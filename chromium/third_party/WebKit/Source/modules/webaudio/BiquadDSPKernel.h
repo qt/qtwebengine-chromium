@@ -55,13 +55,13 @@ public:
 
 protected:
     Biquad m_biquad;
-    BiquadProcessor* biquadProcessor() { return static_cast<BiquadProcessor*>(processor()); }
+    BiquadProcessor* getBiquadProcessor() { return static_cast<BiquadProcessor*>(processor()); }
 
     // To prevent audio glitches when parameters are changed,
     // dezippering is used to slowly change the parameters.
-    void updateCoefficientsIfNecessary();
+    void updateCoefficientsIfNecessary(int);
     // Update the biquad cofficients with the given parameters
-    void updateCoefficients(double frequency, double Q, double gain, double detune);
+    void updateCoefficients(int, const float* frequency, const float* Q, const float* gain, const float* detune);
 
 private:
     // Synchronize process() with getting and setting the filter coefficients.

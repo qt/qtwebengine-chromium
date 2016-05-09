@@ -30,14 +30,16 @@
 #ifndef AXObject_h
 #define AXObject_h
 
-#include "core/InspectorTypeBuilder.h"
 #include "core/editing/VisiblePosition.h"
 #include "modules/ModulesExport.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
+#include "platform/inspector_protocol/TypeBuilder.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
+
+class SkMatrix44;
 
 namespace blink {
 
@@ -51,12 +53,12 @@ class NameSource;
 class Node;
 class LayoutObject;
 class ScrollableArea;
-class Widget;
 
 typedef unsigned AXID;
 
 enum AccessibilityRole {
     UnknownRole = 0,
+    AbbrRole, // No mapping to ARIA role
     AlertDialogRole,
     AlertRole,
     AnnotationRole, // No mapping to ARIA role
@@ -547,8 +549,7 @@ public:
     virtual bool isAXLayoutObject() const { return false; }
     virtual bool isAXListBox() const { return false; }
     virtual bool isAXListBoxOption() const { return false; }
-    virtual bool isAXScrollbar() const { return false; }
-    virtual bool isAXScrollView() const { return false; }
+    virtual bool isAXRadioInput() const { return false; }
     virtual bool isAXSVGRoot() const { return false; }
 
     // Check object role or purpose.
@@ -557,7 +558,6 @@ public:
     virtual bool isARIATreeGridRow() const { return false; }
     virtual bool isAXTable() const { return false; }
     virtual bool isAnchor() const { return false; }
-    virtual bool isAttachment() const { return false; }
     bool isButton() const;
     bool isCanvas() const { return roleValue() == CanvasRole; }
     bool isCheckbox() const { return roleValue() == CheckBoxRole; }
@@ -701,6 +701,7 @@ public:
     // Used by objects of role ColorWellRole.
     virtual RGBA32 colorValue() const { return Color::transparent; }
     virtual bool canvasHasFallbackContent() const { return false; }
+    virtual String fontFamily() const { return nullAtom; }
     // Font size is in pixels.
     virtual float fontSize() const { return 0.0f; }
     virtual int headingLevel() const { return 0; }
@@ -710,7 +711,7 @@ public:
     virtual String text() const { return String(); }
     virtual AccessibilityTextDirection textDirection() const { return AccessibilityTextDirectionLTR; }
     virtual int textLength() const { return 0; }
-    virtual TextStyle textStyle() const { return TextStyleNone; }
+    virtual TextStyle getTextStyle() const { return TextStyleNone; }
     virtual KURL url() const { return KURL(); }
 
     // Load inline text boxes for just this node, even if
@@ -729,9 +730,9 @@ public:
     virtual void wordBoundaries(Vector<AXRange>& words) const { }
 
     // Properties of interactive elements.
-    virtual String actionVerb() const;
+    String actionVerb() const;
     virtual AccessibilityButtonState checkboxOrRadioValue() const;
-    virtual InvalidState invalidState() const { return InvalidStateUndefined; }
+    virtual InvalidState getInvalidState() const { return InvalidStateUndefined; }
     // Only used when invalidState() returns InvalidStateOther.
     virtual String ariaInvalidValue() const { return String(); }
     virtual String valueDescription() const { return String(); }
@@ -765,7 +766,7 @@ public:
     virtual bool supportsARIAFlowTo() const { return false; }
     virtual bool supportsARIAOwns() const { return false; }
     bool supportsRangeValue() const;
-    virtual SortDirection sortDirection() const { return SortDirectionUndefined; }
+    virtual SortDirection getSortDirection() const { return SortDirectionUndefined; }
 
     // Returns 0-based index.
     int indexInParent() const;
@@ -793,6 +794,9 @@ public:
     void setElementRect(LayoutRect r) { m_explicitElementRect = r; }
     virtual void markCachedElementRectDirty() const;
     virtual IntPoint clickPoint();
+
+    // Transformation relative to the parent frame, if local (otherwise returns identity).
+    virtual SkMatrix44 transformFromLocalParentFrame() const;
 
     // Hit testing.
     // Called on the root AX object to return the deepest available element.
@@ -824,16 +828,14 @@ public:
 
     // Properties of the object's owning document or page.
     virtual double estimatedLoadingProgress() const { return 0; }
-    AXObject* focusedUIElement() const;
 
     // DOM and layout tree access.
-    virtual Node* node() const { return 0; }
-    virtual LayoutObject* layoutObject() const { return 0; }
-    virtual Document* document() const;
+    virtual Node* getNode() const { return 0; }
+    virtual LayoutObject* getLayoutObject() const { return 0; }
+    virtual Document* getDocument() const;
     virtual FrameView* documentFrameView() const;
     virtual Element* anchorElement() const { return 0; }
     virtual Element* actionElement() const { return 0; }
-    virtual Widget* widgetForAttachmentView() const { return 0; }
     String language() const;
     bool hasAttribute(const QualifiedName&) const;
     const AtomicString& getAttribute(const QualifiedName&) const;
@@ -911,10 +913,10 @@ protected:
     static String recursiveTextAlternative(const AXObject&, bool inAriaLabelledByTraversal, AXObjectSet& visited);
     bool isHiddenForTextAlternativeCalculation() const;
     String ariaTextAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*, bool* foundTextAlternative) const;
-    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXRelatedObjectVector* relatedObjects) const;
+    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, HeapVector<Member<Element>>& elements, AXRelatedObjectVector* relatedObjects) const;
     void tokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
-    void elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName&) const;
-    void ariaLabelledbyElementVector(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const;
+    void elementsFromAttribute(HeapVector<Member<Element>>& elements, const QualifiedName&) const;
+    void ariaLabelledbyElementVector(HeapVector<Member<Element>>& elements) const;
     String textFromAriaLabelledby(AXObjectSet& visited, AXRelatedObjectVector* relatedObjects) const;
     String textFromAriaDescribedby(AXRelatedObjectVector* relatedObjects) const;
 

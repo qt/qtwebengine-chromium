@@ -17,7 +17,6 @@
 
 namespace net {
 
-namespace tools {
 
 namespace test {
 
@@ -36,7 +35,8 @@ class QuicTestServer : public QuicServer {
         const QuicConfig& config,
         QuicConnection* connection,
         QuicServerSessionVisitor* visitor,
-        const QuicCryptoServerConfig* crypto_config) = 0;
+        const QuicCryptoServerConfig* crypto_config,
+        QuicCompressedCertsCache* compressed_certs_cache) = 0;
   };
 
   // Factory for creating QuicSimpleServerStreams.
@@ -90,12 +90,12 @@ class ImmediateGoAwaySession : public QuicSimpleServerSession {
   ImmediateGoAwaySession(const QuicConfig& config,
                          QuicConnection* connection,
                          QuicServerSessionVisitor* visitor,
-                         const QuicCryptoServerConfig* crypto_config);
+                         const QuicCryptoServerConfig* crypto_config,
+                         QuicCompressedCertsCache* compressed_certs_cache);
 };
 
 }  // namespace test
 
-}  // namespace tools
 
 }  // namespace net
 

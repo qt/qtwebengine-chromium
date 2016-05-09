@@ -35,7 +35,7 @@ static const int kMinChannelNumber = 0x4000;
 static const int kMaxChannelNumber = 0x7FFF;
 
 static const size_t kNonceKeySize = 16;
-static const size_t kNonceSize = 40;
+static const size_t kNonceSize = 48;
 
 static const size_t TURN_CHANNEL_HEADER_SIZE = 4U;
 
@@ -216,7 +216,7 @@ void TurnServer::OnInternalPacket(rtc::AsyncPacketSocket* socket,
 void TurnServer::HandleStunMessage(TurnServerConnection* conn, const char* data,
                                    size_t size) {
   TurnMessage msg;
-  rtc::ByteBuffer buf(data, size);
+  rtc::ByteBufferReader buf(data, size);
   if (!msg.Read(&buf) || (buf.Length() > 0)) {
     LOG(LS_WARNING) << "Received invalid STUN message";
     return;
@@ -392,13 +392,13 @@ void TurnServer::HandleAllocateRequest(TurnServerConnection* conn,
   }
 }
 
-std::string TurnServer::GenerateNonce() const {
+std::string TurnServer::GenerateNonce(int64_t now) const {
   // Generate a nonce of the form hex(now + HMAC-MD5(nonce_key_, now))
-  uint32_t now = rtc::Time();
   std::string input(reinterpret_cast<const char*>(&now), sizeof(now));
   std::string nonce = rtc::hex_encode(input.c_str(), input.size());
   nonce += rtc::ComputeHmac(rtc::DIGEST_MD5, nonce_key_, input);
   ASSERT(nonce.size() == kNonceSize);
+
   return nonce;
 }
 
@@ -409,7 +409,7 @@ bool TurnServer::ValidateNonce(const std::string& nonce) const {
   }
 
   // Decode the timestamp.
-  uint32_t then;
+  int64_t then;
   char* p = reinterpret_cast<char*>(&then);
   size_t len = rtc::hex_decode(p, sizeof(then),
       nonce.substr(0, sizeof(then) * 2));
@@ -424,7 +424,7 @@ bool TurnServer::ValidateNonce(const std::string& nonce) const {
   }
 
   // Validate the timestamp.
-  return rtc::TimeSince(then) < kNonceTimeout;
+  return rtc::Time64() - then < kNonceTimeout;
 }
 
 TurnServerAllocation* TurnServer::FindAllocation(TurnServerConnection* conn) {
@@ -464,8 +464,14 @@ void TurnServer::SendErrorResponseWithRealmAndNonce(
     int code, const std::string& reason) {
   TurnMessage resp;
   InitErrorResponse(msg, code, reason, &resp);
-  VERIFY(resp.AddAttribute(new StunByteStringAttribute(
-      STUN_ATTR_NONCE, GenerateNonce())));
+
+  int64_t timestamp = rtc::Time64();
+  if (ts_for_next_nonce_) {
+    timestamp = ts_for_next_nonce_;
+    ts_for_next_nonce_ = 0;
+  }
+  VERIFY(resp.AddAttribute(
+      new StunByteStringAttribute(STUN_ATTR_NONCE, GenerateNonce(timestamp))));
   VERIFY(resp.AddAttribute(new StunByteStringAttribute(
       STUN_ATTR_REALM, realm_)));
   SendStun(conn, &resp);
@@ -483,7 +489,7 @@ void TurnServer::SendErrorResponseWithAlternateServer(
 }
 
 void TurnServer::SendStun(TurnServerConnection* conn, StunMessage* msg) {
-  rtc::ByteBuffer buf;
+  rtc::ByteBufferWriter buf;
   // Add a SOFTWARE attribute if one is set.
   if (!software_.empty()) {
     VERIFY(msg->AddAttribute(
@@ -494,7 +500,7 @@ void TurnServer::SendStun(TurnServerConnection* conn, StunMessage* msg) {
 }
 
 void TurnServer::Send(TurnServerConnection* conn,
-                      const rtc::ByteBuffer& buf) {
+                      const rtc::ByteBufferWriter& buf) {
   rtc::PacketOptions options;
   conn->socket()->SendTo(buf.Data(), buf.Length(), conn->src(), options);
 }
@@ -788,7 +794,7 @@ void TurnServerAllocation::OnExternalPacket(
   Channel* channel = FindChannel(addr);
   if (channel) {
     // There is a channel bound to this address. Send as a channel message.
-    rtc::ByteBuffer buf;
+    rtc::ByteBufferWriter buf;
     buf.WriteUInt16(channel->id());
     buf.WriteUInt16(static_cast<uint16_t>(size));
     buf.WriteBytes(data, size);
@@ -812,10 +818,10 @@ void TurnServerAllocation::OnExternalPacket(
 
 int TurnServerAllocation::ComputeLifetime(const TurnMessage* msg) {
   // Return the smaller of our default lifetime and the requested lifetime.
-  uint32_t lifetime = kDefaultAllocationTimeout / 1000;  // convert to seconds
+  int lifetime = kDefaultAllocationTimeout / 1000;  // convert to seconds
   const StunUInt32Attribute* lifetime_attr = msg->GetUInt32(STUN_ATTR_LIFETIME);
-  if (lifetime_attr && lifetime_attr->value() < lifetime) {
-    lifetime = lifetime_attr->value();
+  if (lifetime_attr && static_cast<int>(lifetime_attr->value()) < lifetime) {
+    lifetime = static_cast<int>(lifetime_attr->value());
   }
   return lifetime;
 }

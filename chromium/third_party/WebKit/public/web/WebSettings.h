@@ -110,6 +110,7 @@ public:
     virtual void setAllowDisplayOfInsecureContent(bool) = 0;
     virtual void setAllowFileAccessFromFileURLs(bool) = 0;
     virtual void setAllowCustomScrollbarInMainFrame(bool) = 0;
+    virtual void setAllowGeolocationOnInsecureOrigins(bool) = 0;
     // If set to true, allows frames with an https origin to run active
     // contents at an insecure URL. This includes WebSockets. Otherwise,
     // disallows it. The FrameLoaderClient set to the frame may override the
@@ -148,7 +149,6 @@ public:
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
-    virtual void setReportWheelOverscroll(bool) = 0;
     virtual void setForceZeroLayoutHeight(bool) = 0;
     virtual void setFullscreenSupported(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
@@ -163,18 +163,19 @@ public:
     void setLayerSquashingEnabled(bool) { }
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLoadWithOverviewMode(bool) = 0;
+    virtual void setShouldReuseGlobalForUnownedMainFrame(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
     virtual void setMainFrameClipsContent(bool) = 0;
     virtual void setMainFrameResizesAreOrientationChanges(bool) = 0;
     virtual void setMaxTouchPoints(int) = 0;
     virtual void setMediaControlsOverlayPlayButtonEnabled(bool) = 0;
     virtual void setMediaPlaybackRequiresUserGesture(bool) = 0;
+    virtual void setPresentationRequiresUserGesture(bool) = 0;
     virtual void setMinimumAccelerated2dCanvasSize(int) = 0;
     virtual void setMinimumFontSize(int) = 0;
     virtual void setMinimumLogicalFontSize(int) = 0;
     virtual void setMockScrollbarsEnabled(bool) = 0;
     virtual void setOfflineWebApplicationCacheEnabled(bool) = 0;
-    virtual void setOpenGLMultisamplingEnabled(bool) = 0;
     virtual void setPasswordEchoDurationInSeconds(double) = 0;
     virtual void setPasswordEchoEnabled(bool) = 0;
     virtual void setPerTilePaintingEnabled(bool) = 0;
@@ -227,13 +228,13 @@ public:
     virtual void setTextTrackFontFamily(const WebString&) = 0;
     virtual void setTextTrackFontStyle(const WebString&) = 0;
     virtual void setTextTrackFontVariant(const WebString&) = 0;
+    virtual void setTextTrackMarginPercentage(float) = 0;
     virtual void setTextTrackTextColor(const WebString&) = 0;
     virtual void setTextTrackTextShadow(const WebString&) = 0;
     virtual void setTextTrackTextSize(const WebString&) = 0;
     virtual void setThreadedScrollingEnabled(bool) = 0;
     virtual void setTouchDragDropEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
-    virtual void setUnsafePluginPastingEnabled(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;
     virtual void setUseMobileViewportStyle(bool) = 0;
     virtual void setUseSolidColorScrollbars(bool) = 0;
@@ -247,9 +248,9 @@ public:
     virtual void setViewportMetaMergeContentQuirk(bool) = 0;
     virtual void setViewportMetaNonUserScalableQuirk(bool) = 0;
     virtual void setViewportMetaZeroValuesQuirk(bool) = 0;
-    virtual void setWebAudioEnabled(bool) = 0;
     virtual void setWebGLErrorsToConsoleEnabled(bool) = 0;
     virtual void setWebSecurityEnabled(bool) = 0;
+    virtual void setWheelGesturesEnabled(bool) = 0;
     virtual void setWideViewportQuirkEnabled(bool) = 0;
     virtual void setXSSAuditorEnabled(bool) = 0;
 

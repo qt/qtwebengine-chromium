@@ -45,7 +45,8 @@ enum MIDIPortType {
 };
 
 [
-    ActiveDOMObject,
+    ActiveScriptWrappable,
+    DependentLifetime,
     GarbageCollected,
 ] interface MIDIPort : EventTarget {
     readonly attribute MIDIPortConnectionState connection;

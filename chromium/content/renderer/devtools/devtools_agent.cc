@@ -25,10 +25,6 @@
 #include "third_party/WebKit/public/web/WebDevToolsAgent.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
-#if defined(USE_TCMALLOC)
-#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
-#endif
-
 using blink::WebConsoleMessage;
 using blink::WebDevToolsAgent;
 using blink::WebDevToolsAgentClient;
@@ -91,6 +87,8 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                         OnDispatchOnInspectorBackend)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_InspectElement, OnInspectElement)
+    IPC_MESSAGE_HANDLER(DevToolsAgentMsg_RequestNewWindow_ACK,
+                        OnRequestNewWindowACK)
     IPC_MESSAGE_HANDLER(DevToolsMsg_SetupDevToolsClient, OnSetupDevToolsClient)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -109,6 +107,11 @@ void DevToolsAgent::sendProtocolMessage(int session_id,
                                         int call_id,
                                         const blink::WebString& message,
                                         const blink::WebString& state_cookie) {
+  if (!send_protocol_message_callback_for_test_.is_null()) {
+    send_protocol_message_callback_for_test_.Run(
+        session_id, call_id, message.utf8(), state_cookie.utf8());
+    return;
+  }
   SendChunkedProtocolMessage(this, routing_id(), session_id, call_id,
                              message.utf8(), state_cookie.utf8());
 }
@@ -132,6 +135,15 @@ void DevToolsAgent::didExitDebugLoop() {
     widget->IgnoreAckForMouseMoveFromDebugger();
     paused_in_mouse_move_ = false;
   }
+}
+
+bool DevToolsAgent::requestDevToolsForFrame(blink::WebLocalFrame* webFrame) {
+  RenderFrameImpl* frame = RenderFrameImpl::FromWebFrame(webFrame);
+  if (!frame)
+    return false;
+  Send(new DevToolsAgentHostMsg_RequestNewWindow(routing_id(),
+      frame->GetRoutingID()));
+  return true;
 }
 
 void DevToolsAgent::enableTracing(const WebString& category_filter) {
@@ -200,54 +212,42 @@ void DevToolsAgent::SendChunkedProtocolMessage(IPC::Sender* sender,
 }
 
 void DevToolsAgent::OnAttach(const std::string& host_id, int session_id) {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent) {
-    web_agent->attach(WebString::fromUTF8(host_id), session_id);
-    is_attached_ = true;
-  }
+  GetWebAgent()->attach(WebString::fromUTF8(host_id), session_id);
+  is_attached_ = true;
 }
 
 void DevToolsAgent::OnReattach(const std::string& host_id,
                                int session_id,
                                const std::string& agent_state) {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent) {
-    web_agent->reattach(WebString::fromUTF8(host_id), session_id,
-                        WebString::fromUTF8(agent_state));
-    is_attached_ = true;
-  }
+  GetWebAgent()->reattach(WebString::fromUTF8(host_id), session_id,
+                          WebString::fromUTF8(agent_state));
+  is_attached_ = true;
 }
 
 void DevToolsAgent::OnDetach() {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent) {
-    web_agent->detach();
-    is_attached_ = false;
-  }
+  GetWebAgent()->detach();
+  is_attached_ = false;
 }
 
 void DevToolsAgent::OnDispatchOnInspectorBackend(int session_id,
                                                  const std::string& message) {
   TRACE_EVENT0("devtools", "DevToolsAgent::OnDispatchOnInspectorBackend");
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent)
-    web_agent->dispatchOnInspectorBackend(session_id,
-                                          WebString::fromUTF8(message));
+  GetWebAgent()->dispatchOnInspectorBackend(session_id,
+                                            WebString::fromUTF8(message));
 }
 
 void DevToolsAgent::OnInspectElement(int x, int y) {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent) {
-    DCHECK(is_attached_);
-    web_agent->inspectElementAt(WebPoint(x, y));
-  }
+  GetWebAgent()->inspectElementAt(WebPoint(x, y));
+}
+
+void DevToolsAgent::OnRequestNewWindowACK(bool success) {
+  if (!success)
+    GetWebAgent()->failedToRequestDevTools();
 }
 
 void DevToolsAgent::AddMessageToConsole(ConsoleMessageLevel level,
                                         const std::string& message) {
   WebLocalFrame* web_frame = frame_->GetWebFrame();
-  if (!web_frame)
-    return;
 
   WebConsoleMessage::Level target_level = WebConsoleMessage::LevelLog;
   switch (level) {
@@ -269,15 +269,13 @@ void DevToolsAgent::AddMessageToConsole(ConsoleMessageLevel level,
 }
 
 void DevToolsAgent::ContinueProgram() {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (web_agent)
-    web_agent->continueProgram();
+  GetWebAgent()->continueProgram();
 }
 
 void DevToolsAgent::OnSetupDevToolsClient(
     const std::string& compatibility_script) {
   // We only want to register once; and only in main frame.
-  DCHECK(!frame_->GetWebFrame() || !frame_->GetWebFrame()->parent());
+  DCHECK(!frame_->GetWebFrame()->parent());
   if (is_devtools_client_)
     return;
   is_devtools_client_ = true;
@@ -285,8 +283,7 @@ void DevToolsAgent::OnSetupDevToolsClient(
 }
 
 WebDevToolsAgent* DevToolsAgent::GetWebAgent() {
-  WebLocalFrame* web_frame = frame_->GetWebFrame();
-  return web_frame ? web_frame->devToolsAgent() : nullptr;
+  return frame_->GetWebFrame()->devToolsAgent();
 }
 
 bool DevToolsAgent::IsAttached() {

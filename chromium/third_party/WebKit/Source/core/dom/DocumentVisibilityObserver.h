@@ -13,13 +13,14 @@ namespace blink {
 
 class Document;
 
-class CORE_EXPORT DocumentVisibilityObserver : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT DocumentVisibilityObserver : public GarbageCollectedMixin {
     WTF_MAKE_NONCOPYABLE(DocumentVisibilityObserver);
 public:
     explicit DocumentVisibilityObserver(Document&);
     virtual ~DocumentVisibilityObserver();
 
     virtual void didChangeVisibilityState(PageVisibilityState) = 0;
+    virtual void willDetachDocument() = 0;
 
     // Classes that inherit Node and DocumentVisibilityObserver must have a
     // virtual override of Node::didMoveToNewDocument that calls
@@ -33,7 +34,7 @@ private:
     void registerObserver(Document&);
     void unregisterObserver();
 
-    RawPtrWillBeMember<Document> m_document;
+    Member<Document> m_document;
 };
 
 } // namespace blink

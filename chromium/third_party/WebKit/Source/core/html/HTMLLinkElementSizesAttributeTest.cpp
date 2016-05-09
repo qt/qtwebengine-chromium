@@ -5,7 +5,7 @@
 #include "core/html/HTMLLinkElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/DOMSettableTokenList.h"
+#include "core/dom/DOMTokenList.h"
 #include "core/dom/Document.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -76,9 +76,9 @@ TEST(HTMLLinkElementSizesAttributeTest, parseSizes)
 
 TEST(HTMLLinkElementSizesAttributeTest, setSizesPropertyValue_updatesAttribute)
 {
-    RefPtrWillBeRawPtr<Document> document = Document::create();
-    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
-    RefPtrWillBeRawPtr<DOMSettableTokenList> sizes = link->sizes();
+    RawPtr<Document> document = Document::create();
+    RawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
+    RawPtr<DOMTokenList> sizes = link->sizes();
     EXPECT_EQ(nullAtom, sizes->value());
     sizes->setValue("   a b  c ");
     EXPECT_EQ("   a b  c ", link->getAttribute(HTMLNames::sizesAttr));
@@ -87,9 +87,9 @@ TEST(HTMLLinkElementSizesAttributeTest, setSizesPropertyValue_updatesAttribute)
 
 TEST(HTMLLinkElementSizesAttributeTest, setSizesAttribute_updatesSizesPropertyValue)
 {
-    RefPtrWillBeRawPtr<Document> document = Document::create();
-    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
-    RefPtrWillBeRawPtr<DOMSettableTokenList> sizes = link->sizes();
+    RawPtr<Document> document = Document::create();
+    RawPtr<HTMLLinkElement> link = HTMLLinkElement::create(*document, /* createdByParser: */ false);
+    RawPtr<DOMTokenList> sizes = link->sizes();
     EXPECT_EQ(nullAtom, sizes->value());
     link->setAttribute(HTMLNames::sizesAttr, "y  x ");
     EXPECT_EQ("y  x ", sizes->value());

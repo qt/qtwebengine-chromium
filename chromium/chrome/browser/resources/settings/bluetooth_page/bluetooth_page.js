@@ -13,9 +13,6 @@
  *      </settings-bluetooth-page>
  *      ... other pages ...
  *    </core-animated-pages>
- *
- * @group Chrome Settings Elements
- * @element settings-bluetooth-page
  */
 
 var bluetoothPage = bluetoothPage || {
@@ -416,7 +413,7 @@ Polymer({
    * @private
    */
   haveDevices_: function(deviceListChanges) {
-    return this.deviceList.findIndex(function(d) { return d.paired; }) != -1;
+    return this.deviceList.findIndex(function(d) { return !!d.paired; }) != -1;
   },
 
   /**

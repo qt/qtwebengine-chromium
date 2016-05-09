@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
+#include "base/run_loop.h"
 #include "build/build_config.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -17,15 +18,17 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/test/native_widget_factory.h"
 #include "ui/views/test/test_views.h"
 #include "ui/views/test/test_views_delegate.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
-#include "ui/wm/public/dispatcher_client.h"
 
 #if defined(OS_WIN)
+#include "ui/base/view_prop.h"
+#include "ui/base/win/window_event_target.h"
 #include "ui/views/win/hwnd_util.h"
 #endif
 
@@ -231,15 +234,10 @@ TEST_F(DesktopNativeWidgetAuraTest, WidgetCanBeDestroyedFromNestedLoop) {
   widget->Init(params);
   widget->Show();
 
-  aura::Window* window = widget->GetNativeView();
-  aura::Window* root = window->GetRootWindow();
-  aura::client::DispatcherClient* client =
-      aura::client::GetDispatcherClient(root);
-
   // Post a task that terminates the nested loop and destroyes the widget. This
   // task will be executed from the nested loop initiated with the call to
   // |RunWithDispatcher()| below.
-  aura::client::DispatcherRunLoop run_loop(client, NULL);
+  base::RunLoop run_loop;
   base::Closure quit_runloop = run_loop.QuitClosure();
   message_loop()->PostTask(FROM_HERE,
                            base::Bind(&QuitNestedLoopAndCloseWidget,
@@ -434,9 +432,7 @@ TEST_F(DesktopAuraWidgetTest, TopLevelOwnedPopupRepositionTest) {
 
   gfx::Rect new_pos(10, 10, 400, 400);
   popup_window.owned_window()->SetBoundsInScreen(
-      new_pos,
-      gfx::Screen::GetScreenFor(
-          popup_window.owned_window())->GetDisplayNearestPoint(gfx::Point()));
+      new_pos, gfx::Screen::GetScreen()->GetDisplayNearestPoint(gfx::Point()));
 
   EXPECT_EQ(new_pos,
             popup_window.top_level_widget()->GetWindowBoundsInScreen());
@@ -493,7 +489,8 @@ void RunCloseWidgetDuringDispatchTest(WidgetTest* test,
   Widget* widget = new Widget;
   Widget::InitParams params =
       test->CreateParams(Widget::InitParams::TYPE_POPUP);
-  params.native_widget = new PlatformDesktopNativeWidget(widget);
+  params.native_widget =
+      CreatePlatformDesktopNativeWidgetImpl(params, widget, nullptr);
   params.bounds = gfx::Rect(0, 0, 50, 100);
   widget->Init(params);
   widget->SetContentsView(new CloseWidgetView(last_event_type));
@@ -535,8 +532,8 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
   gfx::Rect initial_bounds(0, 0, 500, 500);
   init_params.bounds = initial_bounds;
   init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  init_params.native_widget =
-      new PlatformDesktopNativeWidget(&top_level_widget);
+  init_params.native_widget = CreatePlatformDesktopNativeWidgetImpl(
+      init_params, &top_level_widget, nullptr);
   top_level_widget.Init(init_params);
   top_level_widget.Show();
   EXPECT_TRUE(top_level_widget.IsVisible());
@@ -632,6 +629,32 @@ TEST_F(WidgetTest, WindowModalityActivationTest) {
 
   modal_dialog_widget->CloseNow();
 }
+
+// This test validates that sending WM_CHAR/WM_SYSCHAR/WM_SYSDEADCHAR
+// messages via the WindowEventTarget interface implemented by the
+// HWNDMessageHandler class does not cause a crash due to an unprocessed
+// event
+TEST_F(WidgetTest, CharMessagesAsKeyboardMessagesDoesNotCrash) {
+  Widget widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.native_widget =
+      CreatePlatformDesktopNativeWidgetImpl(params, &widget, nullptr);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(params);
+  widget.Show();
+
+  ui::WindowEventTarget* target =
+      reinterpret_cast<ui::WindowEventTarget*>(ui::ViewProp::GetValue(
+          widget.GetNativeWindow()->GetHost()->GetAcceleratedWidget(),
+          ui::WindowEventTarget::kWin32InputEventTarget));
+  ASSERT_NE(nullptr, target);
+  bool handled = false;
+  target->HandleKeyboardMessage(WM_CHAR, 0, 0, &handled);
+  target->HandleKeyboardMessage(WM_SYSCHAR, 0, 0, &handled);
+  target->HandleKeyboardMessage(WM_SYSDEADCHAR, 0, 0, &handled);
+  widget.CloseNow();
+}
+
 #endif  // defined(OS_WIN)
 
 }  // namespace test

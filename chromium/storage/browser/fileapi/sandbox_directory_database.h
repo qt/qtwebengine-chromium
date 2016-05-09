@@ -7,13 +7,13 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "storage/browser/storage_browser_export.h"
 
@@ -123,12 +123,14 @@ class STORAGE_EXPORT SandboxDirectoryDatabase {
   bool AddFileInfoHelper(
       const FileInfo& info, FileId file_id, leveldb::WriteBatch* batch);
   bool RemoveFileInfoHelper(FileId file_id, leveldb::WriteBatch* batch);
+  // Close the database. Before this, all iterators associated with the database
+  // must be deleted.
   void HandleError(const tracked_objects::Location& from_here,
                    const leveldb::Status& status);
 
   const base::FilePath filesystem_data_directory_;
   leveldb::Env* env_override_;
-  scoped_ptr<leveldb::DB> db_;
+  std::unique_ptr<leveldb::DB> db_;
   base::Time last_reported_time_;
   DISALLOW_COPY_AND_ASSIGN(SandboxDirectoryDatabase);
 };

@@ -14,23 +14,32 @@
 #include "net/tools/quic/quic_simple_server_stream.h"
 #include "url/gurl.h"
 
+using std::string;
+
 namespace net {
-namespace tools {
 
 QuicSimpleServerSession::QuicSimpleServerSession(
     const QuicConfig& config,
     QuicConnection* connection,
     QuicServerSessionVisitor* visitor,
-    const QuicCryptoServerConfig* crypto_config)
-    : QuicServerSessionBase(config, connection, visitor, crypto_config),
+    const QuicCryptoServerConfig* crypto_config,
+    QuicCompressedCertsCache* compressed_certs_cache)
+    : QuicServerSessionBase(config,
+                            connection,
+                            visitor,
+                            crypto_config,
+                            compressed_certs_cache),
       highest_promised_stream_id_(0) {}
 
 QuicSimpleServerSession::~QuicSimpleServerSession() {}
 
 QuicCryptoServerStreamBase*
 QuicSimpleServerSession::CreateQuicCryptoServerStream(
-    const QuicCryptoServerConfig* crypto_config) {
-  return new QuicCryptoServerStream(crypto_config, this);
+    const QuicCryptoServerConfig* crypto_config,
+    QuicCompressedCertsCache* compressed_certs_cache) {
+  return new QuicCryptoServerStream(crypto_config, compressed_certs_cache,
+                                    FLAGS_enable_quic_stateless_reject_support,
+                                    this);
 }
 
 void QuicSimpleServerSession::StreamDraining(QuicStreamId id) {
@@ -43,8 +52,9 @@ void QuicSimpleServerSession::StreamDraining(QuicStreamId id) {
 void QuicSimpleServerSession::OnStreamFrame(const QuicStreamFrame& frame) {
   if (!IsIncomingStream(frame.stream_id)) {
     LOG(WARNING) << "Client shouldn't send data on server push stream";
-    connection()->SendConnectionCloseWithDetails(
-        QUIC_INVALID_STREAM_ID, "Client sent data on server push stream");
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Client sent data on server push stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return;
   }
   QuicSpdySession::OnStreamFrame(frame);
@@ -52,7 +62,7 @@ void QuicSimpleServerSession::OnStreamFrame(const QuicStreamFrame& frame) {
 
 void QuicSimpleServerSession::PromisePushResources(
     const string& request_url,
-    const list<QuicInMemoryCache::ServerPushInfo>& resources,
+    const std::list<QuicInMemoryCache::ServerPushInfo>& resources,
     QuicStreamId original_stream_id,
     const SpdyHeaderBlock& original_request_headers) {
   for (QuicInMemoryCache::ServerPushInfo resource : resources) {
@@ -74,7 +84,9 @@ QuicSpdyStream* QuicSimpleServerSession::CreateIncomingDynamicStream(
     return nullptr;
   }
 
-  return new QuicSimpleServerStream(id, this);
+  QuicSpdyStream* stream = new QuicSimpleServerStream(id, this);
+  ActivateStream(stream);
+  return stream;
 }
 
 QuicSimpleServerStream* QuicSimpleServerSession::CreateOutgoingDynamicStream(
@@ -176,11 +188,11 @@ void QuicSimpleServerSession::HandlePromisedPushRequests() {
     DCHECK_EQ(promised_info.stream_id, promised_stream->id());
     DVLOG(1) << "created server push stream " << promised_stream->id();
 
-    promised_stream->PushResponse(promised_info.request_headers);
+    const SpdyHeaderBlock request_headers(promised_info.request_headers);
 
     promised_streams_.pop_front();
+    promised_stream->PushResponse(request_headers);
   }
 }
 
-}  // namespace tools
 }  // namespace net

@@ -8,20 +8,23 @@
 #include "modules/EventModules.h"
 #include "modules/ModulesExport.h"
 #include "modules/serviceworkers/ExtendableEvent.h"
+#include "modules/serviceworkers/ForeignFetchOptions.h"
 
 namespace blink {
+
+class USVStringOrUSVStringSequence;
 
 class MODULES_EXPORT InstallEvent : public ExtendableEvent {
     DEFINE_WRAPPERTYPEINFO();
 
 public:
-    static PassRefPtrWillBeRawPtr<InstallEvent> create();
-    static PassRefPtrWillBeRawPtr<InstallEvent> create(const AtomicString& type, const ExtendableEventInit&);
-    static PassRefPtrWillBeRawPtr<InstallEvent> create(const AtomicString& type, const ExtendableEventInit&, WaitUntilObserver*);
+    static InstallEvent* create();
+    static InstallEvent* create(const AtomicString& type, const ExtendableEventInit&);
+    static InstallEvent* create(const AtomicString& type, const ExtendableEventInit&, WaitUntilObserver*);
 
     ~InstallEvent() override;
 
-    void registerForeignFetchScopes(ExecutionContext*, const Vector<String>& subScopes, ExceptionState&);
+    void registerForeignFetch(ExecutionContext*, const ForeignFetchOptions&, ExceptionState&);
 
     const AtomicString& interfaceName() const override;
 

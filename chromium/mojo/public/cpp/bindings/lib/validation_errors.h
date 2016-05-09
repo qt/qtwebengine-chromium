@@ -5,8 +5,9 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_LIB_VALIDATION_ERRORS_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_LIB_VALIDATION_ERRORS_H_
 
+#include "base/logging.h"
+#include "base/macros.h"
 #include "mojo/public/cpp/bindings/callback.h"
-#include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
 namespace internal {
@@ -59,7 +60,9 @@ enum ValidationError {
   // lengths.
   VALIDATION_ERROR_DIFFERENT_SIZED_ARRAYS_IN_MAP,
   // Attempted to deserialize a tagged union with an unknown tag.
-  VALIDATION_ERROR_UNKNOWN_UNION_TAG
+  VALIDATION_ERROR_UNKNOWN_UNION_TAG,
+  // A value of a non-extensible enum type is unknown.
+  VALIDATION_ERROR_UNKNOWN_ENUM_VALUE
 };
 
 const char* ValidationErrorToString(ValidationError error);
@@ -84,7 +87,7 @@ class ValidationErrorObserverForTesting {
   ValidationError last_error_;
   Callback<void()> callback_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(ValidationErrorObserverForTesting);
+  DISALLOW_COPY_AND_ASSIGN(ValidationErrorObserverForTesting);
 };
 
 // Used only by MOJO_INTERNAL_DLOG_SERIALIZATION_WARNING. Don't use it directly.
@@ -106,7 +109,7 @@ class SerializationWarningObserverForTesting {
  private:
   ValidationError last_warning_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(SerializationWarningObserverForTesting);
+  DISALLOW_COPY_AND_ASSIGN(SerializationWarningObserverForTesting);
 };
 
 }  // namespace internal
@@ -121,11 +124,11 @@ class SerializationWarningObserverForTesting {
 // of the serialzation result.
 //
 // In non-debug build, does nothing (not even compiling |condition|).
-#define MOJO_INTERNAL_DLOG_SERIALIZATION_WARNING(                        \
-    condition, error, description)                                       \
-  MOJO_DLOG_IF(FATAL, (condition) && !ReportSerializationWarning(error)) \
-      << "The outgoing message will trigger "                            \
-      << ValidationErrorToString(error) << " at the receiving side ("    \
+#define MOJO_INTERNAL_DLOG_SERIALIZATION_WARNING(condition, error,    \
+                                                 description)         \
+  DLOG_IF(FATAL, (condition) && !ReportSerializationWarning(error))   \
+      << "The outgoing message will trigger "                         \
+      << ValidationErrorToString(error) << " at the receiving side (" \
       << description << ").";
 
 #endif  // MOJO_PUBLIC_CPP_BINDINGS_LIB_VALIDATION_ERRORS_H_

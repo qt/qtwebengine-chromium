@@ -40,6 +40,12 @@
             "settingName": "enableAsyncStackTraces",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "settingName": "showMetricsRulers",
+            "settingType": "boolean",
+            "defaultValue": false
         }
     ],
     "scripts": [
@@ -47,15 +53,22 @@
         "../InspectorBackendCommands.js",
         "InspectorBackendHostedMode.js",
         "Target.js",
+        "TargetManager.js",
         "ApplicationCacheModel.js",
         "ConsoleModel.js",
         "ContentProviders.js",
         "CookieParser.js",
         "CPUProfileDataModel.js",
         "CPUProfilerModel.js",
+        "CSSMatchedStyles.js",
+        "CSSMedia.js",
         "CSSMetadata.js",
+        "CSSModel.js",
         "CSSParser.js",
-        "CSSStyleModel.js",
+        "CSSProperty.js",
+        "CSSRule.js",
+        "CSSStyleDeclaration.js",
+        "CSSStyleSheetHeader.js",
         "DOMModel.js",
         "DebuggerModel.js",
         "HAREntry.js",

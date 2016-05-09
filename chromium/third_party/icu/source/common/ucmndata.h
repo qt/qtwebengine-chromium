@@ -49,7 +49,7 @@ typedef struct {
     uint32_t count, reserved;
     /*
     const struct {
-    const char *const name; 
+    const char *const name;
     const void *const data;
     } toc[1];
     */

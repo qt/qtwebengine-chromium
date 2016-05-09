@@ -12,7 +12,6 @@
 #define WEBRTC_P2P_BASE_TRANSPORTCHANNELIMPL_H_
 
 #include <string>
-#include "webrtc/p2p/base/transport.h"
 #include "webrtc/p2p/base/transportchannel.h"
 
 namespace buzz { class XmlElement; }
@@ -35,9 +34,6 @@ class TransportChannelImpl : public TransportChannel {
   explicit TransportChannelImpl(const std::string& transport_name,
                                 int component)
       : TransportChannel(transport_name, component) {}
-
-  // Returns the transport that created this channel.
-  virtual Transport* GetTransport() = 0;
 
   // For ICE channels.
   virtual IceRole GetIceRole() const = 0;
@@ -80,7 +76,10 @@ class TransportChannelImpl : public TransportChannel {
   // before forwarding.
   sigslot::signal2<TransportChannelImpl*, const Candidate&>
       SignalCandidateGathered;
+  sigslot::signal2<TransportChannelImpl*, const Candidates&>
+      SignalCandidatesRemoved;
   virtual void AddRemoteCandidate(const Candidate& candidate) = 0;
+  virtual void RemoveRemoteCandidate(const Candidate& candidate) = 0;
 
   virtual IceGatheringState gathering_state() const = 0;
 

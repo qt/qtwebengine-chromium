@@ -17,14 +17,12 @@ class Insets;
 }
 
 namespace mojo {
-class Shell;
+class Connector;
 }
 
 namespace mus {
 class Window;
-namespace mojom {
-class WindowTreeHost;
-}
+class WindowManagerClient;
 }
 
 namespace mash {
@@ -35,9 +33,9 @@ class NonClientFrameController : public views::WidgetDelegateView,
                                  public mus::WindowObserver {
  public:
   // NonClientFrameController deletes itself when |window| is destroyed.
-  NonClientFrameController(mojo::Shell* shell,
-                           mus::Window* window,
-                           mus::mojom::WindowTreeHost* window_tree_host);
+  static void Create(mojo::Connector* connector,
+                     mus::Window* window,
+                     mus::WindowManagerClient* window_manager_client);
 
   // Returns the preferred client area insets.
   static gfx::Insets GetPreferredClientAreaInsets();
@@ -49,6 +47,9 @@ class NonClientFrameController : public views::WidgetDelegateView,
   mus::Window* window() { return window_; }
 
  private:
+  NonClientFrameController(mojo::Connector* connector,
+                           mus::Window* window,
+                           mus::WindowManagerClient* window_manager_client);
   ~NonClientFrameController() override;
 
   // views::WidgetDelegateView:
@@ -72,8 +73,6 @@ class NonClientFrameController : public views::WidgetDelegateView,
   // WARNING: as widget delays destruction there is a portion of time when this
   // is null.
   mus::Window* window_;
-
-  mus::mojom::WindowTreeHost* mus_window_tree_host_;
 
   DISALLOW_COPY_AND_ASSIGN(NonClientFrameController);
 };

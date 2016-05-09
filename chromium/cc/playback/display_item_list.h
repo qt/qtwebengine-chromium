@@ -28,6 +28,7 @@ class SkPictureRecorder;
 namespace cc {
 class DisplayItem;
 class DrawingDisplayItem;
+class ImageSerializationProcessor;
 
 namespace proto {
 class DisplayItemList;
@@ -49,12 +50,14 @@ class CC_EXPORT DisplayItemList
   // TODO(dtrainor): Pass in a list of possible DisplayItems to reuse
   // (crbug.com/548434).
   static scoped_refptr<DisplayItemList> CreateFromProto(
-      const proto::DisplayItemList& proto);
+      const proto::DisplayItemList& proto,
+      ImageSerializationProcessor* image_serialization_processor);
 
   // Creates a Protobuf representing the state of this DisplayItemList.
   // TODO(dtrainor): Don't resend DisplayItems that were already serialized
   // (crbug.com/548434).
-  void ToProtobuf(proto::DisplayItemList* proto);
+  void ToProtobuf(proto::DisplayItemList* proto,
+                  ImageSerializationProcessor* image_serialization_processor);
 
   void Raster(SkCanvas* canvas,
               SkPicture::AbortCallback* callback,
@@ -95,7 +98,7 @@ class CC_EXPORT DisplayItemList
 
   bool RetainsIndividualDisplayItems() const;
 
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue(
+  scoped_ptr<base::trace_event::ConvertableToTraceFormat> AsValue(
       bool include_items) const;
 
   void EmitTraceSnapshot() const;
@@ -104,8 +107,7 @@ class CC_EXPORT DisplayItemList
   void GetDiscardableImagesInRect(const gfx::Rect& rect,
                                   float raster_scale,
                                   std::vector<DrawImage>* images);
-
-  bool HasDiscardableImageInRect(const gfx::Rect& layer_rect) const;
+  bool MayHaveDiscardableImages() const;
 
   gfx::Rect VisualRectForTesting(int index) { return visual_rects_[index]; }
 
@@ -124,7 +126,7 @@ class CC_EXPORT DisplayItemList
   // |items_| . These rects are intentionally kept separate
   // because they are not needed while walking the |items_| for raster.
   std::vector<gfx::Rect> visual_rects_;
-  skia::RefPtr<SkPicture> picture_;
+  sk_sp<SkPicture> picture_;
 
   scoped_ptr<SkPictureRecorder> recorder_;
   skia::RefPtr<SkCanvas> canvas_;

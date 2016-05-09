@@ -90,7 +90,7 @@ static bool checkShapeImageOrigin(Document& document, const StyleImage& styleIma
 
     ASSERT(styleImage.cachedImage());
     ImageResource& imageResource = *(styleImage.cachedImage());
-    if (imageResource.isAccessAllowed(document.securityOrigin()))
+    if (imageResource.isAccessAllowed(document.getSecurityOrigin()))
         return true;
 
     const KURL& url = imageResource.url();
@@ -121,7 +121,7 @@ static bool isValidRasterShapeRect(const LayoutRect& rect)
 
 PassOwnPtr<Shape> ShapeOutsideInfo::createShapeForImage(StyleImage* styleImage, float shapeImageThreshold, WritingMode writingMode, float margin) const
 {
-    const LayoutSize& imageSize = m_layoutBox.calculateImageIntrinsicDimensions(styleImage, m_referenceBoxLogicalSize, LayoutImage::ScaleByEffectiveZoom);
+    const LayoutSize& imageSize = styleImage->imageSize(m_layoutBox, m_layoutBox.style()->effectiveZoom(), m_referenceBoxLogicalSize);
 
     const LayoutRect& marginRect = getShapeImageMarginRect(m_layoutBox, m_referenceBoxLogicalSize);
     const LayoutRect& imageRect = (m_layoutBox.isLayoutImage())
@@ -134,7 +134,7 @@ PassOwnPtr<Shape> ShapeOutsideInfo::createShapeForImage(StyleImage* styleImage, 
     }
 
     ASSERT(!styleImage->isPendingImage());
-    RefPtr<Image> image = styleImage->image(const_cast<LayoutBox*>(&m_layoutBox), flooredIntSize(imageSize), m_layoutBox.style()->effectiveZoom());
+    RefPtr<Image> image = styleImage->image(m_layoutBox, flooredIntSize(imageSize), m_layoutBox.style()->effectiveZoom());
 
     return Shape::createRasterShape(image.get(), shapeImageThreshold, imageRect, marginRect, writingMode, margin);
 }
@@ -150,7 +150,7 @@ const Shape& ShapeOutsideInfo::computedShape() const
     ASSERT(m_layoutBox.containingBlock());
     const ComputedStyle& containingBlockStyle = *m_layoutBox.containingBlock()->style();
 
-    WritingMode writingMode = containingBlockStyle.writingMode();
+    WritingMode writingMode = containingBlockStyle.getWritingMode();
     // Make sure contentWidth is not negative. This can happen when containing block has a vertical scrollbar and
     // its content is smaller than the scrollbar width.
     LayoutUnit maximumValue = m_layoutBox.containingBlock() ? std::max(LayoutUnit(), m_layoutBox.containingBlock()->contentWidth()) : LayoutUnit();
@@ -183,13 +183,13 @@ const Shape& ShapeOutsideInfo::computedShape() const
 inline LayoutUnit borderBeforeInWritingMode(const LayoutBox& layoutBox, WritingMode writingMode)
 {
     switch (writingMode) {
-    case TopToBottomWritingMode: return layoutBox.borderTop();
-    case LeftToRightWritingMode: return layoutBox.borderLeft();
-    case RightToLeftWritingMode: return layoutBox.borderRight();
+    case TopToBottomWritingMode: return LayoutUnit(layoutBox.borderTop());
+    case LeftToRightWritingMode: return LayoutUnit(layoutBox.borderLeft());
+    case RightToLeftWritingMode: return LayoutUnit(layoutBox.borderRight());
     }
 
     ASSERT_NOT_REACHED();
-    return layoutBox.borderBefore();
+    return LayoutUnit(layoutBox.borderBefore());
 }
 
 inline LayoutUnit borderAndPaddingBeforeInWritingMode(const LayoutBox& layoutBox, WritingMode writingMode)
@@ -209,8 +209,8 @@ LayoutUnit ShapeOutsideInfo::logicalTopOffset() const
     switch (referenceBox(*m_layoutBox.style()->shapeOutside())) {
     case MarginBox: return -m_layoutBox.marginBefore(m_layoutBox.containingBlock()->style());
     case BorderBox: return LayoutUnit();
-    case PaddingBox: return borderBeforeInWritingMode(m_layoutBox, m_layoutBox.containingBlock()->style()->writingMode());
-    case ContentBox: return borderAndPaddingBeforeInWritingMode(m_layoutBox, m_layoutBox.containingBlock()->style()->writingMode());
+    case PaddingBox: return borderBeforeInWritingMode(m_layoutBox, m_layoutBox.containingBlock()->style()->getWritingMode());
+    case ContentBox: return borderAndPaddingBeforeInWritingMode(m_layoutBox, m_layoutBox.containingBlock()->style()->getWritingMode());
     case BoxMissing: break;
     }
 
@@ -222,14 +222,14 @@ inline LayoutUnit borderStartWithStyleForWritingMode(const LayoutBox& layoutBox,
 {
     if (style->isHorizontalWritingMode()) {
         if (style->isLeftToRightDirection())
-            return layoutBox.borderLeft();
+            return LayoutUnit(layoutBox.borderLeft());
 
-        return layoutBox.borderRight();
+        return LayoutUnit(layoutBox.borderRight());
     }
     if (style->isLeftToRightDirection())
-        return layoutBox.borderTop();
+        return LayoutUnit(layoutBox.borderTop());
 
-    return layoutBox.borderBottom();
+    return LayoutUnit(layoutBox.borderBottom());
 }
 
 inline LayoutUnit borderAndPaddingStartWithStyleForWritingMode(const LayoutBox& layoutBox, const ComputedStyle* style)
@@ -294,11 +294,11 @@ ShapeOutsideDeltas ShapeOutsideInfo::computeDeltasForContainingBlockLine(const L
             LineSegment segment = computedShape().getExcludedInterval((borderBoxLineTop - logicalTopOffset()), std::min(lineHeight, shapeLogicalBottom() - borderBoxLineTop));
             if (segment.isValid) {
                 LayoutUnit logicalLeftMargin = containingBlock.style()->isLeftToRightDirection() ? containingBlock.marginStartForChild(m_layoutBox) : containingBlock.marginEndForChild(m_layoutBox);
-                LayoutUnit rawLeftMarginBoxDelta = segment.logicalLeft + logicalLeftOffset() + logicalLeftMargin;
+                LayoutUnit rawLeftMarginBoxDelta(segment.logicalLeft + logicalLeftOffset() + logicalLeftMargin);
                 LayoutUnit leftMarginBoxDelta = clampTo<LayoutUnit>(rawLeftMarginBoxDelta, LayoutUnit(), floatMarginBoxWidth);
 
                 LayoutUnit logicalRightMargin = containingBlock.style()->isLeftToRightDirection() ? containingBlock.marginEndForChild(m_layoutBox) : containingBlock.marginStartForChild(m_layoutBox);
-                LayoutUnit rawRightMarginBoxDelta = segment.logicalRight + logicalLeftOffset() - containingBlock.logicalWidthForChild(m_layoutBox) - logicalRightMargin;
+                LayoutUnit rawRightMarginBoxDelta(segment.logicalRight + logicalLeftOffset() - containingBlock.logicalWidthForChild(m_layoutBox) - logicalRightMargin);
                 LayoutUnit rightMarginBoxDelta = clampTo<LayoutUnit>(rawRightMarginBoxDelta, -floatMarginBoxWidth, LayoutUnit());
 
                 m_shapeOutsideDeltas = ShapeOutsideDeltas(leftMarginBoxDelta, rightMarginBoxDelta, true, borderBoxLineTop, lineHeight);

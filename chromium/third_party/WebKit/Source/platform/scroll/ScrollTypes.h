@@ -26,6 +26,7 @@
 #ifndef ScrollTypes_h
 #define ScrollTypes_h
 
+#include "platform/geometry/FloatSize.h"
 #include "wtf/Assertions.h"
 
 namespace blink {
@@ -52,7 +53,8 @@ enum ScrollDirectionPhysical {
 enum ScrollType {
     UserScroll,
     ProgrammaticScroll,
-    CompositorScroll
+    CompositorScroll,
+    AnchoringScroll
 };
 
 // Convert logical scroll direction to physical. Physical scroll directions are unaffected.
@@ -176,21 +178,7 @@ enum ScrollbarOverlayStyle {
 };
 
 // The result of an attempt to scroll. If didScroll is true, then unusedScrollDelta gives
-// the amount of the scroll delta that was not consumed by scrolling. If didScroll is false
-// then unusedScrollDelta is zero.
-struct ScrollResultOneDimensional {
-    STACK_ALLOCATED();
-    explicit ScrollResultOneDimensional(bool didScroll)
-        : didScroll(didScroll)
-        , unusedScrollDelta(0) { }
-    ScrollResultOneDimensional(bool didScroll, float unusedScrollDelta)
-        : didScroll(didScroll)
-        , unusedScrollDelta(unusedScrollDelta) { }
-
-    bool didScroll;
-    float unusedScrollDelta;
-};
-
+// the amount of the scroll delta that was not consumed by scrolling.
 struct ScrollResult {
     STACK_ALLOCATED();
     explicit ScrollResult()
@@ -208,12 +196,27 @@ struct ScrollResult {
 
     bool didScrollX;
     bool didScrollY;
+
+    // In pixels.
     float unusedScrollDeltaX;
     float unusedScrollDeltaY;
 };
 
+inline FloatSize toScrollDelta(ScrollbarOrientation orientation, float delta)
+{
+    return orientation == HorizontalScrollbar ? FloatSize(delta, 0.0f) : FloatSize(0.0f, delta);
+}
+
+inline FloatSize toScrollDelta(ScrollDirectionPhysical dir, float delta)
+{
+    if (dir == ScrollUp || dir == ScrollLeft)
+        delta = -delta;
+
+    return (dir == ScrollLeft || dir == ScrollRight) ? FloatSize(delta, 0) : FloatSize(0, delta);
+}
+
 typedef unsigned ScrollbarControlPartMask;
 
-}
+} // namespace blink
 
 #endif

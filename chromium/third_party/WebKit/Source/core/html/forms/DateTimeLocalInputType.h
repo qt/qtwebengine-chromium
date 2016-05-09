@@ -46,7 +46,7 @@ using BaseDateTimeLocalInputType = BaseChooserOnlyDateAndTimeInputType;
 
 class DateTimeLocalInputType final : public BaseDateTimeLocalInputType {
 public:
-    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
+    static InputType* create(HTMLInputElement&);
 
 private:
     explicit DateTimeLocalInputType(HTMLInputElement& element) : BaseDateTimeLocalInputType(element) { }
@@ -59,6 +59,7 @@ private:
     bool parseToDateComponentsInternal(const String&, DateComponents*) const override;
     bool setMillisecondToDateComponents(double, DateComponents*) const override;
     String localizeValue(const String&) const override;
+    void warnIfValueIsInvalid(const String&) const override;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // BaseMultipleFieldsDateAndTimeInputType functions

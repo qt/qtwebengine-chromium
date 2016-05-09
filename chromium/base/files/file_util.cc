@@ -124,9 +124,9 @@ bool TextContentsEqual(const FilePath& filename1, const FilePath& filename2) {
 }
 #endif  // !defined(OS_NACL_NONSFI)
 
-bool ReadFileToString(const FilePath& path,
-                      std::string* contents,
-                      size_t max_size) {
+bool ReadFileToStringWithMaxSize(const FilePath& path,
+                                 std::string* contents,
+                                 size_t max_size) {
   if (contents)
     contents->clear();
   if (path.ReferencesParent())
@@ -137,7 +137,7 @@ bool ReadFileToString(const FilePath& path,
   }
 
   const size_t kBufferSize = 1 << 16;
-  scoped_ptr<char[]> buf(new char[kBufferSize]);
+  std::unique_ptr<char[]> buf(new char[kBufferSize]);
   size_t len;
   size_t size = 0;
   bool read_status = true;
@@ -162,7 +162,8 @@ bool ReadFileToString(const FilePath& path,
 }
 
 bool ReadFileToString(const FilePath& path, std::string* contents) {
-  return ReadFileToString(path, contents, std::numeric_limits<size_t>::max());
+  return ReadFileToStringWithMaxSize(path, contents,
+                                     std::numeric_limits<size_t>::max());
 }
 
 #if !defined(OS_NACL_NONSFI)

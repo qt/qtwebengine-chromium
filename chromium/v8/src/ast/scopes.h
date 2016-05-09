@@ -24,8 +24,7 @@ class VariableMap: public ZoneHashMap {
 
   Variable* Declare(Scope* scope, const AstRawString* name, VariableMode mode,
                     Variable::Kind kind, InitializationFlag initialization_flag,
-                    MaybeAssignedFlag maybe_assigned_flag = kNotAssigned,
-                    int declaration_group_start = -1);
+                    MaybeAssignedFlag maybe_assigned_flag = kNotAssigned);
 
   Variable* Lookup(const AstRawString* name);
 
@@ -163,8 +162,7 @@ class Scope: public ZoneObject {
   // declared before, the previously declared variable is returned.
   Variable* DeclareLocal(const AstRawString* name, VariableMode mode,
                          InitializationFlag init_flag, Variable::Kind kind,
-                         MaybeAssignedFlag maybe_assigned_flag = kNotAssigned,
-                         int declaration_group_start = -1);
+                         MaybeAssignedFlag maybe_assigned_flag = kNotAssigned);
 
   // Declare an implicit global variable in this scope which must be a
   // script scope.  The variable was introduced (possibly from an inner
@@ -226,29 +224,13 @@ class Scope: public ZoneObject {
   // ---------------------------------------------------------------------------
   // Illegal redeclaration support.
 
-  // Set an expression node that will be executed when the scope is
-  // entered. We only keep track of one illegal redeclaration node per
-  // scope - the first one - so if you try to set it multiple times
-  // the additional requests will be silently ignored.
-  void SetIllegalRedeclaration(Expression* expression);
-
-  // Retrieve the illegal redeclaration expression. Do not call if the
-  // scope doesn't have an illegal redeclaration node.
-  Expression* GetIllegalRedeclaration();
-
-  // Check if the scope has (at least) one illegal redeclaration.
-  bool HasIllegalRedeclaration() const { return illegal_redecl_ != NULL; }
-
-  // For harmony block scoping mode: Check if the scope has conflicting var
+  // Check if the scope has conflicting var
   // declarations, i.e. a var declaration that has been hoisted from a nested
   // scope over a let binding of the same name.
   Declaration* CheckConflictingVarDeclarations();
 
   // ---------------------------------------------------------------------------
   // Scope-specific info.
-
-  // Inform the scope that the corresponding code contains a with statement.
-  void RecordWithStatement() { scope_contains_with_ = true; }
 
   // Inform the scope that the corresponding code contains an eval call.
   void RecordEvalCall() { scope_calls_eval_ = true; }
@@ -377,12 +359,6 @@ class Scope: public ZoneObject {
              IsClassConstructor(function_kind())));
   }
 
-  const Scope* NearestOuterEvalScope() const {
-    if (is_eval_scope()) return this;
-    if (outer_scope() == nullptr) return nullptr;
-    return outer_scope()->NearestOuterEvalScope();
-  }
-
   // ---------------------------------------------------------------------------
   // Accessors.
 
@@ -428,7 +404,24 @@ class Scope: public ZoneObject {
   // Returns the default function arity excluding default or rest parameters.
   int default_function_length() const { return arity_; }
 
-  int num_parameters() const { return params_.length(); }
+  // Returns the number of formal parameters, up to but not including the
+  // rest parameter index (if the function has rest parameters), i.e. it
+  // says 2 for
+  //
+  //   function foo(a, b) { ... }
+  //
+  // and
+  //
+  //   function foo(a, b, ...c) { ... }
+  //
+  // but for
+  //
+  //   function foo(a, b, c = 1) { ... }
+  //
+  // we return 3 here.
+  int num_parameters() const {
+    return has_rest_parameter() ? params_.length() - 1 : params_.length();
+  }
 
   // A function can have at most one rest parameter. Returns Variable* or NULL.
   Variable* rest_parameter(int* index) const {
@@ -486,25 +479,15 @@ class Scope: public ZoneObject {
   // The ModuleDescriptor for this scope; only for module scopes.
   ModuleDescriptor* module() const { return module_descriptor_; }
 
-
-  void set_class_declaration_group_start(int position) {
-    class_declaration_group_start_ = position;
-  }
-
-  int class_declaration_group_start() const {
-    return class_declaration_group_start_;
-  }
-
   // ---------------------------------------------------------------------------
   // Variable allocation.
 
   // Collect stack and context allocated local variables in this scope. Note
   // that the function variable - if present - is not collected and should be
   // handled separately.
-  void CollectStackAndContextLocals(
-      ZoneList<Variable*>* stack_locals, ZoneList<Variable*>* context_locals,
-      ZoneList<Variable*>* context_globals,
-      ZoneList<Variable*>* strong_mode_free_variables = nullptr);
+  void CollectStackAndContextLocals(ZoneList<Variable*>* stack_locals,
+                                    ZoneList<Variable*>* context_locals,
+                                    ZoneList<Variable*>* context_globals);
 
   // Current number of var or const locals.
   int num_var_or_const() { return num_var_or_const_; }
@@ -557,14 +540,7 @@ class Scope: public ZoneObject {
 
   Handle<ScopeInfo> GetScopeInfo(Isolate* isolate);
 
-  // Get the chain of nested scopes within this scope for the source statement
-  // position. The scopes will be added to the list from the outermost scope to
-  // the innermost scope. Only nested block, catch or with scopes are tracked
-  // and will be returned, but no inner function scopes.
-  void GetNestedScopeChain(Isolate* isolate, List<Handle<ScopeInfo> >* chain,
-                           int statement_position);
-
-  void CollectNonLocals(HashMap* non_locals);
+  Handle<StringSet> CollectNonLocals(Handle<StringSet> non_locals);
 
   // ---------------------------------------------------------------------------
   // Strict mode support.
@@ -647,15 +623,10 @@ class Scope: public ZoneObject {
   // Map of function names to lists of functions defined in sloppy blocks
   SloppyBlockFunctionMap sloppy_block_function_map_;
 
-  // Illegal redeclaration.
-  Expression* illegal_redecl_;
-
   // Scope-specific information computed during parsing.
   //
   // This scope is inside a 'with' of some outer scope.
   bool scope_inside_with_;
-  // This scope contains a 'with' statement.
-  bool scope_contains_with_;
   // This scope or a nested catch scope or with scope contain an 'eval' call. At
   // the 'eval' call site this scope is the declaration scope.
   bool scope_calls_eval_;
@@ -767,12 +738,6 @@ class Scope: public ZoneObject {
   MUST_USE_RESULT
   bool ResolveVariablesRecursively(ParseInfo* info, AstNodeFactory* factory);
 
-  bool CheckStrongModeDeclaration(VariableProxy* proxy, Variable* var);
-
-  // If this scope is a method scope of a class, return the corresponding
-  // class variable, otherwise nullptr.
-  ClassVariable* ClassVariableForMethod() const;
-
   // Scope analysis.
   void PropagateScopeInfo(bool outer_scope_calls_sloppy_eval);
   bool HasTrivialContext() const;
@@ -837,10 +802,6 @@ class Scope: public ZoneObject {
   Zone* zone_;
 
   PendingCompilationErrorHandler pending_error_handler_;
-
-  // For tracking which classes are declared consecutively. Needed for strong
-  // mode.
-  int class_declaration_group_start_;
 };
 
 }  // namespace internal

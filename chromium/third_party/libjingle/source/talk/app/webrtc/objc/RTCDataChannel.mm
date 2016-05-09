@@ -31,7 +31,9 @@
 
 #import "RTCDataChannel+Internal.h"
 
-#include "talk/app/webrtc/datachannelinterface.h"
+#include <memory>
+
+#include "webrtc/api/datachannelinterface.h"
 
 namespace webrtc {
 
@@ -145,14 +147,14 @@ std::string StdStringFromNSString(NSString* nsString) {
 @end
 
 @implementation RTCDataBuffer {
-  rtc::scoped_ptr<webrtc::DataBuffer> _dataBuffer;
+  std::unique_ptr<webrtc::DataBuffer> _dataBuffer;
 }
 
 - (instancetype)initWithData:(NSData*)data isBinary:(BOOL)isBinary {
   NSAssert(data, @"data cannot be nil");
   if (self = [super init]) {
-    rtc::Buffer buffer(reinterpret_cast<const uint8_t*>([data bytes]),
-                       [data length]);
+    rtc::CopyOnWriteBuffer buffer(
+        reinterpret_cast<const uint8_t*>([data bytes]), [data length]);
     _dataBuffer.reset(new webrtc::DataBuffer(buffer, isBinary));
   }
   return self;
@@ -186,7 +188,7 @@ std::string StdStringFromNSString(NSString* nsString) {
 
 @implementation RTCDataChannel {
   rtc::scoped_refptr<webrtc::DataChannelInterface> _dataChannel;
-  rtc::scoped_ptr<webrtc::RTCDataChannelObserver> _observer;
+  std::unique_ptr<webrtc::RTCDataChannelObserver> _observer;
   BOOL _isObserverRegistered;
 }
 

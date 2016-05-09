@@ -30,26 +30,11 @@
 {
   'variables': {
     'webrtc_root%': '<(DEPTH)/webrtc',
-    'libjingle_tests_additional_deps%': [],
     # TODO(ronghuawu): For now, disable the Chrome plugins, which causes a
     # flood of chromium-style warnings.
     'clang_use_chrome_plugins%': 0,
-    'conditions': [
-      ['OS=="android" or OS=="linux"', {
-        'java_home%': '<!(python -c "import os; dir=os.getenv(\'JAVA_HOME\', \'/usr/lib/jvm/java-7-openjdk-amd64\'); assert os.path.exists(os.path.join(dir, \'include/jni.h\')), \'Point \\$JAVA_HOME or the java_home gyp variable to a directory containing include/jni.h!\'; print dir")',
-      }],
-    ],
     # Disable these to not build components which can be externally provided.
-    'build_expat%': 1,
     'build_json%': 1,
-    'build_libsrtp%': 1,
-    'build_libyuv%': 1,
-    'build_usrsctp%': 1,
-    # Make it possible to provide custom locations for some libraries.
-    'libyuv_dir%': '<(DEPTH)/third_party/libyuv',
-
-    # Disable this to skip building source requiring GTK.
-    'use_gtk%': 1,
   },
   'target_defaults': {
     'include_dirs': [
@@ -59,27 +44,9 @@
       '../../third_party/webrtc',
       '../../webrtc',
     ],
-    'defines': [
-      'EXPAT_RELATIVE_PATH',
-      'FEATURE_ENABLE_VOICEMAIL',
-      'GTEST_RELATIVE_PATH',
-      'JSONCPP_RELATIVE_PATH',
-      'LOGGING=1',
-      'SRTP_RELATIVE_PATH',
-
-      # Feature selection
-      'FEATURE_ENABLE_SSL',
-      'FEATURE_ENABLE_VOICEMAIL',
-      'FEATURE_ENABLE_PSTN',
-      'HAVE_SCTP',
-      'HAVE_SRTP',
-      'HAVE_WEBRTC_VIDEO',
-      'HAVE_WEBRTC_VOICE',
-    ],
     'conditions': [
       ['OS=="linux"', {
         'defines': [
-          'LINUX',
           'WEBRTC_LINUX',
         ],
         # Remove Chromium's disabling of the -Wformat warning.
@@ -111,7 +78,6 @@
       }],
       ['OS=="mac"', {
         'defines': [
-          'OSX',
           'WEBRTC_MAC',
         ],
       }],
@@ -128,7 +94,6 @@
       }],
       ['OS=="ios"', {
         'defines': [
-          'IOS',
           'WEBRTC_MAC',
           'WEBRTC_IOS',
         ],

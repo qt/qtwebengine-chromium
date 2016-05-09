@@ -1,30 +1,38 @@
-<link rel="import" href="chrome://resources/polymer/v1_0/polymer/polymer.html">
+<link rel="import" href="chrome://resources/html/polymer.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-toolbar/paper-toolbar.html">
 <dom-module name="media-router-header">
   <link rel="import" type="css" href="../../media_router_common.css">
   <link rel="import" type="css" href="media_router_header.css">
   <template>
-    <paper-toolbar class$="[[view]]">
+    <paper-toolbar id="header-toolbar" class$="[[view]]">
       <div id="back-button-container">
         <paper-icon-button id="back-button" icon="[[arrowDropIcon_]]"
-            on-click="onBackButtonClick_"
+            on-tap="onBackButtonClick_" title="[[backButtonTitle_]]"
             hidden$="[[computeBackButtonHidden_(view)]]">
         </paper-icon-button>
       </div>
-      <span id="header-text" title="[[tooltip]]">[[headingText]]</span>
-      <div id="arrow-drop-container">
-        <paper-icon-button icon="[[computeArrowDropIcon_(view)]]"
-            id="arrow-drop-icon" on-click="onArrowDropClick_"
-            disabled$="[[arrowDropIconDisabled]]"
-            hidden$="[[computeArrowDropIconHidden_(view)]]">
-        </paper-icon-button>
+      <div id="header-and-arrow-container" on-tap="onHeaderOrArrowClick_">
+        <span id="header-text" title="[[tooltip]]">
+            [[headingText]]</span>
+        <div id="arrow-drop-container">
+          <paper-icon-button icon="[[computeArrowDropIcon_(view)]]"
+              id="arrow-drop-icon" disabled$="[[arrowDropIconDisabled]]"
+              hidden$="[[computeArrowDropIconHidden_(view)]]"
+              title="[[computeArrowDropTitle_(view)]]">
+          </paper-icon-button>
+        </div>
       </div>
       <div id="close-button-container">
         <paper-icon-button icon="close" id="close-button"
-            on-click="onCloseButtonClick_">
+            on-tap="onCloseButtonClick_" title="[[closeButtonTitle_]]">
         </paper-icon-button>
       </div>
+      <template is="dom-if" if="[[showEmail]]">
+        <div id="user-email-container" class="bottom fit">
+          <span>[[userEmail]]</span>
+        </div>
+      </template>
     </paper-toolbar>
   </template>
 <script src="media_router_header.js"></script>

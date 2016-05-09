@@ -5,6 +5,7 @@
 #include "chromecast/browser/cast_content_browser_client.h"
 
 #include <stddef.h>
+
 #include <string>
 #include <utility>
 
@@ -13,6 +14,7 @@
 #include "base/files/scoped_file.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -26,14 +28,11 @@
 #include "chromecast/browser/cast_quota_permission_context.h"
 #include "chromecast/browser/cast_resource_dispatcher_host_delegate.h"
 #include "chromecast/browser/geolocation/cast_access_token_store.h"
-#include "chromecast/browser/media/cma_media_pipeline_client.h"
 #include "chromecast/browser/media/cma_message_filter_host.h"
 #include "chromecast/browser/service/cast_service_simple.h"
 #include "chromecast/browser/url_request_context_factory.h"
 #include "chromecast/common/global_descriptors.h"
-#include "chromecast/media/audio/cast_audio_manager_factory.h"
-#include "chromecast/media/base/media_message_loop.h"
-#include "chromecast/public/cast_media_shlib.h"
+#include "chromecast/media/cma/backend/media_pipeline_backend_manager.h"
 #include "chromecast/public/media/media_pipeline_backend.h"
 #include "components/crash/content/app/breakpad_linux.h"
 #include "components/crash/content/browser/crash_handler_host_linux.h"
@@ -48,10 +47,14 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
-#include "media/audio/audio_manager_factory.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/gl/gl_switches.h"
+
+#if defined(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
+#include "chromecast/browser/media/cast_mojo_media_application.h"
+#include "chromecast/browser/media/cast_mojo_media_client.h"
+#endif  // ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS
 
 #if defined(OS_ANDROID)
 #include "components/crash/content/browser/crash_dump_manager_android.h"
@@ -63,9 +66,23 @@
 namespace chromecast {
 namespace shell {
 
-CastContentBrowserClient::CastContentBrowserClient()
-    : url_request_context_factory_(new URLRequestContextFactory()) {
+namespace {
+#if defined(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
+static std::unique_ptr<mojo::ShellClient> CreateCastMojoMediaApplication(
+    CastContentBrowserClient* browser_client) {
+  std::unique_ptr<media::CastMojoMediaClient> mojo_media_client(
+      new media::CastMojoMediaClient(
+          base::Bind(&CastContentBrowserClient::CreateMediaPipelineBackend,
+                     base::Unretained(browser_client))));
+  return std::unique_ptr<mojo::ShellClient>(new media::CastMojoMediaApplication(
+      std::move(mojo_media_client), browser_client->GetMediaTaskRunner()));
 }
+#endif  // ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS
+}  // namespace
+
+CastContentBrowserClient::CastContentBrowserClient()
+    : cast_browser_main_parts_(nullptr),
+      url_request_context_factory_(new URLRequestContextFactory()) {}
 
 CastContentBrowserClient::~CastContentBrowserClient() {
   content::BrowserThread::DeleteSoon(
@@ -78,31 +95,41 @@ void CastContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line) {
 }
 
-scoped_ptr<CastService> CastContentBrowserClient::CreateCastService(
+void CastContentBrowserClient::PreCreateThreads() {
+}
+
+std::unique_ptr<CastService> CastContentBrowserClient::CreateCastService(
     content::BrowserContext* browser_context,
     PrefService* pref_service,
-    net::URLRequestContextGetter* request_context_getter) {
-  return make_scoped_ptr(new CastServiceSimple(browser_context, pref_service));
+    net::URLRequestContextGetter* request_context_getter,
+    media::VideoPlaneController* video_plane_controller) {
+  return base::WrapUnique(new CastServiceSimple(browser_context, pref_service));
 }
 
 #if !defined(OS_ANDROID)
-scoped_ptr<::media::AudioManagerFactory>
-CastContentBrowserClient::CreateAudioManagerFactory() {
-  return make_scoped_ptr(new media::CastAudioManagerFactory());
+scoped_refptr<base::SingleThreadTaskRunner>
+CastContentBrowserClient::GetMediaTaskRunner() {
+  DCHECK(cast_browser_main_parts_);
+  return cast_browser_main_parts_->GetMediaTaskRunner();
 }
 
-scoped_refptr<media::CmaMediaPipelineClient>
-CastContentBrowserClient::CreateCmaMediaPipelineClient() {
-  return make_scoped_refptr(new media::CmaMediaPipelineClient());
+std::unique_ptr<media::MediaPipelineBackend>
+CastContentBrowserClient::CreateMediaPipelineBackend(
+    const media::MediaPipelineDeviceParams& params) {
+  return media_pipeline_backend_manager()->CreateMediaPipelineBackend(params);
 }
-#endif  // OS_ANDROID
 
-void CastContentBrowserClient::ProcessExiting() {
-  // Finalize CastMediaShlib on media thread to ensure it's not accessed
-  // after Finalize.
-  media::MediaMessageLoop::GetTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&media::CastMediaShlib::Finalize));
+media::MediaResourceTracker*
+CastContentBrowserClient::media_resource_tracker() {
+  return cast_browser_main_parts_->media_resource_tracker();
 }
+
+media::MediaPipelineBackendManager*
+CastContentBrowserClient::media_pipeline_backend_manager() {
+  DCHECK(cast_browser_main_parts_);
+  return cast_browser_main_parts_->media_pipeline_backend_manager();
+}
+#endif  // !defined(OS_ANDROID)
 
 void CastContentBrowserClient::SetMetricsClientId(
     const std::string& client_id) {
@@ -118,18 +145,22 @@ bool CastContentBrowserClient::EnableRemoteDebuggingImmediately() {
 
 content::BrowserMainParts* CastContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  content::BrowserMainParts* parts =
+  DCHECK(!cast_browser_main_parts_);
+  cast_browser_main_parts_ =
       new CastBrowserMainParts(parameters, url_request_context_factory_.get());
   CastBrowserProcess::GetInstance()->SetCastContentBrowserClient(this);
-  return parts;
+  return cast_browser_main_parts_;
 }
 
 void CastContentBrowserClient::RenderProcessWillLaunch(
     content::RenderProcessHost* host) {
 #if !defined(OS_ANDROID)
   scoped_refptr<media::CmaMessageFilterHost> cma_message_filter(
-      new media::CmaMessageFilterHost(host->GetID(),
-                                      CreateCmaMediaPipelineClient()));
+      new media::CmaMessageFilterHost(
+          host->GetID(),
+          base::Bind(&CastContentBrowserClient::CreateMediaPipelineBackend,
+                     base::Unretained(this)),
+          GetMediaTaskRunner(), media_resource_tracker()));
   host->AddFilter(cma_message_filter.get());
 #endif  // !defined(OS_ANDROID)
 
@@ -157,14 +188,6 @@ void CastContentBrowserClient::AddNetworkHintsMessageFilter(
       new network_hints::NetworkHintsMessageFilter(
           url_request_context_factory_->host_resolver()));
   host->AddFilter(network_hints_message_filter.get());
-}
-
-net::URLRequestContextGetter* CastContentBrowserClient::CreateRequestContext(
-    content::BrowserContext* browser_context,
-    content::ProtocolHandlerMap* protocol_handlers,
-    content::URLRequestInterceptorScopedVector request_interceptors) {
-  return url_request_context_factory_->CreateMainGetter(
-      browser_context, protocol_handlers, std::move(request_interceptors));
 }
 
 bool CastContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -246,11 +269,14 @@ void CastContentBrowserClient::OverrideWebkitPrefs(
   // to retrieve media data chunks while running in a https page. This pref
   // should be disabled once all the content providers are no longer doing that.
   prefs->allow_running_insecure_content = true;
+
+  // Enable 5% margins for WebVTT cues to keep within title-safe area
+  prefs->text_track_margin_percentage = 5;
 }
 
 void CastContentBrowserClient::ResourceDispatcherHostCreated() {
   CastBrowserProcess::GetInstance()->SetResourceDispatcherHostDelegate(
-      make_scoped_ptr(new CastResourceDispatcherHostDelegate));
+      base::WrapUnique(new CastResourceDispatcherHostDelegate));
   content::ResourceDispatcherHost::Get()->SetDelegate(
       CastBrowserProcess::GetInstance()->resource_dispatcher_host_delegate());
 }
@@ -285,7 +311,7 @@ void CastContentBrowserClient::AllowCertificateError(
 void CastContentBrowserClient::SelectClientCertificate(
     content::WebContents* web_contents,
     net::SSLCertRequestInfo* cert_request_info,
-    scoped_ptr<content::ClientCertificateDelegate> delegate) {
+    std::unique_ptr<content::ClientCertificateDelegate> delegate) {
   GURL requesting_url("https://" + cert_request_info->host_and_port.ToString());
 
   if (!requesting_url.is_valid()) {
@@ -353,11 +379,12 @@ bool CastContentBrowserClient::CanCreateWindow(
   return false;
 }
 
-void CastContentBrowserClient::RegisterUnsandboxedOutOfProcessMojoApplications(
-    std::map<GURL, base::string16>* apps) {
-#if defined(ENABLE_MOJO_MEDIA_IN_UTILITY_PROCESS)
-  apps->insert(std::make_pair(GURL("mojo:media"),
-                              base::ASCIIToUTF16("Media App")));
+void CastContentBrowserClient::RegisterInProcessMojoApplications(
+    StaticMojoApplicationMap* apps) {
+#if defined(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
+  apps->insert(std::make_pair(
+      "mojo:media",
+      base::Bind(&CreateCastMojoMediaApplication, base::Unretained(this))));
 #endif
 }
 
@@ -391,10 +418,12 @@ void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 
 #else
 
-scoped_ptr<::media::CdmFactory> CastContentBrowserClient::CreateCdmFactory() {
+std::unique_ptr<::media::CdmFactory>
+CastContentBrowserClient::CreateCdmFactory() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCmaMediaPipeline)) {
-    return make_scoped_ptr(new media::CastBrowserCdmFactory());
+    return base::WrapUnique(new media::CastBrowserCdmFactory(
+        GetMediaTaskRunner(), media_resource_tracker()));
   }
 
   return nullptr;
@@ -433,7 +462,8 @@ int CastContentBrowserClient::GetCrashSignalFD(
       command_line.GetSwitchValueASCII(switches::kProcessType);
 
   if (process_type == switches::kRendererProcess ||
-      process_type == switches::kGpuProcess) {
+      process_type == switches::kGpuProcess ||
+      process_type == switches::kUtilityProcess) {
     breakpad::CrashHandlerHostLinux* crash_handler =
         crash_handlers_[process_type];
     if (!crash_handler) {

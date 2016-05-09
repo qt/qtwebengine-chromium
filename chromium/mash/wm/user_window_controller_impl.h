@@ -7,19 +7,23 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/macros.h"
 #include "components/mus/common/types.h"
 #include "components/mus/public/cpp/window_observer.h"
+#include "components/mus/public/cpp/window_tree_connection_observer.h"
 #include "mash/wm/public/interfaces/user_window_controller.mojom.h"
 
 namespace mash {
 namespace wm {
 
-class WindowManagerApplication;
-class WindowTitleObserver;
+class RootWindowController;
+class WindowPropertyObserver;
 
 class UserWindowControllerImpl : public mojom::UserWindowController,
-                                 public mus::WindowObserver {
+                                 public mus::WindowObserver,
+                                 public mus::WindowTreeConnectionObserver {
  public:
   UserWindowControllerImpl();
   ~UserWindowControllerImpl() override;
@@ -28,7 +32,7 @@ class UserWindowControllerImpl : public mojom::UserWindowController,
     return user_window_observer_.get();
   }
 
-  void Initialize(WindowManagerApplication* state);
+  void Initialize(RootWindowController* root_controller);
 
  private:
   // A helper to get the container for user windows.
@@ -37,13 +41,17 @@ class UserWindowControllerImpl : public mojom::UserWindowController,
   // mus::WindowObserver:
   void OnTreeChanging(const TreeChangeParams& params) override;
 
+  // mus::WindowTreeConnectionObserver:
+  void OnWindowTreeFocusChanged(mus::Window* gained_focus,
+                                mus::Window* lost_focus) override;
+
   // mojom::UserWindowController:
   void AddUserWindowObserver(mojom::UserWindowObserverPtr observer) override;
   void FocusUserWindow(uint32_t window_id) override;
 
-  WindowManagerApplication* state_;
+  RootWindowController* root_controller_;
   mojom::UserWindowObserverPtr user_window_observer_;
-  scoped_ptr<WindowTitleObserver> window_title_observer_;
+  std::unique_ptr<WindowPropertyObserver> window_property_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(UserWindowControllerImpl);
 };

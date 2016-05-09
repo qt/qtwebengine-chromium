@@ -81,10 +81,11 @@ MediaConstraints::GetOptional() const {
   for (NSString *key in constraints) {
     NSAssert([key isKindOfClass:[NSString class]],
              @"%@ is not an NSString.", key);
-    NSAssert([constraints[key] isKindOfClass:[NSString class]],
-             @"%@ is not an NSString.", constraints[key]);
+    NSString *value = [constraints objectForKey:key];
+    NSAssert([value isKindOfClass:[NSString class]],
+             @"%@ is not an NSString.", value);
     nativeConstraints.push_back(webrtc::MediaConstraintsInterface::Constraint(
-        key.stdString, constraints[key].stdString));
+        key.stdString, value.stdString));
   }
   return nativeConstraints;
 }

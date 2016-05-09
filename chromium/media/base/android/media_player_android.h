@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "media/base/android/media_player_listener.h"
@@ -22,6 +23,19 @@ namespace media {
 
 class MediaKeys;
 class MediaPlayerManager;
+
+enum {
+  // Id used for players not participating in any media sessions
+  // because of undefined behavior in the specification. When all
+  // media session interactions have been worked out, this id should
+  // no longer be used.
+  kInvalidMediaSessionId = -1,
+
+  // The media session for media elements that don't have an explicit
+  // user created media session set. Must be in-sync with
+  // WebMediaSession::DefaultID in blink.
+  kDefaultMediaSessionId = 0
+};
 
 // This class serves as the base class for different media player
 // implementations on Android. Subclasses need to provide their own
@@ -36,7 +50,10 @@ class MEDIA_EXPORT MediaPlayerAndroid {
     MEDIA_ERROR_DECODE,
     MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK,
     MEDIA_ERROR_INVALID_CODE,
+    MEDIA_ERROR_SERVER_DIED,
   };
+
+  static const double kDefaultVolumeMultiplier;
 
   // Callback when the player releases decoding resources.
   typedef base::Callback<void(int player_id)> OnDecoderResourcesReleasedCB;
@@ -62,8 +79,13 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // Release the player resources.
   virtual void Release() = 0;
 
-  // Set the player volume.
-  virtual void SetVolume(double volume) = 0;
+  // Set the player volume, and take effect immediately.
+  // The volume should be between 0.0 and 1.0.
+  void SetVolume(double volume);
+
+  // Set the player volume multiplier, and take effect immediately.
+  // The volume should be between 0.0 and 1.0.
+  void SetVolumeMultiplier(double volume_multiplier);
 
   // Get the media information from the player.
   virtual bool HasVideo() const = 0;
@@ -100,6 +122,8 @@ class MEDIA_EXPORT MediaPlayerAndroid {
 
   GURL frame_url() { return frame_url_; }
 
+  int media_session_id() { return media_session_id_; }
+
   // Attach/Detaches |listener_| for listening to all the media events. If
   // |j_media_player| is NULL, |listener_| only listens to the system media
   // events. Otherwise, it also listens to the events from |j_media_player|.
@@ -111,7 +135,8 @@ class MEDIA_EXPORT MediaPlayerAndroid {
       int player_id,
       MediaPlayerManager* manager,
       const OnDecoderResourcesReleasedCB& on_decoder_resources_released_cb,
-      const GURL& frame_url);
+      const GURL& frame_url,
+      int media_session_id);
 
   // TODO(qinmin): Simplify the MediaPlayerListener class to only listen to
   // media interrupt events. And have a separate child class to listen to all
@@ -125,6 +150,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual void OnSeekComplete();
   virtual void OnMediaPrepared();
 
+  double GetEffectiveVolume() const;
+  void UpdateEffectiveVolume();
+
   // When destroying a subclassed object on a non-UI thread
   // it is still required to destroy the |listener_| related stuff
   // on the UI thread.
@@ -137,10 +165,21 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   OnDecoderResourcesReleasedCB on_decoder_resources_released_cb_;
 
  private:
+  // Set the effective player volume, implemented by children classes.
+  virtual void UpdateEffectiveVolumeInternal(double effective_volume) = 0;
+
   friend class MediaPlayerListener;
 
   // Player ID assigned to this player.
   int player_id_;
+
+  // The player volume. Should be between 0.0 and 1.0.
+  double volume_;
+
+  // The player volume multiplier. Should be between 0.0 and 1.0.  This
+  // should be a cached version of the MediaSession volume multiplier,
+  // and should keep updated.
+  double volume_multiplier_;
 
   // Resource manager for all the media players.
   MediaPlayerManager* manager_;
@@ -150,6 +189,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
 
   // Listener object that listens to all the media player events.
   scoped_ptr<MediaPlayerListener> listener_;
+
+  // Media session ID assigned to this player.
+  int media_session_id_;
 
   // Weak pointer passed to |listener_| for callbacks.
   // NOTE: Weak pointers must be invalidated before all other member variables.

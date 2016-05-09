@@ -74,8 +74,8 @@ public:
     void assign(const WebDocument& e) { WebNode::assign(e); }
 
     BLINK_EXPORT WebURL url() const;
-    // Note: Security checks should use the securityOrigin(), not url().
-    BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
+    // Note: Security checks should use the getSecurityOrigin(), not url().
+    BLINK_EXPORT WebSecurityOrigin getSecurityOrigin() const;
     BLINK_EXPORT bool isSecureContext(WebString& errorMessage) const;
 
     BLINK_EXPORT WebString encoding() const;
@@ -121,6 +121,10 @@ public:
 
     // Gets the accessibility object for an object on this page by ID.
     BLINK_EXPORT WebAXObject accessibilityObjectFromID(int axID) const;
+
+    // Gets the accessibility object that has focus.
+    BLINK_EXPORT WebAXObject focusedAccessibilityObject() const;
+
     // Inserts the given CSS source code as a stylesheet in the document.
     BLINK_EXPORT void insertStyleSheet(const WebString& sourceCode);
 
@@ -137,13 +141,10 @@ public:
     BLINK_EXPORT bool manifestUseCredentials() const;
     BLINK_EXPORT WebDistillabilityFeatures distillabilityFeatures();
 
-    BLINK_EXPORT bool attemptedToDetermineEncodingFromContentSniffing() const;
-    BLINK_EXPORT bool encodingWasDetectedFromContentSniffing() const;
-
 #if BLINK_IMPLEMENTATION
-    WebDocument(const PassRefPtrWillBeRawPtr<Document>&);
-    WebDocument& operator=(const PassRefPtrWillBeRawPtr<Document>&);
-    operator PassRefPtrWillBeRawPtr<Document>() const;
+    BLINK_EXPORT WebDocument(Document*);
+    BLINK_EXPORT WebDocument& operator=(Document*);
+    BLINK_EXPORT operator Document*() const;
 #endif
 };
 

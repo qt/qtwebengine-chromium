@@ -35,10 +35,16 @@
 
 class SkPaint;
 
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
+}
+
 namespace blink {
-class WebGraphicsContext3D;
 class ExceptionState;
 class GraphicsContext;
+class ImageBitmapOptions;
 
 // GL types as defined in OpenGL ES 2.0 header file gl2.h from khronos.org.
 // That header cannot be included directly due to a conflict with NPAPI headers.
@@ -49,7 +55,7 @@ typedef int GC3Dint;
 class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement, public CanvasImageSource, public ImageBitmapSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
+    static RawPtr<HTMLVideoElement> create(Document&);
     DECLARE_VIRTUAL_TRACE();
 
     unsigned videoWidth() const;
@@ -70,26 +76,26 @@ public:
     void paintCurrentFrame(SkCanvas*, const IntRect&, const SkPaint*) const;
 
     // Used by WebGL to do GPU-GPU textures copy if possible.
-    bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, Platform3DObject texture, GLenum internalFormat, GLenum type, bool premultiplyAlpha, bool flipY);
+    bool copyVideoTextureToPlatformTexture(gpu::gles2::GLES2Interface*, Platform3DObject texture, GLenum internalFormat, GLenum type, bool premultiplyAlpha, bool flipY);
 
-    bool shouldDisplayPosterImage() const { return displayMode() == Poster; }
+    bool shouldDisplayPosterImage() const { return getDisplayMode() == Poster; }
 
     bool hasAvailableVideoFrame() const;
 
     KURL posterImageURL() const override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint, SnapshotReason, const FloatSize&) const override;
     bool isVideoElement() const override { return true; }
     bool wouldTaintOrigin(SecurityOrigin*) const override;
-    FloatSize elementSize() const override;
+    FloatSize elementSize(const FloatSize&) const override;
     const KURL& sourceURL() const override { return currentSrc(); }
 
     bool isHTMLVideoElement() const override { return true; }
 
     // ImageBitmapSource implementation
     IntSize bitmapSourceSize() const override;
-    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, ExceptionState&) override;
+    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, const ImageBitmapOptions&, ExceptionState&) override;
 
 private:
     HTMLVideoElement(Document&);
@@ -108,7 +114,7 @@ private:
     void didMoveToNewDocument(Document& oldDocument) override;
     void setDisplayMode(DisplayMode) override;
 
-    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
+    Member<HTMLImageLoader> m_imageLoader;
 
     AtomicString m_defaultPosterURL;
 };

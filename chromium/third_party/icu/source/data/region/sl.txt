@@ -1,16 +1,42 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2014 International Business Machines
+// * Copyright (C) 2015 International Business Machines
 // * Corporation and others. All Rights Reserved.
 // * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
 // * Source File: <path>/common/main/sl.xml
 // *
 // ***************************************************************************
-/**
- * ICU <specials> source: <path>/common/main/sl.xml
- */
 sl{
     Countries{
+        001{"Svet"}
+        002{"Afrika"}
+        003{"Severna Amerika"}
+        005{"Južna Amerika"}
+        009{"Oceanija"}
+        011{"Zahodna Afrika"}
+        013{"Srednja Amerika"}
+        014{"Vzhodna Afrika"}
+        015{"Severna Afrika"}
+        017{"Srednja Afrika"}
+        018{"Južna Afrika"}
+        019{"Amerike"}
+        021{"severnoameriška celina"}
+        029{"Karibi"}
+        030{"Vzhodna Azija"}
+        034{"Južna Azija"}
+        035{"Jugovzhodna Azija"}
+        039{"Južna Evropa"}
+        053{"Avstralija in Nova Zelandija"}
+        054{"Melanezija"}
+        057{"mikronezijska regija"}
+        061{"Polinezija"}
+        142{"Azija"}
+        143{"Osrednja Azija"}
+        145{"Zahodna Azija"}
+        150{"Evropa"}
+        151{"Vzhodna Evropa"}
+        154{"Severna Evropa"}
+        155{"Zahodna Evropa"}
         419{"Latinska Amerika"}
         AC{"Otok Ascension"}
         AD{"Andora"}
@@ -94,7 +120,7 @@ sl{
         FO{"Ferski otoki"}
         FR{"Francija"}
         GA{"Gabon"}
-        GB{"Velika Britanija"}
+        GB{"Združeno kraljestvo"}
         GD{"Grenada"}
         GE{"Gruzija"}
         GF{"Francoska Gvajana"}
@@ -273,15 +299,16 @@ sl{
         ZW{"Zimbabve"}
         ZZ{"Neznano ali neveljavno območje"}
     }
-    Countries%variant{
-        CD{"Kongo (Demokratična republika Kongo)"}
-        CG{"Kongo (Republika)"}
-        FK{"Falklandski otoki (Malvinski otoki)"}
-        MK{"Makedonija (FYROM)"}
-    }
-    CountriesShort{
+    Countries%short{
         GB{"ZK"}
         US{"ZDA"}
     }
-    Version{"2.1.8.9"}
+    Countries%variant{
+        CD{"Kongo (Demokratična republika Kongo)"}
+        CG{"Kongo (Republika)"}
+        CI{"Côte d’Ivoire"}
+        FK{"Falklandski otoki (Malvini)"}
+        MK{"Makedonija (FYROM)"}
+    }
+    Version{"2.1.19.14"}
 }

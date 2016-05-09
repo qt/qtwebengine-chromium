@@ -18,14 +18,14 @@ namespace blink {
 class PaintControllerPaintTestBase : public RenderingTest {
 public:
     PaintControllerPaintTestBase(bool enableSlimmingPaintV2)
-        : m_originalSlimmingPaintOffsetCachingEnabled(RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled())
+        : m_originalSlimmingPaintInvalidationEnabled(RuntimeEnabledFeatures::slimmingPaintInvalidationEnabled())
         , m_originalSlimmingPaintV2Enabled(RuntimeEnabledFeatures::slimmingPaintV2Enabled())
         , m_enableSlimmingPaintV2(enableSlimmingPaintV2)
     { }
 
 protected:
     LayoutView& layoutView() { return *document().layoutView(); }
-    PaintController& rootPaintController() { return layoutView().layer()->graphicsLayerBacking()->paintController(); }
+    PaintController& rootPaintController() { return layoutView().layer()->graphicsLayerBacking()->getPaintController(); }
 
     void SetUp() override
     {
@@ -36,7 +36,7 @@ protected:
     }
     void TearDown() override
     {
-        RuntimeEnabledFeatures::setSlimmingPaintOffsetCachingEnabled(m_originalSlimmingPaintOffsetCachingEnabled);
+        RuntimeEnabledFeatures::setSlimmingPaintInvalidationEnabled(m_originalSlimmingPaintInvalidationEnabled);
         RuntimeEnabledFeatures::setSlimmingPaintV2Enabled(m_originalSlimmingPaintV2Enabled);
         GraphicsLayer::setDrawDebugRedFillForTesting(true);
     }
@@ -83,8 +83,17 @@ protected:
             commit();
     }
 
+    bool displayItemListContains(const DisplayItemList& displayItemList, DisplayItemClient& client, DisplayItem::Type type)
+    {
+        for (auto& item : displayItemList) {
+            if (item.client() == client && item.getType() == type)
+                return true;
+        }
+        return false;
+    }
+
 private:
-    bool m_originalSlimmingPaintOffsetCachingEnabled;
+    bool m_originalSlimmingPaintInvalidationEnabled;
     bool m_originalSlimmingPaintV2Enabled;
     bool m_enableSlimmingPaintV2;
 };
@@ -131,7 +140,7 @@ public:
         for (size_t index = 0; index < std::min<size_t>(actual.size(), expectedSize); index++) { \
             TRACE_DISPLAY_ITEMS(index, expected[index], actual[index]); \
             EXPECT_EQ(expected[index].client(), actual[index].client()); \
-            EXPECT_EQ(expected[index].type(), actual[index].type()); \
+            EXPECT_EQ(expected[index].getType(), actual[index].getType()); \
         } \
     } while (false);
 
@@ -140,6 +149,8 @@ const DisplayItem::Type backgroundType = DisplayItem::BoxDecorationBackground;
 const DisplayItem::Type cachedBackgroundType = DisplayItem::drawingTypeToCachedDrawingType(backgroundType);
 const DisplayItem::Type foregroundType = DisplayItem::paintPhaseToDrawingType(PaintPhaseForeground);
 const DisplayItem::Type cachedForegroundType = DisplayItem::drawingTypeToCachedDrawingType(foregroundType);
+const DisplayItem::Type documentBackgroundType = DisplayItem::DocumentBackground;
+const DisplayItem::Type cachedDocumentBackgroundType = DisplayItem::drawingTypeToCachedDrawingType(DisplayItem::DocumentBackground);
 
 } // namespace blink
 

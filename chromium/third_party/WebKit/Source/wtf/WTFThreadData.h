@@ -35,6 +35,16 @@
 #include "wtf/WTFExport.h"
 #include "wtf/text/StringHash.h"
 
+namespace blink {
+
+// TODO(hajimehoshi): CompressibleStringTable should be moved from blink to WTF
+// namespace. Fix this forward declaration when we do this.
+class CompressibleStringTable;
+
+typedef void (*CompressibleStringTableDestructor)(CompressibleStringTable*);
+
+}
+
 namespace WTF {
 
 class AtomicStringTable;
@@ -43,14 +53,20 @@ struct ICUConverterWrapper;
 typedef void (*AtomicStringTableDestructor)(AtomicStringTable*);
 
 class WTF_EXPORT WTFThreadData {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     WTF_MAKE_NONCOPYABLE(WTFThreadData);
 public:
     WTFThreadData();
     ~WTFThreadData();
 
-    AtomicStringTable* atomicStringTable()
+    AtomicStringTable* getAtomicStringTable()
     {
         return m_atomicStringTable;
+    }
+
+    blink::CompressibleStringTable* compressibleStringTable()
+    {
+        return m_compressibleStringTable;
     }
 
     ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
@@ -58,21 +74,20 @@ public:
 private:
     AtomicStringTable* m_atomicStringTable;
     AtomicStringTableDestructor m_atomicStringTableDestructor;
+    blink::CompressibleStringTable* m_compressibleStringTable;
+    blink::CompressibleStringTableDestructor m_compressibleStringTableDestructor;
     OwnPtr<ICUConverterWrapper> m_cachedConverterICU;
 
     static ThreadSpecific<WTFThreadData>* staticData;
     friend WTFThreadData& wtfThreadData();
     friend class AtomicStringTable;
+    friend class blink::CompressibleStringTable;
 };
 
 inline WTFThreadData& wtfThreadData()
 {
-    // WRT WebCore:
-    //    WTFThreadData is used on main thread before it could possibly be used
-    //    on secondary ones, so there is no need for synchronization here.
-    // WRT JavaScriptCore:
-    //    wtfThreadData() is initially called from initializeThreading(), ensuring
-    //    this is initially called in a pthread_once locked context.
+    // WTFThreadData is used on main thread before it could possibly be used
+    // on secondary ones, so there is no need for synchronization here.
     if (!WTFThreadData::staticData)
         WTFThreadData::staticData = new ThreadSpecific<WTFThreadData>;
     return **WTFThreadData::staticData;

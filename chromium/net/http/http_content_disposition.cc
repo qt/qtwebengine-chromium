@@ -12,7 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/base/net_string_util.h"
-#include "net/base/net_util.h"
 #include "net/http/http_util.h"
 
 namespace net {
@@ -324,7 +323,8 @@ bool DecodeExtValue(const std::string& param_value, std::string* decoded) {
   }
 
   std::string unescaped = UnescapeURLComponent(
-      value, UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
+      value, UnescapeRule::SPACES |
+                 UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS);
 
   return ConvertToUtf8AndNormalize(unescaped, charset.c_str(), decoded);
 }

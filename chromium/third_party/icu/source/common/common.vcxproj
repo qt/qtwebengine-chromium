@@ -104,7 +104,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <OutputFile>..\..\bin\icuuc54.dll</OutputFile>
+      <OutputFile>..\..\bin\icuuc56.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <ProgramDatabaseFile>.\..\..\lib\icuuc.pdb</ProgramDatabaseFile>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -145,7 +145,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <OutputFile>..\..\bin\icuuc54d.dll</OutputFile>
+      <OutputFile>..\..\bin\icuuc56d.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>.\..\..\lib\icuucd.pdb</ProgramDatabaseFile>
@@ -183,7 +183,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <OutputFile>..\..\bin64\icuuc54.dll</OutputFile>
+      <OutputFile>..\..\bin64\icuuc56.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <ProgramDatabaseFile>.\..\..\lib64\icuuc.pdb</ProgramDatabaseFile>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -222,7 +222,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <Link>
-      <OutputFile>..\..\bin64\icuuc54d.dll</OutputFile>
+      <OutputFile>..\..\bin64\icuuc56d.dll</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>.\..\..\lib64\icuucd.pdb</ProgramDatabaseFile>
@@ -232,6 +232,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="filteredbrk.cpp" />
     <ClCompile Include="ubidi.c" />
     <ClCompile Include="ubidi_props.c" />
     <ClCompile Include="ubidiln.c" />
@@ -243,6 +244,7 @@
     <ClCompile Include="brkiter.cpp">
     </ClCompile>
     <ClCompile Include="dictbe.cpp" />
+    <ClCompile Include="pluralmap.cpp" />
     <ClCompile Include="rbbi.cpp">
     </ClCompile>
     <ClCompile Include="rbbidata.cpp">
@@ -377,7 +379,8 @@
     <ClCompile Include="uloc_tag.c" />
     <ClCompile Include="ures_cnv.c" />
     <ClCompile Include="uresbund.cpp" />
-    <ClCompile Include="uresdata.c" />
+    <ClCompile Include="uresdata.cpp" />
+    <ClCompile Include="resource.cpp" />
     <ClCompile Include="caniter.cpp">
     </ClCompile>
     <ClCompile Include="filterednormalizer2.cpp" />
@@ -398,7 +401,7 @@
     <ClCompile Include="uchar.c" />
     <ClCompile Include="unames.cpp" />
     <ClCompile Include="unifiedcache.cpp">
-    <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
     </ClCompile>
     <ClCompile Include="unifilt.cpp" />
     <ClCompile Include="unifunct.cpp" />
@@ -466,8 +469,8 @@
     <ClCompile Include="ustrtrns.cpp" />
     <ClCompile Include="utext.cpp" />
     <ClCompile Include="utf_impl.c" />
-    <ClCompile Include="listformatter.cpp">
-    </ClCompile>
+    <ClCompile Include="listformatter.cpp" />
+    <ClCompile Include="ulistformatter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="unicode\ubidi.h">
@@ -486,6 +489,7 @@
     </CustomBuild>
     <ClInclude Include="localsvc.h" />
     <ClInclude Include="msvcres.h" />
+    <ClInclude Include="pluralmap.h" />
     <ClInclude Include="propname_data.h" />
     <ClInclude Include="ubidi_props.h" />
     <ClInclude Include="ubidiimp.h" />
@@ -575,6 +579,7 @@
     <ClInclude Include="uchar_props_data.h" />
     <ClInclude Include="ucol_data.h" />
     <ClInclude Include="ucol_swp.h" />
+    <ClInclude Include="unistrappender.h" />
     <ClInclude Include="hash.h" />
     <ClInclude Include="propsvec.h" />
     <CustomBuild Include="unicode\strenum.h">
@@ -624,6 +629,7 @@
 </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
     </CustomBuild>
+    <ClInclude Include="unicode\filteredbrk.h" />
     <ClInclude Include="ustrenum.h" />
     <ClInclude Include="utrie.h" />
     <ClInclude Include="utrie2.h" />
@@ -1130,6 +1136,7 @@
     <ClInclude Include="uresdata.h" />
     <ClInclude Include="uresimp.h" />
     <ClInclude Include="ureslocs.h" />
+    <ClInclude Include="resource.h" />
     <CustomBuild Include="unicode\caniter.h">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy "%(FullPath)" ..\..\include\unicode
 </Command>
@@ -1729,6 +1736,20 @@
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
     </CustomBuild>
     <CustomBuild Include="unicode\listformatter.h">
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy "%(FullPath)" ..\..\include\unicode
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">copy "%(FullPath)" ..\..\include\unicode
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">copy "%(FullPath)" ..\..\include\unicode
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">copy "%(FullPath)" ..\..\include\unicode
+</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="unicode\ulistformatter.h">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">copy "%(FullPath)" ..\..\include\unicode
 </Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\include\unicode\%(Filename)%(Extension);%(Outputs)</Outputs>

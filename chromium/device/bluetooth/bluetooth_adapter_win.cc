@@ -43,8 +43,8 @@ BluetoothAdapterWin::BluetoothAdapterWin(const InitCallback& init_callback)
       powered_(false),
       discovery_status_(NOT_DISCOVERING),
       num_discovery_listeners_(0),
-      weak_ptr_factory_(this) {
-}
+      force_update_device_for_test_(false),
+      weak_ptr_factory_(this) {}
 
 BluetoothAdapterWin::~BluetoothAdapterWin() {
   if (task_manager_.get()) {
@@ -156,6 +156,11 @@ void BluetoothAdapterWin::DiscoveryStopped() {
 
   // If there are start discovery requests, post the start discovery again.
   MaybePostStartDiscoveryTask();
+}
+
+BluetoothAdapter::UUIDList BluetoothAdapterWin::GetUUIDs() const {
+  NOTIMPLEMENTED();
+  return UUIDList();
 }
 
 void BluetoothAdapterWin::CreateRfcommService(
@@ -284,10 +289,15 @@ void BluetoothAdapterWin::DevicesPolled(
           static_cast<BluetoothDeviceWin*>(iter->second);
       if (!device_win->IsEqual(*device_state)) {
         device_win->Update(*device_state);
-        FOR_EACH_OBSERVER(BluetoothAdapter::Observer,
-                          observers_,
+        FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                           DeviceChanged(this, device_win));
       }
+      // Above IsEqual returns true if device name, address, status and services
+      // (primary services of BLE device) are the same. However, in BLE tests,
+      // we may simulate characteristic, descriptor and secondary GATT service
+      // after device has been initialized.
+      if (force_update_device_for_test_)
+        device_win->Update(*device_state);
     }
   }
 }
@@ -341,6 +351,8 @@ void BluetoothAdapterWin::InitForTest(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
     scoped_refptr<base::SequencedTaskRunner> bluetooth_task_runner) {
   ui_task_runner_ = ui_task_runner;
+  if (ui_task_runner_ == nullptr)
+    ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   task_manager_ =
       new BluetoothTaskManagerWin(ui_task_runner_);
   task_manager_->AddObserver(this);

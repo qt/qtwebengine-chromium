@@ -8,10 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include "webrtc/base/network.h"
 
 #if defined(WEBRTC_POSIX)
@@ -286,6 +282,7 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
       // This network is new. Place it in the network map.
       merged_list.push_back(net);
       networks_map_[key] = net;
+      net->set_id(next_available_network_id_++);
       // Also, we might have accumulated IPAddresses from the first
       // step, set it here.
       net->SetIPs(kv.second.ips, true);
@@ -317,10 +314,11 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
     networks_ = merged_list;
     // Reset the active states of all networks.
     for (const auto& kv : networks_map_) {
-      kv.second->set_active(false);
-    }
-    for (Network* network : networks_) {
-      network->set_active(true);
+      Network* network = kv.second;
+      // If |network| is in the newly generated |networks_|, it is active.
+      bool found = std::find(networks_.begin(), networks_.end(), network) !=
+                   networks_.end();
+      network->set_active(found);
     }
     std::sort(networks_.begin(), networks_.end(), SortNetworks);
     // Now network interfaces are sorted, we should set the preference value
@@ -441,6 +439,8 @@ void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
       AdapterType adapter_type = ADAPTER_TYPE_UNKNOWN;
       if (cursor->ifa_flags & IFF_LOOPBACK) {
         adapter_type = ADAPTER_TYPE_LOOPBACK;
+      } else if (network_monitor_) {
+        adapter_type = network_monitor_->GetAdapterType(cursor->ifa_name);
       }
 #if defined(WEBRTC_IOS)
       // Cell networks are pdp_ipN on iOS.
@@ -731,10 +731,13 @@ void BasicNetworkManager::StartNetworkMonitor() {
   if (factory == nullptr) {
     return;
   }
-  network_monitor_.reset(factory->CreateNetworkMonitor());
   if (!network_monitor_) {
-    return;
+    network_monitor_.reset(factory->CreateNetworkMonitor());
+    if (!network_monitor_) {
+      return;
+    }
   }
+
   network_monitor_->SignalNetworksChanged.connect(
       this, &BasicNetworkManager::OnNetworksChanged);
   network_monitor_->Start();
@@ -745,7 +748,6 @@ void BasicNetworkManager::StopNetworkMonitor() {
     return;
   }
   network_monitor_->Stop();
-  network_monitor_.reset();
 }
 
 void BasicNetworkManager::OnMessage(Message* msg) {
@@ -771,12 +773,14 @@ IPAddress BasicNetworkManager::QueryDefaultLocalAddress(int family) const {
   scoped_ptr<AsyncSocket> socket(
       thread_->socketserver()->CreateAsyncSocket(family, SOCK_DGRAM));
   if (!socket) {
+    LOG_ERR(LERROR) << "Socket creation failed";
     return IPAddress();
   }
 
-  if (!socket->Connect(
-          SocketAddress(family == AF_INET ? kPublicIPv4Host : kPublicIPv6Host,
-                        kPublicPort))) {
+  if (socket->Connect(SocketAddress(
+          family == AF_INET ? kPublicIPv4Host : kPublicIPv6Host, kPublicPort)) <
+      0) {
+    LOG(LS_INFO) << "Connect failed with " << socket->GetError();
     return IPAddress();
   }
   return socket->GetLocalAddress().ipaddr();

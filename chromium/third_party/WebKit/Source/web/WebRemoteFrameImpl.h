@@ -5,32 +5,28 @@
 #ifndef WebRemoteFrameImpl_h
 #define WebRemoteFrameImpl_h
 
-#include "core/frame/FrameOwner.h"
 #include "core/frame/RemoteFrame.h"
 #include "public/web/WebRemoteFrame.h"
 #include "public/web/WebRemoteFrameClient.h"
 #include "web/RemoteFrameClientImpl.h"
+#include "web/WebExport.h"
 #include "web/WebFrameImplBase.h"
-#include "wtf/HashMap.h"
+#include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
 class FrameHost;
 class FrameOwner;
 class RemoteFrame;
+enum class WebFrameLoadType;
 
-class WebRemoteFrameImpl final : public WebFrameImplBase, public WebRemoteFrame {
+class WEB_EXPORT WebRemoteFrameImpl final : public WebFrameImplBase, WTF_NON_EXPORTED_BASE(public WebRemoteFrame) {
 public:
-    static WebRemoteFrameImpl* create(WebTreeScopeType, WebRemoteFrameClient*);
+    static WebRemoteFrameImpl* create(WebTreeScopeType, WebRemoteFrameClient*, WebFrame* opener);
     ~WebRemoteFrameImpl() override;
 
     // WebFrame methods:
-    bool isWebLocalFrame() const override;
-    WebLocalFrame* toWebLocalFrame() override;
-    bool isWebRemoteFrame() const override;
-    WebRemoteFrame* toWebRemoteFrame() override;
     void close() override;
     WebString uniqueName() const override;
     WebString assignedName() const override;
@@ -47,14 +43,10 @@ public:
     bool hasHorizontalScrollbar() const override;
     bool hasVerticalScrollbar() const override;
     WebView* view() const override;
-    void removeChild(WebFrame*) override;
     WebDocument document() const override;
     WebPerformance performance() const override;
     bool dispatchBeforeUnloadEvent() override;
     void dispatchUnloadEvent() override;
-    NPObject* windowObject() const override;
-    void bindToWindowObject(const WebString& name, NPObject*) override;
-    void bindToWindowObject(const WebString& name, NPObject*, void*) override;
     void executeScript(const WebScriptSource&) override;
     void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sources, unsigned numSources,
@@ -63,7 +55,6 @@ public:
     void setIsolatedWorldContentSecurityPolicy(int worldID, const WebString&) override;
     void addMessageToConsole(const WebConsoleMessage&) override;
     void collectGarbage() override;
-    bool checkIfRunInsecureContent(const WebURL&) const override;
     v8::Local<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) override;
     void executeScriptInIsolatedWorld(
@@ -76,13 +67,10 @@ public:
         v8::Local<v8::Value> argv[]) override;
     v8::Local<v8::Context> mainWorldScriptContext() const override;
     v8::Local<v8::Context> deprecatedMainWorldScriptContext() const override;
-    void reload(bool ignoreCache) override;
-    void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
+    void reload(WebFrameLoadType) override;
+    void reloadWithOverrideURL(const WebURL& overrideUrl, WebFrameLoadType) override;
     void loadRequest(const WebURLRequest&) override;
-    void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebURLRequest::CachePolicy) override;
-    void loadData(
-        const WebData&, const WebString& mimeType, const WebString& textEncoding,
-        const WebURL& baseURL, const WebURL& unreachableURL, bool replace) override;
+    void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebCachePolicy) override;
     void loadHTMLString(
         const WebData& html, const WebURL& baseURL, const WebURL& unreachableURL,
         bool replace) override;
@@ -138,29 +126,10 @@ public:
         int& marginLeft) override;
     WebString pageProperty(const WebString& propertyName, int pageIndex) override;
     void printPagesWithBoundaries(WebCanvas*, const WebSize&) override;
-    bool find(
-        int identifier, const WebString& searchText, const WebFindOptions&,
-        bool wrapWithinFrame, WebRect* selectionRect) override;
-    void stopFinding(bool clearSelection) override;
-    void scopeStringMatches(
-        int identifier, const WebString& searchText, const WebFindOptions&,
-        bool reset) override;
-    void cancelPendingScopingEffort() override;
-    void increaseMatchCount(int count, int identifier) override;
-    void resetMatchCount() override;
-    int findMatchMarkersVersion() const override;
-    WebFloatRect activeFindMatchRect() override;
-    void findMatchRects(WebVector<WebFloatRect>&) override;
-    int selectNearestFindMatch(const WebFloatPoint&, WebRect* selectionRect) override;
-    void setTickmarks(const WebVector<WebRect>&) override;
     void dispatchMessageEventWithOriginCheck(
         const WebSecurityOrigin& intendedTargetOrigin,
         const WebDOMEvent&) override;
 
-    WebString contentAsText(size_t maxChars) const override;
-    WebString contentAsMarkup() const override;
-    WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const override;
-    WebString markerTextForListItem(const WebElement&) const override;
     WebRect selectionBoundsRect() const override;
 
     bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
@@ -169,29 +138,32 @@ public:
     WebFrameImplBase* toImplBase() { return this; }
 
     // WebFrameImplBase methods:
-    void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& fallbackName) override;
+    void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& uniqueName) override;
     RemoteFrame* frame() const override { return m_frame.get(); }
 
-    void setCoreFrame(PassRefPtrWillBeRawPtr<RemoteFrame>);
+    void setCoreFrame(RemoteFrame*);
 
     WebRemoteFrameClient* client() const { return m_client; }
 
     static WebRemoteFrameImpl* fromFrame(RemoteFrame&);
 
     // WebRemoteFrame methods:
-    WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling, const WebFrameOwnerProperties&) override;
-    WebRemoteFrame* createRemoteChild(WebTreeScopeType, const WebString& name, WebSandboxFlags, WebRemoteFrameClient*) override;
+    WebLocalFrame* createLocalChild(WebTreeScopeType, const WebString& name, const WebString& uniqueName, WebSandboxFlags, WebFrameClient*, WebFrame* previousSibling, const WebFrameOwnerProperties&, WebFrame* opener) override;
+    WebRemoteFrame* createRemoteChild(WebTreeScopeType, const WebString& name, const WebString& uniqueName, WebSandboxFlags, WebRemoteFrameClient*, WebFrame* opener) override;
 
     void initializeFromFrame(WebLocalFrame*) const override;
 
     void setReplicatedOrigin(const WebSecurityOrigin&) const override;
     void setReplicatedSandboxFlags(WebSandboxFlags) const override;
-    void setReplicatedName(const WebString&) const override;
+    void setReplicatedName(const WebString& name, const WebString& uniqueName) const override;
     void setReplicatedShouldEnforceStrictMixedContentChecking(bool) const override;
+    void setReplicatedPotentiallyTrustworthyUniqueOrigin(bool) const override;
     void DispatchLoadEventForFrameOwner() const override;
 
     void didStartLoading() override;
     void didStopLoading() override;
+
+    bool isIgnoredForHitTest() const override;
 
 #if ENABLE(OILPAN)
     DECLARE_TRACE();
@@ -200,11 +172,16 @@ public:
 private:
     WebRemoteFrameImpl(WebTreeScopeType, WebRemoteFrameClient*);
 
-    OwnPtrWillBeMember<RemoteFrameClientImpl> m_frameClient;
-    RefPtrWillBeMember<RemoteFrame> m_frame;
-    WebRemoteFrameClient* m_client;
+    // Inherited from WebFrame, but intentionally hidden: it never makes sense
+    // to call these on a WebRemoteFrameImpl.
+    bool isWebLocalFrame() const override;
+    WebLocalFrame* toWebLocalFrame() override;
+    bool isWebRemoteFrame() const override;
+    WebRemoteFrame* toWebRemoteFrame() override;
 
-    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>> m_ownersForChildren;
+    Member<RemoteFrameClientImpl> m_frameClient;
+    Member<RemoteFrame> m_frame;
+    WebRemoteFrameClient* m_client;
 
 #if ENABLE(OILPAN)
     // Oilpan: WebRemoteFrameImpl must remain alive until close() is called.

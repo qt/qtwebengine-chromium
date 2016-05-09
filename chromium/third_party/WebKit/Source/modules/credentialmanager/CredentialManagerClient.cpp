@@ -22,7 +22,7 @@ CredentialManagerClient::~CredentialManagerClient()
 
 DEFINE_TRACE(CredentialManagerClient)
 {
-    WillBeHeapSupplement<Page>::trace(visitor);
+    Supplement<Page>::trace(visitor);
 }
 
 // static
@@ -42,12 +42,12 @@ CredentialManagerClient* CredentialManagerClient::from(ExecutionContext* executi
 // static
 CredentialManagerClient* CredentialManagerClient::from(Page* page)
 {
-    return static_cast<CredentialManagerClient*>(WillBeHeapSupplement<Page>::from(page, supplementName()));
+    return static_cast<CredentialManagerClient*>(Supplement<Page>::from(page, supplementName()));
 }
 
 void provideCredentialManagerClientTo(Page& page, CredentialManagerClient* client)
 {
-    CredentialManagerClient::provideTo(page, CredentialManagerClient::supplementName(), adoptPtrWillBeNoop(client));
+    CredentialManagerClient::provideTo(page, CredentialManagerClient::supplementName(), client);
 }
 
 void CredentialManagerClient::dispatchFailedSignIn(const WebCredential& credential, WebCredentialManagerClient::NotificationCallbacks* callbacks)
@@ -71,11 +71,11 @@ void CredentialManagerClient::dispatchRequireUserMediation(WebCredentialManagerC
     m_client->dispatchRequireUserMediation(callbacks);
 }
 
-void CredentialManagerClient::dispatchGet(bool zeroClickOnly, const WebVector<WebURL>& federations, WebCredentialManagerClient::RequestCallbacks* callbacks)
+void CredentialManagerClient::dispatchGet(bool zeroClickOnly, bool includePasswords, const WebVector<WebURL>& federations, WebCredentialManagerClient::RequestCallbacks* callbacks)
 {
     if (!m_client)
         return;
-    m_client->dispatchGet(zeroClickOnly, federations, callbacks);
+    m_client->dispatchGet(zeroClickOnly, includePasswords, federations, callbacks);
 }
 
 } // namespace blink

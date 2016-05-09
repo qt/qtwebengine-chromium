@@ -8,6 +8,8 @@
 #include <openssl/evp.h>
 
 #include "base/memory/scoped_ptr.h"
+#include "net/quic/quic_flags.h"
+#include "net/quic/quic_utils.h"
 
 using base::StringPiece;
 
@@ -77,9 +79,10 @@ bool AeadBaseDecrypter::SetNoncePrefix(StringPiece nonce_prefix) {
   return true;
 }
 
-bool AeadBaseDecrypter::DecryptPacket(QuicPacketNumber packet_number,
-                                      const StringPiece& associated_data,
-                                      const StringPiece& ciphertext,
+bool AeadBaseDecrypter::DecryptPacket(QuicPathId path_id,
+                                      QuicPacketNumber packet_number,
+                                      StringPiece associated_data,
+                                      StringPiece ciphertext,
                                       char* output,
                                       size_t* output_length,
                                       size_t max_output_length) {
@@ -90,7 +93,10 @@ bool AeadBaseDecrypter::DecryptPacket(QuicPacketNumber packet_number,
   uint8_t nonce[sizeof(nonce_prefix_) + sizeof(packet_number)];
   const size_t nonce_size = nonce_prefix_size_ + sizeof(packet_number);
   memcpy(nonce, nonce_prefix_, nonce_prefix_size_);
-  memcpy(nonce + nonce_prefix_size_, &packet_number, sizeof(packet_number));
+  uint64_t path_id_packet_number =
+      QuicUtils::PackPathIdAndPacketNumber(path_id, packet_number);
+  memcpy(nonce + nonce_prefix_size_, &path_id_packet_number,
+         sizeof(path_id_packet_number));
   if (!EVP_AEAD_CTX_open(
           ctx_.get(), reinterpret_cast<uint8_t*>(output), output_length,
           max_output_length, reinterpret_cast<const uint8_t*>(nonce),

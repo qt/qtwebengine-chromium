@@ -8,8 +8,6 @@
       'target_name': 'mozilla',
       'type': '<(component)',
       'sources': [
-        'ComplexTextInputPanel.h',
-        'ComplexTextInputPanel.mm',
         'MozillaExport.h',
         'NSPasteboard+Utils.h',
         'NSPasteboard+Utils.mm',
@@ -31,6 +29,7 @@
         ],
       },
       'dependencies': [
+        '../../base/base.gyp:base',
         '../../url/url.gyp:url_lib',
       ],
       'conditions': [

@@ -14,7 +14,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 
 namespace net {
 
@@ -238,10 +237,6 @@ void TCPClientSocket::SetOmniboxSpeculation() {
 
 bool TCPClientSocket::WasEverUsed() const {
   return use_history_.was_used_to_convey_data();
-}
-
-bool TCPClientSocket::UsingTCPFastOpen() const {
-  return socket_->UsingTCPFastOpen();
 }
 
 void TCPClientSocket::EnableTCPFastOpenIfSupported() {

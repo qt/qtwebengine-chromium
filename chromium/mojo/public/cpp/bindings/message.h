@@ -11,10 +11,10 @@
 #include <limits>
 #include <vector>
 
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/public/cpp/bindings/lib/message_internal.h"
 #include "mojo/public/cpp/bindings/lib/pickle_buffer.h"
-#include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
 
@@ -33,8 +33,7 @@ class Message {
   void MoveTo(Message* destination);
 
   uint32_t data_num_bytes() const {
-    MOJO_DCHECK(buffer_->data_num_bytes() <=
-                std::numeric_limits<uint32_t>::max());
+    DCHECK(buffer_->data_num_bytes() <= std::numeric_limits<uint32_t>::max());
     return static_cast<uint32_t>(buffer_->data_num_bytes());
   }
 
@@ -64,12 +63,12 @@ class Message {
   // Access the request_id field (if present).
   bool has_request_id() const { return header()->version >= 1; }
   uint64_t request_id() const {
-    MOJO_DCHECK(has_request_id());
+    DCHECK(has_request_id());
     return static_cast<const internal::MessageHeaderWithRequestID*>(
                header())->request_id;
   }
   void set_request_id(uint64_t request_id) {
-    MOJO_DCHECK(has_request_id());
+    DCHECK(has_request_id());
     static_cast<internal::MessageHeaderWithRequestID*>(header())
         ->request_id = request_id;
   }
@@ -78,9 +77,9 @@ class Message {
   const uint8_t* payload() const { return data() + header()->num_bytes; }
   uint8_t* mutable_payload() { return const_cast<uint8_t*>(payload()); }
   uint32_t payload_num_bytes() const {
-    MOJO_DCHECK(buffer_->data_num_bytes() >= header()->num_bytes);
+    DCHECK(buffer_->data_num_bytes() >= header()->num_bytes);
     size_t num_bytes = buffer_->data_num_bytes() - header()->num_bytes;
-    MOJO_DCHECK(num_bytes <= std::numeric_limits<uint32_t>::max());
+    DCHECK(num_bytes <= std::numeric_limits<uint32_t>::max());
     return static_cast<uint32_t>(num_bytes);
   }
 
@@ -97,7 +96,7 @@ class Message {
   scoped_ptr<internal::PickleBuffer> buffer_;
   std::vector<Handle> handles_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(Message);
+  DISALLOW_COPY_AND_ASSIGN(Message);
 };
 
 class MessageReceiver {
@@ -107,7 +106,7 @@ class MessageReceiver {
   // The receiver may mutate the given message.  Returns true if the message
   // was accepted and false otherwise, indicating that the message was invalid
   // or malformed.
-  virtual bool Accept(Message* message) MOJO_WARN_UNUSED_RESULT = 0;
+  virtual bool Accept(Message* message) WARN_UNUSED_RESULT = 0;
 };
 
 class MessageReceiverWithResponder : public MessageReceiver {
@@ -123,8 +122,9 @@ class MessageReceiverWithResponder : public MessageReceiver {
   // |responder| and will delete it after calling |responder->Accept| or upon
   // its own destruction.
   //
+  // TODO(yzshen): consider changing |responder| to scoped_ptr<MessageReceiver>.
   virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
-      MOJO_WARN_UNUSED_RESULT = 0;
+      WARN_UNUSED_RESULT = 0;
 };
 
 // A MessageReceiver that is also able to provide status about the state
@@ -137,6 +137,11 @@ class MessageReceiverWithStatus : public MessageReceiver {
   // Returns |true| if this MessageReceiver is currently bound to a MessagePipe,
   // the pipe has not been closed, and the pipe has not encountered an error.
   virtual bool IsValid() = 0;
+
+  // DCHECKs if this MessageReceiver is currently bound to a MessagePipe, the
+  // pipe has not been closed, and the pipe has not encountered an error.
+  // This function may be called on any thread.
+  virtual void DCheckInvalid(const std::string& message) = 0;
 };
 
 // An alternative to MessageReceiverWithResponder for cases in which it
@@ -155,9 +160,10 @@ class MessageReceiverWithResponderStatus : public MessageReceiver {
   // |responder| and will delete it after calling |responder->Accept| or upon
   // its own destruction.
   //
+  // TODO(yzshen): consider changing |responder| to scoped_ptr<MessageReceiver>.
   virtual bool AcceptWithResponder(Message* message,
                                    MessageReceiverWithStatus* responder)
-      MOJO_WARN_UNUSED_RESULT = 0;
+      WARN_UNUSED_RESULT = 0;
 };
 
 // Read a single message from the pipe. The caller should have created the

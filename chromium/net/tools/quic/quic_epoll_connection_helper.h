@@ -25,22 +25,29 @@ namespace net {
 class EpollServer;
 class QuicRandom;
 
-namespace tools {
 
 class AckAlarm;
 class RetransmissionAlarm;
 class SendAlarm;
 class TimeoutAlarm;
 
+using QuicStreamBufferAllocator = SimpleBufferAllocator;
+
+enum class QuicAllocator { SIMPLE, BUFFER_POOL };
+
 class QuicEpollConnectionHelper : public QuicConnectionHelperInterface {
  public:
-  explicit QuicEpollConnectionHelper(EpollServer* eps);
+  QuicEpollConnectionHelper(EpollServer* eps, QuicAllocator allocator);
   ~QuicEpollConnectionHelper() override;
 
   // QuicEpollConnectionHelperInterface
   const QuicClock* GetClock() const override;
   QuicRandom* GetRandomGenerator() override;
   QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) override;
+  QuicArenaScopedPtr<QuicAlarm> CreateAlarm(
+      QuicArenaScopedPtr<QuicAlarm::Delegate> delegate,
+      QuicConnectionArena* arena) override;
+
   QuicBufferAllocator* GetBufferAllocator() override;
 
   EpollServer* epoll_server() { return epoll_server_; }
@@ -52,12 +59,14 @@ class QuicEpollConnectionHelper : public QuicConnectionHelperInterface {
 
   const QuicEpollClock clock_;
   QuicRandom* random_generator_;
-  SimpleBufferAllocator buffer_allocator_;
+  // Set up both allocators.  They take up minimal memory before use.
+  QuicStreamBufferAllocator buffer_allocator_;
+  SimpleBufferAllocator simple_buffer_allocator_;
+  QuicAllocator allocator_type_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicEpollConnectionHelper);
 };
 
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_QUIC_EPOLL_CONNECTION_HELPER_H_

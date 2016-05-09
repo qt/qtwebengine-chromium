@@ -5,15 +5,25 @@
 #ifndef MEDIA_MOJO_SERVICES_MOJO_MEDIA_CLIENT_H_
 #define MEDIA_MOJO_SERVICES_MOJO_MEDIA_CLIENT_H_
 
-#include "base/single_thread_task_runner.h"
+#include <memory>
+
+#include "media/base/audio_decoder.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/cdm_factory.h"
 #include "media/base/media_log.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/video_renderer_sink.h"
 
+namespace base {
+class SingleThreadTaskRunner;
+}
+
 namespace mojo {
-class ServiceProvider;
+namespace shell {
+namespace mojom {
+class InterfaceProvider;
+}
+}
 }
 
 namespace media {
@@ -22,24 +32,30 @@ class MojoMediaClient {
  public:
   virtual ~MojoMediaClient();
 
-  static scoped_ptr<MojoMediaClient> Create();
-
   // Called exactly once before any other method.
   virtual void Initialize();
-  // Returns the RendererFactory to be used by MojoRendererService. If returns
-  // null, a RendererImpl will be used with audio/video decoders provided in
-  // CreateAudioDecoders() and CreateVideoDecoders().
-  virtual scoped_ptr<RendererFactory> CreateRendererFactory(
+
+  virtual std::unique_ptr<AudioDecoder> CreateAudioDecoder(
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+  // TODO(xhwang): Consider creating Renderer and CDM directly in the client
+  // instead of creating factories. See http://crbug.com/586211
+
+  // Returns the RendererFactory to be used by MojoRendererService.
+  virtual std::unique_ptr<RendererFactory> CreateRendererFactory(
       const scoped_refptr<MediaLog>& media_log);
-  // The output sink used for rendering audio or video respectively. These
-  // sinks must be owned by the client.
+
+  // The output sink used for rendering audio or video respectively. They will
+  // be used in the CreateRenderer() call on the RendererFactory returned by
+  // CreateRendererFactory(). May be null if the RendererFactory doesn't need an
+  // audio or video sink. If not null, the sink must be owned by the client.
   virtual AudioRendererSink* CreateAudioRendererSink();
   virtual VideoRendererSink* CreateVideoRendererSink(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   // Returns the CdmFactory to be used by MojoCdmService.
-  virtual scoped_ptr<CdmFactory> CreateCdmFactory(
-      mojo::ServiceProvider* service_provider);
+  virtual std::unique_ptr<CdmFactory> CreateCdmFactory(
+      mojo::shell::mojom::InterfaceProvider* interface_provider);
 
  protected:
   MojoMediaClient();

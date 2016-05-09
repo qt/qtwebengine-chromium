@@ -23,6 +23,7 @@
 #ifndef SVGFilterElement_h
 #define SVGFilterElement_h
 
+#include "core/CoreExport.h"
 #include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
@@ -36,16 +37,19 @@
 
 namespace blink {
 
-class SVGFilterElement final : public SVGElement,
-                               public SVGURIReference {
+class SVGResourceClient;
+
+class CORE_EXPORT SVGFilterElement final : public SVGElement, public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGFilterElement);
+    USING_GARBAGE_COLLECTED_MIXIN(SVGFilterElement);
 public:
     DECLARE_NODE_FACTORY(SVGFilterElement);
     DECLARE_VIRTUAL_TRACE();
 
-    void addClient(Node*);
-    void removeClient(Node*);
+    ~SVGFilterElement() override;
+
+    void addClient(SVGResourceClient*);
+    void removeClient(SVGResourceClient*);
 
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
@@ -66,14 +70,14 @@ private:
 
     bool selfHasRelativeLengths() const override;
 
-    RefPtrWillBeMember<SVGAnimatedLength> m_x;
-    RefPtrWillBeMember<SVGAnimatedLength> m_y;
-    RefPtrWillBeMember<SVGAnimatedLength> m_width;
-    RefPtrWillBeMember<SVGAnimatedLength> m_height;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_filterUnits;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_primitiveUnits;
+    Member<SVGAnimatedLength> m_x;
+    Member<SVGAnimatedLength> m_y;
+    Member<SVGAnimatedLength> m_width;
+    Member<SVGAnimatedLength> m_height;
+    Member<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_filterUnits;
+    Member<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_primitiveUnits;
 
-    WillBeHeapHashSet<RefPtrWillBeMember<Node>> m_clientsToAdd;
+    HashSet<SVGResourceClient*> m_clientsToAdd;
 };
 
 } // namespace blink

@@ -58,12 +58,21 @@ void FrameTree::setName(const AtomicString& name, const AtomicString& fallbackNa
         m_uniqueName = name;
         return;
     }
-    m_uniqueName = AtomicString(); // Remove our old frame name so it's not considered in uniqueChildName.
-    m_uniqueName = parent()->tree().uniqueChildName(name.isEmpty() ? fallbackName : name);
+
+    // Remove our old frame name so it's not considered in calculateUniqueNameForChildFrame.
+    m_uniqueName = AtomicString();
+
+    m_uniqueName = parent()->tree().calculateUniqueNameForChildFrame(true, name, fallbackName);
 }
 
-void FrameTree::setNameForReplacementFrame(const AtomicString& name, const AtomicString& uniqueName)
+void FrameTree::setPrecalculatedName(const AtomicString& name, const AtomicString& uniqueName)
 {
+    if (!parent()) {
+        ASSERT(uniqueName == name);
+    } else {
+        ASSERT(!uniqueName.isEmpty());
+    }
+
     m_name = name;
     m_uniqueName = uniqueName;
 }
@@ -123,8 +132,19 @@ bool FrameTree::uniqueNameExists(const AtomicString& name) const
     return false;
 }
 
-AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
+AtomicString FrameTree::calculateUniqueNameForNewChildFrame(
+    const AtomicString& name,
+    const AtomicString& fallbackName) const
 {
+    return calculateUniqueNameForChildFrame(false, name, fallbackName);
+}
+
+AtomicString FrameTree::calculateUniqueNameForChildFrame(
+    bool existingChildFrame,
+    const AtomicString& name,
+    const AtomicString& fallbackName) const
+{
+    const AtomicString& requestedName = name.isEmpty() ? fallbackName : name;
     if (!requestedName.isEmpty() && !uniqueNameExists(requestedName) && requestedName != "_blank")
         return requestedName;
 
@@ -140,30 +160,30 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     const int framePathSuffixLength = 3;
 
     // Find the nearest parent that has a frame with a path in it.
-    WillBeHeapVector<RawPtrWillBeMember<Frame>, 16> chain;
+    HeapVector<Member<Frame>, 16> chain;
     Frame* frame;
     for (frame = m_thisFrame; frame; frame = frame->tree().parent()) {
         if (frame->tree().uniqueName().startsWith(framePathPrefix))
             break;
         chain.append(frame);
     }
-    StringBuilder name;
-    name.append(framePathPrefix);
+    StringBuilder uniqueName;
+    uniqueName.append(framePathPrefix);
     if (frame) {
-        name.append(frame->tree().uniqueName().string().substring(framePathPrefixLength,
+        uniqueName.append(frame->tree().uniqueName().getString().substring(framePathPrefixLength,
             frame->tree().uniqueName().length() - framePathPrefixLength - framePathSuffixLength));
     }
     for (int i = chain.size() - 1; i >= 0; --i) {
         frame = chain[i];
-        name.append('/');
-        name.append(frame->tree().uniqueName());
+        uniqueName.append('/');
+        uniqueName.append(frame->tree().uniqueName());
     }
 
-    name.appendLiteral("/<!--frame");
-    name.appendNumber(childCount() - 1);
-    name.appendLiteral("-->-->");
+    uniqueName.appendLiteral("/<!--frame");
+    uniqueName.appendNumber(childCount() - (existingChildFrame ? 1 : 0));
+    uniqueName.appendLiteral("-->-->");
 
-    return name.toAtomicString();
+    return uniqueName.toAtomicString();
 }
 
 Frame* FrameTree::scopedChild(unsigned index) const
@@ -392,7 +412,7 @@ static void printFrames(const blink::Frame* frame, const blink::Frame* targetFra
     printIndent(indent);
     printf("  document=%p\n", frame->isLocalFrame() ? toLocalFrame(frame)->document() : 0);
     printIndent(indent);
-    printf("  uri=%s\n\n", frame->isLocalFrame() ? toLocalFrame(frame)->document()->url().string().utf8().data() : 0);
+    printf("  uri=%s\n\n", frame->isLocalFrame() ? toLocalFrame(frame)->document()->url().getString().utf8().data() : 0);
 
     for (blink::Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
         printFrames(child, targetFrame, indent + 1);

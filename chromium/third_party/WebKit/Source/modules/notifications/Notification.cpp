@@ -105,18 +105,19 @@ Notification* Notification::create(ExecutionContext* context, const String& titl
     return notification;
 }
 
-Notification* Notification::create(ExecutionContext* context, int64_t persistentId, const WebNotificationData& data)
+Notification* Notification::create(ExecutionContext* context, int64_t persistentId, const WebNotificationData& data, bool showing)
 {
     Notification* notification = new Notification(context, data);
     notification->setPersistentId(persistentId);
-    notification->setState(NotificationStateShowing);
+    notification->setState(showing ? NotificationStateShowing : NotificationStateClosed);
     notification->suspendIfNeeded();
 
     return notification;
 }
 
 Notification::Notification(ExecutionContext* context, const WebNotificationData& data)
-    : ActiveDOMObject(context)
+    : ActiveScriptWrappable(this)
+    , ActiveDOMObject(context)
     , m_data(data)
     , m_persistentId(kInvalidPersistentId)
     , m_state(NotificationStateIdle)
@@ -140,12 +141,12 @@ void Notification::scheduleShow()
 void Notification::show()
 {
     ASSERT(m_state == NotificationStateIdle);
-    if (Notification::checkPermission(executionContext()) != WebNotificationPermissionAllowed) {
+    if (Notification::checkPermission(getExecutionContext()) != WebNotificationPermissionAllowed) {
         dispatchErrorEvent();
         return;
     }
 
-    SecurityOrigin* origin = executionContext()->securityOrigin();
+    SecurityOrigin* origin = getExecutionContext()->getSecurityOrigin();
     ASSERT(origin);
 
     notificationManager()->show(WebSecurityOrigin(origin), m_data, this);
@@ -160,14 +161,14 @@ void Notification::close()
 
     if (m_persistentId == kInvalidPersistentId) {
         // Fire the close event asynchronously.
-        executionContext()->postTask(BLINK_FROM_HERE, createSameThreadTask(&Notification::dispatchCloseEvent, this));
+        getExecutionContext()->postTask(BLINK_FROM_HERE, createSameThreadTask(&Notification::dispatchCloseEvent, this));
 
         m_state = NotificationStateClosing;
         notificationManager()->close(this);
     } else {
         m_state = NotificationStateClosed;
 
-        SecurityOrigin* origin = executionContext()->securityOrigin();
+        SecurityOrigin* origin = getExecutionContext()->getSecurityOrigin();
         ASSERT(origin);
 
         notificationManager()->closePersistent(WebSecurityOrigin(origin), m_persistentId);
@@ -182,7 +183,7 @@ void Notification::dispatchShowEvent()
 void Notification::dispatchClickEvent()
 {
     UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
-    ScopedWindowFocusAllowedIndicator windowFocusAllowed(executionContext());
+    ScopedWindowFocusAllowedIndicator windowFocusAllowed(getExecutionContext());
     dispatchEvent(Event::create(EventTypeNames::click));
 }
 
@@ -242,6 +243,11 @@ String Notification::icon() const
     return m_data.icon.string();
 }
 
+String Notification::badge() const
+{
+    return m_data.badge.string();
+}
+
 NavigatorVibration::VibrationPattern Notification::vibrate(bool& isNull) const
 {
     NavigatorVibration::VibrationPattern pattern;
@@ -251,6 +257,16 @@ NavigatorVibration::VibrationPattern Notification::vibrate(bool& isNull) const
         isNull = true;
 
     return pattern;
+}
+
+DOMTimeStamp Notification::timestamp() const
+{
+    return m_data.timestamp;
+}
+
+bool Notification::renotify() const
+{
+    return m_data.renotify;
 }
 
 bool Notification::silent() const
@@ -286,8 +302,20 @@ HeapVector<NotificationAction> Notification::actions() const
     actions.grow(m_data.actions.size());
 
     for (size_t i = 0; i < m_data.actions.size(); ++i) {
+        switch (m_data.actions[i].type) {
+        case WebNotificationAction::Button:
+            actions[i].setType("button");
+            break;
+        case WebNotificationAction::Text:
+            actions[i].setType("text");
+            break;
+        default:
+            NOTREACHED() << "Unknown action type: " << m_data.actions[i].type;
+        }
         actions[i].setAction(m_data.actions[i].action);
         actions[i].setTitle(m_data.actions[i].title);
+        actions[i].setIcon(m_data.actions[i].icon.string());
+        actions[i].setPlaceholder(m_data.actions[i].placeholder);
     }
 
     return actions;
@@ -315,7 +343,7 @@ String Notification::permission(ExecutionContext* context)
 
 WebNotificationPermission Notification::checkPermission(ExecutionContext* context)
 {
-    SecurityOrigin* origin = context->securityOrigin();
+    SecurityOrigin* origin = context->getSecurityOrigin();
     ASSERT(origin);
 
     return notificationManager()->checkPermission(WebSecurityOrigin(origin));
@@ -323,7 +351,7 @@ WebNotificationPermission Notification::checkPermission(ExecutionContext* contex
 
 ScriptPromise Notification::requestPermission(ScriptState* scriptState, NotificationPermissionCallback* deprecatedCallback)
 {
-    ExecutionContext* context = scriptState->executionContext();
+    ExecutionContext* context = scriptState->getExecutionContext();
     if (NotificationPermissionClient* permissionClient = NotificationPermissionClient::from(context))
         return permissionClient->requestPermission(scriptState, deprecatedCallback);
 
@@ -341,9 +369,9 @@ size_t Notification::maxActions()
     return notificationManager()->maxActions();
 }
 
-bool Notification::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
+DispatchEventResult Notification::dispatchEventInternal(Event* event)
 {
-    ASSERT(executionContext()->isContextThread());
+    ASSERT(getExecutionContext()->isContextThread());
     return EventTarget::dispatchEventInternal(event);
 }
 

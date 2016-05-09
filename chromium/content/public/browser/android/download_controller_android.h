@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/download_item.h"
 #include "content/public/common/context_menu_params.h"
 
 namespace content {
@@ -15,7 +16,7 @@ class WebContents;
 
 // Interface to request GET downloads and send notifications for POST
 // downloads.
-class CONTENT_EXPORT DownloadControllerAndroid {
+class CONTENT_EXPORT DownloadControllerAndroid : public DownloadItem::Observer {
  public:
   // Returns the singleton instance of the DownloadControllerAndroid.
   static DownloadControllerAndroid* Get();
@@ -27,7 +28,7 @@ class CONTENT_EXPORT DownloadControllerAndroid {
   // Starts a new download request with Android. Should be called on the
   // UI thread.
   virtual void CreateGETDownload(int render_process_id, int render_view_id,
-                                 int request_id) = 0;
+                                 int request_id, bool must_download) = 0;
 
   // Should be called when a download is started. It can be either a GET
   // request with authentication or a POST request. Notifies the embedding
@@ -40,8 +41,9 @@ class CONTENT_EXPORT DownloadControllerAndroid {
       bool is_link, const std::string& extra_headers) = 0;
 
   // Called when a dangerous download item is verified or rejected.
-  virtual void DangerousDownloadValidated(
-      WebContents* web_contents, int download_id, bool accept) = 0;
+  virtual void DangerousDownloadValidated(WebContents* web_contents,
+                                          const std::string& download_guid,
+                                          bool accept) = 0;
 
   // Callback when user permission prompt finishes. Args: whether file access
   // permission is acquired.
@@ -56,8 +58,12 @@ class CONTENT_EXPORT DownloadControllerAndroid {
   // Called by unit test to approve or disapprove file access request.
   virtual void SetApproveFileAccessRequestForTesting(bool approve) {};
 
+  // Called to set the default download file name if it cannot be resolved
+  // from url and content disposition
+  virtual void SetDefaultDownloadFileName(const std::string& file_name) {}
+
  protected:
-  virtual ~DownloadControllerAndroid() {};
+  ~DownloadControllerAndroid() override {};
   static DownloadControllerAndroid* download_controller_;
 };
 

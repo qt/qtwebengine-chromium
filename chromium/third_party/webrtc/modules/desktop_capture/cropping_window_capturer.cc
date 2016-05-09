@@ -31,6 +31,11 @@ void CroppingWindowCapturer::Start(DesktopCapturer::Callback* callback) {
   window_capturer_->Start(callback);
 }
 
+void CroppingWindowCapturer::SetSharedMemoryFactory(
+    rtc::scoped_ptr<SharedMemoryFactory> shared_memory_factory) {
+  window_capturer_->SetSharedMemoryFactory(std::move(shared_memory_factory));
+}
+
 void CroppingWindowCapturer::Capture(const DesktopRegion& region) {
   if (ShouldUseScreenCapturer()) {
     if (!screen_capturer_.get()) {
@@ -69,12 +74,8 @@ bool CroppingWindowCapturer::BringSelectedWindowToFront() {
   return window_capturer_->BringSelectedWindowToFront();
 }
 
-SharedMemory* CroppingWindowCapturer::CreateSharedMemory(size_t size) {
-  return callback_->CreateSharedMemory(size);
-}
-
 void CroppingWindowCapturer::OnCaptureCompleted(DesktopFrame* frame) {
-  rtc::scoped_ptr<DesktopFrame> screen_frame(frame);
+  std::unique_ptr<DesktopFrame> screen_frame(frame);
 
   if (!ShouldUseScreenCapturer()) {
     LOG(LS_INFO) << "Window no longer on top when ScreenCapturer finishes";
@@ -95,7 +96,7 @@ void CroppingWindowCapturer::OnCaptureCompleted(DesktopFrame* frame) {
     return;
   }
 
-  rtc::scoped_ptr<DesktopFrame> window_frame(
+  std::unique_ptr<DesktopFrame> window_frame(
       CreateCroppedDesktopFrame(screen_frame.release(), window_rect));
   callback_->OnCaptureCompleted(window_frame.release());
 }

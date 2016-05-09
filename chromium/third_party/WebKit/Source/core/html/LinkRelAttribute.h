@@ -45,17 +45,17 @@ public:
     explicit LinkRelAttribute(const String& = "");
 
     bool isStyleSheet() const { return m_isStyleSheet; }
-    IconType iconType() const { return m_iconType; }
+    IconType getIconType() const { return m_iconType; }
     bool isAlternate() const { return m_isAlternate; }
     bool isDNSPrefetch() const { return m_isDNSPrefetch; }
     bool isPreconnect() const { return m_isPreconnect; }
     bool isLinkPrefetch() const { return m_isLinkPrefetch; }
-    bool isLinkSubresource() const { return m_isLinkSubresource; }
     bool isLinkPreload() const { return m_isLinkPreload; }
     bool isLinkPrerender() const { return m_isLinkPrerender; }
     bool isLinkNext() const { return m_isLinkNext; }
     bool isImport() const { return m_isImport; }
     bool isManifest() const { return m_isManifest; }
+    bool isServiceWorker() const { return m_isServiceWorker; }
 
 private:
     IconType m_iconType;
@@ -64,14 +64,14 @@ private:
     bool m_isDNSPrefetch : 1;
     bool m_isPreconnect : 1;
     bool m_isLinkPrefetch : 1;
-    bool m_isLinkSubresource : 1;
     bool m_isLinkPreload : 1;
     bool m_isLinkPrerender : 1;
     bool m_isLinkNext : 1;
     bool m_isImport : 1;
     bool m_isManifest : 1;
+    bool m_isServiceWorker : 1;
 };
 
-}
+} // namespace blink
 
 #endif

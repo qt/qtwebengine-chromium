@@ -142,12 +142,12 @@ void ICOImageDecoder::decode(size_t index, bool onlySize)
 
     // If we couldn't decode the image but we've received all the data, decoding
     // has failed.
-    if ((!decodeDirectory() || (!onlySize && !decodeAtIndex(index))) && isAllDataReceived())
+    if ((!decodeDirectory() || (!onlySize && !decodeAtIndex(index))) && isAllDataReceived()) {
         setFailed();
     // If we're done decoding this frame, we don't need the BMPImageReader or
     // PNGImageDecoder anymore.  (If we failed, these have already been
     // cleared.)
-    else if ((m_frameBufferCache.size() > index) && (m_frameBufferCache[index].status() == ImageFrame::FrameComplete)) {
+    } else if ((m_frameBufferCache.size() > index) && (m_frameBufferCache[index].getStatus() == ImageFrame::FrameComplete)) {
         m_bmpReaders[index].clear();
         m_pngDecoders[index].clear();
     }
@@ -304,4 +304,4 @@ ICOImageDecoder::ImageType ICOImageDecoder::imageTypeAtIndex(size_t index)
     return strncmp(data, "\x89PNG", 4) ? BMP : PNG;
 }
 
-}
+} // namespace blink

@@ -46,39 +46,6 @@ var SupervisedUserFilteringBehavior = {
 };
 
 /**
- * The type of the history result object. The definition is based on
- * chrome/browser/ui/webui/history_ui.cc:
- *     BrowsingHistoryHandler::HistoryEntry::ToValue()
- * @typedef {{allTimestamps: Array<number>,
- *            blockedVisit: (boolean|undefined),
- *            dateRelativeDay: (string|undefined),
- *            dateShort: string,
- *            dateTimeOfDay: (string|undefined),
- *            deviceName: string,
- *            deviceType: string,
- *            domain: string,
- *            hostFilteringBehavior: (number|undefined),
- *            snippet: (string|undefined),
- *            starred: boolean,
- *            time: number,
- *            title: string,
- *            url: string}}
- */
-var HistoryEntry;
-
-/**
- * The type of the history results info object. The definition is based on
- * chrome/browser/ui/webui/history_ui.cc:
- *     BrowsingHistoryHandler::QueryComplete()
- * @typedef {{finished: boolean,
- *            hasSyncedResults: (boolean|undefined),
- *            queryEndTime: string,
- *            queryStartTime: string,
- *            term: string}}
- */
-var HistoryQuery;
-
-/**
  * Returns true if the mobile (non-desktop) version is being shown.
  * @return {boolean} true if the mobile version is being shown.
  */
@@ -125,6 +92,7 @@ function Visit(result, continued, model) {
   this.url_ = result.url;
   this.domain_ = result.domain;
   this.starred_ = result.starred;
+  this.fallbackFaviconText_ = result.fallbackFaviconText;
 
   // These identify the name and type of the device on which this visit
   // occurred. They will be empty if the visit occurred on the current device.
@@ -144,19 +112,19 @@ function Visit(result, continued, model) {
 
   // See comment in BrowsingHistoryHandler::QueryComplete - we won't always
   // get all of these.
-  this.dateRelativeDay = result.dateRelativeDay || '';
-  this.dateTimeOfDay = result.dateTimeOfDay || '';
-  this.dateShort = result.dateShort || '';
+  this.dateRelativeDay = result.dateRelativeDay;
+  this.dateTimeOfDay = result.dateTimeOfDay;
+  this.dateShort = result.dateShort;
 
   // Shows the filtering behavior for that host (only used for supervised
   // users).
   // A value of |SupervisedUserFilteringBehavior.ALLOW| is not displayed so it
   // is used as the default value.
   this.hostFilteringBehavior = SupervisedUserFilteringBehavior.ALLOW;
-  if (typeof result.hostFilteringBehavior != 'undefined')
+  if (result.hostFilteringBehavior)
     this.hostFilteringBehavior = result.hostFilteringBehavior;
 
-  this.blockedVisit = result.blockedVisit || false;
+  this.blockedVisit = result.blockedVisit;
 
   // Whether this is the continuation of a previous day.
   this.continued = continued;
@@ -252,6 +220,15 @@ Visit.prototype.getResultDOM = function(propertyBag) {
 
   entryBox.appendChild(bookmarkSection);
 
+  if (addTitleFavicon || this.blockedVisit) {
+    var faviconSection = createElementWithClassName('div', 'favicon');
+    if (this.blockedVisit)
+      faviconSection.classList.add('blocked-icon');
+    else
+      this.loadFavicon_(faviconSection);
+    entryBox.appendChild(faviconSection);
+  }
+
   var visitEntryWrapper = /** @type {HTMLElement} */(
       entryBox.appendChild(document.createElement('div')));
   if (addTitleFavicon || this.blockedVisit)
@@ -262,9 +239,6 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   } else {
     var title = visitEntryWrapper.appendChild(
         this.getTitleDOM_(isSearchResult));
-
-    if (addTitleFavicon)
-      this.addFaviconToElement_(visitEntryWrapper);
 
     if (focusless)
       title.querySelector('a').tabIndex = -1;
@@ -394,7 +368,7 @@ Object.defineProperty(Visit.prototype, 'dropDown', {
 Visit.prototype.addHighlightedText_ = function(node, content, highlightText) {
   var i = 0;
   if (highlightText) {
-    var re = new RegExp(Visit.pregQuote_(highlightText), 'gim');
+    var re = new RegExp(quoteString(highlightText), 'gim');
     var match;
     while (match = re.exec(content)) {
       if (match.index > i)
@@ -473,15 +447,42 @@ Visit.prototype.getVisitAttemptDOM_ = function() {
 };
 
 /**
- * Set the favicon for an element.
- * @param {Element} el The DOM element to which to add the icon.
+ * Load the favicon for an element.
+ * @param {Element} faviconDiv The DOM element for which to load the icon.
  * @private
  */
-Visit.prototype.addFaviconToElement_ = function(el) {
-  var url = isMobileVersion() ?
-      getFaviconImageSet(this.url_, 32, 'touch-icon') :
-      getFaviconImageSet(this.url_);
-  el.style.backgroundImage = url;
+Visit.prototype.loadFavicon_ = function(faviconDiv) {
+  if (cr.isAndroid) {
+    // On Android, if a large icon is unavailable, an HTML/CSS  fallback favicon
+    // is generated because Android does not yet support text drawing in native.
+
+    // Check whether a fallback favicon needs to be generated.
+    var desiredPixelSize = 32 * window.devicePixelRatio;
+    var img = new Image();
+    img.onload = this.onLargeFaviconLoadedAndroid_.bind(this, faviconDiv);
+    img.src = 'chrome://large-icon/' + desiredPixelSize + '/' + this.url_;
+  } else {
+    faviconDiv.style.backgroundImage = getFaviconImageSet(this.url_);
+  }
+};
+
+/**
+ * Called when the chrome://large-icon image has finished loading.
+ * @param {Element} faviconDiv The DOM element to add the favicon to.
+ * @param {Event} event The onload event.
+ * @private
+ */
+Visit.prototype.onLargeFaviconLoadedAndroid_ = function(faviconDiv, event) {
+  // The loaded image should either:
+  // - Have the desired size.
+  // OR
+  // - Be 1x1 px with the background color for the fallback icon.
+  var loadedImg = event.target;
+  if (loadedImg.width == 1) {
+    faviconDiv.classList.add('fallback-favicon');
+    faviconDiv.textContent = this.fallbackFaviconText_;
+  }
+  faviconDiv.style.backgroundImage = url(loadedImg.src);
 };
 
 /**
@@ -533,18 +534,6 @@ Visit.prototype.removeEntryFromHistory_ = function(e) {
   this.model_.getView().onBeforeRemove(this);
   this.removeFromHistory();
   e.preventDefault();
-};
-
-// Visit, private, static: ----------------------------------------------------
-
-/**
- * Quote a string so it can be used in a regular expression.
- * @param {string} str The source string.
- * @return {string} The escaped string.
- * @private
- */
-Visit.pregQuote_ = function(str) {
-  return str.replace(/([\\\.\+\*\?\[\^\]\$\(\)\{\}\=\!\<\>\|\:])/g, '\\$1');
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -653,12 +642,6 @@ HistoryModel.prototype.addResults = function(info, results) {
     var isSameDay = lastDay == thisDay;
     this.visits_.push(new Visit(result, isSameDay, this));
     lastDay = thisDay;
-  }
-
-  if (loadTimeData.getBoolean('isUserSignedIn')) {
-    var message = loadTimeData.getString(
-        info.hasSyncedResults ? 'hasSyncedResults' : 'noSyncedResults');
-    this.view_.showNotification(message);
   }
 
   this.updateSearch_();
@@ -893,7 +876,7 @@ HistoryModel.prototype.getGroupByDomain = function() {
 /**
  * Provides an implementation for a single column grid.
  * @param {!Element} root
- * @param {Node} boundary
+ * @param {?Element} boundary
  * @constructor
  * @extends {cr.ui.FocusRow}
  */
@@ -1178,6 +1161,31 @@ HistoryView.prototype.showNotification = function(innerHTML, isWarning) {
 };
 
 /**
+ * Shows a notification about whether there are any synced results, and whether
+ * there are other forms of browsing history on the server.
+ * @param {boolean} hasSyncedResults Whether there are synced results.
+ * @param {boolean} includeOtherFormsOfBrowsingHistory Whether to include
+ *     a sentence about the existence of other forms of browsing history.
+ */
+HistoryView.prototype.showWebHistoryNotification = function(
+    hasSyncedResults, includeOtherFormsOfBrowsingHistory) {
+  var message = '';
+
+  if (loadTimeData.getBoolean('isUserSignedIn')) {
+    message += '<span>' + loadTimeData.getString(
+        hasSyncedResults ? 'hasSyncedResults' : 'noSyncedResults') + '</span>';
+  }
+
+  if (includeOtherFormsOfBrowsingHistory) {
+    message += ' ' /* A whitespace to separate <span>s. */ + '<span>' +
+        loadTimeData.getString('otherFormsOfBrowsingHistory') + '</span>';
+  }
+
+  if (message)
+    this.showNotification(message, false /* isWarning */);
+};
+
+/**
  * @param {Visit} visit The visit about to be removed from this view.
  */
 HistoryView.prototype.onBeforeRemove = function(visit) {
@@ -1285,19 +1293,19 @@ HistoryView.prototype.onEntryRemoved = function() {
  */
 HistoryView.prototype.positionNotificationBar = function() {
   var bar = $('notification-bar');
+  var container = $('top-container');
 
-  // If the bar does not fit beside the editing controls, put it into the
-  // overflow state.
-  if (bar.getBoundingClientRect().top >=
-      $('editing-controls').getBoundingClientRect().bottom) {
-    bar.classList.add('alone');
-  } else {
-    bar.classList.remove('alone');
-  }
+  // If the bar does not fit beside the editing controls, or if it contains
+  // more than one message, put it into the overflow state.
+  var shouldOverflow =
+      (bar.getBoundingClientRect().top >=
+           $('editing-controls').getBoundingClientRect().bottom) ||
+      bar.childElementCount > 1;
+  container.classList.toggle('overflow', shouldOverflow);
 };
 
 /**
- * @param {Element} el An element to look for.
+ * @param {!Element} el An element to look for.
  * @return {boolean} Whether |el| is in |this.focusGrid_|.
  */
 HistoryView.prototype.isInFocusGrid = function(el) {
@@ -1374,6 +1382,8 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
 
   var siteArrow = siteDomainRow.appendChild(
       createElementWithClassName('div', 'site-domain-arrow'));
+  var siteFavicon = siteDomainRow.appendChild(
+      createElementWithClassName('div', 'favicon'));
   var siteDomain = siteDomainRow.appendChild(
       createElementWithClassName('div', 'site-domain'));
   var siteDomainLink = siteDomain.appendChild(new ActionLink);
@@ -1385,7 +1395,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
                                                        domainVisits.length);
   siteDomain.appendChild(numberOfVisits);
 
-  domainVisits[0].addFaviconToElement_(siteDomain);
+  domainVisits[0].loadFavicon_(siteFavicon);
 
   siteDomainWrapper.addEventListener(
       'click', this.toggleGroupedVisits_.bind(this));
@@ -2352,6 +2362,19 @@ function getFilteringStatusDOM(filteringBehavior) {
  */
 function historyResult(info, results) {
   historyModel.addResults(info, results);
+}
+
+/**
+ * Called by the history backend after receiving results and after discovering
+ * the existence of other forms of browsing history.
+ * @param {boolean} hasSyncedResults Whether there are synced results.
+ * @param {boolean} includeOtherFormsOfBrowsingHistory Whether to include
+ *     a sentence about the existence of other forms of browsing history.
+ */
+function showNotification(
+    hasSyncedResults, includeOtherFormsOfBrowsingHistory) {
+  historyView.showWebHistoryNotification(
+      hasSyncedResults, includeOtherFormsOfBrowsingHistory);
 }
 
 /**

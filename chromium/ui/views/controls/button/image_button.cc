@@ -47,9 +47,11 @@ const gfx::ImageSkia& ImageButton::GetImage(ButtonState state) const {
   return images_[state];
 }
 
-void ImageButton::SetImage(ButtonState state, const gfx::ImageSkia* image) {
-  images_[state] = image ? *image : gfx::ImageSkia();
+void ImageButton::SetImage(ButtonState for_state, const gfx::ImageSkia* image) {
+  images_[for_state] = image ? *image : gfx::ImageSkia();
   PreferredSizeChanged();
+  if (state() == for_state)
+    SchedulePaint();
 }
 
 void ImageButton::SetBackground(SkColor color,
@@ -134,13 +136,13 @@ void ImageButton::OnPaint(gfx::Canvas* canvas) {
 // ImageButton, protected:
 
 void ImageButton::OnFocus() {
-  View::OnFocus();
+  CustomButton::OnFocus();
   if (focus_painter_.get())
     SchedulePaint();
 }
 
 void ImageButton::OnBlur() {
-  View::OnBlur();
+  CustomButton::OnBlur();
   if (focus_painter_.get())
     SchedulePaint();
 }

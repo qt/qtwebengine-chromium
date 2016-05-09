@@ -10,12 +10,14 @@
 
 // Test to verify correct operation for externally created decoders.
 
+#include <memory>
+
 #include "testing/gmock/include/gmock/gmock.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/audio_coding/neteq/mock/mock_external_decoder_pcm16b.h"
 #include "webrtc/modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "webrtc/modules/audio_coding/neteq/tools/neteq_external_decoder_test.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_generator.h"
+#include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/test/testsupport/fileutils.h"
 
 namespace webrtc {
@@ -145,16 +147,16 @@ class NetEqExternalDecoderUnitTest : public test::NetEqExternalDecoderTest {
 
   int samples_per_ms() const { return samples_per_ms_; }
  private:
-  rtc::scoped_ptr<MockExternalPcm16B> external_decoder_;
+  std::unique_ptr<MockExternalPcm16B> external_decoder_;
   int samples_per_ms_;
   size_t frame_size_samples_;
-  rtc::scoped_ptr<test::RtpGenerator> rtp_generator_;
+  std::unique_ptr<test::RtpGenerator> rtp_generator_;
   int16_t* input_;
   uint8_t* encoded_;
   size_t payload_size_bytes_;
   uint32_t last_send_time_;
   uint32_t last_arrival_time_;
-  rtc::scoped_ptr<test::InputAudioFile> input_file_;
+  std::unique_ptr<test::InputAudioFile> input_file_;
   WebRtcRTPHeader rtp_header_;
 };
 
@@ -186,26 +188,18 @@ class NetEqExternalVsInternalDecoderTest : public NetEqExternalDecoderUnitTest,
   }
 
   void GetAndVerifyOutput() override {
-    NetEqOutputType output_type;
-    size_t samples_per_channel;
-    size_t num_channels;
     // Get audio from internal decoder instance.
-    EXPECT_EQ(NetEq::kOK,
-              neteq_internal_->GetAudio(kMaxBlockSize,
-                                        output_internal_,
-                                        &samples_per_channel,
-                                        &num_channels,
-                                        &output_type));
-    EXPECT_EQ(1u, num_channels);
+    EXPECT_EQ(NetEq::kOK, neteq_internal_->GetAudio(&output_internal_));
+    EXPECT_EQ(1u, output_internal_.num_channels_);
     EXPECT_EQ(static_cast<size_t>(kOutputLengthMs * sample_rate_hz_ / 1000),
-              samples_per_channel);
+              output_internal_.samples_per_channel_);
 
     // Get audio from external decoder instance.
-    samples_per_channel = GetOutputAudio(kMaxBlockSize, output_, &output_type);
+    GetOutputAudio(&output_);
 
-    for (size_t i = 0; i < samples_per_channel; ++i) {
-      ASSERT_EQ(output_[i], output_internal_[i]) <<
-          "Diff in sample " << i << ".";
+    for (size_t i = 0; i < output_.samples_per_channel_; ++i) {
+      ASSERT_EQ(output_.data_[i], output_internal_.data_[i])
+          << "Diff in sample " << i << ".";
     }
   }
 
@@ -225,9 +219,9 @@ class NetEqExternalVsInternalDecoderTest : public NetEqExternalDecoderUnitTest,
 
  private:
   int sample_rate_hz_;
-  rtc::scoped_ptr<NetEq> neteq_internal_;
-  int16_t output_internal_[kMaxBlockSize];
-  int16_t output_[kMaxBlockSize];
+  std::unique_ptr<NetEq> neteq_internal_;
+  AudioFrame output_internal_;
+  AudioFrame output_;
 };
 
 TEST_F(NetEqExternalVsInternalDecoderTest, RunTest) {
@@ -255,30 +249,30 @@ class LargeTimestampJumpTest : public NetEqExternalDecoderUnitTest,
         .WillRepeatedly(Return(false));
   }
 
-  virtual void UpdateState(NetEqOutputType output_type) {
+  virtual void UpdateState(AudioFrame::SpeechType output_type) {
     switch (test_state_) {
       case kInitialPhase: {
-        if (output_type == kOutputNormal) {
+        if (output_type == AudioFrame::kNormalSpeech) {
           test_state_ = kNormalPhase;
         }
         break;
       }
       case kNormalPhase: {
-        if (output_type == kOutputPLC) {
+        if (output_type == AudioFrame::kPLC) {
           test_state_ = kExpandPhase;
         }
         break;
       }
       case kExpandPhase: {
-        if (output_type == kOutputPLCtoCNG) {
+        if (output_type == AudioFrame::kPLCCNG) {
           test_state_ = kFadedExpandPhase;
-        } else if (output_type == kOutputNormal) {
+        } else if (output_type == AudioFrame::kNormalSpeech) {
           test_state_ = kRecovered;
         }
         break;
       }
       case kFadedExpandPhase: {
-        if (output_type == kOutputNormal) {
+        if (output_type == AudioFrame::kNormalSpeech) {
           test_state_ = kRecovered;
         }
         break;
@@ -290,18 +284,18 @@ class LargeTimestampJumpTest : public NetEqExternalDecoderUnitTest,
   }
 
   void GetAndVerifyOutput() override {
-    size_t num_samples;
-    NetEqOutputType output_type;
-    num_samples = GetOutputAudio(kMaxBlockSize, output_, &output_type);
-    UpdateState(output_type);
+    AudioFrame output;
+    GetOutputAudio(&output);
+    UpdateState(output.speech_type_);
 
     if (test_state_ == kExpandPhase || test_state_ == kFadedExpandPhase) {
       // Don't verify the output in this phase of the test.
       return;
     }
 
-    for (size_t i = 0; i < num_samples; ++i) {
-      if (output_[i] != 0)
+    ASSERT_EQ(1u, output.num_channels_);
+    for (size_t i = 0; i < output.samples_per_channel_; ++i) {
+      if (output.data_[i] != 0)
         return;
     }
     EXPECT_TRUE(false)
@@ -320,9 +314,6 @@ class LargeTimestampJumpTest : public NetEqExternalDecoderUnitTest,
   }
 
   TestStates test_state_;
-
- private:
-  int16_t output_[kMaxBlockSize];
 };
 
 TEST_F(LargeTimestampJumpTest, JumpLongerThanHalfRange) {
@@ -375,22 +366,22 @@ TEST_F(LargeTimestampJumpTest, JumpLongerThanHalfRangeAndWrap) {
 
 class ShortTimestampJumpTest : public LargeTimestampJumpTest {
  protected:
-  void UpdateState(NetEqOutputType output_type) override {
+  void UpdateState(AudioFrame::SpeechType output_type) override {
     switch (test_state_) {
       case kInitialPhase: {
-        if (output_type == kOutputNormal) {
+        if (output_type == AudioFrame::kNormalSpeech) {
           test_state_ = kNormalPhase;
         }
         break;
       }
       case kNormalPhase: {
-        if (output_type == kOutputPLC) {
+        if (output_type == AudioFrame::kPLC) {
           test_state_ = kExpandPhase;
         }
         break;
       }
       case kExpandPhase: {
-        if (output_type == kOutputNormal) {
+        if (output_type == AudioFrame::kNormalSpeech) {
           test_state_ = kRecovered;
         }
         break;

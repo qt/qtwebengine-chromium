@@ -11,7 +11,9 @@ import("//third_party/WebKit/Source/modules/modules.gni")
 visibility = [ "//third_party/WebKit/Source/*" ]
 
 # GYP version: WebKit/Source/modules/modules.gyp:modules
-source_set("modules") {
+component("modules") {
+  output_name = "blink_modules"
+
   visibility = []  # Allow re-assignment of list.
   visibility = [ "//third_party/WebKit/*" ]
 
@@ -40,9 +42,14 @@ source_set("modules") {
     "//third_party/WebKit/Source:inside_blink",
   ]
 
+  defines = [ "BLINK_MODULES_IMPLEMENTATION=1" ]
+
   deps = [
     ":make_modules_generated",
+    "//device/battery:mojo_bindings",
+    "//mojo/public/c/system:for_component",
     "//third_party/WebKit/Source/core",
+    "//third_party/WebKit/public:mojo_bindings_blink",
     "//third_party/icu",
     "//third_party/sqlite",
     "//third_party/zlib",
@@ -56,6 +63,11 @@ source_set("modules") {
     #[buildtype=="Official"', {
     #  'msvs_shard': 5,
     #}],
+  }
+
+  if (remove_webcore_debug_symbols) {
+    configs -= [ "//build/config/compiler:default_symbols" ]
+    configs += [ "//build/config/compiler:no_symbols" ]
   }
 }
 
@@ -74,6 +86,7 @@ source_set("modules_testing") {
 
   deps = [
     "//third_party/WebKit/Source/core",
+    "//third_party/WebKit/Source/modules",
   ]
 }
 

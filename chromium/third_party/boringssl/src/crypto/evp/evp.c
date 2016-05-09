@@ -59,12 +59,11 @@
 #include <assert.h>
 #include <string.h>
 
-#include <openssl/bio.h>
 #include <openssl/dsa.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
-#include <openssl/obj.h>
+#include <openssl/nid.h>
 #include <openssl/rsa.h>
 #include <openssl/thread.h>
 
@@ -195,11 +194,12 @@ int EVP_PKEY_id(const EVP_PKEY *pkey) {
   return pkey->type;
 }
 
-/* TODO(fork): remove the first argument. */
-const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find(ENGINE **pengine, int nid) {
+/* evp_pkey_asn1_find returns the ASN.1 method table for the given |nid|, which
+ * should be one of the |EVP_PKEY_*| values. It returns NULL if |nid| is
+ * unknown. */
+static const EVP_PKEY_ASN1_METHOD *evp_pkey_asn1_find(int nid) {
   switch (nid) {
     case EVP_PKEY_RSA:
-    case EVP_PKEY_RSA2:
       return &rsa_asn1_meth;
     case EVP_PKEY_EC:
       return &ec_asn1_meth;
@@ -211,7 +211,7 @@ const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find(ENGINE **pengine, int nid) {
 }
 
 int EVP_PKEY_type(int nid) {
-  const EVP_PKEY_ASN1_METHOD *meth = EVP_PKEY_asn1_find(NULL, nid);
+  const EVP_PKEY_ASN1_METHOD *meth = evp_pkey_asn1_find(nid);
   if (meth == NULL) {
     return NID_undef;
   }
@@ -310,19 +310,6 @@ int EVP_PKEY_assign(EVP_PKEY *pkey, int type, void *key) {
   return key != NULL;
 }
 
-const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find_str(ENGINE **pengine,
-                                                   const char *name,
-                                                   size_t len) {
-  if (len == 3 && memcmp(name, "RSA", 3) == 0) {
-    return &rsa_asn1_meth;
-  } if (len == 2 && memcmp(name, "EC", 2) == 0) {
-    return &ec_asn1_meth;
-  } else if (len == 3 && memcmp(name, "DSA", 3) == 0) {
-    return &dsa_asn1_meth;
-  }
-  return NULL;
-}
-
 int EVP_PKEY_set_type(EVP_PKEY *pkey, int type) {
   const EVP_PKEY_ASN1_METHOD *ameth;
 
@@ -330,10 +317,10 @@ int EVP_PKEY_set_type(EVP_PKEY *pkey, int type) {
     free_it(pkey);
   }
 
-  ameth = EVP_PKEY_asn1_find(NULL, type);
+  ameth = evp_pkey_asn1_find(type);
   if (ameth == NULL) {
     OPENSSL_PUT_ERROR(EVP, EVP_R_UNSUPPORTED_ALGORITHM);
-    ERR_add_error_dataf("algorithm %d (%s)", type, OBJ_nid2sn(type));
+    ERR_add_error_dataf("algorithm %d", type);
     return 0;
   }
 
@@ -355,41 +342,6 @@ int EVP_PKEY_cmp_parameters(const EVP_PKEY *a, const EVP_PKEY *b) {
     return a->ameth->param_cmp(a, b);
   }
   return -2;
-}
-
-static int print_unsupported(BIO *out, const EVP_PKEY *pkey, int indent,
-                             const char *kstr) {
-  BIO_indent(out, indent, 128);
-  BIO_printf(out, "%s algorithm \"%s\" unsupported\n", kstr,
-             OBJ_nid2ln(pkey->type));
-  return 1;
-}
-
-int EVP_PKEY_print_public(BIO *out, const EVP_PKEY *pkey, int indent,
-                          ASN1_PCTX *pctx) {
-  if (pkey->ameth && pkey->ameth->pub_print) {
-    return pkey->ameth->pub_print(out, pkey, indent, pctx);
-  }
-
-  return print_unsupported(out, pkey, indent, "Public Key");
-}
-
-int EVP_PKEY_print_private(BIO *out, const EVP_PKEY *pkey, int indent,
-                           ASN1_PCTX *pctx) {
-  if (pkey->ameth && pkey->ameth->priv_print) {
-    return pkey->ameth->priv_print(out, pkey, indent, pctx);
-  }
-
-  return print_unsupported(out, pkey, indent, "Private Key");
-}
-
-int EVP_PKEY_print_params(BIO *out, const EVP_PKEY *pkey, int indent,
-                          ASN1_PCTX *pctx) {
-  if (pkey->ameth && pkey->ameth->param_print) {
-    return pkey->ameth->param_print(out, pkey, indent, pctx);
-  }
-
-  return print_unsupported(out, pkey, indent, "Parameters");
 }
 
 int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD *md) {

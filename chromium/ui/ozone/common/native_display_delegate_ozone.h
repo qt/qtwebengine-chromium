@@ -8,14 +8,13 @@
 #include <stdint.h>
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "ui/display/types/native_display_delegate.h"
-#include "ui/ozone/ozone_base_export.h"
 
 namespace ui {
 
-class OZONE_BASE_EXPORT NativeDisplayDelegateOzone
-    : public NativeDisplayDelegate {
+class NativeDisplayDelegateOzone : public NativeDisplayDelegate {
  public:
   NativeDisplayDelegateOzone();
   ~NativeDisplayDelegateOzone() override;
@@ -48,9 +47,10 @@ class OZONE_BASE_EXPORT NativeDisplayDelegateOzone
   bool SetColorCalibrationProfile(
       const ui::DisplaySnapshot& output,
       ui::ColorCalibrationProfile new_profile) override;
-  bool SetGammaRamp(const ui::DisplaySnapshot& output,
-                    const std::vector<GammaRampRGBEntry>& lut) override;
-
+  bool SetColorCorrection(const ui::DisplaySnapshot& output,
+                          const std::vector<GammaRampRGBEntry>& degamma_lut,
+                          const std::vector<GammaRampRGBEntry>& gamma_lut,
+                          const std::vector<float>& correction_matrix) override;
   void AddObserver(NativeDisplayObserver* observer) override;
   void RemoveObserver(NativeDisplayObserver* observer) override;
 

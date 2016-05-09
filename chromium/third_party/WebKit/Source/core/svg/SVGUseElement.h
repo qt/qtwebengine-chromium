@@ -38,9 +38,10 @@ class SVGUseElement final : public SVGGraphicsElement,
     public DocumentResourceClient {
 
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGUseElement);
+    USING_GARBAGE_COLLECTED_MIXIN(SVGUseElement);
+    USING_PRE_FINALIZER(SVGUseElement, dispose);
 public:
-    static PassRefPtrWillBeRawPtr<SVGUseElement> create(Document&);
+    static SVGUseElement* create(Document&);
     ~SVGUseElement() override;
 
     void invalidateShadowTree();
@@ -64,6 +65,8 @@ public:
 private:
     explicit SVGUseElement(Document&);
 
+    void dispose();
+
     FloatRect getBBox() override;
 
     bool isPresentationAttribute(const QualifiedName&) const override;
@@ -86,35 +89,34 @@ private:
     bool selfHasRelativeLengths() const override;
 
     // Instance tree handling
-    void buildShadowAndInstanceTree(SVGElement* target);
+    void buildShadowAndInstanceTree(SVGElement& target);
     void clearInstanceRoot();
-    bool buildShadowTree(SVGElement* target, SVGElement* targetInstance, bool foundUse);
+    Element* createInstanceTree(SVGElement& targetRoot) const;
     void clearShadowTree();
-    bool hasCycleUseReferencing(SVGUseElement*, ContainerNode* targetInstance, SVGElement*& newTarget);
-    bool expandUseElementsInShadowTree(SVGElement*);
-    void expandSymbolElementsInShadowTree(SVGElement*);
-
-    void transferUseAttributesToReplacedElement(SVGElement* from, SVGElement* to) const;
+    bool hasCycleUseReferencing(const SVGUseElement&, const ContainerNode& targetInstance, SVGElement*& newTarget) const;
+    bool expandUseElementsInShadowTree();
+    void cloneNonMarkupEventListeners();
+    void addReferencesToFirstDegreeNestedUseElements(SVGElement& target);
 
     void invalidateDependentShadowTrees();
 
     bool resourceIsStillLoading() const;
+    bool resourceIsValid() const;
     Document* externalDocument() const;
-    bool instanceTreeIsLoading(const SVGElement*);
+    bool instanceTreeIsLoading() const;
     void notifyFinished(Resource*) override;
     String debugName() const override { return "SVGUseElement"; }
-    TreeScope* referencedScope() const;
-    void setDocumentResource(ResourcePtr<DocumentResource>);
+    void setDocumentResource(DocumentResource*);
 
-    RefPtrWillBeMember<SVGAnimatedLength> m_x;
-    RefPtrWillBeMember<SVGAnimatedLength> m_y;
-    RefPtrWillBeMember<SVGAnimatedLength> m_width;
-    RefPtrWillBeMember<SVGAnimatedLength> m_height;
+    Member<SVGAnimatedLength> m_x;
+    Member<SVGAnimatedLength> m_y;
+    Member<SVGAnimatedLength> m_width;
+    Member<SVGAnimatedLength> m_height;
 
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
-    RefPtrWillBeMember<SVGElement> m_targetElementInstance;
-    ResourcePtr<DocumentResource> m_resource;
+    Member<SVGElement> m_targetElementInstance;
+    Member<DocumentResource> m_resource;
 };
 
 } // namespace blink

@@ -19,6 +19,7 @@
 namespace webrtc {
 
 PacketRouter::PacketRouter() : transport_seq_(0) {
+  pacer_thread_checker_.DetachFromThread();
 }
 
 PacketRouter::~PacketRouter() {
@@ -26,24 +27,25 @@ PacketRouter::~PacketRouter() {
 }
 
 void PacketRouter::AddRtpModule(RtpRtcp* rtp_module) {
-  rtc::CritScope cs(&modules_lock_);
+  rtc::CritScope cs(&modules_crit_);
   RTC_DCHECK(std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module) ==
              rtp_modules_.end());
   rtp_modules_.push_back(rtp_module);
 }
 
 void PacketRouter::RemoveRtpModule(RtpRtcp* rtp_module) {
-  rtc::CritScope cs(&modules_lock_);
-  auto it = std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module);
-  RTC_DCHECK(it != rtp_modules_.end());
-  rtp_modules_.erase(it);
+  rtc::CritScope cs(&modules_crit_);
+  RTC_DCHECK(std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module) !=
+             rtp_modules_.end());
+  rtp_modules_.remove(rtp_module);
 }
 
 bool PacketRouter::TimeToSendPacket(uint32_t ssrc,
                                     uint16_t sequence_number,
                                     int64_t capture_timestamp,
                                     bool retransmission) {
-  rtc::CritScope cs(&modules_lock_);
+  RTC_DCHECK(pacer_thread_checker_.CalledOnValidThread());
+  rtc::CritScope cs(&modules_crit_);
   for (auto* rtp_module : rtp_modules_) {
     if (rtp_module->SendingMedia() && ssrc == rtp_module->SSRC()) {
       return rtp_module->TimeToSendPacket(ssrc, sequence_number,
@@ -54,8 +56,9 @@ bool PacketRouter::TimeToSendPacket(uint32_t ssrc,
 }
 
 size_t PacketRouter::TimeToSendPadding(size_t bytes_to_send) {
+  RTC_DCHECK(pacer_thread_checker_.CalledOnValidThread());
   size_t total_bytes_sent = 0;
-  rtc::CritScope cs(&modules_lock_);
+  rtc::CritScope cs(&modules_crit_);
   for (RtpRtcp* module : rtp_modules_) {
     if (module->SendingMedia()) {
       size_t bytes_sent =
@@ -91,7 +94,7 @@ uint16_t PacketRouter::AllocateSequenceNumber() {
 }
 
 bool PacketRouter::SendFeedback(rtcp::TransportFeedback* packet) {
-  rtc::CritScope cs(&modules_lock_);
+  rtc::CritScope cs(&modules_crit_);
   for (auto* rtp_module : rtp_modules_) {
     packet->WithPacketSenderSsrc(rtp_module->SSRC());
     if (rtp_module->SendFeedbackPacket(*packet))

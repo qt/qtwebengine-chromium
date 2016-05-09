@@ -8,6 +8,7 @@
 #ifndef NET_QUIC_QUIC_MULTIPATH_RECEIVED_PACKET_MANAGER_H_
 #define NET_QUIC_QUIC_MULTIPATH_RECEIVED_PACKET_MANAGER_H_
 
+#include <unordered_map>
 #include <vector>
 
 #include "net/quic/quic_protocol.h"
@@ -21,7 +22,7 @@ class QuicMultipathReceivedPacketManagerPeer;
 
 class NET_EXPORT_PRIVATE QuicMultipathReceivedPacketManager {
  public:
-  typedef base::hash_map<QuicPathId, QuicReceivedPacketManager*>
+  typedef std::unordered_map<QuicPathId, QuicReceivedPacketManager*>
       MultipathReceivedPacketManagerMap;
 
   explicit QuicMultipathReceivedPacketManager(QuicConnectionStats* stats);
@@ -38,9 +39,6 @@ class NET_EXPORT_PRIVATE QuicMultipathReceivedPacketManager {
                             QuicByteCount bytes,
                             const QuicPacketHeader& header,
                             QuicTime receipt_time);
-
-  // Called when packet with |packet_number| is revived on path with |path_id|.
-  void RecordPacketRevived(QuicPathId path_id, QuicPacketNumber packet_number);
 
   // Checks whether |packet_number| is missing on path with |path_id|.
   bool IsMissing(QuicPathId path_id, QuicPacketNumber packet_number);

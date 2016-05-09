@@ -94,6 +94,13 @@ ResourceRequest createAccessControlPreflightRequest(const ResourceRequest& reque
                 // Access-Control-Request-Headers header.
                 continue;
             }
+            if (equalIgnoringCase(header.key, "save-data")) {
+                // As a short-term fix, exclude Save-Data from
+                // Access-Control-Request-Headers header.
+                // TODO(rajendrant): crbug.com/601092 Longer-term all simple
+                // headers should be excluded as well.
+                continue;
+            }
             headers.append(header.key.lower());
         }
         std::sort(headers.begin(), headers.end(), WTF::codePointCompareLessThan);
@@ -129,9 +136,9 @@ static String buildAccessControlFailureMessage(const String& detail, SecurityOri
 
 bool passesAccessControlCheck(const ResourceResponse& response, StoredCredentials includeCredentials, SecurityOrigin* securityOrigin, String& errorDescription, WebURLRequest::RequestContext context)
 {
-    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowOriginHeaderName, (new AtomicString("access-control-allow-origin", AtomicString::ConstructFromLiteral)));
-    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowCredentialsHeaderName, (new AtomicString("access-control-allow-credentials", AtomicString::ConstructFromLiteral)));
-    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowSuboriginHeaderName, (new AtomicString("access-control-allow-suborigin", AtomicString::ConstructFromLiteral)));
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowOriginHeaderName, (new AtomicString("access-control-allow-origin")));
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowCredentialsHeaderName, (new AtomicString("access-control-allow-credentials")));
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, allowSuboriginHeaderName, (new AtomicString("access-control-allow-suborigin")));
 
     int statusCode = response.httpStatusCode();
 
@@ -146,7 +153,7 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
     // which implies that all Suborigins are okay as well.
     if (securityOrigin->hasSuborigin() && allowOriginHeaderValue != starAtom) {
         const AtomicString& allowSuboriginHeaderValue = response.httpHeaderField(allowSuboriginHeaderName);
-        AtomicString atomicSuboriginName(securityOrigin->suboriginName());
+        AtomicString atomicSuboriginName(securityOrigin->suborigin()->name());
         if (allowSuboriginHeaderValue != starAtom && allowSuboriginHeaderValue != atomicSuboriginName) {
             errorDescription = buildAccessControlFailureMessage("The 'Access-Control-Allow-Suborigin' header has a value '" + allowSuboriginHeaderValue + "' that is not equal to the supplied suborigin.", securityOrigin);
             return false;
@@ -180,7 +187,7 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
         }
 
         String detail;
-        if (allowOriginHeaderValue.string().find(isOriginSeparator, 0) != kNotFound) {
+        if (allowOriginHeaderValue.getString().find(isOriginSeparator, 0) != kNotFound) {
             detail = "The 'Access-Control-Allow-Origin' header contains multiple values '" + allowOriginHeaderValue + "', but only one is allowed.";
         } else {
             KURL headerOrigin(KURL(), allowOriginHeaderValue);
@@ -237,12 +244,12 @@ bool CrossOriginAccessControl::isLegalRedirectLocation(const KURL& requestURL, S
 {
     // CORS restrictions imposed on Location: URL -- http://www.w3.org/TR/cors/#redirect-steps (steps 2 + 3.)
     if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(requestURL.protocol())) {
-        errorDescription = "The request was redirected to a URL ('" + requestURL.string() + "') which has a disallowed scheme for cross-origin requests.";
+        errorDescription = "The request was redirected to a URL ('" + requestURL.getString() + "') which has a disallowed scheme for cross-origin requests.";
         return false;
     }
 
     if (!(requestURL.user().isEmpty() && requestURL.pass().isEmpty())) {
-        errorDescription = "The request was redirected to a URL ('" + requestURL.string() + "') containing userinfo, which is disallowed for cross-origin requests.";
+        errorDescription = "The request was redirected to a URL ('" + requestURL.getString() + "') containing userinfo, which is disallowed for cross-origin requests.";
         return false;
     }
 

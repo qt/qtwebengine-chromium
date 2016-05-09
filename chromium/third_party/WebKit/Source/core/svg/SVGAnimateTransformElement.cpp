@@ -41,7 +41,7 @@ bool SVGAnimateTransformElement::hasValidAttributeType()
     if (!targetElement)
         return false;
 
-    if (attributeType() == AttributeTypeCSS)
+    if (getAttributeType() == AttributeTypeCSS)
         return false;
 
     return animatedPropertyType() == AnimatedTransformList;
@@ -59,4 +59,4 @@ void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const
     SVGAnimateElement::parseAttribute(name, oldValue, value);
 }
 
-}
+} // namespace blink

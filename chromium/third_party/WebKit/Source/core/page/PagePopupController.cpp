@@ -44,9 +44,9 @@ PagePopupController::PagePopupController(PagePopup& popup, PagePopupClient* clie
     ASSERT(client);
 }
 
-PassRefPtrWillBeRawPtr<PagePopupController> PagePopupController::create(PagePopup& popup, PagePopupClient* client)
+PagePopupController* PagePopupController::create(PagePopup& popup, PagePopupClient* client)
 {
-    return adoptRefWillBeNoop(new PagePopupController(popup, client));
+    return new PagePopupController(popup, client);
 }
 
 void PagePopupController::setValueAndClosePopup(int numValue, const String& stringValue)
@@ -113,11 +113,6 @@ String PagePopupController::formatWeek(int year, int weekNumber, const String& l
 void PagePopupController::clearPagePopupClient()
 {
     m_popupClient = nullptr;
-}
-
-void PagePopupController::histogramEnumeration(const String& name, int sample, int boundaryValue)
-{
-    Platform::current()->histogramEnumeration(name.utf8().data(), sample, boundaryValue);
 }
 
 void PagePopupController::setWindowRect(int x, int y, int width, int height)

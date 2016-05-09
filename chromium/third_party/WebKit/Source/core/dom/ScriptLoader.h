@@ -25,7 +25,6 @@
 #include "core/dom/PendingScript.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
 #include "core/fetch/ScriptResource.h"
 #include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
@@ -37,12 +36,11 @@ class ScriptLoaderClient;
 class ScriptSourceCode;
 class LocalFrame;
 
-class CORE_EXPORT ScriptLoader : public NoBaseWillBeGarbageCollectedFinalized<ScriptLoader>, private ScriptResourceClient {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(ScriptLoader);
+class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>, public ScriptResourceClient {
 public:
-    static PassOwnPtrWillBeRawPtr<ScriptLoader> create(Element* element, bool createdByParser, bool isEvaluated)
+    static RawPtr<ScriptLoader> create(Element* element, bool createdByParser, bool isEvaluated, bool createdDuringDocumentWrite = false)
     {
-        return adoptPtrWillBeNoop(new ScriptLoader(element, createdByParser, isEvaluated));
+        return new ScriptLoader(element, createdByParser, isEvaluated, createdDuringDocumentWrite);
     }
 
     ~ScriptLoader() override;
@@ -68,7 +66,7 @@ public:
     bool willBeParserExecuted() const { return m_willBeParserExecuted; }
     bool readyToBeParserExecuted() const { return m_readyToBeParserExecuted; }
     bool willExecuteWhenDocumentFinishedParsing() const { return m_willExecuteWhenDocumentFinishedParsing; }
-    ResourcePtr<ScriptResource> resource() { return m_resource; }
+    ScriptResource* resource() { return m_resource.get(); }
 
     void setHaveFiredLoadEvent(bool haveFiredLoad) { m_haveFiredLoad = haveFiredLoad; }
     bool isParserInserted() const { return m_parserInserted; }
@@ -81,13 +79,16 @@ public:
     void handleSourceAttribute(const String& sourceUrl);
     void handleAsyncAttribute();
 
-    virtual bool isReady() const { return m_pendingScript.isReady(); }
+    virtual bool isReady() const { return m_pendingScript && m_pendingScript->isReady(); }
+    bool errorOccurred() const { return m_pendingScript && m_pendingScript->errorOccurred(); }
 
     // Clears the connection to the PendingScript (and Element and Resource).
     void detach();
 
+    bool wasCreatedDuringDocumentWrite() { return m_createdDuringDocumentWrite; }
+
 protected:
-    ScriptLoader(Element*, bool createdByParser, bool isEvaluated);
+    ScriptLoader(Element*, bool createdByParser, bool isEvaluated, bool createdDuringDocumentWrite);
 
 private:
     bool ignoresLoadRequest() const;
@@ -102,8 +103,8 @@ private:
     void notifyFinished(Resource*) override;
     String debugName() const override { return "ScriptLoader"; }
 
-    RawPtrWillBeMember<Element> m_element;
-    ResourcePtr<ScriptResource> m_resource;
+    Member<Element> m_element;
+    Member<ScriptResource> m_resource;
     WTF::OrdinalNumber m_startLineNumber;
     String m_characterEncoding;
     String m_fallbackCharacterEncoding;
@@ -117,8 +118,9 @@ private:
     bool m_willExecuteInOrder : 1;
     bool m_willExecuteWhenDocumentFinishedParsing : 1;
     bool m_forceAsync : 1;
+    const bool m_createdDuringDocumentWrite : 1;
 
-    PendingScript m_pendingScript;
+    Member<PendingScript> m_pendingScript;
 };
 
 ScriptLoader* toScriptLoaderIfPossible(Element*);

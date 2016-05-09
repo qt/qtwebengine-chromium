@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/memory/free_deleter.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,7 +24,7 @@ void BoundBoolSetFromScopedPtr(bool* var, scoped_ptr<bool> val) {
 void BoundBoolSetFromScopedPtrFreeDeleter(
     bool* var,
     scoped_ptr<bool, base::FreeDeleter> val) {
-  *var = val;
+  *var = *val;
 }
 
 void BoundBoolSetFromScopedArray(bool* var, scoped_ptr<bool[]> val) {

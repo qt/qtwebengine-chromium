@@ -10,8 +10,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "platform/ThreadSafeFunctional.h"
+#include "platform/graphics/CompositorMutableProperties.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebCompositorMutableProperties.h"
 #include "public/platform/WebTraceLocation.h"
 #include <algorithm>
 
@@ -19,21 +19,21 @@ namespace blink {
 
 static const struct {
     const char* name;
-    WebCompositorMutableProperty property;
+    uint32_t property;
 } allowedProperties[] = {
-    { "opacity", WebCompositorMutablePropertyOpacity },
-    { "scrollleft", WebCompositorMutablePropertyScrollLeft },
-    { "scrolltop", WebCompositorMutablePropertyScrollTop },
-    { "transform", WebCompositorMutablePropertyTransform },
+    { "opacity", CompositorMutableProperty::kOpacity },
+    { "scrollleft", CompositorMutableProperty::kScrollLeft },
+    { "scrolltop", CompositorMutableProperty::kScrollTop },
+    { "transform", CompositorMutableProperty::kTransform },
 };
 
-static WebCompositorMutableProperty compositorMutablePropertyForName(const String& attributeName)
+static uint32_t compositorMutablePropertyForName(const String& attributeName)
 {
     for (const auto& mapping : allowedProperties) {
         if (equalIgnoringCase(mapping.name, attributeName))
             return mapping.property;
     }
-    return WebCompositorMutablePropertyNone;
+    return CompositorMutableProperty::kNone;
 }
 
 static bool isControlThread()
@@ -49,7 +49,7 @@ static bool isCallingCompositorFrameCallback()
 
 static void decrementCompositorProxiedPropertiesForElement(uint64_t elementId, uint32_t compositorMutableProperties)
 {
-    ASSERT(isMainThread());
+    DCHECK(isMainThread());
     Node* node = DOMNodeIds::nodeForId(elementId);
     if (!node)
         return;
@@ -59,7 +59,7 @@ static void decrementCompositorProxiedPropertiesForElement(uint64_t elementId, u
 
 static void incrementCompositorProxiedPropertiesForElement(uint64_t elementId, uint32_t compositorMutableProperties)
 {
-    ASSERT(isMainThread());
+    DCHECK(isMainThread());
     Node* node = DOMNodeIds::nodeForId(elementId);
     if (!node)
         return;
@@ -84,12 +84,12 @@ static uint32_t compositorMutablePropertiesFromNames(const Vector<String>& attri
 {
     uint32_t properties = 0;
     for (const auto& attribute : attributeArray) {
-        properties |= static_cast<uint32_t>(compositorMutablePropertyForName(attribute));
+        properties |= compositorMutablePropertyForName(attribute);
     }
     return properties;
 }
 
-#if ENABLE(ASSERT)
+#if DCHECK_IS_ON()
 static bool sanityCheckMutableProperties(uint32_t properties)
 {
     // Ensures that we only have bits set for valid mutable properties.
@@ -121,9 +121,11 @@ CompositorProxy::CompositorProxy(Element& element, const Vector<String>& attribu
     : m_elementId(DOMNodeIds::idForNode(&element))
     , m_compositorMutableProperties(compositorMutablePropertiesFromNames(attributeArray))
 {
-    ASSERT(isMainThread());
-    ASSERT(m_compositorMutableProperties);
-    ASSERT(sanityCheckMutableProperties(m_compositorMutableProperties));
+    DCHECK(isMainThread());
+    DCHECK(m_compositorMutableProperties);
+#if DCHECK_IS_ON()
+    DCHECK(sanityCheckMutableProperties(m_compositorMutableProperties));
+#endif
 
     incrementCompositorProxiedPropertiesForElement(m_elementId, m_compositorMutableProperties);
 }
@@ -132,9 +134,11 @@ CompositorProxy::CompositorProxy(uint64_t elementId, uint32_t compositorMutableP
     : m_elementId(elementId)
     , m_compositorMutableProperties(compositorMutableProperties)
 {
-    ASSERT(isControlThread());
-    ASSERT(sanityCheckMutableProperties(m_compositorMutableProperties));
-    Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&incrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
+    DCHECK(isControlThread());
+#if DCHECK_IS_ON()
+    DCHECK(sanityCheckMutableProperties(m_compositorMutableProperties));
+#endif
+    Platform::current()->mainThread()->getWebTaskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&incrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
 }
 
 CompositorProxy::~CompositorProxy()
@@ -145,14 +149,14 @@ CompositorProxy::~CompositorProxy()
 
 bool CompositorProxy::supports(const String& attributeName) const
 {
-    return !!(m_compositorMutableProperties & static_cast<uint32_t>(compositorMutablePropertyForName(attributeName)));
+    return m_compositorMutableProperties & compositorMutablePropertyForName(attributeName);
 }
 
 double CompositorProxy::opacity(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyOpacity), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kOpacity, exceptionState))
         return 0.0;
     return m_opacity;
 }
@@ -161,7 +165,7 @@ double CompositorProxy::scrollLeft(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kScrollLeft, exceptionState))
         return 0.0;
     return m_scrollLeft;
 }
@@ -170,7 +174,7 @@ double CompositorProxy::scrollTop(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return 0.0;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kScrollTop, exceptionState))
         return 0.0;
     return m_scrollTop;
 }
@@ -179,7 +183,7 @@ DOMMatrix* CompositorProxy::transform(ExceptionState& exceptionState) const
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return nullptr;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyTransform), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kTransform, exceptionState))
         return nullptr;
     return m_transform;
 }
@@ -188,40 +192,40 @@ void CompositorProxy::setOpacity(double opacity, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyOpacity), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kOpacity, exceptionState))
         return;
     m_opacity = std::min(1., std::max(0., opacity));
-    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyTransform);
+    m_mutatedProperties |= CompositorMutableProperty::kTransform;
 }
 
 void CompositorProxy::setScrollLeft(double scrollLeft, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kScrollLeft, exceptionState))
         return;
     m_scrollLeft = scrollLeft;
-    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyScrollLeft);
+    m_mutatedProperties |= CompositorMutableProperty::kScrollLeft;
 }
 
 void CompositorProxy::setScrollTop(double scrollTop, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kScrollTop, exceptionState))
         return;
     m_scrollTop = scrollTop;
-    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyScrollTop);
+    m_mutatedProperties |= CompositorMutableProperty::kScrollTop;
 }
 
 void CompositorProxy::setTransform(DOMMatrix* transform, ExceptionState& exceptionState)
 {
     if (raiseExceptionIfMutationNotAllowed(exceptionState))
         return;
-    if (raiseExceptionIfNotMutable(static_cast<uint32_t>(WebCompositorMutablePropertyTransform), exceptionState))
+    if (raiseExceptionIfNotMutable(CompositorMutableProperty::kTransform, exceptionState))
         return;
     m_transform = transform;
-    m_mutatedProperties |= static_cast<uint32_t>(WebCompositorMutablePropertyTransform);
+    m_mutatedProperties |= CompositorMutableProperty::kTransform;
 }
 
 bool CompositorProxy::raiseExceptionIfNotMutable(uint32_t property, ExceptionState& exceptionState) const
@@ -239,7 +243,7 @@ void CompositorProxy::disconnect()
     if (isMainThread())
         decrementCompositorProxiedPropertiesForElement(m_elementId, m_compositorMutableProperties);
     else
-        Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&decrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
+        Platform::current()->mainThread()->getWebTaskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&decrementCompositorProxiedPropertiesForElement, m_elementId, m_compositorMutableProperties));
 }
 
 } // namespace blink

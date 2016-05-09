@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <vector>
+
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
@@ -142,20 +144,18 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
 
   // Start the worker, and then...
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
-  version_->StartWorker(CreateReceiverOnCurrentThread(&status));
+  version_->StartWorker(ServiceWorkerMetrics::EventType::UNKNOWN,
+                        CreateReceiverOnCurrentThread(&status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_OK, status);
 
-  // ...dispatch install event.
-  status = SERVICE_WORKER_ERROR_FAILED;
+  // ...update state to installing...
   version_->SetStatus(ServiceWorkerVersion::INSTALLING);
-  version_->DispatchInstallEvent(CreateReceiverOnCurrentThread(&status));
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SERVICE_WORKER_OK, status);
 
+  // ...and update state to installed.
   version_->SetStatus(ServiceWorkerVersion::INSTALLED);
 
-  ASSERT_EQ(4UL, ipc_sink()->message_count());
+  ASSERT_EQ(3UL, ipc_sink()->message_count());
   ASSERT_EQ(0L, dispatcher_host_->bad_message_received_count_);
 
   // We should be sending 1. StartWorker,
@@ -165,13 +165,10 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
   VerifyStateChangedMessage(handle->handle_id(),
                             blink::WebServiceWorkerStateInstalling,
                             ipc_sink()->GetMessageAt(1));
-  // 3. SendMessageToWorker (to send InstallEvent), and
-  EXPECT_EQ(EmbeddedWorkerContextMsg_MessageToWorker::ID,
-            ipc_sink()->GetMessageAt(2)->type());
-  // 4. StateChanged (state == Installed).
+  // 3. StateChanged (state == Installed).
   VerifyStateChangedMessage(handle->handle_id(),
                             blink::WebServiceWorkerStateInstalled,
-                            ipc_sink()->GetMessageAt(3));
+                            ipc_sink()->GetMessageAt(2));
 }
 
 }  // namespace content

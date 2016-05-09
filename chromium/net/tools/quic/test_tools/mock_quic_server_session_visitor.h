@@ -10,15 +10,16 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace net {
-namespace tools {
 namespace test {
 
 class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
  public:
   MockQuicServerSessionVisitor();
-  virtual ~MockQuicServerSessionVisitor();
-  MOCK_METHOD2(OnConnectionClosed,
-               void(QuicConnectionId connection_id, QuicErrorCode error));
+  virtual ~MockQuicServerSessionVisitor() override;
+  MOCK_METHOD3(OnConnectionClosed,
+               void(QuicConnectionId connection_id,
+                    QuicErrorCode error,
+                    const std::string& error_details));
   MOCK_METHOD1(OnWriteBlocked,
                void(QuicBlockedWriterInterface* blocked_writer));
   MOCK_METHOD1(OnConnectionAddedToTimeWaitList,
@@ -31,7 +32,6 @@ class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
 };
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_MOCK_QUIC_SERVER_SESSION_VISITOR_H_

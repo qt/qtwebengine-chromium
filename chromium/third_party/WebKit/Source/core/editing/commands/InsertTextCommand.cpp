@@ -44,20 +44,24 @@ InsertTextCommand::InsertTextCommand(Document& document, const String& text, boo
 {
 }
 
-Position InsertTextCommand::positionInsideTextNode(const Position& p)
+Position InsertTextCommand::positionInsideTextNode(const Position& p, EditingState* editingState)
 {
     Position pos = p;
     if (isTabHTMLSpanElementTextNode(pos.anchorNode())) {
-        RefPtrWillBeRawPtr<Text> textNode = document().createEditingTextNode("");
-        insertNodeAtTabSpanPosition(textNode.get(), pos);
+        RawPtr<Text> textNode = document().createEditingTextNode("");
+        insertNodeAtTabSpanPosition(textNode.get(), pos, editingState);
+        if (editingState->isAborted())
+            return Position();
         return firstPositionInNode(textNode.get());
     }
 
     // Prepare for text input by looking at the specified position.
     // It may be necessary to insert a text node to receive characters.
     if (!pos.computeContainerNode()->isTextNode()) {
-        RefPtrWillBeRawPtr<Text> textNode = document().createEditingTextNode("");
-        insertNodeAt(textNode.get(), pos);
+        RawPtr<Text> textNode = document().createEditingTextNode("");
+        insertNodeAt(textNode.get(), pos, editingState);
+        if (editingState->isAborted())
+            return Position();
         return firstPositionInNode(textNode.get());
     }
 
@@ -102,7 +106,7 @@ bool InsertTextCommand::performOverwrite(const String& text, bool selectInserted
     Position start = endingSelection().start();
     if (start.isNull() || !start.isOffsetInAnchor() || !start.computeContainerNode()->isTextNode())
         return false;
-    RefPtrWillBeRawPtr<Text> textNode = toText(start.computeContainerNode());
+    RawPtr<Text> textNode = toText(start.computeContainerNode());
     if (!textNode)
         return false;
 
@@ -120,7 +124,7 @@ bool InsertTextCommand::performOverwrite(const String& text, bool selectInserted
     return true;
 }
 
-void InsertTextCommand::doApply()
+void InsertTextCommand::doApply(EditingState* editingState)
 {
     ASSERT(m_text.find('\n') == kNotFound);
 
@@ -133,7 +137,9 @@ void InsertTextCommand::doApply()
         if (performTrivialReplace(m_text, m_selectInsertedText))
             return;
         bool endOfSelectionWasAtStartOfBlock = isStartOfBlock(endingSelection().visibleEnd());
-        deleteSelection(false, true, false, false);
+        deleteSelection(editingState, false, true, false, false);
+        if (editingState->isAborted())
+            return;
         // deleteSelection eventually makes a new endingSelection out of a Position. If that Position doesn't have
         // a layoutObject (e.g. it is on a <frameset> in the DOM), the VisibleSelection cannot be canonicalized to
         // anything other than NoSelection. The rest of this function requires a real endingSelection, so bail out.
@@ -174,31 +180,35 @@ void InsertTextCommand::doApply()
     ASSERT(startPosition.computeContainerNode());
     Position positionBeforeStartNode(positionInParentBeforeNode(*startPosition.computeContainerNode()));
     deleteInsignificantText(startPosition, mostForwardCaretPosition(startPosition));
-    if (!startPosition.inDocument())
+    if (!startPosition.inShadowIncludingDocument())
         startPosition = positionBeforeStartNode;
     if (!isVisuallyEquivalentCandidate(startPosition))
         startPosition = mostForwardCaretPosition(startPosition);
 
-    startPosition = positionAvoidingSpecialElementBoundary(startPosition);
+    startPosition = positionAvoidingSpecialElementBoundary(startPosition, editingState);
+    if (editingState->isAborted())
+        return;
 
     Position endPosition;
 
-    if (m_text == "\t") {
-        endPosition = insertTab(startPosition);
-        // TODO(yosin) We should use |PositionMoveType::Character| for
-        // |previousPositionOf()|.
-        startPosition = previousPositionOf(endPosition, PositionMoveType::Character);
+    if (m_text == "\t" && isRichlyEditablePosition(startPosition)) {
+        endPosition = insertTab(startPosition, editingState);
+        if (editingState->isAborted())
+            return;
+        startPosition = previousPositionOf(endPosition, PositionMoveType::GraphemeCluster);
         if (placeholder.isNotNull())
             removePlaceholderAt(placeholder);
     } else {
         // Make sure the document is set up to receive m_text
-        startPosition = positionInsideTextNode(startPosition);
+        startPosition = positionInsideTextNode(startPosition, editingState);
+        if (editingState->isAborted())
+            return;
         ASSERT(startPosition.isOffsetInAnchor());
         ASSERT(startPosition.computeContainerNode());
         ASSERT(startPosition.computeContainerNode()->isTextNode());
         if (placeholder.isNotNull())
             removePlaceholderAt(placeholder);
-        RefPtrWillBeRawPtr<Text> textNode = toText(startPosition.computeContainerNode());
+        RawPtr<Text> textNode = toText(startPosition.computeContainerNode());
         const unsigned offset = startPosition.offsetInContainerNode();
 
         insertTextIntoNode(textNode, offset, m_text);
@@ -220,17 +230,20 @@ void InsertTextCommand::doApply()
     setEndingSelectionWithoutValidation(startPosition, endPosition);
 
     // Handle the case where there is a typing style.
-    if (RefPtrWillBeRawPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle()) {
+    if (RawPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle()) {
         typingStyle->prepareToApplyAt(endPosition, EditingStyle::PreserveWritingDirection);
-        if (!typingStyle->isEmpty())
-            applyStyle(typingStyle.get());
+        if (!typingStyle->isEmpty()) {
+            applyStyle(typingStyle.get(), editingState);
+            if (editingState->isAborted())
+                return;
+        }
     }
 
     if (!m_selectInsertedText)
         setEndingSelection(VisibleSelection(endingSelection().end(), endingSelection().affinity(), endingSelection().isDirectional()));
 }
 
-Position InsertTextCommand::insertTab(const Position& pos)
+Position InsertTextCommand::insertTab(const Position& pos, EditingState* editingState)
 {
     Position insertPos = createVisiblePosition(pos).deepEquivalent();
     if (insertPos.isNull())
@@ -241,21 +254,21 @@ Position InsertTextCommand::insertTab(const Position& pos)
 
     // keep tabs coalesced in tab span
     if (isTabHTMLSpanElementTextNode(node)) {
-        RefPtrWillBeRawPtr<Text> textNode = toText(node);
+        RawPtr<Text> textNode = toText(node);
         insertTextIntoNode(textNode, offset, "\t");
         return Position(textNode.release(), offset + 1);
     }
 
     // create new tab span
-    RefPtrWillBeRawPtr<HTMLSpanElement> spanElement = createTabSpanElement(document());
+    RawPtr<HTMLSpanElement> spanElement = createTabSpanElement(document());
 
     // place it
     if (!node->isTextNode()) {
-        insertNodeAt(spanElement.get(), insertPos);
+        insertNodeAt(spanElement.get(), insertPos, editingState);
     } else {
-        RefPtrWillBeRawPtr<Text> textNode = toText(node);
+        RawPtr<Text> textNode = toText(node);
         if (offset >= textNode->length()) {
-            insertNodeAfter(spanElement, textNode.release());
+            insertNodeAfter(spanElement, textNode.release(), editingState);
         } else {
             // split node to make room for the span
             // NOTE: splitTextNode uses textNode for the
@@ -263,12 +276,14 @@ Position InsertTextCommand::insertTab(const Position& pos)
             // insert the span before it.
             if (offset > 0)
                 splitTextNode(textNode, offset);
-            insertNodeBefore(spanElement, textNode.release());
+            insertNodeBefore(spanElement, textNode.release(), editingState);
         }
     }
+    if (editingState->isAborted())
+        return Position();
 
     // return the position following the new tab
     return lastPositionInNode(spanElement.get());
 }
 
-}
+} // namespace blink

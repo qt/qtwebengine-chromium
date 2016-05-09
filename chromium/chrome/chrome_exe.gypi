@@ -104,8 +104,6 @@
             'chrome_watcher_client',
             '../components/components.gyp:browser_watcher_client',
             '../components/components.gyp:crash_component',
-            '../third_party/crashpad/crashpad/handler/handler.gyp:crashpad_handler_lib',
-            '../third_party/kasko/kasko.gyp:kasko',
           ],
           'sources': [
             'app/chrome_crash_reporter_client.cc',
@@ -160,12 +158,6 @@
             },
           ],
           'conditions': [
-            ['use_allocator!="none"', {
-                'dependencies': [
-                  '<(allocator_target)',
-                ],
-              },
-            ],
             ['profiling==0 and linux_disable_pie==0', {
               'ldflags': [
                 '-pie',
@@ -210,6 +202,7 @@
             '../content/content.gyp:content_app_both',
             # Needed for chrome_main.cc initialization of libraries.
             '../build/linux/system.gyp:pangocairo',
+            'chrome_features.gyp:chrome_common_features',
             # Needed to use the master_preferences functions
             'installer_util',
           ],
@@ -425,12 +418,12 @@
             '../components/components.gyp:crash_component',
             '../components/components.gyp:crash_core_common',
             '../components/components.gyp:flags_ui_switches',
+            '../components/components.gyp:policy',
             '../components/components.gyp:startup_metric_utils_common',
             '../sandbox/sandbox.gyp:sandbox',
             '../third_party/kasko/kasko.gyp:kasko_features',
             '../ui/gfx/gfx.gyp:gfx',
-            '../win8/metro_driver/metro_driver.gyp:metro_driver',
-            '../win8/delegate_execute/delegate_execute.gyp:*',
+            '../win8/win8.gyp:visual_elements_resources',
           ],
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
@@ -467,13 +460,6 @@
               ],
             },
           },
-          'conditions': [
-            ['configuration_policy==1', {
-              'dependencies': [
-                '<(DEPTH)/components/components.gyp:policy',
-              ],
-            }],
-          ],
           'actions': [
             {
               'action_name': 'first_run',
@@ -520,6 +506,7 @@
           ],
           'dependencies': [
              '../base/base.gyp:base',
+             '../components/components.gyp:startup_metric_utils_common',
           ],
         },
       ],
@@ -553,11 +540,13 @@
                 '../components/components.gyp:breakpad_win64',
                 '../components/components.gyp:crash_core_common_win64',
                 '../components/components.gyp:flags_ui_switches_win64',
+                '../components/components.gyp:policy_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',
                 '../sandbox/sandbox.gyp:sandbox_win64',
+                '../third_party/kasko/kasko.gyp:kasko_features',
               ],
               'defines': [
                 '<@(nacl_win64_defines)',
@@ -577,13 +566,6 @@
                   'msvs_target_platform': 'x64',
                 },
               },
-              'conditions': [
-                ['configuration_policy==1', {
-                  'dependencies': [
-                    '<(DEPTH)/components/components.gyp:policy_win64',
-                  ],
-                }],
-              ],
             },
           ],
         }, {  # else (disable_nacl==1)

@@ -70,7 +70,6 @@ set(ly_unittest_sources
   ${ly_base_dir}/unit_test/scale_test.cc
   ${ly_base_dir}/unit_test/unit_test.cc
   ${ly_base_dir}/unit_test/video_common_test.cc
-  ${ly_base_dir}/unit_test/version_test.cc
 )
 
 set(ly_header_files
@@ -111,12 +110,13 @@ endif()
 if(TEST)
   find_library(GTEST_LIBRARY gtest)
   if(GTEST_LIBRARY STREQUAL "GTEST_LIBRARY-NOTFOUND")
-    set(GTEST_SRC_DIR /usr/src/gtest)
+    set(GTEST_SRC_DIR /usr/src/gtest CACHE STRING "Location of gtest sources")
     if(EXISTS ${GTEST_SRC_DIR}/src/gtest-all.cc)
       message(STATUS "building gtest from sources in ${GTEST_SRC_DIR}")
       set(gtest_sources ${GTEST_SRC_DIR}/src/gtest-all.cc)
       add_library(gtest STATIC ${gtest_sources})
       include_directories(${GTEST_SRC_DIR})
+      include_directories(${GTEST_SRC_DIR}/include)
       set(GTEST_LIBRARY gtest)
     else()
       message(FATAL_ERROR "TEST is set but unable to find gtest library")
@@ -133,6 +133,8 @@ endif()
 if(NACL AND NACL_LIBC STREQUAL "newlib")
   target_link_libraries(libyuv_unittest glibc-compat)
 endif()
+
+target_link_libraries(libyuv_unittest gflags)
 
 install(TARGETS ${ly_lib_name} DESTINATION lib)
 install(FILES ${ly_header_files} DESTINATION include/libyuv)

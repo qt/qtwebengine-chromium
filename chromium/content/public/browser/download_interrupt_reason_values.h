@@ -51,6 +51,9 @@ INTERRUPT_REASON(FILE_SECURITY_CHECK_FAILED, 12)
 // a file (as part of resuming a previously interrupted download).
 INTERRUPT_REASON(FILE_TOO_SHORT, 13)
 
+// The partial file didn't match the expected hash.
+INTERRUPT_REASON(FILE_HASH_MISMATCH, 14)
+
 // Network errors.
 
 // Generic network failure.
@@ -105,6 +108,10 @@ INTERRUPT_REASON(SERVER_CERT_PROBLEM, 35)
 
 // Server access forbidden.
 INTERRUPT_REASON(SERVER_FORBIDDEN, 36)
+
+// Unexpected server response. This might indicate that the responding server
+// may not be the intended server.
+INTERRUPT_REASON(SERVER_UNREACHABLE, 37)
 
 // User input.
 

@@ -38,6 +38,7 @@ class SurfaceImpl;
 class ImageImpl;
 struct ConfigDesc;
 class DeviceImpl;
+class StreamImpl;
 
 class DisplayImpl : angle::NonCopyable
 {
@@ -64,8 +65,11 @@ class DisplayImpl : angle::NonCopyable
                                    egl::ImageSibling *buffer,
                                    const egl::AttributeMap &attribs) = 0;
 
-    virtual egl::Error createContext(const egl::Config *config, const gl::Context *shareContext, const egl::AttributeMap &attribs,
-                                     gl::Context **outContext) = 0;
+    virtual gl::Context *createContext(const egl::Config *config,
+                                       const gl::Context *shareContext,
+                                       const egl::AttributeMap &attribs) = 0;
+
+    virtual StreamImpl *createStream(const egl::AttributeMap &attribs) = 0;
 
     virtual egl::Error makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context) = 0;
 
@@ -80,6 +84,11 @@ class DisplayImpl : angle::NonCopyable
     virtual std::string getVendorString() const = 0;
 
     virtual egl::Error getDevice(DeviceImpl **device) = 0;
+
+    virtual egl::Error waitClient() const = 0;
+    virtual egl::Error waitNative(EGLint engine,
+                                  egl::Surface *drawSurface,
+                                  egl::Surface *readSurface) const = 0;
 
     const egl::Caps &getCaps() const;
 

@@ -15,13 +15,14 @@
 #define _USE_MATH_DEFINES
 
 #include <math.h>
+
+#include <memory>
 #include <vector>
 
 #include "webrtc/common_audio/lapped_transform.h"
 #include "webrtc/common_audio/channel_buffer.h"
 #include "webrtc/modules/audio_processing/beamformer/beamformer.h"
 #include "webrtc/modules/audio_processing/beamformer/complex_matrix.h"
-#include "webrtc/system_wrappers/include/scoped_vector.h"
 
 namespace webrtc {
 
@@ -125,7 +126,7 @@ class NonlinearBeamformer
 
   // Deals with the fft transform and blocking.
   size_t chunk_length_;
-  rtc::scoped_ptr<LappedTransform> lapped_transform_;
+  std::unique_ptr<LappedTransform> lapped_transform_;
   float window_[kFftSize];
 
   // Parameters exposed to the user.
@@ -167,9 +168,9 @@ class NonlinearBeamformer
   ComplexMatrixF target_cov_mats_[kNumFreqBins];
   ComplexMatrixF uniform_cov_mat_[kNumFreqBins];
   // Array of length |kNumFreqBins|, Matrix of size |num_input_channels_| x
-  // |num_input_channels_|. ScopedVector has a size equal to the number of
+  // |num_input_channels_|. The vector has a size equal to the number of
   // interferer scenarios.
-  ScopedVector<ComplexMatrixF> interf_cov_mats_[kNumFreqBins];
+  std::vector<std::unique_ptr<ComplexMatrixF>> interf_cov_mats_[kNumFreqBins];
 
   // Of length |kNumFreqBins|.
   float wave_numbers_[kNumFreqBins];

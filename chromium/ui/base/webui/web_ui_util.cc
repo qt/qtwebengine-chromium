@@ -91,9 +91,10 @@ bool ParseScaleFactor(const base::StringPiece& identifier,
 void ParsePathAndScale(const GURL& url,
                        std::string* path,
                        float* scale_factor) {
-  *path = net::UnescapeURLComponent(url.path().substr(1),
-                                    (net::UnescapeRule::URL_SPECIAL_CHARS |
-                                     net::UnescapeRule::SPACES));
+  *path = net::UnescapeURLComponent(
+      url.path().substr(1),
+      net::UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS |
+          net::UnescapeRule::SPACES);
   if (scale_factor)
     *scale_factor = 1.0f;
 
@@ -123,7 +124,7 @@ void SetLoadTimeDataDefaults(const std::string& app_locale,
 }
 
 std::string GetWebUiCssTextDefaults(const std::string& css_template) {
-  std::map<base::StringPiece, std::string> placeholders;
+  ui::TemplateReplacements placeholders;
   placeholders["textDirection"] = GetTextDirection();
   placeholders["fontFamily"] = GetFontFamily();
   placeholders["fontSize"] = GetFontSize();

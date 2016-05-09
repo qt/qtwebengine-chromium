@@ -31,6 +31,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/api/LineLayoutAPIShim.h"
 #include "core/layout/svg/SVGTextQuery.h"
 
 namespace blink {
@@ -49,9 +50,9 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAd
 // It should return getComputedTextLength() when textLength is not specified manually.
 class SVGAnimatedTextLength final : public SVGAnimatedLength {
 public:
-    static PassRefPtrWillBeRawPtr<SVGAnimatedTextLength> create(SVGTextContentElement* contextElement)
+    static SVGAnimatedTextLength* create(SVGTextContentElement* contextElement)
     {
-        return adoptRefWillBeNoop(new SVGAnimatedTextLength(contextElement));
+        return new SVGAnimatedTextLength(contextElement);
     }
 
     SVGLengthTearOff* baseVal() override
@@ -116,7 +117,7 @@ float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchar
     return SVGTextQuery(layoutObject()).subStringLength(charnum, nchars);
 }
 
-PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
+SVGPointTearOff* SVGTextContentElement::getStartPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -129,7 +130,7 @@ PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionO
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
-PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
+SVGPointTearOff* SVGTextContentElement::getEndPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -142,7 +143,7 @@ PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfC
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
-PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState& exceptionState)
+SVGRectTearOff* SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -167,7 +168,7 @@ float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState&
     return SVGTextQuery(layoutObject()).rotationOfCharacter(charnum);
 }
 
-int SVGTextContentElement::getCharNumAtPosition(PassRefPtrWillBeRawPtr<SVGPointTearOff> point, ExceptionState& exceptionState)
+int SVGTextContentElement::getCharNumAtPosition(SVGPointTearOff* point, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
     return SVGTextQuery(layoutObject()).characterNumberAtPosition(point->target()->value());
@@ -209,7 +210,7 @@ bool SVGTextContentElement::isPresentationAttribute(const QualifiedName& name) c
 void SVGTextContentElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
     if (name.matches(XMLNames::spaceAttr)) {
-        DEFINE_STATIC_LOCAL(const AtomicString, preserveString, ("preserve", AtomicString::ConstructFromLiteral));
+        DEFINE_STATIC_LOCAL(const AtomicString, preserveString, ("preserve"));
 
         if (value == preserveString) {
             UseCounter::count(document(), UseCounter::WhiteSpacePreFromXMLSpace);
@@ -250,17 +251,14 @@ bool SVGTextContentElement::selfHasRelativeLengths() const
     return true;
 }
 
-SVGTextContentElement* SVGTextContentElement::elementFromLayoutObject(LayoutObject* layoutObject)
+SVGTextContentElement* SVGTextContentElement::elementFromLineLayoutItem(LineLayoutItem lineLayoutItem)
 {
-    if (!layoutObject)
+    if (!lineLayoutItem || (!lineLayoutItem.isSVGText() && !lineLayoutItem.isSVGInline()))
         return nullptr;
 
-    if (!layoutObject->isSVGText() && !layoutObject->isSVGInline())
-        return nullptr;
-
-    SVGElement* element = toSVGElement(layoutObject->node());
+    SVGElement* element = toSVGElement(lineLayoutItem.node());
     ASSERT(element);
     return isSVGTextContentElement(*element) ? toSVGTextContentElement(element) : 0;
 }
 
-}
+} // namespace blink

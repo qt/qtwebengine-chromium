@@ -46,7 +46,6 @@ public:
     void notifyStoppingActiveDOMObjects();
 
     unsigned activeDOMObjectCount() const;
-    bool hasPendingActivity() const;
 
 protected:
     // Need a default constructor to link core and modules separately.
@@ -56,7 +55,7 @@ protected:
     // constructor ExecutionContext::ExecutionContext()".
     ContextLifecycleNotifier() { }
 
-#if ENABLE(ASSERT)
+#if DCHECK_IS_ON()
     bool contains(ActiveDOMObject*) const;
 #endif
 };

@@ -38,14 +38,14 @@
 
 #include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/CoreAudio.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <map>
+#include <vector>
 
 #include "base/atomicops.h"
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -60,7 +60,8 @@ class AudioBus;
 class AudioManagerMac;
 class DataBuffer;
 
-class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
+class MEDIA_EXPORT AUAudioInputStream
+    : public AgcAudioStream<AudioInputStream> {
  public:
   // The ctor takes all the usual parameters, plus |manager| which is the
   // the audio manager who is creating this object.
@@ -82,26 +83,59 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   bool IsMuted() override;
 
   // Returns the current hardware sample rate for the default input device.
-  MEDIA_EXPORT static int HardwareSampleRate();
+  static int HardwareSampleRate();
 
-  bool started() const { return started_; }
-  AudioUnit audio_unit() const { return audio_unit_; }
-  AudioBufferList* audio_buffer_list() { return &audio_buffer_list_; }
+  // Returns true if the audio unit is active/running.
+  // The result is based on the kAudioOutputUnitProperty_IsRunning property
+  // which exists for output units.
+  bool IsRunning();
+
   AudioDeviceID device_id() const { return input_device_id_; }
   size_t requested_buffer_size() const { return number_of_frames_; }
 
  private:
-  // AudioOutputUnit callback.
-  static OSStatus InputProc(void* user_data,
-                            AudioUnitRenderActionFlags* flags,
-                            const AudioTimeStamp* time_stamp,
-                            UInt32 bus_number,
-                            UInt32 number_of_frames,
-                            AudioBufferList* io_data);
+  static const AudioObjectPropertyAddress kDeviceChangePropertyAddress;
+
+  // Callback functions called on a real-time priority I/O thread from the audio
+  // unit. These methods are called when recorded audio is available.
+  static OSStatus DataIsAvailable(void* context,
+                                  AudioUnitRenderActionFlags* flags,
+                                  const AudioTimeStamp* time_stamp,
+                                  UInt32 bus_number,
+                                  UInt32 number_of_frames,
+                                  AudioBufferList* io_data);
+  OSStatus OnDataIsAvailable(AudioUnitRenderActionFlags* flags,
+                             const AudioTimeStamp* time_stamp,
+                             UInt32 bus_number,
+                             UInt32 number_of_frames);
 
   // Pushes recorded data to consumer of the input audio stream.
   OSStatus Provide(UInt32 number_of_frames, AudioBufferList* io_data,
                    const AudioTimeStamp* time_stamp);
+
+  // Callback functions called on different system threads from the Core Audio
+  // framework. These methods are called when device properties are changed.
+  static OSStatus OnDevicePropertyChanged(
+      AudioObjectID object_id,
+      UInt32 num_addresses,
+      const AudioObjectPropertyAddress addresses[],
+      void* context);
+  OSStatus DevicePropertyChanged(AudioObjectID object_id,
+                                 UInt32 num_addresses,
+                                 const AudioObjectPropertyAddress addresses[]);
+
+  // Updates the |device_property_changes_map_| on the main browser thread,
+  // (CrBrowserMain) which is the same thread as this instance is created on.
+  void DevicePropertyChangedOnMainThread(const std::vector<UInt32>& properties);
+
+  // Updates |last_callback_time_| on the main browser thread.
+  void UpdateDataCallbackTimeOnMainThread(base::TimeTicks now_tick);
+
+  // Registers OnDevicePropertyChanged() to receive notifications when device
+  // properties changes.
+  void RegisterDeviceChangeListener();
+  // Stop listening for changes in device properties.
+  void DeRegisterDeviceChangeListener();
 
   // Gets the fixed capture hardware latency and store it during initialization.
   // Returns 0 if not available.
@@ -129,11 +163,32 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   // expires 5 seconds after calling Start().
   void CheckInputStartupSuccess();
 
+  // Checks (periodically) if a stream is alive by comparing the current time
+  // with the last timestamp stored in a data callback. Calls RestartAudio()
+  // when a restart is required.
+  void CheckIfInputStreamIsAlive();
+
   // Uninitializes the audio unit if needed.
   void CloseAudioUnit();
 
+  // Called by CheckIfInputStreamIsAlive() on the main thread when an audio
+  // restarts is required. Restarts the existing audio stream reusing the
+  // current audio parameters.
+  void RestartAudio();
+
   // Adds extra UMA stats when it has been detected that startup failed.
   void AddHistogramsForFailedStartup();
+
+  // Scans the map of all available property changes (notification types) and
+  // filters out some that make sense to add to UMA stats.
+  void AddDevicePropertyChangesToUMA(bool startup_failed);
+
+  // Updates capture timestamp, current lost frames, and total lost frames and
+  // glitches.
+  void UpdateCaptureTimestamp(const AudioTimeStamp* timestamp);
+
+  // Called from the dtor and when the stream is reset.
+  void ReportAndResetStats();
 
   // Verifies that Open(), Start(), Stop() and Close() are all called on the
   // creating thread which is the main browser thread (CrBrowserMain) on Mac.
@@ -144,6 +199,15 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
 
   // Contains the desired number of audio frames in each callback.
   const size_t number_of_frames_;
+
+  // Stores the number of frames that we actually get callbacks for.
+  // This may be different from what we ask for, so we use this for stats in
+  // order to understand how often this happens and what are the typical values.
+  size_t number_of_frames_provided_;
+
+  // The actual I/O buffer size for the input device connected to the active
+  // AUHAL audio unit.
+  size_t io_buffer_frame_size_;
 
   // Pointer to the object that will receive the recorded audio samples.
   AudioInputCallback* sink_;
@@ -166,9 +230,6 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   // Temporary storage for recorded data. The InputProc() renders into this
   // array as soon as a frame of the desired buffer size has been recorded.
   scoped_ptr<uint8_t[]> audio_data_buffer_;
-
-  // True after successful Start(), false after successful Stop().
-  bool started_;
 
   // Fixed capture hardware latency in frames.
   double hardware_latency_frames_;
@@ -205,6 +266,70 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   // Set to true if the audio unit's IO buffer was changed when Open() was
   // called.
   bool buffer_size_was_changed_;
+
+  // Set to true once when AudioUnitRender() succeeds for the first time.
+  bool audio_unit_render_has_worked_;
+
+  // Maps unique representations of device property notification types and
+  // number of times we have been notified about a change in such a type.
+  // While the notifier is active, this member is modified by several different
+  // internal thread. My guess is that a serial dispatch queue is used under
+  // the hood and it executes one task at a time in the order in which they are
+  // added to the queue. The currently executing task runs on a distinct thread
+  // (which can vary from task to task) that is managed by the dispatch queue.
+  // The map is always read on the creating thread but only while the notifier
+  // is disabled, hence no lock is required.
+  std::map<UInt32, int> device_property_changes_map_;
+
+  // Set to true when we are listening for changes in device properties.
+  // Only touched on the creating thread.
+  bool device_listener_is_active_;
+
+  // Set to true when audio unit is running, or performing IO. False otherwise.
+  bool started_;
+
+  // Stores the timestamp of the previous audio buffer provided by the OS.
+  // We use this in combination with |last_number_of_frames_| to detect when
+  // the OS has decided to skip providing frames (i.e. a glitch).
+  // This can happen in case of high CPU load or excessive blocking on the
+  // callback audio thread.
+  // These variables are only touched on the callback thread and then read
+  // in the dtor (when no longer receiving callbacks).
+  // NOTE: Float64 and UInt32 types are used for native API compatibility.
+  Float64 last_sample_time_;
+  UInt32 last_number_of_frames_;
+  UInt32 total_lost_frames_;
+  UInt32 largest_glitch_frames_;
+  int glitches_detected_;
+
+  // Timer that provides periodic callbacks used to monitor if the input stream
+  // is alive or not.
+  scoped_ptr<base::RepeatingTimer> check_alive_timer_;
+
+  // Time tick set once in each input data callback. The time is measured on
+  // the real-time priority I/O thread but this member is modified and read
+  // on the main thread only.
+  base::TimeTicks last_callback_time_;
+
+  // Counts number of times we get a signal of that a restart seems required.
+  // If it is above a threshold (kNumberOfIndicationsToTriggerRestart), the
+  // current audio stream is closed and a new (using same audio parameters) is
+  // started.
+  size_t number_of_restart_indications_;
+
+  // Counts number of times RestartAudio() has been called. The max number of
+  // attempts is restricted by |kMaxNumberOfRestartAttempts|.
+  // Note that this counter is reset to zero after each successful restart.
+  size_t number_of_restart_attempts_;
+
+  // Counts the total number of times RestartAudio() has been called. It is
+  // set to zero once in the constructor and then never reset again.
+  size_t total_number_of_restart_attempts_;
+
+  // Used to ensure DevicePropertyChangedOnMainThread() is not called when
+  // this object is destroyed.
+  // Note that, all member variables should appear before the WeakPtrFactory.
+  base::WeakPtrFactory<AUAudioInputStream> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AUAudioInputStream);
 };

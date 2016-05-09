@@ -53,13 +53,14 @@ class WebURL;
 class WorkerClients;
 
 // See WebServiceWorkerContextClient for documentation for the methods in this class.
-class MODULES_EXPORT ServiceWorkerGlobalScopeClient : public WillBeHeapSupplement<WorkerClients> {
+class MODULES_EXPORT ServiceWorkerGlobalScopeClient : public Supplement<WorkerClients> {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeClient);
     DISALLOW_NEW();
 public:
     virtual ~ServiceWorkerGlobalScopeClient() { }
 
     // Called from ServiceWorkerClients.
+    virtual void getClient(const WebString&, WebServiceWorkerClientCallbacks*) = 0;
     virtual void getClients(const WebServiceWorkerClientQueryOptions&, WebServiceWorkerClientsCallbacks*) = 0;
     virtual void openWindow(const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
     virtual void setCachedMetadata(const WebURL&, const char*, size_t) = 0;
@@ -68,12 +69,14 @@ public:
     virtual WebURL scope() const = 0;
 
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult) = 0;
+    virtual void didHandleExtendableMessageEvent(int eventID, WebServiceWorkerEventResult) = 0;
     // Calling didHandleFetchEvent without response means no response was
     // provided by the service worker in the fetch events, so fallback to native.
     virtual void didHandleFetchEvent(int fetchEventID) = 0;
     virtual void didHandleFetchEvent(int fetchEventID, const WebServiceWorkerResponse&) = 0;
     virtual void didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult) = 0;
     virtual void didHandleNotificationClickEvent(int eventID, WebServiceWorkerEventResult) = 0;
+    virtual void didHandleNotificationCloseEvent(int eventID, WebServiceWorkerEventResult) = 0;
     virtual void didHandlePushEvent(int pushEventID, WebServiceWorkerEventResult) = 0;
     virtual void didHandleSyncEvent(int syncEventID, WebServiceWorkerEventResult) = 0;
     virtual void postMessageToClient(const WebString& clientUUID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) = 0;
@@ -82,7 +85,7 @@ public:
     virtual void claim(WebServiceWorkerClientsClaimCallbacks*) = 0;
     virtual void focus(const WebString& clientUUID, WebServiceWorkerClientCallbacks*) = 0;
     virtual void navigate(const WebString& clientUUID, const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
-    virtual void registerForeignFetchScopes(const WebVector<WebURL>& subScopes) = 0;
+    virtual void registerForeignFetchScopes(const WebVector<WebURL>& subScopes, const WebVector<WebSecurityOrigin>&) = 0;
 
     static const char* supplementName();
     static ServiceWorkerGlobalScopeClient* from(ExecutionContext*);
@@ -91,7 +94,7 @@ protected:
     ServiceWorkerGlobalScopeClient() { }
 };
 
-MODULES_EXPORT void provideServiceWorkerGlobalScopeClientToWorker(WorkerClients*, PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient>);
+MODULES_EXPORT void provideServiceWorkerGlobalScopeClientToWorker(WorkerClients*, ServiceWorkerGlobalScopeClient*);
 
 } // namespace blink
 

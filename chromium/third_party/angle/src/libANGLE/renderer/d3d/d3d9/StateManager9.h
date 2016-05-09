@@ -19,11 +19,27 @@ namespace rx
 
 class Renderer9;
 
+struct dx_VertexConstants9
+{
+    float depthRange[4];
+    float viewAdjust[4];
+    float viewCoords[4];
+};
+
+struct dx_PixelConstants9
+{
+    float depthRange[4];
+    float viewCoords[4];
+    float depthFront[4];
+};
+
 class StateManager9 final : angle::NonCopyable
 {
   public:
     StateManager9(Renderer9 *renderer9);
     ~StateManager9();
+
+    void initialize();
 
     void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits);
 
@@ -142,6 +158,8 @@ class StateManager9 final : angle::NonCopyable
 
     typedef std::bitset<DIRTY_BIT_MAX> DirtyBits;
 
+    bool mUsingZeroColorMaskWorkaround;
+
     // Currently applied blend state
     gl::BlendState mCurBlendState;
     gl::ColorF mCurBlendColor;
@@ -175,8 +193,8 @@ class StateManager9 final : angle::NonCopyable
     float mCurDepthFront;
     bool mCurIgnoreViewport;
 
-    dx_VertexConstants mVertexConstants;
-    dx_PixelConstants mPixelConstants;
+    dx_VertexConstants9 mVertexConstants;
+    dx_PixelConstants9 mPixelConstants;
     bool mDxUniformsDirty;
 
     // FIXME: Unsupported by D3D9

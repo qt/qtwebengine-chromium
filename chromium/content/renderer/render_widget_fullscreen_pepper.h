@@ -39,7 +39,7 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
   void InvalidateRect(const blink::WebRect& rect) override;
   void ScrollRect(int dx, int dy, const blink::WebRect& rect) override;
   void Destroy() override;
-  void DidChangeCursor(const blink::WebCursorInfo& cursor) override;
+  void PepperDidChangeCursor(const blink::WebCursorInfo& cursor) override;
   void SetLayer(blink::WebLayer* layer) override;
 
   // IPC::Listener implementation. This overrides the implementation
@@ -64,14 +64,14 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
   void DidInitiatePaint() override;
   void DidFlushPaint() override;
   void Close() override;
-  void OnResize(const ViewMsg_Resize_Params& params) override;
+  void OnResize(const ResizeParams& params) override;
 
   // RenderWidgetFullscreen API.
   blink::WebWidget* CreateWebWidget() override;
 
   // RenderWidget overrides.
   GURL GetURLForGraphicsContext3D() override;
-  void SetDeviceScaleFactor(float device_scale_factor) override;
+  void OnDeviceScaleFactorChanged() override;
 
  private:
   // URL that is responsible for this widget, passed to ggl::CreateViewContext.

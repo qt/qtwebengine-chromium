@@ -40,10 +40,8 @@ public:
     // WebFrameWidget overrides:
     void close() override;
     WebSize size() override;
-    void willStartLiveResize() override;
     void resize(const WebSize&) override;
     void resizeVisualViewport(const WebSize&) override;
-    void willEndLiveResize() override;
     void didEnterFullScreen() override;
     void didExitFullScreen() override;
     void beginFrame(double lastFrameTimeMonotonic) override;
@@ -94,13 +92,16 @@ public:
     void setTopControlsHeight(float height, bool topControlsShrinkLayoutSize) override;
     void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) override;
     void setVisibilityState(WebPageVisibilityState, bool isInitialState) override;
+    bool isTransparent() const override;
+    void setIsTransparent(bool) override;
+    void setBaseBackgroundColor(WebColor) override;
     bool forSubframe() const { return false; }
     void scheduleAnimation() override;
 
 private:
     WebWidgetClient* m_client;
     RefPtr<WebViewImpl> m_webView;
-    RefPtrWillBePersistent<WebLocalFrameImpl> m_mainFrame;
+    Persistent<WebLocalFrameImpl> m_mainFrame;
 };
 
 } // namespace blink

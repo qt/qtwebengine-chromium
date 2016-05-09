@@ -81,7 +81,6 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
                                     IPC::Message* reply_msg) {}
 
   virtual void RunBeforeUnloadConfirm(RenderFrameHost* render_frame_host,
-                                      const base::string16& message,
                                       bool is_reload,
                                       IPC::Message* reply_msg) {}
 
@@ -158,7 +157,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void EnterFullscreenMode(const GURL& origin) {}
 
   // Notification that the frame wants to go out of fullscreen mode.
-  virtual void ExitFullscreenMode() {}
+  // |will_cause_resize| indicates whether the fullscreen change causes a
+  // view resize. e.g. This will be false when going from tab fullscreen to
+  // browser fullscreen.
+  virtual void ExitFullscreenMode(bool will_cause_resize) {}
 
   // Let the delegate decide whether postMessage should be delivered to
   // |target_rfh| from a source frame in the given SiteInstance.  This defaults
@@ -183,11 +185,6 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Creates a WebUI object for a frame navigating to |url|. If no WebUI
   // applies, returns null.
   virtual scoped_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(const GURL& url);
-
-#if defined(OS_WIN)
-  // Returns the frame's parent's NativeViewAccessible.
-  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();
-#endif
 
  protected:
   virtual ~RenderFrameHostDelegate() {}

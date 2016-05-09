@@ -7,7 +7,7 @@
 #include "src/base/lazy-instance.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
-#include "src/types-inl.h"
+#include "src/types.h"
 
 namespace v8 {
 namespace internal {
@@ -156,7 +156,6 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   return OpParameter<ElementAccess>(op);
 }
 
-
 #define PURE_OP_LIST(V)                                  \
   V(BooleanNot, Operator::kNoProperties, 1)              \
   V(BooleanToNumber, Operator::kNoProperties, 1)         \
@@ -174,10 +173,16 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   V(NumberShiftLeft, Operator::kNoProperties, 2)         \
   V(NumberShiftRight, Operator::kNoProperties, 2)        \
   V(NumberShiftRightLogical, Operator::kNoProperties, 2) \
+  V(NumberClz32, Operator::kNoProperties, 1)             \
+  V(NumberCeil, Operator::kNoProperties, 1)              \
+  V(NumberFloor, Operator::kNoProperties, 1)             \
+  V(NumberRound, Operator::kNoProperties, 1)             \
+  V(NumberTrunc, Operator::kNoProperties, 1)             \
   V(NumberToInt32, Operator::kNoProperties, 1)           \
   V(NumberToUint32, Operator::kNoProperties, 1)          \
   V(NumberIsHoleNaN, Operator::kNoProperties, 1)         \
   V(PlainPrimitiveToNumber, Operator::kNoProperties, 1)  \
+  V(StringToNumber, Operator::kNoProperties, 1)          \
   V(ChangeTaggedToInt32, Operator::kNoProperties, 1)     \
   V(ChangeTaggedToUint32, Operator::kNoProperties, 1)    \
   V(ChangeTaggedToFloat64, Operator::kNoProperties, 1)   \
@@ -187,7 +192,9 @@ const ElementAccess& ElementAccessOf(const Operator* op) {
   V(ChangeBoolToBit, Operator::kNoProperties, 1)         \
   V(ChangeBitToBool, Operator::kNoProperties, 1)         \
   V(ObjectIsNumber, Operator::kNoProperties, 1)          \
-  V(ObjectIsSmi, Operator::kNoProperties, 1)
+  V(ObjectIsReceiver, Operator::kNoProperties, 1)        \
+  V(ObjectIsSmi, Operator::kNoProperties, 1)             \
+  V(ObjectIsUndetectable, Operator::kNoProperties, 1)
 
 #define NO_THROW_OP_LIST(V)                 \
   V(StringEqual, Operator::kCommutative, 2) \
@@ -253,7 +260,6 @@ NO_THROW_OP_LIST(GET_FROM_CACHE)
 
 
 const Operator* SimplifiedOperatorBuilder::ReferenceEqual(Type* type) {
-  // TODO(titzer): What about the type parameter?
   return new (zone()) Operator(IrOpcode::kReferenceEqual,
                                Operator::kCommutative | Operator::kPure,
                                "ReferenceEqual", 2, 0, 0, 1, 0, 0);

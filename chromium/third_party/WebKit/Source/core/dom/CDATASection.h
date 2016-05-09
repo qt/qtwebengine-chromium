@@ -30,17 +30,17 @@ namespace blink {
 class CDATASection final : public Text {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<CDATASection> create(Document&, const String&);
+    static RawPtr<CDATASection> create(Document&, const String&);
 
 private:
     CDATASection(Document&, const String&);
 
     String nodeName() const override;
-    NodeType nodeType() const override;
-    PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&) override;
+    NodeType getNodeType() const override;
+    RawPtr<Text> cloneWithData(const String&) override;
 };
 
-DEFINE_NODE_TYPE_CASTS(CDATASection, nodeType() == Node::CDATA_SECTION_NODE);
+DEFINE_NODE_TYPE_CASTS(CDATASection, getNodeType() == Node::CDATA_SECTION_NODE);
 
 } // namespace blink
 

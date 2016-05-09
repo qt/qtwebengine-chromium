@@ -5,14 +5,15 @@
 #include "core/imagebitmap/ImageBitmapSource.h"
 
 #include "core/frame/ImageBitmap.h"
+#include "core/imagebitmap/ImageBitmapOptions.h"
 
 namespace blink {
 
-ScriptPromise ImageBitmapSource::fulfillImageBitmap(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ImageBitmap> imageBitmap)
+ScriptPromise ImageBitmapSource::fulfillImageBitmap(ScriptState* scriptState, ImageBitmap* imageBitmap)
 {
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    if (imageBitmap) {
+    if (imageBitmap && imageBitmap->bitmapImage()) {
         resolver->resolve(imageBitmap);
     } else {
         resolver->reject(ScriptValue(scriptState, v8::Null(scriptState->isolate())));
@@ -20,7 +21,7 @@ ScriptPromise ImageBitmapSource::fulfillImageBitmap(ScriptState* scriptState, Pa
     return promise;
 }
 
-ScriptPromise ImageBitmapSource::createImageBitmap(ScriptState* scriptState, EventTarget& eventTarget, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
+ScriptPromise ImageBitmapSource::createImageBitmap(ScriptState* scriptState, EventTarget& eventTarget, int sx, int sy, int sw, int sh, const ImageBitmapOptions& options, ExceptionState& exceptionState)
 {
     return ScriptPromise();
 }

@@ -25,8 +25,8 @@
 
 #include "core/CoreExport.h"
 #include "core/fetch/ImageResource.h"
-#include "core/fetch/ImageResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/ImageResourceObserver.h"
+#include "core/fetch/ResourceClient.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/WeakPtr.h"
@@ -37,20 +37,6 @@ namespace blink {
 class IncrementLoadEventDelayCount;
 class FetchRequest;
 class Document;
-
-class CORE_EXPORT ImageLoaderClient : public WillBeGarbageCollectedMixin {
-public:
-    virtual void notifyImageSourceChanged() = 0;
-
-    // Determines whether the observed ImageResource should have higher priority in the decoded resources cache.
-    virtual bool requestsHighLiveResourceCachePriority() { return false; }
-
-    DEFINE_INLINE_VIRTUAL_TRACE() { }
-
-protected:
-    ImageLoaderClient() { }
-};
-
 class Element;
 class ImageLoader;
 class LayoutImageResource;
@@ -58,9 +44,8 @@ class LayoutImageResource;
 template<typename T> class EventSender;
 using ImageEventSender = EventSender<ImageLoader>;
 
-class CORE_EXPORT ImageLoader : public NoBaseWillBeGarbageCollectedFinalized<ImageLoader>, public ImageResourceClient {
-    WILL_BE_USING_PRE_FINALIZER(ImageLoader, dispose);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(ImageLoader);
+class CORE_EXPORT ImageLoader : public GarbageCollectedFinalized<ImageLoader>, public ImageResourceObserver {
+    USING_PRE_FINALIZER(ImageLoader, dispose);
 public:
     explicit ImageLoader(Element*);
     ~ImageLoader() override;
@@ -116,12 +101,9 @@ public:
     static void dispatchPendingLoadEvents();
     static void dispatchPendingErrorEvents();
 
-    void addClient(ImageLoaderClient*);
-    void removeClient(ImageLoaderClient*);
-
-    bool getImageAnimationPolicy(ImageResource*, ImageAnimationPolicy&) final;
+    bool getImageAnimationPolicy(ImageAnimationPolicy&) final;
 protected:
-    void notifyFinished(Resource*) override;
+    void imageNotifyFinished(ImageResource*) override;
 
 private:
     class Task;
@@ -141,7 +123,6 @@ private:
     void updateLayoutObject();
 
     void setImageWithoutConsideringPendingLoadEvent(ImageResource*);
-    void sourceImageChanged();
     void clearFailedLoadURL();
     void dispatchErrorEvent();
     void crossSiteOrCSPViolationOccurred(AtomicString);
@@ -155,8 +136,6 @@ private:
     // or to schedule a microtask.
     bool shouldLoadImmediately(const KURL&) const;
 
-    void willRemoveClient(ImageLoaderClient&);
-
     // For Oilpan, we must run dispose() as a prefinalizer and call
     // m_image->removeClient(this) (and more.) Otherwise, the ImageResource can invoke
     // didAddClient() for the ImageLoader that is about to die in the current
@@ -164,19 +143,13 @@ private:
     // have already been finalized in the current lazy sweeping.
     void dispose();
 
-#if ENABLE(OILPAN)
-    void clearWeakMembers(Visitor*);
-#endif
-
-    RawPtrWillBeMember<Element> m_element;
-    ResourcePtr<ImageResource> m_image;
+    Member<Element> m_element;
+    Member<ImageResource> m_image;
     // FIXME: Oilpan: We might be able to remove this Persistent hack when
     // ImageResourceClient is traceable.
     GC_PLUGIN_IGNORE("http://crbug.com/383741")
-    RefPtrWillBePersistent<Element> m_keepAlive;
+    Persistent<Element> m_keepAlive;
 
-    // Oilpan: the client references are weak, and managed as such via clearWeakMembers();
-    HashSet<RawPtrWillBeUntracedMember<ImageLoaderClient>> m_clients;
     Timer<ImageLoader> m_derefElementTimer;
     AtomicString m_failedLoadURL;
     WeakPtr<Task> m_pendingTask; // owned by Microtask
@@ -187,9 +160,8 @@ private:
     bool m_loadingImageDocument : 1;
     bool m_elementIsProtected : 1;
     bool m_suppressErrorEvents : 1;
-    unsigned m_highPriorityClientCount;
 };
 
-}
+} // namespace blink
 
 #endif

@@ -21,6 +21,7 @@
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
+#include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -119,9 +120,9 @@ int BrowserPluginGuest::GetGuestProxyRoutingID() {
   if (guest_proxy_routing_id_ != MSG_ROUTING_NONE)
     return guest_proxy_routing_id_;
 
-  // Create a swapped out RenderView for the guest in the embedder renderer
+  // Create a RenderFrameProxyHost for the guest in the embedder renderer
   // process, so that the embedder can access the guest's window object.
-  // On reattachment, we can reuse the same swapped out RenderView because
+  // On reattachment, we can reuse the same RenderFrameProxyHost because
   // the embedder process will always be the same even if the embedder
   // WebContents changes.
   //
@@ -130,17 +131,12 @@ int BrowserPluginGuest::GetGuestProxyRoutingID() {
   // |guest_proxy_routing_id_| and perform any necessary cleanup on Detach
   // to enable this.
   SiteInstance* owner_site_instance = owner_web_contents_->GetSiteInstance();
-  if (SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
-    int proxy_routing_id =
-        GetWebContents()->GetFrameTree()->root()->render_manager()->
-            CreateRenderFrameProxy(owner_site_instance);
-    guest_proxy_routing_id_ = RenderFrameProxyHost::FromID(
-        owner_site_instance->GetProcess()->GetID(), proxy_routing_id)
-            ->GetRenderViewHost()->GetRoutingID();
-  } else {
-    guest_proxy_routing_id_ =
-        GetWebContents()->CreateSwappedOutRenderView(owner_site_instance);
-  }
+  int proxy_routing_id =
+      GetWebContents()->GetFrameTree()->root()->render_manager()->
+          CreateRenderFrameProxy(owner_site_instance);
+  guest_proxy_routing_id_ = RenderFrameProxyHost::FromID(
+      owner_site_instance->GetProcess()->GetID(), proxy_routing_id)
+          ->GetRenderViewHost()->GetRoutingID();
 
   return guest_proxy_routing_id_;
 }
@@ -250,8 +246,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPluginGuest, message)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_CompositorFrameSwappedACK,
-                        OnCompositorFrameSwappedACK)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_DragStatusUpdate,
                         OnDragStatusUpdate)
@@ -264,8 +258,6 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeSetComposition,
                         OnImeSetComposition)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ReclaimCompositorResources,
-                        OnReclaimCompositorResources)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetFocus, OnSetFocus)
@@ -395,24 +387,6 @@ void BrowserPluginGuest::EmbedderVisibilityChanged(bool visible) {
 void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
   SendMessageToEmbedder(
       new BrowserPluginMsg_SetMouseLock(browser_plugin_instance_id(), allow));
-}
-
-// TODO(wjmaclean): Remove this once any remaining users of this pathway
-// are gone.
-void BrowserPluginGuest::SwapCompositorFrame(
-    uint32_t output_surface_id,
-    int host_process_id,
-    int host_routing_id,
-    scoped_ptr<cc::CompositorFrame> frame) {
-  last_pending_frame_.reset(new FrameMsg_CompositorFrameSwapped_Params());
-  frame->AssignTo(&last_pending_frame_->frame);
-  last_pending_frame_->output_surface_id = output_surface_id;
-  last_pending_frame_->producing_route_id = host_routing_id;
-  last_pending_frame_->producing_host_id = host_process_id;
-
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_CompositorFrameSwapped(
-          browser_plugin_instance_id(), *last_pending_frame_));
 }
 
 void BrowserPluginGuest::SetChildFrameSurface(
@@ -752,21 +726,6 @@ void BrowserPluginGuest::Attach(
     WebContentsImpl* embedder_web_contents,
     const BrowserPluginHostMsg_Attach_Params& params) {
   browser_plugin_instance_id_ = browser_plugin_instance_id;
-  // If a guest is detaching from one container and attaching to another
-  // container, then late arriving ACKs may be lost if the mapping from
-  // |browser_plugin_instance_id| to |guest_instance_id| changes. Thus we
-  // ensure that we always get new frames on attachment by ACKing the pending
-  // frame if it's still waiting on the ACK.
-  if (last_pending_frame_) {
-    cc::CompositorFrameAck ack;
-    RenderWidgetHostImpl::SendSwapCompositorFrameAck(
-        last_pending_frame_->producing_route_id,
-        last_pending_frame_->output_surface_id,
-        last_pending_frame_->producing_host_id,
-        ack);
-    last_pending_frame_.reset();
-  }
-
   // The guest is owned by the embedder. Attach is queued up so we cannot
   // change embedders before attach completes. If the embedder goes away,
   // so does the guest and so we will never call WillAttachComplete because
@@ -781,16 +740,15 @@ void BrowserPluginGuest::Attach(
 void BrowserPluginGuest::OnWillAttachComplete(
     WebContentsImpl* embedder_web_contents,
     const BrowserPluginHostMsg_Attach_Params& params) {
-  bool use_cross_process_frames =
-      BrowserPluginGuestMode::UseCrossProcessFramesForGuests();
   // If a RenderView has already been created for this new window, then we need
   // to initialize the browser-side state now so that the RenderFrameHostManager
   // does not create a new RenderView on navigation.
-  if (!use_cross_process_frames && has_render_view_) {
+  if (has_render_view_) {
     // This will trigger a callback to RenderViewReady after a round-trip IPC.
     static_cast<RenderViewHostImpl*>(GetWebContents()->GetRenderViewHost())
         ->GetWidget()
         ->Init();
+    GetWebContents()->GetMainFrame()->Init();
     WebContentsViewGuest* web_contents_view =
         static_cast<WebContentsViewGuest*>(GetWebContents()->GetView());
     if (!web_contents()->GetRenderViewHost()->GetWidget()->GetView()) {
@@ -809,21 +767,9 @@ void BrowserPluginGuest::OnWillAttachComplete(
   RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
       web_contents()->GetRenderWidgetHostView());
   rwhv->RegisterSurfaceNamespaceId();
-
-  if (!use_cross_process_frames)
-    has_render_view_ = true;
+  has_render_view_ = true;
 
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));
-}
-
-void BrowserPluginGuest::OnCompositorFrameSwappedACK(
-    int browser_plugin_instance_id,
-    const FrameHostMsg_CompositorFrameSwappedACK_Params& params) {
-  RenderWidgetHostImpl::SendSwapCompositorFrameAck(params.producing_route_id,
-                                                   params.output_surface_id,
-                                                   params.producing_host_id,
-                                                   params.ack);
-  last_pending_frame_.reset();
 }
 
 void BrowserPluginGuest::OnDetach(int browser_plugin_instance_id) {
@@ -834,8 +780,9 @@ void BrowserPluginGuest::OnDetach(int browser_plugin_instance_id) {
   // it's attached again.
   attached_ = false;
 
-  RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
-       web_contents()->GetRenderWidgetHostView());
+  RenderWidgetHostViewChildFrame* rwhv =
+      static_cast<RenderWidgetHostViewChildFrame*>(
+          web_contents()->GetRenderWidgetHostView());
   // If the guest is terminated, our host may already be gone.
   if (rwhv)
     rwhv->UnregisterSurfaceNamespaceId();
@@ -897,6 +844,7 @@ void BrowserPluginGuest::OnImeSetComposition(
     int selection_end) {
   Send(new InputMsg_ImeSetComposition(routing_id(),
                                       base::UTF8ToUTF16(text), underlines,
+                                      gfx::Range::InvalidRange(),
                                       selection_start, selection_end));
 }
 
@@ -918,15 +866,6 @@ void BrowserPluginGuest::OnExtendSelectionAndDelete(
       web_contents()->GetFocusedFrame());
   if (rfh)
     rfh->ExtendSelectionAndDelete(before, after);
-}
-
-void BrowserPluginGuest::OnReclaimCompositorResources(
-    int browser_plugin_instance_id,
-    const FrameHostMsg_ReclaimCompositorResources_Params& params) {
-  RenderWidgetHostImpl::SendReclaimCompositorResources(params.route_id,
-                                                       params.output_surface_id,
-                                                       params.renderer_host_id,
-                                                       params.ack);
 }
 
 void BrowserPluginGuest::OnLockMouse(bool user_gesture,
@@ -973,6 +912,10 @@ void BrowserPluginGuest::OnSetEditCommandsForNextKeyEvent(
 
 void BrowserPluginGuest::OnSetVisibility(int browser_plugin_instance_id,
                                          bool visible) {
+  // For OOPIF-<webivew>, the remote frame will handle visibility state.
+  if (BrowserPluginGuestMode::UseCrossProcessFramesForGuests())
+    return;
+
   guest_visible_ = visible;
   if (embedder_visible_ && guest_visible_)
     GetWebContents()->WasShown();
@@ -999,10 +942,7 @@ void BrowserPluginGuest::OnUpdateGeometry(int browser_plugin_instance_id,
   // The plugin has moved within the embedder without resizing or the
   // embedder/container's view rect changing.
   guest_window_rect_ = view_rect;
-  RenderWidgetHostImpl* rwh = RenderWidgetHostImpl::From(
-      GetWebContents()->GetRenderViewHost()->GetWidget());
-  if (rwh)
-    rwh->SendScreenRects();
+  GetWebContents()->SendScreenRects();
 }
 
 void BrowserPluginGuest::OnHasTouchEventHandlers(bool accept) {

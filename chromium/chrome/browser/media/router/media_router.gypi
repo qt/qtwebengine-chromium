@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# TODO(crbug.com/596999): Move non-Android code to mojo/
 {
   'variables': {
     # File lists shared with GN build.
@@ -14,8 +15,6 @@
       'issue_manager.h',
       'issues_observer.h',
       'issues_observer.cc',
-      'local_media_routes_observer.cc',
-      'local_media_routes_observer.h',
       'media_route.cc',
       'media_route.h',
       'media_router.h',
@@ -46,23 +45,31 @@
       'presentation_session_messages_observer.cc',
       'presentation_session_messages_observer.h',
       'render_frame_host_id.h',
+      'route_request_result.cc',
+      'route_request_result.h',
     ],
     # Files that are only needed on desktop builds
     'media_router_non_android_sources': [
-      'media_router_mojo_impl.cc',
-      'media_router_mojo_impl.h',
-      'media_router_type_converters.cc',
-      'media_router_type_converters.h',
+      'mojo/media_route_provider_util_win.cc',
+      'mojo/media_route_provider_util_win.h',
+      'mojo/media_router_mojo_metrics.cc',
+      'mojo/media_router_mojo_metrics.h',
+      'mojo/media_router_mojo_impl.cc',
+      'mojo/media_router_mojo_impl.h',
+      'mojo/media_router_type_converters.cc',
+      'mojo/media_router_type_converters.h',
     ],
     'media_router_test_support_sources': [
-      'media_router_mojo_test.cc',
-      'media_router_mojo_test.h',
       'mock_media_router.cc',
       'mock_media_router.h',
       'mock_screen_availability_listener.cc',
       'mock_screen_availability_listener.h',
       'test_helper.cc',
       'test_helper.h',
+    ],
+    'media_router_non_android_test_support_sources': [
+      'mojo/media_router_mojo_test.cc',
+      'mojo/media_router_mojo_test.h',
     ],
   },
 }

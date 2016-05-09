@@ -12,9 +12,10 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
+#include <memory>
+
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/threading/platform_thread_internal_posix.h"
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_restrictions.h"
@@ -29,7 +30,6 @@
 namespace base {
 
 void InitThreading();
-void InitOnThread();
 void TerminateOnThread();
 size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes);
 
@@ -45,19 +45,22 @@ struct ThreadParams {
 };
 
 void* ThreadFunc(void* params) {
-  base::InitOnThread();
-
   PlatformThread::Delegate* delegate = nullptr;
 
   {
-    scoped_ptr<ThreadParams> thread_params(static_cast<ThreadParams*>(params));
+    std::unique_ptr<ThreadParams> thread_params(
+        static_cast<ThreadParams*>(params));
 
     delegate = thread_params->delegate;
     if (!thread_params->joinable)
       base::ThreadRestrictions::SetSingletonAllowed(false);
 
-    if (thread_params->priority != ThreadPriority::NORMAL)
-      PlatformThread::SetCurrentThreadPriority(thread_params->priority);
+#if !defined(OS_NACL)
+    // Threads on linux/android may inherit their priority from the thread
+    // where they were created. This explicitly sets the priority of all new
+    // threads.
+    PlatformThread::SetCurrentThreadPriority(thread_params->priority);
+#endif
   }
 
   ThreadIdNameManager::GetInstance()->RegisterThread(
@@ -97,7 +100,7 @@ bool CreateThread(size_t stack_size,
   if (stack_size > 0)
     pthread_attr_setstacksize(&attributes, stack_size);
 
-  scoped_ptr<ThreadParams> params(new ThreadParams);
+  std::unique_ptr<ThreadParams> params(new ThreadParams);
   params->delegate = delegate;
   params->joinable = joinable;
   params->priority = priority;

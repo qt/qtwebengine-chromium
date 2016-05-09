@@ -23,6 +23,32 @@
             'h264_objc.mm',
           ],
         }],
+        # TODO(hbos): Consider renaming this flag and the below macro to
+        # something which helps distinguish OpenH264/FFmpeg from other H264
+        # implementations.
+        ['rtc_use_h264==1', {
+          'defines': [
+            'WEBRTC_USE_H264',
+          ],
+          'conditions': [
+            ['rtc_initialize_ffmpeg==1', {
+              'defines': [
+                'WEBRTC_INITIALIZE_FFMPEG',
+              ],
+            }],
+          ],
+          'dependencies': [
+            '<(DEPTH)/third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+            '<(DEPTH)/third_party/openh264/openh264.gyp:openh264_encoder',
+            '<(webrtc_root)/common_video/common_video.gyp:common_video',
+          ],
+          'sources': [
+            'h264_decoder_impl.cc',
+            'h264_decoder_impl.h',
+            'h264_encoder_impl.cc',
+            'h264_encoder_impl.h',
+          ],
+        }],
       ],
       'sources': [
         'h264.cc',
@@ -36,12 +62,14 @@
         {
           'target_name': 'webrtc_h264_video_toolbox',
           'type': 'static_library',
+          'includes': [ '../../../../build/objc_common.gypi' ],
           'dependencies': [
-            '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
+            '<(webrtc_root)/base/base.gyp:rtc_base_objc',
           ],
           'link_settings': {
             'xcode_settings': {
               'OTHER_LDFLAGS': [
+                '-framework CoreFoundation',
                 '-framework CoreMedia',
                 '-framework CoreVideo',
                 '-framework VideoToolbox',
@@ -55,6 +83,11 @@
             'h264_video_toolbox_encoder.h',
             'h264_video_toolbox_nalu.cc',
             'h264_video_toolbox_nalu.h',
+          ],
+          'conditions': [
+            ['build_libyuv==1', {
+              'dependencies': ['<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv'],
+            }],
           ],
         }, # webrtc_h264_video_toolbox
       ], # targets

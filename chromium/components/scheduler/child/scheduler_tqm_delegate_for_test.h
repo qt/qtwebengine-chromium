@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_SCHEDULER_TQM_DELEGATE_FOR_TEST_H_
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "components/scheduler/child/scheduler_tqm_delegate.h"
 
@@ -32,8 +33,6 @@ class SchedulerTqmDelegateForTest : public SchedulerTqmDelegate {
   bool RunsTasksOnCurrentThread() const override;
   bool IsNested() const override;
   base::TimeTicks NowTicks() override;
-  void OnNoMoreImmediateWork() override;
-  double CurrentTimeSeconds() const override;
 
   base::SingleThreadTaskRunner* default_task_runner() const {
     return default_task_runner_.get();

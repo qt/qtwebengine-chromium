@@ -156,7 +156,7 @@ void HTMLDocument::setVlinkColor(const AtomicString& value)
     setBodyAttribute(vlinkAttr, value);
 }
 
-PassRefPtrWillBeRawPtr<Document> HTMLDocument::cloneDocumentWithoutChildren()
+RawPtr<Document> HTMLDocument::cloneDocumentWithoutChildren()
 {
     return create(DocumentInit(url()).withRegistrationContext(registrationContext()));
 }
@@ -239,4 +239,4 @@ bool HTMLDocument::isCaseSensitiveAttribute(const QualifiedName& attributeName)
     return !isPossibleHTMLAttr || !htmlCaseInsensitiveAttributesSet->contains(attributeName.localName().impl());
 }
 
-}
+} // namespace blink

@@ -11,13 +11,14 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "url/gurl.h"
+
+struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
 
@@ -68,12 +69,21 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   static scoped_ptr<NavigationHandleImpl> Create(
       const GURL& url,
       FrameTreeNode* frame_tree_node,
-      const base::TimeTicks& navigation_start);
+      bool is_synchronous,
+      bool is_srcdoc,
+      const base::TimeTicks& navigation_start,
+      int pending_nav_entry_id);
   ~NavigationHandleImpl() override;
 
   // NavigationHandle implementation:
   const GURL& GetURL() override;
   bool IsInMainFrame() override;
+  bool IsParentMainFrame() override;
+  bool IsSynchronousNavigation() override;
+  bool IsSrcdoc() override;
+  bool WasServerRedirect() override;
+  int GetFrameTreeNodeId() override;
+  int GetParentFrameTreeNodeId() override;
   const base::TimeTicks& NavigationStart() override;
   bool IsPost() override;
   const Referrer& GetReferrer() override;
@@ -104,11 +114,24 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
 
   NavigatorDelegate* GetDelegate() const;
 
-  // Returns the response headers for the request. This can only be accessed
-  // after a redirect was encountered or after the the navigation is ready to
-  // commit. It should not be modified, as modifications will not be reflected
-  // in the network stack.
+  // Returns the response headers for the request or nullptr if there are none.
+  // This should only be accessed after a redirect was encountered or after the
+  // navigation is ready to commit. The headers returned should not be modified,
+  // as modifications will not be reflected in the network stack.
   const net::HttpResponseHeaders* GetResponseHeaders();
+
+  // Get the unique id from the NavigationEntry associated with this
+  // NavigationHandle. Note that a synchronous, renderer-initiated navigation
+  // will not have a NavigationEntry associated with it, and this will return 0.
+  int pending_nav_entry_id() const { return pending_nav_entry_id_; }
+
+  // Changes the pending NavigationEntry ID for this handle.  This is currently
+  // required during transfer navigations.
+  // TODO(creis): Remove this when transfer navigations do not require pending
+  // entries.  See https://crbug.com/495161.
+  void update_entry_id_for_transfer(int nav_entry_id) {
+    pending_nav_entry_id_ = nav_entry_id;
+  }
 
   void set_net_error_code(net::Error net_error_code) {
     net_error_code_ = net_error_code;
@@ -152,6 +175,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // Called when the URLRequest will be redirected in the network stack.
   // |callback| will be called when all throttles check have completed. This
   // will allow the caller to cancel the navigation or let it proceed.
+  // This will also inform the delegate that the request was redirected.
   void WillRedirectRequest(
       const GURL& new_url,
       bool new_method_is_post,
@@ -160,24 +184,32 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       const ThrottleChecksFinishedCallback& callback);
 
+  // Called when the URLRequest has delivered response headers and metadata.
+  // |callback| will be called when all throttle checks have completed,
+  // allowing the caller to cancel the navigation or let it proceed.
+  // NavigationHandle will not call |callback| with a result of DEFER.
+  // If the result is PROCEED, then 'ReadyToCommitNavigation' will be called
+  // with |render_frame_host| and |response_headers| just before calling
+  // |callback|.
+  void WillProcessResponse(
+      RenderFrameHostImpl* render_frame_host,
+      scoped_refptr<net::HttpResponseHeaders> response_headers,
+      const ThrottleChecksFinishedCallback& callback);
+
   // Returns the FrameTreeNode this navigation is happening in.
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
-
-  // Called when the navigation was redirected. This will update the |url_| and
-  // inform the delegate.
-  void DidRedirectNavigation(const GURL& new_url);
 
   // Called when the navigation is ready to be committed in
   // |render_frame_host|. This will update the |state_| and inform the
   // delegate.
-  void ReadyToCommitNavigation(
-      RenderFrameHostImpl* render_frame_host,
-      scoped_refptr<net::HttpResponseHeaders> response_headers);
+  void ReadyToCommitNavigation(RenderFrameHostImpl* render_frame_host);
 
   // Called when the navigation was committed in |render_frame_host|. This will
   // update the |state_|.
-  void DidCommitNavigation(bool same_page,
-                           RenderFrameHostImpl* render_frame_host);
+  void DidCommitNavigation(
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool same_page,
+      RenderFrameHostImpl* render_frame_host);
 
  private:
   friend class NavigationHandleImplTest;
@@ -190,6 +222,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
     WILL_REDIRECT_REQUEST,
     DEFERRING_REDIRECT,
     CANCELING,
+    WILL_PROCESS_RESPONSE,
+    DEFERRING_RESPONSE,
     READY_TO_COMMIT,
     DID_COMMIT,
     DID_COMMIT_ERROR_PAGE,
@@ -197,10 +231,14 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
 
   NavigationHandleImpl(const GURL& url,
                        FrameTreeNode* frame_tree_node,
-                       const base::TimeTicks& navigation_start);
+                       bool is_synchronous,
+                       bool is_srcdoc,
+                       const base::TimeTicks& navigation_start,
+                       int pending_nav_entry_id);
 
   NavigationThrottle::ThrottleCheckResult CheckWillStartRequest();
   NavigationThrottle::ThrottleCheckResult CheckWillRedirectRequest();
+  NavigationThrottle::ThrottleCheckResult CheckWillProcessResponse();
 
   // Helper function to run and reset the |complete_callback_|. This marks the
   // end of a round of NavigationThrottleChecks.
@@ -219,6 +257,9 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   net::Error net_error_code_;
   RenderFrameHostImpl* render_frame_host_;
   bool is_same_page_;
+  const bool is_synchronous_;
+  const bool is_srcdoc_;
+  bool was_redirected_;
   scoped_refptr<net::HttpResponseHeaders> response_headers_;
 
   // The state the navigation is in.
@@ -239,6 +280,9 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
 
   // The time this navigation started.
   const base::TimeTicks navigation_start_;
+
+  // The unique id of the corresponding NavigationEntry.
+  int pending_nav_entry_id_;
 
   // This callback will be run when all throttle checks have been performed.
   ThrottleChecksFinishedCallback complete_callback_;

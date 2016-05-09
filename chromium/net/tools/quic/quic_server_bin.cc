@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/crypto/proof_source_chromium.h"
 #include "net/quic/quic_protocol.h"
@@ -55,7 +56,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (line->HasSwitch("quic_in_memory_cache_dir")) {
-    net::tools::QuicInMemoryCache::GetInstance()->InitializeFromDirectory(
+    net::QuicInMemoryCache::GetInstance()->InitializeFromDirectory(
         line->GetSwitchValueASCII("quic_in_memory_cache_dir"));
   }
 
@@ -76,17 +77,17 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  net::IPAddressNumber ip;
-  CHECK(net::ParseIPLiteralToNumber("::", &ip));
+  auto ip = net::IPAddress::IPv6AllZeros();
 
   net::QuicConfig config;
-  net::tools::QuicServer server(
+  net::QuicServer server(
       CreateProofSource(line->GetSwitchValuePath("certificate_file"),
                         line->GetSwitchValuePath("key_file")),
-      config, net::QuicSupportedVersions());
+      config, net::QuicCryptoServerConfig::ConfigOptions(),
+      net::QuicSupportedVersions());
   server.SetStrikeRegisterNoStartupPeriod();
 
-  int rc = server.Listen(net::IPEndPoint(ip, FLAGS_port));
+  int rc = server.CreateUDPSocketAndListen(net::IPEndPoint(ip, FLAGS_port));
   if (rc < 0) {
     return 1;
   }

@@ -96,7 +96,7 @@ PassRefPtr<SkImage> DragImage::resizeAndOrientImage(PassRefPtr<SkImage> image, I
         return image;
     }
 
-    RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(size.width(), size.height()));
+    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(size.width(), size.height());
     if (!surface)
         return nullptr;
 
@@ -176,9 +176,9 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     bool drawURLString = true;
     bool clipURLString = false;
     bool clipLabelString = false;
-    float kMaxDragLabelStringWidthDIP = kMaxDragLabelStringWidth / deviceScaleFactor;
+    float maxDragLabelStringWidthDIP = kMaxDragLabelStringWidth / deviceScaleFactor;
 
-    String urlString = url.string();
+    String urlString = url.getString();
     String label = inLabel.stripWhiteSpace();
     if (label.isEmpty()) {
         drawURLString = false;
@@ -188,10 +188,10 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     // First step is drawing the link drag image width.
     TextRun labelRun(label.impl());
     TextRun urlRun(urlString.impl());
-    IntSize labelSize(labelFont.width(labelRun), labelFont.fontMetrics().ascent() + labelFont.fontMetrics().descent());
+    IntSize labelSize(labelFont.width(labelRun), labelFont.getFontMetrics().ascent() + labelFont.getFontMetrics().descent());
 
-    if (labelSize.width() > kMaxDragLabelStringWidthDIP) {
-        labelSize.setWidth(kMaxDragLabelStringWidthDIP);
+    if (labelSize.width() > maxDragLabelStringWidthDIP) {
+        labelSize.setWidth(maxDragLabelStringWidthDIP);
         clipLabelString = true;
     }
 
@@ -200,10 +200,10 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
 
     if (drawURLString) {
         urlStringSize.setWidth(urlFont.width(urlRun));
-        urlStringSize.setHeight(urlFont.fontMetrics().ascent() + urlFont.fontMetrics().descent());
+        urlStringSize.setHeight(urlFont.getFontMetrics().ascent() + urlFont.getFontMetrics().descent());
         imageSize.setHeight(imageSize.height() + urlStringSize.height());
-        if (urlStringSize.width() > kMaxDragLabelStringWidthDIP) {
-            imageSize.setWidth(kMaxDragLabelStringWidthDIP);
+        if (urlStringSize.width() > maxDragLabelStringWidthDIP) {
+            imageSize.setWidth(maxDragLabelStringWidthDIP);
             clipURLString = true;
         } else
             imageSize.setWidth(std::max(labelSize.width(), urlStringSize.width()) + kDragLabelBorderX * 2);
@@ -233,7 +233,7 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     if (drawURLString) {
         if (clipURLString)
             urlString = StringTruncator::centerTruncate(urlString, imageSize.width() - (kDragLabelBorderX * 2.0f), urlFont);
-        IntPoint textPos(kDragLabelBorderX, imageSize.height() - (kLabelBorderYOffset + urlFont.fontMetrics().descent()));
+        IntPoint textPos(kDragLabelBorderX, imageSize.height() - (kLabelBorderYOffset + urlFont.getFontMetrics().descent()));
         TextRun textRun(urlString);
         urlFont.drawText(buffer->canvas(), TextRunPaintInfo(textRun), textPos, deviceScaleFactor, textPaint);
     }
@@ -243,7 +243,7 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
 
     bool hasStrongDirectionality;
     TextRun textRun = textRunWithDirectionality(label, &hasStrongDirectionality);
-    IntPoint textPos(kDragLabelBorderX, kDragLabelBorderY + labelFont.fontDescription().computedPixelSize());
+    IntPoint textPos(kDragLabelBorderX, kDragLabelBorderY + labelFont.getFontDescription().computedPixelSize());
     if (hasStrongDirectionality && textRun.direction() == RTL) {
         float textWidth = labelFont.width(textRun);
         int availableWidth = imageSize.width() - kDragLabelBorderX * 2;

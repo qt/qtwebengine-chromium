@@ -5,11 +5,15 @@
 #include "content/browser/accessibility/browser_accessibility_android.h"
 
 #include "base/i18n/break_iterator.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/app/strings/grit/content_strings.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/common/accessibility_messages.h"
+#include "content/public/common/content_client.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace {
 
@@ -132,6 +136,8 @@ bool BrowserAccessibilityAndroid::IsClickable() const {
   if (!PlatformIsLeaf())
     return false;
 
+  // We are very aggressive about returning true with IsClickable on Android
+  // because there is no way to know for sure what might have a click handler.
   return IsFocusable() || !GetText().empty();
 }
 
@@ -181,7 +187,7 @@ bool BrowserAccessibilityAndroid::IsFocusable() const {
 }
 
 bool BrowserAccessibilityAndroid::IsFocused() const {
-  return manager()->GetFocus(manager()->GetRoot()) == this;
+  return manager()->GetFocus() == this;
 }
 
 bool BrowserAccessibilityAndroid::IsHeading() const {
@@ -300,7 +306,10 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       class_name = "android.app.Dialog";
       break;
     case ui::AX_ROLE_ROOT_WEB_AREA:
-      class_name = "android.webkit.WebView";
+      if (GetParent() == nullptr)
+        class_name = "android.webkit.WebView";
+      else
+        class_name = "android.view.View";
       break;
     case ui::AX_ROLE_MENU_ITEM:
     case ui::AX_ROLE_MENU_ITEM_CHECK_BOX:
@@ -354,10 +363,11 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
   // For color wells, the color is stored in separate attributes.
   // Perhaps we could return color names in the future?
   if (GetRole() == ui::AX_ROLE_COLOR_WELL) {
-    int color = GetIntAttribute(ui::AX_ATTR_COLOR_VALUE);
-    int red = (color >> 16) & 0xFF;
-    int green = (color >> 8) & 0xFF;
-    int blue = color & 0xFF;
+    unsigned int color =
+        static_cast<unsigned int>(GetIntAttribute(ui::AX_ATTR_COLOR_VALUE));
+    unsigned int red = SkColorGetR(color);
+    unsigned int green = SkColorGetG(color);
+    unsigned int blue = SkColorGetB(color);
     return base::UTF8ToUTF16(
         base::StringPrintf("#%02X%02X%02X", red, green, blue));
   }
@@ -405,6 +415,412 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
   }
 
   return text;
+}
+
+base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
+  content::ContentClient* content_client = content::GetContentClient();
+
+  // As a special case, if we have a heading level return a string like
+  // "heading level 1", etc.
+  if (GetRole() == ui::AX_ROLE_HEADING) {
+    int level = GetIntAttribute(ui::AX_ATTR_HIERARCHICAL_LEVEL);
+    if (level >= 1 && level <= 6) {
+      std::vector<base::string16> values;
+      values.push_back(base::IntToString16(level));
+      return base::ReplaceStringPlaceholders(
+          content_client->GetLocalizedString(IDS_AX_ROLE_HEADING_WITH_LEVEL),
+          values, nullptr);
+    }
+  }
+
+  int message_id = -1;
+  switch (GetRole()) {
+    case ui::AX_ROLE_ABBR:
+      // No role description.
+      break;
+    case ui::AX_ROLE_ALERT_DIALOG:
+      message_id = IDS_AX_ROLE_ALERT_DIALOG;
+      break;
+    case ui::AX_ROLE_ALERT:
+      message_id = IDS_AX_ROLE_ALERT;
+      break;
+    case ui::AX_ROLE_ANNOTATION:
+      // No role description.
+      break;
+    case ui::AX_ROLE_APPLICATION:
+      message_id = IDS_AX_ROLE_APPLICATION;
+      break;
+    case ui::AX_ROLE_ARTICLE:
+      message_id = IDS_AX_ROLE_ARTICLE;
+      break;
+    case ui::AX_ROLE_BANNER:
+      message_id = IDS_AX_ROLE_BANNER;
+      break;
+    case ui::AX_ROLE_BLOCKQUOTE:
+      message_id = IDS_AX_ROLE_BLOCKQUOTE;
+      break;
+    case ui::AX_ROLE_BUSY_INDICATOR:
+      message_id = IDS_AX_ROLE_BUSY_INDICATOR;
+      break;
+    case ui::AX_ROLE_BUTTON:
+      message_id = IDS_AX_ROLE_BUTTON;
+      break;
+    case ui::AX_ROLE_BUTTON_DROP_DOWN:
+      message_id = IDS_AX_ROLE_BUTTON_DROP_DOWN;
+      break;
+    case ui::AX_ROLE_CANVAS:
+      // No role description.
+      break;
+    case ui::AX_ROLE_CAPTION:
+      // No role description.
+       break;
+    case ui::AX_ROLE_CELL:
+      message_id = IDS_AX_ROLE_CELL;
+      break;
+    case ui::AX_ROLE_CHECK_BOX:
+      message_id = IDS_AX_ROLE_CHECK_BOX;
+      break;
+    case ui::AX_ROLE_CLIENT:
+      // No role description.
+      break;
+    case ui::AX_ROLE_COLOR_WELL:
+      message_id = IDS_AX_ROLE_COLOR_WELL;
+      break;
+    case ui::AX_ROLE_COLUMN_HEADER:
+      message_id = IDS_AX_ROLE_COLUMN_HEADER;
+      break;
+    case ui::AX_ROLE_COLUMN:
+      // No role description.
+      break;
+    case ui::AX_ROLE_COMBO_BOX:
+      message_id = IDS_AX_ROLE_COMBO_BOX;
+      break;
+    case ui::AX_ROLE_COMPLEMENTARY:
+      message_id = IDS_AX_ROLE_COMPLEMENTARY;
+      break;
+    case ui::AX_ROLE_CONTENT_INFO:
+      message_id = IDS_AX_ROLE_CONTENT_INFO;
+      break;
+    case ui::AX_ROLE_DATE:
+      message_id = IDS_AX_ROLE_DATE;
+      break;
+    case ui::AX_ROLE_DATE_TIME:
+      message_id = IDS_AX_ROLE_DATE_TIME;
+      break;
+    case ui::AX_ROLE_DEFINITION:
+      message_id = IDS_AX_ROLE_DEFINITION;
+      break;
+    case ui::AX_ROLE_DESCRIPTION_LIST_DETAIL:
+      message_id = IDS_AX_ROLE_DEFINITION;
+      break;
+    case ui::AX_ROLE_DESCRIPTION_LIST:
+      // No role description.
+      break;
+    case ui::AX_ROLE_DESCRIPTION_LIST_TERM:
+      // No role description.
+      break;
+    case ui::AX_ROLE_DESKTOP:
+      // No role description.
+      break;
+    case ui::AX_ROLE_DETAILS:
+      // No role description.
+      break;
+    case ui::AX_ROLE_DIALOG:
+      message_id = IDS_AX_ROLE_DIALOG;
+      break;
+    case ui::AX_ROLE_DIRECTORY:
+      message_id = IDS_AX_ROLE_DIRECTORY;
+      break;
+    case ui::AX_ROLE_DISCLOSURE_TRIANGLE:
+      message_id = IDS_AX_ROLE_DISCLOSURE_TRIANGLE;
+      break;
+    case ui::AX_ROLE_DIV:
+      // No role description.
+      break;
+    case ui::AX_ROLE_DOCUMENT:
+      message_id = IDS_AX_ROLE_DOCUMENT;
+      break;
+    case ui::AX_ROLE_EMBEDDED_OBJECT:
+      message_id = IDS_AX_ROLE_EMBEDDED_OBJECT;
+      break;
+    case ui::AX_ROLE_FIGCAPTION:
+      // No role description.
+      break;
+    case ui::AX_ROLE_FIGURE:
+      message_id = IDS_AX_ROLE_GRAPHIC;
+      break;
+    case ui::AX_ROLE_FOOTER:
+      message_id = IDS_AX_ROLE_FOOTER;
+      break;
+    case ui::AX_ROLE_FORM:
+      // No role description.
+      break;
+    case ui::AX_ROLE_GRID:
+      message_id = IDS_AX_ROLE_TABLE;
+      break;
+    case ui::AX_ROLE_GROUP:
+      // No role description.
+      break;
+    case ui::AX_ROLE_HEADING:
+      // Note that code above this switch statement handles headings with
+      // a level, returning a string like "heading level 1", etc.
+      message_id = IDS_AX_ROLE_HEADING;
+      break;
+    case ui::AX_ROLE_IFRAME:
+      // No role description.
+      break;
+    case ui::AX_ROLE_IFRAME_PRESENTATIONAL:
+      // No role description.
+      break;
+    case ui::AX_ROLE_IGNORED:
+      // No role description.
+      break;
+    case ui::AX_ROLE_IMAGE_MAP_LINK:
+      message_id = IDS_AX_ROLE_LINK;
+      break;
+    case ui::AX_ROLE_IMAGE_MAP:
+      message_id = IDS_AX_ROLE_GRAPHIC;
+      break;
+    case ui::AX_ROLE_IMAGE:
+      message_id = IDS_AX_ROLE_GRAPHIC;
+      break;
+    case ui::AX_ROLE_INLINE_TEXT_BOX:
+      // No role description.
+      break;
+    case ui::AX_ROLE_INPUT_TIME:
+      message_id = IDS_AX_ROLE_INPUT_TIME;
+      break;
+    case ui::AX_ROLE_LABEL_TEXT:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LEGEND:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LINE_BREAK:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LINK:
+      message_id = IDS_AX_ROLE_LINK;
+      break;
+    case ui::AX_ROLE_LIST_BOX_OPTION:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LIST_BOX:
+      message_id = IDS_AX_ROLE_LIST_BOX;
+      break;
+    case ui::AX_ROLE_LIST_ITEM:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LIST_MARKER:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LIST:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LOCATION_BAR:
+      // No role description.
+      break;
+    case ui::AX_ROLE_LOG:
+      message_id = IDS_AX_ROLE_LOG;
+      break;
+    case ui::AX_ROLE_MAIN:
+      message_id = IDS_AX_ROLE_MAIN_CONTENT;
+      break;
+    case ui::AX_ROLE_MARK:
+      message_id = IDS_AX_ROLE_MARK;
+      break;
+    case ui::AX_ROLE_MARQUEE:
+      message_id = IDS_AX_ROLE_MARQUEE;
+      break;
+    case ui::AX_ROLE_MATH:
+      message_id = IDS_AX_ROLE_MATH;
+      break;
+    case ui::AX_ROLE_MENU_BAR:
+      message_id = IDS_AX_ROLE_MENU_BAR;
+      break;
+    case ui::AX_ROLE_MENU_BUTTON:
+      message_id = IDS_AX_ROLE_MENU_BUTTON;
+      break;
+    case ui::AX_ROLE_MENU_ITEM:
+      message_id = IDS_AX_ROLE_MENU_ITEM;
+      break;
+    case ui::AX_ROLE_MENU_ITEM_CHECK_BOX:
+      message_id = IDS_AX_ROLE_CHECK_BOX;
+      break;
+    case ui::AX_ROLE_MENU_ITEM_RADIO:
+      message_id = IDS_AX_ROLE_RADIO;
+      break;
+    case ui::AX_ROLE_MENU_LIST_OPTION:
+      // No role description.
+      break;
+    case ui::AX_ROLE_MENU_LIST_POPUP:
+      // No role description.
+      break;
+    case ui::AX_ROLE_MENU:
+      message_id = IDS_AX_ROLE_MENU;
+      break;
+    case ui::AX_ROLE_METER:
+      message_id = IDS_AX_ROLE_METER;
+      break;
+    case ui::AX_ROLE_NAVIGATION:
+      message_id = IDS_AX_ROLE_NAVIGATIONAL_LINK;
+      break;
+    case ui::AX_ROLE_NOTE:
+      message_id = IDS_AX_ROLE_NOTE;
+      break;
+    case ui::AX_ROLE_OUTLINE:
+      message_id = IDS_AX_ROLE_OUTLINE;
+      break;
+    case ui::AX_ROLE_PANE:
+      // No role description.
+      break;
+    case ui::AX_ROLE_PARAGRAPH:
+      // No role description.
+      break;
+    case ui::AX_ROLE_POP_UP_BUTTON:
+      message_id = IDS_AX_ROLE_POP_UP_BUTTON;
+      break;
+    case ui::AX_ROLE_PRE:
+      // No role description.
+      break;
+    case ui::AX_ROLE_PRESENTATIONAL:
+      // No role description.
+      break;
+    case ui::AX_ROLE_PROGRESS_INDICATOR:
+      message_id = IDS_AX_ROLE_PROGRESS_INDICATOR;
+      break;
+    case ui::AX_ROLE_RADIO_BUTTON:
+      message_id = IDS_AX_ROLE_RADIO;
+      break;
+    case ui::AX_ROLE_RADIO_GROUP:
+      message_id = IDS_AX_ROLE_RADIO_GROUP;
+      break;
+    case ui::AX_ROLE_REGION:
+      message_id = IDS_AX_ROLE_REGION;
+      break;
+    case ui::AX_ROLE_ROOT_WEB_AREA:
+      // No role description.
+      break;
+    case ui::AX_ROLE_ROW_HEADER:
+      message_id = IDS_AX_ROLE_ROW_HEADER;
+      break;
+    case ui::AX_ROLE_ROW:
+      // No role description.
+      break;
+    case ui::AX_ROLE_RUBY:
+      // No role description.
+      break;
+    case ui::AX_ROLE_RULER:
+      message_id = IDS_AX_ROLE_RULER;
+      break;
+    case ui::AX_ROLE_SVG_ROOT:
+      message_id = IDS_AX_ROLE_GRAPHIC;
+      break;
+    case ui::AX_ROLE_SCROLL_AREA:
+      // No role description.
+      break;
+    case ui::AX_ROLE_SCROLL_BAR:
+      message_id = IDS_AX_ROLE_SCROLL_BAR;
+      break;
+    case ui::AX_ROLE_SEAMLESS_WEB_AREA:
+      // No role description.
+      break;
+    case ui::AX_ROLE_SEARCH:
+      message_id = IDS_AX_ROLE_SEARCH;
+      break;
+    case ui::AX_ROLE_SEARCH_BOX:
+      message_id = IDS_AX_ROLE_SEARCH_BOX;
+      break;
+    case ui::AX_ROLE_SLIDER:
+      message_id = IDS_AX_ROLE_SLIDER;
+      break;
+    case ui::AX_ROLE_SLIDER_THUMB:
+      // No role description.
+      break;
+    case ui::AX_ROLE_SPIN_BUTTON_PART:
+      // No role description.
+      break;
+    case ui::AX_ROLE_SPIN_BUTTON:
+      message_id = IDS_AX_ROLE_SPIN_BUTTON;
+      break;
+    case ui::AX_ROLE_SPLITTER:
+      message_id = IDS_AX_ROLE_SPLITTER;
+      break;
+    case ui::AX_ROLE_STATIC_TEXT:
+      // No role description.
+      break;
+    case ui::AX_ROLE_STATUS:
+      message_id = IDS_AX_ROLE_STATUS;
+      break;
+    case ui::AX_ROLE_SWITCH:
+      message_id = IDS_AX_ROLE_SWITCH;
+      break;
+    case ui::AX_ROLE_TAB_GROUP:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TAB_LIST:
+      message_id = IDS_AX_ROLE_TAB_LIST;
+      break;
+    case ui::AX_ROLE_TAB_PANEL:
+      message_id = IDS_AX_ROLE_TAB_PANEL;
+      break;
+    case ui::AX_ROLE_TAB:
+      message_id = IDS_AX_ROLE_TAB;
+      break;
+    case ui::AX_ROLE_TABLE_HEADER_CONTAINER:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TABLE:
+      message_id = IDS_AX_ROLE_TABLE;
+      break;
+    case ui::AX_ROLE_TEXT_FIELD:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TIME:
+      message_id = IDS_AX_ROLE_TIME;
+      break;
+    case ui::AX_ROLE_TIMER:
+      message_id = IDS_AX_ROLE_TIMER;
+      break;
+    case ui::AX_ROLE_TITLE_BAR:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TOGGLE_BUTTON:
+      message_id = IDS_AX_ROLE_TOGGLE_BUTTON;
+      break;
+    case ui::AX_ROLE_TOOLBAR:
+      message_id = IDS_AX_ROLE_TOOLBAR;
+      break;
+    case ui::AX_ROLE_TREE_GRID:
+      message_id = IDS_AX_ROLE_TREE_GRID;
+      break;
+    case ui::AX_ROLE_TREE_ITEM:
+      message_id = IDS_AX_ROLE_TREE_ITEM;
+      break;
+    case ui::AX_ROLE_TREE:
+      message_id = IDS_AX_ROLE_TREE;
+      break;
+    case ui::AX_ROLE_UNKNOWN:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TOOLTIP:
+      message_id = IDS_AX_ROLE_TOOLTIP;
+      break;
+    case ui::AX_ROLE_WEB_AREA:
+      // No role description.
+      break;
+    case ui::AX_ROLE_WEB_VIEW:
+      // No role description.
+      break;
+    case ui::AX_ROLE_WINDOW:
+      // No role description.
+      break;
+  }
+
+  if (message_id != -1)
+    return content_client->GetLocalizedString(message_id);
+
+  return base::string16();
 }
 
 int BrowserAccessibilityAndroid::GetItemIndex() const {
@@ -526,13 +942,13 @@ bool BrowserAccessibilityAndroid::Scroll(int direction) const {
   // Figure out the bounding box of the visible portion of this scrollable
   // view so we know how much to scroll by.
   gfx::Rect bounds;
-  if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA) {
+  if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA && !GetParent()) {
     // If this is the root web area, use the bounds of the view to determine
     // how big one page is.
     if (!manager()->delegate())
       return false;
     bounds = manager()->delegate()->AccessibilityGetViewBounds();
-  } else if (GetRole() == ui::AX_ROLE_WEB_AREA) {
+  } else if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA && GetParent()) {
     // If this is a web area inside of an iframe, try to use the bounds of
     // the containing element.
     BrowserAccessibility* parent = GetParent();
@@ -924,9 +1340,8 @@ bool BrowserAccessibilityAndroid::HasOnlyTextAndImageChildren() const {
 }
 
 bool BrowserAccessibilityAndroid::IsIframe() const {
-  base::string16 html_tag = GetString16Attribute(
-      ui::AX_ATTR_HTML_TAG);
-  return html_tag == base::ASCIIToUTF16("iframe");
+  return (GetRole() == ui::AX_ROLE_IFRAME ||
+          GetRole() == ui::AX_ROLE_IFRAME_PRESENTATIONAL);
 }
 
 void BrowserAccessibilityAndroid::OnDataChanged() {

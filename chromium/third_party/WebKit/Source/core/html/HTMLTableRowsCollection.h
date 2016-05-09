@@ -39,7 +39,7 @@ class HTMLTableRowElement;
 
 class HTMLTableRowsCollection final : public HTMLCollection {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> create(ContainerNode&, CollectionType);
+    static RawPtr<HTMLTableRowsCollection> create(ContainerNode&, CollectionType);
 
     HTMLTableRowElement* item(unsigned offset) const { return toHTMLTableRowElement(HTMLCollection::item(offset)); }
 
@@ -54,6 +54,6 @@ private:
 
 DEFINE_TYPE_CASTS(HTMLTableRowsCollection, LiveNodeListBase, collection, collection->type() == TableRows, collection.type() == TableRows);
 
-} // namespace
+} // namespace blink
 
 #endif

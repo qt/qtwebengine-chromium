@@ -30,6 +30,7 @@
 #include "core/layout/LayoutObject.h"
 #include "platform/PlatformWheelEvent.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/scroll/MainThreadScrollingReason.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
@@ -40,7 +41,7 @@ class WebScrollbarLayer;
 
 namespace blink {
 
-typedef unsigned MainThreadScrollingReasons;
+using MainThreadScrollingReasons = uint32_t;
 
 class LocalFrame;
 class FrameView;
@@ -48,14 +49,13 @@ class GraphicsLayer;
 class Page;
 class Region;
 class ScrollableArea;
-class WebCompositorAnimationTimeline;
+class CompositorAnimationTimeline;
 class WebLayerTreeView;
 
-class CORE_EXPORT ScrollingCoordinator final : public NoBaseWillBeGarbageCollectedFinalized<ScrollingCoordinator> {
+class CORE_EXPORT ScrollingCoordinator final : public GarbageCollectedFinalized<ScrollingCoordinator> {
     WTF_MAKE_NONCOPYABLE(ScrollingCoordinator);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(ScrollingCoordinator);
 public:
-    static PassOwnPtrWillBeRawPtr<ScrollingCoordinator> create(Page*);
+    static ScrollingCoordinator* create(Page*);
 
     ~ScrollingCoordinator();
     DECLARE_TRACE();
@@ -75,9 +75,6 @@ public:
 
     void updateAfterCompositingChangeIfNeeded();
 
-    void updateHaveWheelEventHandlers();
-    void updateHaveScrollEventHandlers();
-
     // Should be called whenever a scrollable area is added or removed, or gains/loses a composited layer.
     void scrollableAreasDidChange();
 
@@ -95,12 +92,6 @@ public:
     void handleWheelEventPhase(PlatformWheelEventPhase);
 #endif
 
-    enum MainThreadScrollingReasonFlags {
-        HasBackgroundAttachmentFixedObjects = 1 << 0,
-        HasNonLayerViewportConstrainedObjects = 1 << 1,
-        ThreadedScrollingDisabled = 1 << 2
-    };
-
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
@@ -115,14 +106,16 @@ public:
     void touchEventTargetRectsDidChange();
     void willDestroyLayer(PaintLayer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, const PaintLayer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, const PaintLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
     Region computeShouldHandleScrollGestureOnMainThreadRegion(const LocalFrame*, const IntPoint& frameLocation) const;
 
     void updateTouchEventTargetRectsIfNeeded();
+
+    CompositorAnimationTimeline* compositorAnimationTimeline() { return m_programmaticScrollAnimatorTimeline.get(); }
 
     // For testing purposes only. This ScrollingCoordinator is reused between layout test, and must be reset
     // for the results to be valid.
@@ -135,7 +128,7 @@ protected:
     bool isForMainFrame(ScrollableArea*) const;
     bool isForViewport(ScrollableArea*) const;
 
-    RawPtrWillBeMember<Page> m_page;
+    Member<Page> m_page;
 
     // Dirty flags used to idenfity what really needs to be computed after compositing is updated.
     bool m_scrollGestureRegionIsDirty;
@@ -159,9 +152,9 @@ private:
 
     bool frameViewIsDirty() const;
 
-    OwnPtr<WebCompositorAnimationTimeline> m_programmaticScrollAnimatorTimeline;
+    OwnPtr<CompositorAnimationTimeline> m_programmaticScrollAnimatorTimeline;
 
-    using ScrollbarMap = WillBeHeapHashMap<RawPtrWillBeMember<ScrollableArea>, OwnPtr<WebScrollbarLayer>>;
+    using ScrollbarMap = HeapHashMap<Member<ScrollableArea>, OwnPtr<WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
     HashSet<const PaintLayer*> m_layersWithTouchRects;

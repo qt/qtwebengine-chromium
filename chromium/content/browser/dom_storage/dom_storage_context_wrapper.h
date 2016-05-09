@@ -5,12 +5,15 @@
 #ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_CONTEXT_WRAPPER_H_
 #define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_CONTEXT_WRAPPER_H_
 
+#include <map>
 #include <string>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
+#include "content/common/storage_partition_service.mojom.h"
 #include "content/public/browser/dom_storage_context.h"
+#include "url/origin.h"
 
 namespace base {
 class FilePath;
@@ -23,16 +26,19 @@ class SpecialStoragePolicy;
 namespace content {
 
 class DOMStorageContextImpl;
+class LevelDBWrapperImpl;
 
-// This is owned by BrowserContext (aka Profile) and encapsulates all
-// per-profile dom storage state.
+// This is owned by Storage Partition and encapsulates all its dom storage
+// state.
 class CONTENT_EXPORT DOMStorageContextWrapper :
     NON_EXPORTED_BASE(public DOMStorageContext),
     public base::RefCountedThreadSafe<DOMStorageContextWrapper> {
  public:
   // If |data_path| is empty, nothing will be saved to disk.
   DOMStorageContextWrapper(
+      const std::string& mojo_user_id,
       const base::FilePath& data_path,
+      const base::FilePath& local_partition_path,
       storage::SpecialStoragePolicy* special_storage_policy);
 
   // DOMStorageContext implementation.
@@ -58,6 +64,11 @@ class CONTENT_EXPORT DOMStorageContextWrapper :
 
   void Flush();
 
+  // See mojom::StoragePartitionService interface.
+  void OpenLocalStorage(const url::Origin& origin,
+                        mojom::LevelDBObserverPtr observer,
+                        mojom::LevelDBWrapperRequest request);
+
  private:
   friend class DOMStorageMessageFilter;  // for access to context()
   friend class SessionStorageNamespaceImpl;  // ditto
@@ -65,6 +76,11 @@ class CONTENT_EXPORT DOMStorageContextWrapper :
 
   ~DOMStorageContextWrapper() override;
   DOMStorageContextImpl* context() const { return context_.get(); }
+
+  // An inner class to keep all mojo-ish details together and not bleed them
+  // through the public interface.
+  class MojoState;
+  scoped_ptr<MojoState> mojo_state_;
 
   scoped_refptr<DOMStorageContextImpl> context_;
 

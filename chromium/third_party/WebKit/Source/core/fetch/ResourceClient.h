@@ -26,7 +26,6 @@
 #define ResourceClient_h
 
 #include "core/CoreExport.h"
-#include "platform/network/ResourceLoadPriority.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -37,7 +36,6 @@ class CORE_EXPORT ResourceClient {
 public:
     enum ResourceClientType {
         BaseResourceType,
-        ImageType,
         FontType,
         StyleSheetType,
         DocumentType,
@@ -48,10 +46,8 @@ public:
     virtual ~ResourceClient() { }
     virtual void notifyFinished(Resource*) { }
 
-    static ResourceClientType expectedType() { return BaseResourceType; }
-    virtual ResourceClientType resourceClientType() const { return expectedType(); }
-
-    virtual ResourcePriority computeResourcePriority() const { return ResourcePriority(); }
+    static bool isExpectedType(ResourceClient*) { return true; }
+    virtual ResourceClientType getResourceClientType() const { return BaseResourceType; }
 
     // Name for debugging, e.g. shown in memory-infra.
     virtual String debugName() const = 0;
@@ -59,6 +55,6 @@ public:
 protected:
     ResourceClient() { }
 };
-}
+} // namespace blink
 
 #endif

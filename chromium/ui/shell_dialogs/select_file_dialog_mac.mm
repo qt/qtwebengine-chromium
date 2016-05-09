@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog_mac.h"
 
-#import <Cocoa/Cocoa.h>
 #include <CoreServices/CoreServices.h>
 #include <stddef.h>
 
-#include <map>
-#include <set>
 #include <vector>
 
 #include "base/files/file_util.h"
@@ -18,8 +15,6 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#import "base/mac/scoped_nsobject.h"
-#include "base/macros.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -55,16 +50,14 @@ NSString* GetDescriptionFromExtension(const base::FilePath::StringType& ext) {
 
 }  // namespace
 
-class SelectFileDialogImpl;
-
 // A bridge class to act as the modal delegate to the save/open sheet and send
 // the results to the C++ class.
 @interface SelectFileDialogBridge : NSObject<NSOpenSavePanelDelegate> {
  @private
-  SelectFileDialogImpl* selectFileDialogImpl_;  // WEAK; owns us
+  ui::SelectFileDialogImpl* selectFileDialogImpl_;  // WEAK; owns us
 }
 
-- (id)initWithSelectFileDialogImpl:(SelectFileDialogImpl*)s;
+- (id)initWithSelectFileDialogImpl:(ui::SelectFileDialogImpl*)s;
 - (void)endedPanel:(NSSavePanel*)panel
          didCancel:(bool)did_cancel
               type:(ui::SelectFileDialog::Type)type
@@ -92,76 +85,7 @@ class SelectFileDialogImpl;
 - (void)popupAction:(id)sender;
 @end
 
-// Implementation of SelectFileDialog that shows Cocoa dialogs for choosing a
-// file or folder.
-class SelectFileDialogImpl : public ui::SelectFileDialog {
- public:
-  explicit SelectFileDialogImpl(Listener* listener,
-                                ui::SelectFilePolicy* policy);
-
-  // BaseShellDialog implementation.
-  bool IsRunning(gfx::NativeWindow parent_window) const override;
-  void ListenerDestroyed() override;
-
-  // Callback from ObjC bridge.
-  void FileWasSelected(NSSavePanel* dialog,
-                       NSWindow* parent_window,
-                       bool was_cancelled,
-                       bool is_multi,
-                       const std::vector<base::FilePath>& files,
-                       int index);
-
- protected:
-  // SelectFileDialog implementation.
-  // |params| is user data we pass back via the Listener interface.
-  void SelectFileImpl(Type type,
-                      const base::string16& title,
-                      const base::FilePath& default_path,
-                      const FileTypeInfo* file_types,
-                      int file_type_index,
-                      const base::FilePath::StringType& default_extension,
-                      gfx::NativeWindow owning_window,
-                      void* params) override;
-
- private:
-  // Struct to store data associated with a file dialog while it is showing.
-  struct DialogData {
-    DialogData(void* params_,
-               base::scoped_nsobject<ExtensionDropdownHandler> handler)
-        : params(params_), extension_dropdown_handler(handler) {}
-
-    // |params| user data associated with this file dialog.
-    void* params;
-
-    // Extension dropdown handler corresponding to this file dialog.
-    base::scoped_nsobject<ExtensionDropdownHandler> extension_dropdown_handler;
-  };
-
-  ~SelectFileDialogImpl() override;
-
-  // Sets the accessory view for the |dialog| and returns the associated
-  // ExtensionDropdownHandler.
-  static base::scoped_nsobject<ExtensionDropdownHandler> SetAccessoryView(
-      NSSavePanel* dialog,
-      const FileTypeInfo* file_types,
-      int file_type_index,
-      const base::FilePath::StringType& default_extension);
-
-  bool HasMultipleFileTypeChoicesImpl() override;
-
-  // The bridge for results from Cocoa to return to us.
-  base::scoped_nsobject<SelectFileDialogBridge> bridge_;
-
-  // The set of all parent windows for which we are currently running dialogs.
-  std::set<NSWindow*> parents_;
-
-  // A map from file dialogs to the DialogData associated with them.
-  std::map<NSSavePanel*, DialogData> dialog_data_map_;
-
-  bool hasMultipleFileTypeChoices_;
-
-  DISALLOW_COPY_AND_ASSIGN(SelectFileDialogImpl);
-};
+namespace ui {
 
 SelectFileDialogImpl::SelectFileDialogImpl(Listener* listener,
                                            ui::SelectFilePolicy* policy)
@@ -319,6 +243,15 @@ void SelectFileDialogImpl::SelectFileImpl(
   }];
 }
 
+SelectFileDialogImpl::DialogData::DialogData(
+    void* params_,
+    base::scoped_nsobject<ExtensionDropdownHandler> handler)
+    : params(params_), extension_dropdown_handler(handler) {}
+
+SelectFileDialogImpl::DialogData::DialogData(const DialogData& other) = default;
+
+SelectFileDialogImpl::DialogData::~DialogData() {}
+
 SelectFileDialogImpl::~SelectFileDialogImpl() {
   // Walk through the open dialogs and close them all.  Use a temporary vector
   // to hold the pointers, since we can't delete from the map as we're iterating
@@ -350,6 +283,7 @@ SelectFileDialogImpl::SetAccessoryView(
   // Create an array with each item corresponding to an array of different
   // extensions in an extension group.
   NSMutableArray* file_type_lists = [NSMutableArray array];
+  int default_extension_index = -1;
   for (size_t i = 0; i < file_types->extensions.size(); ++i) {
     const std::vector<base::FilePath::StringType>& ext_list =
         file_types->extensions[i];
@@ -373,6 +307,9 @@ SelectFileDialogImpl::SetAccessoryView(
     // Set to store different extensions in the current extension group.
     NSMutableSet* file_type_set = [NSMutableSet set];
     for (const base::FilePath::StringType& ext : ext_list) {
+      if (ext == default_extension)
+        default_extension_index = i;
+
       base::ScopedCFTypeRef<CFStringRef> uti(CreateUTIFromExtension(ext));
       [file_type_set addObject:base::mac::CFToNSCast(uti.get())];
 
@@ -401,14 +338,21 @@ SelectFileDialogImpl::SetAccessoryView(
   [popup setTarget:handler];
   [popup setAction:@selector(popupAction:)];
 
-  if (default_extension.empty()) {
+  // file_type_index uses 1 based indexing.
+  if (file_type_index) {
+    DCHECK_LE(static_cast<size_t>(file_type_index),
+              file_types->extensions.size());
+    DCHECK_GE(file_type_index, 1);
+    [popup selectItemAtIndex:file_type_index - 1];
+    [handler popupAction:popup];
+  } else if (!default_extension.empty() && default_extension_index != -1) {
+    [popup selectItemAtIndex:default_extension_index];
+    [dialog
+        setAllowedFileTypes:@[ base::SysUTF8ToNSString(default_extension) ]];
+  } else {
     // Select the first item.
     [popup selectItemAtIndex:0];
     [handler popupAction:popup];
-  } else {
-    [popup selectItemAtIndex:-1];
-    [dialog
-        setAllowedFileTypes:@[ base::SysUTF8ToNSString(default_extension) ]];
   }
 
   return handler;
@@ -418,9 +362,16 @@ bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
   return hasMultipleFileTypeChoices_;
 }
 
+SelectFileDialog* CreateSelectFileDialog(SelectFileDialog::Listener* listener,
+                                         SelectFilePolicy* policy) {
+  return new SelectFileDialogImpl(listener, policy);
+}
+
+}  // namespace ui
+
 @implementation SelectFileDialogBridge
 
-- (id)initWithSelectFileDialogImpl:(SelectFileDialogImpl*)s {
+- (id)initWithSelectFileDialogImpl:(ui::SelectFileDialogImpl*)s {
   if ((self = [super init])) {
     selectFileDialogImpl_ = s;
   }
@@ -498,13 +449,3 @@ bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
 }
 
 @end
-
-namespace ui {
-
-SelectFileDialog* CreateMacSelectFileDialog(
-    SelectFileDialog::Listener* listener,
-    SelectFilePolicy* policy) {
-  return new SelectFileDialogImpl(listener, policy);
-}
-
-}  // namespace ui

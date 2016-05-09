@@ -7,12 +7,22 @@
 
 #include <stdint.h>
 
+#include <deque>
+#include <unordered_map>
+
 #include "base/containers/hash_tables.h"
+#include "base/gtest_prod_util.h"
 #include "base/macros.h"
-#include "base/memory/weak_ptr.h"
+#include "cc/surfaces/surface_hittest_delegate.h"
+#include "cc/surfaces/surface_id.h"
+#include "content/browser/renderer_host/render_widget_host_view_base_observer.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/geometry/vector2d.h"
+
+struct FrameHostMsg_HittestData_Params;
 
 namespace blink {
+class WebGestureEvent;
 class WebMouseEvent;
 class WebMouseWheelEvent;
 class WebTouchEvent;
@@ -36,15 +46,22 @@ class RenderWidgetHostViewBase;
 // own. When an input event requires routing based on window coordinates,
 // this class requests a Surface hit test from the provided |root_view| and
 // forwards the event to the owning RWHV of the returned Surface ID.
-class CONTENT_EXPORT RenderWidgetHostInputEventRouter {
+class CONTENT_EXPORT RenderWidgetHostInputEventRouter
+    : public RenderWidgetHostViewBaseObserver {
  public:
   RenderWidgetHostInputEventRouter();
-  ~RenderWidgetHostInputEventRouter();
+  ~RenderWidgetHostInputEventRouter() final;
+
+  void OnRenderWidgetHostViewBaseDestroyed(
+      RenderWidgetHostViewBase* view) override;
 
   void RouteMouseEvent(RenderWidgetHostViewBase* root_view,
                        blink::WebMouseEvent* event);
   void RouteMouseWheelEvent(RenderWidgetHostViewBase* root_view,
                             blink::WebMouseWheelEvent* event);
+  void RouteGestureEvent(RenderWidgetHostViewBase* root_view,
+                         blink::WebGestureEvent* event,
+                         const ui::LatencyInfo& latency);
   void RouteTouchEvent(RenderWidgetHostViewBase* root_view,
                        blink::WebTouchEvent *event,
                        const ui::LatencyInfo& latency);
@@ -56,20 +73,57 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter {
     return owner_map_.find(id) != owner_map_.end();
   }
 
+  void OnHittestData(const FrameHostMsg_HittestData_Params& params);
+
  private:
-  using WeakTarget = base::WeakPtr<RenderWidgetHostViewBase>;
+  struct HittestData {
+    bool ignored_for_hittest;
+  };
+
+  class HittestDelegate : public cc::SurfaceHittestDelegate {
+   public:
+    HittestDelegate(
+        const std::unordered_map<cc::SurfaceId, HittestData, cc::SurfaceIdHash>&
+            hittest_data);
+    bool RejectHitTarget(const cc::SurfaceDrawQuad* surface_quad,
+                         const gfx::Point& point_in_quad_space) override;
+    bool AcceptHitTarget(const cc::SurfaceDrawQuad* surface_quad,
+                         const gfx::Point& point_in_quad_space) override;
+
+    const std::unordered_map<cc::SurfaceId, HittestData, cc::SurfaceIdHash>&
+        hittest_data_;
+  };
+
   using SurfaceIdNamespaceOwnerMap =
-      base::hash_map<uint32_t, base::WeakPtr<RenderWidgetHostViewBase>>;
+      base::hash_map<uint32_t, RenderWidgetHostViewBase*>;
+  struct GestureTargetData {
+    RenderWidgetHostViewBase* target;
+    const gfx::Vector2d delta;
+
+    GestureTargetData(RenderWidgetHostViewBase* target, gfx::Vector2d delta)
+        : target(target), delta(delta) {}
+  };
+  using GestureTargetQueue = std::deque<GestureTargetData>;
+
+  void ClearAllObserverRegistrations();
 
   RenderWidgetHostViewBase* FindEventTarget(RenderWidgetHostViewBase* root_view,
                                             const gfx::Point& point,
                                             gfx::Point* transformed_point);
 
   SurfaceIdNamespaceOwnerMap owner_map_;
-  WeakTarget current_touch_target_;
+  GestureTargetQueue gesture_target_queue_;
+  RenderWidgetHostViewBase* touch_target_;
+  RenderWidgetHostViewBase* gesture_target_;
+  gfx::Vector2d touch_delta_;
+  gfx::Vector2d gesture_delta_;
   int active_touches_;
+  std::unordered_map<cc::SurfaceId, HittestData, cc::SurfaceIdHash>
+      hittest_data_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostInputEventRouter);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
+                           InputEventRouterGestureTargetQueueTest);
 };
 
 }  // namespace content

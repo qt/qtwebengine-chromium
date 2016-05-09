@@ -34,7 +34,6 @@ using std::string;
 using std::vector;
 
 namespace net {
-namespace tools {
 namespace test {
 namespace {
 
@@ -44,7 +43,10 @@ class RecordingProofVerifier : public ProofVerifier {
  public:
   // ProofVerifier interface.
   QuicAsyncStatus VerifyProof(const string& hostname,
+                              const uint16_t port,
                               const string& server_config,
+                              QuicVersion quic_version,
+                              StringPiece chlo_hash,
                               const vector<string>& certs,
                               const string& cert_sct,
                               const string& signature,
@@ -182,7 +184,9 @@ QuicTestClient::QuicTestClient(IPEndPoint server_address,
                                      config,
                                      supported_versions,
                                      &epoll_server_)),
-      allow_bidirectional_data_(false) {
+      allow_bidirectional_data_(false),
+      num_requests_(0),
+      num_responses_(0) {
   Initialize();
 }
 
@@ -200,7 +204,6 @@ void QuicTestClient::Initialize() {
   connect_attempted_ = false;
   auto_reconnect_ = false;
   buffer_body_ = true;
-  fec_policy_ = FEC_PROTECT_OPTIONAL;
   ClearPerRequestState();
   // As chrome will generally do this, we want it to be the default when it's
   // not overridden.
@@ -234,6 +237,22 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
     StringPiece body,
     bool fin,
     QuicAckListenerInterface* delegate) {
+  if (headers) {
+    QuicClientPushPromiseIndex::TryHandle* handle;
+    QuicAsyncStatus rv = client()->push_promise_index()->Try(
+        SpdyBalsaUtils::RequestHeadersToSpdyHeaders(*headers), this, &handle);
+    if (rv == QUIC_SUCCESS)
+      return 1;
+    if (rv == QUIC_PENDING) {
+      // May need to retry request if asynchronous rendezvous fails.
+      auto new_headers = new BalsaHeaders;
+      new_headers->CopyFrom(*headers);
+      push_promise_data_to_resend_.reset(
+          new TestClientDataToResend(new_headers, body, fin, this, delegate));
+      return 1;
+    }
+  }
+
   // Maybe it's better just to overload this.  it's just that we need
   // for the GetOrCreateStream function to call something else...which
   // is icky and complicated, but maybe not worse than this.
@@ -241,8 +260,8 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
   if (stream == nullptr) {
     return 0;
   }
-  ssize_t ret = 0;
 
+  ssize_t ret = 0;
   if (headers != nullptr) {
     SpdyHeaderBlock spdy_headers =
         SpdyBalsaUtils::RequestHeadersToSpdyHeaders(*headers);
@@ -258,8 +277,9 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
       spdy_headers[":authority"] = client_->server_id().host();
     }
     ret = stream->SendRequest(spdy_headers, body, fin);
+    ++num_requests_;
   } else {
-    stream->SendBody(body.as_string(), fin, delegate);
+    stream->WriteOrBufferBody(body.as_string(), fin, delegate);
     ret = body.length();
   }
   if (FLAGS_enable_quic_stateless_reject_support) {
@@ -376,8 +396,6 @@ QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
     QuicSpdyClientStream* cs = reinterpret_cast<QuicSpdyClientStream*>(stream_);
     cs->SetPriority(priority_);
     cs->set_allow_bidirectional_data(allow_bidirectional_data_);
-    // Set FEC policy on stream.
-    ReliableQuicStreamPeer::SetFecPolicy(stream_, fec_policy_);
   }
 
   return stream_;
@@ -437,7 +455,7 @@ void QuicTestClient::Disconnect() {
 }
 
 IPEndPoint QuicTestClient::local_address() const {
-  return client_->client_address();
+  return client_->GetLatestClientAddress();
 }
 
 void QuicTestClient::ClearPerRequestState() {
@@ -446,11 +464,17 @@ void QuicTestClient::ClearPerRequestState() {
   response_ = "";
   response_complete_ = false;
   response_headers_complete_ = false;
-  headers_.Clear();
+  response_headers_.Clear();
   bytes_read_ = 0;
   bytes_written_ = 0;
   response_header_size_ = 0;
   response_body_size_ = 0;
+}
+
+bool QuicTestClient::HaveActiveStream() {
+  return push_promise_data_to_resend_.get() ||
+         (stream_ != nullptr &&
+          !client_->session()->IsClosedStream(stream_->id()));
 }
 
 void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
@@ -464,8 +488,7 @@ void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
           ->GetClock();
   QuicTime end_waiting_time =
       clock->Now().Add(QuicTime::Delta::FromMicroseconds(timeout_us));
-  while (stream_ != nullptr &&
-         !client_->session()->IsClosedStream(stream_->id()) &&
+  while (HaveActiveStream() &&
          (timeout_us < 0 || clock->Now() < end_waiting_time)) {
     client_->WaitForEvents();
   }
@@ -509,10 +532,11 @@ bool QuicTestClient::response_headers_complete() const {
 
 const BalsaHeaders* QuicTestClient::response_headers() const {
   if (stream_ != nullptr) {
-    SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_);
-    return &headers_;
+    SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->response_headers(),
+                                                 &response_headers_);
+    return &response_headers_;
   } else {
-    return &headers_;
+    return &response_headers_;
   }
 }
 
@@ -547,15 +571,35 @@ void QuicTestClient::OnClose(QuicSpdyStream* stream) {
   }
   response_complete_ = true;
   response_headers_complete_ = stream_->headers_decompressed();
-  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->headers(), &headers_);
-  response_trailers_ = stream_->trailers();
+  SpdyBalsaUtils::SpdyHeadersToResponseHeaders(stream_->response_headers(),
+                                               &response_headers_);
+  response_trailers_ = stream_->received_trailers();
   stream_error_ = stream_->stream_error();
   bytes_read_ = stream_->stream_bytes_read() + stream_->header_bytes_read();
   bytes_written_ =
       stream_->stream_bytes_written() + stream_->header_bytes_written();
-  response_header_size_ = headers_.GetSizeForWriteBuffer();
+  response_header_size_ = response_headers_.GetSizeForWriteBuffer();
   response_body_size_ = stream_->data().size();
   stream_ = nullptr;
+  ++num_responses_;
+}
+
+bool QuicTestClient::CheckVary(const SpdyHeaderBlock& client_request,
+                               const SpdyHeaderBlock& promise_request,
+                               const SpdyHeaderBlock& promise_response) {
+  return true;
+}
+
+void QuicTestClient::OnRendezvousResult(QuicSpdyStream* stream) {
+  std::unique_ptr<TestClientDataToResend> data_to_resend =
+      std::move(push_promise_data_to_resend_);
+  stream_ = static_cast<QuicSpdyClientStream*>(stream);
+  if (stream) {
+    stream->set_visitor(this);
+    stream->OnDataAvailable();
+  } else if (data_to_resend.get()) {
+    data_to_resend->Resend();
+  }
 }
 
 void QuicTestClient::UseWriter(QuicPacketWriterWrapper* writer) {
@@ -577,7 +621,7 @@ void QuicTestClient::Bind(IPEndPoint* local_address) {
   DLOG(WARNING) << "Bind will be done during connect";
 }
 
-void QuicTestClient::MigrateSocket(const IPAddressNumber& new_host) {
+void QuicTestClient::MigrateSocket(const IPAddress& new_host) {
   client_->MigrateSocket(new_host);
 }
 
@@ -586,11 +630,11 @@ string QuicTestClient::SerializeMessage(const HTTPMessage& message) {
   return "";
 }
 
-IPAddressNumber QuicTestClient::bind_to_address() const {
+IPAddress QuicTestClient::bind_to_address() const {
   return client_->bind_to_address();
 }
 
-void QuicTestClient::set_bind_to_address(IPAddressNumber address) {
+void QuicTestClient::set_bind_to_address(const IPAddress& address) {
   client_->set_bind_to_address(address);
 }
 
@@ -607,15 +651,6 @@ void QuicTestClient::WaitForWriteToFlush() {
   while (connected() && client()->session()->HasDataToWrite()) {
     client_->WaitForEvents();
   }
-}
-
-void QuicTestClient::SetFecPolicy(FecPolicy fec_policy) {
-  fec_policy_ = fec_policy;
-  // Set policy for headers and crypto streams.
-  ReliableQuicStreamPeer::SetFecPolicy(
-      QuicSpdySessionPeer::GetHeadersStream(client()->session()), fec_policy);
-  ReliableQuicStreamPeer::SetFecPolicy(client()->session()->GetCryptoStream(),
-                                       fec_policy);
 }
 
 void QuicTestClient::TestClientDataToResend::Resend() {
@@ -638,5 +673,4 @@ void QuicTestClient::FillInRequest(const string& uri, HTTPMessage* message) {
 }
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net

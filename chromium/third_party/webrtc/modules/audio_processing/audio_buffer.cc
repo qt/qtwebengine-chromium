@@ -75,17 +75,15 @@ AudioBuffer::AudioBuffer(size_t input_num_frames,
 
     if (input_num_frames_ != proc_num_frames_) {
       for (size_t i = 0; i < num_proc_channels_; ++i) {
-        input_resamplers_.push_back(
-            new PushSincResampler(input_num_frames_,
-                                  proc_num_frames_));
+        input_resamplers_.push_back(std::unique_ptr<PushSincResampler>(
+            new PushSincResampler(input_num_frames_, proc_num_frames_)));
       }
     }
 
     if (output_num_frames_ != proc_num_frames_) {
       for (size_t i = 0; i < num_proc_channels_; ++i) {
-        output_resamplers_.push_back(
-            new PushSincResampler(proc_num_frames_,
-                                  output_num_frames_));
+        output_resamplers_.push_back(std::unique_ptr<PushSincResampler>(
+            new PushSincResampler(proc_num_frames_, output_num_frames_)));
       }
     }
   }
@@ -432,10 +430,10 @@ void AudioBuffer::InterleaveTo(AudioFrame* frame, bool data_changed) {
   }
 
   if (frame->num_channels_ == num_channels_) {
-    Interleave(data_ptr->ibuf()->channels(), proc_num_frames_, num_channels_,
+    Interleave(data_ptr->ibuf()->channels(), output_num_frames_, num_channels_,
                frame->data_);
   } else {
-    UpmixMonoToInterleaved(data_ptr->ibuf()->channels()[0], proc_num_frames_,
+    UpmixMonoToInterleaved(data_ptr->ibuf()->channels()[0], output_num_frames_,
                            frame->num_channels_, frame->data_);
   }
 }

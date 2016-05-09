@@ -53,9 +53,8 @@ private:
     Vector<String> m_words;
 };
 
-class CORE_EXPORT DocumentMarkerController final : public NoBaseWillBeGarbageCollected<DocumentMarkerController> {
-    WTF_MAKE_NONCOPYABLE(DocumentMarkerController); USING_FAST_MALLOC_WILL_BE_REMOVED(DocumentMarkerController);
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentMarkerController);
+class CORE_EXPORT DocumentMarkerController final : public GarbageCollected<DocumentMarkerController> {
+    WTF_MAKE_NONCOPYABLE(DocumentMarkerController);
 public:
 
     DocumentMarkerController();
@@ -80,8 +79,10 @@ public:
     void removeMarkers(const MarkerRemoverPredicate& shouldRemoveMarker);
     void repaintMarkers(DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
     void shiftMarkers(Node*, unsigned startOffset, int delta);
-    void setMarkersActive(Range*, bool);
-    void setMarkersActive(Node*, unsigned startOffset, unsigned endOffset, bool);
+    // Returns true if markers within a range are found.
+    bool setMarkersActive(Range*, bool);
+    // Returns true if markers within a range defined by a node, |startOffset| and |endOffset| are found.
+    bool setMarkersActive(Node*, unsigned startOffset, unsigned endOffset, bool);
     bool hasMarkers(Node* node) const { return m_markers.contains(node); }
 
     DocumentMarker* markerContainingPoint(const LayoutPoint&, DocumentMarker::MarkerType);
@@ -100,10 +101,10 @@ public:
 private:
     void addMarker(Node*, const DocumentMarker&);
 
-    using MarkerList = WillBeHeapVector<OwnPtrWillBeMember<RenderedDocumentMarker>>;
-    using MarkerLists = WillBeHeapVector<OwnPtrWillBeMember<MarkerList>, DocumentMarker::MarkerTypeIndexesCount>;
-    using MarkerMap = WillBeHeapHashMap<RawPtrWillBeWeakMember<const Node>, OwnPtrWillBeMember<MarkerLists>>;
-    void mergeOverlapping(MarkerList*, PassOwnPtrWillBeRawPtr<RenderedDocumentMarker>);
+    using MarkerList = HeapVector<Member<RenderedDocumentMarker>>;
+    using MarkerLists = HeapVector<Member<MarkerList>, DocumentMarker::MarkerTypeIndexesCount>;
+    using MarkerMap = HeapHashMap<WeakMember<const Node>, Member<MarkerLists>>;
+    void mergeOverlapping(MarkerList*, RawPtr<RenderedDocumentMarker>);
     bool possiblyHasMarkers(DocumentMarker::MarkerTypes);
     void removeMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
     void removeMarkers(TextIterator&, DocumentMarker::MarkerTypes, RemovePartiallyOverlappingMarkerOrNot);

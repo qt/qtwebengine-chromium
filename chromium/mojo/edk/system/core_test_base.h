@@ -7,11 +7,11 @@
 
 #include <stddef.h>
 
+#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/system/test_utils.h"
 #include "mojo/public/c/system/types.h"
-#include "mojo/public/cpp/system/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
@@ -38,7 +38,7 @@ class CoreTestBase : public testing::Test {
   Core* core();
 
  private:
-  MOJO_DISALLOW_COPY_AND_ASSIGN(CoreTestBase);
+  DISALLOW_COPY_AND_ASSIGN(CoreTestBase);
 };
 
 class CoreTestBase_MockHandleInfo {
@@ -59,7 +59,6 @@ class CoreTestBase_MockHandleInfo {
   unsigned GetEndReadDataCallCount() const;
   unsigned GetAddAwakableCallCount() const;
   unsigned GetRemoveAwakableCallCount() const;
-  unsigned GetCancelAllAwakablesCallCount() const;
 
   size_t GetAddedAwakableSize() const;
   Awakable* GetAddedAwakableAt(unsigned i) const;
@@ -78,7 +77,6 @@ class CoreTestBase_MockHandleInfo {
   void IncrementEndReadDataCallCount();
   void IncrementAddAwakableCallCount();
   void IncrementRemoveAwakableCallCount();
-  void IncrementCancelAllAwakablesCallCount();
 
   void AllowAddAwakable(bool alllow);
   bool IsAddAwakableAllowed() const;
@@ -99,12 +97,11 @@ class CoreTestBase_MockHandleInfo {
   unsigned end_read_data_call_count_;
   unsigned add_awakable_call_count_;
   unsigned remove_awakable_call_count_;
-  unsigned cancel_all_awakables_call_count_;
 
   bool add_awakable_allowed_;
   std::vector<Awakable*> added_awakables_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(CoreTestBase_MockHandleInfo);
+  DISALLOW_COPY_AND_ASSIGN(CoreTestBase_MockHandleInfo);
 };
 
 }  // namespace test

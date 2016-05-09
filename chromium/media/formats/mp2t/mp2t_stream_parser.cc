@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/stl_util.h"
+#include "media/base/media_tracks.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/text_track_config.h"
 #include "media/base/timestamp_constants.h"
@@ -150,6 +151,9 @@ Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
     video_config(video_cfg) {
 }
 
+Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
+    const BufferQueueWithConfig& other) = default;
+
 Mp2tStreamParser::BufferQueueWithConfig::~BufferQueueWithConfig() {
 }
 
@@ -172,7 +176,7 @@ void Mp2tStreamParser::Init(
     bool /* ignore_text_tracks */,
     const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
     const NewMediaSegmentCB& new_segment_cb,
-    const base::Closure& end_of_segment_cb,
+    const EndMediaSegmentCB& end_of_segment_cb,
     const scoped_refptr<MediaLog>& media_log) {
   DCHECK(!is_initialized_);
   DCHECK(init_cb_.is_null());
@@ -180,6 +184,7 @@ void Mp2tStreamParser::Init(
   DCHECK(!config_cb.is_null());
   DCHECK(!new_buffers_cb.is_null());
   DCHECK(!encrypted_media_init_data_cb.is_null());
+  DCHECK(!new_segment_cb.is_null());
   DCHECK(!end_of_segment_cb.is_null());
 
   init_cb_ = init_cb;
@@ -501,6 +506,21 @@ void Mp2tStreamParser::OnAudioConfigChanged(
   }
 }
 
+scoped_ptr<MediaTracks> GenerateMediaTrackInfo(
+    const AudioDecoderConfig& audio_config,
+    const VideoDecoderConfig& video_config) {
+  scoped_ptr<MediaTracks> media_tracks(new MediaTracks());
+  // TODO(servolk): Implement proper sourcing of media track info as described
+  // in crbug.com/590085
+  if (audio_config.IsValidConfig()) {
+    media_tracks->AddAudioTrack(audio_config, "audio", "main", "", "");
+  }
+  if (video_config.IsValidConfig()) {
+    media_tracks->AddVideoTrack(video_config, "video", "main", "", "");
+  }
+  return media_tracks;
+}
+
 bool Mp2tStreamParser::FinishInitializationIfNeeded() {
   // Nothing to be done if already initialized.
   if (is_initialized_)
@@ -520,14 +540,23 @@ bool Mp2tStreamParser::FinishInitializationIfNeeded() {
     return true;
 
   // Pass the config before invoking the initialization callback.
-  RCHECK(config_cb_.Run(queue_with_config.audio_config,
-                        queue_with_config.video_config,
-                        TextTrackConfigMap()));
+  scoped_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
+      queue_with_config.audio_config, queue_with_config.video_config);
+  RCHECK(config_cb_.Run(std::move(media_tracks), TextTrackConfigMap()));
   queue_with_config.is_config_sent = true;
 
   // For Mpeg2 TS, the duration is not known.
   DVLOG(1) << "Mpeg2TS stream parser initialization done";
-  base::ResetAndReturn(&init_cb_).Run(InitParameters(kInfiniteDuration()));
+
+  // TODO(wolenetz): If possible, detect and report track counts by type more
+  // accurately here. Currently, capped at max 1 each for audio and video, with
+  // assumption of 0 text tracks.
+  InitParameters params(kInfiniteDuration());
+  params.detected_audio_track_count =
+      queue_with_config.audio_config.IsValidConfig() ? 1 : 0;
+  params.detected_video_track_count =
+      queue_with_config.video_config.IsValidConfig() ? 1 : 0;
+  base::ResetAndReturn(&init_cb_).Run(params);
   is_initialized_ = true;
 
   return true;
@@ -619,9 +648,9 @@ bool Mp2tStreamParser::EmitRemainingBuffers() {
     // Update the audio and video config if needed.
     BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
     if (!queue_with_config.is_config_sent) {
-      if (!config_cb_.Run(queue_with_config.audio_config,
-                          queue_with_config.video_config,
-                          TextTrackConfigMap()))
+      scoped_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
+          queue_with_config.audio_config, queue_with_config.video_config);
+      if (!config_cb_.Run(std::move(media_tracks), TextTrackConfigMap()))
         return false;
       queue_with_config.is_config_sent = true;
     }

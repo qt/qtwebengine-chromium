@@ -34,6 +34,10 @@ namespace gpu {
 struct GPUInfo;
 }
 
+namespace media {
+class MediaClientAndroid;
+}
+
 namespace sandbox {
 class TargetPolicy;
 }
@@ -42,7 +46,7 @@ namespace content {
 
 class ContentBrowserClient;
 class ContentClient;
-class ContentPluginClient;
+class ContentGpuClient;
 class ContentRendererClient;
 class ContentUtilityClient;
 struct PepperPluginInfo;
@@ -72,7 +76,7 @@ class CONTENT_EXPORT ContentClient {
   virtual ~ContentClient();
 
   ContentBrowserClient* browser() { return browser_; }
-  ContentPluginClient* plugin() { return plugin_; }
+  ContentGpuClient* gpu() { return gpu_; }
   ContentRendererClient* renderer() { return renderer_; }
   ContentUtilityClient* utility() { return utility_; }
 
@@ -86,10 +90,11 @@ class CONTENT_EXPORT ContentClient {
   virtual void AddPepperPlugins(
       std::vector<content::PepperPluginInfo>* plugins) {}
 
-  // Gives the embedder a chance to register its own standard and saveable
-  // url schemes early on in the startup sequence.
+  // Gives the embedder a chance to register its own standard, referrer and
+  // saveable url schemes early on in the startup sequence.
   virtual void AddAdditionalSchemes(
       std::vector<url::SchemeWithType>* standard_schemes,
+      std::vector<url::SchemeWithType>* referrer_schemes,
       std::vector<std::string>* savable_schemes) {}
 
   // Returns whether the given message should be sent in a swapped out renderer.
@@ -122,7 +127,7 @@ class CONTENT_EXPORT ContentClient {
   // doesn't know about because they're from the embedder.
   virtual std::string GetProcessTypeNameInEnglish(int type);
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_MACOSX)
   // Allows the embedder to define a new |sandbox_type| by mapping it to the
   // resource ID corresponding to the sandbox profile to use. The legal values
   // for |sandbox_type| are defined by the embedder and should start with
@@ -153,14 +158,23 @@ class CONTENT_EXPORT ContentClient {
   // model decisions.
   virtual bool IsSupplementarySiteIsolationModeEnabled();
 
+  // Returns the public key to be used for origin trials, or an empty string if
+  // origin trials are not enabled in this context.
+  virtual base::StringPiece GetOriginTrialPublicKey();
+
+#if defined(OS_ANDROID)
+  // Returns the MediaClientAndroid to be used by media code on Android.
+  virtual media::MediaClientAndroid* GetMediaClientAndroid();
+#endif  // OS_ANDROID
+
  private:
   friend class ContentClientInitializer;  // To set these pointers.
   friend class InternalTestInitializer;
 
   // The embedder API for participating in browser logic.
   ContentBrowserClient* browser_;
-  // The embedder API for participating in plugin logic.
-  ContentPluginClient* plugin_;
+  // The embedder API for participating in gpu logic.
+  ContentGpuClient* gpu_;
   // The embedder API for participating in renderer logic.
   ContentRendererClient* renderer_;
   // The embedder API for participating in utility logic.

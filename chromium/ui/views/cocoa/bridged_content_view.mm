@@ -5,9 +5,11 @@
 #import "ui/views/cocoa/bridged_content_view.h"
 
 #include "base/logging.h"
+#import "base/mac/mac_util.h"
 #import "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/canvas_painter.h"
@@ -17,6 +19,9 @@
 #include "ui/gfx/canvas_paint_mac.h"
 #include "ui/gfx/geometry/rect.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
+#include "ui/gfx/path.h"
+#import "ui/gfx/path_mac.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller.h"
@@ -27,6 +32,17 @@ using views::MenuController;
 
 namespace {
 
+// Returns true if all four corners of |rect| are contained inside |path|.
+bool IsRectInsidePath(NSRect rect, NSBezierPath* path) {
+  return [path containsPoint:rect.origin] &&
+         [path containsPoint:NSMakePoint(rect.origin.x + rect.size.width,
+                                         rect.origin.y)] &&
+         [path containsPoint:NSMakePoint(rect.origin.x,
+                                         rect.origin.y + rect.size.height)] &&
+         [path containsPoint:NSMakePoint(rect.origin.x + rect.size.width,
+                                         rect.origin.y + rect.size.height)];
+}
+
 // Convert a |point| in |source_window|'s AppKit coordinate system (origin at
 // the bottom left of the window) to |target_window|'s content rect, with the
 // origin at the top left of the content area.
@@ -35,10 +51,11 @@ gfx::Point MovePointToWindow(const NSPoint& point,
                              NSWindow* source_window,
                              NSWindow* target_window) {
   NSPoint point_in_screen = source_window
-      ? [source_window convertBaseToScreen:point]
+      ? ui::ConvertPointFromWindowToScreen(source_window, point)
       : point;
 
-  NSPoint point_in_window = [target_window convertScreenToBase:point_in_screen];
+  NSPoint point_in_window =
+      ui::ConvertPointFromScreenToWindow(target_window, point_in_screen);
   NSRect content_rect =
       [target_window contentRectForFrameRect:[target_window frame]];
   return gfx::Point(point_in_window.x,
@@ -252,6 +269,30 @@ gfx::Rect GetFirstRectForRangeHelper(const ui::TextInputClient* client,
   }
 }
 
+- (void)updateWindowMask {
+  DCHECK(![self inLiveResize]);
+  DCHECK(base::mac::IsOSMavericksOrEarlier());
+  DCHECK(hostedView_);
+
+  views::Widget* widget = hostedView_->GetWidget();
+  if (!widget->non_client_view())
+    return;
+
+  const NSRect frameRect = [self bounds];
+  gfx::Path mask;
+  widget->non_client_view()->GetWindowMask(gfx::Size(frameRect.size), &mask);
+  if (mask.isEmpty())
+    return;
+
+  windowMask_.reset([gfx::CreateNSBezierPathFromSkPath(mask) retain]);
+
+  // Convert to AppKit coordinate system.
+  NSAffineTransform* flipTransform = [NSAffineTransform transform];
+  [flipTransform translateXBy:0.0 yBy:frameRect.size.height];
+  [flipTransform scaleXBy:1.0 yBy:-1.0];
+  [windowMask_ transformUsingAffineTransform:flipTransform];
+}
+
 // BridgedContentView private implementation.
 
 - (void)handleKeyEvent:(NSEvent*)theEvent {
@@ -368,6 +409,20 @@ gfx::Rect GetFirstRectForRangeHelper(const ui::TextInputClient* client,
   return YES;
 }
 
+- (BOOL)becomeFirstResponder {
+  BOOL result = [super becomeFirstResponder];
+  if (result && hostedView_)
+    hostedView_->GetWidget()->GetFocusManager()->RestoreFocusedView();
+  return result;
+}
+
+- (BOOL)resignFirstResponder {
+  BOOL result = [super resignFirstResponder];
+  if (result && hostedView_)
+    hostedView_->GetWidget()->GetFocusManager()->StoreFocusedView(true);
+  return result;
+}
+
 - (void)viewDidMoveToWindow {
   // When this view is added to a window, AppKit calls setFrameSize before it is
   // added to the window, so the behavior in setFrameSize is not triggered.
@@ -393,6 +448,18 @@ gfx::Rect GetFirstRectForRangeHelper(const ui::TextInputClient* client,
   hostedView_->SetSize(gfx::Size(newSize.width, newSize.height));
 }
 
+- (void)viewDidEndLiveResize {
+  [super viewDidEndLiveResize];
+
+  // We prevent updating the window mask and clipping the border around the
+  // view, during a live resize. Hence update the window mask and redraw the
+  // view after resize has completed.
+  if (base::mac::IsOSMavericksOrEarlier()) {
+    [self updateWindowMask];
+    [self setNeedsDisplay:YES];
+  }
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
   // Note that BridgedNativeWidget uses -[NSWindow setAutodisplay:NO] to
   // suppress calls to this when the window is known to be hidden.
@@ -407,6 +474,33 @@ gfx::Rect GetFirstRectForRangeHelper(const ui::TextInputClient* client,
                                      yRadius:radius] fill];
   }
 
+  // On OS versions earlier than Yosemite, to generate a drop shadow, we set an
+  // opaque background. This causes windows with non rectangular shapes to have
+  // square corners. To get around this, fill the path outside the window
+  // boundary with clearColor and tell Cococa to regenerate drop shadow. See
+  // crbug.com/543671.
+  if (windowMask_ && ![self inLiveResize] &&
+      !IsRectInsidePath(dirtyRect, windowMask_)) {
+    DCHECK(base::mac::IsOSMavericksOrEarlier());
+    gfx::ScopedNSGraphicsContextSaveGState state;
+
+    // The outer rectangular path corresponding to the window.
+    NSBezierPath* outerPath = [NSBezierPath bezierPathWithRect:[self bounds]];
+
+    [outerPath appendBezierPath:windowMask_];
+    [outerPath setWindingRule:NSEvenOddWindingRule];
+    [[NSGraphicsContext currentContext]
+        setCompositingOperation:NSCompositeCopy];
+    [[NSColor clearColor] set];
+
+    // Fill the region between windowMask_ and its outer rectangular path
+    // with clear color. This causes the window to have the shape described
+    // by windowMask_.
+    [outerPath fill];
+    // Regerate drop shadow around the window boundary.
+    [[self window] invalidateShadow];
+  }
+
   // If there's a layer, painting occurs in BridgedNativeWidget::OnPaintLayer().
   if (hostedView_->GetWidget()->GetLayer())
     return;
@@ -414,6 +508,13 @@ gfx::Rect GetFirstRectForRangeHelper(const ui::TextInputClient* client,
   gfx::CanvasSkiaPaint canvas(dirtyRect, false /* opaque */);
   hostedView_->GetWidget()->OnNativeWidgetPaint(
       ui::CanvasPainter(&canvas, 1.f).context());
+}
+
+// To maximize consistency with the Cocoa browser (mac_views_browser=0), accept
+// mouse clicks immediately so that clicking on Chrome from an inactive window
+// will allow the event to be processed, rather than merely activate the window.
+- (BOOL)acceptsFirstMouse:(NSEvent*)theEvent {
+  return YES;
 }
 
 - (NSTextInputContext*)inputContext {

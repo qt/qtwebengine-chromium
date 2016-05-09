@@ -161,6 +161,15 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
+     * @param {number} callId
+     * @param {string} script
+     */
+    evaluateForTestInFrontend: function(callId, script)
+    {
+        this._dispatchOnInspectorFrontendAPI("evaluateForTestInFrontend", [callId, script]);
+    },
+
+    /**
      * @param {!Array.<!{fileSystemName: string, rootURL: string, fileSystemPath: string}>} fileSystems
      */
     fileSystemsLoaded: function(fileSystems)
@@ -297,24 +306,6 @@ DevToolsAPIImpl.prototype = {
     streamWrite: function(id, chunk)
     {
         this._dispatchOnInspectorFrontendAPI("streamWrite", [id, chunk]);
-    },
-
-    frontendAPIAttached: function()
-    {
-        this._dispatchOnInspectorFrontendAPI("frontendAPIAttached", []);
-    },
-
-    frontendAPIDetached: function()
-    {
-        this._dispatchOnInspectorFrontendAPI("frontendAPIDetached", []);
-    },
-
-    /**
-     * @param {string} command
-     */
-    dispatchFrontendAPIMessage: function(command)
-    {
-        this._dispatchOnInspectorFrontendAPI("dispatchFrontendAPIMessage", [command]);
     }
 }
 
@@ -400,13 +391,7 @@ InspectorFrontendHostImpl.prototype = {
      */
     setInspectedPageBounds: function(bounds)
     {
-        var converted = {
-          x: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.x)),
-          y: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.y)),
-          width: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.width)),
-          height: Math.round(DevToolsHost.convertLengthForEmbedder(bounds.height))
-        };
-        DevToolsAPI.sendMessageToEmbedder("setInspectedPageBounds", [converted], null);
+        DevToolsAPI.sendMessageToEmbedder("setInspectedPageBounds", [bounds], null);
     },
 
     /**
@@ -540,16 +525,10 @@ InspectorFrontendHostImpl.prototype = {
      */
     recordEnumeratedHistogram: function(actionName, actionCode, bucketSize)
     {
+        // Support for M49 frontend.
+        if (actionName === "DevTools.DrawerShown")
+            return;
         DevToolsAPI.sendMessageToEmbedder("recordEnumeratedHistogram", [actionName, actionCode, bucketSize], null);
-    },
-
-    /**
-     * @override
-     * @param {string} message
-     */
-    sendFrontendAPINotification: function(message)
-    {
-        DevToolsAPI.sendMessageToEmbedder("sendFrontendAPINotification", [message], null);
     },
 
     /**
@@ -681,6 +660,14 @@ InspectorFrontendHostImpl.prototype = {
 
     /**
      * @override
+     */
+    readyForTest: function()
+    {
+        DevToolsAPI.sendMessageToEmbedder("readyForTest", [], null);
+    },
+
+    /**
+     * @override
      * @param {boolean} discoverUsbDevices
      * @param {boolean} portForwardingEnabled
      * @param {!Adb.PortForwardingConfig} portForwardingConfig
@@ -741,6 +728,14 @@ InspectorFrontendHostImpl.prototype = {
     },
 
     // Backward-compatible methods below this line --------------------------------------------
+
+    /**
+     * Support for legacy front-ends (<M50).
+     * @param {string} message
+     */
+    sendFrontendAPINotification: function(message)
+    {
+    },
 
     /**
      * Support for legacy front-ends (<M41).
@@ -867,6 +862,105 @@ window.InspectorFrontendHost = new InspectorFrontendHostImpl();
 
 // DevToolsApp ---------------------------------------------------------------
 
+function installObjectObserve()
+{
+    var properties = [
+        "advancedSearchConfig", "auditsPanelSplitViewState", "auditsSidebarWidth", "blockedURLs", "breakpoints", "cacheDisabled", "colorFormat", "consoleHistory",
+        "consoleTimestampsEnabled", "cpuProfilerView", "cssSourceMapsEnabled", "currentDockState", "customColorPalette", "customDevicePresets", "customEmulatedDeviceList",
+        "customFormatters", "customUserAgent", "databaseTableViewVisibleColumns", "dataGrid-cookiesTable", "dataGrid-DOMStorageItemsView", "debuggerSidebarHidden", "disableDataSaverInfobar",
+        "disablePausedStateOverlay", "domBreakpoints", "domWordWrap", "elementsPanelSplitViewState", "elementsSidebarWidth", "emulation.deviceHeight", "emulation.deviceModeValue",
+        "emulation.deviceOrientationOverride", "emulation.deviceScale", "emulation.deviceScaleFactor", "emulation.deviceUA", "emulation.deviceWidth", "emulation.geolocationOverride",
+        "emulation.showDeviceMode", "emulation.showRulers", "enableAsyncStackTraces", "eventListenerBreakpoints", "fileMappingEntries", "fileSystemMapping", "FileSystemViewSidebarWidth",
+        "fileSystemViewSplitViewState", "filterBar-consoleView", "filterBar-networkPanel", "filterBar-promisePane", "filterBar-timelinePanel", "frameViewerHideChromeWindow",
+        "heapSnapshotRetainersViewSize", "heapSnapshotSplitViewState", "hideCollectedPromises", "hideNetworkMessages", "highlightNodeOnHoverInOverlay", "highResolutionCpuProfiling",
+        "inlineVariableValues", "Inspector.drawerSplitView", "Inspector.drawerSplitViewState", "InspectorView.panelOrder", "InspectorView.screencastSplitView",
+        "InspectorView.screencastSplitViewState", "InspectorView.splitView", "InspectorView.splitViewState", "javaScriptDisabled", "jsSourceMapsEnabled", "lastActivePanel", "lastDockState",
+        "lastSelectedSourcesSidebarPaneTab", "lastSnippetEvaluationIndex", "layerDetailsSplitView", "layerDetailsSplitViewState", "layersPanelSplitViewState", "layersShowInternalLayers",
+        "layersSidebarWidth", "messageLevelFilters", "messageURLFilters", "monitoringXHREnabled", "navigatorGroupByFolder", "navigatorHidden", "networkColorCodeResourceTypes",
+        "networkConditions", "networkConditionsCustomProfiles", "networkHideDataURL", "networkLogColumnsVisibility", "networkLogLargeRows", "networkLogShowOverview",
+        "networkPanelSplitViewState", "networkRecordFilmStripSetting", "networkResourceTypeFilters", "networkShowPrimaryLoadWaterfall", "networkSidebarWidth", "openLinkHandler",
+        "pauseOnCaughtException", "pauseOnExceptionEnabled", "preserveConsoleLog", "prettyPrintInfobarDisabled", "previouslyViewedFiles", "profilesPanelSplitViewState",
+        "profilesSidebarWidth", "promiseStatusFilters", "recordAllocationStacks", "requestHeaderFilterSetting", "request-info-formData-category-expanded",
+        "request-info-general-category-expanded", "request-info-queryString-category-expanded", "request-info-requestHeaders-category-expanded",
+        "request-info-requestPayload-category-expanded", "request-info-responseHeaders-category-expanded", "resources", "resourcesLastSelectedItem", "resourcesPanelSplitViewState",
+        "resourcesSidebarWidth", "resourceViewTab", "savedURLs", "screencastEnabled", "scriptsPanelNavigatorSidebarWidth", "searchInContentScripts", "selectedAuditCategories",
+        "selectedColorPalette", "selectedProfileType", "shortcutPanelSwitch", "showAdvancedHeapSnapshotProperties", "showEventListenersForAncestors", "showFrameowkrListeners",
+        "showHeaSnapshotObjectsHiddenProperties", "showInheritedComputedStyleProperties", "showMediaQueryInspector", "showNativeFunctionsInJSProfile", "showUAShadowDOM",
+        "showWhitespacesInEditor", "sidebarPosition", "skipContentScripts", "skipStackFramesPattern", "sourceMapInfobarDisabled", "sourcesPanelDebuggerSidebarSplitViewState",
+        "sourcesPanelNavigatorSplitViewState", "sourcesPanelSplitSidebarRatio", "sourcesPanelSplitViewState", "sourcesSidebarWidth", "standardEmulatedDeviceList",
+        "StylesPaneSplitRatio", "stylesPaneSplitViewState", "textEditorAutocompletion", "textEditorAutoDetectIndent", "textEditorBracketMatching", "textEditorIndent",
+        "timelineCaptureFilmStrip", "timelineCaptureLayersAndPictures", "timelineCaptureMemory", "timelineCaptureNetwork", "timeline-details", "timelineEnableJSSampling",
+        "timelineOverviewMode", "timelinePanelDetailsSplitViewState", "timelinePanelRecorsSplitViewState", "timelinePanelTimelineStackSplitViewState", "timelinePerspective",
+        "timeline-split", "timelineTreeGroupBy", "timeline-view", "timelineViewMode", "uiTheme", "watchExpressions", "WebInspector.Drawer.lastSelectedView", "WebInspector.Drawer.showOnLoad",
+        "workspaceExcludedFolders", "workspaceFolderExcludePattern", "workspaceInfobarDisabled", "workspaceMappingInfobarDisabled", "xhrBreakpoints"];
+
+    /**
+     * @this {!{_storage: Object, _name: string}}
+     */
+    function settingRemove()
+    {
+        this._storage[this._name] = undefined;
+    }
+
+    function objectObserve(object, observer)
+    {
+        if (window["WebInspector"]) {
+            var settingPrototype = window["WebInspector"]["Setting"]["prototype"];
+            if (typeof settingPrototype["remove"] === "function")
+                settingPrototype["remove"] = settingRemove;
+        }
+
+        var changedProperties = new Set();
+        var scheduled = false;
+
+        function scheduleObserver()
+        {
+            if (!scheduled) {
+                scheduled = true;
+                setImmediate(callObserver);
+            }
+        }
+
+        function callObserver()
+        {
+            scheduled = false;
+            var changes = [];
+            changedProperties.forEach(function(name) { changes.push({name: name}); });
+            changedProperties.clear();
+            observer.call(null, changes);
+        }
+
+        var storage = new Map();
+
+        function defineProperty(property)
+        {
+            if (property in object) {
+                storage.set(property, object[property]);
+                delete object[property];
+            }
+
+            Object.defineProperty(object, property, {
+                get: function()
+                {
+                    return storage.get(property);
+                },
+
+                set: function(value)
+                {
+                    storage.set(property, value);
+                    changedProperties.add(property);
+                    scheduleObserver();
+                }
+            });
+        }
+
+        for (var i = 0; i < properties.length; ++i)
+            defineProperty(properties[i]);
+    }
+
+    window.Object.observe = objectObserve;
+}
+
 /**
  * @suppressGlobalPropertiesCheck
  */
@@ -874,6 +968,9 @@ function installBackwardsCompatibility()
 {
     if (window.location.search.indexOf("remoteFrontend") === -1)
         return;
+
+    // Support for legacy (<M50) frontends.
+    installObjectObserve();
 
     /**
      * @this {CSSStyleDeclaration}
@@ -907,7 +1004,15 @@ function installBackwardsCompatibility()
     var styleElement = window.document.createElement("style");
     styleElement.type = "text/css";
     styleElement.textContent = "html /deep/ * { min-width: 0; min-height: 0; }";
+
+    // Support for quirky border-image behavior (<M51), see:
+    // https://bugs.chromium.org/p/chromium/issues/detail?id=559258
+    styleElement.textContent += "\nhtml /deep/ .cm-breakpoint .CodeMirror-linenumber { border-style: solid !important; }";
+    styleElement.textContent += "\nhtml /deep/ .cm-breakpoint.cm-breakpoint-conditional .CodeMirror-linenumber { border-style: solid !important; }";
     window.document.head.appendChild(styleElement);
+
+    // Support for legacy (<M49) frontends. Remove in M52.
+    Event.prototype.deepPath = undefined;
 }
 
 function windowLoaded()
@@ -920,35 +1025,6 @@ if (window.document.head && (window.document.readyState === "complete" || window
     installBackwardsCompatibility();
 else
     window.addEventListener("DOMContentLoaded", windowLoaded, false);
-
-// UITests ------------------------------------------------------------------
-
-if (window.domAutomationController) {
-    var uiTests = {};
-
-    uiTests._dispatchIfReady = function()
-    {
-        if (uiTests._testSuite && uiTests._pendingDispatchArgs) {
-            var args = uiTests._pendingDispatchArgs;
-            delete uiTests._pendingDispatchArgs;
-            uiTests._testSuite.dispatch(args);
-        }
-    }
-
-    uiTests.dispatchOnTestSuite = function(args)
-    {
-        uiTests._pendingDispatchArgs = args;
-        uiTests._dispatchIfReady();
-    };
-
-    uiTests.testSuiteReady = function(testSuiteConstructor)
-    {
-        uiTests._testSuite = testSuiteConstructor(window.domAutomationController);
-        uiTests._dispatchIfReady();
-    };
-
-    window.uiTests = uiTests;
-}
 
 })(window);
 

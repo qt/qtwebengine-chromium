@@ -17,6 +17,7 @@ namespace net {
 // content/common/resource_messages.h.
 struct NET_EXPORT RedirectInfo {
   RedirectInfo();
+  RedirectInfo(const RedirectInfo& other);
   ~RedirectInfo();
 
   // The status code for the redirect response. This is almost redundant with
@@ -36,6 +37,11 @@ struct NET_EXPORT RedirectInfo {
 
   // The new HTTP referrer header.
   std::string new_referrer;
+
+  // The hostname of the referrer if it asked the client to include a referred
+  // Token Binding when following the redirect; otherwise this is the empty
+  // string.
+  std::string referred_token_binding_host;
 };
 
 }  // namespace net

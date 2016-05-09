@@ -34,8 +34,9 @@ namespace blink {
 
 class CompositeEditCommand;
 class Document;
+class EditingState;
 
-class EditCommand : public RefCountedWillBeGarbageCollectedFinalized<EditCommand> {
+class EditCommand : public GarbageCollectedFinalized<EditCommand> {
 public:
     virtual ~EditCommand();
 
@@ -50,7 +51,8 @@ public:
     virtual bool isCompositeEditCommand() const { return false; }
     bool isTopLevelCommand() const { return !m_parent; }
 
-    virtual void doApply() = 0;
+    // The |EditingState*| argument must not be nullptr.
+    virtual void doApply(EditingState*) = 0;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -69,10 +71,10 @@ protected:
     static bool isRenderedCharacter(const Position&);
 
 private:
-    RefPtrWillBeMember<Document> m_document;
+    Member<Document> m_document;
     VisibleSelection m_startingSelection;
     VisibleSelection m_endingSelection;
-    RawPtrWillBeMember<CompositeEditCommand> m_parent;
+    Member<CompositeEditCommand> m_parent;
 };
 
 enum ShouldAssumeContentIsAlwaysEditable {

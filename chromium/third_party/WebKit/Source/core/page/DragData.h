@@ -67,7 +67,7 @@ public:
     String asURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames, String* title = nullptr) const;
     String asPlainText() const;
     void asFilePaths(Vector<String>&) const;
-    PassRefPtrWillBeRawPtr<DocumentFragment> asFragment(LocalFrame*) const;
+    DocumentFragment* asFragment(LocalFrame*) const;
     bool canSmartReplace() const;
     bool containsFiles() const;
     int modifiers() const;
@@ -82,6 +82,6 @@ private:
     DragApplicationFlags m_applicationFlags;
 };
 
-}
+} // namespace blink
 
 #endif // !DragData_h

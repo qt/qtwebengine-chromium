@@ -64,6 +64,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterAndroid final
                        const base::Closure& callback,
                        const ErrorCallback& error_callback) override;
   bool IsDiscovering() const override;
+  UUIDList GetUUIDs() const override;
   void CreateRfcommService(
       const BluetoothUUID& uuid,
       const ServiceOptions& options,
@@ -83,13 +84,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterAndroid final
       const CreateAdvertisementCallback& callback,
       const CreateAdvertisementErrorCallback& error_callback) override;
 
-  // Returns BluetoothAdapter Observers for use by Android platform
-  // implementation classes to send event notifications. Intentionally not
-  // exposed on the public base class BluetoothAdapter as it is an
-  // implementation detail.
-  base::ObserverList<device::BluetoothAdapter::Observer>& GetObservers() {
-    return observers_;
-  }
+  // Called when adapter state changes.
+  void OnAdapterStateChanged(JNIEnv* env,
+                             const base::android::JavaParamRef<jobject>& caller,
+                             const bool powered);
 
   // Handles a scan error event by invalidating all discovery sessions.
   void OnScanFailed(JNIEnv* env,

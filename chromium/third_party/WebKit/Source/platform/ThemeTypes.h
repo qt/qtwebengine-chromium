@@ -56,7 +56,6 @@ enum ControlPart {
     SliderThumbVerticalPart, CaretPart, SearchFieldPart, SearchFieldDecorationPart,
     SearchFieldResultsDecorationPart,
     SearchFieldCancelButtonPart, TextFieldPart,
-    RelevancyLevelIndicatorPart, ContinuousCapacityLevelIndicatorPart, DiscreteCapacityLevelIndicatorPart, RatingLevelIndicatorPart,
     TextAreaPart, CapsLockIndicatorPart
 };
 
@@ -76,5 +75,5 @@ enum ThemeColor {
     FocusRingColor, ActiveListBoxSelection, ActiveListBoxSelectionText, InactiveListBoxSelection, InactiveListBoxSelectionText
 };
 
-}
+} // namespace blink
 #endif

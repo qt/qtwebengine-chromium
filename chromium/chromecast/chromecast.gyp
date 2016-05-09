@@ -14,7 +14,6 @@
     'chromecast_branding%': 'public',
     'disable_display%': 0,
     'ozone_platform_cast%': 0,
-    'use_chromecast_webui%': 0,
   },
   'includes': [
     'chromecast_tests.gypi',
@@ -22,11 +21,6 @@
   'target_defaults': {
     'include_dirs': [
       '..',  # Root of Chromium checkout
-    ],
-    'conditions': [
-      ['disable_display==1', {
-        'defines': ['DISABLE_DISPLAY'],
-      }],
     ],
     'target_conditions': [
       ['_type=="executable"', {
@@ -132,6 +126,18 @@
       ],
     },  # end of target 'cast_base'
     {
+      'target_name': 'cast_component',
+      'type': '<(component)',
+      'dependencies': [
+        '../base/base.gyp:base',
+      ],
+      'sources': [
+        'base/component/component.cc',
+        'base/component/component.h',
+        'base/component/component_internal.h',
+      ],
+    },  # end of target 'cast_component'
+    {
       'target_name': 'cast_crash',
       'type': '<(component)',
       'include_dirs': [
@@ -180,10 +186,10 @@
         '../breakpad/src',
       ],
       'sources' : [
-        'app/android/crash_handler.cc',
-        'app/android/crash_handler.h',
         'app/android/cast_crash_reporter_client_android.cc',
         'app/android/cast_crash_reporter_client_android.h',
+        'app/android/crash_handler.cc',
+        'app/android/crash_handler.h',
         'app/linux/cast_crash_reporter_client.cc',
         'app/linux/cast_crash_reporter_client.h',
       ],
@@ -230,6 +236,7 @@
         }],
       ],
     },
+    # GN target: //chromecast/app:resources
     {
       'target_name': 'cast_shell_resources',
       'type': 'none',
@@ -248,6 +255,7 @@
       ],
       'includes': [ '../build/grit_target.gypi' ],
     },
+    # GN target: //chromecast:cast_shell_pak
     {
       'target_name': 'cast_shell_pak',
       'type': 'none',
@@ -278,15 +286,9 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
             ],
             'conditions': [
-              ['chromecast_branding!="public" and use_chromecast_webui==1', {
-                'pak_inputs': [
-                  '<(SHARED_INTERMEDIATE_DIR)/chromecast/app_resources.pak',
-                  '<(SHARED_INTERMEDIATE_DIR)/chromecast/cast_webui_resources.pak',
-                ],
-              }],
               ['chromecast_branding!="public"', {
                 'pak_inputs': [
-                  '<(SHARED_INTERMEDIATE_DIR)/chromecast/sound_resources.pak',
+                  '<(SHARED_INTERMEDIATE_DIR)/chromecast/internal/cast_shell_internal.pak',
                 ],
               }],
             ],
@@ -296,21 +298,16 @@
         },
       ],
       'conditions': [
-        ['chromecast_branding!="public" and use_chromecast_webui==1', {
-          'dependencies': [
-            'internal/chromecast_resources.gyp:chromecast_app_resources',
-            'internal/chromecast_resources.gyp:chromecast_webui_resources',
-          ],
-        }],
         ['chromecast_branding!="public"', {
           'dependencies': [
-            'internal/chromecast_resources.gyp:chromecast_sound_resources',
+            'internal/chromecast_resources.gyp:cast_shell_internal_pak',
           ],
         }],
       ],
     },  # end of target 'cast_shell_pak'
     # This target contains all content-embedder implementation that is
     # non-platform-specific.
+    # GN target: This target is dissolved into many targets on GN.
     {
       'target_name': 'cast_shell_common',
       'type': '<(component)',
@@ -322,6 +319,7 @@
         'cast_shell_resources',
         'cast_sys_info',
         'cast_version_header',
+        'chromecast_features',
         'chromecast_locales.gyp:chromecast_locales_pak',
         'chromecast_locales.gyp:chromecast_settings',
         'media/media.gyp:media_base',
@@ -420,6 +418,7 @@
         'renderer/media/capabilities_message_filter.h',
         'service/cast_service.cc',
         'service/cast_service.h',
+        'utility/cast_content_utility_client.h',
       ],
       'conditions': [
         ['chromecast_branding!="public"', {
@@ -433,6 +432,7 @@
             'browser/pref_service_helper_simple.cc',
             'common/platform_client_auth_simple.cc',
             'renderer/cast_content_renderer_client_simple.cc',
+            'utility/cast_content_utility_client_simple.cc',
           ],
         }],
         # ExternalMetrics not necessary on Android and (as of this writing) uses
@@ -456,8 +456,14 @@
             'cast_jni_headers',
           ],
         }],
+        ['use_ozone==1', {
+          'dependencies': [
+            '../ui/ozone/ozone.gyp:ozone',
+          ],
+        }],
       ],
     },
+    # GN target: //chromecast/base:cast_sys_info
     {
       'target_name': 'cast_sys_info',
       'type': '<(component)',
@@ -486,6 +492,7 @@
         }],
       ],
     },  # end of target 'cast_sys_info'
+    # GN target: //chromecast/base:cast_version_header
     {
       'target_name': 'cast_version_header',
       'type': 'none',
@@ -537,7 +544,18 @@
         'graphics/graphics_properties_default.cc',
         'graphics/osd_plane_default.cc'
       ],
-    }
+    },
+    {
+      # GN target: //chromecast:chromecast_features
+      'target_name': 'chromecast_features',
+      'includes': [ '../build/buildflag_header.gypi' ],
+      'variables': {
+        'buildflag_header_path': 'chromecast/chromecast_features.h',
+        'buildflag_flags': [
+          'DISABLE_DISPLAY=<(disable_display)',
+        ]
+      }
+    },  # end of target 'chromecast_features'
   ],  # end of targets
 
   # Targets for Android receiver.
@@ -545,7 +563,7 @@
     ['OS=="android"', {
       'includes': ['../build/android/v8_external_startup_data_arch_suffix.gypi',],
       'variables': {
-         'cast_shell_assets_path': '<(PRODUCT_DIR)/assets/cast_shell_apk',
+         'cast_shell_assets_path': '<(PRODUCT_DIR)/assets',
       },
       'targets': [
         {
@@ -559,7 +577,6 @@
             'dest_path': '<(cast_shell_assets_path)',
             'src_files': [
               '<(PRODUCT_DIR)/icudtl.dat',
-              '<(PRODUCT_DIR)/assets/cast_shell.pak',
             ],
             'renaming_sources': [
               '<(PRODUCT_DIR)/natives_blob.bin',
@@ -722,8 +739,6 @@
           'sources': [
             'browser/media/cast_browser_cdm_factory.cc',
             'browser/media/cast_browser_cdm_factory.h',
-            'browser/media/cma_media_pipeline_client.cc',
-            'browser/media/cma_media_pipeline_client.h',
             'browser/media/cma_message_filter_host.cc',
             'browser/media/cma_message_filter_host.h',
             'browser/media/media_pipeline_host.cc',
@@ -744,8 +759,6 @@
             'renderer/media/cma_message_filter_proxy.h',
             'renderer/media/cma_renderer.cc',
             'renderer/media/cma_renderer.h',
-            'renderer/media/demuxer_stream_adapter.cc',
-            'renderer/media/demuxer_stream_adapter.h',
             'renderer/media/hole_frame_factory.cc',
             'renderer/media/hole_frame_factory.h',
             'renderer/media/media_channel_proxy.cc',

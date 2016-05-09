@@ -224,12 +224,14 @@ source_set("test_support") {
   }
 }
 
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("google_apis_unittests_run") {
+bundle_data("google_apis_unittests_bundle_data") {
   testonly = true
-  deps = [
-    ":google_apis_unittests",
+  sources = [
+    "test",
+  ]
+  outputs = [
+    "{{bundle_resources_dir}}/" +
+        "{{source_root_relative_dir}}/{{source_file_part}}",
   ]
 }
 
@@ -256,6 +258,7 @@ test("google_apis_unittests") {
 
   deps = [
     ":google_apis",
+    ":google_apis_unittests_bundle_data",
     ":test_support",
     "//base",
     "//base/test:run_all_unittests",

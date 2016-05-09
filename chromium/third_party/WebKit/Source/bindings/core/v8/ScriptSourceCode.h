@@ -33,7 +33,6 @@
 
 #include "bindings/core/v8/ScriptStreamer.h"
 #include "core/CoreExport.h"
-#include "core/fetch/ResourcePtr.h"
 #include "core/fetch/ScriptResource.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -41,9 +40,6 @@
 #include "wtf/text/WTFString.h"
 
 namespace blink {
-
-template <class R> class ResourcePtr;
-class ScriptResource;
 
 class CORE_EXPORT ScriptSourceCode final {
     DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
@@ -53,7 +49,8 @@ public:
     // Not sure if that matters.
     explicit ScriptSourceCode(ScriptResource*);
     ScriptSourceCode(const String&, const KURL& = KURL(), const TextPosition& startPosition = TextPosition::minimumPosition());
-    ScriptSourceCode(PassRefPtrWillBeRawPtr<ScriptStreamer>, ScriptResource*);
+    ScriptSourceCode(const CompressibleString&, const KURL& = KURL(), const TextPosition& startPosition = TextPosition::minimumPosition());
+    ScriptSourceCode(RawPtr<ScriptStreamer>, ScriptResource*);
 
     ~ScriptSourceCode();
     DECLARE_TRACE();
@@ -64,7 +61,7 @@ public:
     // constructor, and differs from the empty script.
     bool isNull() const { return m_source.isNull(); }
 
-    const String& source() const { return m_source; }
+    const CompressibleString& source() const { return m_source; }
     ScriptResource* resource() const { return m_resource.get(); }
     const KURL& url() const;
     int startLine() const { return m_startPosition.m_line.oneBasedInt(); }
@@ -76,9 +73,9 @@ public:
 private:
     void treatNullSourceAsEmpty();
 
-    String m_source;
-    ResourcePtr<ScriptResource> m_resource;
-    RefPtrWillBeMember<ScriptStreamer> m_streamer;
+    CompressibleString m_source;
+    Member<ScriptResource> m_resource;
+    Member<ScriptStreamer> m_streamer;
     mutable KURL m_url;
     TextPosition m_startPosition;
 };

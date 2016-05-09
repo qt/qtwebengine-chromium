@@ -14,24 +14,14 @@ namespace ui {
 // Mac implementation of native theme support.
 class NATIVE_THEME_EXPORT NativeThemeMac : public NativeThemeBase {
  public:
+  static const int kComboboxCornerRadius = 5;
+
   static NativeThemeMac* instance();
 
   // Overridden from NativeTheme:
   SkColor GetSystemColor(ColorId color_id) const override;
 
   // Overridden from NativeThemeBase:
-  void PaintScrollbarTrack(SkCanvas* canvas,
-                           Part part,
-                           State state,
-                           const ScrollbarTrackExtraParams& extra_params,
-                           const gfx::Rect& rect) const override;
-  void PaintScrollbarThumb(SkCanvas* sk_canvas,
-                           Part part,
-                           State state,
-                           const gfx::Rect& rect) const override;
-  void PaintScrollbarCorner(SkCanvas* canvas,
-                            State state,
-                            const gfx::Rect& rect) const override;
   void PaintMenuPopupBackground(
       SkCanvas* canvas,
       const gfx::Size& size,
@@ -40,7 +30,10 @@ class NATIVE_THEME_EXPORT NativeThemeMac : public NativeThemeBase {
       SkCanvas* canvas,
       State state,
       const gfx::Rect& rect,
-      const MenuListExtraParams& menu_list) const override;
+      const MenuItemExtraParams& menu_item) const override;
+
+  // Creates a shader appropriate for painting the background of a button.
+  static sk_sp<SkShader> GetButtonBackgroundShader(State state, int height);
 
  private:
   NativeThemeMac();

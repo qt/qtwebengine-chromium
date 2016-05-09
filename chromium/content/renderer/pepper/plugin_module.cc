@@ -39,7 +39,6 @@
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
-#include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
@@ -399,12 +398,6 @@ const PPB_Testing_Private testing_interface = {
 // GetInterface ----------------------------------------------------------------
 
 const void* InternalGetInterface(const char* name) {
-  // Allow custom interface factories first stab at the GetInterface call.
-  const void* custom_interface =
-      GetContentClient()->renderer()->CreatePPAPIInterface(name);
-  if (custom_interface)
-    return custom_interface;
-
 // TODO(brettw) put these in a hash map for better performance.
 #define PROXIED_IFACE(iface_str, iface_struct) \
   if (strcmp(name, iface_str) == 0)            \

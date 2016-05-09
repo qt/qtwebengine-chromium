@@ -162,6 +162,8 @@ class XcodeSettings(object):
     self.spec = spec
 
     self.isIOS = False
+    self.mac_toolchain_dir = None
+    self.header_map_path = None
 
     # Per-target 'xcode_settings' are pushed down into configs earlier by gyp.
     # This means self.xcode_settings[config] always contains all settings
@@ -221,6 +223,10 @@ class XcodeSettings(object):
     format = self.xcode_settings[configname].get('INFOPLIST_OUTPUT_FORMAT',
                                                  default)
     return format == "binary"
+
+  def IsIosFramework(self):
+    return self.spec['type'] == 'shared_library' and self._IsBundle() and \
+        self.isIOS
 
   def _IsBundle(self):
     return int(self.spec.get('mac_bundle', 0)) != 0 or self._IsXCTest()
@@ -488,6 +494,9 @@ class XcodeSettings(object):
     sdk_root = self._SdkPath()
     if 'SDKROOT' in self._Settings() and sdk_root:
       cflags.append('-isysroot %s' % sdk_root)
+
+    if self.header_map_path:
+      cflags.append('-I%s' % self.header_map_path)
 
     if self._Test('CLANG_WARN_CONSTANT_CONVERSION', 'YES', default='NO'):
       cflags.append('-Wconstant-conversion')
@@ -858,13 +867,13 @@ class XcodeSettings(object):
       # extensions and provide loader and main function.
       # These flags reflect the compilation options used by xcode to compile
       # extensions.
-      ldflags.append('-lpkstart')
       if XcodeVersion() < '0900':
+        ldflags.append('-lpkstart')
         ldflags.append(sdk_root +
             '/System/Library/PrivateFrameworks/PlugInKit.framework/PlugInKit')
+      else:
+        ldflags.append('-e _NSExtensionMain')
       ldflags.append('-fapplication-extension')
-      ldflags.append('-Xlinker -rpath '
-          '-Xlinker @executable_path/../../Frameworks')
 
     self._Appendf(ldflags, 'CLANG_CXX_LIBRARY', '-stdlib=%s')
 
@@ -938,7 +947,8 @@ class XcodeSettings(object):
         self._Test('STRIP_INSTALLED_PRODUCT', 'YES', default='NO')):
 
       default_strip_style = 'debugging'
-      if self.spec['type'] == 'loadable_module' and self._IsBundle():
+      if ((self.spec['type'] == 'loadable_module' or self._IsIosAppExtension())
+          and self._IsBundle()):
         default_strip_style = 'non-global'
       elif self.spec['type'] == 'executable':
         default_strip_style = 'all'
@@ -994,7 +1004,8 @@ class XcodeSettings(object):
     be deployed to a device.  This should be run as the very last step of the
     build."""
     if not (self.isIOS and
-        (self.spec['type'] == 'executable' or self._IsXCTest())):
+        (self.spec['type'] == 'executable' or self._IsXCTest()) or
+         self.IsIosFramework()):
       return []
 
     settings = self.xcode_settings[configname]
@@ -1009,9 +1020,8 @@ class XcodeSettings(object):
       print 'Warning: Some codesign keys not implemented, ignoring: %s' % (
           ', '.join(sorted(unimpl)))
 
-    return ['%s code-sign-bundle "%s" "%s" "%s" "%s"' % (
+    return ['%s code-sign-bundle "%s" "%s" "%s"' % (
         os.path.join('${TARGET_BUILD_DIR}', 'gyp-mac-tool'), key,
-        settings.get('CODE_SIGN_RESOURCE_RULES_PATH', ''),
         settings.get('CODE_SIGN_ENTITLEMENTS', ''),
         settings.get('PROVISIONING_PROFILE', ''))
     ]
@@ -1096,25 +1106,37 @@ class XcodeSettings(object):
       xcode, xcode_build = XcodeVersion()
       cache['DTXcode'] = xcode
       cache['DTXcodeBuild'] = xcode_build
+      compiler = self.xcode_settings[configname].get('GCC_VERSION')
+      if compiler is not None:
+        cache['DTCompiler'] = compiler
 
       sdk_root = self._SdkRoot(configname)
       if not sdk_root:
         sdk_root = self._DefaultSdkRoot()
-      cache['DTSDKName'] = sdk_root
-      if xcode >= '0430':
+      sdk_version = self._GetSdkVersionInfoItem(sdk_root, '--show-sdk-version')
+      cache['DTSDKName'] = sdk_root + (sdk_version or '')
+      if xcode >= '0720':
         cache['DTSDKBuild'] = self._GetSdkVersionInfoItem(
-            sdk_root, '--show-sdk-version')
+            sdk_root, '--show-sdk-build-version')
+      elif xcode >= '0430':
+        cache['DTSDKBuild'] = sdk_version
       else:
         cache['DTSDKBuild'] = cache['BuildMachineOSBuild']
 
       if self.isIOS:
-        cache['DTPlatformName'] = cache['DTSDKName']
+        cache['MinimumOSVersion'] = self.xcode_settings[configname].get(
+            'IPHONEOS_DEPLOYMENT_TARGET')
+        cache['DTPlatformName'] = sdk_root
+        cache['DTPlatformVersion'] = sdk_version
+
         if configname.endswith("iphoneos"):
-          cache['DTPlatformVersion'] = self._GetSdkVersionInfoItem(
-              sdk_root, '--show-sdk-version')
           cache['CFBundleSupportedPlatforms'] = ['iPhoneOS']
+          cache['DTPlatformBuild'] = cache['DTSDKBuild']
         else:
           cache['CFBundleSupportedPlatforms'] = ['iPhoneSimulator']
+          # This is weird, but Xcode sets DTPlatformBuild to an empty field
+          # for simulator builds.
+          cache['DTPlatformBuild'] = ""
       XcodeSettings._plist_cache[configname] = cache
 
     # Include extra plist items that are per-target, not per global
@@ -1487,11 +1509,15 @@ def _GetXcodeEnv(xcode_settings, built_products_dir, srcroot, configuration,
     # written for bundles:
     'TARGET_BUILD_DIR' : built_products_dir,
     'TEMP_DIR' : '${TMPDIR}',
+    'XCODE_VERSION_ACTUAL' : XcodeVersion()[0],
   }
   if xcode_settings.GetPerConfigSetting('SDKROOT', configuration):
     env['SDKROOT'] = xcode_settings._SdkPath(configuration)
   else:
     env['SDKROOT'] = ''
+
+  if xcode_settings.mac_toolchain_dir:
+    env['DEVELOPER_DIR'] = xcode_settings.mac_toolchain_dir
 
   if spec['type'] in (
       'executable', 'static_library', 'shared_library', 'loadable_module'):

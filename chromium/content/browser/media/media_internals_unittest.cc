@@ -44,7 +44,7 @@ class MediaInternalsTestBase {
     std::string utf8_update = base::UTF16ToUTF8(update);
     const std::string::size_type first_brace = utf8_update.find('{');
     const std::string::size_type last_brace = utf8_update.rfind('}');
-    scoped_ptr<base::Value> output_value = base::JSONReader::Read(
+    std::unique_ptr<base::Value> output_value = base::JSONReader::Read(
         utf8_update.substr(first_brace, last_brace - first_brace + 1));
     CHECK(output_value);
 
@@ -122,13 +122,11 @@ TEST_F(MediaInternalsVideoCaptureDeviceTest,
   CaptureApiTypeStringMap m;
 #if defined(OS_LINUX)
   m[VideoCaptureDeviceName::V4L2_SINGLE_PLANE] = "V4L2 SPLANE";
-  m[VideoCaptureDeviceName::V4L2_MULTI_PLANE] = "V4L2 MPLANE";
 #elif defined(OS_WIN)
   m[VideoCaptureDeviceName::MEDIA_FOUNDATION] = "Media Foundation";
   m[VideoCaptureDeviceName::DIRECT_SHOW] = "Direct Show";
 #elif defined(OS_MACOSX)
   m[VideoCaptureDeviceName::AVFOUNDATION] = "AV Foundation";
-  m[VideoCaptureDeviceName::QTKIT] = "QTKit";
   m[VideoCaptureDeviceName::DECKLINK] = "DeckLink";
 #elif defined(OS_ANDROID)
   m[VideoCaptureDeviceName::API1] = "Camera API1";
@@ -181,8 +179,8 @@ TEST_F(MediaInternalsVideoCaptureDeviceTest,
   formats.push_back(format_hd);
   const media::VideoCaptureDeviceInfo device_info(
 #if defined(OS_MACOSX)
-      media::VideoCaptureDevice::Name("dummy", "dummy",
-          media::VideoCaptureDevice::Name::QTKIT),
+      media::VideoCaptureDevice::Name(
+          "dummy", "dummy", media::VideoCaptureDevice::Name::AVFOUNDATION),
 #elif defined(OS_WIN)
       media::VideoCaptureDevice::Name("dummy", "dummy",
           media::VideoCaptureDevice::Name::DIRECT_SHOW),
@@ -220,7 +218,7 @@ TEST_F(MediaInternalsVideoCaptureDeviceTest,
 #elif defined(OS_WIN)
   ExpectString("captureApi", "Direct Show");
 #elif defined(OS_MACOSX)
-  ExpectString("captureApi", "QTKit");
+  ExpectString("captureApi", "AV Foundation");
 #elif defined(OS_ANDROID)
   ExpectString("captureApi", "Camera API2 Legacy");
 #endif
@@ -247,7 +245,7 @@ class MediaInternalsAudioLogTest
   MediaInternals::UpdateCallback update_cb_;
   const media::AudioParameters test_params_;
   const media::AudioLogFactory::AudioComponent test_component_;
-  scoped_ptr<media::AudioLog> audio_log_;
+  std::unique_ptr<media::AudioLog> audio_log_;
 
  private:
   static media::AudioParameters MakeAudioParams() {

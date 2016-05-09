@@ -9,21 +9,16 @@
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
-#include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_request.h"
 #include "net/http/transport_security_state.h"
 #include "net/log/net_log.h"
-#include "net/net_features.h"
 #include "net/quic/quic_server_id.h"
+#include "net/spdy/bidirectional_stream_spdy_impl.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "url/gurl.h"
-
-#if BUILDFLAG(ENABLE_BIDIRECTIONAL_STREAM)
-#include "net/spdy/bidirectional_stream_spdy_job.h"
-#endif
 
 namespace net {
 
@@ -55,13 +50,9 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStream(
     HttpStreamRequest::Delegate* delegate,
     const BoundNetLog& net_log) {
   DCHECK(!for_websockets_);
-  return RequestStreamInternal(request_info,
-                               priority,
-                               server_ssl_config,
-                               proxy_ssl_config,
-                               delegate,
-                               NULL,
-                               net_log);
+  return RequestStreamInternal(request_info, priority, server_ssl_config,
+                               proxy_ssl_config, delegate, nullptr,
+                               HttpStreamRequest::HTTP_STREAM, net_log);
 }
 
 HttpStreamRequest* HttpStreamFactoryImpl::RequestWebSocketHandshakeStream(
@@ -74,16 +65,12 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestWebSocketHandshakeStream(
     const BoundNetLog& net_log) {
   DCHECK(for_websockets_);
   DCHECK(create_helper);
-  return RequestStreamInternal(request_info,
-                               priority,
-                               server_ssl_config,
-                               proxy_ssl_config,
-                               delegate,
-                               create_helper,
-                               net_log);
+  return RequestStreamInternal(request_info, priority, server_ssl_config,
+                               proxy_ssl_config, delegate, create_helper,
+                               HttpStreamRequest::HTTP_STREAM, net_log);
 }
 
-HttpStreamRequest* HttpStreamFactoryImpl::RequestBidirectionalStreamJob(
+HttpStreamRequest* HttpStreamFactoryImpl::RequestBidirectionalStreamImpl(
     const HttpRequestInfo& request_info,
     RequestPriority priority,
     const SSLConfig& server_ssl_config,
@@ -93,24 +80,9 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestBidirectionalStreamJob(
   DCHECK(!for_websockets_);
   DCHECK(request_info.url.SchemeIs(url::kHttpsScheme));
 
-// TODO(xunjieli): Create QUIC's version of BidirectionalStreamJob.
-#if BUILDFLAG(ENABLE_BIDIRECTIONAL_STREAM)
-  HostPortPair server = HostPortPair::FromURL(request_info.url);
-  GURL origin_url = ApplyHostMappingRules(request_info.url, &server);
-  Request* request =
-      new Request(request_info.url, this, delegate, nullptr, net_log,
-                  Request::BIDIRECTIONAL_STREAM_SPDY_JOB);
-  Job* job = new Job(this, session_, request_info, priority, server_ssl_config,
-                     proxy_ssl_config, server, origin_url, net_log.net_log());
-  request->AttachJob(job);
-
-  job->Start(request);
-  return request;
-
-#else
-  DCHECK(false);
-  return nullptr;
-#endif
+  return RequestStreamInternal(
+      request_info, priority, server_ssl_config, proxy_ssl_config, delegate,
+      nullptr, HttpStreamRequest::BIDIRECTIONAL_STREAM, net_log);
 }
 
 HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
@@ -121,10 +93,11 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
     HttpStreamRequest::Delegate* delegate,
     WebSocketHandshakeStreamBase::CreateHelper*
         websocket_handshake_stream_create_helper,
+    HttpStreamRequest::StreamType stream_type,
     const BoundNetLog& net_log) {
   Request* request = new Request(request_info.url, this, delegate,
                                  websocket_handshake_stream_create_helper,
-                                 net_log, Request::HTTP_STREAM);
+                                 net_log, stream_type);
   HostPortPair server = HostPortPair::FromURL(request_info.url);
   GURL origin_url = ApplyHostMappingRules(request_info.url, &server);
 
@@ -133,7 +106,7 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
   request->AttachJob(job);
 
   const AlternativeService alternative_service =
-      GetAlternativeServiceFor(request_info, delegate);
+      GetAlternativeServiceFor(request_info, delegate, stream_type);
 
   if (alternative_service.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
     // Never share connection with other jobs for FTP requests.
@@ -171,8 +144,8 @@ void HttpStreamFactoryImpl::PreconnectStreams(
     const SSLConfig& server_ssl_config,
     const SSLConfig& proxy_ssl_config) {
   DCHECK(!for_websockets_);
-  AlternativeService alternative_service =
-      GetAlternativeServiceFor(request_info, nullptr);
+  AlternativeService alternative_service = GetAlternativeServiceFor(
+      request_info, nullptr, HttpStreamRequest::HTTP_STREAM);
   HostPortPair server;
   if (alternative_service.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
     server = alternative_service.host_port_pair();
@@ -203,7 +176,8 @@ const HostMappingRules* HttpStreamFactoryImpl::GetHostMappingRules() const {
 
 AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
     const HttpRequestInfo& request_info,
-    HttpStreamRequest::Delegate* delegate) {
+    HttpStreamRequest::Delegate* delegate,
+    HttpStreamRequest::StreamType stream_type) {
   GURL original_url = request_info.url;
 
   if (original_url.SchemeIs("ftp"))
@@ -221,7 +195,7 @@ AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
   bool quic_all_broken = true;
 
   const bool enable_different_host =
-      session_->params().use_alternative_services;
+      session_->params().enable_alternative_service_with_different_host;
 
   // First Alt-Svc that is not marked as broken.
   AlternativeService first_alternative_service;
@@ -258,9 +232,6 @@ AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
       if (!HttpStreamFactory::spdy_enabled())
         continue;
 
-      if (session_->HasSpdyExclusion(origin))
-        continue;
-
       // Cache this entry if we don't have a non-broken Alt-Svc yet.
       if (first_alternative_service.protocol ==
           UNINITIALIZED_ALTERNATE_PROTOCOL)
@@ -272,6 +243,14 @@ AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
     quic_all_broken = false;
     if (!session_->params().enable_quic)
       continue;
+
+    if (!IsQuicWhitelistedForHost(origin.host()))
+      continue;
+
+    if (stream_type == HttpStreamRequest::BIDIRECTIONAL_STREAM &&
+        session_->params().quic_disable_bidirectional_streams) {
+      continue;
+    }
 
     if (session_->quic_stream_factory()->IsQuicDisabled(origin.port()))
       continue;
@@ -287,9 +266,6 @@ AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
     if (session_->quic_stream_factory()->CanUseExistingSession(
             server_id, request_info.privacy_mode, origin_host))
       return alternative_service;
-
-    if (!IsQuicWhitelistedForHost(destination.host()))
-      continue;
 
     // Cache this entry if we don't have a non-broken Alt-Svc yet.
     if (first_alternative_service.protocol == UNINITIALIZED_ALTERNATE_PROTOCOL)
@@ -342,14 +318,11 @@ void HttpStreamFactoryImpl::OnNewSpdySessionReady(
       // TODO(ricea): Restore this code path when WebSocket over SPDY
       // implementation is ready.
       NOTREACHED();
-    } else if (request->for_bidirectional()) {
-#if BUILDFLAG(ENABLE_BIDIRECTIONAL_STREAM)
-      request->OnBidirectionalStreamJobReady(
+    } else if (request->stream_type() ==
+               HttpStreamRequest::BIDIRECTIONAL_STREAM) {
+      request->OnBidirectionalStreamImplReady(
           nullptr, used_ssl_config, used_proxy_info,
-          new BidirectionalStreamSpdyJob(spdy_session));
-#else
-      DCHECK(false);
-#endif
+          new BidirectionalStreamSpdyImpl(spdy_session));
     } else {
       bool use_relative_url = direct || request->url().SchemeIs("https");
       request->OnStreamReady(
@@ -372,15 +345,23 @@ void HttpStreamFactoryImpl::OnPreconnectsComplete(const Job* job) {
 }
 
 bool HttpStreamFactoryImpl::IsQuicWhitelistedForHost(const std::string& host) {
+  bool whitelist_needed = false;
+  for (QuicVersion version : session_->params().quic_supported_versions) {
+    if (version <= QUIC_VERSION_30) {
+      whitelist_needed = true;
+      break;
+    }
+  }
+
+  // The QUIC whitelist is not needed in QUIC versions after 30.
+  if (!whitelist_needed)
+    return true;
+
   if (session_->params().transport_security_state->IsGooglePinnedHost(host))
     return true;
 
-  std::string lower_host = base::ToLowerASCII(host);
-  if (ContainsKey(session_->params().quic_host_whitelist, lower_host))
-    return true;
-
-  return base::EndsWith(lower_host, ".snapchat.com",
-                        base::CompareCase::SENSITIVE);
+  return ContainsKey(session_->params().quic_host_whitelist,
+                     base::ToLowerASCII(host));
 }
 
 }  // namespace net

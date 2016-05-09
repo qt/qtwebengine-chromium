@@ -7,8 +7,9 @@
 
 #include "public/platform/WebCallbacks.h"
 #include "public/platform/WebCredentialManagerError.h"
-#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/WebVector.h"
+
+#include <memory>
 
 namespace blink {
 
@@ -20,7 +21,7 @@ class WebURL;
 // 'credentialmanager' module.
 class WebCredentialManagerClient {
 public:
-    typedef WebCallbacks<WebPassOwnPtr<WebCredential>, WebCredentialManagerError> RequestCallbacks;
+    typedef WebCallbacks<std::unique_ptr<WebCredential>, WebCredentialManagerError> RequestCallbacks;
     typedef WebCallbacks<void, WebCredentialManagerError> NotificationCallbacks;
 
     // Ownership of the callback is transferred to the callee for each of
@@ -28,7 +29,7 @@ public:
     virtual void dispatchFailedSignIn(const WebCredential&, NotificationCallbacks*) { }
     virtual void dispatchStore(const WebCredential&, NotificationCallbacks*) { }
     virtual void dispatchRequireUserMediation(NotificationCallbacks*) { }
-    virtual void dispatchGet(bool zeroClickOnly, const WebVector<WebURL>& federations, RequestCallbacks*) { }
+    virtual void dispatchGet(bool zeroClickOnly, bool includePasswords, const WebVector<WebURL>& federations, RequestCallbacks*) {}
 };
 
 } // namespace blink

@@ -1,0 +1,5 @@
+{
+  "name": "exe:chrome_mash",
+  "display_name": "Chrome",
+  "capabilities": { "*": [ "*" ] }
+}

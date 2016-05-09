@@ -189,12 +189,12 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
   return "???";
 }
 
-scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+scoped_ptr<base::trace_event::ConvertableToTraceFormat>
 SchedulerStateMachine::AsValue() const {
-  scoped_refptr<base::trace_event::TracedValue> state =
-      new base::trace_event::TracedValue();
+  scoped_ptr<base::trace_event::TracedValue> state(
+      new base::trace_event::TracedValue());
   AsValueInto(state.get());
-  return state;
+  return std::move(state);
 }
 
 void SchedulerStateMachine::AsValueInto(
@@ -315,8 +315,14 @@ bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
 
   // We only want to start output surface initialization after the
   // previous commit is complete.
-  if (begin_main_frame_state_ != BEGIN_MAIN_FRAME_STATE_IDLE)
+  // We make an exception if the embedder explicitly allows beginning output
+  // surface creation while the previous commit has not been aborted. This
+  // assumes that any state passed from the client during the commit will not be
+  // tied to the output surface.
+  if (begin_main_frame_state_ != BEGIN_MAIN_FRAME_STATE_IDLE &&
+      settings_.abort_commit_before_output_surface_creation) {
     return false;
+  }
 
   // Make sure the BeginImplFrame from any previous OutputSurfaces
   // are complete before creating the new OutputSurface.
@@ -613,7 +619,6 @@ void SchedulerStateMachine::WillCommit(bool commit_has_no_updates) {
       forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW) {
     DCHECK(!has_pending_tree_);
     needs_redraw_ = true;
-    active_tree_needs_first_draw_ = true;
   }
 
   // This post-commit work is common to both completed and aborted commits.
@@ -643,6 +648,13 @@ void SchedulerStateMachine::WillActivate() {
 }
 
 void SchedulerStateMachine::WillDrawInternal() {
+  // If a new active tree is pending after the one we are about to draw,
+  // the main thread is in a high latency mode.
+  // main_thread_missed_last_deadline_ is here in addition to
+  // OnBeginImplFrameIdle for cases where the scheduler aborts draws outside
+  // of the deadline.
+  main_thread_missed_last_deadline_ = CommitPending() || has_pending_tree_;
+
   // We need to reset needs_redraw_ before we draw since the
   // draw itself might request another draw.
   needs_redraw_ = false;
@@ -725,7 +737,11 @@ void SchedulerStateMachine::WillBeginOutputSurfaceCreation() {
   // The following DCHECKs make sure we are in the proper quiescent state.
   // The pipeline should be flushed entirely before we start output
   // surface creation to avoid complicated corner cases.
-  DCHECK_EQ(begin_main_frame_state_, BEGIN_MAIN_FRAME_STATE_IDLE);
+
+  // We allow output surface creation while the previous commit has not been
+  // aborted if the embedder explicitly allows it.
+  DCHECK(!settings_.abort_commit_before_output_surface_creation ||
+         begin_main_frame_state_ == BEGIN_MAIN_FRAME_STATE_IDLE);
   DCHECK(!has_pending_tree_);
   DCHECK(!active_tree_needs_first_draw_);
 }
@@ -953,10 +969,6 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineImmediately()
   return false;
 }
 
-bool SchedulerStateMachine::main_thread_missed_last_deadline() const {
-  return main_thread_missed_last_deadline_;
-}
-
 bool SchedulerStateMachine::SwapThrottled() const {
   return pending_swaps_ >= kMaxPendingSwaps;
 }
@@ -1003,7 +1015,8 @@ void SchedulerStateMachine::SetNeedsPrepareTiles() {
   }
 }
 void SchedulerStateMachine::DidSwapBuffers() {
-  TRACE_EVENT_ASYNC_BEGIN0("cc", "Scheduler:pending_swaps", this);
+  TRACE_EVENT_ASYNC_BEGIN1("cc", "Scheduler:pending_swaps", this,
+                           "pending_frames", pending_swaps_);
   DCHECK_LT(pending_swaps_, kMaxPendingSwaps);
 
   pending_swaps_++;
@@ -1014,7 +1027,8 @@ void SchedulerStateMachine::DidSwapBuffers() {
 }
 
 void SchedulerStateMachine::DidSwapBuffersComplete() {
-  TRACE_EVENT_ASYNC_END0("cc", "Scheduler:pending_swaps", this);
+  TRACE_EVENT_ASYNC_END1("cc", "Scheduler:pending_swaps", this,
+                         "pending_frames", pending_swaps_);
   pending_swaps_--;
 }
 
@@ -1066,6 +1080,11 @@ void SchedulerStateMachine::NotifyReadyToCommit() {
 
 void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
   DCHECK_EQ(begin_main_frame_state_, BEGIN_MAIN_FRAME_STATE_STARTED);
+
+  // If the main thread aborted, it doesn't matter if the  main thread missed
+  // the last deadline since it didn't have an update anyway.
+  main_thread_missed_last_deadline_ = false;
+
   switch (reason) {
     case CommitEarlyOutReason::ABORTED_OUTPUT_SURFACE_LOST:
     case CommitEarlyOutReason::ABORTED_NOT_VISIBLE:

@@ -30,8 +30,8 @@
 #include "src/compiler/instruction-selector.h"
 #include "src/compiler/js-builtin-reducer.h"
 #include "src/compiler/js-call-reducer.h"
-#include "src/compiler/js-context-relaxation.h"
 #include "src/compiler/js-context-specialization.h"
+#include "src/compiler/js-create-lowering.h"
 #include "src/compiler/js-frame-specialization.h"
 #include "src/compiler/js-generic-lowering.h"
 #include "src/compiler/js-global-object-specialization.h"
@@ -267,28 +267,34 @@ class PipelineData {
     register_allocation_data_ = nullptr;
   }
 
-  void InitializeInstructionSequence() {
+  void InitializeInstructionSequence(const CallDescriptor* descriptor) {
     DCHECK(sequence_ == nullptr);
     InstructionBlocks* instruction_blocks =
         InstructionSequence::InstructionBlocksFor(instruction_zone(),
                                                   schedule());
     sequence_ = new (instruction_zone()) InstructionSequence(
         info()->isolate(), instruction_zone(), instruction_blocks);
+    if (descriptor && descriptor->RequiresFrameAsIncoming()) {
+      sequence_->instruction_blocks()[0]->mark_needs_frame();
+    } else {
+      DCHECK_EQ(0, descriptor->CalleeSavedFPRegisters());
+      DCHECK_EQ(0, descriptor->CalleeSavedRegisters());
+    }
+  }
+
+  void InitializeFrameData(CallDescriptor* descriptor) {
+    DCHECK(frame_ == nullptr);
+    int fixed_frame_size = 0;
+    if (descriptor != nullptr) {
+      fixed_frame_size = CalculateFixedFrameSize(descriptor);
+    }
+    frame_ = new (instruction_zone()) Frame(fixed_frame_size, descriptor);
   }
 
   void InitializeRegisterAllocationData(const RegisterConfiguration* config,
                                         CallDescriptor* descriptor,
                                         const char* debug_name) {
-    DCHECK(frame_ == nullptr);
     DCHECK(register_allocation_data_ == nullptr);
-    int fixed_frame_size = 0;
-    if (descriptor != nullptr) {
-      fixed_frame_size = (descriptor->IsCFunctionCall())
-                             ? StandardFrameConstants::kFixedSlotCountAboveFp +
-                                   StandardFrameConstants::kCPSlotCount
-                             : StandardFrameConstants::kFixedSlotCount;
-    }
-    frame_ = new (instruction_zone()) Frame(fixed_frame_size, descriptor);
     register_allocation_data_ = new (register_allocation_zone())
         RegisterAllocationData(config, register_allocation_zone(), frame(),
                                sequence(), debug_name);
@@ -334,6 +340,16 @@ class PipelineData {
   ZonePool::Scope register_allocation_zone_scope_;
   Zone* register_allocation_zone_;
   RegisterAllocationData* register_allocation_data_;
+
+  int CalculateFixedFrameSize(CallDescriptor* descriptor) {
+    if (descriptor->IsJSFunctionCall()) {
+      return StandardFrameConstants::kFixedSlotCount;
+    }
+    return descriptor->IsCFunctionCall()
+               ? (CommonFrameConstants::kFixedSlotCountAboveFp +
+                  CommonFrameConstants::kCPSlotCount)
+               : TypedFrameConstants::kFixedSlotCount;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(PipelineData);
 };
@@ -512,7 +528,7 @@ struct GraphBuilderPhase {
     if (data->info()->shared_info()->HasBytecodeArray()) {
       BytecodeGraphBuilder graph_builder(temp_zone, data->info(),
                                          data->jsgraph());
-      succeeded = graph_builder.CreateGraph(stack_check);
+      succeeded = graph_builder.CreateGraph();
     } else {
       AstGraphBuilderWithPositions graph_builder(
           temp_zone, data->info(), data->jsgraph(), data->loop_assignment(),
@@ -549,17 +565,19 @@ struct InliningPhase {
     JSFrameSpecialization frame_specialization(data->info()->osr_frame(),
                                                data->jsgraph());
     JSGlobalObjectSpecialization global_object_specialization(
-        &graph_reducer, data->jsgraph(),
-        data->info()->is_deoptimization_enabled()
-            ? JSGlobalObjectSpecialization::kDeoptimizationEnabled
-            : JSGlobalObjectSpecialization::kNoFlags,
-        data->native_context(), data->info()->dependencies());
+        &graph_reducer, data->jsgraph(), data->native_context(),
+        data->info()->dependencies());
+    JSNativeContextSpecialization::Flags flags =
+        JSNativeContextSpecialization::kNoFlags;
+    if (data->info()->is_bailout_on_uninitialized()) {
+      flags |= JSNativeContextSpecialization::kBailoutOnUninitialized;
+    }
+    if (data->info()->is_deoptimization_enabled()) {
+      flags |= JSNativeContextSpecialization::kDeoptimizationEnabled;
+    }
     JSNativeContextSpecialization native_context_specialization(
-        &graph_reducer, data->jsgraph(),
-        data->info()->is_deoptimization_enabled()
-            ? JSNativeContextSpecialization::kDeoptimizationEnabled
-            : JSNativeContextSpecialization::kNoFlags,
-        data->native_context(), data->info()->dependencies(), temp_zone);
+        &graph_reducer, data->jsgraph(), flags, data->native_context(),
+        data->info()->dependencies(), temp_zone);
     JSInliningHeuristic inlining(&graph_reducer,
                                  data->info()->is_inlining_enabled()
                                      ? JSInliningHeuristic::kGeneralInlining
@@ -570,7 +588,9 @@ struct InliningPhase {
     if (data->info()->is_frame_specializing()) {
       AddReducer(data, &graph_reducer, &frame_specialization);
     }
-    AddReducer(data, &graph_reducer, &global_object_specialization);
+    if (data->info()->is_deoptimization_enabled()) {
+      AddReducer(data, &graph_reducer, &global_object_specialization);
+    }
     AddReducer(data, &graph_reducer, &native_context_specialization);
     AddReducer(data, &graph_reducer, &context_specialization);
     AddReducer(data, &graph_reducer, &call_reducer);
@@ -608,8 +628,16 @@ struct TypedLoweringPhase {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
-    LoadElimination load_elimination(&graph_reducer);
+    LoadElimination load_elimination(&graph_reducer, data->graph(),
+                                     data->common());
     JSBuiltinReducer builtin_reducer(&graph_reducer, data->jsgraph());
+    MaybeHandle<LiteralsArray> literals_array =
+        data->info()->is_native_context_specializing()
+            ? handle(data->info()->closure()->literals(), data->isolate())
+            : MaybeHandle<LiteralsArray>();
+    JSCreateLowering create_lowering(
+        &graph_reducer, data->info()->dependencies(), data->jsgraph(),
+        literals_array, temp_zone);
     JSTypedLowering::Flags typed_lowering_flags = JSTypedLowering::kNoFlags;
     if (data->info()->is_deoptimization_enabled()) {
       typed_lowering_flags |= JSTypedLowering::kDeoptimizationEnabled;
@@ -625,13 +653,18 @@ struct TypedLoweringPhase {
         data->info()->is_deoptimization_enabled()
             ? JSIntrinsicLowering::kDeoptimizationEnabled
             : JSIntrinsicLowering::kDeoptimizationDisabled);
+    SimplifiedOperatorReducer simple_reducer(data->jsgraph());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
                                          data->common(), data->machine());
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &builtin_reducer);
+    if (data->info()->is_deoptimization_enabled()) {
+      AddReducer(data, &graph_reducer, &create_lowering);
+    }
     AddReducer(data, &graph_reducer, &typed_lowering);
     AddReducer(data, &graph_reducer, &intrinsic_lowering);
     AddReducer(data, &graph_reducer, &load_elimination);
+    AddReducer(data, &graph_reducer, &simple_reducer);
     AddReducer(data, &graph_reducer, &common_reducer);
     graph_reducer.ReduceGraph();
   }
@@ -664,8 +697,11 @@ struct EscapeAnalysisPhase {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     EscapeAnalysisReducer escape_reducer(&graph_reducer, data->jsgraph(),
                                          &escape_analysis, temp_zone);
+    escape_reducer.SetExistsVirtualAllocate(
+        escape_analysis.ExistsVirtualAllocate());
     AddReducer(data, &graph_reducer, &escape_reducer);
     graph_reducer.ReduceGraph();
+    escape_reducer.VerifyReplacement();
   }
 };
 
@@ -677,6 +713,13 @@ struct SimplifiedLoweringPhase {
     SimplifiedLowering lowering(data->jsgraph(), temp_zone,
                                 data->source_positions());
     lowering.LowerAllNodes();
+
+    // TODO(bmeurer): See comment on SimplifiedLowering::abort_compilation_.
+    if (lowering.abort_compilation_) {
+      data->set_compilation_failed();
+      return;
+    }
+
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
@@ -772,7 +815,6 @@ struct GenericLoweringPhase {
 
   void Run(PipelineData* data, Zone* temp_zone) {
     JSGraphReducer graph_reducer(data->jsgraph(), temp_zone);
-    JSContextRelaxation context_relaxing;
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common());
     CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
@@ -782,7 +824,6 @@ struct GenericLoweringPhase {
     SelectLowering select_lowering(data->jsgraph()->graph(),
                                    data->jsgraph()->common());
     TailCallOptimization tco(data->common(), data->graph());
-    AddReducer(data, &graph_reducer, &context_relaxing);
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &common_reducer);
     AddReducer(data, &graph_reducer, &generic_lowering);
@@ -813,7 +854,7 @@ struct InstructionSelectionPhase {
   void Run(PipelineData* data, Zone* temp_zone, Linkage* linkage) {
     InstructionSelector selector(
         temp_zone, data->graph()->NodeCount(), linkage, data->sequence(),
-        data->schedule(), data->source_positions(),
+        data->schedule(), data->source_positions(), data->frame(),
         data->info()->is_source_positions_enabled()
             ? InstructionSelector::kAllSourcePositions
             : InstructionSelector::kCallSourcePositions);
@@ -979,9 +1020,10 @@ struct FrameElisionPhase {
 struct JumpThreadingPhase {
   static const char* phase_name() { return "jump threading"; }
 
-  void Run(PipelineData* data, Zone* temp_zone) {
+  void Run(PipelineData* data, Zone* temp_zone, bool frame_at_start) {
     ZoneVector<RpoNumber> result(temp_zone);
-    if (JumpThreading::ComputeForwarding(temp_zone, result, data->sequence())) {
+    if (JumpThreading::ComputeForwarding(temp_zone, result, data->sequence(),
+                                         frame_at_start)) {
       JumpThreading::ApplyForwarding(result, data->sequence());
     }
   }
@@ -1053,14 +1095,7 @@ void Pipeline::RunPrintAndVerify(const char* phase, bool untyped) {
 
 
 Handle<Code> Pipeline::GenerateCode() {
-  // TODO(mstarzinger): This is just a temporary hack to make TurboFan work,
-  // the correct solution is to restore the context register after invoking
-  // builtins from full-codegen.
-  if (Context::IsJSBuiltin(isolate()->native_context(), info()->closure())) {
-    return Handle<Code>::null();
-  }
-
-  ZonePool zone_pool;
+  ZonePool zone_pool(isolate()->allocator());
   base::SmartPointer<PipelineStatistics> pipeline_statistics;
 
   if (FLAG_turbo_stats) {
@@ -1073,13 +1108,14 @@ Handle<Code> Pipeline::GenerateCode() {
     if (json_file != nullptr) {
       OFStream json_of(json_file);
       Handle<Script> script = info()->script();
-      FunctionLiteral* function = info()->literal();
       base::SmartArrayPointer<char> function_name = info()->GetDebugName();
       int pos = info()->shared_info()->start_position();
       json_of << "{\"function\":\"" << function_name.get()
               << "\", \"sourcePosition\":" << pos << ", \"source\":\"";
-      if (!script->IsUndefined() && !script->source()->IsUndefined()) {
+      if (info()->has_literal() && !script->IsUndefined() &&
+          !script->source()->IsUndefined()) {
         DisallowHeapAllocation no_allocation;
+        FunctionLiteral* function = info()->literal();
         int start = function->start_position();
         int len = function->end_position() - start;
         String::SubStringRange source(String::cast(script->source()), start,
@@ -1204,6 +1240,9 @@ Handle<Code> Pipeline::GenerateCode() {
   // Kill the Typer and thereby uninstall the decorator (if any).
   typer.Reset(nullptr);
 
+  // TODO(bmeurer): See comment on SimplifiedLowering::abort_compilation_.
+  if (data.compilation_failed()) return Handle<Code>::null();
+
   return ScheduleAndGenerateCode(
       Linkage::ComputeIncoming(data.instruction_zone(), info()));
 }
@@ -1212,13 +1251,12 @@ Handle<Code> Pipeline::GenerateCode() {
 Handle<Code> Pipeline::GenerateCodeForCodeStub(Isolate* isolate,
                                                CallDescriptor* call_descriptor,
                                                Graph* graph, Schedule* schedule,
-                                               Code::Kind kind,
+                                               Code::Flags flags,
                                                const char* debug_name) {
-  CompilationInfo info(debug_name, isolate, graph->zone());
-  info.set_output_code_kind(kind);
+  CompilationInfo info(debug_name, isolate, graph->zone(), flags);
 
   // Construct a pipeline for scheduling and code generation.
-  ZonePool zone_pool;
+  ZonePool zone_pool(isolate->allocator());
   PipelineData data(&zone_pool, &info, graph, schedule);
   base::SmartPointer<PipelineStatistics> pipeline_statistics;
   if (FLAG_turbo_stats) {
@@ -1259,7 +1297,7 @@ Handle<Code> Pipeline::GenerateCodeForTesting(CompilationInfo* info,
                                               Graph* graph,
                                               Schedule* schedule) {
   // Construct a pipeline for scheduling and code generation.
-  ZonePool zone_pool;
+  ZonePool zone_pool(info->isolate()->allocator());
   PipelineData data(&zone_pool, info, graph, schedule);
   base::SmartPointer<PipelineStatistics> pipeline_statistics;
   if (FLAG_turbo_stats) {
@@ -1282,10 +1320,11 @@ bool Pipeline::AllocateRegistersForTesting(const RegisterConfiguration* config,
                                            InstructionSequence* sequence,
                                            bool run_verifier) {
   CompilationInfo info("testing", sequence->isolate(), sequence->zone());
-  ZonePool zone_pool;
+  ZonePool zone_pool(sequence->isolate()->allocator());
   PipelineData data(&zone_pool, &info, sequence);
   Pipeline pipeline(&info);
   pipeline.data_ = &data;
+  pipeline.data_->InitializeFrameData(nullptr);
   pipeline.AllocateRegisters(config, nullptr, run_verifier);
   return !data.compilation_failed();
 }
@@ -1306,8 +1345,9 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
                                                        data->schedule());
   }
 
-  data->InitializeInstructionSequence();
+  data->InitializeInstructionSequence(call_descriptor);
 
+  data->InitializeFrameData(call_descriptor);
   // Select and schedule instructions covering the scheduled graph.
   Linkage linkage(call_descriptor);
   Run<InstructionSelectionPhase>(&linkage);
@@ -1329,20 +1369,24 @@ Handle<Code> Pipeline::ScheduleAndGenerateCode(
   BeginPhaseKind("register allocation");
 
   bool run_verifier = FLAG_turbo_verify_allocation;
+
   // Allocate registers.
   AllocateRegisters(
       RegisterConfiguration::ArchDefault(RegisterConfiguration::TURBOFAN),
       call_descriptor, run_verifier);
+  Run<FrameElisionPhase>();
   if (data->compilation_failed()) {
     info()->AbortOptimization(kNotEnoughVirtualRegistersRegalloc);
     return Handle<Code>();
   }
 
   BeginPhaseKind("code generation");
-
+  // TODO(mtrofin): move this off to the register allocator.
+  bool generate_frame_at_start =
+      data_->sequence()->instruction_blocks().front()->must_construct_frame();
   // Optimimize jumps.
   if (FLAG_turbo_jt) {
-    Run<JumpThreadingPhase>();
+    Run<JumpThreadingPhase>(generate_frame_at_start);
   }
 
   // Generate final machine code.
@@ -1399,7 +1443,7 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   base::SmartPointer<Zone> verifier_zone;
   RegisterAllocatorVerifier* verifier = nullptr;
   if (run_verifier) {
-    verifier_zone.Reset(new Zone());
+    verifier_zone.Reset(new Zone(isolate()->allocator()));
     verifier = new (verifier_zone.get()) RegisterAllocatorVerifier(
         verifier_zone.get(), config, data->sequence());
   }
@@ -1407,6 +1451,8 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   base::SmartArrayPointer<char> debug_name;
 #ifdef DEBUG
   debug_name = info()->GetDebugName();
+  data_->sequence()->ValidateEdgeSplitForm();
+  data_->sequence()->ValidateDeferredBlockExitPaths();
 #endif
 
   data->InitializeRegisterAllocationData(config, descriptor, debug_name.get());
@@ -1446,11 +1492,6 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
     Run<MergeSplintersPhase>();
   }
 
-  if (FLAG_turbo_frame_elision) {
-    Run<LocateSpillSlotsPhase>();
-    Run<FrameElisionPhase>();
-  }
-
   Run<AssignSpillSlotsPhase>();
 
   Run<CommitAssignmentPhase>();
@@ -1460,6 +1501,8 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
   if (FLAG_turbo_move_optimization) {
     Run<OptimizeMovesPhase>();
   }
+
+  Run<LocateSpillSlotsPhase>();
 
   if (FLAG_trace_turbo_graph) {
     OFStream os(stdout);
@@ -1481,6 +1524,8 @@ void Pipeline::AllocateRegisters(const RegisterConfiguration* config,
 
   data->DeleteRegisterAllocationZone();
 }
+
+Isolate* Pipeline::isolate() const { return info()->isolate(); }
 
 }  // namespace compiler
 }  // namespace internal

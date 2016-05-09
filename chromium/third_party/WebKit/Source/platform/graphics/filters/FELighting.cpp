@@ -50,7 +50,7 @@ FELighting::FELighting(Filter* filter, LightingType lightingType, const Color& l
 {
 }
 
-FloatRect FELighting::mapPaintRect(const FloatRect& rect, bool)
+FloatRect FELighting::mapPaintRect(const FloatRect& rect, bool) const
 {
     FloatRect result = rect;
     // The areas affected need to be a pixel bigger to accommodate the Sobel kernel.
@@ -63,7 +63,7 @@ PassRefPtr<SkImageFilter> FELighting::createImageFilter(SkiaImageFilterBuilder& 
     if (!m_lightSource)
         return createTransparentBlack(builder);
 
-    SkImageFilter::CropRect rect = getCropRect(builder.cropOffset());
+    SkImageFilter::CropRect rect = getCropRect();
     Color lightColor = adaptColorToOperatingColorSpace(m_lightingColor);
     RefPtr<SkImageFilter> input(builder.build(inputEffect(0), operatingColorSpace()));
     switch (m_lightSource->type()) {

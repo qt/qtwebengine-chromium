@@ -20,7 +20,7 @@ protected:
         CSSParserMode parserMode = HTMLStandardMode;
         if (propertyID == CSSPropertyFloodColor)
             parserMode = SVGAttributeMode;
-        RefPtrWillBeRawPtr<CSSValue> value = CSSParser::parseSingleValue(propertyID, string, CSSParserContext(parserMode, 0));
+        CSSValue* value = CSSParser::parseSingleValue(propertyID, string, CSSParserContext(parserMode, 0));
         ASSERT(value);
         return DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*value);
     }
@@ -104,4 +104,4 @@ TEST_F(AnimationDeferredLegacyStyleInterpolationTest, BackdropFilter)
     EXPECT_FALSE(test(CSSPropertyBackdropFilter, "sepia(1)"));
     EXPECT_TRUE(test(CSSPropertyBackdropFilter, "url(#svgfilter)"));
 }
-}
+} // namespace blink

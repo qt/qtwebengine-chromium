@@ -9,17 +9,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/types/native_display_delegate.h"
-#include "ui/ozone/platform/drm/host/channel_observer.h"
+#include "ui/ozone/platform/drm/host/gpu_thread_observer.h"
 
 namespace ui {
 
 struct DisplaySnapshot_Params;
 class DisplaySnapshot;
-class DrmGpuPlatformSupportHost;
+class GpuThreadAdapter;
 
-class DrmDisplayHost : public ChannelObserver {
+class DrmDisplayHost : public GpuThreadObserver {
  public:
-  DrmDisplayHost(DrmGpuPlatformSupportHost* sender,
+  DrmDisplayHost(GpuThreadAdapter* sender,
                  const DisplaySnapshot_Params& params,
                  bool is_dummy);
   ~DrmDisplayHost() override;
@@ -32,7 +32,9 @@ class DrmDisplayHost : public ChannelObserver {
                  const ConfigureCallback& callback);
   void GetHDCPState(const GetHDCPStateCallback& callback);
   void SetHDCPState(HDCPState state, const SetHDCPStateCallback& callback);
-  void SetGammaRamp(const std::vector<GammaRampRGBEntry>& lut);
+  void SetColorCorrection(const std::vector<GammaRampRGBEntry>& degamma_lut,
+                          const std::vector<GammaRampRGBEntry>& gamma_lut,
+                          const std::vector<float>& correction_matrix);
 
   // Called when the IPC from the GPU process arrives to answer the above
   // commands.
@@ -40,15 +42,15 @@ class DrmDisplayHost : public ChannelObserver {
   void OnHDCPStateReceived(bool status, HDCPState state);
   void OnHDCPStateUpdated(bool status);
 
-  // ChannelObserver:
-  void OnChannelEstablished() override;
-  void OnChannelDestroyed() override;
+  // GpuThreadObserver:
+  void OnGpuThreadReady() override;
+  void OnGpuThreadRetired() override;
 
  private:
   // Calls all the callbacks with failure.
   void ClearCallbacks();
 
-  DrmGpuPlatformSupportHost* sender_;  // Not owned.
+  GpuThreadAdapter* sender_;  // Not owned.
 
   scoped_ptr<DisplaySnapshot> snapshot_;
 

@@ -100,12 +100,12 @@ AffineTransform SVGGraphicsElement::getScreenCTM(StyleUpdateStrategy styleUpdate
     return computeCTM(ScreenScope, styleUpdateStrategy);
 }
 
-PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getCTMFromJavascript()
+SVGMatrixTearOff* SVGGraphicsElement::getCTMFromJavascript()
 {
     return SVGMatrixTearOff::create(getCTM());
 }
 
-PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJavascript()
+SVGMatrixTearOff* SVGGraphicsElement::getScreenCTMFromJavascript()
 {
     return SVGMatrixTearOff::create(getScreenCTM());
 }
@@ -222,9 +222,9 @@ FloatRect SVGGraphicsElement::getBBox()
     return layoutObject()->objectBoundingBox();
 }
 
-PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript()
+SVGRectTearOff* SVGGraphicsElement::getBBoxFromJavascript()
 {
     return SVGRectTearOff::create(SVGRect::create(getBBox()), 0, PropertyIsNotAnimVal);
 }
 
-}
+} // namespace blink

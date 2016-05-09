@@ -38,6 +38,7 @@ CSPSourceList::CSPSourceList(ContentSecurityPolicy* policy, const String& direct
     , m_allowStar(false)
     , m_allowInline(false)
     , m_allowEval(false)
+    , m_allowDynamic(false)
     , m_hashAlgorithmsUsed(0)
 {
 }
@@ -71,6 +72,11 @@ bool CSPSourceList::allowInline() const
 bool CSPSourceList::allowEval() const
 {
     return m_allowEval;
+}
+
+bool CSPSourceList::allowDynamic() const
+{
+    return m_allowDynamic;
 }
 
 bool CSPSourceList::allowNonce(const String& nonce) const
@@ -124,7 +130,7 @@ void CSPSourceList::parse(const UChar* begin, const UChar* end)
                 continue;
             if (m_policy->isDirectiveName(host))
                 m_policy->reportDirectiveAsSourceExpression(m_directiveName, host);
-            m_list.append(CSPSource(m_policy, scheme, host, port, path, hostWildcard, portWildcard));
+            m_list.append(new CSPSource(m_policy, scheme, host, port, path, hostWildcard, portWildcard));
         } else {
             m_policy->reportInvalidSourceExpression(m_directiveName, String(beginSource, position - beginSource));
         }
@@ -161,6 +167,11 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
 
     if (equalIgnoringCase("'unsafe-eval'", begin, end - begin)) {
         addSourceUnsafeEval();
+        return true;
+    }
+
+    if (equalIgnoringCase("'unsafe-dynamic'", begin, end - begin)) {
+        addSourceUnsafeDynamic();
         return true;
     }
 
@@ -481,6 +492,11 @@ void CSPSourceList::addSourceUnsafeEval()
     m_allowEval = true;
 }
 
+void CSPSourceList::addSourceUnsafeDynamic()
+{
+    m_allowDynamic = true;
+}
+
 void CSPSourceList::addSourceNonce(const String& nonce)
 {
     m_nonces.add(nonce);
@@ -495,11 +511,17 @@ void CSPSourceList::addSourceHash(const ContentSecurityPolicyHashAlgorithm& algo
 bool CSPSourceList::hasSourceMatchInList(const KURL& url, ContentSecurityPolicy::RedirectStatus redirectStatus) const
 {
     for (size_t i = 0; i < m_list.size(); ++i) {
-        if (m_list[i].matches(url, redirectStatus))
+        if (m_list[i]->matches(url, redirectStatus))
             return true;
     }
 
     return false;
+}
+
+DEFINE_TRACE(CSPSourceList)
+{
+    visitor->trace(m_policy);
+    visitor->trace(m_list);
 }
 
 } // namespace blink

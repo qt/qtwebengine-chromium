@@ -20,7 +20,6 @@
 
 #include "core/svg/SVGTextPathElement.h"
 
-#include "core/XLinkNames.h"
 #include "core/layout/svg/LayoutSVGTextPath.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
@@ -121,7 +120,7 @@ bool SVGTextPathElement::layoutObjectIsNeeded(const ComputedStyle& style)
 void SVGTextPathElement::buildPendingResource()
 {
     clearResourceReferences();
-    if (!inDocument())
+    if (!inShadowIncludingDocument())
         return;
 
     AtomicString id;
@@ -140,6 +139,9 @@ void SVGTextPathElement::buildPendingResource()
         // that leads to relayout/repainting now informs us, so we can react to it.
         addReferenceTo(toSVGElement((target)));
     }
+
+    if (LayoutObject* layoutObject = this->layoutObject())
+        markForLayoutAndParentResourceInvalidation(layoutObject);
 }
 
 Node::InsertionNotificationRequest SVGTextPathElement::insertedInto(ContainerNode* rootParent)
@@ -152,7 +154,7 @@ Node::InsertionNotificationRequest SVGTextPathElement::insertedInto(ContainerNod
 void SVGTextPathElement::removedFrom(ContainerNode* rootParent)
 {
     SVGTextContentElement::removedFrom(rootParent);
-    if (rootParent->inDocument())
+    if (rootParent->inShadowIncludingDocument())
         clearResourceReferences();
 }
 

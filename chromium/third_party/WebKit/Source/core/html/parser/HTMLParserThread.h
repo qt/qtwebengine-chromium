@@ -32,6 +32,7 @@
 #define HTMLParserThread_h
 
 #include "core/CoreExport.h"
+#include "platform/WaitableEvent.h"
 #include "platform/WebThreadSupportingGC.h"
 #include "wtf/Allocator.h"
 #include "wtf/Functional.h"
@@ -49,15 +50,13 @@ public:
     // It is an error to call shared() before init() or after shutdown();
     static HTMLParserThread* shared();
 
-    void postTask(PassOwnPtr<Closure>);
-    WebThread& platformThread();
-    bool isRunning();
+    void postTask(PassOwnPtr<CrossThreadClosure>);
 
 private:
     HTMLParserThread();
     ~HTMLParserThread();
     void setupHTMLParserThread();
-    void cleanupHTMLParserThread();
+    void cleanupHTMLParserThread(WaitableEvent*);
 
     OwnPtr<WebThreadSupportingGC> m_thread;
 };

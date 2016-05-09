@@ -11,11 +11,8 @@
 
 #include "base/strings/string_util.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/http/http_auth_preferences.h"
 #include "net/http/http_auth_sspi_win.h"
-
-#pragma comment(lib, "secur32.lib")
 
 namespace net {
 
@@ -53,6 +50,7 @@ HttpAuthHandlerNTLM::Factory::~Factory() {
 int HttpAuthHandlerNTLM::Factory::CreateAuthHandler(
     HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
+    const SSLInfo& ssl_info,
     const GURL& origin,
     CreateReason reason,
     int digest_nonce_count,
@@ -72,7 +70,8 @@ int HttpAuthHandlerNTLM::Factory::CreateAuthHandler(
   //                 method and only constructing when valid.
   scoped_ptr<HttpAuthHandler> tmp_handler(new HttpAuthHandlerNTLM(
       sspi_library_.get(), max_token_length_, http_auth_preferences()));
-  if (!tmp_handler->InitFromChallenge(challenge, target, origin, net_log))
+  if (!tmp_handler->InitFromChallenge(challenge, target, ssl_info, origin,
+                                      net_log))
     return ERR_INVALID_RESPONSE;
   handler->swap(tmp_handler);
   return OK;

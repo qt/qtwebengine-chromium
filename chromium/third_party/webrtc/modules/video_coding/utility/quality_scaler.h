@@ -27,7 +27,11 @@ class QualityScaler {
   QualityScaler();
   void Init(int low_qp_threshold,
             int high_qp_threshold,
-            bool use_framerate_reduction);
+            bool use_framerate_reduction,
+            int initial_bitrate_kbps,
+            int width,
+            int height,
+            int fps);
   void SetMinResolution(int min_width, int min_height);
   void ReportFramerate(int framerate);
   void ReportQP(int qp);
@@ -41,18 +45,24 @@ class QualityScaler {
 
  private:
   void AdjustScale(bool up);
+  void UpdateTargetResolution(int frame_width, int frame_height);
   void ClearSamples();
+  void UpdateSampleCounts();
 
   Scaler scaler_;
   VideoFrame scaled_frame_;
 
-  size_t num_samples_;
+  size_t num_samples_downscale_;
+  size_t num_samples_upscale_;
+  int measure_seconds_upscale_;
+  MovingAverage<int> average_qp_upscale_;
+  MovingAverage<int> average_qp_downscale_;
+
   int framerate_;
   int target_framerate_;
   int low_qp_threshold_;
   int high_qp_threshold_;
   MovingAverage<int> framedrop_percent_;
-  MovingAverage<int> average_qp_;
   Resolution res_;
 
   int downscale_shift_;

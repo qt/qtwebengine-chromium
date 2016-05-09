@@ -30,13 +30,13 @@
 
 namespace blink {
 
-MoveSelectionCommand::MoveSelectionCommand(PassRefPtrWillBeRawPtr<DocumentFragment> fragment, const Position& position, bool smartInsert, bool smartDelete)
+MoveSelectionCommand::MoveSelectionCommand(RawPtr<DocumentFragment> fragment, const Position& position, bool smartInsert, bool smartDelete)
     : CompositeEditCommand(*position.document()), m_fragment(fragment), m_position(position), m_smartInsert(smartInsert), m_smartDelete(smartDelete)
 {
     ASSERT(m_fragment);
 }
 
-void MoveSelectionCommand::doApply()
+void MoveSelectionCommand::doApply(EditingState* editingState)
 {
     ASSERT(endingSelection().isNonOrphanedRange());
 
@@ -55,26 +55,30 @@ void MoveSelectionCommand::doApply()
             pos = Position(pos.computeContainerNode(), pos.offsetInContainerNode() + selectionStart.offsetInContainerNode());
     }
 
-    deleteSelection(m_smartDelete);
+    deleteSelection(editingState, m_smartDelete);
+    if (editingState->isAborted())
+        return;
 
     // If the node for the destination has been removed as a result of the deletion,
     // set the destination to the ending point after the deletion.
     // Fixes: <rdar://problem/3910425> REGRESSION (Mail): Crash in ReplaceSelectionCommand;
     //        selection is empty, leading to null deref
-    if (!pos.inDocument())
+    if (!pos.inShadowIncludingDocument())
         pos = endingSelection().start();
 
-    cleanupAfterDeletion(createVisiblePosition(pos));
+    cleanupAfterDeletion(editingState, createVisiblePosition(pos));
+    if (editingState->isAborted())
+        return;
 
     setEndingSelection(VisibleSelection(pos, endingSelection().affinity(), endingSelection().isDirectional()));
-    if (!pos.inDocument()) {
+    if (!pos.inShadowIncludingDocument()) {
         // Document was modified out from under us.
         return;
     }
     ReplaceSelectionCommand::CommandOptions options = ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::PreventNesting;
     if (m_smartInsert)
         options |= ReplaceSelectionCommand::SmartReplace;
-    applyCommandToComposite(ReplaceSelectionCommand::create(document(), m_fragment, options));
+    applyCommandToComposite(ReplaceSelectionCommand::create(document(), m_fragment, options), editingState);
 }
 
 EditAction MoveSelectionCommand::editingAction() const

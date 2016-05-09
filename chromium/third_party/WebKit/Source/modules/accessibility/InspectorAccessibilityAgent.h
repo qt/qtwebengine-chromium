@@ -5,7 +5,6 @@
 #ifndef InspectorAccessibilityAgent_h
 #define InspectorAccessibilityAgent_h
 
-#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "modules/ModulesExport.h"
 #include "wtf/PassOwnPtr.h"
@@ -14,26 +13,26 @@ namespace blink {
 
 class Page;
 
-class MODULES_EXPORT InspectorAccessibilityAgent : public InspectorBaseAgent<InspectorAccessibilityAgent, InspectorFrontend::Accessibility>, public InspectorBackendDispatcher::AccessibilityCommandHandler {
+class MODULES_EXPORT InspectorAccessibilityAgent : public InspectorBaseAgent<InspectorAccessibilityAgent, protocol::Frontend::Accessibility>, public protocol::Backend::Accessibility {
     WTF_MAKE_NONCOPYABLE(InspectorAccessibilityAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorAccessibilityAgent> create(Page* page)
+    static InspectorAccessibilityAgent* create(Page* page)
     {
-        return adoptPtrWillBeNoop(new InspectorAccessibilityAgent(page));
+        return new InspectorAccessibilityAgent(page);
     }
 
     // Base agent methods.
     DECLARE_VIRTUAL_TRACE();
 
     // Protocol methods.
-    void getAXNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Accessibility::AXNode>& accessibilityNode) override;
+    void getAXNode(ErrorString*, int nodeId, Maybe<protocol::Accessibility::AXNode>* accessibilityNode) override;
 
 private:
     explicit InspectorAccessibilityAgent(Page*);
 
-    RawPtrWillBeMember<Page> m_page;
+    Member<Page> m_page;
 };
 
-}
+} // namespace blink
 
 #endif // InspectorAccessibilityAgent_h

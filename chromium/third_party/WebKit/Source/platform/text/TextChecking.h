@@ -108,7 +108,7 @@ private:
     Vector<unsigned> m_offsets;
 };
 
-class TextCheckingRequest : public RefCountedWillBeGarbageCollectedFinalized<TextCheckingRequest> {
+class TextCheckingRequest : public GarbageCollectedFinalized<TextCheckingRequest> {
 public:
     virtual ~TextCheckingRequest() { }
     DEFINE_INLINE_VIRTUAL_TRACE() { }
@@ -118,6 +118,6 @@ public:
     virtual void didCancel() = 0;
 };
 
-}
+} // namespace blink
 
 #endif // TextChecking_h

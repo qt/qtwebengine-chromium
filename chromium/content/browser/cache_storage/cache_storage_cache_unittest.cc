@@ -23,6 +23,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/referrer.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/test_completion_callback.h"
@@ -41,6 +42,8 @@ namespace content {
 
 namespace {
 const char kTestData[] = "Hello World";
+const char kOrigin[] = "http://example.com";
+const char kCacheName[] = "test_cache";
 
 // Returns a BlobProtocolHandler that uses |blob_storage_context|. Caller owns
 // the memory.
@@ -188,6 +191,14 @@ bool ResponseMetadataEqual(const ServiceWorkerResponse& expected,
       return false;
   }
 
+  EXPECT_EQ(expected.response_time, actual.response_time);
+  if (expected.response_time != actual.response_time)
+    return false;
+
+  EXPECT_EQ(expected.cache_storage_cache_name, actual.cache_storage_cache_name);
+  if (expected.cache_storage_cache_name != actual.cache_storage_cache_name)
+    return false;
+
   return true;
 }
 
@@ -198,6 +209,14 @@ bool ResponseBodiesEqual(const std::string& expected_body,
   return expected_body == actual_body;
 }
 
+ServiceWorkerResponse SetCacheName(const ServiceWorkerResponse& original) {
+  return ServiceWorkerResponse(
+      original.url, original.status_code, original.status_text,
+      original.response_type, original.headers, original.blob_uuid,
+      original.blob_size, original.stream_url, original.error,
+      original.response_time, true, kCacheName);
+}
+
 }  // namespace
 
 // A CacheStorageCache that can optionally delay during backend creation.
@@ -205,11 +224,13 @@ class TestCacheStorageCache : public CacheStorageCache {
  public:
   TestCacheStorageCache(
       const GURL& origin,
+      const std::string& cache_name,
       const base::FilePath& path,
       const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
       const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context)
       : CacheStorageCache(origin,
+                          cache_name,
                           path,
                           request_context_getter,
                           quota_manager_proxy,
@@ -253,9 +274,7 @@ class TestCacheStorageCache : public CacheStorageCache {
 class CacheStorageCacheTest : public testing::Test {
  public:
   CacheStorageCacheTest()
-      : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
-        callback_error_(CACHE_STORAGE_OK),
-        callback_closed_(false) {}
+      : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
   void SetUp() override {
     ChromeBlobStorageContext* blob_storage_context =
@@ -264,8 +283,19 @@ class CacheStorageCacheTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
     blob_storage_context_ = blob_storage_context->context();
 
+    if (!MemoryOnly())
+      ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+
+    quota_policy_ = new MockSpecialStoragePolicy;
+    mock_quota_manager_ = new MockQuotaManager(
+        MemoryOnly() /* is incognito */, temp_dir_.path(),
+        base::ThreadTaskRunnerHandle::Get().get(),
+        base::ThreadTaskRunnerHandle::Get().get(), quota_policy_.get());
+    mock_quota_manager_->SetQuota(GURL(kOrigin), storage::kStorageTypeTemporary,
+                                  1024 * 1024 * 100);
+
     quota_manager_proxy_ = new MockQuotaManagerProxy(
-        nullptr, base::ThreadTaskRunnerHandle::Get().get());
+        mock_quota_manager_.get(), base::ThreadTaskRunnerHandle::Get().get());
 
     url_request_job_factory_.reset(new net::URLRequestJobFactoryImpl);
     url_request_job_factory_->SetProtocolHandler(
@@ -278,13 +308,10 @@ class CacheStorageCacheTest : public testing::Test {
 
     CreateRequests(blob_storage_context);
 
-    if (!MemoryOnly())
-      ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    base::FilePath path = MemoryOnly() ? base::FilePath() : temp_dir_.path();
-
     cache_ = make_scoped_refptr(new TestCacheStorageCache(
-        GURL("http://example.com"), path, browser_context_.GetRequestContext(),
-        quota_manager_proxy_, blob_storage_context->context()->AsWeakPtr()));
+        GURL(kOrigin), kCacheName, temp_dir_.path(),
+        browser_context_.GetRequestContext(), quota_manager_proxy_,
+        blob_storage_context->context()->AsWeakPtr()));
   }
 
   void TearDown() override {
@@ -299,6 +326,9 @@ class CacheStorageCacheTest : public testing::Test {
     body_request_ =
         ServiceWorkerFetchRequest(GURL("http://example.com/body.html"), "GET",
                                   headers, Referrer(), false);
+    body_request_with_query_ = ServiceWorkerFetchRequest(
+        GURL("http://example.com/body.html?query=test"), "GET", headers,
+        Referrer(), false);
     no_body_request_ =
         ServiceWorkerFetchRequest(GURL("http://example.com/no_body.html"),
                                   "GET", headers, Referrer(), false);
@@ -318,12 +348,24 @@ class CacheStorageCacheTest : public testing::Test {
         GURL("http://example.com/body.html"), 200, "OK",
         blink::WebServiceWorkerResponseTypeDefault, headers,
         blob_handle_->uuid(), expected_blob_data_.size(), GURL(),
-        blink::WebServiceWorkerResponseErrorUnknown);
+        blink::WebServiceWorkerResponseErrorUnknown, base::Time::Now(),
+        false /* is_in_cache_storage */,
+        std::string() /* cache_storage_cache_name */);
+
+    body_response_with_query_ = ServiceWorkerResponse(
+        GURL("http://example.com/body.html?query=test"), 200, "OK",
+        blink::WebServiceWorkerResponseTypeDefault, headers,
+        blob_handle_->uuid(), expected_blob_data_.size(), GURL(),
+        blink::WebServiceWorkerResponseErrorUnknown, base::Time::Now(),
+        false /* is_in_cache_storage */,
+        std::string() /* cache_storage_cache_name */);
 
     no_body_response_ = ServiceWorkerResponse(
         GURL("http://example.com/no_body.html"), 200, "OK",
         blink::WebServiceWorkerResponseTypeDefault, headers, "", 0, GURL(),
-        blink::WebServiceWorkerResponseErrorUnknown);
+        blink::WebServiceWorkerResponseErrorUnknown, base::Time::Now(),
+        false /* is_in_cache_storage */,
+        std::string() /* cache_storage_cache_name */);
   }
 
   scoped_ptr<ServiceWorkerFetchRequest> CopyFetchRequest(
@@ -372,20 +414,33 @@ class CacheStorageCacheTest : public testing::Test {
     return callback_error_ == CACHE_STORAGE_OK;
   }
 
-  bool MatchAll(scoped_ptr<CacheStorageCache::Responses>* responses,
+  bool MatchAll(const ServiceWorkerFetchRequest& request,
+                const CacheStorageCacheQueryParams& match_params,
+                scoped_ptr<CacheStorageCache::Responses>* responses,
                 scoped_ptr<CacheStorageCache::BlobDataHandles>* body_handles) {
     base::RunLoop loop;
-    cache_->MatchAll(base::Bind(
-        &CacheStorageCacheTest::ResponsesAndErrorCallback,
-        base::Unretained(this), loop.QuitClosure(), responses, body_handles));
+    cache_->MatchAll(
+        CopyFetchRequest(request), match_params,
+        base::Bind(&CacheStorageCacheTest::ResponsesAndErrorCallback,
+                   base::Unretained(this), loop.QuitClosure(), responses,
+                   body_handles));
     loop.Run();
     return callback_error_ == CACHE_STORAGE_OK;
   }
 
-  bool Delete(const ServiceWorkerFetchRequest& request) {
+  bool MatchAll(scoped_ptr<CacheStorageCache::Responses>* responses,
+                scoped_ptr<CacheStorageCache::BlobDataHandles>* body_handles) {
+    return MatchAll(ServiceWorkerFetchRequest(), CacheStorageCacheQueryParams(),
+                    responses, body_handles);
+  }
+
+  bool Delete(const ServiceWorkerFetchRequest& request,
+              const CacheStorageCacheQueryParams& match_params =
+                  CacheStorageCacheQueryParams()) {
     CacheStorageBatchOperation operation;
     operation.operation_type = CACHE_STORAGE_CACHE_OPERATION_TYPE_DELETE;
     operation.request = request;
+    operation.match_params = match_params;
 
     CacheStorageError error =
         BatchOperation(std::vector<CacheStorageBatchOperation>(1, operation));
@@ -411,6 +466,32 @@ class CacheStorageCacheTest : public testing::Test {
                              base::Unretained(loop.get())));
     loop->Run();
     return callback_closed_;
+  }
+
+  int64_t Size() {
+    // Storage notification happens after an operation completes. Let the any
+    // notifications complete before calling Size.
+    base::RunLoop().RunUntilIdle();
+
+    base::RunLoop run_loop;
+    bool callback_called = false;
+    cache_->Size(base::Bind(&CacheStorageCacheTest::SizeCallback,
+                            base::Unretained(this), &run_loop,
+                            &callback_called));
+    run_loop.Run();
+    EXPECT_TRUE(callback_called);
+    return callback_size_;
+  }
+
+  int64_t GetSizeThenClose() {
+    base::RunLoop run_loop;
+    bool callback_called = false;
+    cache_->GetSizeThenClose(base::Bind(&CacheStorageCacheTest::SizeCallback,
+                                        base::Unretained(this), &run_loop,
+                                        &callback_called));
+    run_loop.Run();
+    EXPECT_TRUE(callback_called);
+    return callback_size_;
   }
 
   void RequestsCallback(base::RunLoop* run_loop,
@@ -477,6 +558,15 @@ class CacheStorageCacheTest : public testing::Test {
       run_loop->Quit();
   }
 
+  void SizeCallback(base::RunLoop* run_loop,
+                    bool* callback_called,
+                    int64_t size) {
+    *callback_called = true;
+    callback_size_ = size;
+    if (run_loop)
+      run_loop->Quit();
+  }
+
   bool VerifyKeys(const std::vector<std::string>& expected_keys) {
     if (expected_keys.size() != callback_strings_.size())
       return false;
@@ -514,6 +604,8 @@ class CacheStorageCacheTest : public testing::Test {
   TestBrowserContext browser_context_;
   TestBrowserThreadBundle browser_thread_bundle_;
   scoped_ptr<net::URLRequestJobFactoryImpl> url_request_job_factory_;
+  scoped_refptr<MockSpecialStoragePolicy> quota_policy_;
+  scoped_refptr<MockQuotaManager> mock_quota_manager_;
   scoped_refptr<MockQuotaManagerProxy> quota_manager_proxy_;
   storage::BlobStorageContext* blob_storage_context_;
 
@@ -521,27 +613,24 @@ class CacheStorageCacheTest : public testing::Test {
 
   ServiceWorkerFetchRequest body_request_;
   ServiceWorkerResponse body_response_;
+  ServiceWorkerFetchRequest body_request_with_query_;
+  ServiceWorkerResponse body_response_with_query_;
   ServiceWorkerFetchRequest no_body_request_;
   ServiceWorkerResponse no_body_response_;
   scoped_ptr<storage::BlobDataHandle> blob_handle_;
   std::string expected_blob_data_;
 
-  CacheStorageError callback_error_;
+  CacheStorageError callback_error_ = CACHE_STORAGE_OK;
   scoped_ptr<ServiceWorkerResponse> callback_response_;
   scoped_ptr<storage::BlobDataHandle> callback_response_data_;
   std::vector<std::string> callback_strings_;
-  bool callback_closed_;
+  bool callback_closed_ = false;
+  int64_t callback_size_ = 0;
 };
 
 class CacheStorageCacheTestP : public CacheStorageCacheTest,
                                public testing::WithParamInterface<bool> {
   bool MemoryOnly() override { return !GetParam(); }
-};
-
-class CacheStorageCacheMemoryOnlyTest
-    : public CacheStorageCacheTest,
-      public testing::WithParamInterface<bool> {
-  bool MemoryOnly() override { return true; }
 };
 
 TEST_P(CacheStorageCacheTestP, PutNoBody) {
@@ -666,14 +755,16 @@ TEST_P(CacheStorageCacheTestP, PutReplcaceInBatch) {
 TEST_P(CacheStorageCacheTestP, MatchNoBody) {
   EXPECT_TRUE(Put(no_body_request_, no_body_response_));
   EXPECT_TRUE(Match(no_body_request_));
-  EXPECT_TRUE(ResponseMetadataEqual(no_body_response_, *callback_response_));
+  EXPECT_TRUE(ResponseMetadataEqual(SetCacheName(no_body_response_),
+                                    *callback_response_));
   EXPECT_FALSE(callback_response_data_);
 }
 
 TEST_P(CacheStorageCacheTestP, MatchBody) {
   EXPECT_TRUE(Put(body_request_, body_response_));
   EXPECT_TRUE(Match(body_request_));
-  EXPECT_TRUE(ResponseMetadataEqual(body_response_, *callback_response_));
+  EXPECT_TRUE(
+      ResponseMetadataEqual(SetCacheName(body_response_), *callback_response_));
   EXPECT_TRUE(
       ResponseBodiesEqual(expected_blob_data_, *callback_response_data_));
 }
@@ -694,7 +785,8 @@ TEST_P(CacheStorageCacheTestP, MatchAll_NoBody) {
   EXPECT_TRUE(MatchAll(&responses, &body_handles));
 
   ASSERT_EQ(1u, responses->size());
-  EXPECT_TRUE(ResponseMetadataEqual(no_body_response_, responses->at(0)));
+  EXPECT_TRUE(
+      ResponseMetadataEqual(SetCacheName(no_body_response_), responses->at(0)));
   EXPECT_TRUE(body_handles->empty());
 }
 
@@ -707,7 +799,8 @@ TEST_P(CacheStorageCacheTestP, MatchAll_Body) {
 
   ASSERT_EQ(1u, responses->size());
   ASSERT_EQ(1u, body_handles->size());
-  EXPECT_TRUE(ResponseMetadataEqual(body_response_, responses->at(0)));
+  EXPECT_TRUE(
+      ResponseMetadataEqual(SetCacheName(body_response_), responses->at(0)));
   EXPECT_TRUE(ResponseBodiesEqual(expected_blob_data_, body_handles->at(0)));
 }
 
@@ -725,10 +818,12 @@ TEST_P(CacheStorageCacheTestP, MatchAll_TwoResponsesThenOne) {
   std::set<std::string> matched_set;
   for (const ServiceWorkerResponse& response : *responses) {
     if (response.url.spec() == "http://example.com/no_body.html") {
-      EXPECT_TRUE(ResponseMetadataEqual(no_body_response_, response));
+      EXPECT_TRUE(
+          ResponseMetadataEqual(SetCacheName(no_body_response_), response));
       matched_set.insert(response.url.spec());
     } else if (response.url.spec() == "http://example.com/body.html") {
-      EXPECT_TRUE(ResponseMetadataEqual(body_response_, response));
+      EXPECT_TRUE(
+          ResponseMetadataEqual(SetCacheName(body_response_), response));
       EXPECT_TRUE(
           ResponseBodiesEqual(expected_blob_data_, body_handles->at(0)));
       matched_set.insert(response.url.spec());
@@ -743,8 +838,39 @@ TEST_P(CacheStorageCacheTestP, MatchAll_TwoResponsesThenOne) {
   EXPECT_TRUE(MatchAll(&responses, &body_handles));
 
   ASSERT_EQ(1u, responses->size());
-  EXPECT_TRUE(ResponseMetadataEqual(no_body_response_, responses->at(0)));
+  EXPECT_TRUE(
+      ResponseMetadataEqual(SetCacheName(no_body_response_), responses->at(0)));
   EXPECT_TRUE(body_handles->empty());
+}
+
+TEST_P(CacheStorageCacheTestP, MatchAll_IgnoreSearch) {
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_TRUE(Put(body_request_with_query_, body_response_with_query_));
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+
+  scoped_ptr<CacheStorageCache::Responses> responses;
+  scoped_ptr<CacheStorageCache::BlobDataHandles> body_handles;
+  CacheStorageCacheQueryParams match_params;
+  match_params.ignore_search = true;
+  EXPECT_TRUE(MatchAll(body_request_, match_params, &responses, &body_handles));
+
+  ASSERT_EQ(2u, responses->size());
+  ASSERT_EQ(2u, body_handles->size());
+
+  // Order of returned responses is not guaranteed.
+  std::set<std::string> matched_set;
+  for (const ServiceWorkerResponse& response : *responses) {
+    if (response.url.spec() == "http://example.com/body.html?query=test") {
+      EXPECT_TRUE(ResponseMetadataEqual(SetCacheName(body_response_with_query_),
+                                        response));
+      matched_set.insert(response.url.spec());
+    } else if (response.url.spec() == "http://example.com/body.html") {
+      EXPECT_TRUE(
+          ResponseMetadataEqual(SetCacheName(body_response_), response));
+      matched_set.insert(response.url.spec());
+    }
+  }
+  EXPECT_EQ(2u, matched_set.size());
 }
 
 TEST_P(CacheStorageCacheTestP, Vary) {
@@ -863,6 +989,61 @@ TEST_P(CacheStorageCacheTestP, DeleteBody) {
   EXPECT_TRUE(Delete(body_request_));
 }
 
+TEST_P(CacheStorageCacheTestP, DeleteWithIgnoreSearchTrue) {
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_TRUE(Put(body_request_with_query_, body_response_with_query_));
+
+  EXPECT_TRUE(Keys());
+  EXPECT_EQ(3u, callback_strings_.size());
+  std::vector<std::string> expected_keys;
+  expected_keys.push_back(no_body_request_.url.spec());
+  expected_keys.push_back(body_request_.url.spec());
+  expected_keys.push_back(body_request_with_query_.url.spec());
+  EXPECT_TRUE(VerifyKeys(expected_keys));
+
+  // The following delete operation will remove both of body_request_ and
+  // body_request_with_query_ from cache storage.
+  CacheStorageCacheQueryParams match_params;
+  match_params.ignore_search = true;
+  EXPECT_TRUE(Delete(body_request_with_query_, match_params));
+
+  EXPECT_TRUE(Keys());
+  EXPECT_EQ(1u, callback_strings_.size());
+  expected_keys.clear();
+  expected_keys.push_back(no_body_request_.url.spec());
+  EXPECT_TRUE(VerifyKeys(expected_keys));
+}
+
+TEST_P(CacheStorageCacheTestP, DeleteWithIgnoreSearchFalse) {
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_TRUE(Put(body_request_with_query_, body_response_with_query_));
+
+  EXPECT_TRUE(Keys());
+  EXPECT_EQ(3u, callback_strings_.size());
+  std::vector<std::string> expected_keys;
+  expected_keys.push_back(no_body_request_.url.spec());
+  expected_keys.push_back(body_request_.url.spec());
+  expected_keys.push_back(body_request_with_query_.url.spec());
+  EXPECT_TRUE(VerifyKeys(expected_keys));
+
+  // Default value of ignore_search is false.
+  CacheStorageCacheQueryParams match_params;
+  match_params.ignore_search = false;
+  EXPECT_EQ(match_params.ignore_search,
+            CacheStorageCacheQueryParams().ignore_search);
+
+  EXPECT_TRUE(Delete(body_request_with_query_, match_params));
+
+  EXPECT_TRUE(Keys());
+  EXPECT_EQ(2u, callback_strings_.size());
+  expected_keys.clear();
+  expected_keys.push_back(no_body_request_.url.spec());
+  expected_keys.push_back(body_request_.url.spec());
+  EXPECT_TRUE(VerifyKeys(expected_keys));
+}
+
 TEST_P(CacheStorageCacheTestP, QuickStressNoBody) {
   for (int i = 0; i < 100; ++i) {
     EXPECT_FALSE(Match(no_body_request_));
@@ -895,7 +1076,9 @@ TEST_F(CacheStorageCacheTest, CaselessServiceWorkerResponseHeaders) {
   ServiceWorkerResponse response(GURL("http://www.example.com"), 200, "OK",
                                  blink::WebServiceWorkerResponseTypeDefault,
                                  ServiceWorkerHeaderMap(), "", 0, GURL(),
-                                 blink::WebServiceWorkerResponseErrorUnknown);
+                                 blink::WebServiceWorkerResponseErrorUnknown,
+                                 base::Time(), false /* is_in_cache_storage */,
+                                 std::string() /* cache_storage_cache_name */);
   response.headers["content-type"] = "foo";
   response.headers["Content-Type"] = "bar";
   EXPECT_EQ("bar", response.headers["content-type"]);
@@ -916,46 +1099,95 @@ TEST_P(CacheStorageCacheTestP, QuotaManagerModified) {
   EXPECT_EQ(0, quota_manager_proxy_->notify_storage_modified_count());
 
   EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  // Storage notification happens after the operation returns, so continue the
+  // event loop.
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1, quota_manager_proxy_->notify_storage_modified_count());
   EXPECT_LT(0, quota_manager_proxy_->last_notified_delta());
   int64_t sum_delta = quota_manager_proxy_->last_notified_delta();
 
   EXPECT_TRUE(Put(body_request_, body_response_));
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(2, quota_manager_proxy_->notify_storage_modified_count());
   EXPECT_LT(sum_delta, quota_manager_proxy_->last_notified_delta());
   sum_delta += quota_manager_proxy_->last_notified_delta();
 
   EXPECT_TRUE(Delete(body_request_));
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(3, quota_manager_proxy_->notify_storage_modified_count());
   sum_delta += quota_manager_proxy_->last_notified_delta();
 
   EXPECT_TRUE(Delete(no_body_request_));
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(4, quota_manager_proxy_->notify_storage_modified_count());
   sum_delta += quota_manager_proxy_->last_notified_delta();
 
   EXPECT_EQ(0, sum_delta);
 }
 
-TEST_F(CacheStorageCacheMemoryOnlyTest, MemoryBackedSize) {
-  EXPECT_EQ(0, cache_->MemoryBackedSize());
-  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
-  EXPECT_LT(0, cache_->MemoryBackedSize());
-  int64_t no_body_size = cache_->MemoryBackedSize();
-
-  EXPECT_TRUE(Delete(no_body_request_));
-  EXPECT_EQ(0, cache_->MemoryBackedSize());
-
-  EXPECT_TRUE(Put(body_request_, body_response_));
-  EXPECT_LT(no_body_size, cache_->MemoryBackedSize());
-
-  EXPECT_TRUE(Delete(body_request_));
-  EXPECT_EQ(0, cache_->MemoryBackedSize());
+TEST_P(CacheStorageCacheTestP, PutObeysQuotaLimits) {
+  mock_quota_manager_->SetQuota(GURL(kOrigin), storage::kStorageTypeTemporary,
+                                0);
+  EXPECT_FALSE(Put(no_body_request_, no_body_response_));
+  EXPECT_EQ(CACHE_STORAGE_ERROR_QUOTA_EXCEEDED, callback_error_);
 }
 
-TEST_F(CacheStorageCacheTest, MemoryBackedSizePersistent) {
-  EXPECT_EQ(0, cache_->MemoryBackedSize());
+TEST_P(CacheStorageCacheTestP, Size) {
+  EXPECT_EQ(0, Size());
   EXPECT_TRUE(Put(no_body_request_, no_body_response_));
-  EXPECT_EQ(0, cache_->MemoryBackedSize());
+  EXPECT_LT(0, Size());
+  int64_t no_body_size = Size();
+
+  EXPECT_TRUE(Delete(no_body_request_));
+  EXPECT_EQ(0, Size());
+
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_LT(no_body_size, Size());
+
+  EXPECT_TRUE(Delete(body_request_));
+  EXPECT_EQ(0, Size());
+}
+
+TEST_P(CacheStorageCacheTestP, SizeOperationsArePrioritized) {
+  // Test that pending size operations (those waiting for initialization) run
+  // before other scheduler operations.
+  cache_->set_delay_backend_creation(true);  // Delay cache initialization
+
+  CacheStorageBatchOperation operation;
+  operation.operation_type = CACHE_STORAGE_CACHE_OPERATION_TYPE_PUT;
+  operation.request = body_request_;
+  operation.response = body_response_;
+
+  callback_error_ = CACHE_STORAGE_ERROR_NOT_FOUND;
+  base::RunLoop run_loop;
+  // Start a put operation that blocks on initialization.
+  cache_->BatchOperation(std::vector<CacheStorageBatchOperation>(1, operation),
+                         base::Bind(&CacheStorageCacheTest::ErrorTypeCallback,
+                                    base::Unretained(this), &run_loop));
+
+  // Next start a size operation that also blocks on initialization.
+  bool size_callback_called = false;
+  cache_->Size(base::Bind(&CacheStorageCacheTest::SizeCallback,
+                          base::Unretained(this), nullptr,
+                          &size_callback_called));
+
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(size_callback_called);
+  EXPECT_EQ(CACHE_STORAGE_ERROR_NOT_FOUND, callback_error_);
+
+  // Finish initialization. The Size operation should complete before Put gets
+  // to run as Size has priority. See crbug.com/605663.
+  cache_->ContinueCreateBackend();
+  run_loop.Run();
+  EXPECT_TRUE(size_callback_called);
+  EXPECT_EQ(CACHE_STORAGE_OK, callback_error_);
+}
+
+TEST_P(CacheStorageCacheTestP, GetSizeThenClose) {
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  int64_t cache_size = Size();
+  EXPECT_EQ(cache_size, GetSizeThenClose());
+  VerifyAllOpsFail();
 }
 
 TEST_P(CacheStorageCacheTestP, OpsFailOnClosedBackendNeverCreated) {

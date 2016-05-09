@@ -328,8 +328,7 @@ bool VCMCodecDataBase::RequiresEncoderReset(const VideoCodec& new_send_codec) {
       new_send_codec.qpMax != send_codec_.qpMax ||
       new_send_codec.numberOfSimulcastStreams !=
           send_codec_.numberOfSimulcastStreams ||
-      new_send_codec.mode != send_codec_.mode ||
-      new_send_codec.extra_options != send_codec_.extra_options) {
+      new_send_codec.mode != send_codec_.mode) {
     return true;
   }
 
@@ -530,6 +529,8 @@ VCMGenericDecoder* VCMCodecDataBase::CreateAndInitDecoder(
     const VCMEncodedFrame& frame,
     VideoCodec* new_codec) const {
   uint8_t payload_type = frame.PayloadType();
+  LOG(LS_INFO) << "Initializing decoder with payload type '"
+               << static_cast<int>(payload_type) << "'.";
   assert(new_codec);
   const VCMDecoderMapItem* decoder_item = FindDecoderItem(payload_type);
   if (!decoder_item) {

@@ -47,7 +47,7 @@ public:
     SVGUnitTypes::SVGUnitType clipPathUnits() const { return toSVGClipPathElement(element())->clipPathUnits()->currentValue()->enumValue(); }
 
     bool asPath(const AffineTransform&, const FloatRect& referenceBox, Path&);
-    PassRefPtr<const SkPicture> createContentPicture(AffineTransform&, const FloatRect&, GraphicsContext&);
+    PassRefPtr<const SkPicture> createContentPicture();
 
     bool hasCycle() { return m_inClipExpansion; }
     void beginClipExpansion() { ASSERT(!m_inClipExpansion); m_inClipExpansion = true; }
@@ -72,6 +72,6 @@ private:
 
 DEFINE_LAYOUT_SVG_RESOURCE_TYPE_CASTS(LayoutSVGResourceClipper, ClipperResourceType);
 
-}
+} // namespace blink
 
 #endif

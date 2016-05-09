@@ -7,6 +7,7 @@
 #ifndef MEDIA_BASE_MEDIA_SWITCHES_H_
 #define MEDIA_BASE_MEDIA_SWITCHES_H_
 
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "media/base/media_export.h"
 
@@ -21,8 +22,8 @@ MEDIA_EXPORT extern const char kDisableMediaSuspend[];
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableMediaThreadForMediaPlayback[];
+MEDIA_EXPORT extern const char kDisableUnifiedMediaPipeline[];
 MEDIA_EXPORT extern const char kEnableMediaThreadForMediaPlayback[];
-MEDIA_EXPORT extern const char kEnableUnifiedMediaPipeline[];
 #endif
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
@@ -32,14 +33,8 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 MEDIA_EXPORT extern const char kUseGpuMemoryBuffersForCapture[];
 
-#if defined(OS_MACOSX)
-MEDIA_EXPORT extern const char kEnableAVFoundation[];
-MEDIA_EXPORT extern const char kForceQTKit[];
-#endif
-
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const char kEnableExclusiveAudio[];
-MEDIA_EXPORT extern const char kForceDirectShowVideoCapture[];
 MEDIA_EXPORT extern const char kForceMediaFoundationVideoCapture[];
 MEDIA_EXPORT extern const char kForceWaveAudio[];
 MEDIA_EXPORT extern const char kTrySupportedChannelLayouts[];
@@ -48,6 +43,10 @@ MEDIA_EXPORT extern const char kWaveOutBuffers[];
 
 #if defined(USE_CRAS)
 MEDIA_EXPORT extern const char kUseCras[];
+#endif
+
+#if !defined(OS_ANDROID)
+MEDIA_EXPORT extern const char kEnableDefaultMediaSession[];
 #endif
 
 MEDIA_EXPORT extern const char kUseFakeDeviceForMediaStream[];
@@ -62,8 +61,14 @@ MEDIA_EXPORT extern const char kVideoUnderflowThresholdMs[];
 
 MEDIA_EXPORT extern const char kDisableRTCSmoothnessAlgorithm[];
 
-MEDIA_EXPORT extern const char kUseNewMediaCache[];
-
 }  // namespace switches
+
+namespace media {
+
+// All features in alphabetical order. The features should be documented
+// alongside the definition of their values in the .cc file.
+MEDIA_EXPORT extern const base::Feature kUseNewMediaCache;
+
+}  // namespace media
 
 #endif  // MEDIA_BASE_MEDIA_SWITCHES_H_

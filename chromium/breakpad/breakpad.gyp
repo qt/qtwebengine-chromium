@@ -306,6 +306,17 @@
             'src/common/simple_string_dictionary.cc',
             'src/common/string_conversion.cc',
           ],
+          'conditions': [
+            ['OS=="ios"', {
+              'xcode_settings' : {
+                'WARNING_CFLAGS': [
+                  # See https://bugs.chromium.org/p/google-breakpad/issues/detail?id=675.
+                  # TODO(crbug.com/569158): remove when fixed.
+                  '-Wno-deprecated-declarations',
+                ],
+              },
+            }],
+          ],
         },
         {
           # GN version: //breakpad:crash_inspector
@@ -861,6 +872,13 @@
               'src',
             ],
           },
+          'xcode_settings' : {
+            'WARNING_CFLAGS': [
+              # See https://bugs.chromium.org/p/google-breakpad/issues/detail?id=675.
+              # TODO(crbug.com/569158): remove when fixed.
+              '-Wno-deprecated-declarations',
+            ],
+          },
         }
       ]
     }],
@@ -973,15 +991,14 @@
           'target_name': 'breakpad_unittests_deps',
           'type': 'none',
           'dependencies': [
-            'breakpad_unittests_stripped',
+            'breakpad_unittests',
+            'linux_dumper_unittest_helper',
           ],
-          # For the component build, ensure dependent shared libraries are
-          # stripped and put alongside breakpad_unittest to simplify pushing to
-          # the device.
           'variables': {
-             'output_dir': '<(PRODUCT_DIR)/breakpad_unittests_deps/',
-             'native_binary': '<(PRODUCT_DIR)/breakpad_unittests_stripped',
-             'include_main_binary': 0,
+             'output_dir': '<(PRODUCT_DIR)/breakpad_unittests__dist/',
+             'native_binary': '<(PRODUCT_DIR)/breakpad_unittests',
+             'include_main_binary': 1,
+             'extra_files': ['<(PRODUCT_DIR)/linux_dumper_unittest_helper'],
           },
           'includes': [
             '../build/android/native_app_dependencies.gypi'

@@ -39,12 +39,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/dom/ViewportDescription.h"
-#include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 
 namespace blink {
-
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ViewportStyleResolver);
 
 ViewportStyleResolver::ViewportStyleResolver(Document* document)
     : m_document(document)
@@ -74,7 +71,7 @@ void ViewportStyleResolver::collectViewportRules(RuleSet* rules, Origin origin)
 {
     rules->compactRulesIfNeeded();
 
-    const WillBeHeapVector<RawPtrWillBeMember<StyleRuleViewport>>& viewportRules = rules->viewportRules();
+    const HeapVector<Member<StyleRuleViewport>>& viewportRules = rules->viewportRules();
     for (size_t i = 0; i < viewportRules.size(); ++i)
         addViewportRule(viewportRules[i], origin);
 }
@@ -136,17 +133,17 @@ float ViewportStyleResolver::viewportArgumentValue(CSSPropertyID id) const
     if (id == CSSPropertyUserZoom)
         defaultValue = 1;
 
-    RefPtrWillBeRawPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
+    CSSValue* value = m_propertySet->getPropertyCSSValue(id);
     if (!value || !value->isPrimitiveValue())
         return defaultValue;
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     if (primitiveValue->isNumber() || primitiveValue->isPx())
         return primitiveValue->getFloatValue();
 
     if (primitiveValue->isFontRelativeLength())
-        return primitiveValue->getFloatValue() * m_document->computedStyle()->fontDescription().computedSize();
+        return primitiveValue->getFloatValue() * m_document->computedStyle()->getFontDescription().computedSize();
 
     if (primitiveValue->isPercentage()) {
         float percentValue = primitiveValue->getFloatValue() / 100.0f;
@@ -186,11 +183,11 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
         || id == CSSPropertyMaxWidth
         || id == CSSPropertyMinWidth);
 
-    RefPtrWillBeRawPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
+    CSSValue* value = m_propertySet->getPropertyCSSValue(id);
     if (!value || !value->isPrimitiveValue())
         return Length(); // auto
 
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     if (primitiveValue->getValueID() == CSSValueInternalExtendToZoom)
         return Length(ExtendToZoom);
@@ -201,12 +198,8 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
     bool documentStyleHasViewportUnits = documentStyle->hasViewportUnits();
     documentStyle->setHasViewportUnits(false);
 
-    FrameView* view = m_document->view();
-    float width = view ? view->width() : 0;
-    float height = view ? view->height() : 0;
-
     CSSToLengthConversionData::FontSizes fontSizes(documentStyle, documentStyle);
-    CSSToLengthConversionData::ViewportSize viewportSize(width, height);
+    CSSToLengthConversionData::ViewportSize viewportSize(m_document->layoutView());
 
     if (primitiveValue->getValueID() == CSSValueAuto)
         return Length(Auto);

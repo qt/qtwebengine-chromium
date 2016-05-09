@@ -50,11 +50,10 @@ _log = logging.getLogger(__name__)
 class WinPort(base.Port):
     port_name = 'win'
 
-    SUPPORTED_VERSIONS = ('xp', 'win7', 'win10')
+    SUPPORTED_VERSIONS = ('win7', 'win10')
 
     FALLBACK_PATHS = {'win10': ['win']}
     FALLBACK_PATHS['win7'] = ['win7'] + FALLBACK_PATHS['win10']
-    FALLBACK_PATHS['xp'] = ['win-xp'] + FALLBACK_PATHS['win7']
 
     DEFAULT_BUILD_DIRECTORIES = ('build', 'out')
 
@@ -217,9 +216,9 @@ class WinPort(base.Port):
     # PROTECTED ROUTINES
     #
 
-    def _path_to_driver(self, configuration=None):
+    def _path_to_driver(self, target=None):
         binary_name = '%s.exe' % self.driver_name()
-        return self._build_path_with_configuration(configuration, binary_name)
+        return self._build_path_with_target(target, binary_name)
 
     def _path_to_crash_service(self):
         binary_name = 'content_shell_crash_service.exe'

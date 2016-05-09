@@ -5,8 +5,12 @@
 {
   'dependencies': [
     '../base/base.gyp:base',
+    '../gpu/gpu.gyp:command_buffer_traits',
+    '../gpu/gpu.gyp:gpu',
+    '../gpu/gpu.gyp:gpu_ipc_service',
     '../skia/skia.gyp:skia',
     '../ui/gl/gl.gyp:gl',
+    'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
   ],
   'sources': [
     'gpu/gpu_child_thread.cc',
@@ -20,6 +24,9 @@
     'gpu/gpu_watchdog_thread.h',
     'gpu/in_process_gpu_thread.cc',
     'gpu/in_process_gpu_thread.h',
+    'public/gpu/content_gpu_client.h',
+    'public/gpu/gpu_video_decode_accelerator_factory.cc',
+    'public/gpu/gpu_video_decode_accelerator_factory.h',
   ],
   'include_dirs': [
     '..',

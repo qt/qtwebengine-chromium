@@ -24,8 +24,7 @@ WebExternalTextureLayerImpl::WebExternalTextureLayerImpl(
     blink::WebExternalTextureLayerClient* client)
     : client_(client) {
   cc::TextureLayerClient* cc_client = client_ ? this : nullptr;
-  scoped_refptr<TextureLayer> layer =
-      TextureLayer::CreateForMailbox(WebLayerImpl::LayerSettings(), cc_client);
+  scoped_refptr<TextureLayer> layer = TextureLayer::CreateForMailbox(cc_client);
   layer->SetIsDrawable(true);
   layer_.reset(new WebLayerImpl(layer));
 }
@@ -87,9 +86,15 @@ bool WebExternalTextureLayerImpl::PrepareTextureMailbox(
     if (client_mailbox.validSyncToken)
       memcpy(&sync_token, client_mailbox.syncToken, sizeof(sync_token));
 
-    // TODO(achaulk): pass a valid size here if allowOverlay is set.
-    *mailbox = cc::TextureMailbox(name, sync_token, GL_TEXTURE_2D, gfx::Size(),
-                                  client_mailbox.allowOverlay);
+    gfx::Size size;
+    if (client_mailbox.allowOverlay) {
+      size = gfx::Size(client_mailbox.textureSize.width,
+                       client_mailbox.textureSize.height);
+    }
+
+    *mailbox =
+        cc::TextureMailbox(name, sync_token, client_mailbox.textureTarget, size,
+                           client_mailbox.allowOverlay, false);
   }
   mailbox->set_nearest_neighbor(client_mailbox.nearestNeighbor);
 

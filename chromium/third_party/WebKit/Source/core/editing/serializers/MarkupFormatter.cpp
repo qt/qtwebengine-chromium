@@ -116,11 +116,11 @@ String MarkupFormatter::resolveURLIfNeeded(const Element& element, const String&
 {
     switch (m_resolveURLsMethod) {
     case ResolveAllURLs:
-        return element.document().completeURL(urlString).string();
+        return element.document().completeURL(urlString).getString();
 
     case ResolveNonLocalURLs:
         if (!element.document().url().isLocalFile())
-            return element.document().completeURL(urlString).string();
+            return element.document().completeURL(urlString).getString();
         break;
 
     case DoNotResolveURLs:
@@ -131,7 +131,7 @@ String MarkupFormatter::resolveURLIfNeeded(const Element& element, const String&
 
 void MarkupFormatter::appendStartMarkup(StringBuilder& result, const Node& node, Namespaces* namespaces)
 {
-    switch (node.nodeType()) {
+    switch (node.getNodeType()) {
     case Node::TEXT_NODE:
         ASSERT_NOT_REACHED();
         break;
@@ -198,11 +198,11 @@ void MarkupFormatter::appendQuotedURLAttributeValue(StringBuilder& result, const
     if (protocolIsJavaScript(strippedURLString)) {
         // minimal escaping for javascript urls
         if (strippedURLString.contains('&'))
-            strippedURLString.replaceWithLiteral('&', "&amp;");
+            strippedURLString.replace('&', "&amp;");
 
         if (strippedURLString.contains('"')) {
             if (strippedURLString.contains('\''))
-                strippedURLString.replaceWithLiteral('"', "&quot;");
+                strippedURLString.replace('"', "&quot;");
             else
                 quoteChar = '\'';
         }
@@ -228,7 +228,7 @@ void MarkupFormatter::appendNamespace(StringBuilder& result, const AtomicString&
     if (foundURI != namespaceURI) {
         namespaces.set(lookupKey, namespaceURI);
         result.append(' ');
-        result.append(xmlnsAtom.string());
+        result.append(xmlnsAtom.getString());
         if (!prefix.isEmpty()) {
             result.append(':');
             result.append(prefix);
@@ -471,4 +471,4 @@ bool MarkupFormatter::serializeAsHTMLDocument(const Node& node) const
     return node.document().isHTMLDocument();
 }
 
-}
+} // namespace blink

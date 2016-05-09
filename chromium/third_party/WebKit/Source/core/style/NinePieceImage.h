@@ -49,7 +49,7 @@ public:
     unsigned fill : 1;
     unsigned horizontalRule : 2; // ENinePieceImageRule
     unsigned verticalRule : 2; // ENinePieceImageRule
-    RefPtrWillBePersistent<StyleImage> image;
+    Persistent<StyleImage> image;
     LengthBox imageSlices;
     BorderImageLengthBox borderSlices;
     BorderImageLengthBox outset;
@@ -63,7 +63,7 @@ class CORE_EXPORT NinePieceImage {
     DISALLOW_NEW();
 public:
     NinePieceImage();
-    NinePieceImage(PassRefPtrWillBeRawPtr<StyleImage>, LengthBox imageSlices, bool fill, const BorderImageLengthBox& borderSlices,
+    NinePieceImage(StyleImage*, LengthBox imageSlices, bool fill, const BorderImageLengthBox& borderSlices,
         const BorderImageLengthBox& outset, ENinePieceImageRule horizontalRule, ENinePieceImageRule verticalRule);
 
     bool operator==(const NinePieceImage& other) const { return m_data == other.m_data; }
@@ -71,7 +71,7 @@ public:
 
     bool hasImage() const { return m_data->image; }
     StyleImage* image() const { return m_data->image.get(); }
-    void setImage(PassRefPtrWillBeRawPtr<StyleImage> image) { m_data.access()->image = image; }
+    void setImage(StyleImage* image) { m_data.access()->image = image; }
 
     const LengthBox& imageSlices() const { return m_data->imageSlices; }
     void setImageSlices(const LengthBox& slices) { m_data.access()->imageSlices = slices; }
@@ -120,11 +120,11 @@ public:
         m_data.access()->borderSlices = BorderImageLengthBox(Length(Auto));
     }
 
-    static LayoutUnit computeOutset(const BorderImageLength& outsetSide, LayoutUnit borderSide)
+    static LayoutUnit computeOutset(const BorderImageLength& outsetSide, int borderSide)
     {
         if (outsetSide.isNumber())
-            return outsetSide.number() * borderSide;
-        return outsetSide.length().value();
+            return LayoutUnit(outsetSide.number() * borderSide);
+        return LayoutUnit(outsetSide.length().value());
     }
 
 private:

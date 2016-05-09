@@ -18,7 +18,6 @@
 #include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_util.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_request_info.h"
@@ -169,10 +168,6 @@ void SpdyProxyClientSocket::SetOmniboxSpeculation() {
 
 bool SpdyProxyClientSocket::WasEverUsed() const {
   return was_ever_used_ || (spdy_stream_.get() && spdy_stream_->WasEverUsed());
-}
-
-bool SpdyProxyClientSocket::UsingTCPFastOpen() const {
-  return false;
 }
 
 bool SpdyProxyClientSocket::WasNpnNegotiated() const {
@@ -496,7 +491,7 @@ void SpdyProxyClientSocket::OnDataSent()  {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&SpdyProxyClientSocket::RunCallback,
                             write_callback_weak_factory_.GetWeakPtr(),
-                            ResetAndReturn(&write_callback_), rv));
+                            base::ResetAndReturn(&write_callback_), rv));
 }
 
 void SpdyProxyClientSocket::OnTrailers(const SpdyHeaderBlock& trailers) {

@@ -183,6 +183,7 @@ class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
 class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
  public:
   QuicFixedTagVector(QuicTag name, QuicConfigPresence presence);
+  QuicFixedTagVector(const QuicFixedTagVector& other);
   ~QuicFixedTagVector() override;
 
   bool HasSendValues() const;
@@ -219,6 +220,7 @@ class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
 class NET_EXPORT_PRIVATE QuicConfig {
  public:
   QuicConfig();
+  QuicConfig(const QuicConfig& other);
   ~QuicConfig();
 
   void SetConnectionOptionsToSend(const QuicTagVector& connection_options);
@@ -333,6 +335,10 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   bool MultipathEnabled() const;
 
+  void SetDisableConnectionMigration();
+
+  bool DisableConnectionMigration() const;
+
   bool negotiated() const;
 
   // ToHandshakeMessage serialises the settings in this object as a series of
@@ -382,6 +388,9 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   // Whether to support multipath for this connection.
   QuicNegotiableUint32 multipath_enabled_;
+
+  // Whether tell peer not to attempt connection migration.
+  QuicFixedUint32 connection_migration_disabled_;
 };
 
 }  // namespace net

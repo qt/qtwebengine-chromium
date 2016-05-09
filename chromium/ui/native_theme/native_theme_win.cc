@@ -24,7 +24,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkShader.h"
-#include "ui/base/resource/material_design/material_design_controller.h"
+#include "ui/base/material_design/material_design_controller.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/gdi_util.h"
@@ -77,12 +77,9 @@ void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   SkMatrix local_matrix;
   local_matrix.setTranslate(SkIntToScalar(align_rect.left),
                             SkIntToScalar(align_rect.top));
-  skia::RefPtr<SkShader> shader =
-      skia::AdoptRef(SkShader::CreateBitmapShader(bitmap,
-                                                  SkShader::kRepeat_TileMode,
-                                                  SkShader::kRepeat_TileMode,
-                                                  &local_matrix));
-  paint->setShader(shader.get());
+  paint->setShader(
+      SkShader::MakeBitmapShader(bitmap, SkShader::kRepeat_TileMode,
+                                 SkShader::kRepeat_TileMode, &local_matrix));
 }
 
 //    <-a->
@@ -196,10 +193,6 @@ NativeThemeWin* NativeThemeWin::instance() {
 gfx::Size NativeThemeWin::GetPartSize(Part part,
                                       State state,
                                       const ExtraParams& extra) const {
-  gfx::Size part_size = CommonThemeGetPartSize(part, state, extra);
-  if (!part_size.IsEmpty())
-    return part_size;
-
   // The GetThemePartSize call below returns the default size without
   // accounting for user customization (crbug/218291).
   switch (part) {
@@ -245,9 +238,6 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
     return;
 
   switch (part) {
-    case kComboboxArrow:
-      CommonThemePaintComboboxArrow(canvas, rect);
-      return;
     case kMenuPopupGutter:
       PaintMenuGutter(canvas, rect);
       return;
@@ -258,7 +248,8 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
       PaintMenuBackground(canvas, rect);
       return;
     case kMenuItemBackground:
-      CommonThemePaintMenuItemBackground(this, canvas, state, rect);
+      CommonThemePaintMenuItemBackground(this, canvas, state, rect,
+                                         extra.menu_item);
       return;
     default:
       break;
@@ -466,7 +457,6 @@ void NativeThemeWin::PaintDirect(SkCanvas* canvas,
     case kWindowResizeGripper:
       PaintWindowResizeGripper(hdc, rect);
       return;
-    case kComboboxArrow:
     case kSliderTrack:
     case kSliderThumb:
     case kMaxPart:
@@ -722,12 +712,7 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
   // Draw the theme controls using existing HDC-drawing code.
   PaintDirect(&offscreen_canvas, part, state, adjusted_rect, adjusted_extra);
 
-  // Copy the pixels to a bitmap that has ref-counted pixel storage, which is
-  // necessary to have when drawing to a SkPicture.
-  const SkBitmap& hdc_bitmap =
-      offscreen_canvas.getDevice()->accessBitmap(false);
-  SkBitmap bitmap;
-  hdc_bitmap.copyTo(&bitmap, kN32_SkColorType);
+  SkBitmap bitmap = skia::ReadPixels(&offscreen_canvas);
 
   // Post-process the pixels to fix up the alpha values (see big comment above).
   const SkPMColor placeholder_value = SkPreMultiplyColor(placeholder);
@@ -1715,7 +1700,6 @@ NativeThemeWin::ThemeName NativeThemeWin::GetThemeName(Part part) {
       return TEXTFIELD;
     case kWindowResizeGripper:
       return STATUS;
-    case kComboboxArrow:
     case kMenuCheckBackground:
     case kMenuPopupBackground:
     case kMenuItemBackground:
@@ -1761,7 +1745,6 @@ int NativeThemeWin::GetWindowsPart(Part part,
       return SBP_THUMBBTNVERT;
     case kWindowResizeGripper:
       return SP_GRIPPER;
-    case kComboboxArrow:
     case kInnerSpinButton:
     case kMenuList:
     case kMenuCheckBackground:
@@ -1955,7 +1938,6 @@ int NativeThemeWin::GetWindowsState(Part part,
           NOTREACHED();
           return 0;
       }
-    case kComboboxArrow:
     case kInnerSpinButton:
     case kMenuList:
     case kMenuCheckBackground:

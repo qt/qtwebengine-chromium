@@ -35,9 +35,9 @@ class Widget;
 
 class CORE_EXPORT PluginDocument final : public HTMLDocument {
 public:
-    static PassRefPtrWillBeRawPtr<PluginDocument> create(const DocumentInit& initializer = DocumentInit())
+    static RawPtr<PluginDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRefWillBeNoop(new PluginDocument(initializer));
+        return new PluginDocument(initializer);
     }
 
     void setPluginNode(Node* pluginNode) { m_pluginNode = pluginNode; }
@@ -52,15 +52,13 @@ public:
 private:
     explicit PluginDocument(const DocumentInit&);
 
-    PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
+    RawPtr<DocumentParser> createParser() override;
 
-    String debugName() const override { return "PluginDocument"; }
-
-    RefPtrWillBeMember<Node> m_pluginNode;
+    Member<Node> m_pluginNode;
 };
 
 DEFINE_DOCUMENT_TYPE_CASTS(PluginDocument);
 
-}
+} // namespace blink
 
 #endif // PluginDocument_h

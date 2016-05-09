@@ -122,10 +122,14 @@ static CGFloat const kAppLabelHeight = 20;
   UILabel *_audioOnlyLabel;
   UISwitch *_loopbackSwitch;
   UILabel *_loopbackLabel;
+  UISwitch *_audioConfigDelaySwitch;
+  UILabel *_audioConfigDelayLabel;
   UIButton *_startCallButton;
+  UIButton *_audioLoopButton;
 }
 
 @synthesize delegate = _delegate;
+@synthesize isAudioLoopPlaying = _isAudioLoopPlaying;
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
@@ -171,7 +175,17 @@ static CGFloat const kAppLabelHeight = 20;
     [_loopbackLabel sizeToFit];
     [self addSubview:_loopbackLabel];
 
-    _startCallButton = [[UIButton alloc] initWithFrame:CGRectZero];
+    _audioConfigDelaySwitch = [[UISwitch alloc] initWithFrame:CGRectZero];
+    [_audioConfigDelaySwitch sizeToFit];
+    _audioConfigDelaySwitch.on = YES;
+    [self addSubview:_audioConfigDelaySwitch];
+
+    _audioConfigDelayLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    _audioConfigDelayLabel.text = @"Delay audio config";
+    _audioConfigDelayLabel.font = controlFont;
+    _audioConfigDelayLabel.textColor = controlFontColor;
+    [_audioConfigDelayLabel sizeToFit];
+    [self addSubview:_audioConfigDelayLabel];
 
     _startCallButton = [UIButton buttonWithType:UIButtonTypeSystem];
     _startCallButton.backgroundColor = [UIColor blueColor];
@@ -191,9 +205,33 @@ static CGFloat const kAppLabelHeight = 20;
                forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:_startCallButton];
 
+    // Used to test what happens to sounds when calls are in progress.
+    _audioLoopButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    _audioLoopButton.layer.cornerRadius = 10;
+    _audioLoopButton.clipsToBounds = YES;
+    _audioLoopButton.contentEdgeInsets = UIEdgeInsetsMake(5, 10, 5, 10);
+    _audioLoopButton.titleLabel.font = controlFont;
+    [_audioLoopButton setTitleColor:[UIColor whiteColor]
+                           forState:UIControlStateNormal];
+    [_audioLoopButton setTitleColor:[UIColor lightGrayColor]
+                           forState:UIControlStateSelected];
+    [self updateAudioLoopButton];
+    [_audioLoopButton addTarget:self
+                         action:@selector(onToggleAudioLoop:)
+               forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_audioLoopButton];
+
     self.backgroundColor = [UIColor whiteColor];
   }
   return self;
+}
+
+- (void)setIsAudioLoopPlaying:(BOOL)isAudioLoopPlaying {
+  if (_isAudioLoopPlaying == isAudioLoopPlaying) {
+    return;
+  }
+  _isAudioLoopPlaying = isAudioLoopPlaying;
+  [self updateAudioLoopButton];
 }
 
 - (void)layoutSubviews {
@@ -237,8 +275,29 @@ static CGFloat const kAppLabelHeight = 20;
   _loopbackLabel.center = CGPointMake(loopbackModeLabelCenterX,
                                       CGRectGetMidY(loopbackModeRect));
 
+  CGFloat audioConfigDelayTop =
+      CGRectGetMaxY(_loopbackSwitch.frame) + kCallControlMargin;
+  CGRect audioConfigDelayRect =
+      CGRectMake(kCallControlMargin * 3,
+                 audioConfigDelayTop,
+                 _audioConfigDelaySwitch.frame.size.width,
+                 _audioConfigDelaySwitch.frame.size.height);
+  _audioConfigDelaySwitch.frame = audioConfigDelayRect;
+  CGFloat audioConfigDelayLabelCenterX = CGRectGetMaxX(audioConfigDelayRect) +
+      kCallControlMargin + _audioConfigDelayLabel.frame.size.width / 2;
+  _audioConfigDelayLabel.center =
+      CGPointMake(audioConfigDelayLabelCenterX,
+                  CGRectGetMidY(audioConfigDelayRect));
+
+  CGFloat audioLoopTop =
+     CGRectGetMaxY(audioConfigDelayRect) + kCallControlMargin * 3;
+  _audioLoopButton.frame = CGRectMake(kCallControlMargin,
+                                      audioLoopTop,
+                                      _audioLoopButton.frame.size.width,
+                                      _audioLoopButton.frame.size.height);
+
   CGFloat startCallTop =
-     CGRectGetMaxY(loopbackModeRect) + kCallControlMargin * 3;
+      CGRectGetMaxY(_audioLoopButton.frame) + kCallControlMargin * 3;
   _startCallButton.frame = CGRectMake(kCallControlMargin,
                                       startCallTop,
                                       _startCallButton.frame.size.width,
@@ -246,6 +305,24 @@ static CGFloat const kAppLabelHeight = 20;
 }
 
 #pragma mark - Private
+
+- (void)updateAudioLoopButton {
+  if (_isAudioLoopPlaying) {
+    _audioLoopButton.backgroundColor = [UIColor redColor];
+    [_audioLoopButton setTitle:@"Stop sound"
+                      forState:UIControlStateNormal];
+    [_audioLoopButton sizeToFit];
+  } else {
+    _audioLoopButton.backgroundColor = [UIColor greenColor];
+    [_audioLoopButton setTitle:@"Play sound"
+                      forState:UIControlStateNormal];
+    [_audioLoopButton sizeToFit];
+  }
+}
+
+- (void)onToggleAudioLoop:(id)sender {
+  [_delegate mainViewDidToggleAudioLoop:self];
+}
 
 - (void)onStartCall:(id)sender {
   NSString *room = _roomText.roomText;
@@ -255,9 +332,10 @@ static CGFloat const kAppLabelHeight = 20;
   }
   room = [room stringByReplacingOccurrencesOfString:@"-" withString:@""];
   [_delegate mainView:self
-         didInputRoom:room
-           isLoopback:_loopbackSwitch.isOn
-          isAudioOnly:_audioOnlySwitch.isOn];
+                didInputRoom:room
+                  isLoopback:_loopbackSwitch.isOn
+                 isAudioOnly:_audioOnlySwitch.isOn
+      shouldDelayAudioConfig:_audioConfigDelaySwitch.isOn];
 }
 
 @end

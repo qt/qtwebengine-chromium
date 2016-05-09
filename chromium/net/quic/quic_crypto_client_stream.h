@@ -19,8 +19,6 @@
 
 namespace net {
 
-class QuicClientSessionBase;
-
 namespace test {
 class CryptoTestUtils;
 class QuicChromiumClientSessionPeer;
@@ -28,7 +26,7 @@ class QuicChromiumClientSessionPeer;
 
 class NET_EXPORT_PRIVATE QuicCryptoClientStreamBase : public QuicCryptoStream {
  public:
-  explicit QuicCryptoClientStreamBase(QuicClientSessionBase* session);
+  explicit QuicCryptoClientStreamBase(QuicSession* session);
 
   ~QuicCryptoClientStreamBase() override{};
 
@@ -39,6 +37,11 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStreamBase : public QuicCryptoStream {
   // have been sent. If the handshake has completed then this is one greater
   // than the number of round-trips needed for the handshake.
   virtual int num_sent_client_hellos() const = 0;
+
+  // The number of server config update messages received by the
+  // client.  Does not count update messages that were received prior
+  // to handshake confirmation.
+  virtual int num_scup_messages_received() const = 0;
 };
 
 class NET_EXPORT_PRIVATE QuicCryptoClientStream
@@ -51,16 +54,39 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream
   //     the server being unwilling to send it without a valid source-address
   //     token.
   static const int kMaxClientHellos = 3;
+
+  // ProofHandler is an interface that handles callbacks from the crypto
+  // stream when the client has proof verification details of the server.
+  class NET_EXPORT_PRIVATE ProofHandler {
+   public:
+    virtual ~ProofHandler() {}
+
+    // Called when the proof in |cached| is marked valid.  If this is a secure
+    // QUIC session, then this will happen only after the proof verifier
+    // completes.
+    virtual void OnProofValid(
+        const QuicCryptoClientConfig::CachedState& cached) = 0;
+
+    // Called when proof verification details become available, either because
+    // proof verification is complete, or when cached details are used. This
+    // will only be called for secure QUIC connections.
+    virtual void OnProofVerifyDetailsAvailable(
+        const ProofVerifyDetails& verify_details) = 0;
+  };
+
   QuicCryptoClientStream(const QuicServerId& server_id,
-                         QuicClientSessionBase* session,
+                         QuicSession* session,
                          ProofVerifyContext* verify_context,
-                         QuicCryptoClientConfig* crypto_config);
+                         QuicCryptoClientConfig* crypto_config,
+                         ProofHandler* proof_handler);
 
   ~QuicCryptoClientStream() override;
 
   // From QuicCryptoClientStreamBase
   void CryptoConnect() override;
   int num_sent_client_hellos() const override;
+
+  int num_scup_messages_received() const override;
 
   // CryptoFramerVisitorInterface implementation
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;
@@ -183,8 +209,6 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream
   // and the client config settings also allow sending a ChannelID.
   bool RequiresChannelID(QuicCryptoClientConfig::CachedState* cached);
 
-  QuicClientSessionBase* client_session();
-
   State next_state_;
   // num_client_hellos_ contains the number of client hello messages that this
   // connection has sent.
@@ -192,8 +216,9 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream
 
   QuicCryptoClientConfig* const crypto_config_;
 
-  // Client's connection nonce (4-byte timestamp + 28 random bytes)
-  std::string nonce_;
+  // SHA-256 hash of the most recently sent CHLO.
+  std::string chlo_hash_;
+
   // Server's (hostname, port, is_https, privacy_mode) tuple.
   const QuicServerId server_id_;
 
@@ -223,6 +248,9 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream
   // proof_verify_callback_ contains the callback object that we passed to an
   // asynchronous proof verification. The ProofVerifier owns this object.
   ProofVerifierCallbackImpl* proof_verify_callback_;
+  // proof_handler_ contains the callback object used by a quic client
+  // for proof verification. It is not owned by this class.
+  ProofHandler* proof_handler_;
 
   // These members are used to store the result of an asynchronous proof
   // verification. These members must not be used after
@@ -237,6 +265,8 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream
   bool stateless_reject_received_;
 
   base::TimeTicks proof_verify_start_time_;
+
+  int num_scup_messages_received_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientStream);
 };

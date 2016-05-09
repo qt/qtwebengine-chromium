@@ -9,21 +9,20 @@
  */
 
 #include <string>
+#include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/audio/audio_receive_stream.h"
 #include "webrtc/audio/conversion.h"
-#include "webrtc/call/mock/mock_congestion_controller.h"
 #include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
+#include "webrtc/modules/congestion_controller/include/mock/mock_congestion_controller.h"
 #include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
-#include "webrtc/modules/utility/include/mock/mock_process_thread.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/mock_voe_channel_proxy.h"
 #include "webrtc/test/mock_voice_engine.h"
-#include "webrtc/video/call_stats.h"
 
 namespace webrtc {
 namespace test {
@@ -65,10 +64,9 @@ const AudioDecodingCallStats kAudioDecodeStats = MakeAudioDecodeStatsForTest();
 struct ConfigHelper {
   ConfigHelper()
       : simulated_clock_(123456),
-        call_stats_(&simulated_clock_),
-        congestion_controller_(&process_thread_,
-                               &call_stats_,
-                               &bitrate_observer_) {
+        congestion_controller_(&simulated_clock_,
+                               &bitrate_observer_,
+                               &remote_bitrate_observer_) {
     using testing::Invoke;
 
     EXPECT_CALL(voice_engine_,
@@ -90,13 +88,15 @@ struct ConfigHelper {
           EXPECT_CALL(*channel_proxy_,
               SetReceiveAudioLevelIndicationStatus(true, kAudioLevelId))
                   .Times(1);
-          EXPECT_CALL(*channel_proxy_, SetCongestionControlObjects(
-                                           nullptr, nullptr, &packet_router_))
+          EXPECT_CALL(*channel_proxy_, EnableReceiveTransportSequenceNumber(
+                                           kTransportSequenceNumberId))
+              .Times(1);
+          EXPECT_CALL(*channel_proxy_,
+                      RegisterReceiverCongestionControlObjects(&packet_router_))
               .Times(1);
           EXPECT_CALL(congestion_controller_, packet_router())
               .WillOnce(Return(&packet_router_));
-          EXPECT_CALL(*channel_proxy_,
-                      SetCongestionControlObjects(nullptr, nullptr, nullptr))
+          EXPECT_CALL(*channel_proxy_, ResetCongestionControlObjects())
               .Times(1);
           return channel_proxy_;
         }));
@@ -107,6 +107,8 @@ struct ConfigHelper {
         RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
     stream_config_.rtp.extensions.push_back(
         RtpExtension(RtpExtension::kAudioLevel, kAudioLevelId));
+    stream_config_.rtp.extensions.push_back(RtpExtension(
+        RtpExtension::kTransportSequenceNumber, kTransportSequenceNumberId));
   }
 
   MockCongestionController* congestion_controller() {
@@ -149,10 +151,9 @@ struct ConfigHelper {
 
  private:
   SimulatedClock simulated_clock_;
-  CallStats call_stats_;
   PacketRouter packet_router_;
   testing::NiceMock<MockBitrateObserver> bitrate_observer_;
-  testing::NiceMock<MockProcessThread> process_thread_;
+  testing::NiceMock<MockRemoteBitrateObserver> remote_bitrate_observer_;
   MockCongestionController congestion_controller_;
   MockRemoteBitrateEstimator remote_bitrate_estimator_;
   testing::StrictMock<MockVoiceEngine> voice_engine_;
@@ -208,12 +209,12 @@ TEST(AudioReceiveStreamTest, ConfigToString) {
   config.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
   config.voe_channel_id = kChannelId;
-  config.combined_audio_video_bwe = true;
   EXPECT_EQ(
       "{rtp: {remote_ssrc: 1234, local_ssrc: 5678, extensions: [{name: "
-      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time, id: 2}]}, "
+      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time, id: 2}], "
+      "transport_cc: off}, "
       "receive_transport: nullptr, rtcp_send_transport: nullptr, "
-      "voe_channel_id: 2, combined_audio_video_bwe: true}",
+      "voe_channel_id: 2}",
       config.ToString());
 }
 
@@ -234,35 +235,9 @@ MATCHER_P(VerifyHeaderExtension, expected_extension, "") {
              expected_extension.transportSequenceNumber;
 }
 
-TEST(AudioReceiveStreamTest, AudioPacketUpdatesBweWithTimestamp) {
-  ConfigHelper helper;
-  helper.config().combined_audio_video_bwe = true;
-  helper.SetupMockForBweFeedback(false);
-  internal::AudioReceiveStream recv_stream(
-      helper.congestion_controller(), helper.config(), helper.audio_state());
-  const int kAbsSendTimeValue = 1234;
-  std::vector<uint8_t> rtp_packet =
-      CreateRtpHeaderWithOneByteExtension(kAbsSendTimeId, kAbsSendTimeValue, 3);
-  PacketTime packet_time(5678000, 0);
-  const size_t kExpectedHeaderLength = 20;
-  RTPHeaderExtension expected_extension;
-  expected_extension.hasAbsoluteSendTime = true;
-  expected_extension.absoluteSendTime = kAbsSendTimeValue;
-  EXPECT_CALL(*helper.remote_bitrate_estimator(),
-              IncomingPacket(packet_time.timestamp / 1000,
-                             rtp_packet.size() - kExpectedHeaderLength,
-                             VerifyHeaderExtension(expected_extension), false))
-      .Times(1);
-  EXPECT_TRUE(
-      recv_stream.DeliverRtp(&rtp_packet[0], rtp_packet.size(), packet_time));
-}
-
 TEST(AudioReceiveStreamTest, AudioPacketUpdatesBweFeedback) {
   ConfigHelper helper;
-  helper.config().combined_audio_video_bwe = true;
   helper.config().rtp.transport_cc = true;
-  helper.config().rtp.extensions.push_back(RtpExtension(
-      RtpExtension::kTransportSequenceNumber, kTransportSequenceNumberId));
   helper.SetupMockForBweFeedback(true);
   internal::AudioReceiveStream recv_stream(
       helper.congestion_controller(), helper.config(), helper.audio_state());

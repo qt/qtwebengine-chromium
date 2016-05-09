@@ -34,8 +34,10 @@
 #include "platform/HTTPNames.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebAddressSpace.h"
 #include "public/platform/WebURLRequest.h"
-
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -49,6 +51,7 @@ WorkerScriptLoader::WorkerScriptLoader()
     , m_identifier(0)
     , m_appCacheID(0)
     , m_requestContext(WebURLRequest::RequestContextWorker)
+    , m_responseAddressSpace(WebAddressSpacePublic)
 {
 }
 
@@ -62,11 +65,11 @@ WorkerScriptLoader::~WorkerScriptLoader()
         cancel();
 }
 
-void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy)
+void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, WebAddressSpace creationAddressSpace)
 {
     m_url = url;
 
-    ResourceRequest request(createResourceRequest());
+    ResourceRequest request(createResourceRequest(creationAddressSpace));
     ASSERT_WITH_SECURITY_IMPLICATION(executionContext.isWorkerGlobalScope());
 
     ThreadableLoaderOptions options;
@@ -80,14 +83,14 @@ void WorkerScriptLoader::loadSynchronously(ExecutionContext& executionContext, c
     WorkerThreadableLoader::loadResourceSynchronously(toWorkerGlobalScope(executionContext), request, *this, options, resourceLoaderOptions);
 }
 
-void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, PassOwnPtr<Closure> responseCallback, PassOwnPtr<Closure> finishedCallback)
+void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, const KURL& url, CrossOriginRequestPolicy crossOriginRequestPolicy, WebAddressSpace creationAddressSpace, PassOwnPtr<SameThreadClosure> responseCallback, PassOwnPtr<SameThreadClosure> finishedCallback)
 {
     ASSERT(responseCallback || finishedCallback);
     m_responseCallback = responseCallback;
     m_finishedCallback = finishedCallback;
     m_url = url;
 
-    ResourceRequest request(createResourceRequest());
+    ResourceRequest request(createResourceRequest(creationAddressSpace));
     ThreadableLoaderOptions options;
     options.crossOriginRequestPolicy = crossOriginRequestPolicy;
 
@@ -100,7 +103,8 @@ void WorkerScriptLoader::loadAsynchronously(ExecutionContext& executionContext, 
     // (E.g. see crbug.com/524694 for why we can't easily remove this protect)
     RefPtr<WorkerScriptLoader> protect(this);
     m_needToCancel = true;
-    m_threadableLoader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
+    m_threadableLoader = ThreadableLoader::create(executionContext, this, options, resourceLoaderOptions);
+    m_threadableLoader->start(request);
     if (m_failed)
         notifyFinished();
 }
@@ -111,11 +115,12 @@ const KURL& WorkerScriptLoader::responseURL() const
     return m_responseURL;
 }
 
-ResourceRequest WorkerScriptLoader::createResourceRequest()
+ResourceRequest WorkerScriptLoader::createResourceRequest(WebAddressSpace creationAddressSpace)
 {
     ResourceRequest request(m_url);
     request.setHTTPMethod(HTTPNames::GET);
     request.setRequestContext(m_requestContext);
+    request.setExternalRequestStateFromRequestorAddressSpace(creationAddressSpace);
     return request;
 }
 
@@ -131,6 +136,13 @@ void WorkerScriptLoader::didReceiveResponse(unsigned long identifier, const Reso
     m_responseEncoding = response.textEncodingName();
     m_appCacheID = response.appCacheID();
     processContentSecurityPolicy(response);
+
+    if (Platform::current()->isReservedIPAddress(response.remoteIPAddress())) {
+        m_responseAddressSpace = SecurityOrigin::create(m_responseURL)->isLocalhost()
+            ? WebAddressSpaceLocal
+            : WebAddressSpacePrivate;
+    }
+
     if (m_responseCallback)
         (*m_responseCallback)();
 }
@@ -211,7 +223,7 @@ void WorkerScriptLoader::notifyFinished()
     if (!m_finishedCallback)
         return;
 
-    OwnPtr<Closure> callback = m_finishedCallback.release();
+    OwnPtr<SameThreadClosure> callback = m_finishedCallback.release();
     (*callback)();
 }
 

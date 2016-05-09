@@ -10,6 +10,7 @@
 #include "base/strings/string_piece.h"
 #include "net/quic/p2p/quic_p2p_stream.h"
 #include "net/quic/quic_client_session_base.h"
+#include "net/quic/quic_clock.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -52,7 +53,9 @@ class NET_EXPORT QuicP2PSession : public QuicSession {
       net::SpdyPriority priority) override;
 
   // QuicConnectionVisitorInterface overrides.
-  void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
+  void OnConnectionClosed(QuicErrorCode error,
+                          const std::string& error_details,
+                          ConnectionCloseSource source) override;
 
   void SetDelegate(Delegate* delegate);
 
@@ -80,6 +83,9 @@ class NET_EXPORT QuicP2PSession : public QuicSession {
 
   ReadState read_state_ = READ_STATE_DO_READ;
   scoped_refptr<IOBuffer> read_buffer_;
+
+  // For recording receipt time
+  QuicClock clock_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicP2PSession);
 };

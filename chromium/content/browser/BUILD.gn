@@ -10,150 +10,135 @@ import("//media/media_options.gni")
 source_set("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
-  visibility = [ "//content/public/browser:browser_sources" ]
+  visibility = [
+    ":for_content_tests",  # See top of //content/BUILD.gn for why.
+    "//content/public/browser:browser_sources",
+  ]
 
   configs += [
     "//build/config:precompiled_headers",
+    "//content:content_implementation",
     "//content/public/common:mojo_shell_client",
+    "//third_party/WebKit/public:debug_devtools",
+    "//v8:external_startup_data",
   ]
   defines = []
   libs = []
   ldflags = []
 
-  # Shared deps. See also non-iOS deps below.
   deps = [
     "//base",
     "//base:base_static",
+    "//base/third_party/dynamic_annotations",
+    "//cc",
+    "//cc/surfaces",
+    "//components/filesystem:lib",
+    "//components/leveldb:lib",
     "//components/mime_util",
+    "//components/profile_service:lib",
+    "//components/scheduler:common",
+    "//components/tracing",
+    "//components/tracing:startup_tracing",
     "//components/url_formatter",
     "//content:resources",
+    "//content/app/resources",
+    "//content/app/strings",
     "//content/browser/background_sync:background_sync_proto",
     "//content/browser/cache_storage:cache_storage_proto",
+    "//content/browser/devtools:gen_devtools_protocol_handler",
+    "//content/browser/devtools:resources",
     "//content/browser/notifications:notification_proto",
     "//content/browser/service_worker:service_worker_proto",
     "//content/browser/speech/proto",
+    "//content/common",
     "//content/public/common:common_sources",
     "//content/public/common:mojo_bindings",
     "//crypto",
     "//device/battery",
+    "//device/bluetooth",
     "//device/vibration",
+    "//gin",
     "//google_apis",
+    "//gpu",
+    "//gpu/command_buffer/client:gles2_implementation",
+    "//ipc/mojo",
+    "//media",
+    "//media/midi",
     "//mojo/common",
+    "//mojo/common:url_type_converters",
+    "//mojo/converters/geometry",
     "//mojo/public/cpp/bindings",
+    "//mojo/public/js",
     "//mojo/shell",
-    "//mojo/shell/package_manager",
     "//mojo/shell/public/cpp:cpp_for_chromium",
     "//mojo/shell/public/interfaces",
+    "//mojo/shell/runner/common",
+    "//mojo/shell/runner/host:lib",
     "//net",
     "//net:extras",
     "//skia",
+    "//skia/public",
     "//sql",
+    "//storage/browser",
+    "//storage/common",
+
+    # TODO(brettw) bug 582206: Blink should not be used in the browser
+    # process. This is required by devtools' input_handler.cc which calls
+    # WebKeyboardEvent::setKeyIdentifierFromWindowsKeyCode
+    "//third_party/WebKit/public:blink",
     "//third_party/WebKit/public:blink_headers",
+    "//third_party/WebKit/public:image_resources",
+    "//third_party/WebKit/public:resources",
+    "//third_party/angle:commit_id",
+    "//third_party/icu",
     "//third_party/kasko:kasko_features",
-    "//third_party/npapi",
+    "//third_party/leveldatabase",
+    "//third_party/libyuv",
     "//third_party/re2",
+    "//third_party/webrtc",
+    "//third_party/webrtc/base:rtc_base",
+    "//third_party/webrtc/modules/desktop_capture:primitives",
     "//third_party/zlib",
     "//third_party/zlib:zip",
     "//ui/accessibility",
     "//ui/accessibility:ax_gen",
     "//ui/base",
     "//ui/base/ime",
+    "//ui/display",
     "//ui/events",
     "//ui/events:gesture_detection",
+    "//ui/events/blink",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
     "//ui/native_theme",
     "//ui/resources",
+    "//ui/shell_dialogs",
     "//ui/snapshot",
+    "//ui/surface",
+    "//ui/touch_selection",
   ]
 
-  if (is_ios) {
-    # iOS doesn't get the normal file list and only takes these whitelisted
-    # files.
-    sources = [
-      "browser_context.cc",
-      "browser_main_loop.cc",
-      "browser_main_runner.cc",
-      "browser_process_sub_thread.cc",
-      "browser_thread_impl.cc",
-      "browser_url_handler_impl.cc",
-      "cert_store_impl.cc",
-      "download/download_create_info.cc",
-      "notification_service_impl.cc",
-      "signed_certificate_timestamp_store_impl.cc",
-      "user_metrics.cc",
-      "web_contents/navigation_entry_impl.cc",
-    ]
-  } else {
-    # Normal non-iOS sources get everything.
-    sources = rebase_path(content_browser_gypi_values.private_browser_sources,
-                          ".",
-                          "//content")
+  sources = rebase_path(content_browser_gypi_values.private_browser_sources,
+                        ".",
+                        "//content")
 
-    # TODO(GYP) these generated files are listed as sources in content_browser.
-    # This is a bit suspicious. The GN grit template will make a source set
-    # containing the generated code so it should be sufficient to just depend
-    # on the grit rule. But maybe some of these will need to be added?
-    #
-    # Need this annoying rebase_path call to match what happened with the
-    # sources.
-    sources -= rebase_path(
-            [
-              "$root_gen_dir/blink/grit/devtools_resources.h",
-              "$root_gen_dir/blink/grit/devtools_resources_map.cc",
-              "$root_gen_dir/blink/grit/devtools_resources_map.h",
-              "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
-              "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
-            ],
-            ".")
-
-    sources += [
-      "mojo/mojo_shell_client_host.cc",
-      "mojo/mojo_shell_client_host.h",
-      "mojo/renderer_capability_filter.cc",
-    ]
-
-    # Non-iOS deps.
-    deps += [
-      "//cc",
-      "//cc/surfaces",
-      "//components/scheduler:common",
-      "//content/app/resources",
-      "//content/app/strings",
-      "//content/browser/devtools:gen_devtools_protocol_handler",
-      "//content/browser/devtools:resources",
-      "//content/common:mojo_bindings",
-      "//content/public/common:mojo_bindings",
-      "//device/bluetooth",
-      "//gin",
-      "//mojo/common:url_type_converters",
-      "//mojo/converters/geometry",
-      "//mojo/public/cpp/bindings",
-      "//mojo/public/js",
-      "//mojo/shell/public/interfaces",
-      "//skia/public",
-      "//storage/browser",
-      "//storage/common",
-      "//third_party/WebKit/public:image_resources",
-      "//third_party/WebKit/public:resources",
-      "//third_party/angle:commit_id",
-      "//third_party/icu",
-      "//third_party/leveldatabase",
-      "//third_party/libyuv",
-      "//ui/events/blink",
-      "//ui/resources",
-      "//ui/surface",
-      "//ui/touch_selection",
-    ]
-
-    configs += [ "//v8:external_startup_data" ]
-  }
-
-  configs += [
-    "//content:content_implementation",
-    "//third_party/WebKit/public:debug_devtools",
-  ]
+  # TODO(GYP) these generated files are listed as sources in content_browser.
+  # This is a bit suspicious. The GN grit template will make a source set
+  # containing the generated code so it should be sufficient to just depend
+  # on the grit rule. But maybe some of these will need to be added?
+  #
+  # Need this annoying rebase_path call to match what happened with the
+  # sources.
+  sources -= rebase_path(
+          [
+            "$root_gen_dir/blink/grit/devtools_resources.h",
+            "$root_gen_dir/blink/grit/devtools_resources_map.cc",
+            "$root_gen_dir/blink/grit/devtools_resources_map.h",
+            "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
+            "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
+          ],
+          ".")
 
   if (toolkit_views) {
     deps += [ "//ui/events" ]
@@ -176,32 +161,37 @@ source_set("browser") {
   }
 
   # TODO(GYP)
-  #   ['OS!="ios" and chrome_multiple_dll!=1', {
+  #   [chrome_multiple_dll!=1', {
   #     'dependencies': [
   #       '../third_party/WebKit/public/blink.gyp:blink',
   #     ],
   #   }],
-  if (!is_mac && !is_ios) {
+  if (!is_mac) {
     deps += [ "//sandbox" ]
   }
-  if (!is_android && !is_ios) {
+  if (!is_android) {
     deps += [ "//content/browser/tracing:resources" ]
+  }
+  if ((use_udev && is_posix) || is_mac || is_win) {
+    deps += [ "//tools/battor_agent:battor_agent_lib" ]
+    sources += [
+      "tracing/power_tracing_agent.cc",
+      "tracing/power_tracing_agent.h",
+    ]
   }
 
   if (enable_webrtc) {
     sources += rebase_path(content_browser_gypi_values.webrtc_browser_sources,
                            ".",
                            "//content")
-    deps += [ "//jingle:jingle_glue" ]
-    if (is_linux) {
-      deps += [ "//third_party/libjingle:libjingle_webrtc" ]
-    }
+    deps += [
+      "//jingle:jingle_glue",
+      "//third_party/libjingle:libjingle_webrtc",
+    ]
     if (is_linux || is_mac || is_win) {
       sources += [
         "media/capture/desktop_capture_device.cc",
         "media/capture/desktop_capture_device.h",
-        "media/capture/desktop_capture_device_uma_types.cc",
-        "media/capture/desktop_capture_device_uma_types.h",
       ]
       if (use_aura) {
         sources += [
@@ -235,6 +225,7 @@ source_set("browser") {
       "dinput8.lib",
       "dwmapi.lib",
       "dxguid.lib",
+      "imm32.lib",
       "oleacc.lib",
       "sensorsapi.lib",
       "portabledeviceguids.lib",
@@ -251,20 +242,13 @@ source_set("browser") {
   }
 
   if (use_udev) {
-    deps += [ "//device/udev_linux" ]
-  } else {
-    # Remove udev-specific sources.
-    sources -= [
-      "device_monitor_udev.cc",
-      "device_monitor_udev.h",
+    deps += [
+      "//device/udev_linux",
+      "//media/capture",
     ]
+  } else {
     if (is_linux) {
-      # Already filtered out on non-Linux.
-      sources -= [
-        "gamepad/gamepad_platform_data_fetcher_linux.cc",
-        "udev_linux.cc",
-        "udev_linux.h",
-      ]
+      sources -= [ "gamepad/gamepad_platform_data_fetcher_linux.cc" ]
     }
   }
 
@@ -305,6 +289,9 @@ source_set("browser") {
 
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
+    if (!is_chromeos) {
+      configs += [ "//build/config/linux:xscrnsaver" ]
+    }
     deps += [ "//ui/gfx/x" ]
   }
 
@@ -338,6 +325,10 @@ source_set("browser") {
     sources += rebase_path(content_browser_gypi_values.android_browser_sources,
                            ".",
                            "//content")
+    sources += rebase_path(
+            content_browser_gypi_values.android_in_process_browser_sources,
+            ".",
+            "//content")
     sources -= [
       "browser_ipc_logging.cc",
       "device_sensors/data_fetcher_shared_memory_default.cc",
@@ -345,8 +336,10 @@ source_set("browser") {
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
       "geolocation/network_location_request.h",
+      "media/session/media_session_delegate_default.cc",
       "power_usage_monitor_impl.cc",
       "power_usage_monitor_impl.h",
+      "renderer_host/begin_frame_observer_proxy.cc",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -372,26 +365,13 @@ source_set("browser") {
       "speech/speech_recognizer_impl.cc",
       "speech/speech_recognizer_impl.h",
     ]
-
-    if (!use_aura) {
-      sources += rebase_path(
-              content_browser_gypi_values.android_non_aura_browser_sources,
-              ".",
-              "//content")
-      sources += rebase_path(
-              content_browser_gypi_values.android_in_process_browser_sources,
-              ".",
-              "//content")
-      sources -= [ "renderer_host/begin_frame_observer_proxy.cc" ]
-      deps += [ "//ui/android" ]
-    }
-
     deps -= [ "//device/battery" ]
     deps += [
       "//content/public/android:jni",
       "//media",
       "//media/mojo/interfaces",
       "//mojo/android:libsystem_java",
+      "//ui/android",
     ]
     defines += [ "APPCACHE_USE_SIMPLE_CACHE" ]
     libs += [ "jnigraphics" ]
@@ -409,18 +389,10 @@ source_set("browser") {
       "//third_party/sudden_motion_sensor",
       "//ui/accelerated_widget_mac",
     ]
-    libs += [
-      "bsm",
-      "QTKit.framework",
-    ]
   }
 
   if (is_chromeos) {
     sources -= [ "device_sensors/data_fetcher_shared_memory_default.cc" ]
-    sources += [
-      "gpu/gpu_arc_video_service_host.cc",
-      "gpu/gpu_arc_video_service_host.h",
-    ]
     deps += [
       "//chromeos",
       "//chromeos:power_manager_proto",
@@ -506,13 +478,6 @@ source_set("browser") {
     deps += [ "//ui/compositor" ]
   }
 
-  if (!is_ios) {
-    sources += [
-      "compositor/surface_utils.cc",
-      "compositor/surface_utils.h",
-    ]
-  }
-
   if (enable_web_speech) {
     deps += [ "//third_party/flac" ]
   }
@@ -532,12 +497,8 @@ source_set("browser") {
     deps += [ "//third_party/boringssl" ]
   }
 
-  if (enable_mojo_media != "none") {
-    configs += [ "//media/mojo/services:enable_mojo_media_config" ]
-  }
-
-  if (enable_mojo_media == "browser") {
-    deps += [ "//media/mojo/services:application" ]
+  if (enable_mojo_media) {
+    configs += [ "//media/mojo/services:mojo_media_config" ]
   }
 
   if (enable_webvr) {
@@ -556,6 +517,16 @@ source_set("browser") {
       "vr/android/cardboard/cardboard_vr_device.h",
       "vr/android/cardboard/cardboard_vr_device_provider.cc",
       "vr/android/cardboard/cardboard_vr_device_provider.h",
+    ]
+  }
+}
+
+# See comment at the top of //content/BUILD.gn for how this works.
+group("for_content_tests") {
+  visibility = [ "//content/test/*" ]
+  if (!is_component_build) {
+    public_deps = [
+      ":browser",
     ]
   }
 }

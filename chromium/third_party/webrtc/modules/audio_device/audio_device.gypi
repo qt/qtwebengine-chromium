@@ -166,10 +166,24 @@
               },
             }],
             ['OS=="ios"', {
+              'dependencies': [
+                '<(webrtc_root)/base/base.gyp:rtc_base_objc',
+              ],
               'sources': [
                 'ios/audio_device_ios.h',
                 'ios/audio_device_ios.mm',
                 'ios/audio_device_not_implemented_ios.mm',
+                'ios/audio_session_observer.h',
+                'ios/objc/RTCAudioSession+Configuration.mm',
+                'ios/objc/RTCAudioSession+Private.h',
+                'ios/objc/RTCAudioSession.h',
+                'ios/objc/RTCAudioSession.mm',
+                'ios/objc/RTCAudioSessionConfiguration.h',
+                'ios/objc/RTCAudioSessionConfiguration.m',
+                'ios/objc/RTCAudioSessionDelegateAdapter.h',
+                'ios/objc/RTCAudioSessionDelegateAdapter.mm',
+                'ios/voice_processing_audio_unit.h',
+                'ios/voice_processing_audio_unit.mm',
               ],
               'xcode_settings': {
                 'CLANG_ENABLE_OBJC_ARC': 'YES',

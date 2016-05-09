@@ -31,6 +31,7 @@
 #ifndef FileReader_h
 #define FileReader_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
@@ -49,10 +50,10 @@ class ExceptionState;
 class ExecutionContext;
 class StringOrArrayBuffer;
 
-class CORE_EXPORT FileReader final : public RefCountedGarbageCollectedEventTargetWithInlineData<FileReader>, public ActiveDOMObject, public FileReaderLoaderClient {
+class CORE_EXPORT FileReader final : public RefCountedGarbageCollectedEventTargetWithInlineData<FileReader>, public ActiveScriptWrappable, public ActiveDOMObject, public FileReaderLoaderClient {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(FileReader);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileReader);
+    USING_GARBAGE_COLLECTED_MIXIN(FileReader);
 public:
     static FileReader* create(ExecutionContext*);
 
@@ -73,17 +74,19 @@ public:
 
     void doAbort();
 
-    ReadyState readyState() const { return m_state; }
+    ReadyState getReadyState() const { return m_state; }
     FileError* error() { return m_error; }
     void result(StringOrArrayBuffer& resultAttribute) const;
 
     // ActiveDOMObject
     void stop() override;
-    bool hasPendingActivity() const override;
+
+    // ActiveScriptWrappable
+    bool hasPendingActivity() const final;
 
     // EventTarget
     const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override { return ActiveDOMObject::executionContext(); }
+    ExecutionContext* getExecutionContext() const override { return ActiveDOMObject::getExecutionContext(); }
 
     // FileReaderLoaderClient
     void didStartLoading() override;
@@ -131,7 +134,6 @@ private:
     OwnPtr<FileReaderLoader> m_loader;
     Member<FileError> m_error;
     double m_lastProgressNotificationTimeMS;
-    int m_asyncOperationId;
 };
 
 } // namespace blink

@@ -59,20 +59,9 @@ MISSING_KEYWORD = 'Missing'
 NEEDS_REBASELINE_KEYWORD = 'NeedsRebaseline'
 NEEDS_MANUAL_REBASELINE_KEYWORD = 'NeedsManualRebaseline'
 
-# TODO(ojan): Don't add new platforms here. New mac platforms
-# should use the version number directly instead of the english
-# language names throughout the code.
-MAC_VERSION_MAPPING = {
-    'mac10.6': 'snowleopard',
-    'mac10.7': 'lion',
-    'mac10.8': 'mountainlion',
-    'mac10.9': 'mavericks',
-}
-
-INVERTED_MAC_VERSION_MAPPING = {value: name for name, value in MAC_VERSION_MAPPING.items()}
-
 
 class ParseError(Exception):
+
     def __init__(self, warnings):
         super(ParseError, self).__init__()
         self.warnings = warnings
@@ -87,7 +76,8 @@ class ParseError(Exception):
 class TestExpectationParser(object):
     """Provides parsing facilities for lines in the test_expectation.txt file."""
 
-    # FIXME: Rename these to *_KEYWORD as in MISSING_KEYWORD above, but make the case studdly-caps to match the actual file contents.
+    # FIXME: Rename these to *_KEYWORD as in MISSING_KEYWORD above, but make
+    # the case studdly-caps to match the actual file contents.
     REBASELINE_MODIFIER = 'rebaseline'
     NEEDS_REBASELINE_MODIFIER = 'needsrebaseline'
     NEEDS_MANUAL_REBASELINE_MODIFIER = 'needsmanualrebaseline'
@@ -102,7 +92,8 @@ class TestExpectationParser(object):
 
     def __init__(self, port, all_tests, is_lint_mode):
         self._port = port
-        self._test_configuration_converter = TestConfigurationConverter(set(port.all_test_configurations()), port.configuration_specifier_macros())
+        self._test_configuration_converter = TestConfigurationConverter(
+            set(port.all_test_configurations()), port.configuration_specifier_macros())
 
         if all_tests:
             self._all_tests = set(all_tests)
@@ -134,7 +125,6 @@ class TestExpectationParser(object):
         self._parse_line(expectation_line)
         return expectation_line
 
-
     def expectation_for_skipped_test(self, test_name):
         if not self._port.test_exists(test_name):
             _log.warning('The following test %s from the Skipped list doesn\'t exist' % test_name)
@@ -163,15 +153,15 @@ class TestExpectationParser(object):
         self._parse_expectations(expectation_line)
 
     def _parse_specifier(self, specifier):
-        specifier = specifier.lower()
-        return MAC_VERSION_MAPPING.get(specifier, specifier)
+        return specifier.lower()
 
     def _parse_specifiers(self, expectation_line):
         if self._is_lint_mode:
             self._lint_line(expectation_line)
 
         parsed_specifiers = set([self._parse_specifier(specifier) for specifier in expectation_line.specifiers])
-        expectation_line.matching_configurations = self._test_configuration_converter.to_config_set(parsed_specifiers, expectation_line.warnings)
+        expectation_line.matching_configurations = self._test_configuration_converter.to_config_set(
+            parsed_specifiers, expectation_line.warnings)
 
     def _lint_line(self, expectation_line):
         expectations = [expectation.lower() for expectation in expectation_line.expectations]
@@ -230,9 +220,9 @@ class TestExpectationParser(object):
 
     # FIXME: Update the original specifiers and remove this once the old syntax is gone.
     _configuration_tokens_list = [
-        'Mac', 'Mac10.6', 'Mac10.7', 'Mac10.8', 'Mac10.9', 'Mac10.10', 'Retina',
-        'Win', 'XP', 'Win7', 'Win10',
-        'Linux', 'Linux32', 'Precise', 'Trusty',
+        'Mac', 'Mac10.9', 'Mac10.10', 'Mac10.11', 'Retina',
+        'Win', 'Win7', 'Win10',
+        'Linux', 'Precise', 'Trusty',
         'Android',
         'Release',
         'Debug',
@@ -368,6 +358,18 @@ class TestExpectationParser(object):
         if ('SKIP' in expectations or 'WONTFIX' in expectations) and len(set(expectations) - set(['SKIP', 'WONTFIX'])):
             warnings.append('A test marked Skip or WontFix must not have other expectations.')
 
+        if 'SLOW' in expectations and 'SlowTests' not in filename:
+            warnings.append('SLOW tests should ony be added to SlowTests and not to TestExpectations.')
+
+        if 'WONTFIX' in expectations and ('NeverFixTests' not in filename and 'StaleTestExpectations' not in filename):
+            warnings.append('WONTFIX tests should ony be added to NeverFixTests or StaleTestExpectations and not to TestExpectations.')
+
+        if 'NeverFixTests' in filename and expectations != ['WONTFIX', 'SKIP']:
+            warnings.append('Only WONTFIX expectations are allowed in NeverFixTests')
+
+        if 'SlowTests' in filename and expectations != ['SLOW']:
+            warnings.append('Only SLOW expectations are allowed in SlowTests')
+
         if not expectations and not has_unrecognized_expectation:
             warnings.append('Missing expectations.')
 
@@ -405,22 +407,25 @@ class TestExpectationLine(object):
         self.warnings = []
         self.is_skipped_outside_expectations_file = False
 
+    def __str__(self):
+        return "TestExpectationLine{name=%s, matching_configurations=%s, original_string=%s}" % (self.name, self.matching_configurations, self.original_string)
+
     def __eq__(self, other):
         return (self.original_string == other.original_string
-            and self.filename == other.filename
-            and self.line_numbers == other.line_numbers
-            and self.name == other.name
-            and self.path == other.path
-            and self.bugs == other.bugs
-            and self.specifiers == other.specifiers
-            and self.parsed_specifiers == other.parsed_specifiers
-            and self.matching_configurations == other.matching_configurations
-            and self.expectations == other.expectations
-            and self.parsed_expectations == other.parsed_expectations
-            and self.comment == other.comment
-            and self.matching_tests == other.matching_tests
-            and self.warnings == other.warnings
-            and self.is_skipped_outside_expectations_file == other.is_skipped_outside_expectations_file)
+                and self.filename == other.filename
+                and self.line_numbers == other.line_numbers
+                and self.name == other.name
+                and self.path == other.path
+                and self.bugs == other.bugs
+                and self.specifiers == other.specifiers
+                and self.parsed_specifiers == other.parsed_specifiers
+                and self.matching_configurations == other.matching_configurations
+                and self.expectations == other.expectations
+                and self.parsed_expectations == other.parsed_expectations
+                and self.comment == other.comment
+                and self.matching_tests == other.matching_tests
+                and self.warnings == other.warnings
+                and self.is_skipped_outside_expectations_file == other.is_skipped_outside_expectations_file)
 
     def is_invalid(self):
         return bool(self.warnings and self.warnings != [TestExpectationParser.MISSING_BUG_WARNING])
@@ -472,7 +477,8 @@ class TestExpectationLine(object):
         return result
 
     def to_string(self, test_configuration_converter, include_specifiers=True, include_expectations=True, include_comment=True):
-        parsed_expectation_to_string = dict([[parsed_expectation, expectation_string] for expectation_string, parsed_expectation in TestExpectations.EXPECTATIONS.items()])
+        parsed_expectation_to_string = dict([[parsed_expectation, expectation_string]
+                                             for expectation_string, parsed_expectation in TestExpectations.EXPECTATIONS.items()])
 
         if self.is_invalid():
             return self.original_string or ''
@@ -491,7 +497,7 @@ class TestExpectationLine(object):
             return "\n".join(result) if result else None
 
         return self._format_line(self.bugs, self.specifiers, self.name, self.expectations, self.comment,
-            include_specifiers, include_expectations, include_comment)
+                                 include_specifiers, include_expectations, include_comment)
 
     def to_csv(self):
         # Note that this doesn't include the comments.
@@ -508,7 +514,6 @@ class TestExpectationLine(object):
         result = []
         result.extend(sorted(self.parsed_specifiers))
         result.extend(test_configuration_converter.specifier_sorter().sort_specifiers(specifiers))
-        result = [INVERTED_MAC_VERSION_MAPPING.get(specifier, specifier) for specifier in result]
         return ' '.join(result)
 
     @staticmethod
@@ -689,7 +694,8 @@ class TestExpectationsModel(object):
                 continue
 
             if model_all_expectations:
-                expectation_line = TestExpectationLine.merge_expectation_lines(self.get_expectation_line(test), expectation_line, model_all_expectations)
+                expectation_line = TestExpectationLine.merge_expectation_lines(
+                    self.get_expectation_line(test), expectation_line, model_all_expectations)
 
             self._clear_expectations_for_test(test)
             self._test_to_expectation_line[test] = expectation_line
@@ -786,21 +792,24 @@ class TestExpectationsModel(object):
 
         if prev_expectation_line.matching_configurations >= expectation_line.matching_configurations:
             expectation_line.warnings.append('More specific entry for %s on line %s:%s overrides line %s:%s.' % (expectation_line.name,
-                self._shorten_filename(prev_expectation_line.filename), prev_expectation_line.line_numbers,
-                self._shorten_filename(expectation_line.filename), expectation_line.line_numbers))
+                                                                                                                 self._shorten_filename(
+                                                                                                                     prev_expectation_line.filename), prev_expectation_line.line_numbers,
+                                                                                                                 self._shorten_filename(expectation_line.filename), expectation_line.line_numbers))
             # FIXME: return False if we want more specific to win.
             return True
 
         if prev_expectation_line.matching_configurations <= expectation_line.matching_configurations:
             expectation_line.warnings.append('More specific entry for %s on line %s:%s overrides line %s:%s.' % (expectation_line.name,
-                self._shorten_filename(expectation_line.filename), expectation_line.line_numbers,
-                self._shorten_filename(prev_expectation_line.filename), prev_expectation_line.line_numbers))
+                                                                                                                 self._shorten_filename(
+                                                                                                                     expectation_line.filename), expectation_line.line_numbers,
+                                                                                                                 self._shorten_filename(prev_expectation_line.filename), prev_expectation_line.line_numbers))
             return True
 
         if prev_expectation_line.matching_configurations & expectation_line.matching_configurations:
             expectation_line.warnings.append('Entries for %s on lines %s:%s and %s:%s match overlapping sets of configurations.' % (expectation_line.name,
-                self._shorten_filename(prev_expectation_line.filename), prev_expectation_line.line_numbers,
-                self._shorten_filename(expectation_line.filename), expectation_line.line_numbers))
+                                                                                                                                    self._shorten_filename(
+                                                                                                                                        prev_expectation_line.filename), prev_expectation_line.line_numbers,
+                                                                                                                                    self._shorten_filename(expectation_line.filename), expectation_line.line_numbers))
             return True
 
         # Configuration sets are disjoint, then.
@@ -853,7 +862,7 @@ class TestExpectations(object):
                     TestExpectationParser.WONTFIX_MODIFIER: WONTFIX,
                     TestExpectationParser.SLOW_MODIFIER: SLOW,
                     TestExpectationParser.REBASELINE_MODIFIER: REBASELINE,
-    }
+                    }
 
     EXPECTATIONS_TO_STRING = dict((k, v) for (v, k) in EXPECTATIONS.iteritems())
 
@@ -1057,7 +1066,7 @@ class TestExpectations(object):
         for expectation in self._expectations:
             for warning in expectation.warnings:
                 warnings.append('%s:%s %s %s' % (self._shorten_filename(expectation.filename), expectation.line_numbers,
-                                warning, expectation.name if expectation.expectations else expectation.original_string))
+                                                 warning, expectation.name if expectation.expectations else expectation.original_string))
 
         if warnings:
             self._has_warnings = True

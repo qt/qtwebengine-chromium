@@ -102,20 +102,20 @@ public:
     // Called from HTMLTableCellElement.
     void colSpanOrRowSpanChanged();
 
-    void setCol(unsigned column)
+    void setAbsoluteColumnIndex(unsigned column)
     {
         if (UNLIKELY(column > maxColumnIndex))
             CRASH();
 
-        m_column = column;
+        m_absoluteColumnIndex = column;
     }
 
-    bool hasCol() const { return m_column != unsetColumnIndex; }
+    bool hasSetAbsoluteColumnIndex() const { return m_absoluteColumnIndex != unsetColumnIndex; }
 
-    unsigned col() const
+    unsigned absoluteColumnIndex() const
     {
-        ASSERT(hasCol());
-        return m_column;
+        ASSERT(hasSetAbsoluteColumnIndex());
+        return m_absoluteColumnIndex;
     }
 
     LayoutTableRow* row() const { return toLayoutTableRow(parent()); }
@@ -137,7 +137,7 @@ public:
         Length styleWidth = style()->logicalWidth();
         if (!styleWidth.isAuto())
             return styleWidth;
-        if (LayoutTableCol* firstColumn = table()->colElement(col()).innermostColOrColGroup())
+        if (LayoutTableCol* firstColumn = table()->colElementAtAbsoluteColumn(absoluteColumnIndex()).innermostColOrColGroup())
             return logicalWidthFromColumns(firstColumn, styleWidth);
         return styleWidth;
     }
@@ -149,7 +149,7 @@ public:
 
         // In strict mode, box-sizing: content-box do the right thing and actually add in the border and padding.
         // Call computedCSSPadding* directly to avoid including implicitPadding.
-        if (!document().inQuirksMode() && style()->boxSizing() != BORDER_BOX)
+        if (!document().inQuirksMode() && style()->boxSizing() != BoxSizingBorderBox)
             styleLogicalHeight += (computedCSSPaddingBefore() + computedCSSPaddingAfter()).floor() + borderBefore() + borderAfter();
         return styleLogicalHeight;
     }
@@ -181,11 +181,11 @@ public:
 
     void paint(const PaintInfo&, const LayoutPoint&) const override;
 
-    LayoutUnit cellBaselinePosition() const;
+    int cellBaselinePosition() const;
     bool isBaselineAligned() const
     {
         EVerticalAlign va = style()->verticalAlign();
-        return va == BASELINE || va == TEXT_BOTTOM || va == TEXT_TOP || va == SUPER || va == SUB || va == LENGTH;
+        return va == VerticalAlignBaseline || va == VerticalAlignTextBottom || va == VerticalAlignTextTop || va == VerticalAlignSuper || va == VerticalAlignSub || va == VerticalAlignLength;
     }
 
     void computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope&);
@@ -290,9 +290,9 @@ private:
 
     bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, const InlineFlowBox*) const override;
 
-    LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = nullptr) const override;
-    LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
-    void mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, const PaintInvalidationState*) const override;
+    LayoutSize offsetFromContainer(const LayoutObject*) const override;
+    LayoutRect localOverflowRectForPaintInvalidation() const override;
+    bool mapToVisualRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, VisualRectFlags = DefaultVisualRectFlags) const override;
 
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
@@ -345,7 +345,7 @@ private:
     void previousSibling() const = delete;
 
     // Note MSVC will only pack members if they have identical types, hence we use unsigned instead of bool here.
-    unsigned m_column : 29;
+    unsigned m_absoluteColumnIndex : 29;
     unsigned m_cellWidthChanged : 1;
     unsigned m_hasColSpan: 1;
     unsigned m_hasRowSpan: 1;

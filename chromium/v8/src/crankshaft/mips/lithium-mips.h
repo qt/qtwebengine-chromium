@@ -21,7 +21,6 @@ class LCodeGen;
   V(AccessArgumentsAt)                       \
   V(AddI)                                    \
   V(Allocate)                                \
-  V(AllocateBlockContext)                    \
   V(ApplyArguments)                          \
   V(ArgumentsElements)                       \
   V(ArgumentsLength)                         \
@@ -30,12 +29,9 @@ class LCodeGen;
   V(BitI)                                    \
   V(BoundsCheck)                             \
   V(Branch)                                  \
-  V(CallJSFunction)                          \
   V(CallWithDescriptor)                      \
-  V(CallFunction)                            \
   V(CallNewArray)                            \
   V(CallRuntime)                             \
-  V(CallStub)                                \
   V(CheckArrayBufferNotNeutered)             \
   V(CheckInstanceType)                       \
   V(CheckMaps)                               \
@@ -47,7 +43,6 @@ class LCodeGen;
   V(ClampIToUint8)                           \
   V(ClampTToUint8)                           \
   V(ClassOfTestAndBranch)                    \
-  V(CompareMinusZeroAndBranch)               \
   V(CompareNumericAndBranch)                 \
   V(CmpObjectEqAndBranch)                    \
   V(CmpHoleAndBranch)                        \
@@ -101,7 +96,6 @@ class LCodeGen;
   V(LoadKeyedGeneric)                        \
   V(LoadNamedField)                          \
   V(LoadNamedGeneric)                        \
-  V(MapEnumLength)                           \
   V(MathAbs)                                 \
   V(MathExp)                                 \
   V(MathClz32)                               \
@@ -136,7 +130,6 @@ class LCodeGen;
   V(StackCheck)                              \
   V(StoreCodeEntry)                          \
   V(StoreContextSlot)                        \
-  V(StoreFrameContext)                       \
   V(StoreKeyed)                              \
   V(StoreKeyedGeneric)                       \
   V(StoreNamedField)                         \
@@ -148,7 +141,6 @@ class LCodeGen;
   V(SubI)                                    \
   V(TaggedToI)                               \
   V(ThisFunction)                            \
-  V(ToFastProperties)                        \
   V(TransitionElementsKind)                  \
   V(TrapAllocationMemento)                   \
   V(Typeof)                                  \
@@ -228,6 +220,13 @@ class LInstruction : public ZoneObject {
   void MarkAsCall() { bit_field_ = IsCallBits::update(bit_field_, true); }
   bool IsCall() const { return IsCallBits::decode(bit_field_); }
 
+  void MarkAsSyntacticTailCall() {
+    bit_field_ = IsSyntacticTailCallBits::update(bit_field_, true);
+  }
+  bool IsSyntacticTailCall() const {
+    return IsSyntacticTailCallBits::decode(bit_field_);
+  }
+
   // Interface to the register allocator and iterators.
   bool ClobbersTemps() const { return IsCall(); }
   bool ClobbersRegisters() const { return IsCall(); }
@@ -262,6 +261,8 @@ class LInstruction : public ZoneObject {
   virtual LOperand* TempAt(int i) = 0;
 
   class IsCallBits: public BitField<bool, 0, 1> {};
+  class IsSyntacticTailCallBits : public BitField<bool, IsCallBits::kNext, 1> {
+  };
 
   LEnvironment* environment_;
   SetOncePointer<LPointerMap> pointer_map_;
@@ -457,19 +458,6 @@ class LParameter final : public LTemplateInstruction<1, 0, 0> {
 };
 
 
-class LCallStub final : public LTemplateInstruction<1, 1, 0> {
- public:
-  explicit LCallStub(LOperand* context) {
-    inputs_[0] = context;
-  }
-
-  LOperand* context() { return inputs_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(CallStub, "call-stub")
-  DECLARE_HYDROGEN_ACCESSOR(CallStub)
-};
-
-
 class LUnknownOSRValue final : public LTemplateInstruction<1, 0, 0> {
  public:
   bool HasInterestingComment(LCodeGen* gen) const override { return false; }
@@ -549,6 +537,7 @@ class LApplyArguments final : public LTemplateInstruction<1, 4, 0> {
   }
 
   DECLARE_CONCRETE_INSTRUCTION(ApplyArguments, "apply-arguments")
+  DECLARE_HYDROGEN_ACCESSOR(ApplyArguments)
 
   LOperand* function() { return inputs_[0]; }
   LOperand* receiver() { return inputs_[1]; }
@@ -970,22 +959,6 @@ class LCmpHoleAndBranch final : public LControlInstruction<1, 0> {
 };
 
 
-class LCompareMinusZeroAndBranch final : public LControlInstruction<1, 1> {
- public:
-  LCompareMinusZeroAndBranch(LOperand* value, LOperand* temp) {
-    inputs_[0] = value;
-    temps_[0] = temp;
-  }
-
-  LOperand* value() { return inputs_[0]; }
-  LOperand* temp() { return temps_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(CompareMinusZeroAndBranch,
-                               "cmp-minus-zero-and-branch")
-  DECLARE_HYDROGEN_ACCESSOR(CompareMinusZeroAndBranch)
-};
-
-
 class LIsStringAndBranch final : public LControlInstruction<1, 1> {
  public:
   LIsStringAndBranch(LOperand* value, LOperand* temp) {
@@ -1135,8 +1108,6 @@ class LCmpT final : public LTemplateInstruction<1, 3, 0> {
 
   DECLARE_CONCRETE_INSTRUCTION(CmpT, "cmp-t")
   DECLARE_HYDROGEN_ACCESSOR(CompareGeneric)
-
-  Strength strength() { return hydrogen()->strength(); }
 
   Token::Value op() const { return hydrogen()->token(); }
 };
@@ -1324,18 +1295,6 @@ class LCmpMapAndBranch final : public LControlInstruction<1, 1> {
 };
 
 
-class LMapEnumLength final : public LTemplateInstruction<1, 1, 0> {
- public:
-  explicit LMapEnumLength(LOperand* value) {
-    inputs_[0] = value;
-  }
-
-  LOperand* value() { return inputs_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(MapEnumLength, "map-enum-length")
-};
-
-
 class LSeqStringGetChar final : public LTemplateInstruction<1, 2, 0> {
  public:
   LSeqStringGetChar(LOperand* string, LOperand* index) {
@@ -1460,8 +1419,6 @@ class LArithmeticT final : public LTemplateInstruction<1, 3, 0> {
   const char* Mnemonic() const override;
 
   DECLARE_HYDROGEN_ACCESSOR(BinaryOperation)
-
-  Strength strength() { return hydrogen()->strength(); }
 
  private:
   Token::Value op_;
@@ -1733,23 +1690,6 @@ class LDeclareGlobals final : public LTemplateInstruction<0, 1, 0> {
 };
 
 
-class LCallJSFunction final : public LTemplateInstruction<1, 1, 0> {
- public:
-  explicit LCallJSFunction(LOperand* function) {
-    inputs_[0] = function;
-  }
-
-  LOperand* function() { return inputs_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(CallJSFunction, "call-js-function")
-  DECLARE_HYDROGEN_ACCESSOR(CallJSFunction)
-
-  void PrintDataTo(StringStream* stream) override;
-
-  int arity() const { return hydrogen()->argument_count() - 1; }
-};
-
-
 class LCallWithDescriptor final : public LTemplateResultInstruction<1> {
  public:
   LCallWithDescriptor(CallInterfaceDescriptor descriptor,
@@ -1809,29 +1749,6 @@ class LInvokeFunction final : public LTemplateInstruction<1, 2, 0> {
   void PrintDataTo(StringStream* stream) override;
 
   int arity() const { return hydrogen()->argument_count() - 1; }
-};
-
-
-class LCallFunction final : public LTemplateInstruction<1, 2, 2> {
- public:
-  LCallFunction(LOperand* context, LOperand* function, LOperand* slot,
-                LOperand* vector) {
-    inputs_[0] = context;
-    inputs_[1] = function;
-    temps_[0] = slot;
-    temps_[1] = vector;
-  }
-
-  LOperand* context() { return inputs_[0]; }
-  LOperand* function() { return inputs_[1]; }
-  LOperand* temp_slot() { return temps_[0]; }
-  LOperand* temp_vector() { return temps_[1]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(CallFunction, "call-function")
-  DECLARE_HYDROGEN_ACCESSOR(CallFunction)
-
-  int arity() const { return hydrogen()->argument_count() - 1; }
-  void PrintDataTo(StringStream* stream) override;
 };
 
 
@@ -2434,19 +2351,6 @@ class LAllocate final : public LTemplateInstruction<1, 2, 2> {
 };
 
 
-class LToFastProperties final : public LTemplateInstruction<1, 1, 0> {
- public:
-  explicit LToFastProperties(LOperand* value) {
-    inputs_[0] = value;
-  }
-
-  LOperand* value() { return inputs_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(ToFastProperties, "to-fast-properties")
-  DECLARE_HYDROGEN_ACCESSOR(ToFastProperties)
-};
-
-
 class LTypeof final : public LTemplateInstruction<1, 2, 0> {
  public:
   LTypeof(LOperand* context, LOperand* value) {
@@ -2560,35 +2464,6 @@ class LLoadFieldByIndex final : public LTemplateInstruction<1, 2, 0> {
   LOperand* index() { return inputs_[1]; }
 
   DECLARE_CONCRETE_INSTRUCTION(LoadFieldByIndex, "load-field-by-index")
-};
-
-
-class LStoreFrameContext: public LTemplateInstruction<0, 1, 0> {
- public:
-  explicit LStoreFrameContext(LOperand* context) {
-    inputs_[0] = context;
-  }
-
-  LOperand* context() { return inputs_[0]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(StoreFrameContext, "store-frame-context")
-};
-
-
-class LAllocateBlockContext: public LTemplateInstruction<1, 2, 0> {
- public:
-  LAllocateBlockContext(LOperand* context, LOperand* function) {
-    inputs_[0] = context;
-    inputs_[1] = function;
-  }
-
-  LOperand* context() { return inputs_[0]; }
-  LOperand* function() { return inputs_[1]; }
-
-  Handle<ScopeInfo> scope_info() { return hydrogen()->scope_info(); }
-
-  DECLARE_CONCRETE_INSTRUCTION(AllocateBlockContext, "allocate-block-context")
-  DECLARE_HYDROGEN_ACCESSOR(AllocateBlockContext)
 };
 
 

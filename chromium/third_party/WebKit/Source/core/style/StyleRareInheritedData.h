@@ -28,7 +28,6 @@
 #include "core/CoreExport.h"
 #include "core/css/StyleColor.h"
 #include "core/style/DataRef.h"
-#include "core/style/StyleVariableData.h"
 #include "platform/Length.h"
 #include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
@@ -45,13 +44,10 @@ class CursorData;
 class QuotesData;
 class ShadowList;
 class StyleImage;
+class StyleVariableData;
 
 typedef RefVector<AppliedTextDecoration> AppliedTextDecorationList;
-#if ENABLE(OILPAN)
 typedef HeapVector<CursorData> CursorList;
-#else
-typedef RefVector<CursorData> CursorList;
-#endif
 
 // This struct is for rarely used inherited CSS3, CSS2, and WebKit-specific properties.
 // By grouping them together, we save space, and only allocate this object when someone
@@ -70,7 +66,7 @@ public:
     bool shadowDataEquivalent(const StyleRareInheritedData&) const;
     bool quotesDataEquivalent(const StyleRareInheritedData&) const;
 
-    RefPtrWillBePersistent<StyleImage> listStyleImage;
+    Persistent<StyleImage> listStyleImage;
 
     StyleColor textStrokeColor() const { return m_textStrokeColorIsCurrentColor ? StyleColor::currentColor() : StyleColor(m_textStrokeColor); }
     StyleColor textFillColor() const { return m_textFillColorIsCurrentColor ? StyleColor::currentColor() : StyleColor(m_textFillColor); }
@@ -98,7 +94,7 @@ public:
     RefPtr<ShadowList> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
 
-    RefPtrWillBePersistent<CursorList> cursorData;
+    Persistent<CursorList> cursorData;
 
     Length indent;
     float m_effectiveZoom;
@@ -145,10 +141,14 @@ public:
 
     unsigned m_respectImageOrientation : 1;
 
+    unsigned m_snapHeightPosition : 7;
+
     AtomicString hyphenationString;
     short hyphenationLimitBefore;
     short hyphenationLimitAfter;
     short hyphenationLimitLines;
+
+    uint8_t m_snapHeightUnit;
 
     AtomicString textEmphasisCustomMark;
     RefPtr<QuotesData> quotes;

@@ -48,7 +48,7 @@ public:
 
     unsigned short ruleWidth() const
     {
-        if (m_rule.style() == BNONE || m_rule.style() == BHIDDEN)
+        if (m_rule.style() == BorderStyleNone || m_rule.style() == BorderStyleHidden)
             return 0;
         return m_rule.width();
     }
@@ -64,9 +64,6 @@ public:
     unsigned m_normalGap : 1;
     unsigned m_fill : 1; // ColumnFill
     unsigned m_columnSpan : 1;
-    unsigned m_breakBefore : 2; // EPageBreak
-    unsigned m_breakAfter : 2; // EPageBreak
-    unsigned m_breakInside : 2; // EPageBreak
 
 private:
     StyleMultiColData();

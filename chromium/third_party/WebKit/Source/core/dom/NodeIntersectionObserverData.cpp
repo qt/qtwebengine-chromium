@@ -15,16 +15,6 @@ NodeIntersectionObserverData::NodeIntersectionObserverData() { }
 
 NodeIntersectionObserverData::~NodeIntersectionObserverData() { }
 
-bool NodeIntersectionObserverData::hasIntersectionObserver() const
-{
-    return !m_intersectionObservers.isEmpty();
-}
-
-bool NodeIntersectionObserverData::hasIntersectionObservation() const
-{
-    return !m_intersectionObservations.isEmpty();
-}
-
 IntersectionObservation* NodeIntersectionObserverData::getObservationFor(IntersectionObserver& observer)
 {
     auto i = m_intersectionObservations.find(&observer);
@@ -46,50 +36,13 @@ void NodeIntersectionObserverData::removeObservation(IntersectionObserver& obser
 void NodeIntersectionObserverData::activateValidIntersectionObservers(Node& node)
 {
     IntersectionObserverController& controller = node.document().ensureIntersectionObserverController();
-    // Activate observers for which node is root.
-    for (auto& observer : m_intersectionObservers) {
+    for (auto& observer : m_intersectionObservers)
         controller.addTrackedObserver(*observer);
-        observer->setActive(true);
-    }
-    // A document can be root, but not target.
-    if (node.isDocumentNode())
-        return;
-    // Active observers for which node is target.
-    for (auto& observation : m_intersectionObservations)
-        observation.value->setActive(observation.key->isDescendantOfRoot(&toElement(node)));
 }
 
 void NodeIntersectionObserverData::deactivateAllIntersectionObservers(Node& node)
 {
     node.document().ensureIntersectionObserverController().removeTrackedObserversForRoot(node);
-    for (auto& observer : m_intersectionObservers)
-        observer->setActive(false);
-    for (auto& observation : m_intersectionObservations)
-        observation.value->setActive(false);
-}
-
-#if !ENABLE(OILPAN)
-void NodeIntersectionObserverData::dispose()
-{
-    HeapVector<Member<IntersectionObserver>> observersToDisconnect;
-    copyToVector(m_intersectionObservers, observersToDisconnect);
-    for (auto& observer : observersToDisconnect)
-        observer->disconnect();
-    ASSERT(m_intersectionObservers.isEmpty());
-}
-#endif
-
-WeakPtrWillBeRawPtr<Node> NodeIntersectionObserverData::createWeakPtr(Node* node)
-{
-#if ENABLE(OILPAN)
-    return node;
-#else
-    if (!m_weakPointerFactory)
-        m_weakPointerFactory = adoptPtrWillBeNoop(new WeakPtrFactory<Node>(node));
-    WeakPtr<Node> result = m_weakPointerFactory->createWeakPtr();
-    ASSERT(result.get() == node);
-    return result;
-#endif
 }
 
 DEFINE_TRACE(NodeIntersectionObserverData)

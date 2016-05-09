@@ -56,7 +56,6 @@
       'instance_id.json',
       'language_settings_private.idl',
       'launcher_page.idl',
-      'location.idl',
       'manifest_types.json',
       'media_galleries.idl',
       'metrics_private.json',
@@ -69,7 +68,6 @@
       'preferences_private.json',
       'resources_private.idl',
       'screenlock_private.idl',
-      'search_engines_private.idl',
       'sessions.json',
       'settings_private.idl',
       'signed_in_devices.idl',
@@ -99,7 +97,6 @@
       'extension.json',
       'idltest.idl',
       'music_manager_private.idl',
-      'principals_private.idl',
       'top_sites.json',
     ],
 
@@ -146,6 +143,10 @@
       'cast_streaming_session.idl',
       'cast_streaming_udp_transport.idl',
     ],
+    
+    'task_manager_dependent_schema_files': [
+      'processes.idl',
+    ],
 
     # Input IME schema.
     'input_ime_schema_file': [
@@ -169,6 +170,11 @@
     # Disable schema compiler to generate model extension API code.
     # Only register the extension functions in extension system.
     'conditions': [
+      ['enable_task_manager==1', {
+        'schema_files': [
+          '<@(task_manager_dependent_schema_files)',
+        ],
+      }],
       ['chromeos==1', {
         'schema_files': [
           '<@(chromeos_schema_files)',

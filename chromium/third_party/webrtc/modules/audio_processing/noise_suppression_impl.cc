@@ -56,7 +56,7 @@ void NoiseSuppressionImpl::Initialize(size_t channels, int sample_rate_hz) {
   rtc::CritScope cs(crit_);
   channels_ = channels;
   sample_rate_hz_ = sample_rate_hz;
-  std::vector<rtc::scoped_ptr<Suppressor>> new_suppressors;
+  std::vector<std::unique_ptr<Suppressor>> new_suppressors;
   if (enabled_) {
     new_suppressors.resize(channels);
     for (size_t i = 0; i < channels; i++) {
@@ -172,4 +172,41 @@ float NoiseSuppressionImpl::speech_probability() const {
   return AudioProcessing::kUnsupportedFunctionError;
 #endif
 }
+
+std::vector<float> NoiseSuppressionImpl::NoiseEstimate() {
+  rtc::CritScope cs(crit_);
+  std::vector<float> noise_estimate;
+#if defined(WEBRTC_NS_FLOAT)
+  const float kNumChannelsFraction = 1.f / suppressors_.size();
+  noise_estimate.assign(WebRtcNs_num_freq(), 0.f);
+  for (auto& suppressor : suppressors_) {
+    const float* noise = WebRtcNs_noise_estimate(suppressor->state());
+    for (size_t i = 0; i < noise_estimate.size(); ++i) {
+      noise_estimate[i] += kNumChannelsFraction * noise[i];
+    }
+  }
+#elif defined(WEBRTC_NS_FIXED)
+  noise_estimate.assign(WebRtcNsx_num_freq(), 0.f);
+  for (auto& suppressor : suppressors_) {
+    int q_noise;
+    const uint32_t* noise = WebRtcNsx_noise_estimate(suppressor->state(),
+                                                     &q_noise);
+    const float kNormalizationFactor =
+        1.f / ((1 << q_noise) * suppressors_.size());
+    for (size_t i = 0; i < noise_estimate.size(); ++i) {
+      noise_estimate[i] += kNormalizationFactor * noise[i];
+    }
+  }
+#endif
+  return noise_estimate;
+}
+
+size_t NoiseSuppressionImpl::num_noise_bins() {
+#if defined(WEBRTC_NS_FLOAT)
+  return WebRtcNs_num_freq();
+#elif defined(WEBRTC_NS_FIXED)
+  return WebRtcNsx_num_freq();
+#endif
+}
+
 }  // namespace webrtc

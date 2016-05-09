@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/video_coding/include/mock/mock_video_codec_interface.h"
 #include "webrtc/modules/video_coding/include/mock/mock_vcm_callbacks.h"
 #include "webrtc/modules/video_coding/include/video_coding.h"
@@ -52,7 +52,7 @@ class TestVideoReceiver : public ::testing::Test {
       EXPECT_EQ(0, receiver_->IncomingPacket(payload, 0, *header));
       ++header->header.sequenceNumber;
     }
-    EXPECT_EQ(0, receiver_->Process());
+    receiver_->Process();
     EXPECT_CALL(decoder_, Decode(_, _, _, _, _)).Times(0);
     EXPECT_EQ(VCM_FRAME_NOT_READY, receiver_->Decode(100));
   }
@@ -64,7 +64,7 @@ class TestVideoReceiver : public ::testing::Test {
     EXPECT_EQ(0, receiver_->IncomingPacket(payload, length, *header));
     ++header->header.sequenceNumber;
     EXPECT_CALL(packet_request_callback_, ResendPackets(_, _)).Times(0);
-    EXPECT_EQ(0, receiver_->Process());
+    receiver_->Process();;
     EXPECT_CALL(decoder_, Decode(_, _, _, _, _)).Times(1);
     EXPECT_EQ(0, receiver_->Decode(100));
   }
@@ -75,7 +75,7 @@ class TestVideoReceiver : public ::testing::Test {
   NiceMock<MockVideoDecoder> decoder_;
   NiceMock<MockPacketRequestCallback> packet_request_callback_;
 
-  rtc::scoped_ptr<VideoReceiver> receiver_;
+  std::unique_ptr<VideoReceiver> receiver_;
 };
 
 TEST_F(TestVideoReceiver, PaddingOnlyFrames) {

@@ -69,22 +69,22 @@ static bool shouldPaintBorderAfter(const LayoutFrameSet::GridAxis& axis, size_t 
 
 void FrameSetPainter::paintBorders(const PaintInfo& paintInfo, const LayoutPoint& adjustedPaintOffset)
 {
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedPaintOffset))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutFrameSet, paintInfo.phase))
         return;
 
     LayoutRect adjustedFrameRect(adjustedPaintOffset, m_layoutFrameSet.size());
-    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedFrameRect, adjustedPaintOffset);
+    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutFrameSet, paintInfo.phase, adjustedFrameRect);
 
-    LayoutUnit borderThickness = m_layoutFrameSet.frameSet()->border();
+    LayoutUnit borderThickness(m_layoutFrameSet.frameSet()->border());
     if (!borderThickness)
         return;
 
     LayoutObject* child = m_layoutFrameSet.firstChild();
     size_t rows = m_layoutFrameSet.rows().m_sizes.size();
     size_t cols = m_layoutFrameSet.columns().m_sizes.size();
-    LayoutUnit yPos = 0;
+    LayoutUnit yPos;
     for (size_t r = 0; r < rows; r++) {
-        LayoutUnit xPos = 0;
+        LayoutUnit xPos;
         for (size_t c = 0; c < cols; c++) {
             xPos += m_layoutFrameSet.columns().m_sizes[c];
             if (shouldPaintBorderAfter(m_layoutFrameSet.columns(), c)) {

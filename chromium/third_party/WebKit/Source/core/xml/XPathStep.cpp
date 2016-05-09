@@ -86,7 +86,7 @@ void Step::optimize()
 bool optimizeStepPair(Step* first, Step* second)
 {
     if (first->m_axis == Step::DescendantOrSelfAxis
-        && first->nodeTest().kind() == Step::NodeTest::AnyNodeTest
+        && first->nodeTest().getKind() == Step::NodeTest::AnyNodeTest
         && !first->m_predicates.size()
         && !first->nodeTest().mergedPredicates().size()) {
 
@@ -97,7 +97,7 @@ bool optimizeStepPair(Step* first, Step* second)
         // /descendant-or-self::node()/child::NodeTest to /descendant::NodeTest.
         if (second->m_axis == Step::ChildAxis && second->predicatesAreContextListInsensitive()) {
             first->m_axis = Step::DescendantAxis;
-            first->nodeTest() = Step::NodeTest(second->nodeTest().kind(), second->nodeTest().data(), second->nodeTest().namespaceURI());
+            first->nodeTest() = Step::NodeTest(second->nodeTest().getKind(), second->nodeTest().data(), second->nodeTest().namespaceURI());
             swap(second->nodeTest().mergedPredicates(), first->nodeTest().mergedPredicates());
             swap(second->m_predicates, first->m_predicates);
             first->optimize();
@@ -167,16 +167,16 @@ static inline Node::NodeType primaryNodeType(Step::Axis axis)
 // Evaluate NodeTest without considering merged predicates.
 static inline bool nodeMatchesBasicTest(Node* node, Step::Axis axis, const Step::NodeTest& nodeTest)
 {
-    switch (nodeTest.kind()) {
+    switch (nodeTest.getKind()) {
     case Step::NodeTest::TextNodeTest: {
-        Node::NodeType type = node->nodeType();
+        Node::NodeType type = node->getNodeType();
         return type == Node::TEXT_NODE || type == Node::CDATA_SECTION_NODE;
     }
     case Step::NodeTest::CommentNodeTest:
-        return node->nodeType() == Node::COMMENT_NODE;
+        return node->getNodeType() == Node::COMMENT_NODE;
     case Step::NodeTest::ProcessingInstructionNodeTest: {
         const AtomicString& name = nodeTest.data();
-        return node->nodeType() == Node::PROCESSING_INSTRUCTION_NODE && (name.isEmpty() || node->nodeName() == name);
+        return node->getNodeType() == Node::PROCESSING_INSTRUCTION_NODE && (name.isEmpty() || node->nodeName() == name);
     }
     case Step::NodeTest::AnyNodeTest:
         return true;
@@ -307,7 +307,7 @@ void Step::nodesInAxis(EvaluationContext& evaluationContext, Node* context, Node
     }
 
     case FollowingSiblingAxis:
-        if (context->nodeType() == Node::ATTRIBUTE_NODE)
+        if (context->getNodeType() == Node::ATTRIBUTE_NODE)
             return;
 
         for (Node* n = context->nextSibling(); n; n = n->nextSibling()) {
@@ -317,7 +317,7 @@ void Step::nodesInAxis(EvaluationContext& evaluationContext, Node* context, Node
         return;
 
     case PrecedingSiblingAxis:
-        if (context->nodeType() == Node::ATTRIBUTE_NODE)
+        if (context->getNodeType() == Node::ATTRIBUTE_NODE)
             return;
 
         for (Node* n = context->previousSibling(); n; n = n->previousSibling()) {
@@ -370,8 +370,8 @@ void Step::nodesInAxis(EvaluationContext& evaluationContext, Node* context, Node
         Element* contextElement = toElement(context);
         // Avoid lazily creating attribute nodes for attributes that we do not
         // need anyway.
-        if (nodeTest().kind() == NodeTest::NameTest && nodeTest().data() != starAtom) {
-            RefPtrWillBeRawPtr<Attr> attr = contextElement->getAttributeNodeNS(nodeTest().namespaceURI(), nodeTest().data());
+        if (nodeTest().getKind() == NodeTest::NameTest && nodeTest().data() != starAtom) {
+            RawPtr<Attr> attr = contextElement->getAttributeNodeNS(nodeTest().namespaceURI(), nodeTest().data());
             // In XPath land, namespace nodes are not accessible on the attribute axis.
             if (attr && attr->namespaceURI() != XMLNSNames::xmlnsNamespaceURI) {
                 // Still need to check merged predicates.
@@ -383,7 +383,7 @@ void Step::nodesInAxis(EvaluationContext& evaluationContext, Node* context, Node
 
         AttributeCollection attributes = contextElement->attributes();
         for (auto& attribute : attributes) {
-            RefPtrWillBeRawPtr<Attr> attr = contextElement->ensureAttr(attribute.name());
+            RawPtr<Attr> attr = contextElement->ensureAttr(attribute.name());
             if (nodeMatches(evaluationContext, attr.get(), AttributeAxis, nodeTest()))
                 nodes.append(attr.release());
         }
@@ -432,6 +432,6 @@ void Step::nodesInAxis(EvaluationContext& evaluationContext, Node* context, Node
     ASSERT_NOT_REACHED();
 }
 
-}
+} // namespace XPath
 
-}
+} // namespace blink

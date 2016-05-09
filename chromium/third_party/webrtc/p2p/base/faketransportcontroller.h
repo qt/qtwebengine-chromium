@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/p2p/base/candidatepairinterface.h"
 #include "webrtc/p2p/base/transport.h"
 #include "webrtc/p2p/base/transportchannel.h"
 #include "webrtc/p2p/base/transportcontroller.h"
@@ -45,11 +46,8 @@ struct PacketMessageData : public rtc::MessageData {
 class FakeTransportChannel : public TransportChannelImpl,
                              public rtc::MessageHandler {
  public:
-  explicit FakeTransportChannel(Transport* transport,
-                                const std::string& name,
-                                int component)
+  explicit FakeTransportChannel(const std::string& name, int component)
       : TransportChannelImpl(name, component),
-        transport_(transport),
         dtls_fingerprint_("", nullptr, 0) {}
   ~FakeTransportChannel() { Reset(); }
 
@@ -66,8 +64,6 @@ class FakeTransportChannel : public TransportChannelImpl,
   // If async, will send packets by "Post"-ing to message queue instead of
   // synchronously "Send"-ing.
   void SetAsync(bool async) { async_ = async; }
-
-  Transport* GetTransport() override { return transport_; }
 
   TransportChannelState GetState() const override {
     if (connection_count_ == 0) {
@@ -185,7 +181,7 @@ class FakeTransportChannel : public TransportChannelImpl,
   void SetReceiving(bool receiving) { set_receiving(receiving); }
 
   void SetIceConfig(const IceConfig& config) override {
-    receiving_timeout_ = config.receiving_timeout_ms;
+    receiving_timeout_ = config.receiving_timeout;
     gather_continually_ = config.gather_continually;
   }
 
@@ -210,7 +206,7 @@ class FakeTransportChannel : public TransportChannelImpl,
     } else {
       rtc::Thread::Current()->Send(this, 0, packet);
     }
-    rtc::SentPacket sent_packet(options.packet_id, rtc::Time());
+    rtc::SentPacket sent_packet(options.packet_id, rtc::Time64());
     SignalSentPacket(this, sent_packet);
     return static_cast<int>(len);
   }
@@ -221,6 +217,9 @@ class FakeTransportChannel : public TransportChannelImpl,
   void AddRemoteCandidate(const Candidate& candidate) override {
     remote_candidates_.push_back(candidate);
   }
+
+  void RemoveRemoteCandidate(const Candidate& candidate) override {}
+
   const Candidates& remote_candidates() const { return remote_candidates_; }
 
   void OnMessage(rtc::Message* msg) override {
@@ -261,12 +260,11 @@ class FakeTransportChannel : public TransportChannelImpl,
     return local_cert_;
   }
 
-  bool GetRemoteSSLCertificate(rtc::SSLCertificate** cert) const override {
-    if (!remote_cert_)
-      return false;
-
-    *cert = remote_cert_->GetReference();
-    return true;
+  rtc::scoped_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate()
+      const override {
+    return remote_cert_ ? rtc::scoped_ptr<rtc::SSLCertificate>(
+                              remote_cert_->GetReference())
+                        : nullptr;
   }
 
   bool ExportKeyingMaterial(const std::string& label,
@@ -313,7 +311,6 @@ class FakeTransportChannel : public TransportChannelImpl,
 
  private:
   enum State { STATE_INIT, STATE_CONNECTING, STATE_CONNECTED };
-  Transport* transport_;
   FakeTransportChannel* dest_ = nullptr;
   State state_ = STATE_INIT;
   bool async_ = false;
@@ -414,8 +411,7 @@ class FakeTransport : public Transport {
     if (channels_.find(component) != channels_.end()) {
       return nullptr;
     }
-    FakeTransportChannel* channel =
-        new FakeTransportChannel(this, name(), component);
+    FakeTransportChannel* channel = new FakeTransportChannel(name(), component);
     channel->set_ssl_max_protocol_version(ssl_max_version_);
     channel->SetAsync(async_);
     SetChannelDestination(component, channel);
@@ -454,6 +450,24 @@ class FakeTransport : public Transport {
   bool async_ = false;
   rtc::scoped_refptr<rtc::RTCCertificate> certificate_;
   rtc::SSLProtocolVersion ssl_max_version_ = rtc::SSL_PROTOCOL_DTLS_12;
+};
+
+// Fake candidate pair class, which can be passed to BaseChannel for testing
+// purposes.
+class FakeCandidatePair : public CandidatePairInterface {
+ public:
+  FakeCandidatePair(const Candidate& local_candidate,
+                    const Candidate& remote_candidate)
+      : local_candidate_(local_candidate),
+        remote_candidate_(remote_candidate) {}
+  const Candidate& local_candidate() const override { return local_candidate_; }
+  const Candidate& remote_candidate() const override {
+    return remote_candidate_;
+  }
+
+ private:
+  Candidate local_candidate_;
+  Candidate remote_candidate_;
 };
 
 // Fake TransportController class, which can be passed into a BaseChannel object
@@ -505,6 +519,18 @@ class FakeTransportController : public TransportController {
     }
     return TransportController::CreateTransportChannel_w(transport_name,
                                                          component);
+  }
+
+  FakeCandidatePair* CreateFakeCandidatePair(
+      const rtc::SocketAddress& local_address,
+      int16_t local_network_id,
+      const rtc::SocketAddress& remote_address,
+      int16_t remote_network_id) {
+    Candidate local_candidate(0, "udp", local_address, 0u, "", "", "local", 0,
+                              "foundation", local_network_id, 0);
+    Candidate remote_candidate(0, "udp", remote_address, 0u, "", "", "local", 0,
+                               "foundation", remote_network_id, 0);
+    return new FakeCandidatePair(local_candidate, remote_candidate);
   }
 
   void set_fail_channel_creation(bool fail_channel_creation) {

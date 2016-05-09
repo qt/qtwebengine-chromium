@@ -27,26 +27,21 @@ const int64_t kBaseTimestampScaleFactor =
 const int64_t kBaseTimestampRangeSizeUs = kBaseTimestampScaleFactor * (1 << 24);
 
 TransportFeedbackAdapter::TransportFeedbackAdapter(
-    RtcpBandwidthObserver* bandwidth_observer,
-    Clock* clock,
-    ProcessThread* process_thread)
+    BitrateController* bitrate_controller,
+    Clock* clock)
     : send_time_history_(clock, kSendTimeHistoryWindowMs),
-      rtcp_bandwidth_observer_(bandwidth_observer),
-      process_thread_(process_thread),
+      bitrate_controller_(bitrate_controller),
       clock_(clock),
       current_offset_ms_(kNoTimestamp),
       last_timestamp_us_(kNoTimestamp) {}
 
 TransportFeedbackAdapter::~TransportFeedbackAdapter() {
-  if (bitrate_estimator_.get())
-    process_thread_->DeRegisterModule(bitrate_estimator_.get());
 }
 
 void TransportFeedbackAdapter::SetBitrateEstimator(
     RemoteBitrateEstimator* rbe) {
   if (bitrate_estimator_.get() != rbe) {
     bitrate_estimator_.reset(rbe);
-    process_thread_->RegisterModule(rbe);
   }
 }
 
@@ -122,9 +117,9 @@ void TransportFeedbackAdapter::OnTransportFeedback(
 }
 
 void TransportFeedbackAdapter::OnReceiveBitrateChanged(
-    const std::vector<unsigned int>& ssrcs,
-    unsigned int bitrate) {
-  rtcp_bandwidth_observer_->OnReceivedEstimatedBitrate(bitrate);
+    const std::vector<uint32_t>& ssrcs,
+    uint32_t bitrate) {
+  bitrate_controller_->UpdateDelayBasedEstimate(bitrate);
 }
 
 void TransportFeedbackAdapter::OnRttUpdate(int64_t avg_rtt_ms,

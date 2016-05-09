@@ -11,7 +11,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace net {
-namespace tools {
 namespace test {
 
 class MockTimeWaitListManager : public QuicTimeWaitListManager {
@@ -43,10 +42,15 @@ class MockTimeWaitListManager : public QuicTimeWaitListManager {
                     QuicConnectionId connection_id,
                     QuicPacketNumber packet_number,
                     const QuicEncryptedPacket& packet));
+
+  MOCK_METHOD4(SendVersionNegotiationPacket,
+               void(QuicConnectionId connection_id,
+                    const QuicVersionVector& supported_versions,
+                    const IPEndPoint& server_address,
+                    const IPEndPoint& client_address));
 };
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_MOCK_QUIC_TIME_WAIT_LIST_MANAGER_H_

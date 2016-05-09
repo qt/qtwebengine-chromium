@@ -7,7 +7,7 @@
   <link rel="import" href="chrome://resources/cr_elements/network/cr_network_icon.html">
   <link rel="import" href="chrome://resources/cr_elements/network/cr_onc_types.html">
   <include src="secondary_user_banner.html">
-  <section>
+  <section id="network-section-cros">
     <div id="network-section-header" class="section-header">
       <h3 i18n-content="sectionTitleInternet"></h3>
       <span class="controlled-setting-indicator" plural></span>
@@ -102,7 +102,7 @@
 </if>
   </section>
 <if expr="chromeos">
-  <section>
+  <section id="device-section">
     <h3 i18n-content="sectionTitleDevice"></h3>
     <div>
       <span i18n-content="deviceGroupDescription"></span>
@@ -137,7 +137,7 @@
     </div>
   </section>
 </if>
-  <section>
+  <section id="search-section">
     <h3 i18n-content="sectionTitleSearch"></h3>
       <div id="search-section-content">
         <span id="default-search-engine-label"
@@ -221,6 +221,22 @@
         </div>
       </div>
   </section>
+<if expr="chromeos">
+  <section id="android-apps-section" hidden>
+    <h3 i18n-content="androidAppsTitle"></h3>
+    <div class="checkbox controlled-setting-with-label">
+      <label>
+        <input id="android-apps-enabled" pref="arc.enabled"
+            metric="Options_AndroidApps" type="checkbox">
+        <span>
+          <span i18n-content="androidAppsEnabled"></span>
+          <span class="controlled-setting-indicator"
+                pref="arc.enabled"></span>
+        </span>
+      </label>
+    </div>
+  </section>
+</if>
   <section id="sync-users-section" guest-visibility="hidden">
     <h3 i18n-content="sectionTitleUsers"></h3>
 <if expr="chromeos">
@@ -283,7 +299,7 @@
 <div id="advanced-settings" hidden>
 <div id="advanced-settings-container">
 <if expr="chromeos">
-  <section>
+  <section id="date-time-section">
     <h3 i18n-content="datetimeTitle"></h3>
     <div class="option-control-table">
       <div guest-visibility="disabled">
@@ -525,7 +541,7 @@
       </div>
     </div>
   </section>
-</if>  <!-- chromeos -->
+</if>
   <section id="passwords-and-autofill-section">
     <h3 i18n-content="passwordsAndAutofillGroupName"></h3>
     <div class="checkbox controlled-setting-with-label">
@@ -613,7 +629,7 @@
         <button id="fontSettingsCustomizeFontsButton"
             i18n-content="fontSettingsCustomizeFontsButton"></button>
       </div>
-      <div class="settings-row">
+      <div class="settings-row" guest-visibility="disabled">
         <label class="web-content-select-label">
           <span i18n-content="defaultZoomFactorLabel"></span>
           <select id="defaultZoomFactor" dataType="double"></select>
@@ -727,7 +743,7 @@
       </div>
     </div>
   </section>
-  <section>
+  <section id="certificates-section">
       <h3 i18n-content="advancedSectionTitleCertificates"></h3>
       <div>
 <if expr="use_nss_certs or is_win or is_macosx">
@@ -772,7 +788,7 @@
   <include src="startup_section.html">
 </if>
 
-<section>
+<section id="a11y-section">
   <h3 i18n-content="accessibilityTitle"></h3>
 
   <div>
@@ -939,7 +955,7 @@
             pref="settings.a11y.autoclick_delay_ms"></span>
       </div>
     </div>
-    <div class="option_name" id="accessibility_onscreen_keyboard">
+    <div class="option-name" id="accessibility_onscreen_keyboard">
       <div class="checkbox controlled-setting-with-label">
         <label>
           <input pref="settings.a11y.virtual_keyboard" type="checkbox"
@@ -950,6 +966,73 @@
                 pref="settings.a11y.virtual_keyboard"></span>
           </span>
         </label>
+      </div>
+    </div>
+    <div id="experimental-accessibility-features" hidden>
+      <div class="option-name">
+        <div class="checkbox controlled-setting-with-label">
+          <label>
+            <input pref="settings.a11y.caret_highlight" type="checkbox"
+                metric="Options_AccessibilityCaretHighlight">
+            <span>
+              <span i18n-content="accessibilityCaretHighlight"></span>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.caret_highlight"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="option-name">
+        <div class="checkbox controlled-setting-with-label">
+          <label>
+            <input pref="settings.a11y.cursor_highlight" type="checkbox"
+                metric="Options_AccessibilityCursorHighlight">
+            <span>
+              <span i18n-content="accessibilityCursorHighlight"></span>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.cursor_highlight"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="option-name">
+        <div class="checkbox controlled-setting-with-label">
+          <label>
+            <input pref="settings.a11y.focus_highlight" type="checkbox"
+                metric="Options_AccessibilityFocusHighlight">
+            <span>
+              <span i18n-content="accessibilityFocusHighlight"></span>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.focus_highlight"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="option-name">
+        <div class="checkbox controlled-setting-with-label">
+          <label>
+            <input pref="settings.a11y.select_to_speak" type="checkbox"
+                metric="Options_AccessibilitySelectToSpeak">
+            <span>
+              <span i18n-content="accessibilitySelectToSpeak"></span>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.select_to_speak"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="option-name">
+        <div class="checkbox controlled-setting-with-label">
+          <label>
+            <input pref="settings.a11y.switch_access" type="checkbox"
+                metric="Options_AccessibilitySwitchAccess">
+            <span>
+              <span i18n-content="accessibilitySwitchAccess"></span>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.switch_access"></span>
+            </span>
+          </label>
+        </div>
       </div>
     </div>
   </div>

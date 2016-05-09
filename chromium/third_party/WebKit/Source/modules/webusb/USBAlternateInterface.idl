@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// http://reillyeon.github.io/webusb/#interfaces
+// http://wicg.github.io/webusb/#interfaces
 
 [
     Constructor(USBInterface deviceInterface, octet alternateSetting),
     RaisesException=Constructor,
     GarbageCollected,
-    RuntimeEnabled=WebUSB,
+    OriginTrialEnabled=WebUSB,
 ] interface USBAlternateInterface {
     readonly attribute octet alternateSetting;
     readonly attribute octet interfaceClass;

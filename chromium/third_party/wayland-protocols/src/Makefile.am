@@ -5,6 +5,11 @@ unstable_protocols =								\
 	unstable/text-input/text-input-unstable-v1.xml				\
 	unstable/input-method/input-method-unstable-v1.xml			\
 	unstable/xdg-shell/xdg-shell-unstable-v5.xml				\
+	unstable/relative-pointer/relative-pointer-unstable-v1.xml		\
+	unstable/pointer-constraints/pointer-constraints-unstable-v1.xml	\
+	$(NULL)
+
+stable_protocols =								\
 	$(NULL)
 
 nobase_dist_pkgdata_DATA =							\
@@ -16,3 +21,10 @@ dist_noinst_DATA =								\
 	$(NULL)
 
 noarch_pkgconfig_DATA = wayland-protocols.pc
+
+dist_check_SCRIPTS = tests/scan.sh
+
+TESTS = $(unstable_protocols) $(stable_protocols)
+TEST_EXTENSIONS = .xml
+AM_TESTS_ENVIRONMENT = SCANNER='$(wayland_scanner)'; export SCANNER;
+XML_LOG_COMPILER = $(srcdir)/tests/scan.sh

@@ -9,6 +9,7 @@
 // require special server configurations.
 
 #include <stdint.h>
+
 #include <string>
 
 #include "base/bind.h"
@@ -22,7 +23,7 @@
 #include "base/strings/string_piece.h"
 #include "base/thread_task_runner_handle.h"
 #include "net/base/auth.h"
-#include "net/base/network_delegate.h"
+#include "net/base/proxy_delegate.h"
 #include "net/base/test_data_directory.h"
 #include "net/proxy/proxy_service.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -195,9 +196,9 @@ void ConnectTestingEventInterface::QuitNestedEventLoop() {
 
 // A subclass of TestNetworkDelegate that additionally implements the
 // OnResolveProxy callback and records the information passed to it.
-class TestNetworkDelegateWithProxyInfo : public TestNetworkDelegate {
+class TestProxyDelegateWithProxyInfo : public ProxyDelegate {
  public:
-  TestNetworkDelegateWithProxyInfo() {}
+  TestProxyDelegateWithProxyInfo() {}
 
   struct ResolvedProxyInfo {
     GURL url;
@@ -210,6 +211,7 @@ class TestNetworkDelegateWithProxyInfo : public TestNetworkDelegate {
 
  protected:
   void OnResolveProxy(const GURL& url,
+                      const std::string& method,
                       int load_flags,
                       const ProxyService& proxy_service,
                       ProxyInfo* result) override {
@@ -217,17 +219,34 @@ class TestNetworkDelegateWithProxyInfo : public TestNetworkDelegate {
     resolved_proxy_info_.proxy_info = *result;
   }
 
+  void OnTunnelConnectCompleted(const HostPortPair& endpoint,
+                                const HostPortPair& proxy_server,
+                                int net_error) override {}
+  void OnFallback(const ProxyServer& bad_proxy, int net_error) override {}
+  void OnBeforeSendHeaders(URLRequest* request,
+                           const ProxyInfo& proxy_info,
+                           HttpRequestHeaders* headers) override {}
+  void OnBeforeTunnelRequest(const HostPortPair& proxy_server,
+                             HttpRequestHeaders* extra_headers) override {}
+  void OnTunnelHeadersReceived(
+      const HostPortPair& origin,
+      const HostPortPair& proxy_server,
+      const HttpResponseHeaders& response_headers) override {}
+  bool IsTrustedSpdyProxy(const net::ProxyServer& proxy_server) override {
+    return true;
+  }
+
  private:
   ResolvedProxyInfo resolved_proxy_info_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestNetworkDelegateWithProxyInfo);
+  DISALLOW_COPY_AND_ASSIGN(TestProxyDelegateWithProxyInfo);
 };
 
 class WebSocketEndToEndTest : public ::testing::Test {
  protected:
   WebSocketEndToEndTest()
       : event_interface_(),
-        network_delegate_(new TestNetworkDelegateWithProxyInfo),
+        proxy_delegate_(new TestProxyDelegateWithProxyInfo),
         context_(true),
         channel_(),
         initialised_context_(false) {}
@@ -236,7 +255,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
   // ConnectAndWait(). This method is for the use of tests that need the
   // URLRequestContext initialised before calling ConnectAndWait().
   void InitialiseContext() {
-    context_.set_network_delegate(network_delegate_.get());
+    context_.set_proxy_delegate(proxy_delegate_.get());
     context_.Init();
     initialised_context_ = true;
   }
@@ -257,7 +276,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
   }
 
   ConnectTestingEventInterface* event_interface_;  // owned by channel_
-  scoped_ptr<TestNetworkDelegateWithProxyInfo> network_delegate_;
+  scoped_ptr<TestProxyDelegateWithProxyInfo> proxy_delegate_;
   TestURLRequestContext context_;
   scoped_ptr<WebSocketChannel> channel_;
   std::vector<std::string> sub_protocols_;
@@ -369,8 +388,8 @@ TEST_F(WebSocketEndToEndTest, DISABLED_ON_ANDROID(HttpsProxyUsed)) {
 
   GURL ws_url = ws_server.GetURL(kEchoServer);
   EXPECT_TRUE(ConnectAndWait(ws_url));
-  const TestNetworkDelegateWithProxyInfo::ResolvedProxyInfo& info =
-      network_delegate_->resolved_proxy_info();
+  const TestProxyDelegateWithProxyInfo::ResolvedProxyInfo& info =
+      proxy_delegate_->resolved_proxy_info();
   EXPECT_EQ(ws_url, info.url);
   EXPECT_TRUE(info.proxy_info.is_http());
 }

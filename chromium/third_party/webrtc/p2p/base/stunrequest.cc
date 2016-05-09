@@ -63,6 +63,16 @@ void StunRequestManager::Flush(int msg_type) {
   }
 }
 
+bool StunRequestManager::HasRequest(int msg_type) {
+  for (const auto kv : requests_) {
+    StunRequest* request = kv.second;
+    if (msg_type == kAllRequests || msg_type == request->type()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void StunRequestManager::Remove(StunRequest* request) {
   ASSERT(request->manager() == this);
   RequestMap::iterator iter = requests_.find(request->id());
@@ -128,7 +138,7 @@ bool StunRequestManager::CheckResponse(const char* data, size_t size) {
 
   // Parse the STUN message and continue processing as usual.
 
-  rtc::ByteBuffer buf(data, size);
+  rtc::ByteBufferReader buf(data, size);
   rtc::scoped_ptr<StunMessage> response(iter->second->msg_->CreateNew());
   if (!response->Read(&buf)) {
     LOG(LS_WARNING) << "Failed to read STUN response " << rtc::hex_encode(id);
@@ -181,8 +191,8 @@ const StunMessage* StunRequest::msg() const {
   return msg_;
 }
 
-uint32_t StunRequest::Elapsed() const {
-  return rtc::TimeSince(tstamp_);
+int StunRequest::Elapsed() const {
+  return static_cast<int>(rtc::Time64() - tstamp_);
 }
 
 
@@ -201,9 +211,9 @@ void StunRequest::OnMessage(rtc::Message* pmsg) {
     return;
   }
 
-  tstamp_ = rtc::Time();
+  tstamp_ = rtc::Time64();
 
-  rtc::ByteBuffer buf;
+  rtc::ByteBufferWriter buf;
   msg_->Write(&buf);
   manager_->SignalSendPacket(buf.Data(), buf.Length(), this);
 

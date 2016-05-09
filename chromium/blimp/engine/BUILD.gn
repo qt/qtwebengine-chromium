@@ -5,6 +5,7 @@
 import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
 import("//tools/grit/repack.gni")
 import("//tools/grit/grit_rule.gni")
 
@@ -44,11 +45,209 @@ repack("pak") {
   output = "$root_out_dir/blimp_engine.pak"
 }
 
+source_set("app") {
+  sources = [
+    "app/blimp_browser_main_parts.cc",
+    "app/blimp_browser_main_parts.h",
+    "app/blimp_content_browser_client.cc",
+    "app/blimp_content_browser_client.h",
+    "app/blimp_content_main_delegate.cc",
+    "app/blimp_content_main_delegate.h",
+    "app/blimp_content_renderer_client.cc",
+    "app/blimp_content_renderer_client.h",
+    "app/blimp_engine_config.cc",
+    "app/blimp_engine_config.h",
+    "app/blimp_network_delegate.cc",
+    "app/blimp_network_delegate.h",
+    "app/blimp_permission_manager.cc",
+    "app/blimp_permission_manager.h",
+    "app/blimp_system_url_request_context_getter.cc",
+    "app/blimp_system_url_request_context_getter.h",
+    "app/blimp_url_request_context_getter.cc",
+    "app/blimp_url_request_context_getter.h",
+    "app/engine_settings.cc",
+    "app/engine_settings.h",
+    "app/settings_manager.cc",
+    "app/settings_manager.h",
+    "app/switches.cc",
+    "app/switches.h",
+  ]
+
+  deps = [
+    ":app_ui",
+    ":blob_channel",
+    ":common",
+    ":renderer",
+    ":session",
+    "//base",
+    "//blimp/common/proto",
+    "//components/web_cache/renderer",
+    "//content",
+    "//content/public/app:both",
+    "//content/public/browser",
+    "//content/public/common",
+    "//content/public/renderer",
+    "//content/public/utility",
+  ]
+}
+
+source_set("app_ui") {
+  sources = [
+    "app/ui/blimp_layout_manager.cc",
+    "app/ui/blimp_layout_manager.h",
+    "app/ui/blimp_screen.cc",
+    "app/ui/blimp_screen.h",
+    "app/ui/blimp_window_tree_client.cc",
+    "app/ui/blimp_window_tree_client.h",
+    "app/ui/blimp_window_tree_host.cc",
+    "app/ui/blimp_window_tree_host.h",
+  ]
+
+  deps = [
+    "//blimp/common:blimp_common",
+    "//cc",
+    "//cc/surfaces",
+    "//ui/aura",
+    "//ui/compositor",
+    "//ui/events",
+    "//ui/gfx",
+    "//ui/platform_window",
+    "//ui/platform_window",
+    "//ui/platform_window/stub/",
+  ]
+}
+
+source_set("common") {
+  sources = [
+    "common/blimp_browser_context.cc",
+    "common/blimp_browser_context.h",
+    "common/blimp_content_client.cc",
+    "common/blimp_content_client.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/version_info",
+    "//content/public/common",
+    "//ui/base",
+  ]
+}
+
+source_set("feature") {
+  sources = [
+    "feature/engine_render_widget_feature.cc",
+    "feature/engine_render_widget_feature.h",
+    "feature/engine_settings_feature.cc",
+    "feature/engine_settings_feature.h",
+  ]
+
+  deps = [
+    "//base",
+    "//blimp/common/proto",
+    "//ui/base",
+    "//ui/base/ime",
+    "//ui/resources",
+    "//ui/wm",
+  ]
+}
+
+source_set("renderer") {
+  sources = [
+    "renderer/engine_image_serialization_processor.cc",
+    "renderer/engine_image_serialization_processor.h",
+  ]
+
+  deps = [
+    ":blob_channel_mojo",
+    "//base",
+    "//cc",
+    "//skia",
+    "//third_party/libwebp",
+    "//ui/gfx/geometry",
+    "//ui/gl",
+  ]
+}
+
+source_set("session") {
+  sources = [
+    "session/blimp_engine_session.cc",
+    "session/blimp_engine_session.h",
+  ]
+
+  deps = [
+    ":feature",
+    "//base",
+    "//blimp/common:blimp_common",
+    "//blimp/common/proto",
+    "//blimp/net:blimp_net",
+    "//content",
+    "//net",
+  ]
+}
+
+# Implements the browser portions of the Mojo bridge to BlobChannel.
+source_set("blob_channel") {
+  sources = [
+    "mojo/blob_channel_service.cc",
+    "mojo/blob_channel_service.h",
+  ]
+  deps = [
+    ":blob_channel_mojo",
+  ]
+}
+
+mojom("blob_channel_mojo") {
+  sources = [
+    "mojo/blob_channel.mojom",
+  ]
+}
+
+source_set("app_unit_tests") {
+  testonly = true
+
+  sources = [
+    "app/blimp_engine_config_unittest.cc",
+    "app/settings_manager_unittest.cc",
+    "app/ui/blimp_screen_unittest.cc",
+  ]
+
+  deps = [
+    ":app",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//ui/gfx:test_support",
+  ]
+}
+
+source_set("feature_unit_tests") {
+  testonly = true
+
+  sources = [
+    "feature/engine_render_widget_feature_unittest.cc",
+    "feature/engine_settings_feature_unittest.cc",
+  ]
+
+  deps = [
+    ":feature",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//blimp/common/proto",
+    "//content",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+}
+
 source_set("unit_tests") {
   testonly = true
 
   deps = [
-    "//blimp/engine/browser:unit_tests",
+    ":app_unit_tests",
+    ":feature_unit_tests",
   ]
 }
 
@@ -59,9 +258,10 @@ if (is_linux) {
     ]
 
     deps = [
+      ":app",
       ":pak",
-      "//blimp/engine/app",
       "//blimp/net:blimp_net",
+      "//content/public/app:both",
     ]
   }
 
@@ -70,6 +270,7 @@ if (is_linux) {
       ":blimp_engine_app",
       ":pak",
       "//sandbox/linux:chrome_sandbox",
+      "//third_party/blimp_fonts",
     ]
 
     # List dependencies as both deps and data_deps to ensure changes trigger a
@@ -85,8 +286,9 @@ if (is_linux) {
     # These form the arguments to the script.
     _rebased_out_dir = rebase_path(root_out_dir)
     _rebased_dockerfile = rebase_path("//blimp/engine/Dockerfile")
+    _rebased_startup_script = rebase_path("//blimp/engine/start_engine.sh")
     _rebased_manifest = rebase_path("//blimp/engine/engine-manifest.txt")
-    _bundle = "$root_out_dir/blimp_engine_bundle.tar"
+    _bundle = "$root_out_dir/blimp_engine_bundle.tar.gz"
 
     # Detail the target & "source"-file dependencies, and output, for GN.
     deps = [
@@ -95,6 +297,7 @@ if (is_linux) {
     sources = [
       _rebased_dockerfile,
       _rebased_manifest,
+      _rebased_startup_script,
     ]
     outputs = [
       _bundle,
@@ -106,6 +309,8 @@ if (is_linux) {
       _rebased_out_dir,
       "--dockerfile",
       _rebased_dockerfile,
+      "--startup-script",
+      _rebased_startup_script,
       "--manifest",
       _rebased_manifest,
       "--output",

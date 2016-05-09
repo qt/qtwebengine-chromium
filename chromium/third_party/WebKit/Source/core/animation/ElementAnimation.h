@@ -36,12 +36,12 @@
 #include "core/animation/EffectInput.h"
 #include "core/animation/ElementAnimations.h"
 #include "core/animation/KeyframeEffect.h"
+#include "core/animation/KeyframeEffectOptions.h"
 #include "core/animation/TimingInput.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/Allocator.h"
-
 
 namespace blink {
 
@@ -50,25 +50,28 @@ class Dictionary;
 class ElementAnimation {
     STATIC_ONLY(ElementAnimation);
 public:
-    static Animation* animate(Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, double duration, ExceptionState& exceptionState)
+    static Animation* animate(ExecutionContext* executionContext, Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, double duration, ExceptionState& exceptionState)
     {
-        EffectModel* effect = EffectInput::convert(&element, effectInput, exceptionState);
+        EffectModel* effect = EffectInput::convert(&element, effectInput, executionContext, exceptionState);
         if (exceptionState.hadException())
             return 0;
         return animateInternal(element, effect, TimingInput::convert(duration));
     }
 
-    static Animation* animate(Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, const KeyframeEffectOptions& timingInput, ExceptionState& exceptionState)
+    static Animation* animate(ExecutionContext* executionContext, Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, const KeyframeEffectOptions& options, ExceptionState& exceptionState)
     {
-        EffectModel* effect = EffectInput::convert(&element, effectInput, exceptionState);
+        EffectModel* effect = EffectInput::convert(&element, effectInput, executionContext, exceptionState);
         if (exceptionState.hadException())
             return 0;
-        return animateInternal(element, effect, TimingInput::convert(timingInput));
+
+        Animation* animation = animateInternal(element, effect, TimingInput::convert(options, &element.document()));
+        animation->setId(options.id());
+        return animation;
     }
 
-    static Animation* animate(Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, ExceptionState& exceptionState)
+    static Animation* animate(ExecutionContext* executionContext, Element& element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, ExceptionState& exceptionState)
     {
-        EffectModel* effect = EffectInput::convert(&element, effectInput, exceptionState);
+        EffectModel* effect = EffectInput::convert(&element, effectInput, executionContext, exceptionState);
         if (exceptionState.hadException())
             return 0;
         return animateInternal(element, effect, Timing());
@@ -76,17 +79,17 @@ public:
 
     static HeapVector<Member<Animation>> getAnimations(Element& element)
     {
-        HeapVector<Member<Animation>> animationss;
+        HeapVector<Member<Animation>> animations;
 
         if (!element.hasAnimations())
-            return animationss;
+            return animations;
 
         for (const auto& animation : element.document().timeline().getAnimations()) {
             ASSERT(animation->effect());
             if (toKeyframeEffect(animation->effect())->target() == element && (animation->effect()->isCurrent() || animation->effect()->isInEffect()))
-                animationss.append(animation);
+                animations.append(animation);
         }
-        return animationss;
+        return animations;
     }
 
 private:

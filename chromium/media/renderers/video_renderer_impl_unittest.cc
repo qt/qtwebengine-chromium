@@ -55,7 +55,7 @@ class VideoRendererImplTest
  public:
   VideoRendererImplTest()
       : tick_clock_(new base::SimpleTestTickClock()),
-        decoder_(new MockVideoDecoder()),
+        decoder_(new NiceMock<MockVideoDecoder>()),
         demuxer_stream_(DemuxerStream::VIDEO) {
     ScopedVector<VideoDecoder> decoders;
     decoders.push_back(decoder_);
@@ -93,36 +93,34 @@ class VideoRendererImplTest
 
   void InitializeWithLowDelay(bool low_delay) {
     // Monitor decodes from the decoder.
-    EXPECT_CALL(*decoder_, Decode(_, _))
-        .WillRepeatedly(Invoke(this, &VideoRendererImplTest::DecodeRequested));
-
-    EXPECT_CALL(*decoder_, Reset(_))
-        .WillRepeatedly(Invoke(this, &VideoRendererImplTest::FlushRequested));
+    ON_CALL(*decoder_, Decode(_, _))
+        .WillByDefault(Invoke(this, &VideoRendererImplTest::DecodeRequested));
+    ON_CALL(*decoder_, Reset(_))
+        .WillByDefault(Invoke(this, &VideoRendererImplTest::FlushRequested));
 
     // Initialize, we shouldn't have any reads.
     InitializeRenderer(low_delay, true);
   }
 
-  void InitializeRenderer(bool low_delay, bool expect_to_success) {
-    SCOPED_TRACE(
-        base::StringPrintf("InitializeRenderer(%d)", expect_to_success));
+  void InitializeRenderer(bool low_delay, bool expect_success) {
+    SCOPED_TRACE(base::StringPrintf("InitializeRenderer(%d)", expect_success));
     WaitableMessageLoopEvent event;
-    CallInitialize(event.GetPipelineStatusCB(), low_delay, expect_to_success);
-    event.RunAndWaitForStatus(expect_to_success ? PIPELINE_OK
-                                                : DECODER_ERROR_NOT_SUPPORTED);
+    CallInitialize(event.GetPipelineStatusCB(), low_delay, expect_success);
+    event.RunAndWaitForStatus(expect_success ? PIPELINE_OK
+                                             : DECODER_ERROR_NOT_SUPPORTED);
   }
 
   void CallInitialize(const PipelineStatusCB& status_cb,
                       bool low_delay,
-                      bool expect_to_success) {
+                      bool expect_success) {
     if (low_delay)
       demuxer_stream_.set_liveness(DemuxerStream::LIVENESS_LIVE);
     EXPECT_CALL(*decoder_, Initialize(_, _, _, _, _))
         .WillOnce(
-            DoAll(SaveArg<4>(&output_cb_), RunCallback<3>(expect_to_success)));
+            DoAll(SaveArg<4>(&output_cb_), RunCallback<3>(expect_success)));
     EXPECT_CALL(*this, OnWaitingForDecryptionKey()).Times(0);
     renderer_->Initialize(
-        &demuxer_stream_, status_cb, SetCdmReadyCB(),
+        &demuxer_stream_, status_cb, nullptr,
         base::Bind(&VideoRendererImplTest::OnStatisticsUpdate,
                    base::Unretained(this)),
         base::Bind(&StrictMock<MockCB>::BufferingStateChange,
@@ -174,14 +172,14 @@ class VideoRendererImplTest
       if (token == "abort") {
         scoped_refptr<VideoFrame> null_frame;
         decode_results_.push_back(
-            std::make_pair(VideoDecoder::kAborted, null_frame));
+            std::make_pair(DecodeStatus::ABORTED, null_frame));
         continue;
       }
 
       if (token == "error") {
         scoped_refptr<VideoFrame> null_frame;
         decode_results_.push_back(
-            std::make_pair(VideoDecoder::kDecodeError, null_frame));
+            std::make_pair(DecodeStatus::DECODE_ERROR, null_frame));
         continue;
       }
 
@@ -191,7 +189,7 @@ class VideoRendererImplTest
         scoped_refptr<VideoFrame> frame = VideoFrame::CreateFrame(
             PIXEL_FORMAT_YV12, natural_size, gfx::Rect(natural_size),
             natural_size, base::TimeDelta::FromMilliseconds(timestamp_in_ms));
-        decode_results_.push_back(std::make_pair(VideoDecoder::kOk, frame));
+        decode_results_.push_back(std::make_pair(DecodeStatus::OK, frame));
         continue;
       }
 
@@ -253,13 +251,13 @@ class VideoRendererImplTest
     // Satify pending |decode_cb_| to trigger a new DemuxerStream::Read().
     message_loop_.PostTask(
         FROM_HERE,
-        base::Bind(base::ResetAndReturn(&decode_cb_), VideoDecoder::kOk));
+        base::Bind(base::ResetAndReturn(&decode_cb_), DecodeStatus::OK));
 
     WaitForPendingRead();
 
     message_loop_.PostTask(
         FROM_HERE,
-        base::Bind(base::ResetAndReturn(&decode_cb_), VideoDecoder::kOk));
+        base::Bind(base::ResetAndReturn(&decode_cb_), DecodeStatus::OK));
   }
 
   void AdvanceWallclockTimeInMs(int time_ms) {
@@ -285,7 +283,7 @@ class VideoRendererImplTest
   // Fixture members.
   scoped_ptr<VideoRendererImpl> renderer_;
   base::SimpleTestTickClock* tick_clock_;  // Owned by |renderer_|.
-  MockVideoDecoder* decoder_;  // Owned by |renderer_|.
+  NiceMock<MockVideoDecoder>* decoder_;    // Owned by |renderer_|.
   NiceMock<MockDemuxerStream> demuxer_stream_;
 
   // Use StrictMock<T> to catch missing/extra callbacks.
@@ -354,8 +352,8 @@ class VideoRendererImplTest
   // Run during DecodeRequested() to unblock WaitForPendingRead().
   base::Closure wait_for_pending_decode_cb_;
 
-  std::deque<std::pair<
-      VideoDecoder::Status, scoped_refptr<VideoFrame> > > decode_results_;
+  std::deque<std::pair<DecodeStatus, scoped_refptr<VideoFrame>>>
+      decode_results_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoRendererImplTest);
 };
@@ -740,6 +738,33 @@ TEST_F(VideoRendererImplTest, StartPlayingFromThenFlushThenEOS) {
   SatisfyPendingReadWithEndOfStream();
   EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_ENOUGH));
   WaitForEnded();
+  Destroy();
+}
+
+TEST_F(VideoRendererImplTest, FramesAreNotExpiredDuringPreroll) {
+  Initialize();
+  // !CanReadWithoutStalling() puts the renderer in state BUFFERING_HAVE_ENOUGH
+  // after the first frame.
+  ON_CALL(*decoder_, CanReadWithoutStalling()).WillByDefault(Return(false));
+  // Set background rendering to simulate the first couple of Render() calls
+  // by VFC.
+  null_video_sink_->set_background_render(true);
+  QueueFrames("0 10 20");
+  EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_ENOUGH))
+      .Times(testing::AtMost(1));
+  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(0)));
+  StartPlayingFrom(0);
+
+  renderer_->OnTimeStateChanged(true);
+  time_source_.StartTicking();
+
+  WaitableMessageLoopEvent event;
+  // Frame "10" should not have been expired.
+  EXPECT_CALL(mock_cb_, FrameReceived(HasTimestamp(10)))
+      .WillOnce(RunClosure(event.GetClosure()));
+  AdvanceTimeInMs(10);
+  event.RunAndWait();
+
   Destroy();
 }
 

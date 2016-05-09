@@ -13,13 +13,11 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 
 namespace webrtc {
 
 PayloadRouter::PayloadRouter()
-    : crit_(CriticalSectionWrapper::CreateCriticalSection()),
-      active_(false) {}
+    : active_(false), num_sending_modules_(0) {}
 
 PayloadRouter::~PayloadRouter() {}
 
@@ -28,24 +26,42 @@ size_t PayloadRouter::DefaultMaxPayloadLength() {
   return IP_PACKET_SIZE - kIpUdpSrtpLength;
 }
 
-void PayloadRouter::SetSendingRtpModules(
-    const std::list<RtpRtcp*>& rtp_modules) {
-  CriticalSectionScoped cs(crit_.get());
-  rtp_modules_.clear();
-  rtp_modules_.reserve(rtp_modules.size());
-  for (auto* rtp_module : rtp_modules) {
-    rtp_modules_.push_back(rtp_module);
-  }
+void PayloadRouter::Init(
+    const std::vector<RtpRtcp*>& rtp_modules) {
+  RTC_DCHECK(rtp_modules_.empty());
+  rtp_modules_ = rtp_modules;
 }
 
 void PayloadRouter::set_active(bool active) {
-  CriticalSectionScoped cs(crit_.get());
+  rtc::CritScope lock(&crit_);
+  if (active_ == active)
+    return;
   active_ = active;
+  UpdateModuleSendingState();
 }
 
 bool PayloadRouter::active() {
-  CriticalSectionScoped cs(crit_.get());
+  rtc::CritScope lock(&crit_);
   return active_ && !rtp_modules_.empty();
+}
+
+void PayloadRouter::SetSendingRtpModules(size_t num_sending_modules) {
+  RTC_DCHECK_LE(num_sending_modules, rtp_modules_.size());
+  rtc::CritScope lock(&crit_);
+  num_sending_modules_ = num_sending_modules;
+  UpdateModuleSendingState();
+}
+
+void PayloadRouter::UpdateModuleSendingState() {
+  for (size_t i = 0; i < num_sending_modules_; ++i) {
+    rtp_modules_[i]->SetSendingStatus(active_);
+    rtp_modules_[i]->SetSendingMediaStatus(active_);
+  }
+  // Disable inactive modules.
+  for (size_t i = num_sending_modules_; i < rtp_modules_.size(); ++i) {
+    rtp_modules_[i]->SetSendingStatus(false);
+    rtp_modules_[i]->SetSendingMediaStatus(false);
+  }
 }
 
 bool PayloadRouter::RoutePayload(FrameType frame_type,
@@ -56,19 +72,20 @@ bool PayloadRouter::RoutePayload(FrameType frame_type,
                                  size_t payload_length,
                                  const RTPFragmentationHeader* fragmentation,
                                  const RTPVideoHeader* rtp_video_hdr) {
-  CriticalSectionScoped cs(crit_.get());
-  if (!active_ || rtp_modules_.empty())
-    return false;
-
-  // The simulcast index might actually be larger than the number of modules in
-  // case the encoder was processing a frame during a codec reconfig.
-  if (rtp_video_hdr != NULL &&
-      rtp_video_hdr->simulcastIdx >= rtp_modules_.size())
+  rtc::CritScope lock(&crit_);
+  RTC_DCHECK(!rtp_modules_.empty());
+  if (!active_ || num_sending_modules_ == 0)
     return false;
 
   int stream_idx = 0;
-  if (rtp_video_hdr != NULL)
+  if (rtp_video_hdr) {
+    RTC_DCHECK_LT(rtp_video_hdr->simulcastIdx, rtp_modules_.size());
+    // The simulcast index might actually be larger than the number of modules
+    // in case the encoder was processing a frame during a codec reconfig.
+    if (rtp_video_hdr->simulcastIdx >= num_sending_modules_)
+      return false;
     stream_idx = rtp_video_hdr->simulcastIdx;
+  }
   return rtp_modules_[stream_idx]->SendOutgoingData(
       frame_type, payload_type, time_stamp, capture_time_ms, payload_data,
       payload_length, fragmentation, rtp_video_hdr) == 0 ? true : false;
@@ -76,22 +93,18 @@ bool PayloadRouter::RoutePayload(FrameType frame_type,
 
 void PayloadRouter::SetTargetSendBitrates(
     const std::vector<uint32_t>& stream_bitrates) {
-  CriticalSectionScoped cs(crit_.get());
-  if (stream_bitrates.size() < rtp_modules_.size()) {
-    // There can be a size mis-match during codec reconfiguration.
-    return;
-  }
-  int idx = 0;
-  for (auto* rtp_module : rtp_modules_) {
-    rtp_module->SetTargetSendBitrate(stream_bitrates[idx++]);
+  rtc::CritScope lock(&crit_);
+  RTC_DCHECK_LE(stream_bitrates.size(), rtp_modules_.size());
+  for (size_t i = 0; i < stream_bitrates.size(); ++i) {
+    rtp_modules_[i]->SetTargetSendBitrate(stream_bitrates[i]);
   }
 }
 
 size_t PayloadRouter::MaxPayloadLength() const {
   size_t min_payload_length = DefaultMaxPayloadLength();
-  CriticalSectionScoped cs(crit_.get());
-  for (auto* rtp_module : rtp_modules_) {
-    size_t module_payload_length = rtp_module->MaxDataPayloadLength();
+  rtc::CritScope lock(&crit_);
+  for (size_t i = 0; i < num_sending_modules_; ++i) {
+    size_t module_payload_length = rtp_modules_[i]->MaxDataPayloadLength();
     if (module_payload_length < min_payload_length)
       min_payload_length = module_payload_length;
   }

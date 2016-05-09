@@ -1,8 +1,8 @@
-diff --git a/lib/freebl/unix_rand.c b/lib/freebl/unix_rand.c
-index 579040e..2f9b3e5 100644
---- a/lib/freebl/unix_rand.c
-+++ b/lib/freebl/unix_rand.c
-@@ -916,8 +916,19 @@ void RNG_SystemInfoForRNG(void)
+diff --git a/nss/lib/freebl/unix_rand.c b/nss/lib/freebl/unix_rand.c
+index c9674ea..e0d8f58 100644
+--- a/nss/lib/freebl/unix_rand.c
++++ b/nss/lib/freebl/unix_rand.c
+@@ -917,8 +917,19 @@ void RNG_SystemInfoForRNG(void)
  #if defined(BSDI) || defined(FREEBSD) || defined(NETBSD) \
      || defined(OPENBSD) || defined(DARWIN) || defined(LINUX) \
      || defined(HPUX)
@@ -23,7 +23,7 @@ index 579040e..2f9b3e5 100644
  #endif
  
  #ifdef SOLARIS
-@@ -1134,6 +1145,11 @@ static void rng_systemJitter(void)
+@@ -1135,6 +1146,11 @@ static void rng_systemJitter(void)
     }
  }
  
@@ -35,7 +35,7 @@ index 579040e..2f9b3e5 100644
  size_t RNG_SystemRNG(void *dest, size_t maxLen)
  {
      FILE *file;
-@@ -1144,7 +1160,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
+@@ -1145,7 +1161,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
  
      file = fopen("/dev/urandom", "r");
      if (file == NULL) {
@@ -47,7 +47,7 @@ index 579040e..2f9b3e5 100644
      }
      /* Read from the underlying file descriptor directly to bypass stdio
       * buffering and avoid reading more bytes than we need from /dev/urandom.
-@@ -1164,8 +1183,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
+@@ -1165,8 +1184,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
      }
      fclose(file);
      if (fileBytes != maxLen) {
@@ -60,3 +60,70 @@ index 579040e..2f9b3e5 100644
      }
      return fileBytes;
  }
+diff --git a/patches/nss-urandom-abort.patch b/patches/nss-urandom-abort.patch
+index d5f55c8..e69de29 100644
+--- a/patches/nss-urandom-abort.patch
++++ b/patches/nss-urandom-abort.patch
+@@ -1,62 +0,0 @@
+-diff --git a/lib/freebl/unix_rand.c b/lib/freebl/unix_rand.c
+-index 579040e..2f9b3e5 100644
+---- a/lib/freebl/unix_rand.c
+-+++ b/lib/freebl/unix_rand.c
+-@@ -916,8 +916,19 @@ void RNG_SystemInfoForRNG(void)
+- #if defined(BSDI) || defined(FREEBSD) || defined(NETBSD) \
+-     || defined(OPENBSD) || defined(DARWIN) || defined(LINUX) \
+-     || defined(HPUX)
+--    if (bytes)
+-+    if (bytes == SYSTEM_RNG_SEED_COUNT)
+-         return;
+-+
+-+    /*
+-+     * Modified to abort the process if it failed to read from /dev/urandom.
+-+     *
+-+     * See crbug.com/244661 for details.
+-+     */
+-+    fprintf(stderr, "[ERROR:%s(%d)] NSS read %zu bytes (expected %d bytes) "
+-+            "from /dev/urandom. Abort process.\n", __FILE__, __LINE__,
+-+            bytes, SYSTEM_RNG_SEED_COUNT);
+-+    fflush(stderr);
+-+    abort();
+- #endif
+- 
+- #ifdef SOLARIS
+-@@ -1134,6 +1145,11 @@ static void rng_systemJitter(void)
+-    }
+- }
+- 
+-+/*
+-+ * Modified to abort the process if it failed to read from /dev/urandom.
+-+ *
+-+ * See crbug.com/244661 for details.
+-+ */
+- size_t RNG_SystemRNG(void *dest, size_t maxLen)
+- {
+-     FILE *file;
+-@@ -1144,7 +1160,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
+- 
+-     file = fopen("/dev/urandom", "r");
+-     if (file == NULL) {
+--	return rng_systemFromNoise(dest, maxLen);
+-+	fprintf(stderr, "[ERROR:%s(%d)] NSS failed to read from /dev/urandom. "
+-+		"Abort process.\n", __FILE__, __LINE__);
+-+	fflush(stderr);
+-+	abort();
+-     }
+-     /* Read from the underlying file descriptor directly to bypass stdio
+-      * buffering and avoid reading more bytes than we need from /dev/urandom.
+-@@ -1164,8 +1183,10 @@ size_t RNG_SystemRNG(void *dest, size_t maxLen)
+-     }
+-     fclose(file);
+-     if (fileBytes != maxLen) {
+--	PORT_SetError(SEC_ERROR_NEED_RANDOM);  /* system RNG failed */
+--	fileBytes = 0;
+-+	fprintf(stderr, "[ERROR:%s(%d)] NSS failed to read from /dev/urandom. "
+-+		"Abort process.\n", __FILE__, __LINE__);
+-+	fflush(stderr);
+-+	abort();
+-     }
+-     return fileBytes;
+- }

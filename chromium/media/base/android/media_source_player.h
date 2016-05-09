@@ -45,7 +45,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
       MediaPlayerManager* manager,
       const OnDecoderResourcesReleasedCB& on_decoder_resources_released_cb,
       scoped_ptr<DemuxerAndroid> demuxer,
-      const GURL& frame_url);
+      const GURL& frame_url,
+      int media_session_id);
   ~MediaSourcePlayer() override;
 
   // MediaPlayerAndroid implementation.
@@ -54,7 +55,6 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void Pause(bool is_media_related_action) override;
   void SeekTo(base::TimeDelta timestamp) override;
   void Release() override;
-  void SetVolume(double volume) override;
   bool HasVideo() const override;
   bool HasAudio() const override;
   int GetVideoWidth() override;
@@ -76,6 +76,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
 
  private:
   friend class MediaSourcePlayerTest;
+
+  // MediaPlayerAndroid implementation
+  void UpdateEffectiveVolumeInternal(double effective_volume) override;
 
   // Update the current timestamp.
   void UpdateTimestamps(base::TimeDelta current_presentation_timestamp,

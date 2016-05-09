@@ -20,18 +20,20 @@ class CORE_EXPORT StyleValue : public GarbageCollectedFinalized<StyleValue>, pub
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum StyleValueType {
-        KeywordValueType, SimpleLengthType, CalcLengthType, NumberType, TransformValueType
+        KeywordType, SimpleLengthType, CalcLengthType, NumberType, TransformValueType, PositionType
     };
 
     virtual ~StyleValue() { }
 
     virtual StyleValueType type() const = 0;
 
-    static StyleValue* create(const CSSValue&);
     static ScriptValue parse(ScriptState*, const String& property, const String& cssText);
 
-    virtual String cssString() const = 0;
-    virtual PassRefPtrWillBeRawPtr<CSSValue> toCSSValue() const = 0;
+    virtual CSSValue* toCSSValue() const = 0;
+    virtual String cssString() const
+    {
+        return toCSSValue()->cssText();
+    }
 
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 

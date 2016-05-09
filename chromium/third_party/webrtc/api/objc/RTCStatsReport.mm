@@ -20,12 +20,12 @@
 
 @synthesize timestamp = _timestamp;
 @synthesize type = _type;
-@synthesize statsId = _statsId;
+@synthesize reportId = _reportId;
 @synthesize values = _values;
 
 - (NSString *)description {
   return [NSString stringWithFormat:@"RTCStatsReport:\n%@\n%@\n%f\n%@",
-                                    _statsId,
+                                    _reportId,
                                     _type,
                                     _timestamp,
                                     _values];
@@ -37,7 +37,7 @@
   if (self = [super init]) {
     _timestamp = nativeReport.timestamp();
     _type = [NSString stringForStdString:nativeReport.TypeToString()];
-    _statsId = [NSString stringForStdString:
+    _reportId = [NSString stringForStdString:
         nativeReport.id()->ToString()];
 
     NSUInteger capacity = nativeReport.values().size();
@@ -50,9 +50,8 @@
           valuePair.second->ToString()];
 
       // Not expecting duplicate keys.
-      RTC_DCHECK(values[key]);
-
-      values[key] = value;
+      RTC_DCHECK(![values objectForKey:key]);
+      [values setObject:value forKey:key];
     }
     _values = values;
   }

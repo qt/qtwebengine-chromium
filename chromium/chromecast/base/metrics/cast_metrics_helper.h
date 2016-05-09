@@ -77,6 +77,11 @@ class CastMetricsHelper {
   // This is used as an in-place replacement of content::RecordComputedAction().
   virtual void RecordSimpleAction(const std::string& action);
 
+  // Logs application specific events.
+  virtual void RecordApplicationEvent(const std::string& event);
+  virtual void RecordApplicationEventWithValue(const std::string& event,
+                                               int value);
+
   // Logs UMA record of the time the app made its first paint.
   virtual void LogTimeToFirstPaint();
 
@@ -103,6 +108,9 @@ class CastMetricsHelper {
   // This function could be called multiple times (in unittests), and
   // CastMetricsHelper only honors the last one.
   virtual void SetRecordActionCallback(const RecordActionCallback& callback);
+
+  // Sets an all-0's session ID for running browser tests.
+  void SetDummySessionIdForTesting();
 
  protected:
   // Creates a CastMetricsHelper instance with no task runner. This should only

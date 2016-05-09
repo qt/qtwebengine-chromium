@@ -124,6 +124,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void RequestTransferURL(
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
+      SiteInstance* source_site_instance,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
       ui::PageTransition page_transition,
@@ -146,13 +147,6 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       const CommonNavigationParams& common_params,
       const BeginNavigationParams& begin_params,
       scoped_refptr<ResourceRequestBody> body);
-
-  // PlzNavigate
-  // Signal |render_frame_host| that a navigation is ready to commit (the
-  // response to the navigation request has been received).
-  virtual void CommitNavigation(FrameTreeNode* frame_tree_node,
-                                ResourceResponse* response,
-                                scoped_ptr<StreamHandle> body);
 
   // PlzNavigate
   // Called when a NavigationRequest for |frame_tree_node| failed. An

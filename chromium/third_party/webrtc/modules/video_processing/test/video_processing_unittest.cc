@@ -12,6 +12,7 @@
 
 #include <gflags/gflags.h>
 
+#include <memory>
 #include <string>
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
@@ -69,8 +70,8 @@ void VideoProcessingTest::SetUp() {
   vp_ = VideoProcessing::Create();
   ASSERT_TRUE(vp_ != NULL);
 
-  ASSERT_EQ(0, video_frame_.CreateEmptyFrame(width_, height_, width_,
-                                             half_width_, half_width_));
+  video_frame_.CreateEmptyFrame(width_, height_, width_,
+                                half_width_, half_width_);
   // Clear video frame so DrMemory/Valgrind will allow reads of the buffer.
   memset(video_frame_.buffer(kYPlane), 0, video_frame_.allocated_size(kYPlane));
   memset(video_frame_.buffer(kUPlane), 0, video_frame_.allocated_size(kUPlane));
@@ -116,7 +117,7 @@ TEST_F(VideoProcessingTest, HandleBadStats) {
 #endif
   VideoProcessing::FrameStats stats;
   vp_->ClearFrameStats(&stats);
-  rtc::scoped_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
+  std::unique_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
   ASSERT_EQ(frame_length_,
             fread(video_buffer.get(), 1, frame_length_, source_file_));
   EXPECT_EQ(0, ConvertToI420(kI420, video_buffer.get(), 0, 0, width_, height_,
@@ -135,14 +136,14 @@ TEST_F(VideoProcessingTest, IdenticalResultsAfterReset) {
   VideoFrame video_frame2;
   VideoProcessing::FrameStats stats;
   // Only testing non-static functions here.
-  rtc::scoped_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
+  std::unique_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
   ASSERT_EQ(frame_length_,
             fread(video_buffer.get(), 1, frame_length_, source_file_));
   EXPECT_EQ(0, ConvertToI420(kI420, video_buffer.get(), 0, 0, width_, height_,
                              0, kVideoRotation_0, &video_frame_));
   vp_->GetFrameStats(video_frame_, &stats);
   EXPECT_GT(stats.num_pixels, 0u);
-  ASSERT_EQ(0, video_frame2.CopyFrame(video_frame_));
+  video_frame2.CopyFrame(video_frame_);
   ASSERT_EQ(0, vp_->Deflickering(&video_frame_, &stats));
 
   // Retrieve frame stats again in case Deflickering() has zeroed them.
@@ -171,7 +172,7 @@ TEST_F(VideoProcessingTest, FrameStats) {
 #endif
   VideoProcessing::FrameStats stats;
   vp_->ClearFrameStats(&stats);
-  rtc::scoped_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
+  std::unique_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
   ASSERT_EQ(frame_length_,
             fread(video_buffer.get(), 1, frame_length_, source_file_));
   EXPECT_EQ(0, ConvertToI420(kI420, video_buffer.get(), 0, 0, width_, height_,
@@ -235,7 +236,7 @@ TEST_F(VideoProcessingTest, Resampler) {
   vp_->EnableTemporalDecimation(false);
 
   // Reading test frame
-  rtc::scoped_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
+  std::unique_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
   ASSERT_EQ(frame_length_,
             fread(video_buffer.get(), 1, frame_length_, source_file_));
   // Using ConvertToI420 to add stride to the image.

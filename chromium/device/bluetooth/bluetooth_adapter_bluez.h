@@ -46,8 +46,8 @@ class BluetoothRemoteGattCharacteristicBlueZ;
 class BluetoothRemoteGattDescriptorBlueZ;
 class BluetoothRemoteGattServiceBlueZ;
 
-// The BluetoothAdapterBlueZ class implements BluetoothAdapter for the
-// Chrome OS platform.
+// The BluetoothAdapterBlueZ class implements BluetoothAdapter for platforms
+// that use BlueZ.
 //
 // All methods are called from the dbus origin / UI thread and are generally
 // not assumed to be thread-safe.
@@ -73,10 +73,13 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   typedef base::Callback<void(BluetoothAdapterProfileBlueZ* profile)>
       ProfileRegisteredCallback;
 
-  static base::WeakPtr<BluetoothAdapter> CreateAdapter();
+  // Calls |init_callback| after a BluetoothAdapter is fully initialized.
+  static base::WeakPtr<BluetoothAdapter> CreateAdapter(
+      const InitCallback& init_callback);
 
   // BluetoothAdapter:
   void Shutdown() override;
+  UUIDList GetUUIDs() const override;
   std::string GetAddress() const override;
   std::string GetName() const override;
   void SetName(const std::string& name,
@@ -125,28 +128,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   void NotifyDeviceAddressChanged(BluetoothDeviceBlueZ* device,
                                   const std::string& old_address);
 
-  // The following methods are used to send various GATT observer events to
-  // observers.
-  void NotifyGattServiceAdded(BluetoothRemoteGattServiceBlueZ* service);
-  void NotifyGattServiceRemoved(BluetoothRemoteGattServiceBlueZ* service);
-  void NotifyGattServiceChanged(BluetoothRemoteGattServiceBlueZ* service);
-  void NotifyGattServicesDiscovered(BluetoothDeviceBlueZ* device);
-  void NotifyGattDiscoveryComplete(BluetoothRemoteGattServiceBlueZ* service);
-  void NotifyGattCharacteristicAdded(
-      BluetoothRemoteGattCharacteristicBlueZ* characteristic);
-  void NotifyGattCharacteristicRemoved(
-      BluetoothRemoteGattCharacteristicBlueZ* characteristic);
-  void NotifyGattDescriptorAdded(
-      BluetoothRemoteGattDescriptorBlueZ* descriptor);
-  void NotifyGattDescriptorRemoved(
-      BluetoothRemoteGattDescriptorBlueZ* descriptor);
-  void NotifyGattCharacteristicValueChanged(
-      BluetoothRemoteGattCharacteristicBlueZ* characteristic,
-      const std::vector<uint8_t>& value);
-  void NotifyGattDescriptorValueChanged(
-      BluetoothRemoteGattDescriptorBlueZ* descriptor,
-      const std::vector<uint8_t>& value);
-
   // Returns the object path of the adapter.
   const dbus::ObjectPath& object_path() const { return object_path_; }
 
@@ -193,8 +174,12 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   typedef std::pair<base::Closure, ErrorCompletionCallback>
       RegisterProfileCompletionPair;
 
-  BluetoothAdapterBlueZ();
+  explicit BluetoothAdapterBlueZ(const InitCallback& init_callback);
   ~BluetoothAdapterBlueZ() override;
+
+  // Init will get asynchronouly called once we know if Object Manager is
+  // supported.
+  void Init();
 
   // bluez::BluetoothAdapterClient::Observer override.
   void AdapterAdded(const dbus::ObjectPath& object_path) override;
@@ -263,8 +248,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   // subsequently operate on that adapter until it is removed.
   void SetAdapter(const dbus::ObjectPath& object_path);
 
+#if defined(OS_CHROMEOS)
   // Set the adapter name to one chosen from the system information.
-  void SetDefaultAdapterName();
+  void SetStandardChromeOSAdapterName();
+#endif
 
   // Remove the currently tracked adapter. IsPresent() will return false after
   // this is called.
@@ -354,6 +341,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterBlueZ
   // is called whenever a pending D-Bus call to start or stop discovery has
   // ended (with either success or failure).
   void ProcessQueuedDiscoveryRequests();
+
+  InitCallback init_callback_;
+
+  bool initialized_;
 
   // Set in |Shutdown()|, makes IsPresent()| return false.
   bool dbus_is_shutdown_;

@@ -12,7 +12,6 @@ namespace net {
 class QuicCryptoClientConfig;
 class QuicPacketWriter;
 
-namespace tools {
 
 class QuicClient;
 
@@ -20,7 +19,8 @@ namespace test {
 
 class QuicClientPeer {
  public:
-  static bool CreateUDPSocket(QuicClient* client);
+  static bool CreateUDPSocketAndBind(QuicClient* client);
+  static void CleanUpUDPSocket(QuicClient* client, int fd);
   static void SetClientPort(QuicClient* client, int port);
 
  private:
@@ -28,7 +28,6 @@ class QuicClientPeer {
 };
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_QUIC_CLIENT_PEER_H_

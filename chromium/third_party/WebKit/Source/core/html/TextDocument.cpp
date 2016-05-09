@@ -35,9 +35,9 @@ TextDocument::TextDocument(const DocumentInit& initializer)
     lockCompatibilityMode();
 }
 
-PassRefPtrWillBeRawPtr<DocumentParser> TextDocument::createParser()
+RawPtr<DocumentParser> TextDocument::createParser()
 {
-    return TextDocumentParser::create(*this, parserSynchronizationPolicy());
+    return TextDocumentParser::create(*this, getParserSynchronizationPolicy());
 }
 
-}
+} // namespace blink

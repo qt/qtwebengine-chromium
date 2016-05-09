@@ -20,7 +20,7 @@ class ScopedUIResource;
 
 class CC_EXPORT NinePatchLayer : public UIResourceLayer {
  public:
-  static scoped_refptr<NinePatchLayer> Create(const LayerSettings& settings);
+  static scoped_refptr<NinePatchLayer> Create();
 
   void PushPropertiesTo(LayerImpl* layer) override;
 
@@ -39,14 +39,16 @@ class CC_EXPORT NinePatchLayer : public UIResourceLayer {
   // y-stretched to fit.
   void SetAperture(const gfx::Rect& aperture);
   void SetFillCenter(bool fill_center);
+  void SetNearestNeighbor(bool nearest_neighbor);
 
  private:
-  explicit NinePatchLayer(const LayerSettings& settings);
+  NinePatchLayer();
   ~NinePatchLayer() override;
   scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   gfx::Rect border_;
   bool fill_center_;
+  bool nearest_neighbor_;
 
   // The transparent center region that shows the parent layer's contents in
   // image space.

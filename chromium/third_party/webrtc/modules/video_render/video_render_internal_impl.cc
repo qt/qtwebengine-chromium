@@ -299,11 +299,7 @@ int64_t ModuleVideoRenderImpl::TimeUntilNextProcess()
     // Not used
     return 50;
 }
-int32_t ModuleVideoRenderImpl::Process()
-{
-    // Not used
-    return 0;
-}
+void ModuleVideoRenderImpl::Process() {}
 
 void*
 ModuleVideoRenderImpl::Window()
@@ -795,7 +791,8 @@ int32_t ModuleVideoRenderImpl::SetStartImage(const uint32_t streamId,
         return -1;
     }
     assert (item->second != NULL);
-    return item->second->SetStartImage(videoFrame);
+    item->second->SetStartImage(videoFrame);
+    return 0;
 
 }
 
@@ -821,7 +818,8 @@ int32_t ModuleVideoRenderImpl::SetTimeoutImage(const uint32_t streamId,
         return -1;
     }
     assert(item->second != NULL);
-    return item->second->SetTimeoutImage(videoFrame, timeout);
+    item->second->SetTimeoutImage(videoFrame, timeout);
+    return 0;
 }
 
 }  // namespace webrtc

@@ -84,8 +84,13 @@ class CONTENT_EXPORT MediaStreamVideoSource
   // Return true if |name| is a constraint supported by MediaStreamVideoSource.
   static bool IsConstraintSupported(const std::string& name);
 
+  // Request underlying source to capture a new frame.
+  virtual void RequestRefreshFrame() {}
+
   // Returns the task runner where video frames will be delivered on.
   base::SingleThreadTaskRunner* io_task_runner() const;
+
+  const media::VideoCaptureFormat* GetCurrentFormat() const;
 
  protected:
   void DoStopSource() override;
@@ -164,6 +169,7 @@ class CONTENT_EXPORT MediaStreamVideoSource
                     const VideoCaptureDeliverFrameCB& frame_callback,
                     const blink::WebMediaConstraints& constraints,
                     const ConstraintsCallback& callback);
+    TrackDescriptor(const TrackDescriptor& other);
     ~TrackDescriptor();
 
     MediaStreamVideoTrack* track;

@@ -38,13 +38,14 @@ class OverscrollTestWebContents : public TestWebContents {
 
   static OverscrollTestWebContents* Create(
       BrowserContext* browser_context,
-      SiteInstance* instance,
+      scoped_refptr<SiteInstance> instance,
       scoped_ptr<aura::Window> fake_native_view,
       scoped_ptr<aura::Window> fake_contents_window) {
     OverscrollTestWebContents* web_contents = new OverscrollTestWebContents(
         browser_context, std::move(fake_native_view),
         std::move(fake_contents_window));
-    web_contents->Init(WebContents::CreateParams(browser_context, instance));
+    web_contents->Init(
+        WebContents::CreateParams(browser_context, std::move(instance)));
     return web_contents;
   }
 
@@ -112,7 +113,7 @@ class OverscrollNavigationOverlayTest : public RenderViewHostImplTestHarness {
     // offset -1 on layer_delegate_.
     scoped_ptr<aura::Window> window(
         GetOverlay()->CreateBackWindow(GetBackSlideWindowBounds()));
-    bool window_created = window;
+    bool window_created = !!window;
     // Performs BACK navigation, sets image from layer_delegate_ on
     // image_delegate_.
     GetOverlay()->OnOverscrollCompleting();
@@ -307,7 +308,6 @@ TEST_F(OverscrollNavigationOverlayTest, Navigation_LoadingUpdate) {
   // this is a "safety net" in case we mis-identify the destination webpage
   // (which can happen if a new navigation is performed while while a GestureNav
   // navigation is in progress).
-  contents()->TestSetIsLoading(true);
   contents()->TestSetIsLoading(false);
   EXPECT_FALSE(GetOverlay()->web_contents());
   NavigationEntry* pending = contents()->GetController().GetPendingEntry();

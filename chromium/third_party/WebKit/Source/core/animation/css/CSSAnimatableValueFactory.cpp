@@ -177,8 +177,8 @@ inline static PassRefPtr<AnimatableValue> createFromLengthSize(const LengthSize&
 inline static PassRefPtr<AnimatableValue> createFromStyleImage(StyleImage* image)
 {
     if (image) {
-        if (RefPtrWillBeRawPtr<CSSValue> cssValue = image->cssValue())
-            return AnimatableImage::create(cssValue.release());
+        if (CSSValue* cssValue = image->cssValue())
+            return AnimatableImage::create(cssValue);
     }
     return AnimatableUnknown::create(CSSValueNone);
 }
@@ -488,17 +488,17 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         if (ClipPathOperation* operation = style.clipPath())
             return AnimatableClipPathOperation::create(operation);
         return AnimatableUnknown::create(CSSValueNone);
-    case CSSPropertyWebkitColumnCount:
+    case CSSPropertyColumnCount:
         if (style.hasAutoColumnCount())
             return AnimatableUnknown::create(CSSValueAuto);
         return createFromDouble(style.columnCount());
-    case CSSPropertyWebkitColumnGap:
+    case CSSPropertyColumnGap:
         return createFromDouble(style.columnGap());
-    case CSSPropertyWebkitColumnRuleColor:
+    case CSSPropertyColumnRuleColor:
         return createFromColor(property, style);
-    case CSSPropertyWebkitColumnRuleWidth:
+    case CSSPropertyColumnRuleWidth:
         return createFromDouble(style.columnRuleWidth());
-    case CSSPropertyWebkitColumnWidth:
+    case CSSPropertyColumnWidth:
         if (style.hasAutoColumnWidth())
             return AnimatableUnknown::create(CSSValueAuto);
         return createFromDouble(style.columnWidth());
@@ -555,7 +555,7 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyMotionOffset:
         return createFromLength(style.motionOffset(), style);
     case CSSPropertyMotionRotation:
-        return createFromDoubleAndBool(style.motionRotation(), style.motionRotationType() == MotionRotationAuto, style);
+        return createFromDoubleAndBool(style.motionRotation().angle, style.motionRotation().type == MotionRotationAuto, style);
     case CSSPropertyWebkitPerspectiveOriginX:
         return createFromLength(style.perspectiveOriginX(), style);
     case CSSPropertyWebkitPerspectiveOriginY:
@@ -573,8 +573,8 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyWordSpacing:
         return createFromDouble(style.wordSpacing());
     case CSSPropertyVerticalAlign:
-        if (style.verticalAlign() == LENGTH)
-            return createFromLength(style.verticalAlignLength(), style);
+        if (style.verticalAlign() == VerticalAlignLength)
+            return createFromLength(style.getVerticalAlignLength(), style);
         return AnimatableUnknown::create(CSSPrimitiveValue::create(style.verticalAlign()));
     case CSSPropertyVisibility:
         return AnimatableVisibility::create(style.visibility());

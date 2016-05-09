@@ -37,19 +37,16 @@ class ComputedStyle;
 class Element;
 class FileList;
 class HTMLInputElement;
-class LayoutMeter;
 class Theme;
 class ThemePainter;
 
 class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
 protected:
-    LayoutTheme();
+    explicit LayoutTheme(Theme*);
 
 public:
     virtual ~LayoutTheme() { }
 
-    // This function is to be implemented in your platform-specific theme implementation to hand back the
-    // appropriate platform theme.
     static LayoutTheme& theme();
 
     virtual ThemePainter& painter() = 0;
@@ -160,9 +157,6 @@ public:
     String formatMediaControlsTime(float time) const;
     String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
-    virtual IntSize meterSizeForBounds(const LayoutMeter&, const IntRect&) const;
-    virtual bool supportsMeter(ControlPart) const;
-
     // Returns size of one slider tick mark for a horizontal track.
     // For vertical tracks we rotate it and use it. i.e. Width is always length along the track.
     virtual IntSize sliderTickSize() const = 0;
@@ -202,7 +196,6 @@ protected:
 
     virtual bool themeDrawsFocusRing(const ComputedStyle&) const = 0;
 
-#if !USE(NEW_THEME)
     // Methods for each appearance value.
     virtual void adjustCheckboxStyle(ComputedStyle&) const;
     virtual void setCheckboxSize(ComputedStyle&) const { }
@@ -212,7 +205,6 @@ protected:
 
     virtual void adjustButtonStyle(ComputedStyle&) const;
     virtual void adjustInnerSpinButtonStyle(ComputedStyle&) const;
-#endif
 
     virtual void adjustMenuListStyle(ComputedStyle&, Element*) const;
     virtual void adjustMenuListButtonStyle(ComputedStyle&, Element*) const;
@@ -224,6 +216,8 @@ protected:
     void adjustStyleUsingFallbackTheme(ComputedStyle&);
     void adjustCheckboxStyleUsingFallbackTheme(ComputedStyle&) const;
     void adjustRadioStyleUsingFallbackTheme(ComputedStyle&) const;
+
+    bool hasPlatformTheme() const { return m_platformTheme; }
 
 public:
     // Methods for state querying
@@ -240,6 +234,10 @@ public:
     static bool isReadOnlyControl(const LayoutObject&);
 
 private:
+    // This function is to be implemented in your platform-specific theme implementation to hand back the
+    // appropriate platform theme.
+    static LayoutTheme& nativeTheme();
+
     Color m_customFocusRingColor;
     bool m_hasCustomFocusRingColor;
 
@@ -249,9 +247,7 @@ private:
 
     static const RGBA32 defaultCompositionBackgroundColor = 0xFFFFDD55;
 
-#if USE(NEW_THEME)
     Theme* m_platformTheme; // The platform-specific theme.
-#endif
 };
 
 } // namespace blink

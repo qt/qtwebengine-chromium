@@ -83,8 +83,20 @@ CGError CGSSetWindowBackgroundBlurRadius(CGSConnection connection,
 
 namespace {
 
+using RankMap = std::map<NSView*, int>;
+
+// SDK 10.11 contains incompatible changes of sortSubviewsUsingFunction.
+// It takes (__kindof NSView*) as comparator argument.
+// https://llvm.org/bugs/show_bug.cgi?id=25149
+#if !defined(MAC_OS_X_VERSION_10_11) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_11
+using NSViewComparatorValue = id;
+#else
+using NSViewComparatorValue = __kindof NSView*;
+#endif
+
 const CGFloat kMavericksMenuOpacity = 251.0 / 255.0;
-const CGFloat kYosemiteMenuOpacity = 194.0 / 255.0;
+const CGFloat kYosemiteMenuOpacity = 177.0 / 255.0;
 const int kYosemiteMenuBlur = 80;
 
 // Margin at edge and corners of the window that trigger resizing. These match
@@ -96,7 +108,7 @@ int kWindowPropertiesKey;
 
 float GetDeviceScaleFactorFromView(NSView* view) {
   gfx::Display display =
-      gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
+      gfx::Screen::GetScreen()->GetDisplayNearestWindow(view);
   DCHECK(display.is_valid());
   return display.device_scale_factor();
 }
@@ -263,6 +275,40 @@ scoped_refptr<base::SingleThreadTaskRunner> GetCompositorTaskRunner() {
   return task_runner ? task_runner : base::ThreadTaskRunnerHandle::Get();
 }
 
+void RankNSViews(views::View* view,
+                 const views::BridgedNativeWidget::AssociatedViews& hosts,
+                 RankMap* rank) {
+  auto it = hosts.find(view);
+  if (it != hosts.end())
+    rank->emplace(it->second, rank->size());
+  for (int i = 0; i < view->child_count(); ++i)
+    RankNSViews(view->child_at(i), hosts, rank);
+}
+
+NSComparisonResult SubviewSorter(NSViewComparatorValue lhs,
+                                 NSViewComparatorValue rhs,
+                                 void* rank_as_void) {
+  DCHECK_NE(lhs, rhs);
+
+  const RankMap* rank = static_cast<const RankMap*>(rank_as_void);
+  auto left_rank = rank->find(lhs);
+  auto right_rank = rank->find(rhs);
+  bool left_found = left_rank != rank->end();
+  bool right_found = right_rank != rank->end();
+
+  // Sort unassociated views above associated views.
+  if (left_found != right_found)
+    return left_found ? NSOrderedAscending : NSOrderedDescending;
+
+  if (left_found) {
+    return left_rank->second < right_rank->second ? NSOrderedAscending
+                                                  : NSOrderedDescending;
+  }
+
+  // If both are unassociated, consider that order is not important
+  return NSOrderedSame;
+}
+
 }  // namespace
 
 namespace views {
@@ -293,11 +339,7 @@ BridgedNativeWidget::BridgedNativeWidget(NativeWidgetMac* parent)
 }
 
 BridgedNativeWidget::~BridgedNativeWidget() {
-  RemoveOrDestroyChildren();
-  DCHECK(child_windows_.empty());
-  SetFocusManager(NULL);
-  SetRootView(NULL);
-  DestroyCompositor();
+  bool close_window = false;
   if ([window_ delegate]) {
     // If the delegate is still set on a modal dialog, it means it was not
     // closed via [NSApplication endSheet:]. This is probably OK if the widget
@@ -308,12 +350,31 @@ BridgedNativeWidget::~BridgedNativeWidget() {
     // So ban it. Modal dialogs should be closed via Widget::Close().
     DCHECK(!native_widget_mac_->IsWindowModalSheet());
 
-    // If the delegate is still set, it means OnWindowWillClose has not been
-    // called and the window is still open. Calling -[NSWindow close] will
-    // synchronously call OnWindowWillClose and notify NativeWidgetMac.
+    // If the delegate is still set, it means OnWindowWillClose() has not been
+    // called and the window is still open. Usually, -[NSWindow close] would
+    // synchronously call OnWindowWillClose() which removes the delegate and
+    // notifies NativeWidgetMac, which then calls this with a nil delegate.
+    // For other teardown flows (e.g. Widget::WIDGET_OWNS_NATIVE_WIDGET or
+    // Widget::CloseNow()) the delegate must first be cleared to avoid AppKit
+    // calling back into the bridge. This means OnWindowWillClose() needs to be
+    // invoked manually, which is done below.
+    // Note that if the window has children it can't be closed until the
+    // children are gone, but removing child windows calls into AppKit for the
+    // parent window, so the delegate must be cleared first.
+    [window_ setDelegate:nil];
+    close_window = true;
+  }
+
+  RemoveOrDestroyChildren();
+  DCHECK(child_windows_.empty());
+  SetFocusManager(nullptr);
+  SetRootView(nullptr);
+  DestroyCompositor();
+
+  if (close_window) {
+    OnWindowWillClose();
     [window_ close];
   }
-  DCHECK(![window_ delegate]);
 }
 
 void BridgedNativeWidget::Init(base::scoped_nsobject<NSWindow> window,
@@ -645,11 +706,6 @@ void BridgedNativeWidget::ToggleDesiredFullscreenState() {
   if (!window_visible_)
     SetVisibilityState(SHOW_INACTIVE);
 
-  if (base::mac::IsOSSnowLeopard()) {
-    NOTIMPLEMENTED();
-    return;  // TODO(tapted): Implement this for Snow Leopard.
-  }
-
   // Enable fullscreen collection behavior because:
   // 1: -[NSWindow toggleFullscreen:] would otherwise be ignored,
   // 2: the fullscreen button must be enabled so the user can leave fullscreen.
@@ -667,6 +723,14 @@ void BridgedNativeWidget::OnSizeChanged() {
     if ([window_ inLiveResize])
       MaybeWaitForFrame(new_size);
   }
+
+  // 10.9 is unable to generate a window shadow from the composited CALayer, so
+  // use Quartz.
+  // We don't update the window mask during a live resize, instead it is done
+  // after the resize is completed in viewDidEndLiveResize: in
+  // BridgedContentView.
+  if (base::mac::IsOSMavericksOrEarlier() && ![window_ inLiveResize])
+    [bridged_view_ updateWindowMask];
 }
 
 void BridgedNativeWidget::OnVisibilityChanged() {
@@ -850,10 +914,40 @@ void BridgedNativeWidget::CreateLayer(ui::LayerType layer_type,
   // native shape is what's most appropriate for displaying sheets on Mac.
   if (translucent && !native_widget_mac_->IsWindowModalSheet()) {
     [window_ setOpaque:NO];
-    [window_ setBackgroundColor:[NSColor clearColor]];
+    // For Mac OS versions earlier than Yosemite, the Window server isn't able
+    // to generate a window shadow from the composited CALayer. To get around
+    // this, let the window background remain opaque and clip the window
+    // boundary in drawRect method of BridgedContentView. See crbug.com/543671.
+    if (base::mac::IsOSYosemiteOrLater())
+      [window_ setBackgroundColor:[NSColor clearColor]];
   }
 
   UpdateLayerProperties();
+}
+
+void BridgedNativeWidget::SetAssociationForView(const views::View* view,
+                                                NSView* native_view) {
+  DCHECK_EQ(0u, associated_views_.count(view));
+  associated_views_[view] = native_view;
+  native_widget_mac_->GetWidget()->ReorderNativeViews();
+}
+
+void BridgedNativeWidget::ClearAssociationForView(const views::View* view) {
+  auto it = associated_views_.find(view);
+  DCHECK(it != associated_views_.end());
+  associated_views_.erase(it);
+}
+
+void BridgedNativeWidget::ReorderChildViews() {
+  RankMap rank;
+  Widget* widget = native_widget_mac_->GetWidget();
+  RankNSViews(widget->GetRootView(), associated_views_, &rank);
+  // Unassociated NSViews should be ordered above associated ones. The exception
+  // is the UI compositor's superview, which should always be on the very
+  // bottom, so give it an explicit negative rank.
+  if (compositor_superview_)
+    rank[compositor_superview_] = -1;
+  [bridged_view_ sortSubviewsUsingFunction:&SubviewSorter context:&rank];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -918,7 +1012,6 @@ void BridgedNativeWidget::OnDeviceScaleFactorChanged(
 }
 
 base::Closure BridgedNativeWidget::PrepareForLayerBoundsChange() {
-  NOTIMPLEMENTED();
   return base::Closure();
 }
 
@@ -1053,11 +1146,7 @@ void BridgedNativeWidget::CreateCompositor() {
 
   AddCompositorSuperview();
 
-  // TODO(tapted): Get this value from GpuDataManagerImpl via ViewsDelegate.
-  bool needs_gl_finish_workaround = false;
-
-  compositor_widget_.reset(
-      new ui::AcceleratedWidgetMac(needs_gl_finish_workaround));
+  compositor_widget_.reset(new ui::AcceleratedWidgetMac());
   compositor_.reset(
       new ui::Compositor(context_factory, GetCompositorTaskRunner()));
   compositor_->SetAcceleratedWidget(compositor_widget_->accelerated_widget());

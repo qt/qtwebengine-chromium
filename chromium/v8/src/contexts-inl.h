@@ -33,7 +33,8 @@ void ScriptContextTable::set_used(int used) {
 Handle<Context> ScriptContextTable::GetContext(Handle<ScriptContextTable> table,
                                                int i) {
   DCHECK(i < table->used());
-  return Handle<Context>::cast(FixedArray::get(table, i + kFirstContextSlot));
+  return Handle<Context>::cast(
+      FixedArray::get(*table, i + kFirstContextSlot, table->GetIsolate()));
 }
 
 
@@ -104,6 +105,10 @@ bool Context::IsWithContext() {
   return map == map->GetHeap()->with_context_map();
 }
 
+bool Context::IsDebugEvaluateContext() {
+  Map* map = this->map();
+  return map == map->GetHeap()->debug_evaluate_context_map();
+}
 
 bool Context::IsBlockContext() {
   Map* map = this->map();

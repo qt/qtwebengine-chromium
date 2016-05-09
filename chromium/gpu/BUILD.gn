@@ -45,7 +45,9 @@ component("gpu") {
     "//gpu/command_buffer/common:common_sources",
     "//gpu/command_buffer/service:service_sources",
     "//gpu/config:config_sources",
-    "//gpu/ipc:ipc_sources",
+    "//gpu/ipc/client:ipc_client_sources",
+    "//gpu/ipc/common:ipc_common_sources",
+    "//gpu/ipc/service:ipc_service_sources",
   ]
 }
 
@@ -60,6 +62,8 @@ shared_library("command_buffer_gles2") {
     "gles2_conform_support/egl/egl.cc",
     "gles2_conform_support/egl/surface.cc",
     "gles2_conform_support/egl/surface.h",
+    "gles2_conform_support/egl/test_support.cc",
+    "gles2_conform_support/egl/test_support.h",
   ]
 
   deps = [
@@ -78,6 +82,43 @@ shared_library("command_buffer_gles2") {
     defines += [ "EGLAPI=__declspec(dllexport)" ]
   } else {
     defines += [ "EGLAPI=__attribute__((visibility(\"default\")))" ]
+  }
+}
+
+# GYP version: //gpu/gpu.gyp:command_buffer_gles2_tests
+test("command_buffer_gles2_tests") {
+  sources = [
+    "command_buffer/tests/command_buffer_gles2_tests_main.cc",
+    "command_buffer/tests/egl_test.cc",
+  ]
+
+  deps = [
+    ":command_buffer_gles2",
+    "//base",
+    "//base/test:test_support",
+    "//base/third_party/dynamic_annotations",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+
+  defines = [
+    "COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY",
+    "EGLAPIENTRY=",
+  ]
+  if (current_os == "win") {
+    defines += [ "EGLAPI=__declspec(dllimport)" ]
+  } else {
+    defines += [ "EGLAPI=" ]
+  }
+
+  libs = []
+
+  if (is_android) {
+    libs += [ "android" ]
+    deps += [ "//ui/android:ui_java" ]
+  }
+  if (!is_component_build) {
+    configs += [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
   }
 }
 
@@ -101,13 +142,6 @@ source_set("test_support") {
   ]
 }
 
-group("gl_tests_run") {
-  testonly = true
-  deps = [
-    ":gl_tests",
-  ]
-}
-
 test("gl_tests") {
   sources = [
     "command_buffer/tests/compressed_texture_test.cc",
@@ -118,14 +152,17 @@ test("gl_tests") {
     "command_buffer/tests/gl_chromium_path_rendering_unittest.cc",
     "command_buffer/tests/gl_clear_framebuffer_unittest.cc",
     "command_buffer/tests/gl_compressed_copy_texture_CHROMIUM_unittest.cc",
+    "command_buffer/tests/gl_copy_tex_image_2d_workaround_unittest.cc",
     "command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc",
     "command_buffer/tests/gl_cube_map_texture_unittest.cc",
     "command_buffer/tests/gl_depth_texture_unittest.cc",
+    "command_buffer/tests/gl_dynamic_config_unittest.cc",
     "command_buffer/tests/gl_ext_blend_func_extended_unittest.cc",
     "command_buffer/tests/gl_ext_multisample_compatibility_unittest.cc",
     "command_buffer/tests/gl_ext_srgb_unittest.cc",
     "command_buffer/tests/gl_fence_sync_unittest.cc",
     "command_buffer/tests/gl_gpu_memory_buffer_unittest.cc",
+    "command_buffer/tests/gl_iosurface_readback_workaround_unittest.cc",
     "command_buffer/tests/gl_lose_context_chromium_unittest.cc",
     "command_buffer/tests/gl_manager.cc",
     "command_buffer/tests/gl_manager.h",
@@ -133,6 +170,7 @@ test("gl_tests") {
     "command_buffer/tests/gl_program_unittest.cc",
     "command_buffer/tests/gl_query_unittest.cc",
     "command_buffer/tests/gl_readback_unittest.cc",
+    "command_buffer/tests/gl_request_extension_unittest.cc",
     "command_buffer/tests/gl_shared_resources_unittest.cc",
     "command_buffer/tests/gl_stream_draw_unittest.cc",
     "command_buffer/tests/gl_test_utils.cc",
@@ -176,15 +214,6 @@ test("gl_tests") {
   }
 }
 
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("gpu_unittests_run") {
-  testonly = true
-  deps = [
-    ":gpu_unittests",
-  ]
-}
-
 test("gpu_unittests") {
   sources = [
     "command_buffer/client/buffer_tracker_unittest.cc",
@@ -208,11 +237,12 @@ test("gpu_unittests") {
     "command_buffer/common/gles2_cmd_format_test_autogen.h",
     "command_buffer/common/gles2_cmd_utils_unittest.cc",
     "command_buffer/common/id_allocator_test.cc",
-    "command_buffer/common/trace_event.h",
+    "command_buffer/common/id_type_unittest.cc",
     "command_buffer/common/unittest_main.cc",
     "command_buffer/service/buffer_manager_unittest.cc",
     "command_buffer/service/cmd_parser_test.cc",
     "command_buffer/service/command_buffer_service_unittest.cc",
+    "command_buffer/service/command_executor_unittest.cc",
     "command_buffer/service/common_decoder_unittest.cc",
     "command_buffer/service/context_group_unittest.cc",
     "command_buffer/service/context_state_unittest.cc",
@@ -243,7 +273,6 @@ test("gpu_unittests") {
     "command_buffer/service/gles2_cmd_decoder_unittest_programs.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_textures.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_valuebuffer.cc",
-    "command_buffer/service/gpu_scheduler_unittest.cc",
     "command_buffer/service/gpu_service_test.cc",
     "command_buffer/service/gpu_service_test.h",
     "command_buffer/service/gpu_tracer_unittest.cc",
@@ -280,7 +309,12 @@ test("gpu_unittests") {
     "config/gpu_test_config_unittest.cc",
     "config/gpu_test_expectations_parser_unittest.cc",
     "config/gpu_util_unittest.cc",
+    "ipc/client/gpu_memory_buffer_impl_shared_memory_unittest.cc",
+    "ipc/client/gpu_memory_buffer_impl_test_template.h",
   ]
+  if (is_mac) {
+    sources += [ "ipc/client/gpu_memory_buffer_impl_io_surface_unittest.cc" ]
+  }
 
   configs += [
     "//build/config:precompiled_headers",
@@ -295,6 +329,7 @@ test("gpu_unittests") {
     "//base",
     "//base/test:test_support",
     "//base/third_party/dynamic_annotations",
+    "//gpu/command_buffer/client:gl_in_process_context",
     "//gpu/command_buffer/client:gles2_c_lib",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/command_buffer/common:gles2_utils",
@@ -308,6 +343,12 @@ test("gpu_unittests") {
     "//ui/gl:gl_unittest_utils",
     "//ui/gl:test_support",
   ]
+
+  if (use_ozone) {
+    deps += [ "//ui/ozone" ]
+    sources +=
+        [ "ipc/client/gpu_memory_buffer_impl_ozone_native_pixmap_unittest.cc" ]
+  }
 }
 
 test("gpu_perftests") {
@@ -327,24 +368,4 @@ test("gpu_perftests") {
     "//ui/gfx/geometry",
     "//ui/gl",
   ]
-}
-
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("angle_unittests_run") {
-  testonly = true
-  deps = [
-    "//third_party/angle/src/tests:angle_unittests",
-  ]
-}
-
-if (is_win || is_linux || is_mac) {
-  # TODO(GYP): Delete this after we've converted everything to GN.
-  # The _run targets exist only for compatibility w/ GYP.
-  group("angle_end2end_tests_run") {
-    testonly = true
-    deps = [
-      "//third_party/angle/src/tests:angle_end2end_tests",
-    ]
-  }
 }

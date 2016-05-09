@@ -56,13 +56,13 @@ AddressSorterPosix::PolicyTable LoadPolicy(
 // Search |table| for matching prefix of |address|. |table| must be sorted by
 // descending prefix (prefix of another prefix must be later in table).
 unsigned GetPolicyValue(const AddressSorterPosix::PolicyTable& table,
-                        const IPAddressNumber& address) {
-  if (address.size() == kIPv4AddressSize)
-    return GetPolicyValue(table, ConvertIPv4NumberToIPv6Number(address));
+                        const IPAddress& address) {
+  if (address.IsIPv4())
+    return GetPolicyValue(table, ConvertIPv4ToIPv4MappedIPv6(address));
   for (unsigned i = 0; i < table.size(); ++i) {
     const AddressSorterPosix::PolicyEntry& entry = table[i];
-    IPAddressNumber prefix(entry.prefix, entry.prefix + kIPv6AddressSize);
-    if (IPNumberMatchesPrefix(address, prefix, entry.prefix_length))
+    IPAddress prefix(entry.prefix);
+    if (IPAddressMatchesPrefix(address, prefix, entry.prefix_length))
       return entry.value;
   }
   NOTREACHED();
@@ -70,43 +70,39 @@ unsigned GetPolicyValue(const AddressSorterPosix::PolicyTable& table,
   return table.back().value;
 }
 
-bool IsIPv6Multicast(const IPAddressNumber& address) {
-  DCHECK_EQ(kIPv6AddressSize, address.size());
-  return address[0] == 0xFF;
+bool IsIPv6Multicast(const IPAddress& address) {
+  DCHECK(address.IsIPv6());
+  return address.bytes()[0] == 0xFF;
 }
 
 AddressSorterPosix::AddressScope GetIPv6MulticastScope(
-    const IPAddressNumber& address) {
-  DCHECK_EQ(kIPv6AddressSize, address.size());
-  return static_cast<AddressSorterPosix::AddressScope>(address[1] & 0x0F);
+    const IPAddress& address) {
+  DCHECK(address.IsIPv6());
+  return static_cast<AddressSorterPosix::AddressScope>(address.bytes()[1] &
+                                                       0x0F);
 }
 
-bool IsIPv6Loopback(const IPAddressNumber& address) {
-  DCHECK_EQ(kIPv6AddressSize, address.size());
-  // IN6_IS_ADDR_LOOPBACK
-  unsigned char kLoopback[kIPv6AddressSize] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 1,
-  };
-  return address == IPAddressNumber(kLoopback, kLoopback + kIPv6AddressSize);
+bool IsIPv6Loopback(const IPAddress& address) {
+  DCHECK(address.IsIPv6());
+  return address == IPAddress::IPv6Localhost();
 }
 
-bool IsIPv6LinkLocal(const IPAddressNumber& address) {
-  DCHECK_EQ(kIPv6AddressSize, address.size());
+bool IsIPv6LinkLocal(const IPAddress& address) {
+  DCHECK(address.IsIPv6());
   // IN6_IS_ADDR_LINKLOCAL
-  return (address[0] == 0xFE) && ((address[1] & 0xC0) == 0x80);
+  return (address.bytes()[0] == 0xFE) && ((address.bytes()[1] & 0xC0) == 0x80);
 }
 
-bool IsIPv6SiteLocal(const IPAddressNumber& address) {
-  DCHECK_EQ(kIPv6AddressSize, address.size());
+bool IsIPv6SiteLocal(const IPAddress& address) {
+  DCHECK(address.IsIPv6());
   // IN6_IS_ADDR_SITELOCAL
-  return (address[0] == 0xFE) && ((address[1] & 0xC0) == 0xC0);
+  return (address.bytes()[0] == 0xFE) && ((address.bytes()[1] & 0xC0) == 0xC0);
 }
 
 AddressSorterPosix::AddressScope GetScope(
     const AddressSorterPosix::PolicyTable& ipv4_scope_table,
-    const IPAddressNumber& address) {
-  if (address.size() == kIPv6AddressSize) {
+    const IPAddress& address) {
+  if (address.IsIPv6()) {
     if (IsIPv6Multicast(address)) {
       return GetIPv6MulticastScope(address);
     } else if (IsIPv6Loopback(address) || IsIPv6LinkLocal(address)) {
@@ -116,7 +112,7 @@ AddressSorterPosix::AddressScope GetScope(
     } else {
       return AddressSorterPosix::SCOPE_GLOBAL;
     }
-  } else if (address.size() == kIPv4AddressSize) {
+  } else if (address.IsIPv4()) {
     return static_cast<AddressSorterPosix::AddressScope>(
         GetPolicyValue(ipv4_scope_table, address));
   } else {
@@ -178,7 +174,7 @@ AddressSorterPosix::PolicyEntry kDefaultIPv4ScopeTable[] = {
 };
 
 struct DestinationInfo {
-  IPAddressNumber address;
+  IPAddress address;
   AddressSorterPosix::AddressScope scope;
   unsigned precedence;
   unsigned label;
@@ -302,9 +298,9 @@ void AddressSorterPosix::Sort(const AddressList& list,
     info->src = &src_info;
 
     if (info->address.size() == src.address().size()) {
-      info->common_prefix_length = std::min(
-          CommonPrefixLength(info->address, src.address()),
-          info->src->prefix_length);
+      info->common_prefix_length =
+          std::min(CommonPrefixLength(info->address, src.address()),
+                   info->src->prefix_length);
     }
     sort_list.push_back(std::move(info));
   }
@@ -329,7 +325,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
   typedef internal::AddressTrackerLinux::AddressMap AddressMap;
   AddressMap map = tracker->GetAddressMap();
   for (AddressMap::const_iterator it = map.begin(); it != map.end(); ++it) {
-    const IPAddressNumber& address = it->first;
+    const IPAddress& address = it->first;
     const struct ifaddrmsg& msg = it->second;
     SourceAddressInfo& info = source_map_[address];
     info.native = false;  // TODO(szym): obtain this via netlink.
@@ -387,7 +383,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
 #endif
 }
 
-void AddressSorterPosix::FillPolicy(const IPAddressNumber& address,
+void AddressSorterPosix::FillPolicy(const IPAddress& address,
                                     SourceAddressInfo* info) const {
   DCHECK(CalledOnValidThread());
   info->scope = GetScope(ipv4_scope_table_, address);

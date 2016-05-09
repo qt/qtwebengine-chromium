@@ -9,35 +9,45 @@
 
 #include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "net/cookies/cookie_constants.h"
 #include "url/gurl.h"
 
 namespace net {
 
 class NET_EXPORT CookieOptions {
  public:
+  enum class SameSiteCookieMode {
+    INCLUDE_STRICT_AND_LAX,
+    INCLUDE_LAX,
+    DO_NOT_INCLUDE
+  };
+
   // Creates a CookieOptions object which:
   //
   // * Excludes HttpOnly cookies
-  // * Excludes First-Party-Only cookies
+  // * Excludes SameSite cookies
   // * Does not enforce prefix restrictions (e.g. "$Secure-*")
+  // * Updates last-accessed time.
   //
   // These settings can be altered by calling:
   //
   // * |set_{include,exclude}_httponly()|
-  // * |set_include_first_party_only_cookies()|
+  // * |set_same_site_cookie_mode(
+  //        CookieOptions::SameSiteCookieMode::INCLUDE_STRICT_AND_LAX)|
   // * |set_enforce_prefixes()|
+  // * |set_do_not_update_access_time()|
   CookieOptions();
 
   void set_exclude_httponly() { exclude_httponly_ = true; }
   void set_include_httponly() { exclude_httponly_ = false; }
   bool exclude_httponly() const { return exclude_httponly_; }
 
-  // Default is to exclude 'first-party-only' cookies.
-  void set_include_first_party_only_cookies() {
-    include_first_party_only_cookies_ = true;
+  // Default is to exclude 'same_site' cookies.
+  void set_same_site_cookie_mode(SameSiteCookieMode mode) {
+    same_site_cookie_mode_ = mode;
   }
-  bool include_first_party_only_cookies() const {
-    return include_first_party_only_cookies_;
+  SameSiteCookieMode same_site_cookie_mode() const {
+    return same_site_cookie_mode_;
   }
 
   // TODO(jww): Remove once we decide whether to ship modifying 'secure' cookies
@@ -54,10 +64,14 @@ class NET_EXPORT CookieOptions {
   bool has_server_time() const { return !server_time_.is_null(); }
   base::Time server_time() const { return server_time_; }
 
+  void set_do_not_update_access_time() { update_access_time_ = false; }
+  bool update_access_time() const { return update_access_time_; }
+
  private:
   bool exclude_httponly_;
-  bool include_first_party_only_cookies_;
+  SameSiteCookieMode same_site_cookie_mode_;
   bool enforce_strict_secure_;
+  bool update_access_time_;
   base::Time server_time_;
 };
 

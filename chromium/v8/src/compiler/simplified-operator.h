@@ -15,10 +15,7 @@ namespace v8 {
 namespace internal {
 
 // Forward declarations.
-template <class>
-class TypeImpl;
-struct ZoneTypeConfig;
-typedef TypeImpl<ZoneTypeConfig> Type;
+class Type;
 class Zone;
 
 
@@ -146,6 +143,11 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* NumberShiftLeft();
   const Operator* NumberShiftRight();
   const Operator* NumberShiftRightLogical();
+  const Operator* NumberClz32();
+  const Operator* NumberCeil();
+  const Operator* NumberFloor();
+  const Operator* NumberRound();
+  const Operator* NumberTrunc();
   const Operator* NumberToInt32();
   const Operator* NumberToUint32();
   const Operator* NumberIsHoleNaN();
@@ -157,6 +159,7 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* StringEqual();
   const Operator* StringLessThan();
   const Operator* StringLessThanOrEqual();
+  const Operator* StringToNumber();
 
   const Operator* ChangeTaggedToInt32();
   const Operator* ChangeTaggedToUint32();
@@ -168,7 +171,9 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* ChangeBitToBool();
 
   const Operator* ObjectIsNumber();
+  const Operator* ObjectIsReceiver();
   const Operator* ObjectIsSmi();
+  const Operator* ObjectIsUndetectable();
 
   const Operator* Allocate(PretenureFlag pretenure = NOT_TENURED);
 

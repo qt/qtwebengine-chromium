@@ -1,7 +1,7 @@
-diff --git a/pr/include/prtypes.h b/pr/include/prtypes.h
+diff --git a/nspr/pr/include/prtypes.h b/nspr/pr/include/prtypes.h
 index 52b3ab0..d78f580 100644
---- a/pr/include/prtypes.h
-+++ b/pr/include/prtypes.h
+--- a/nspr/pr/include/prtypes.h
++++ b/nspr/pr/include/prtypes.h
 @@ -48,7 +48,23 @@
  **
  **
@@ -27,10 +27,10 @@ index 52b3ab0..d78f580 100644
  
  #define PR_EXPORT(__type) extern __declspec(dllexport) __type
  #define PR_EXPORT_DATA(__type) extern __declspec(dllexport) __type
-diff --git a/pr/src/md/windows/w95dllmain.c b/pr/src/md/windows/w95dllmain.c
+diff --git a/nspr/pr/src/md/windows/w95dllmain.c b/nspr/pr/src/md/windows/w95dllmain.c
 index 73707a6..90957c1 100644
---- a/pr/src/md/windows/w95dllmain.c
-+++ b/pr/src/md/windows/w95dllmain.c
+--- a/nspr/pr/src/md/windows/w95dllmain.c
++++ b/nspr/pr/src/md/windows/w95dllmain.c
 @@ -3,6 +3,8 @@
   * License, v. 2.0. If a copy of the MPL was not distributed with this
   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,11 +46,11 @@ index 73707a6..90957c1 100644
  }
 +
 +#endif
-diff --git a/pr/src/md/windows/w95thred.c b/pr/src/md/windows/w95thred.c
-index 932c50c..f5c7703 100644
---- a/pr/src/md/windows/w95thred.c
-+++ b/pr/src/md/windows/w95thred.c
-@@ -318,3 +318,120 @@ PRThread *thread;
+diff --git a/nspr/pr/src/md/windows/w95thred.c b/nspr/pr/src/md/windows/w95thred.c
+index c27d982..52bfb02 100644
+--- a/nspr/pr/src/md/windows/w95thred.c
++++ b/nspr/pr/src/md/windows/w95thred.c
+@@ -323,3 +323,120 @@ PRThread *thread;
  	PR_ASSERT(thread != NULL);
  	return thread;
  }

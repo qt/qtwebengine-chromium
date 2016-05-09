@@ -13,6 +13,7 @@
 
 namespace net {
 
+class IPAddress;
 class IPEndPoint;
 class IOBuffer;
 
@@ -31,23 +32,19 @@ class NET_EXPORT DatagramServerSocket : public DatagramSocket {
   // |address| is a buffer provided by the caller for receiving the sender
   //   address information about the received data.  This buffer must be kept
   //   alive by the caller until the callback is placed.
-  // |address_length| is a ptr to the length of the |address| buffer.  This
-  //   is an input parameter containing the maximum size |address| can hold
-  //   and also an output parameter for the size of |address| upon completion.
   // |callback| is the callback on completion of the RecvFrom.
   // Returns a net error code, or ERR_IO_PENDING if the IO is in progress.
-  // If ERR_IO_PENDING is returned, the caller must keep |buf|, |address|,
-  // and |address_length| alive until the callback is called.
+  // If ERR_IO_PENDING is returned, the caller must keep |buf| and |address|
+  // alive until the callback is called.
   virtual int RecvFrom(IOBuffer* buf,
                        int buf_len,
                        IPEndPoint* address,
                        const CompletionCallback& callback) = 0;
 
   // Send to a socket with a particular destination.
-  // |buf| is the buffer to send
-  // |buf_len| is the number of bytes to send
+  // |buf| is the buffer to send.
+  // |buf_len| is the number of bytes to send.
   // |address| is the recipient address.
-  // |address_length| is the size of the recipient address
   // |callback| is the user callback function to call on complete.
   // Returns a net error code, or ERR_IO_PENDING if the IO is in progress.
   // If ERR_IO_PENDING is returned, the caller must keep |buf| and |address|
@@ -75,14 +72,14 @@ class NET_EXPORT DatagramServerSocket : public DatagramSocket {
 
   // Join the multicast group with address |group_address|.
   // Returns a network error code.
-  virtual int JoinGroup(const IPAddressNumber& group_address) const = 0;
+  virtual int JoinGroup(const IPAddress& group_address) const = 0;
 
   // Leave the multicast group with address |group_address|.
   // If the socket hasn't joined the group, it will be ignored.
   // It's optional to leave the multicast group before destroying
   // the socket. It will be done by the OS.
   // Returns a network error code.
-  virtual int LeaveGroup(const IPAddressNumber& group_address) const = 0;
+  virtual int LeaveGroup(const IPAddress& group_address) const = 0;
 
   // Set interface to use for multicast. If |interface_index| set to 0, default
   // interface is used.

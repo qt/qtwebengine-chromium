@@ -30,7 +30,6 @@
 #include "core/workers/WorkerConsole.h"
 
 #include "core/inspector/ConsoleMessage.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
@@ -47,7 +46,7 @@ WorkerConsole::~WorkerConsole()
 {
 }
 
-void WorkerConsole::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
+void WorkerConsole::reportMessageToConsole(ConsoleMessage* consoleMessage)
 {
     m_scope->addConsoleMessage(consoleMessage);
 }
@@ -56,7 +55,7 @@ ExecutionContext* WorkerConsole::context()
 {
     if (!m_scope)
         return nullptr;
-    return m_scope->executionContext();
+    return m_scope->getExecutionContext();
 }
 
 DEFINE_TRACE(WorkerConsole)

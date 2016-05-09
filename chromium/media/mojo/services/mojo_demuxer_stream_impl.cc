@@ -12,7 +12,7 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder_config.h"
-#include "media/mojo/services/media_type_converters.h"
+#include "media/mojo/common/media_type_converters.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 
 namespace media {
@@ -75,6 +75,10 @@ void MojoDemuxerStreamImpl::Read(const ReadCallback& callback)  {
                            weak_factory_.GetWeakPtr(), callback));
 }
 
+void MojoDemuxerStreamImpl::EnableBitstreamConverter() {
+  stream_->EnableBitstreamConverter();
+}
+
 void MojoDemuxerStreamImpl::OnBufferReady(
     const ReadCallback& callback,
     media::DemuxerStream::Status status,
@@ -97,14 +101,14 @@ void MojoDemuxerStreamImpl::OnBufferReady(
                    << stream_->type();
     }
 
-    callback.Run(interfaces::DemuxerStream::STATUS_CONFIG_CHANGED,
+    callback.Run(interfaces::DemuxerStream::Status::CONFIG_CHANGED,
                  interfaces::DecoderBufferPtr(), std::move(audio_config),
                  std::move(video_config));
     return;
   }
 
   if (status == media::DemuxerStream::kAborted) {
-    callback.Run(interfaces::DemuxerStream::STATUS_ABORTED,
+    callback.Run(interfaces::DemuxerStream::Status::ABORTED,
                  interfaces::DecoderBufferPtr(), std::move(audio_config),
                  std::move(video_config));
     return;

@@ -18,7 +18,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/network_interfaces.h"
 #include "net/base/zap.h"
 #include "net/http/des.h"
 #include "net/http/md4.h"
@@ -714,6 +714,7 @@ int HttpAuthHandlerNTLM::GetNextToken(const void* in_token,
 int HttpAuthHandlerNTLM::Factory::CreateAuthHandler(
     HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
+    const SSLInfo& ssl_info,
     const GURL& origin,
     CreateReason reason,
     int digest_nonce_count,
@@ -726,7 +727,8 @@ int HttpAuthHandlerNTLM::Factory::CreateAuthHandler(
   // NOTE: Default credentials are not supported for the portable implementation
   // of NTLM.
   scoped_ptr<HttpAuthHandler> tmp_handler(new HttpAuthHandlerNTLM);
-  if (!tmp_handler->InitFromChallenge(challenge, target, origin, net_log))
+  if (!tmp_handler->InitFromChallenge(challenge, target, ssl_info, origin,
+                                      net_log))
     return ERR_INVALID_RESPONSE;
   handler->swap(tmp_handler);
   return OK;

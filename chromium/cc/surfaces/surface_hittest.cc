@@ -108,6 +108,13 @@ bool SurfaceHittest::GetTargetSurfaceAtPointInternal(
         *out_transform = transform_to_child_space * target_to_quad_transform *
                          transform_from_root_target;
         return true;
+      } else if (delegate_ &&
+                 delegate_->AcceptHitTarget(surface_quad,
+                                            point_in_quad_space)) {
+        *out_surface_id = surface_quad->surface_id;
+        *out_transform = transform_to_child_space * target_to_quad_transform *
+                         transform_from_root_target;
+        return true;
       }
 
       continue;

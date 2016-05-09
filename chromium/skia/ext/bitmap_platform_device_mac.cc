@@ -17,11 +17,23 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/skia/include/core/SkTypes.h"
-#include "third_party/skia/include/core/SkUtils.h"
 
 namespace skia {
 
 namespace {
+
+// Returns true if it is unsafe to attempt to allocate an offscreen buffer
+// given these dimensions.
+bool RasterDeviceTooBigToAllocate(int width, int height) {
+
+#ifndef SKIA_EXT_RASTER_DEVICE_ALLOCATION_MAX
+#define SKIA_EXT_RASTER_DEVICE_ALLOCATION_MAX    (2 * 256 * 1024 * 1024)
+#endif
+
+    int bytesPerPixel = 4;
+    int64_t bytes = (int64_t)width * height * bytesPerPixel;
+    return bytes > SKIA_EXT_RASTER_DEVICE_ALLOCATION_MAX;
+}
 
 static CGContextRef CGContextForData(void* data, int width, int height) {
 #define HAS_ARGB_SHIFTS(a, r, g, b) \
@@ -287,14 +299,14 @@ SkBaseDevice* BitmapPlatformDevice::onCreateDevice(const CreateInfo& cinfo,
 SkCanvas* CreatePlatformCanvas(CGContextRef ctx, int width, int height,
                                bool is_opaque, OnFailureType failureType) {
   const bool do_clear = false;
-  skia::RefPtr<SkBaseDevice> dev = skia::AdoptRef(
+  sk_sp<SkBaseDevice> dev(
       BitmapPlatformDevice::Create(ctx, width, height, is_opaque, do_clear));
   return CreateCanvas(dev, failureType);
 }
 
 SkCanvas* CreatePlatformCanvas(int width, int height, bool is_opaque,
                                uint8_t* data, OnFailureType failureType) {
-  skia::RefPtr<SkBaseDevice> dev = skia::AdoptRef(
+  sk_sp<SkBaseDevice> dev(
       BitmapPlatformDevice::CreateWithData(data, width, height, is_opaque));
   return CreateCanvas(dev, failureType);
 }

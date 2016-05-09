@@ -10,9 +10,9 @@ namespace blink {
 
 namespace {
 
-class TestCancellableTaskFactory : public CancellableTaskFactory {
+class TestCancellableTaskFactory final : public CancellableTaskFactory {
 public:
-    explicit TestCancellableTaskFactory(PassOwnPtr<Closure> closure)
+    explicit TestCancellableTaskFactory(PassOwnPtr<SameThreadClosure> closure)
         : CancellableTaskFactory(closure)
     {
     }

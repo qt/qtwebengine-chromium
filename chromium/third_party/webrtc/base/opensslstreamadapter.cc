@@ -8,10 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#if HAVE_CONFIG_H
-#include "config.h"
-#endif  // HAVE_CONFIG_H
-
 #if HAVE_OPENSSL_SSL_H
 
 #include "webrtc/base/opensslstreamadapter.h"
@@ -146,32 +142,6 @@ static const SslCipherMapEntry kSslCipherMap[] = {
 #pragma warning(disable : 4309)
 #pragma warning(disable : 4310)
 #endif  // defined(_MSC_VER)
-
-// Default cipher used between OpenSSL/BoringSSL stream adapters.
-// This needs to be updated when the default of the SSL library changes.
-// static_cast<uint16_t> causes build warnings on windows platform.
-static int kDefaultSslCipher10 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA);
-static int kDefaultSslEcCipher10 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
-#ifdef OPENSSL_IS_BORINGSSL
-static int kDefaultSslCipher12 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
-static int kDefaultSslEcCipher12 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
-// Fallback cipher for DTLS 1.2 if hardware-accelerated AES-GCM is unavailable.
-static int kDefaultSslCipher12NoAesGcm =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
-static int kDefaultSslEcCipher12NoAesGcm =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256);
-#else  // !OPENSSL_IS_BORINGSSL
-// OpenSSL sorts differently than BoringSSL, so the default cipher doesn't
-// change between TLS 1.0 and TLS 1.2 with the current setup.
-static int kDefaultSslCipher12 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA);
-static int kDefaultSslEcCipher12 =
-    static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
-#endif  // OPENSSL_IS_BORINGSSL
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -320,12 +290,11 @@ void OpenSSLStreamAdapter::SetServerRole(SSLRole role) {
   role_ = role;
 }
 
-bool OpenSSLStreamAdapter::GetPeerCertificate(SSLCertificate** cert) const {
-  if (!peer_certificate_)
-    return false;
-
-  *cert = peer_certificate_->GetReference();
-  return true;
+rtc::scoped_ptr<SSLCertificate> OpenSSLStreamAdapter::GetPeerCertificate()
+    const {
+  return peer_certificate_ ? rtc::scoped_ptr<SSLCertificate>(
+                                 peer_certificate_->GetReference())
+                           : nullptr;
 }
 
 bool OpenSSLStreamAdapter::SetPeerCertificateDigest(const std::string
@@ -383,6 +352,28 @@ bool OpenSSLStreamAdapter::GetSslCipherSuite(int* cipher_suite) {
 
   *cipher_suite = static_cast<uint16_t>(SSL_CIPHER_get_id(current_cipher));
   return true;
+}
+
+int OpenSSLStreamAdapter::GetSslVersion() const {
+  if (state_ != SSL_CONNECTED)
+    return -1;
+
+  int ssl_version = SSL_version(ssl_);
+  if (ssl_mode_ == SSL_MODE_DTLS) {
+    if (ssl_version == DTLS1_VERSION)
+      return SSL_PROTOCOL_DTLS_10;
+    else if (ssl_version == DTLS1_2_VERSION)
+      return SSL_PROTOCOL_DTLS_12;
+  } else {
+    if (ssl_version == TLS1_VERSION)
+      return SSL_PROTOCOL_TLS_10;
+    else if (ssl_version == TLS1_1_VERSION)
+      return SSL_PROTOCOL_TLS_11;
+    else if (ssl_version == TLS1_2_VERSION)
+      return SSL_PROTOCOL_TLS_12;
+  }
+
+  return -1;
 }
 
 // Key Extractor interface
@@ -617,6 +608,10 @@ StreamResult OpenSSLStreamAdapter::Read(void* data, size_t data_len,
       return SR_BLOCK;
     case SSL_ERROR_ZERO_RETURN:
       LOG(LS_VERBOSE) << " -- remote side closed";
+      // When we're closed at SSL layer, also close the stream level which
+      // performs necessary clean up. Otherwise, a new incoming packet after
+      // this could overflow the stream buffer.
+      this->stream()->Close();
       return SR_EOS;
       break;
     default:
@@ -783,15 +778,18 @@ int OpenSSLStreamAdapter::BeginSSL() {
   SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE |
                SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
-  // Specify an ECDH group for ECDHE ciphers, otherwise they cannot be
-  // negotiated when acting as the server. Use NIST's P-256 which is commonly
-  // supported.
+#if !defined(OPENSSL_IS_BORINGSSL)
+  // Specify an ECDH group for ECDHE ciphers, otherwise OpenSSL cannot
+  // negotiate them when acting as the server. Use NIST's P-256 which is
+  // commonly supported. BoringSSL doesn't need explicit configuration and has
+  // a reasonable default set.
   EC_KEY* ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
   if (ecdh == NULL)
     return -1;
   SSL_set_options(ssl_, SSL_OP_SINGLE_ECDH_USE);
   SSL_set_tmp_ecdh(ssl_, ecdh);
   EC_KEY_free(ecdh);
+#endif
 
   // Do the connect
   return ContinueSSL();
@@ -1124,46 +1122,71 @@ bool OpenSSLStreamAdapter::HaveExporter() {
 #endif
 }
 
-int OpenSSLStreamAdapter::GetDefaultSslCipherForTest(SSLProtocolVersion version,
-                                                     KeyType key_type) {
+#define CDEF(X) \
+  { static_cast<uint16_t>(TLS1_CK_##X & 0xffff), "TLS_" #X }
+
+struct cipher_list {
+  uint16_t cipher;
+  const char* cipher_str;
+};
+
+// TODO(torbjorng): Perhaps add more cipher suites to these lists.
+static const cipher_list OK_RSA_ciphers[] = {
+  CDEF(ECDHE_RSA_WITH_AES_128_CBC_SHA),
+  CDEF(ECDHE_RSA_WITH_AES_256_CBC_SHA),
+  CDEF(ECDHE_RSA_WITH_AES_128_GCM_SHA256),
+#ifdef TLS1_CK_ECDHE_RSA_WITH_AES_256_GCM_SHA256
+  CDEF(ECDHE_RSA_WITH_AES_256_GCM_SHA256),
+#endif
+  CDEF(ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256),
+};
+
+static const cipher_list OK_ECDSA_ciphers[] = {
+  CDEF(ECDHE_ECDSA_WITH_AES_128_CBC_SHA),
+  CDEF(ECDHE_ECDSA_WITH_AES_256_CBC_SHA),
+  CDEF(ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
+#ifdef TLS1_CK_ECDHE_ECDSA_WITH_AES_256_GCM_SHA256
+  CDEF(ECDHE_ECDSA_WITH_AES_256_GCM_SHA256),
+#endif
+  CDEF(ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256),
+};
+#undef CDEF
+
+bool OpenSSLStreamAdapter::IsAcceptableCipher(int cipher, KeyType key_type) {
   if (key_type == KT_RSA) {
-    switch (version) {
-      case SSL_PROTOCOL_TLS_10:
-      case SSL_PROTOCOL_TLS_11:
-        return kDefaultSslCipher10;
-      case SSL_PROTOCOL_TLS_12:
-      default:
-#ifdef OPENSSL_IS_BORINGSSL
-        if (EVP_has_aes_hardware()) {
-          return kDefaultSslCipher12;
-        } else {
-          return kDefaultSslCipher12NoAesGcm;
-        }
-#else  // !OPENSSL_IS_BORINGSSL
-        return kDefaultSslCipher12;
-#endif
+    for (const cipher_list& c : OK_RSA_ciphers) {
+      if (cipher == c.cipher)
+        return true;
     }
-  } else if (key_type == KT_ECDSA) {
-    switch (version) {
-      case SSL_PROTOCOL_TLS_10:
-      case SSL_PROTOCOL_TLS_11:
-        return kDefaultSslEcCipher10;
-      case SSL_PROTOCOL_TLS_12:
-      default:
-#ifdef OPENSSL_IS_BORINGSSL
-        if (EVP_has_aes_hardware()) {
-          return kDefaultSslEcCipher12;
-        } else {
-          return kDefaultSslEcCipher12NoAesGcm;
-        }
-#else  // !OPENSSL_IS_BORINGSSL
-        return kDefaultSslEcCipher12;
-#endif
-    }
-  } else {
-    RTC_NOTREACHED();
-    return kDefaultSslEcCipher12;
   }
+
+  if (key_type == KT_ECDSA) {
+    for (const cipher_list& c : OK_ECDSA_ciphers) {
+      if (cipher == c.cipher)
+        return true;
+    }
+  }
+
+  return false;
+}
+
+bool OpenSSLStreamAdapter::IsAcceptableCipher(const std::string& cipher,
+                                              KeyType key_type) {
+  if (key_type == KT_RSA) {
+    for (const cipher_list& c : OK_RSA_ciphers) {
+      if (cipher == c.cipher_str)
+        return true;
+    }
+  }
+
+  if (key_type == KT_ECDSA) {
+    for (const cipher_list& c : OK_ECDSA_ciphers) {
+      if (cipher == c.cipher_str)
+        return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace rtc

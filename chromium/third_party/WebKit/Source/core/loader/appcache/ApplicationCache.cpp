@@ -29,7 +29,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/EventListener.h"
+#include "core/frame/Deprecation.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/OriginsUsingFeatures.h"
+#include "core/frame/UseCounter.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 
@@ -65,14 +68,16 @@ ApplicationCacheHost* ApplicationCache::applicationCacheHost() const
 
 unsigned short ApplicationCache::status() const
 {
+    recordAPIUseType();
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost)
         return ApplicationCacheHost::UNCACHED;
-    return cacheHost->status();
+    return cacheHost->getStatus();
 }
 
 void ApplicationCache::update(ExceptionState& exceptionState)
 {
+    recordAPIUseType();
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->update())
         exceptionState.throwDOMException(InvalidStateError, "there is no application cache to update.");
@@ -80,6 +85,7 @@ void ApplicationCache::update(ExceptionState& exceptionState)
 
 void ApplicationCache::swapCache(ExceptionState& exceptionState)
 {
+    recordAPIUseType();
     ApplicationCacheHost* cacheHost = applicationCacheHost();
     if (!cacheHost || !cacheHost->swapCache())
         exceptionState.throwDOMException(InvalidStateError, "there is no newer application cache to swap to.");
@@ -97,7 +103,7 @@ const AtomicString& ApplicationCache::interfaceName() const
     return EventTargetNames::ApplicationCache;
 }
 
-ExecutionContext* ApplicationCache::executionContext() const
+ExecutionContext* ApplicationCache::getExecutionContext() const
 {
     if (m_frame)
         return m_frame->document();
@@ -126,6 +132,24 @@ const AtomicString& ApplicationCache::toEventType(ApplicationCacheHost::EventID 
     }
     ASSERT_NOT_REACHED();
     return EventTypeNames::error;
+}
+
+void ApplicationCache::recordAPIUseType() const
+{
+    if (!m_frame)
+        return;
+
+    Document* document = m_frame->document();
+
+    if (!document)
+        return;
+
+    if (document->isSecureContext()) {
+        UseCounter::count(document, UseCounter::ApplicationCacheAPISecureOrigin);
+    } else {
+        Deprecation::countDeprecation(document, UseCounter::ApplicationCacheAPIInsecureOrigin);
+        OriginsUsingFeatures::countAnyWorld(*document, OriginsUsingFeatures::Feature::ApplicationCacheAPIInsecureOrigin);
+    }
 }
 
 } // namespace blink

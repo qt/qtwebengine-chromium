@@ -33,7 +33,7 @@ namespace blink {
 class CORE_EXPORT DocumentFragment : public ContainerNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DocumentFragment> create(Document&);
+    static RawPtr<DocumentFragment> create(Document&);
 
     void parseHTML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
     bool parseXML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
@@ -46,8 +46,8 @@ protected:
     String nodeName() const final;
 
 private:
-    NodeType nodeType() const final;
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) override;
+    NodeType getNodeType() const final;
+    RawPtr<Node> cloneNode(bool deep) override;
     bool childTypeAllowed(NodeType) const override;
 
     bool isDocumentFragment() const = delete; // This will catch anyone doing an unnecessary check.

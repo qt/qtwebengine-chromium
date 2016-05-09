@@ -32,15 +32,15 @@ namespace blink {
 
 class CreateLinkCommand final : public CompositeEditCommand {
 public:
-    static PassRefPtrWillBeRawPtr<CreateLinkCommand> create(Document& document, const String& linkURL)
+    static RawPtr<CreateLinkCommand> create(Document& document, const String& linkURL)
     {
-        return adoptRefWillBeNoop(new CreateLinkCommand(document, linkURL));
+        return new CreateLinkCommand(document, linkURL);
     }
 
 private:
     CreateLinkCommand(Document&, const String& linkURL);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
     EditAction editingAction() const override { return EditActionCreateLink; }
 
     String m_url;

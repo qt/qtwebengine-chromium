@@ -16,12 +16,11 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/ozone/ozone_base_export.h"
 #include "ui/ozone/public/overlay_candidates_ozone.h"
 
 namespace ui {
 
-struct OZONE_BASE_EXPORT DisplayMode_Params {
+struct DisplayMode_Params {
   DisplayMode_Params();
   ~DisplayMode_Params();
 
@@ -30,8 +29,9 @@ struct OZONE_BASE_EXPORT DisplayMode_Params {
   float refresh_rate = 0.0f;
 };
 
-struct OZONE_BASE_EXPORT DisplaySnapshot_Params {
+struct DisplaySnapshot_Params {
   DisplaySnapshot_Params();
+  DisplaySnapshot_Params(const DisplaySnapshot_Params& other);
   ~DisplaySnapshot_Params();
 
   int64_t display_id = 0;
@@ -40,9 +40,11 @@ struct OZONE_BASE_EXPORT DisplaySnapshot_Params {
   DisplayConnectionType type = DISPLAY_CONNECTION_TYPE_NONE;
   bool is_aspect_preserving_scaling = false;
   bool has_overscan = false;
+  bool has_color_correction_matrix = false;
   std::string display_name;
   base::FilePath sys_path;
   std::vector<DisplayMode_Params> modes;
+  std::vector<uint8_t> edid;
   bool has_current_mode = false;
   DisplayMode_Params current_mode;
   bool has_native_mode = false;
@@ -51,10 +53,11 @@ struct OZONE_BASE_EXPORT DisplaySnapshot_Params {
   std::string string_representation;
 };
 
-struct OZONE_BASE_EXPORT OverlayCheck_Params {
+struct OverlayCheck_Params {
   OverlayCheck_Params();
   OverlayCheck_Params(
       const OverlayCandidatesOzone::OverlaySurfaceCandidate& candidate);
+  OverlayCheck_Params(const OverlayCheck_Params& other);
   ~OverlayCheck_Params();
 
   bool operator<(const OverlayCheck_Params& plane) const;

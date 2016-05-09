@@ -11,12 +11,25 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/encryption_scheme.h"
+#include "media/base/media_util.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
 #include "media/media_features.h"
 
 namespace media {
+
+namespace {
+
+EncryptionScheme GetEncryptionScheme(const AVStream* stream) {
+  AVDictionaryEntry* key =
+      av_dict_get(stream->metadata, "enc_key_id", nullptr, 0);
+  return key ? AesCtrEncryptionScheme() : Unencrypted();
+}
+
+}  // namespace
 
 // Why FF_INPUT_BUFFER_PADDING_SIZE? FFmpeg assumes all input buffers are
 // padded. Check here to ensure FFmpeg only receives data padded to its
@@ -110,8 +123,8 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
   return kUnknownAudioCodec;
 }
 
-static AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
-                                     SampleFormat sample_format) {
+AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
+                              SampleFormat sample_format) {
   switch (audio_codec) {
     case kCodecAAC:
       return AV_CODEC_ID_AAC;
@@ -302,9 +315,10 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
   return AV_SAMPLE_FMT_NONE;
 }
 
-bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
-                                        bool is_encrypted,
-                                        AudioDecoderConfig* config) {
+bool AVCodecContextToAudioDecoderConfig(
+    const AVCodecContext* codec_context,
+    const EncryptionScheme& encryption_scheme,
+    AudioDecoderConfig* config) {
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
 
   AudioCodec codec = CodecIDToAudioCodec(codec_context->codec_id);
@@ -370,13 +384,9 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
     extra_data.assign(codec_context->extradata,
                       codec_context->extradata + codec_context->extradata_size);
   }
-  config->Initialize(codec,
-                     sample_format,
-                     channel_layout,
-                     sample_rate,
-                     extra_data,
-                     is_encrypted,
-                     seek_preroll,
+
+  config->Initialize(codec, sample_format, channel_layout, sample_rate,
+                     extra_data, encryption_scheme, seek_preroll,
                      codec_context->delay);
 
   // Verify that AudioConfig.bits_per_channel was calculated correctly for
@@ -399,13 +409,8 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
 
 bool AVStreamToAudioDecoderConfig(const AVStream* stream,
                                   AudioDecoderConfig* config) {
-  bool is_encrypted = false;
-  AVDictionaryEntry* key =
-      av_dict_get(stream->metadata, "enc_key_id", nullptr, 0);
-  if (key)
-    is_encrypted = true;
-  return AVCodecContextToAudioDecoderConfig(stream->codec, is_encrypted,
-                                            config);
+  return AVCodecContextToAudioDecoderConfig(
+      stream->codec, GetEncryptionScheme(stream), config);
 }
 
 void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
@@ -456,7 +461,9 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
   if (codec == kCodecVP8)
     profile = VP8PROFILE_ANY;
   else if (codec == kCodecVP9)
-    profile = VP9PROFILE_ANY;
+    // TODO(servolk): Find a way to obtain actual VP9 profile from FFmpeg.
+    // crbug.com/592074
+    profile = VP9PROFILE_PROFILE0;
   else
     profile = ProfileIDToVideoCodecProfile(stream->codec->profile);
 
@@ -496,12 +503,6 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
       coded_size.set_height((coded_size.height() + 1) / 2 * 2);
   }
 
-  bool is_encrypted = false;
-  AVDictionaryEntry* key =
-      av_dict_get(stream->metadata, "enc_key_id", nullptr, 0);
-  if (key)
-    is_encrypted = true;
-
   AVDictionaryEntry* webm_alpha =
       av_dict_get(stream->metadata, "alpha_mode", nullptr, 0);
   if (webm_alpha && !strcmp(webm_alpha->value, "1")) {
@@ -534,7 +535,8 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
                       stream->codec->extradata + stream->codec->extradata_size);
   }
   config->Initialize(codec, profile, format, color_space, coded_size,
-                     visible_rect, natural_size, extra_data, is_encrypted);
+                     visible_rect, natural_size, extra_data,
+                     GetEncryptionScheme(stream));
   return true;
 }
 
@@ -629,6 +631,10 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
   }
 }
 
+#if !defined(ARCH_CPU_LITTLE_ENDIAN)
+#error The code below assumes little-endianness.
+#endif
+
 VideoPixelFormat AVPixelFormatToVideoPixelFormat(AVPixelFormat pixel_format) {
   // The YUVJ alternatives are FFmpeg's (deprecated, but still in use) way to
   // specify a pixel format and full range color combination.
@@ -644,6 +650,22 @@ VideoPixelFormat AVPixelFormatToVideoPixelFormat(AVPixelFormat pixel_format) {
       return PIXEL_FORMAT_YV12;
     case AV_PIX_FMT_YUVA420P:
       return PIXEL_FORMAT_YV12A;
+
+    case AV_PIX_FMT_YUV420P9LE:
+      return PIXEL_FORMAT_YUV420P9;
+    case AV_PIX_FMT_YUV420P10LE:
+      return PIXEL_FORMAT_YUV420P10;
+
+    case AV_PIX_FMT_YUV422P9LE:
+      return PIXEL_FORMAT_YUV422P9;
+    case AV_PIX_FMT_YUV422P10LE:
+      return PIXEL_FORMAT_YUV422P10;
+
+    case AV_PIX_FMT_YUV444P9LE:
+      return PIXEL_FORMAT_YUV444P9;
+    case AV_PIX_FMT_YUV444P10LE:
+      return PIXEL_FORMAT_YUV444P10;
+
     default:
       DVLOG(1) << "Unsupported AVPixelFormat: " << pixel_format;
   }
@@ -660,6 +682,19 @@ AVPixelFormat VideoPixelFormatToAVPixelFormat(VideoPixelFormat video_format) {
       return AV_PIX_FMT_YUVA420P;
     case PIXEL_FORMAT_YV24:
       return AV_PIX_FMT_YUV444P;
+    case PIXEL_FORMAT_YUV420P9:
+      return AV_PIX_FMT_YUV420P9LE;
+    case PIXEL_FORMAT_YUV420P10:
+      return AV_PIX_FMT_YUV420P10LE;
+    case PIXEL_FORMAT_YUV422P9:
+      return AV_PIX_FMT_YUV422P9LE;
+    case PIXEL_FORMAT_YUV422P10:
+      return AV_PIX_FMT_YUV422P10LE;
+    case PIXEL_FORMAT_YUV444P9:
+      return AV_PIX_FMT_YUV444P9LE;
+    case PIXEL_FORMAT_YUV444P10:
+      return AV_PIX_FMT_YUV444P10LE;
+
     default:
       DVLOG(1) << "Unsupported Format: " << video_format;
   }

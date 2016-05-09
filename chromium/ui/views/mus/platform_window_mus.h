@@ -16,6 +16,19 @@
 #include "ui/platform_window/platform_window.h"
 #include "ui/views/mus/mus_export.h"
 
+namespace bitmap_uploader {
+class BitmapUploader;
+}
+
+namespace mojo {
+class Connector;
+}
+
+namespace ui {
+class Event;
+class ViewProp;
+}
+
 namespace views {
 
 class VIEWS_MUS_EXPORT PlatformWindowMus
@@ -24,6 +37,7 @@ class VIEWS_MUS_EXPORT PlatformWindowMus
       public NON_EXPORTED_BASE(mus::InputEventHandler) {
  public:
   PlatformWindowMus(ui::PlatformWindowDelegate* delegate,
+                    mojo::Connector* connector,
                     mus::Window* mus_window);
   ~PlatformWindowMus() override;
 
@@ -69,19 +83,21 @@ class VIEWS_MUS_EXPORT PlatformWindowMus
   void OnRequestClose(mus::Window* window) override;
 
   // mus::InputEventHandler:
-  void OnWindowInputEvent(mus::Window* view,
-                          mus::mojom::EventPtr event,
-                          scoped_ptr<base::Closure>* ack_callback) override;
+  void OnWindowInputEvent(
+      mus::Window* view,
+      const ui::Event& event,
+      scoped_ptr<base::Callback<void(bool)>>* ack_callback) override;
 
   ui::PlatformWindowDelegate* delegate_;
   mus::Window* mus_window_;
   mus::mojom::ShowState show_state_;
   mus::mojom::Cursor last_cursor_;
-  bool has_capture_;
 
   // True if OnWindowDestroyed() has been received.
   bool mus_window_destroyed_;
 
+  scoped_ptr<bitmap_uploader::BitmapUploader> bitmap_uploader_;
+  scoped_ptr<ui::ViewProp> prop_;
 #ifndef NDEBUG
   scoped_ptr<base::WeakPtrFactory<PlatformWindowMus>> weak_factory_;
 #endif

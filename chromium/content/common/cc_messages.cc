@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <utility>
 
+#include "base/numerics/safe_conversions.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
 #include "cc/quads/draw_quad.h"
@@ -15,12 +16,11 @@
 #include "content/public/common/common_param_traits.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFlattenableSerialization.h"
-#include "ui/gfx/transform.h"
 
 namespace IPC {
 
-void ParamTraits<cc::FilterOperation>::Write(
-    Message* m, const param_type& p) {
+void ParamTraits<cc::FilterOperation>::Write(base::Pickle* m,
+                                             const param_type& p) {
   WriteParam(m, p.type());
   switch (p.type()) {
     case cc::FilterOperation::GRAYSCALE:
@@ -57,7 +57,7 @@ void ParamTraits<cc::FilterOperation>::Write(
   }
 }
 
-bool ParamTraits<cc::FilterOperation>::Read(const Message* m,
+bool ParamTraits<cc::FilterOperation>::Read(const base::Pickle* m,
                                             base::PickleIterator* iter,
                                             param_type* r) {
   cc::FilterOperation::FilterType type;
@@ -184,18 +184,18 @@ void ParamTraits<cc::FilterOperation>::Log(
   l->append(")");
 }
 
-void ParamTraits<cc::FilterOperations>::Write(
-    Message* m, const param_type& p) {
-  WriteParam(m, p.size());
+void ParamTraits<cc::FilterOperations>::Write(base::Pickle* m,
+                                              const param_type& p) {
+  WriteParam(m, base::checked_cast<uint32_t>(p.size()));
   for (std::size_t i = 0; i < p.size(); ++i) {
     WriteParam(m, p.at(i));
   }
 }
 
-bool ParamTraits<cc::FilterOperations>::Read(const Message* m,
+bool ParamTraits<cc::FilterOperations>::Read(const base::Pickle* m,
                                              base::PickleIterator* iter,
                                              param_type* r) {
-  size_t count;
+  uint32_t count;
   if (!ReadParam(m, iter, &count))
     return false;
 
@@ -219,19 +219,18 @@ void ParamTraits<cc::FilterOperations>::Log(
   l->append(")");
 }
 
-void ParamTraits<skia::RefPtr<SkImageFilter> >::Write(
-    Message* m, const param_type& p) {
+void ParamTraits<skia::RefPtr<SkImageFilter>>::Write(base::Pickle* m,
+                                                     const param_type& p) {
   SkImageFilter* filter = p.get();
   if (filter) {
-    skia::RefPtr<SkData> data =
-        skia::AdoptRef(SkValidatingSerializeFlattenable(filter));
+    sk_sp<SkData> data(SkValidatingSerializeFlattenable(filter));
     m->WriteData(static_cast<const char*>(data->data()), data->size());
   } else {
     m->WriteData(0, 0);
   }
 }
 
-bool ParamTraits<skia::RefPtr<SkImageFilter>>::Read(const Message* m,
+bool ParamTraits<skia::RefPtr<SkImageFilter>>::Read(const base::Pickle* m,
                                                     base::PickleIterator* iter,
                                                     param_type* r) {
   const char* data = 0;
@@ -255,55 +254,13 @@ void ParamTraits<skia::RefPtr<SkImageFilter> >::Log(
   l->append(")");
 }
 
-void ParamTraits<gfx::Transform>::Write(
-    Message* m, const param_type& p) {
-#ifdef SK_MSCALAR_IS_FLOAT
-  float column_major_data[16];
-  p.matrix().asColMajorf(column_major_data);
-#else
-  double column_major_data[16];
-  p.matrix().asColMajord(column_major_data);
-#endif
-  m->WriteBytes(&column_major_data, sizeof(SkMScalar) * 16);
-}
-
-bool ParamTraits<gfx::Transform>::Read(const Message* m,
-                                       base::PickleIterator* iter,
-                                       param_type* r) {
-  const char* column_major_data;
-  if (!iter->ReadBytes(&column_major_data, sizeof(SkMScalar) * 16))
-    return false;
-  r->matrix().setColMajor(
-      reinterpret_cast<const SkMScalar*>(column_major_data));
-  return true;
-}
-
-void ParamTraits<gfx::Transform>::Log(
-    const param_type& p, std::string* l) {
-#ifdef SK_MSCALAR_IS_FLOAT
-  float row_major_data[16];
-  p.matrix().asRowMajorf(row_major_data);
-#else
-  double row_major_data[16];
-  p.matrix().asRowMajord(row_major_data);
-#endif
-  l->append("(");
-  for (int i = 0; i < 16; ++i) {
-    if (i > 0)
-      l->append(", ");
-    LogParam(row_major_data[i], l);
-  }
-  l->append(") ");
-}
-
-void ParamTraits<cc::RenderPass>::Write(
-    Message* m, const param_type& p) {
+void ParamTraits<cc::RenderPass>::Write(base::Pickle* m, const param_type& p) {
   WriteParam(m, p.id);
   WriteParam(m, p.output_rect);
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
-  WriteParam(m, p.quad_list.size());
+  WriteParam(m, base::checked_cast<uint32_t>(p.quad_list.size()));
 
   cc::SharedQuadStateList::ConstIterator shared_quad_state_iter =
       p.shared_quad_state_list.begin();
@@ -390,7 +347,7 @@ static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
 }
 
 template <typename QuadType>
-static cc::DrawQuad* ReadDrawQuad(const Message* m,
+static cc::DrawQuad* ReadDrawQuad(const base::Pickle* m,
                                   base::PickleIterator* iter,
                                   cc::RenderPass* render_pass) {
   QuadType* quad = render_pass->CreateAndAppendDrawQuad<QuadType>();
@@ -399,7 +356,7 @@ static cc::DrawQuad* ReadDrawQuad(const Message* m,
   return quad;
 }
 
-bool ParamTraits<cc::RenderPass>::Read(const Message* m,
+bool ParamTraits<cc::RenderPass>::Read(const base::Pickle* m,
                                        base::PickleIterator* iter,
                                        param_type* p) {
   cc::RenderPassId id;
@@ -407,7 +364,7 @@ bool ParamTraits<cc::RenderPass>::Read(const Message* m,
   gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
-  size_t quad_list_size;
+  uint32_t quad_list_size;
 
   if (!ReadParam(m, iter, &id) || !ReadParam(m, iter, &output_rect) ||
       !ReadParam(m, iter, &damage_rect) ||
@@ -422,7 +379,7 @@ bool ParamTraits<cc::RenderPass>::Read(const Message* m,
             transform_to_root_target,
             has_transparent_background);
 
-  for (size_t i = 0; i < quad_list_size; ++i) {
+  for (uint32_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
     base::PickleIterator temp_iter = *iter;
     if (!ReadParam(m, &temp_iter, &material))
@@ -566,7 +523,7 @@ namespace {
   };
 }
 
-void ParamTraits<cc::CompositorFrame>::Write(Message* m,
+void ParamTraits<cc::CompositorFrame>::Write(base::Pickle* m,
                                              const param_type& p) {
   WriteParam(m, p.metadata);
   if (p.delegated_frame_data) {
@@ -581,7 +538,7 @@ void ParamTraits<cc::CompositorFrame>::Write(Message* m,
   }
 }
 
-bool ParamTraits<cc::CompositorFrame>::Read(const Message* m,
+bool ParamTraits<cc::CompositorFrame>::Read(const base::Pickle* m,
                                             base::PickleIterator* iter,
                                             param_type* p) {
   if (!ReadParam(m, iter, &p->metadata))
@@ -622,7 +579,7 @@ void ParamTraits<cc::CompositorFrame>::Log(const param_type& p,
   l->append(")");
 }
 
-void ParamTraits<cc::CompositorFrameAck>::Write(Message* m,
+void ParamTraits<cc::CompositorFrameAck>::Write(base::Pickle* m,
                                                 const param_type& p) {
   WriteParam(m, p.resources);
   if (p.gl_frame_data) {
@@ -633,7 +590,7 @@ void ParamTraits<cc::CompositorFrameAck>::Write(Message* m,
   }
 }
 
-bool ParamTraits<cc::CompositorFrameAck>::Read(const Message* m,
+bool ParamTraits<cc::CompositorFrameAck>::Read(const base::Pickle* m,
                                                base::PickleIterator* iter,
                                                param_type* p) {
   if (!ReadParam(m, iter, &p->resources))
@@ -667,7 +624,7 @@ void ParamTraits<cc::CompositorFrameAck>::Log(const param_type& p,
   l->append(")");
 }
 
-void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
+void ParamTraits<cc::DelegatedFrameData>::Write(base::Pickle* m,
                                                 const param_type& p) {
   DCHECK_NE(0u, p.render_pass_list.size());
 
@@ -681,15 +638,16 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
 
   WriteParam(m, p.device_scale_factor);
   WriteParam(m, p.resource_list);
-  WriteParam(m, p.render_pass_list.size());
+  WriteParam(m, base::checked_cast<uint32_t>(p.render_pass_list.size()));
   for (const auto& pass : p.render_pass_list) {
-    WriteParam(m, pass->quad_list.size());
-    WriteParam(m, pass->shared_quad_state_list.size());
+    WriteParam(m, base::checked_cast<uint32_t>(pass->quad_list.size()));
+    WriteParam(m, base::checked_cast<uint32_t>(
+        pass->shared_quad_state_list.size()));
     WriteParam(m, *pass);
   }
 }
 
-bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
+bool ParamTraits<cc::DelegatedFrameData>::Read(const base::Pickle* m,
                                                base::PickleIterator* iter,
                                                param_type* p) {
   if (!ReadParam(m, iter, &p->device_scale_factor))
@@ -701,21 +659,23 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
 
   std::set<cc::RenderPassId> pass_set;
 
-  size_t num_render_passes;
+  uint32_t num_render_passes;
   if (!ReadParam(m, iter, &p->resource_list) ||
       !ReadParam(m, iter, &num_render_passes) ||
       num_render_passes > kMaxRenderPasses || num_render_passes == 0)
     return false;
-  for (size_t i = 0; i < num_render_passes; ++i) {
-    size_t quad_list_size;
-    size_t shared_quad_state_list_size;
+  for (uint32_t i = 0; i < num_render_passes; ++i) {
+    uint32_t quad_list_size;
+    uint32_t shared_quad_state_list_size;
     if (!ReadParam(m, iter, &quad_list_size) ||
         !ReadParam(m, iter, &shared_quad_state_list_size) ||
         quad_list_size > kMaxQuadListSize ||
         shared_quad_state_list_size > kMaxSharedQuadStateListSize)
       return false;
     scoped_ptr<cc::RenderPass> render_pass =
-        cc::RenderPass::Create(shared_quad_state_list_size, quad_list_size);
+        cc::RenderPass::Create(
+            static_cast<size_t>(shared_quad_state_list_size),
+            static_cast<size_t>(quad_list_size));
     if (!ReadParam(m, iter, render_pass.get()))
       return false;
     // Validate that each RenderPassDrawQuad points at a valid RenderPass
@@ -748,7 +708,7 @@ void ParamTraits<cc::DelegatedFrameData>::Log(const param_type& p,
   l->append("])");
 }
 
-void ParamTraits<cc::DrawQuad::Resources>::Write(Message* m,
+void ParamTraits<cc::DrawQuad::Resources>::Write(base::Pickle* m,
                                                  const param_type& p) {
   DCHECK_LE(p.count, cc::DrawQuad::Resources::kMaxResourceIdCount);
   WriteParam(m, p.count);
@@ -756,7 +716,7 @@ void ParamTraits<cc::DrawQuad::Resources>::Write(Message* m,
     WriteParam(m, p.ids[i]);
 }
 
-bool ParamTraits<cc::DrawQuad::Resources>::Read(const Message* m,
+bool ParamTraits<cc::DrawQuad::Resources>::Read(const base::Pickle* m,
                                                 base::PickleIterator* iter,
                                                 param_type* p) {
   if (!ReadParam(m, iter, &p->count))
@@ -789,7 +749,7 @@ void ParamTraits<cc::DrawQuad::Resources>::Log(const param_type& p,
 }
 
 void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Write(
-    Message* m,
+    base::Pickle* m,
     const param_type& p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     WriteParam(m, p.size_in_pixels[i]);
@@ -797,7 +757,7 @@ void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Write(
 }
 
 bool ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Read(
-    const Message* m,
+    const base::Pickle* m,
     base::PickleIterator* iter,
     param_type* p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
@@ -820,7 +780,7 @@ void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Log(
 }
 
 void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Write(
-    Message* m,
+    base::Pickle* m,
     const param_type& p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {
     WriteParam(m, p.size_in_pixels[i]);
@@ -828,7 +788,7 @@ void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Write(
 }
 
 bool ParamTraits<cc::TextureDrawQuad::OverlayResources>::Read(
-    const Message* m,
+    const base::Pickle* m,
     base::PickleIterator* iter,
     param_type* p) {
   for (size_t i = 0; i < cc::DrawQuad::Resources::kMaxResourceIdCount; ++i) {

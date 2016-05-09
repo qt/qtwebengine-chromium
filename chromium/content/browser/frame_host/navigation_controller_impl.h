@@ -87,7 +87,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   bool IsInitialBlankNavigation() const override;
   void Reload(bool check_for_repost) override;
   void ReloadToRefreshContent(bool check_for_repost) override;
-  void ReloadIgnoringCache(bool check_for_repost) override;
+  void ReloadBypassingCache(bool check_for_repost) override;
   void ReloadOriginalRequestURL(bool check_for_repost) override;
   void ReloadDisableLoFi(bool check_for_repost) override;
   void NotifyEntryChanged(const NavigationEntry* entry) override;
@@ -258,6 +258,10 @@ class CONTENT_EXPORT NavigationControllerImpl
                             FrameLoadVector* sameDocumentLoads,
                             FrameLoadVector* differentDocumentLoads);
 
+  // Returns whether there is a pending NavigationEntry whose unique ID matches
+  // the given NavigationHandle's pending_nav_entry_id.
+  bool PendingEntryMatchesHandle(NavigationHandleImpl* handle) const;
+
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
       RenderFrameHostImpl* rfh,
@@ -272,9 +276,11 @@ class CONTENT_EXPORT NavigationControllerImpl
   // anything if some random subframe is loaded. It will return true if anything
   // changed, or false if not.
   //
-  // The functions taking |did_replace_entry| will fill into the given variable
-  // whether the last entry has been replaced or not.
-  // See LoadCommittedDetails.did_replace_entry.
+  // The NewPage and NewSubframe functions take in |replace_entry| to pass to
+  // InsertOrReplaceEntry, in case the newly created NavigationEntry is meant to
+  // replace the current one (e.g., for location.replace or successful loads
+  // after net errors), in contrast to updating a NavigationEntry in place
+  // (e.g., for history.replaceState).
   void RendererDidNavigateToNewPage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
@@ -287,12 +293,14 @@ class CONTENT_EXPORT NavigationControllerImpl
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateNewSubframe(
       RenderFrameHostImpl* rfh,
-      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool replace_entry);
   bool RendererDidNavigateAutoSubframe(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
-  // Helper function for code shared between Reload() and ReloadIgnoringCache().
+  // Helper function for code shared between Reload() and
+  // ReloadBypassingCache().
   void ReloadInternal(bool check_for_repost, ReloadType reload_type);
 
   // Actually issues the navigation held in pending_entry.
@@ -369,8 +377,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   NavigationEntryImpl* pending_entry_;
 
   // If a new entry fails loading, details about it are temporarily held here
-  // until the error page is shown. These variables are only valid if
-  // |failed_pending_entry_id_| is not 0.
+  // until the error page is shown (or 0 otherwise).
   //
   // TODO(avi): We need a better way to handle the connection between failed
   // loads and the subsequent load of the error page. This current approach has
@@ -378,7 +385,6 @@ class CONTENT_EXPORT NavigationControllerImpl
   // error page loaded, and 2. This doesn't work very well for frames.
   // http://crbug.com/474261
   int failed_pending_entry_id_;
-  bool failed_pending_entry_should_replace_;
 
   // The index of the currently visible entry.
   int last_committed_entry_index_;
@@ -428,7 +434,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // The maximum number of entries that a navigation controller can store.
   static size_t max_entry_count_for_testing_;
 
-  // If a repost is pending, its type (RELOAD or RELOAD_IGNORING_CACHE),
+  // If a repost is pending, its type (RELOAD or RELOAD_BYPASSING_CACHE),
   // NO_RELOAD otherwise.
   ReloadType pending_reload_;
 

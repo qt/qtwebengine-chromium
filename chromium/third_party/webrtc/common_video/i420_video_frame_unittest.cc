@@ -13,17 +13,12 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/bind.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/test/fake_texture_frame.h"
+#include "webrtc/test/frame_utils.h"
 #include "webrtc/video_frame.h"
 
 namespace webrtc {
 
-bool EqualPlane(const uint8_t* data1,
-                const uint8_t* data2,
-                int stride,
-                int width,
-                int height);
 int ExpectedSize(int plane_stride, int image_height, PlaneType type);
 
 TEST(TestVideoFrame, InitialValues) {
@@ -41,7 +36,7 @@ TEST(TestVideoFrame, CopiesInitialFrameWithoutCrashing) {
 TEST(TestVideoFrame, WidthHeightValues) {
   VideoFrame frame;
   const int valid_value = 10;
-  EXPECT_EQ(0, frame.CreateEmptyFrame(10, 10, 10, 14, 90));
+  frame.CreateEmptyFrame(10, 10, 10, 14, 90);
   EXPECT_EQ(valid_value, frame.width());
   EXPECT_EQ(valid_value, frame.height());
   frame.set_timestamp(123u);
@@ -54,7 +49,7 @@ TEST(TestVideoFrame, WidthHeightValues) {
 
 TEST(TestVideoFrame, SizeAllocation) {
   VideoFrame frame;
-  EXPECT_EQ(0, frame. CreateEmptyFrame(10, 10, 12, 14, 220));
+  frame. CreateEmptyFrame(10, 10, 12, 14, 220);
   int height = frame.height();
   int stride_y = frame.stride(kYPlane);
   int stride_u = frame.stride(kUPlane);
@@ -79,8 +74,8 @@ TEST(TestVideoFrame, CopyFrame) {
   int height = 15;
   // Copy frame.
   VideoFrame small_frame;
-  EXPECT_EQ(0, small_frame.CreateEmptyFrame(width, height,
-                                            stride_y, stride_u, stride_v));
+  small_frame.CreateEmptyFrame(width, height,
+                               stride_y, stride_u, stride_v);
   small_frame.set_timestamp(timestamp);
   small_frame.set_ntp_time_ms(ntp_time_ms);
   small_frame.set_render_time_ms(render_time_ms);
@@ -95,23 +90,22 @@ TEST(TestVideoFrame, CopyFrame) {
   memset(buffer_u, 8, kSizeU);
   memset(buffer_v, 4, kSizeV);
   VideoFrame big_frame;
-  EXPECT_EQ(0,
-            big_frame.CreateFrame(buffer_y, buffer_u, buffer_v,
-                                  width + 5, height + 5, stride_y + 5,
-                                  stride_u, stride_v, kRotation));
+  big_frame.CreateFrame(buffer_y, buffer_u, buffer_v,
+                        width + 5, height + 5, stride_y + 5,
+                        stride_u, stride_v, kRotation);
   // Frame of smaller dimensions.
-  EXPECT_EQ(0, small_frame.CopyFrame(big_frame));
-  EXPECT_TRUE(small_frame.EqualsFrame(big_frame));
+  small_frame.CopyFrame(big_frame);
+  EXPECT_TRUE(test::FramesEqual(small_frame, big_frame));
   EXPECT_EQ(kRotation, small_frame.rotation());
 
   // Frame of larger dimensions.
-  EXPECT_EQ(0, small_frame.CreateEmptyFrame(width, height,
-                                            stride_y, stride_u, stride_v));
+  small_frame.CreateEmptyFrame(width, height,
+                               stride_y, stride_u, stride_v);
   memset(small_frame.buffer(kYPlane), 1, small_frame.allocated_size(kYPlane));
   memset(small_frame.buffer(kUPlane), 2, small_frame.allocated_size(kUPlane));
   memset(small_frame.buffer(kVPlane), 3, small_frame.allocated_size(kVPlane));
-  EXPECT_EQ(0, big_frame.CopyFrame(small_frame));
-  EXPECT_TRUE(small_frame.EqualsFrame(big_frame));
+  big_frame.CopyFrame(small_frame);
+  EXPECT_TRUE(test::FramesEqual(small_frame, big_frame));
 }
 
 TEST(TestVideoFrame, ShallowCopy) {
@@ -135,8 +129,8 @@ TEST(TestVideoFrame, ShallowCopy) {
   memset(buffer_u, 8, kSizeU);
   memset(buffer_v, 4, kSizeV);
   VideoFrame frame1;
-  EXPECT_EQ(0, frame1.CreateFrame(buffer_y, buffer_u, buffer_v, width, height,
-                                  stride_y, stride_u, stride_v, kRotation));
+  frame1.CreateFrame(buffer_y, buffer_u, buffer_v, width, height,
+                     stride_y, stride_u, stride_v, kRotation);
   frame1.set_timestamp(timestamp);
   frame1.set_ntp_time_ms(ntp_time_ms);
   frame1.set_render_time_ms(render_time_ms);
@@ -172,7 +166,7 @@ TEST(TestVideoFrame, ShallowCopy) {
 
 TEST(TestVideoFrame, Reset) {
   VideoFrame frame;
-  ASSERT_EQ(frame.CreateEmptyFrame(5, 5, 5, 5, 5), 0);
+  frame.CreateEmptyFrame(5, 5, 5, 5, 5);
   frame.set_ntp_time_ms(1);
   frame.set_timestamp(2);
   frame.set_render_time_ms(3);
@@ -193,8 +187,8 @@ TEST(TestVideoFrame, CopyBuffer) {
   int stride_uv = 10;
   const int kSizeY = 225;
   const int kSizeUv = 80;
-  EXPECT_EQ(0, frame2.CreateEmptyFrame(width, height,
-                                       stride_y, stride_uv, stride_uv));
+  frame2.CreateEmptyFrame(width, height,
+                          stride_y, stride_uv, stride_uv);
   uint8_t buffer_y[kSizeY];
   uint8_t buffer_u[kSizeUv];
   uint8_t buffer_v[kSizeUv];
@@ -202,11 +196,15 @@ TEST(TestVideoFrame, CopyBuffer) {
   memset(buffer_u, 8, kSizeUv);
   memset(buffer_v, 4, kSizeUv);
   frame2.CreateFrame(buffer_y, buffer_u, buffer_v,
-                     width, height, stride_y, stride_uv, stride_uv);
+                     width, height, stride_y, stride_uv, stride_uv,
+                     kVideoRotation_0);
   // Expect exactly the same pixel data.
-  EXPECT_TRUE(EqualPlane(buffer_y, frame2.buffer(kYPlane), stride_y, 15, 15));
-  EXPECT_TRUE(EqualPlane(buffer_u, frame2.buffer(kUPlane), stride_uv, 8, 8));
-  EXPECT_TRUE(EqualPlane(buffer_v, frame2.buffer(kVPlane), stride_uv, 8, 8));
+  EXPECT_TRUE(
+      test::EqualPlane(buffer_y, frame2.buffer(kYPlane), stride_y, 15, 15));
+  EXPECT_TRUE(
+      test::EqualPlane(buffer_u, frame2.buffer(kUPlane), stride_uv, 8, 8));
+  EXPECT_TRUE(
+      test::EqualPlane(buffer_v, frame2.buffer(kVPlane), stride_uv, 8, 8));
 
   // Compare size.
   EXPECT_LE(kSizeY, frame2.allocated_size(kYPlane));
@@ -254,6 +252,16 @@ TEST(TestVideoFrame, TextureInitialValues) {
   EXPECT_EQ(200u, frame.timestamp());
   frame.set_render_time_ms(20);
   EXPECT_EQ(20, frame.render_time_ms());
+}
+
+TEST(TestI420FrameBuffer, Copy) {
+  rtc::scoped_refptr<I420Buffer> buf1(
+      new rtc::RefCountedObject<I420Buffer>(20, 10));
+  memset(buf1->MutableData(kYPlane), 1, 200);
+  memset(buf1->MutableData(kUPlane), 2, 50);
+  memset(buf1->MutableData(kVPlane), 3, 50);
+  rtc::scoped_refptr<I420Buffer> buf2 = I420Buffer::Copy(buf1);
+  EXPECT_TRUE(test::FrameBufsEqual(buf1, buf2));
 }
 
 }  // namespace webrtc

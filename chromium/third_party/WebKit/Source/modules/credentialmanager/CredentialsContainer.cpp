@@ -8,9 +8,12 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/frame/Frame.h"
 #include "core/frame/UseCounter.h"
+#include "core/page/FrameTree.h"
 #include "modules/credentialmanager/Credential.h"
 #include "modules/credentialmanager/CredentialManagerClient.h"
 #include "modules/credentialmanager/CredentialRequestOptions.h"
@@ -33,9 +36,12 @@ static void rejectDueToCredentialManagerError(ScriptPromiseResolver* resolver, W
     case WebCredentialManagerDisabledError:
         resolver->reject(DOMException::create(InvalidStateError, "The credential manager is disabled."));
         break;
+    case WebCredentialManagerPendingRequestError:
+        resolver->reject(DOMException::create(InvalidStateError, "A 'get()' request is pending."));
+        break;
     case WebCredentialManagerUnknownError:
     default:
-        resolver->reject(DOMException::create(NotReadableError, "An unknown error occured while talking to the credential manager."));
+        resolver->reject(DOMException::create(NotReadableError, "An unknown error occurred while talking to the credential manager."));
         break;
     }
 }
@@ -48,6 +54,9 @@ public:
 
     void onSuccess() override
     {
+        Frame* frame = toDocument(m_resolver->getScriptState()->getExecutionContext())->frame();
+        SECURITY_CHECK(!frame || frame == frame->tree().top());
+
         m_resolver->resolve();
     }
 
@@ -66,10 +75,13 @@ public:
     explicit RequestCallbacks(ScriptPromiseResolver* resolver) : m_resolver(resolver) { }
     ~RequestCallbacks() override { }
 
-    void onSuccess(WebPassOwnPtr<WebCredential> webCredential) override
+    void onSuccess(std::unique_ptr<WebCredential> webCredential) override
     {
-        OwnPtr<WebCredential> credential = webCredential.release();
-        if (!credential) {
+        Frame* frame = toDocument(m_resolver->getScriptState()->getExecutionContext())->frame();
+        SECURITY_CHECK(!frame || frame == frame->tree().top());
+
+        OwnPtr<WebCredential> credential = adoptPtr(webCredential.release());
+        if (!credential || !frame) {
             m_resolver->resolve();
             return;
         }
@@ -102,15 +114,21 @@ CredentialsContainer::CredentialsContainer()
 
 static bool checkBoilerplate(ScriptPromiseResolver* resolver)
 {
-    CredentialManagerClient* client = CredentialManagerClient::from(resolver->scriptState()->executionContext());
-    if (!client) {
-        resolver->reject(DOMException::create(InvalidStateError, "Could not establish connection to the credential manager."));
+    Frame* frame = toDocument(resolver->getScriptState()->getExecutionContext())->frame();
+    if (!frame || frame != frame->tree().top()) {
+        resolver->reject(DOMException::create(SecurityError, "CredentialContainer methods may only be executed in a top-level document."));
         return false;
     }
 
     String errorMessage;
-    if (!resolver->scriptState()->executionContext()->isSecureContext(errorMessage)) {
+    if (!resolver->getScriptState()->getExecutionContext()->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(SecurityError, errorMessage));
+        return false;
+    }
+
+    CredentialManagerClient* client = CredentialManagerClient::from(resolver->getScriptState()->getExecutionContext());
+    if (!client) {
+        resolver->reject(DOMException::create(InvalidStateError, "Could not establish connection to the credential manager."));
         return false;
     }
 
@@ -126,18 +144,22 @@ ScriptPromise CredentialsContainer::get(ScriptState* scriptState, const Credenti
 
     Vector<KURL> providers;
     if (options.hasFederated() && options.federated().hasProviders()) {
-        for (const auto& string : options.federated().providers()) {
+        // TODO(mkwst): CredentialRequestOptions::federated() needs to return a reference, not a value.
+        // Because it returns a temporary value now, a for loop that directly references the value
+        // generates code that holds a reference to a value that no longer exists by the time the loop
+        // starts looping. In order to avoid this crazyness for the moment, we're making a copy of the
+        // vector. https://crbug.com/587088
+        const Vector<String> providerStrings = options.federated().providers();
+        for (const auto& string : providerStrings) {
             KURL url = KURL(KURL(), string);
             if (url.isValid())
                 providers.append(url);
         }
     }
 
-    UseCounter::count(scriptState->executionContext(),
-                      options.suppressUI() ? UseCounter::CredentialManagerGetWithoutUI
-                                           : UseCounter::CredentialManagerGetWithUI);
+    UseCounter::count(scriptState->getExecutionContext(), options.unmediated() ? UseCounter::CredentialManagerGetWithoutUI : UseCounter::CredentialManagerGetWithUI);
 
-    CredentialManagerClient::from(scriptState->executionContext())->dispatchGet(options.suppressUI(), providers, new RequestCallbacks(resolver));
+    CredentialManagerClient::from(scriptState->getExecutionContext())->dispatchGet(options.unmediated(), options.password(), providers, new RequestCallbacks(resolver));
     return promise;
 }
 
@@ -148,7 +170,7 @@ ScriptPromise CredentialsContainer::store(ScriptState* scriptState, Credential* 
     if (!checkBoilerplate(resolver))
         return promise;
 
-    CredentialManagerClient::from(scriptState->executionContext())->dispatchStore(WebCredential::create(credential->platformCredential()), new NotificationCallbacks(resolver));
+    CredentialManagerClient::from(scriptState->getExecutionContext())->dispatchStore(WebCredential::create(credential->getPlatformCredential()), new NotificationCallbacks(resolver));
     return promise;
 }
 
@@ -159,7 +181,7 @@ ScriptPromise CredentialsContainer::requireUserMediation(ScriptState* scriptStat
     if (!checkBoilerplate(resolver))
         return promise;
 
-    CredentialManagerClient::from(scriptState->executionContext())->dispatchRequireUserMediation(new NotificationCallbacks(resolver));
+    CredentialManagerClient::from(scriptState->getExecutionContext())->dispatchRequireUserMediation(new NotificationCallbacks(resolver));
     return promise;
 }
 

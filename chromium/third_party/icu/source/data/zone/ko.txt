@@ -1,16 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2014 International Business Machines
+// * Copyright (C) 2015 International Business Machines
 // * Corporation and others. All Rights Reserved.
 // * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
 // * Source File: <path>/common/main/ko.xml
 // *
 // ***************************************************************************
-/**
- * ICU <specials> source: <path>/common/main/ko.xml
- */
 ko{
-    Version{"2.1.9.31"}
+    Version{"2.1.19.94"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"아비장"}
@@ -687,11 +684,11 @@ ko{
         "Asia:Calcutta"{
             ec{"콜카타"}
         }
+        "Asia:Chita"{
+            ec{"치타"}
+        }
         "Asia:Choibalsan"{
             ec{"초이발산"}
-        }
-        "Asia:Chongqing"{
-            ec{"충칭"}
         }
         "Asia:Colombo"{
             ec{"콜롬보"}
@@ -713,9 +710,6 @@ ko{
         }
         "Asia:Gaza"{
             ec{"가자"}
-        }
-        "Asia:Harbin"{
-            ec{"하얼빈"}
         }
         "Asia:Hebron"{
             ec{"헤브론"}
@@ -746,9 +740,6 @@ ko{
         }
         "Asia:Karachi"{
             ec{"카라치"}
-        }
-        "Asia:Kashgar"{
-            ec{"카슈가르"}
         }
         "Asia:Katmandu"{
             ec{"카트만두"}
@@ -836,6 +827,9 @@ ko{
         }
         "Asia:Singapore"{
             ec{"싱가포르"}
+        }
+        "Asia:Srednekolymsk"{
+            ec{"스레드네콜림스크"}
         }
         "Asia:Taipei"{
             ec{"타이베이"}
@@ -1020,7 +1014,7 @@ ko{
         }
         "Europe:London"{
             ec{"런던"}
-            ld{"영국 일광 절약 시간"}
+            ld{"영국 하계 표준시"}
         }
         "Europe:Luxembourg"{
             ec{"룩셈부르크"}
@@ -1156,6 +1150,9 @@ ko{
         }
         "Pacific:Auckland"{
             ec{"오클랜드"}
+        }
+        "Pacific:Bougainville"{
+            ec{"부갱빌"}
         }
         "Pacific:Chatham"{
             ec{"채텀"}
@@ -1504,8 +1501,8 @@ ko{
             ls{"서유럽 표준시"}
         }
         "meta:Falkland"{
-            ld{"포클랜드 하계 표준시"}
-            lg{"포클랜드 시간"}
+            ld{"포클랜드 제도 하계 표준시"}
+            lg{"포클랜드 제도 시간"}
             ls{"포클랜드 제도 표준시"}
         }
         "meta:Fiji"{
@@ -1703,7 +1700,7 @@ ko{
             ls{"네팔 시간"}
         }
         "meta:New_Caledonia"{
-            ld{"뉴 칼레도니아 하계 표준시"}
+            ld{"뉴칼레도니아 하계 표준시"}
             lg{"뉴칼레도니아 시간"}
             ls{"뉴칼레도니아 표준시"}
         }
@@ -1739,7 +1736,7 @@ ko{
             ls{"옴스크 표준시"}
         }
         "meta:Pakistan"{
-            ld{"파키스탄 서머 타임"}
+            ld{"파키스탄 하계 표준시"}
             lg{"파키스탄 시간"}
             ls{"파키스탄 표준시"}
         }

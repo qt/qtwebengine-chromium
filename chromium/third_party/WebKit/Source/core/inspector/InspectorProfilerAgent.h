@@ -31,7 +31,6 @@
 #define InspectorProfilerAgent_h
 
 #include "core/CoreExport.h"
-#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -44,11 +43,8 @@ class ExecutionContext;
 class InspectorFrontend;
 class V8ProfilerAgent;
 
-typedef String ErrorString;
-
-class CORE_EXPORT InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent, InspectorFrontend::Profiler>, public InspectorBackendDispatcher::ProfilerCommandHandler {
+class CORE_EXPORT InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent, protocol::Frontend::Profiler>, public protocol::Backend::Profiler {
     WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorProfilerAgent);
 public:
     class Client {
     public:
@@ -57,24 +53,24 @@ public:
         virtual void profilingStopped() { }
     };
 
-    static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(v8::Isolate*, Client*);
+    static RawPtr<InspectorProfilerAgent> create(V8ProfilerAgent*, Client*);
     ~InspectorProfilerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
     // InspectorBaseAgent overrides.
-    void init() override;
-    void setFrontend(InspectorFrontend*) override;
+    void setState(protocol::DictionaryValue*) override;
+    void setFrontend(protocol::Frontend*) override;
     void clearFrontend() override;
     void restore() override;
 
-    void consoleProfile(ExecutionContext*, const String& title);
-    void consoleProfileEnd(const String& title);
+    void consoleProfile(ExecutionContext*, const String16& title);
+    void consoleProfileEnd(const String16& title);
 
     void enable(ErrorString*) override;
     void disable(ErrorString*) override;
     void setSamplingInterval(ErrorString*, int) override;
     void start(ErrorString*) override;
-    void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) override;
+    void stop(ErrorString*, OwnPtr<protocol::Profiler::CPUProfile>*) override;
 
     void willProcessTask();
     void didProcessTask();
@@ -82,10 +78,10 @@ public:
     void didLeaveNestedRunLoop();
 
 private:
-    InspectorProfilerAgent(v8::Isolate*, Client*);
+    InspectorProfilerAgent(V8ProfilerAgent*, Client*);
 
     Client* m_client;
-    OwnPtr<V8ProfilerAgent> m_v8ProfilerAgent;
+    V8ProfilerAgent* m_v8ProfilerAgent;
 };
 
 } // namespace blink

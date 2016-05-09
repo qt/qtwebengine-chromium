@@ -12,7 +12,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/ozone/ozone_export.h"
 
 namespace base {
 class FilePath;
@@ -28,7 +27,7 @@ typedef std::vector<scoped_refptr<DrmDevice>> DrmDeviceVector;
 
 // Tracks the mapping between widgets and the DRM devices used to allocate
 // buffers for the window represented by the widget.
-class OZONE_EXPORT DrmDeviceManager {
+class DrmDeviceManager {
  public:
   DrmDeviceManager(scoped_ptr<DrmDeviceGenerator> drm_device_generator);
   ~DrmDeviceManager();
@@ -47,6 +46,9 @@ class OZONE_EXPORT DrmDeviceManager {
   // Returns the device associated with |widget|. If there is no association
   // returns |primary_device_|.
   scoped_refptr<DrmDevice> GetDrmDevice(gfx::AcceleratedWidget widget);
+
+  // Returns |primary_device_|.
+  scoped_refptr<DrmDevice> GetPrimaryDrmDevice();
 
   const DrmDeviceVector& GetDrmDevices() const;
 

@@ -15,23 +15,23 @@
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/gpu_memory_uma_stats.h"
-#include "content/common/gpu/gpu_process_launch_causes.h"
-#include "content/common/gpu/gpu_result_codes.h"
+#include "content/common/gpu_process_launch_causes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/config/gpu_info.h"
+#include "gpu/ipc/common/gpu_memory_uma_stats.h"
+#include "gpu/ipc/common/surface_handle.h"
 #include "ipc/ipc_sender.h"
 #include "ipc/message_filter.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
-#include "ui/gfx/native_widget_types.h"
 #include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
@@ -41,6 +41,7 @@ struct ChannelHandle;
 }
 
 namespace gpu {
+struct GpuPreferences;
 struct SyncToken;
 }
 
@@ -53,7 +54,7 @@ class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
 
 typedef base::Thread* (*GpuMainThreadFactoryFunction)(
-    const InProcessChildThreadParams&);
+    const InProcessChildThreadParams&, const gpu::GpuPreferences&);
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
                        public IPC::Sender,
@@ -68,16 +69,16 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
-  typedef base::Callback<void(CreateCommandBufferResult)>
-      CreateCommandBufferCallback;
+  struct EstablishChannelRequest {
+    EstablishChannelRequest();
+    EstablishChannelRequest(const EstablishChannelRequest& other);
+    ~EstablishChannelRequest();
+    int32_t client_id;
+    EstablishChannelCallback callback;
+  };
 
   typedef base::Callback<void(const gfx::GpuMemoryBufferHandle& handle)>
       CreateGpuMemoryBufferCallback;
-
-#if defined(OS_CHROMEOS)
-  typedef base::Callback<void(const IPC::ChannelHandle&)>
-      CreateArcVideoAcceleratorChannelCallback;
-#endif
 
   static bool gpu_enabled() { return gpu_enabled_; }
   static int gpu_crash_count() { return gpu_crash_count_; }
@@ -104,6 +105,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   CONTENT_EXPORT static void RegisterGpuMainThreadFactory(
       GpuMainThreadFactoryFunction create);
 
+  // BrowserChildProcessHostDelegate implementation.
+  ServiceRegistry* GetServiceRegistry() override;
+
   // Get the GPU process host for the GPU process with the given ID. Returns
   // null if the process no longer exists.
   static GpuProcessHost* FromID(int host_id);
@@ -121,19 +125,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void EstablishGpuChannel(int client_id,
                            uint64_t client_tracing_id,
                            bool preempts,
-                           bool preempted,
-                           bool allow_future_sync_points,
+                           bool allow_view_command_buffers,
                            bool allow_real_time_streams,
                            const EstablishChannelCallback& callback);
-
-  // Tells the GPU process to create a new command buffer that draws into the
-  // given surface.
-  void CreateViewCommandBuffer(
-      const gfx::GLSurfaceHandle& compositing_surface,
-      int client_id,
-      const GPUCreateCommandBufferConfig& init_params,
-      int route_id,
-      const CreateCommandBufferCallback& callback);
 
   // Tells the GPU process to create a new GPU memory buffer.
   void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
@@ -159,13 +153,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                               int client_id,
                               const gpu::SyncToken& sync_token);
 
-#if defined(OS_CHROMEOS)
-  // Tells the GPU process to create a new ipc channel for
-  // ArcVideoAccelerator.
-  void CreateArcVideoAcceleratorChannel(
-      const CreateArcVideoAcceleratorChannelCallback& callback);
-#endif
-
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
 
@@ -175,10 +162,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Asks the GPU process to stop by itself.
   void StopGpuProcess();
 
-  void BeginFrameSubscription(
-      int surface_id,
-      base::WeakPtr<RenderWidgetHostViewFrameSubscriber> subscriber);
-  void EndFrameSubscription(int surface_id);
   void LoadedShader(const std::string& key, const std::string& data);
 
  private:
@@ -201,28 +184,25 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnProcessLaunched() override;
   void OnProcessLaunchFailed() override;
   void OnProcessCrashed(int exit_code) override;
-  ServiceRegistry* GetServiceRegistry() override;
 
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
-  void OnCommandBufferCreated(CreateCommandBufferResult result);
   void OnGpuMemoryBufferCreated(const gfx::GpuMemoryBufferHandle& handle);
-  void OnArcVideoAcceleratorChannelCreated(const IPC::ChannelHandle& handle);
   void OnDidCreateOffscreenContext(const GURL& url);
   void OnDidLoseContext(bool offscreen,
                         gpu::error::ContextLostReason reason,
                         const GURL& url);
   void OnDidDestroyOffscreenContext(const GURL& url);
-  void OnGpuMemoryUmaStatsReceived(const GPUMemoryUmaStats& stats);
+  void OnGpuMemoryUmaStatsReceived(const gpu::GPUMemoryUmaStats& stats);
 #if defined(OS_MACOSX)
   void OnAcceleratedSurfaceBuffersSwapped(const IPC::Message& message);
 #endif
 
 #if defined(OS_WIN)
   void OnAcceleratedSurfaceCreatedChildWindow(
-      const gfx::PluginWindowHandle& parent_handle,
-      const gfx::PluginWindowHandle& window_handle);
+      gpu::SurfaceHandle parent_handle,
+      gpu::SurfaceHandle window_handle);
 #endif
 
   void CreateChannelCache(int32_t client_id);
@@ -231,7 +211,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                      const std::string& key,
                      const std::string& shader);
 
-  bool LaunchGpuProcess(const std::string& channel_id);
+  bool LaunchGpuProcess(const std::string& channel_id,
+                        gpu::GpuPreferences* gpu_preferences);
 
   void SendOutstandingReplies();
 
@@ -247,20 +228,10 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // These are the channel requests that we have already sent to
   // the GPU process, but haven't heard back about yet.
-  std::queue<EstablishChannelCallback> channel_requests_;
-
-  // The pending create command buffer requests we need to reply to.
-  std::queue<CreateCommandBufferCallback> create_command_buffer_requests_;
+  std::queue<EstablishChannelRequest> channel_requests_;
 
   // The pending create gpu memory buffer requests we need to reply to.
   std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
-
-#if defined(OS_CHROMEOS)
-  // The pending create arc video accelerator channel requests we need to reply
-  // to.
-  std::queue<CreateArcVideoAcceleratorChannelCallback>
-      create_arc_video_accelerator_channel_requests_;
-#endif
 
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;
@@ -313,7 +284,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // Statics kept around to send to UMA histograms on GPU process lost.
   bool uma_memory_stats_received_;
-  GPUMemoryUmaStats uma_memory_stats_;
+  gpu::GPUMemoryUmaStats uma_memory_stats_;
 
   typedef std::map<int32_t, scoped_refptr<ShaderDiskCache>>
       ClientIdToShaderCacheMap;

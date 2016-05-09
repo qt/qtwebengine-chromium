@@ -9,17 +9,20 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "cc/layers/layer.h"
+#include "content/common/child_process_messages.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input/synthetic_smooth_drag_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
 #include "content/public/child/v8_value_converter.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/renderer/chrome_object_extensions_utils.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
@@ -29,6 +32,7 @@
 #include "gin/arguments.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
+#include "gpu/ipc/common/gpu_messages.h"
 #include "third_party/WebKit/public/web/WebImageCache.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
@@ -53,19 +57,52 @@ namespace content {
 
 namespace {
 
-class PNGSerializer : public SkPixelSerializer {
+class EncodingSerializer : public SkPixelSerializer {
  protected:
   bool onUseEncodedData(const void* data, size_t len) override { return true; }
 
   SkData* onEncode(const SkPixmap& pixmap) override {
-    SkBitmap bm;
-    // The const_cast is fine, since we only read from the bitmap.
-    if (bm.installPixels(pixmap.info(),
-                         const_cast<void*>(pixmap.addr()),
-                         pixmap.rowBytes())) {
-      std::vector<unsigned char> vector;
-      if (gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &vector)) {
+    std::vector<uint8_t> vector;
+
+    const base::CommandLine& commandLine =
+        *base::CommandLine::ForCurrentProcess();
+    if (commandLine.HasSwitch(switches::kSkipReencodingOnSKPCapture)) {
+        // In this case, we just want to store some useful information
+        // about the image to replace the missing encoded data.
+
+        // First make sure that the data does not accidentally match any
+        // image signatures.
+        vector.push_back(0xFF);
+        vector.push_back(0xFF);
+        vector.push_back(0xFF);
+        vector.push_back(0xFF);
+
+        // Save the width and height.
+        uint32_t width = pixmap.width();
+        uint32_t height = pixmap.height();
+        vector.push_back(width & 0xFF);
+        vector.push_back((width >> 8) & 0xFF);
+        vector.push_back((width >> 16) & 0xFF);
+        vector.push_back((width >> 24) & 0xFF);
+        vector.push_back(height & 0xFF);
+        vector.push_back((height >> 8) & 0xFF);
+        vector.push_back((height >> 16) & 0xFF);
+        vector.push_back((height >> 24) & 0xFF);
+
+        // Save any additional information about the bitmap that may be
+        // interesting.
+        vector.push_back(pixmap.colorType());
+        vector.push_back(pixmap.alphaType());
         return SkData::NewWithCopy(&vector.front(), vector.size());
+    } else {
+      SkBitmap bm;
+      // The const_cast is fine, since we only read from the bitmap.
+      if (bm.installPixels(pixmap.info(),
+                           const_cast<void*>(pixmap.addr()),
+                           pixmap.rowBytes())) {
+        if (gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &vector)) {
+          return SkData::NewWithCopy(&vector.front(), vector.size());
+        }
       }
     }
     return nullptr;
@@ -91,7 +128,7 @@ class SkPictureSerializer {
       Serialize(children[i].get());
     }
 
-    skia::RefPtr<SkPicture> picture = layer->GetPicture();
+    sk_sp<SkPicture> picture = layer->GetPicture();
     if (!picture)
       return;
 
@@ -105,7 +142,7 @@ class SkPictureSerializer {
     SkFILEWStream file(filepath.c_str());
     DCHECK(file.isValid());
 
-    PNGSerializer serializer;
+    EncodingSerializer serializer;
     picture->serialize(&file, &serializer);
     file.fsync();
   }
@@ -208,7 +245,7 @@ class GpuBenchmarkingContext {
     if (!init_compositor)
       return true;
 
-    compositor_ = render_view_impl_->compositor();
+    compositor_ = render_view_impl_->GetWidget()->compositor();
     if (!compositor_) {
       web_frame_ = NULL;
       web_view_ = NULL;
@@ -360,9 +397,10 @@ bool BeginSmoothScroll(v8::Isolate* isolate,
   // TODO(nduca): If the render_view_impl is destroyed while the gesture is in
   // progress, we will leak the callback and context. This needs to be fixed,
   // somehow.
-  context.render_view_impl()->QueueSyntheticGesture(
+  context.render_view_impl()->GetWidget()->QueueSyntheticGesture(
       std::move(gesture_params),
-      base::Bind(&OnSyntheticGestureCompleted, callback_and_context));
+      base::Bind(&OnSyntheticGestureCompleted,
+                 base::RetainedRef(callback_and_context)));
 
   return true;
 }
@@ -402,9 +440,10 @@ bool BeginSmoothDrag(v8::Isolate* isolate,
   // TODO(nduca): If the render_view_impl is destroyed while the gesture is in
   // progress, we will leak the callback and context. This needs to be fixed,
   // somehow.
-  context.render_view_impl()->QueueSyntheticGesture(
+  context.render_view_impl()->GetWidget()->QueueSyntheticGesture(
       std::move(gesture_params),
-      base::Bind(&OnSyntheticGestureCompleted, callback_and_context));
+      base::Bind(&OnSyntheticGestureCompleted,
+                 base::RetainedRef(callback_and_context)));
 
   return true;
 }
@@ -456,10 +495,10 @@ gin::ObjectTemplateBuilder GpuBenchmarking::GetObjectTemplateBuilder(
       .SetMethod("smoothDrag", &GpuBenchmarking::SmoothDrag)
       .SetMethod("swipe", &GpuBenchmarking::Swipe)
       .SetMethod("scrollBounce", &GpuBenchmarking::ScrollBounce)
-      // TODO(dominikg): Remove once JS interface changes have rolled into
-      //                 stable.
-      .SetValue("newPinchInterface", true)
       .SetMethod("pinchBy", &GpuBenchmarking::PinchBy)
+      .SetMethod("pageScaleFactor", &GpuBenchmarking::PageScaleFactor)
+      .SetMethod("visualViewportX", &GpuBenchmarking::VisualViewportX)
+      .SetMethod("visualViewportY", &GpuBenchmarking::VisualViewportY)
       .SetMethod("visualViewportHeight", &GpuBenchmarking::VisualViewportHeight)
       .SetMethod("visualViewportWidth", &GpuBenchmarking::VisualViewportWidth)
       .SetMethod("tap", &GpuBenchmarking::Tap)
@@ -467,7 +506,10 @@ gin::ObjectTemplateBuilder GpuBenchmarking::GetObjectTemplateBuilder(
       .SetMethod("runMicroBenchmark", &GpuBenchmarking::RunMicroBenchmark)
       .SetMethod("sendMessageToMicroBenchmark",
                  &GpuBenchmarking::SendMessageToMicroBenchmark)
-      .SetMethod("hasGpuProcess", &GpuBenchmarking::HasGpuProcess);
+      .SetMethod("hasGpuChannel", &GpuBenchmarking::HasGpuChannel)
+      .SetMethod("hasGpuProcess", &GpuBenchmarking::HasGpuProcess)
+      .SetMethod("getGpuDriverBugWorkarounds",
+                 &GpuBenchmarking::GetGpuDriverBugWorkarounds);
 }
 
 void GpuBenchmarking::SetNeedsDisplayOnAllLayers() {
@@ -527,7 +569,7 @@ bool GpuBenchmarking::SmoothScrollBy(gin::Arguments* args) {
     return false;
 
   float page_scale_factor = context.web_view()->pageScaleFactor();
-  blink::WebRect rect = context.render_view_impl()->windowRect();
+  blink::WebRect rect = context.render_view_impl()->GetWidget()->windowRect();
 
   float pixels_to_scroll = 0;
   v8::Local<v8::Function> callback;
@@ -597,7 +639,7 @@ bool GpuBenchmarking::Swipe(gin::Arguments* args) {
     return false;
 
   float page_scale_factor = context.web_view()->pageScaleFactor();
-  blink::WebRect rect = context.render_view_impl()->windowRect();
+  blink::WebRect rect = context.render_view_impl()->GetWidget()->windowRect();
 
   std::string direction = "up";
   float pixels_to_scroll = 0;
@@ -632,7 +674,7 @@ bool GpuBenchmarking::ScrollBounce(gin::Arguments* args) {
     return false;
 
   float page_scale_factor = context.web_view()->pageScaleFactor();
-  blink::WebRect rect = context.render_view_impl()->windowRect();
+  blink::WebRect rect = context.render_view_impl()->GetWidget()->windowRect();
 
   std::string direction = "down";
   float distance_length = 0;
@@ -695,9 +737,10 @@ bool GpuBenchmarking::ScrollBounce(gin::Arguments* args) {
   // TODO(nduca): If the render_view_impl is destroyed while the gesture is in
   // progress, we will leak the callback and context. This needs to be fixed,
   // somehow.
-  context.render_view_impl()->QueueSyntheticGesture(
+  context.render_view_impl()->GetWidget()->QueueSyntheticGesture(
       std::move(gesture_params),
-      base::Bind(&OnSyntheticGestureCompleted, callback_and_context));
+      base::Bind(&OnSyntheticGestureCompleted,
+                 base::RetainedRef(callback_and_context)));
 
   return true;
 }
@@ -725,6 +768,7 @@ bool GpuBenchmarking::PinchBy(gin::Arguments* args) {
   scoped_ptr<SyntheticPinchGestureParams> gesture_params(
       new SyntheticPinchGestureParams);
 
+  // TODO(bokan): Remove page scale here when change land in Catapult.
   // Convert coordinates from CSS pixels to density independent pixels (DIPs).
   float page_scale_factor = context.web_view()->pageScaleFactor();
 
@@ -743,11 +787,33 @@ bool GpuBenchmarking::PinchBy(gin::Arguments* args) {
   // TODO(nduca): If the render_view_impl is destroyed while the gesture is in
   // progress, we will leak the callback and context. This needs to be fixed,
   // somehow.
-  context.render_view_impl()->QueueSyntheticGesture(
+  context.render_view_impl()->GetWidget()->QueueSyntheticGesture(
       std::move(gesture_params),
-      base::Bind(&OnSyntheticGestureCompleted, callback_and_context));
+      base::Bind(&OnSyntheticGestureCompleted,
+                 base::RetainedRef(callback_and_context)));
 
   return true;
+}
+
+float GpuBenchmarking::PageScaleFactor() {
+  GpuBenchmarkingContext context;
+  if (!context.Init(false))
+    return 0.0;
+  return context.web_view()->pageScaleFactor();
+}
+
+float GpuBenchmarking::VisualViewportY() {
+  GpuBenchmarkingContext context;
+  if (!context.Init(false))
+    return 0.0;
+  return context.web_view()->visualViewportOffset().y;
+}
+
+float GpuBenchmarking::VisualViewportX() {
+  GpuBenchmarkingContext context;
+  if (!context.Init(false))
+    return 0.0;
+  return context.web_view()->visualViewportOffset().x;
 }
 
 float GpuBenchmarking::VisualViewportHeight() {
@@ -809,9 +875,10 @@ bool GpuBenchmarking::Tap(gin::Arguments* args) {
   // TODO(nduca): If the render_view_impl is destroyed while the gesture is in
   // progress, we will leak the callback and context. This needs to be fixed,
   // somehow.
-  context.render_view_impl()->QueueSyntheticGesture(
+  context.render_view_impl()->GetWidget()->QueueSyntheticGesture(
       std::move(gesture_params),
-      base::Bind(&OnSyntheticGestureCompleted, callback_and_context));
+      base::Bind(&OnSyntheticGestureCompleted,
+                 base::RetainedRef(callback_and_context)));
 
   return true;
 }
@@ -847,7 +914,8 @@ int GpuBenchmarking::RunMicroBenchmark(gin::Arguments* args) {
 
   return context.compositor()->ScheduleMicroBenchmark(
       name, std::move(value),
-      base::Bind(&OnMicroBenchmarkCompleted, callback_and_context));
+      base::Bind(&OnMicroBenchmarkCompleted,
+                 base::RetainedRef(callback_and_context)));
 }
 
 bool GpuBenchmarking::SendMessageToMicroBenchmark(
@@ -868,9 +936,33 @@ bool GpuBenchmarking::SendMessageToMicroBenchmark(
                                                            std::move(value));
 }
 
+bool GpuBenchmarking::HasGpuChannel() {
+  gpu::GpuChannelHost* gpu_channel =
+      RenderThreadImpl::current()->GetGpuChannel();
+  return !!gpu_channel;
+}
+
 bool GpuBenchmarking::HasGpuProcess() {
-    GpuChannelHost* gpu_channel = RenderThreadImpl::current()->GetGpuChannel();
-    return !!gpu_channel;
+  bool has_gpu_process = false;
+  if (!RenderThreadImpl::current()->Send(
+          new ChildProcessHostMsg_HasGpuProcess(&has_gpu_process)))
+    return false;
+
+  return has_gpu_process;
+}
+
+void GpuBenchmarking::GetGpuDriverBugWorkarounds(gin::Arguments* args) {
+  std::vector<std::string> gpu_driver_bug_workarounds;
+  gpu::GpuChannelHost* gpu_channel =
+      RenderThreadImpl::current()->GetGpuChannel();
+  if (!gpu_channel->Send(new GpuChannelMsg_GetDriverBugWorkArounds(
+          &gpu_driver_bug_workarounds))) {
+    return;
+  }
+
+  v8::Local<v8::Value> result;
+  if (gin::TryConvertToV8(args->isolate(), gpu_driver_bug_workarounds, &result))
+    args->Return(result);
 }
 
 }  // namespace content

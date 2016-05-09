@@ -14,6 +14,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_base.h"
+#include "base/strings/string_piece.h"
 
 namespace base {
 
@@ -31,7 +33,67 @@ class Lock;
 
 class BASE_EXPORT StatisticsRecorder {
  public:
+  // A class used as a key for the histogram map below. It always references
+  // a string owned outside of this class, likely in the value of the map.
+  class StringKey : public StringPiece {
+   public:
+    // Constructs the StringKey using various sources. The source must live
+    // at least as long as the created object.
+    StringKey(const std::string& str) : StringPiece(str) {}
+    StringKey(StringPiece str) : StringPiece(str) {}
+
+    // Though StringPiece is better passed by value than by reference, in
+    // this case it's being passed many times and likely already been stored
+    // in memory (not just registers) so the benefit of pass-by-value is
+    // negated.
+    bool operator<(const StringKey& rhs) const {
+      // Since order is unimportant in the map and string comparisons can be
+      // slow, use the length as the primary sort value.
+      if (length() < rhs.length())
+        return true;
+      if (length() > rhs.length())
+        return false;
+
+      // Fall back to an actual string comparison. The lengths are the same
+      // so a simple memory-compare is sufficient. This is slightly more
+      // efficient than calling operator<() for StringPiece which would
+      // again have to check lengths before calling wordmemcmp().
+      return wordmemcmp(data(), rhs.data(), length()) < 0;
+    }
+  };
+
+  typedef std::map<StringKey, HistogramBase*> HistogramMap;
   typedef std::vector<HistogramBase*> Histograms;
+
+  // A class for iterating over the histograms held within this global resource.
+  class BASE_EXPORT HistogramIterator {
+   public:
+    HistogramIterator(const HistogramMap::iterator& iter,
+                      bool include_persistent);
+    HistogramIterator(const HistogramIterator& rhs);  // Must be copyable.
+    ~HistogramIterator();
+
+    HistogramIterator& operator++();
+    HistogramIterator operator++(int) {
+      HistogramIterator tmp(*this);
+      operator++();
+      return tmp;
+    }
+
+    bool operator==(const HistogramIterator& rhs) const {
+      return iter_ == rhs.iter_;
+    }
+    bool operator!=(const HistogramIterator& rhs) const {
+      return iter_ != rhs.iter_;
+    }
+    HistogramBase* operator*() { return iter_->second; }
+
+   private:
+    HistogramMap::iterator iter_;
+    const bool include_persistent_;
+  };
+
+  ~StatisticsRecorder();
 
   // Initializes the StatisticsRecorder system. Safe to call multiple times.
   static void Initialize();
@@ -70,7 +132,11 @@ class BASE_EXPORT StatisticsRecorder {
 
   // Find a histogram by name. It matches the exact name. This method is thread
   // safe.  It returns NULL if a matching histogram is not found.
-  static HistogramBase* FindHistogram(const std::string& name);
+  static HistogramBase* FindHistogram(base::StringPiece name);
+
+  // Support for iterating over known histograms.
+  static HistogramIterator begin(bool include_persistent);
+  static HistogramIterator end();
 
   // GetSnapshot copies some of the pointers to registered histograms into the
   // caller supplied vector (Histograms). Only histograms which have |query| as
@@ -96,11 +162,19 @@ class BASE_EXPORT StatisticsRecorder {
   // histogram. This method is thread safe.
   static OnSampleCallback FindCallback(const std::string& histogram_name);
 
- private:
-  // We keep all registered histograms in a map, indexed by the hash of the
-  // name of the histogram.
-  typedef std::map<uint64_t, HistogramBase*> HistogramMap;
+  // Returns the number of known histograms.
+  static size_t GetHistogramCount();
 
+  // Removes a histogram from the internal set of known ones. This can be
+  // necessary during testing persistent histograms where the underlying
+  // memory is being released.
+  static void ForgetHistogramForTesting(base::StringPiece name);
+
+  // Reset any global instance of the statistics-recorder that was created
+  // by a call to Initialize().
+  static void UninitializeForTesting();
+
+ private:
   // We keep a map of callbacks to histograms, so that as histograms are
   // created, we can set the callback properly.
   typedef std::map<std::string, OnSampleCallback> CallbackMap;
@@ -115,6 +189,7 @@ class BASE_EXPORT StatisticsRecorder {
   friend class HistogramSnapshotManagerTest;
   friend class HistogramTest;
   friend class JsonPrefStoreTest;
+  friend class SharedHistogramTest;
   friend class SparseHistogramTest;
   friend class StatisticsRecorderTest;
   FRIEND_TEST_ALL_PREFIXES(HistogramDeltaSerializationTest,
@@ -122,10 +197,17 @@ class BASE_EXPORT StatisticsRecorder {
 
   // The constructor just initializes static members. Usually client code should
   // use Initialize to do this. But in test code, you can friend this class and
-  // call destructor/constructor to get a clean StatisticsRecorder.
+  // call the constructor to get a clean StatisticsRecorder.
   StatisticsRecorder();
-  ~StatisticsRecorder();
 
+  // These are copies of everything that existed when the (test) Statistics-
+  // Recorder was created. The global ones have to be moved aside to create a
+  // clean environment.
+  std::unique_ptr<HistogramMap> existing_histograms_;
+  std::unique_ptr<CallbackMap> existing_callbacks_;
+  std::unique_ptr<RangesMap> existing_ranges_;
+
+  static void Reset();
   static void DumpHistogramsToVlog(void* instance);
 
   static HistogramMap* histograms_;

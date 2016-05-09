@@ -5,17 +5,18 @@
 {
   'variables': {
     'scheduler_common_sources': [
+      # Sources list duplicated in GN build.
       'common/scheduler_switches.cc',
       'common/scheduler_switches.h',
     ],
     'scheduler_sources': [
+      # Sources list duplicated in GN build.
       'base/cancelable_closure_holder.cc',
       'base/cancelable_closure_holder.h',
       'base/lazy_now.cc',
       'base/lazy_now.h',
       'base/real_time_domain.cc',
       'base/real_time_domain.h',
-      'base/task_queue.cc',
       'base/task_queue.h',
       'base/task_queue_impl.cc',
       'base/task_queue_impl.h',
@@ -48,8 +49,6 @@
       'child/scheduler_tqm_delegate_impl.h',
       'child/single_thread_idle_task_runner.cc',
       'child/single_thread_idle_task_runner.h',
-      'child/virtual_time_tqm_delegate.cc',
-      'child/virtual_time_tqm_delegate.h',
       'child/web_scheduler_impl.cc',
       'child/web_scheduler_impl.h',
       'child/web_task_runner_impl.cc',
@@ -62,6 +61,8 @@
       'child/worker_scheduler.h',
       'child/worker_scheduler_impl.cc',
       'child/worker_scheduler_impl.h',
+      'renderer/auto_advancing_virtual_time_domain.cc',
+      'renderer/auto_advancing_virtual_time_domain.h',
       'renderer/deadline_task_runner.cc',
       'renderer/deadline_task_runner.h',
       'renderer/idle_time_estimator.cc',
@@ -93,6 +94,7 @@
       'scheduler_export.h',
     ],
     'scheduler_test_support_sources': [
+      # Sources list duplicated in GN build.
       'test/lazy_scheduler_message_loop_delegate_for_tests.cc',
       'test/lazy_scheduler_message_loop_delegate_for_tests.h',
     ],

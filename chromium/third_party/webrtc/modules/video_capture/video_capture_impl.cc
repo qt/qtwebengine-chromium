@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 
+#include "webrtc/base/refcount.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/include/module_common_types.h"
@@ -19,22 +20,17 @@
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/ref_count.h"
 #include "webrtc/system_wrappers/include/tick_util.h"
 
-namespace webrtc
-{
-
-namespace videocapturemodule
-{
-VideoCaptureModule* VideoCaptureImpl::Create(
+namespace webrtc {
+namespace videocapturemodule {
+rtc::scoped_refptr<VideoCaptureModule> VideoCaptureImpl::Create(
     const int32_t id,
-    VideoCaptureExternal*& externalCapture)
-{
-    RefCountImpl<VideoCaptureImpl>* implementation =
-        new RefCountImpl<VideoCaptureImpl>(id);
-    externalCapture = implementation;
-    return implementation;
+    VideoCaptureExternal*& externalCapture) {
+  rtc::scoped_refptr<VideoCaptureImpl> implementation(
+      new rtc::RefCountedObject<VideoCaptureImpl>(id));
+  externalCapture = implementation.get();
+  return implementation;
 }
 
 const char* VideoCaptureImpl::CurrentDeviceName() const
@@ -93,7 +89,7 @@ int64_t VideoCaptureImpl::TimeUntilNextProcess()
 }
 
 // Process any pending tasks such as timeouts
-int32_t VideoCaptureImpl::Process()
+void VideoCaptureImpl::Process()
 {
     CriticalSectionScoped cs(&_callBackCs);
 
@@ -136,8 +132,6 @@ int32_t VideoCaptureImpl::Process()
     }
 
     _lastProcessFrameCount = _incomingFrameTimes[0];
-
-    return 0;
 }
 
 VideoCaptureImpl::VideoCaptureImpl(const int32_t id)
@@ -157,7 +151,7 @@ VideoCaptureImpl::VideoCaptureImpl(const int32_t id)
       _captureCallBack(NULL),
       _lastProcessFrameCount(TickTime::Now()),
       _rotateFrame(kVideoRotation_0),
-      apply_rotation_(true) {
+      apply_rotation_(false) {
     _requestedCapability.width = kDefaultWidth;
     _requestedCapability.height = kDefaultHeight;
     _requestedCapability.maxFPS = 30;
@@ -280,16 +274,10 @@ int32_t VideoCaptureImpl::IncomingFrame(
         // Setting absolute height (in case it was negative).
         // In Windows, the image starts bottom left, instead of top left.
         // Setting a negative source height, inverts the image (within LibYuv).
-        int ret = _captureFrame.CreateEmptyFrame(target_width,
-                                                 abs(target_height),
-                                                 stride_y,
-                                                 stride_uv, stride_uv);
-        if (ret < 0)
-        {
-            LOG(LS_ERROR) << "Failed to create empty frame, this should only "
-                             "happen due to bad parameters.";
-            return -1;
-        }
+        _captureFrame.CreateEmptyFrame(target_width,
+                                       abs(target_height),
+                                       stride_y,
+                                       stride_uv, stride_uv);
         const int conversionResult = ConvertToI420(
             commonVideoType, videoFrame, 0, 0,  // No cropping
             width, height, videoFrameLength,

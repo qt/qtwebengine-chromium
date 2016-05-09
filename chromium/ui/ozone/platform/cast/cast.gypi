@@ -4,6 +4,7 @@
 
 {
   'variables': {
+    'disable_display%': 0,
     'internal_ozone_platform_deps': [
       'ozone_platform_cast',
     ],
@@ -18,16 +19,22 @@
       'target_name': 'ozone_platform_cast',
       'type': 'static_library',
       'dependencies': [
+        'ozone.gyp:ozone_base',
+        'ozone.gyp:ozone_common',
         '../events/events.gyp:events',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../../base/base.gyp:base',
         '../../chromecast/chromecast.gyp:cast_public_api',
         '../../chromecast/chromecast.gyp:libcast_graphics_1.0',
-        '../../chromecast/media/media.gyp:media_base',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
+      ],
+      'conditions': [
+        ['disable_display==1', {
+          'defines': ['DISABLE_DISPLAY'],
+        }],
       ],
 
       'sources': [

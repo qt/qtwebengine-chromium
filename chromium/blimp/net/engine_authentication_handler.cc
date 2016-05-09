@@ -4,13 +4,17 @@
 
 #include "blimp/net/engine_authentication_handler.h"
 
+#include <string>
+
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/timer/timer.h"
+#include "blimp/common/logging.h"
 #include "blimp/common/proto/blimp_message.pb.h"
 #include "blimp/net/blimp_connection.h"
 #include "blimp/net/blimp_message_processor.h"
 #include "blimp/net/blimp_transport.h"
+#include "blimp/net/common.h"
 #include "blimp/net/connection_error_observer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
@@ -29,8 +33,9 @@ const int kAuthTimeoutDurationInSeconds = 10;
 class Authenticator : public ConnectionErrorObserver,
                       public BlimpMessageProcessor {
  public:
-  explicit Authenticator(scoped_ptr<BlimpConnection> connection,
-                         base::WeakPtr<ConnectionHandler> connection_handler);
+  explicit Authenticator(std::unique_ptr<BlimpConnection> connection,
+                         base::WeakPtr<ConnectionHandler> connection_handler,
+                         const std::string& client_token);
   ~Authenticator() override;
 
  private:
@@ -44,14 +49,17 @@ class Authenticator : public ConnectionErrorObserver,
   void OnConnectionError(int error) override;
 
   // BlimpMessageProcessor implementation.
-  void ProcessMessage(scoped_ptr<BlimpMessage> message,
+  void ProcessMessage(std::unique_ptr<BlimpMessage> message,
                       const net::CompletionCallback& callback) override;
 
   // The connection to be authenticated.
-  scoped_ptr<BlimpConnection> connection_;
+  std::unique_ptr<BlimpConnection> connection_;
 
   // Handler to pass successfully authenticated connections to.
   base::WeakPtr<ConnectionHandler> connection_handler_;
+
+  // Used to authenticate incoming connection.
+  const std::string client_token_;
 
   // A timer to fail authentication on timeout.
   base::OneShotTimer timeout_timer_;
@@ -60,10 +68,12 @@ class Authenticator : public ConnectionErrorObserver,
 };
 
 Authenticator::Authenticator(
-    scoped_ptr<BlimpConnection> connection,
-    base::WeakPtr<ConnectionHandler> connection_handler)
+    std::unique_ptr<BlimpConnection> connection,
+    base::WeakPtr<ConnectionHandler> connection_handler,
+    const std::string& client_token)
     : connection_(std::move(connection)),
-      connection_handler_(connection_handler) {
+      connection_handler_(connection_handler),
+      client_token_(client_token) {
   DVLOG(1) << "Authenticator object created.";
 
   // Observe for errors that might occur during the authentication phase.
@@ -99,14 +109,21 @@ void Authenticator::OnConnectionError(int error) {
   OnConnectionAuthenticated(false);
 }
 
-void Authenticator::ProcessMessage(scoped_ptr<BlimpMessage> message,
+void Authenticator::ProcessMessage(std::unique_ptr<BlimpMessage> message,
                                    const net::CompletionCallback& callback) {
-  if (message->type() == BlimpMessage::PROTOCOL_CONTROL) {
+  if (message->type() == BlimpMessage::PROTOCOL_CONTROL &&
+      message->protocol_control().type() ==
+          ProtocolControlMessage::START_CONNECTION) {
+    bool token_match =
+        client_token_ ==
+        message->protocol_control().start_connection().client_token();
     DVLOG(1) << "Authentication challenge received: "
-             << message->protocol_control().start_connection().client_token();
-    OnConnectionAuthenticated(true);
+             << message->protocol_control().start_connection().client_token()
+             << ", and token "
+             << (token_match ? " matches" : " does not match");
+    OnConnectionAuthenticated(token_match);
   } else {
-    DVLOG(1) << "Expected START_CONNECTION message, got " << message
+    DVLOG(1) << "Expected START_CONNECTION message, got " << *message
              << " instead.";
     OnConnectionAuthenticated(false);
   }
@@ -117,16 +134,21 @@ void Authenticator::ProcessMessage(scoped_ptr<BlimpMessage> message,
 }  // namespace
 
 EngineAuthenticationHandler::EngineAuthenticationHandler(
-    ConnectionHandler* connection_handler)
-    : connection_handler_weak_factory_(connection_handler) {}
+    ConnectionHandler* connection_handler,
+    const std::string& client_token)
+    : connection_handler_weak_factory_(connection_handler),
+      client_token_(client_token) {
+  DCHECK(!client_token_.empty());
+}
 
 EngineAuthenticationHandler::~EngineAuthenticationHandler() {}
 
 void EngineAuthenticationHandler::HandleConnection(
-    scoped_ptr<BlimpConnection> connection) {
+    std::unique_ptr<BlimpConnection> connection) {
   // Authenticator manages its own lifetime.
   new Authenticator(std::move(connection),
-                    connection_handler_weak_factory_.GetWeakPtr());
+                    connection_handler_weak_factory_.GetWeakPtr(),
+                    client_token_);
 }
 
 }  // namespace blimp

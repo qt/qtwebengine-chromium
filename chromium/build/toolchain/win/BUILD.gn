@@ -25,12 +25,7 @@ if (use_goma) {
 }
 
 # This value will be inherited in the toolchain below.
-if (is_cfi) {
-  concurrent_links =
-      exec_script("../get_concurrent_links.py", [ "--lto" ], "value")
-} else {
-  concurrent_links = exec_script("../get_concurrent_links.py", [], "value")
-}
+concurrent_links = exec_script("../get_concurrent_links.py", [], "value")
 
 # Copy the VS runtime DLL for the default toolchain to the root build directory
 # so things will run.
@@ -74,7 +69,11 @@ template("msvc_toolchain") {
       rspfile = "{{output}}.rsp"
       precompiled_header_type = "msvc"
       pdbname = "{{target_out_dir}}/{{label_name}}_c.pdb"
-      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
+
+      # Label names may have spaces in them so the pdbname must be quoted. The
+      # source and output don't need to be quoted because GN knows they're a
+      # full file name and will quote automatically when necessary.
+      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
       depsformat = "msvc"
       description = "CC {{output}}"
       outputs = [
@@ -89,7 +88,9 @@ template("msvc_toolchain") {
 
       # The PDB name needs to be different between C and C++ compiled files.
       pdbname = "{{target_out_dir}}/{{label_name}}_cc.pdb"
-      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
+
+      # See comment in CC tool about quoting.
+      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
       depsformat = "msvc"
       description = "CXX {{output}}"
       outputs = [
@@ -155,6 +156,7 @@ template("msvc_toolchain") {
       ]
       link_output = libname
       depend_output = libname
+      runtime_link_output = dllname
 
       # Since the above commands only updates the .lib file when it changes, ask
       # Ninja to check if the timestamp actually changed to know if downstream
@@ -225,9 +227,12 @@ template("msvc_toolchain") {
       if (defined(invoker.toolchain_os)) {
         current_os = invoker.toolchain_os
       }
-      if (defined(invoker.is_clang)) {
-        is_clang = invoker.is_clang
-      }
+
+      forward_variables_from(invoker,
+                             [
+                               "is_clang",
+                               "is_component_build",
+                             ])
 
       # This value needs to be passed through unchanged.
       host_toolchain = host_toolchain
@@ -284,21 +289,58 @@ x64_toolchain_data = exec_script("setup_toolchain.py",
                                  ],
                                  "scope")
 
-msvc_toolchain("x64") {
-  environment = "environment.x64"
-  toolchain_cpu = "x64"
-  cl = "${goma_prefix}\"${x64_toolchain_data.vc_bin_dir}/cl.exe\""
-  is_clang = false
+template("win_x64_toolchains") {
+  # TODO(mcgrathr): These assignments are only required because of
+  # crbug.com/395883.  Drop them if that ever gets fixed in GN.
+  concurrent_links = invoker.concurrent_links
+  goma_prefix = invoker.goma_prefix
+  x64_toolchain_data = invoker.x64_toolchain_data
+  clang_cl = invoker.clang_cl
+
+  msvc_toolchain(target_name) {
+    environment = "environment.x64"
+    toolchain_cpu = "x64"
+    cl = "${goma_prefix}\"${x64_toolchain_data.vc_bin_dir}/cl.exe\""
+    is_clang = false
+
+    forward_variables_from(invoker, [ "is_component_build" ])
+  }
+
+  msvc_toolchain("clang_" + target_name) {
+    environment = "environment.x64"
+    toolchain_cpu = "x64"
+    prefix = rebase_path("//third_party/llvm-build/Release+Asserts/bin",
+                         root_build_dir)
+    cl = "${goma_prefix}$prefix/${clang_cl}"
+    toolchain_os = "win"
+    is_clang = true
+
+    forward_variables_from(invoker, [ "is_component_build" ])
+  }
 }
 
-msvc_toolchain("clang_x64") {
-  environment = "environment.x64"
-  toolchain_cpu = "x64"
-  prefix = rebase_path("//third_party/llvm-build/Release+Asserts/bin",
-                       root_build_dir)
-  cl = "${goma_prefix}$prefix/${clang_cl}"
-  toolchain_os = "win"
-  is_clang = true
+win_x64_toolchains("x64") {
+  # TODO(mcgrathr): These assignments are only required because of
+  # crbug.com/395883.  Drop them if that ever gets fixed in GN.
+  concurrent_links = concurrent_links
+  goma_prefix = goma_prefix
+  x64_toolchain_data = x64_toolchain_data
+}
+
+# The nacl_win64 toolchain is nearly identical to the plain x64 toolchain.
+# It's used solely for building nacl64.exe (//components/nacl/broker:nacl64).
+# The only reason it's a separate toolchain is so that it can force
+# is_component_build to false in the toolchain_args() block, because
+# building nacl64.exe in component style does not work.
+win_x64_toolchains("nacl_win64") {
+  is_component_build = false
+
+  # TODO(mcgrathr): These assignments are only required because of
+  # crbug.com/395883.  Drop them if that ever gets fixed in GN.
+  concurrent_links = concurrent_links
+  goma_prefix = goma_prefix
+  x64_toolchain_data = x64_toolchain_data
+  clang_cl = clang_cl
 }
 
 # WinRT toolchains. Only define these when targeting them.

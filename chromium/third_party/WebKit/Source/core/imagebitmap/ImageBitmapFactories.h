@@ -37,27 +37,32 @@
 #include "bindings/core/v8/UnionTypesCore.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "core/imagebitmap/ImageBitmapOptions.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/IntRect.h"
+#include "third_party/skia/include/core/SkImage.h"
 
 namespace blink {
 
-class ImageBitmapSource;
 class Blob;
 class EventTarget;
 class ExceptionState;
 class ExecutionContext;
+class ImageBitmapSource;
+class ImageBitmapOptions;
+class ImageDecoder;
+class WebTaskRunner;
 
 typedef HTMLImageElementOrHTMLVideoElementOrHTMLCanvasElementOrBlobOrImageDataOrImageBitmap ImageBitmapSourceUnion;
 
-class ImageBitmapFactories final : public NoBaseWillBeGarbageCollectedFinalized<ImageBitmapFactories>, public WillBeHeapSupplement<LocalDOMWindow>, public WillBeHeapSupplement<WorkerGlobalScope> {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapFactories);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(ImageBitmapFactories);
-
+class ImageBitmapFactories final : public GarbageCollectedFinalized<ImageBitmapFactories>, public Supplement<LocalDOMWindow>, public Supplement<WorkerGlobalScope> {
+    USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapFactories);
 public:
     static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, const ImageBitmapSourceUnion&, ExceptionState&);
+    static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, const ImageBitmapSourceUnion&, const ImageBitmapOptions&, ExceptionState&);
     static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, const ImageBitmapSourceUnion&, int sx, int sy, int sw, int sh, ExceptionState&);
-    static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, ImageBitmapSource*, int sx, int sy, int sw, int sh, ExceptionState&);
+    static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, const ImageBitmapSourceUnion&, int sx, int sy, int sw, int sh, const ImageBitmapOptions&, ExceptionState&);
+    static ScriptPromise createImageBitmap(ScriptState*, EventTarget&, ImageBitmapSource*, int sx, int sy, int sw, int sh, const ImageBitmapOptions&, ExceptionState&);
 
     virtual ~ImageBitmapFactories() { }
 
@@ -69,9 +74,9 @@ protected:
 private:
     class ImageBitmapLoader final : public GarbageCollectedFinalized<ImageBitmapLoader>, public FileReaderLoaderClient {
     public:
-        static ImageBitmapLoader* create(ImageBitmapFactories& factory, const IntRect& cropRect, ScriptState* scriptState)
+        static ImageBitmapLoader* create(ImageBitmapFactories& factory, const IntRect& cropRect, const ImageBitmapOptions& options, ScriptState* scriptState)
         {
-            return new ImageBitmapLoader(factory, cropRect, scriptState);
+            return new ImageBitmapLoader(factory, cropRect, scriptState, options);
         }
 
         void loadBlobAsync(ExecutionContext*, Blob*);
@@ -82,9 +87,13 @@ private:
         ~ImageBitmapLoader() override { }
 
     private:
-        ImageBitmapLoader(ImageBitmapFactories&, const IntRect&, ScriptState*);
+        ImageBitmapLoader(ImageBitmapFactories&, const IntRect&, ScriptState*, const ImageBitmapOptions&);
 
         void rejectPromise();
+
+        void scheduleAsyncImageBitmapDecoding();
+        void decodeImageOnDecoderThread(WebTaskRunner*);
+        void resolvePromiseOnOriginalThread(PassRefPtr<SkImage>);
 
         // FileReaderLoaderClient
         void didStartLoading() override { }
@@ -93,9 +102,10 @@ private:
         void didFail(FileError::ErrorCode) override;
 
         FileReaderLoader m_loader;
-        RawPtrWillBeMember<ImageBitmapFactories> m_factory;
+        Member<ImageBitmapFactories> m_factory;
         Member<ScriptPromiseResolver> m_resolver;
         IntRect m_cropRect;
+        ImageBitmapOptions m_options;
     };
 
     static ImageBitmapFactories& from(EventTarget&);
@@ -106,7 +116,7 @@ private:
     void addLoader(ImageBitmapLoader*);
     void didFinishLoading(ImageBitmapLoader*);
 
-    PersistentHeapHashSetWillBeHeapHashSet<Member<ImageBitmapLoader>> m_pendingLoaders;
+    HeapHashSet<Member<ImageBitmapLoader>> m_pendingLoaders;
 };
 
 } // namespace blink

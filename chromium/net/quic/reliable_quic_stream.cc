@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "net/quic/iovector.h"
-#include "net/quic/quic_ack_listener_interface.h"
 #include "net/quic/quic_bug_tracker.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_flow_controller.h"
@@ -67,7 +66,6 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
       fin_received_(false),
       rst_sent_(false),
       rst_received_(false),
-      fec_policy_(FEC_PROTECT_OPTIONAL),
       perspective_(session_->perspective()),
       flow_controller_(session_->connection(),
                        id_,
@@ -82,14 +80,12 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
 
 ReliableQuicStream::~ReliableQuicStream() {}
 
-void ReliableQuicStream::SetFromConfig() {
-  if (session_->config()->HasClientSentConnectionOption(kFSTR, perspective_)) {
-    fec_policy_ = FEC_PROTECT_ALWAYS;
-  }
-}
+void ReliableQuicStream::SetFromConfig() {}
 
 void ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   DCHECK_EQ(frame.stream_id, id_);
+
+  DCHECK(!(read_side_closed_ && write_side_closed_));
 
   if (frame.fin) {
     fin_received_ = true;
@@ -114,7 +110,7 @@ void ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
     // violation of flow control.
     if (flow_controller_.FlowControlViolation() ||
         connection_flow_controller_->FlowControlViolation()) {
-      session_->connection()->SendConnectionCloseWithDetails(
+      CloseConnectionWithDetails(
           QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA,
           "Flow control violation after increasing offset");
       return;
@@ -146,7 +142,7 @@ void ReliableQuicStream::OnStreamReset(const QuicRstStreamFrame& frame) {
 }
 
 void ReliableQuicStream::OnConnectionClosed(QuicErrorCode error,
-                                            bool /*from_peer*/) {
+                                            ConnectionCloseSource /*source*/) {
   if (read_side_closed_ && write_side_closed_) {
     return;
   }
@@ -179,7 +175,8 @@ void ReliableQuicStream::Reset(QuicRstStreamErrorCode error) {
 
 void ReliableQuicStream::CloseConnectionWithDetails(QuicErrorCode error,
                                                     const string& details) {
-  session()->connection()->SendConnectionCloseWithDetails(error, details);
+  session()->connection()->CloseConnection(
+      error, details, ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
 }
 
 void ReliableQuicStream::WriteOrBufferData(
@@ -214,7 +211,7 @@ void ReliableQuicStream::WriteOrBufferData(
       (fin && !consumed_data.fin_consumed)) {
     StringPiece remainder(data.substr(consumed_data.bytes_consumed));
     queued_data_bytes_ += remainder.size();
-    queued_data_.push_back(PendingData(remainder.as_string(), ack_listener));
+    queued_data_.emplace_back(remainder.as_string(), ack_listener);
   }
 }
 
@@ -264,7 +261,7 @@ void ReliableQuicStream::MaybeSendBlocked() {
   // WINDOW_UPDATE arrives.
   if (connection_flow_controller_->IsBlocked() &&
       !flow_controller_.IsBlocked()) {
-    session_->MarkConnectionLevelWriteBlocked(id(), Priority());
+    session_->MarkConnectionLevelWriteBlocked(id());
   }
 }
 
@@ -291,6 +288,11 @@ QuicConsumedData ReliableQuicStream::WritevData(
         min(send_window, connection_flow_controller_->SendWindowSize());
   }
 
+  if (FLAGS_quic_cede_correctly && session_->ShouldYield(id())) {
+    session_->MarkConnectionLevelWriteBlocked(id());
+    return QuicConsumedData(0, false);
+  }
+
   if (send_window == 0 && !fin_with_zero_data) {
     // Quick return if nothing can be sent.
     MaybeSendBlocked();
@@ -305,9 +307,9 @@ QuicConsumedData ReliableQuicStream::WritevData(
     write_length = static_cast<size_t>(send_window);
   }
 
-  QuicConsumedData consumed_data = session()->WritevData(
-      id(), QuicIOVector(iov, iov_count, write_length), stream_bytes_written_,
-      fin, GetFecProtection(), ack_listener);
+  QuicConsumedData consumed_data =
+      session()->WritevData(id(), QuicIOVector(iov, iov_count, write_length),
+                            stream_bytes_written_, fin, ack_listener);
   stream_bytes_written_ += consumed_data.bytes_consumed;
 
   AddBytesSent(consumed_data.bytes_consumed);
@@ -329,16 +331,12 @@ QuicConsumedData ReliableQuicStream::WritevData(
       }
       CloseWriteSide();
     } else if (fin && !consumed_data.fin_consumed) {
-      session_->MarkConnectionLevelWriteBlocked(id(), Priority());
+      session_->MarkConnectionLevelWriteBlocked(id());
     }
   } else {
-    session_->MarkConnectionLevelWriteBlocked(id(), Priority());
+    session_->MarkConnectionLevelWriteBlocked(id());
   }
   return consumed_data;
-}
-
-FecProtection ReliableQuicStream::GetFecProtection() {
-  return fec_policy_ == FEC_PROTECT_ALWAYS ? MUST_FEC_PROTECT : MAY_FEC_PROTECT;
 }
 
 void ReliableQuicStream::CloseReadSide() {

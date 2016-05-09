@@ -673,8 +673,6 @@ WebInspector.installComponentRootStyles = function(element)
     WebInspector.appendStyle(element, "ui/inspectorCommon.css");
     WebInspector.themeSupport.injectHighlightStyleSheets(element);
     element.classList.add("platform-" + WebInspector.platform());
-    if (Runtime.experiments.isEnabled("materialDesign"))
-        element.classList.add("material");
 }
 
 /**
@@ -1189,6 +1187,12 @@ WebInspector.initializeUIUtils = function(document, themeSetting)
     if (!WebInspector.themeSupport)
         WebInspector.themeSupport = new WebInspector.ThemeSupport(themeSetting);
     WebInspector.themeSupport.applyTheme(document);
+
+    var body = /** @type {!Element} */ (document.body);
+    WebInspector.appendStyle(body, "ui/inspectorStyle.css");
+    WebInspector.appendStyle(body, "ui/popover.css");
+    WebInspector.appendStyle(body, "ui/sidebarPane.css");
+
 }
 
 /**
@@ -1445,6 +1449,83 @@ WebInspector.appendStyle = function(node, cssFile)
 })();
 
 /**
+ * @param {!Element} input
+ * @param {function(string)} apply
+ * @param {function(string):boolean} validate
+ * @param {boolean} numeric
+ * @return {function(string)}
+ */
+WebInspector.bindInput = function(input, apply, validate, numeric)
+{
+    input.addEventListener("change", onChange, false);
+    input.addEventListener("input", onInput, false);
+    input.addEventListener("keydown", onKeyDown, false);
+    input.addEventListener("focus", input.select.bind(input), false);
+
+    function onInput()
+    {
+        input.classList.toggle("error-input", !validate(input.value));
+    }
+
+    function onChange()
+    {
+        var valid = validate(input.value);
+        input.classList.toggle("error-input", !valid);
+        if (valid)
+            apply(input.value);
+    }
+
+    /**
+     * @param {!Event} event
+     */
+    function onKeyDown(event)
+    {
+        if (isEnterKey(event)) {
+            if (validate(input.value))
+                apply(input.value);
+            return;
+        }
+
+        if (!numeric)
+            return;
+
+        var increment = event.keyIdentifier === "Up" ? 1 : event.keyIdentifier === "Down" ? -1 : 0;
+        if (!increment)
+            return;
+        if (event.shiftKey)
+            increment *= 10;
+
+        var value = input.value;
+        if (!validate(value) || !value)
+            return;
+
+        value = (value ? Number(value) : 0) + increment;
+        var stringValue = value ? String(value) : "";
+        if (!validate(stringValue) || !value)
+            return;
+
+        input.value = stringValue;
+        apply(input.value);
+        event.preventDefault();
+    }
+
+    /**
+     * @param {string} value
+     */
+    function setValue(value)
+    {
+        if (value === input.value)
+            return;
+        var valid = validate(value);
+        input.classList.toggle("error-input", !valid);
+        input.value = value;
+        input.setSelectionRange(value.length, value.length);
+    }
+
+    return setValue;
+}
+
+/**
  * @constructor
  */
 WebInspector.StringFormatter = function()
@@ -1515,6 +1596,16 @@ WebInspector.ThemeSupport = function(setting)
     this._setting = setting;
 }
 
+/**
+ * @enum {number}
+ */
+WebInspector.ThemeSupport.ColorUsage = {
+    Unknown: 0,
+    Foreground: 1 << 0,
+    Background: 1 << 1,
+    Selection: 1 << 2,
+};
+
 WebInspector.ThemeSupport.prototype = {
     /**
      * @return {boolean}
@@ -1584,7 +1675,7 @@ WebInspector.ThemeSupport.prototype = {
 
     /**
      * @param {string} id
-     * @param {!CSSStyleSheet} styleSheet
+     * @param {!StyleSheet} styleSheet
      * @return {string}
      */
     _patchForTheme: function(id, styleSheet)
@@ -1651,15 +1742,20 @@ WebInspector.ThemeSupport.prototype = {
         }
 
         isSelection = isSelection || selectorText.indexOf("selected") !== -1 || selectorText.indexOf(".selection") !== -1;
-        var isBackground = name.indexOf("background") === 0 || name.indexOf("border") === 0;
-        var isForeground = name.indexOf("background") === -1;
+        var colorUsage = WebInspector.ThemeSupport.ColorUsage.Unknown;
+        if (isSelection)
+            colorUsage |= WebInspector.ThemeSupport.ColorUsage.Selection;
+        if (name.indexOf("background") === 0 || name.indexOf("border") === 0)
+            colorUsage |= WebInspector.ThemeSupport.ColorUsage.Background;
+        if (name.indexOf("background") === -1)
+            colorUsage |= WebInspector.ThemeSupport.ColorUsage.Foreground;
 
         var colorRegex = /((?:rgb|hsl)a?\([^)]+\)|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|\b\w+\b(?!-))/g;
         output.push(name);
         output.push(":");
         var items = value.replace(colorRegex, "\0$1\0").split("\0");
         for (var i = 0; i < items.length; ++i)
-            output.push(this._patchColor(items[i], isSelection, isBackground, isForeground));
+            output.push(this.patchColor(items[i], colorUsage));
         if (style.getPropertyPriority(name))
             output.push(" !important");
         output.push(";");
@@ -1667,19 +1763,17 @@ WebInspector.ThemeSupport.prototype = {
 
     /**
      * @param {string} text
-     * @param {boolean} isSelection
-     * @param {boolean} isBackground
-     * @param {boolean} isForeground
+     * @param {!WebInspector.ThemeSupport.ColorUsage} colorUsage
      * @return {string}
      */
-    _patchColor: function(text, isSelection, isBackground, isForeground)
+    patchColor: function(text, colorUsage)
     {
         var color = WebInspector.Color.parse(text);
         if (!color)
             return text;
 
         var hsla = color.hsla();
-        this._patchHSLA(hsla, isSelection, isBackground, isForeground);
+        this._patchHSLA(hsla, colorUsage);
         var rgba = [];
         WebInspector.Color.hsl2rgb(hsla, rgba);
         var outColor = new WebInspector.Color(rgba, color.format());
@@ -1691,11 +1785,9 @@ WebInspector.ThemeSupport.prototype = {
 
     /**
      * @param {!Array<number>} hsla
-     * @param {boolean} isSelection
-     * @param {boolean} isBackground
-     * @param {boolean} isForeground
+     * @param {!WebInspector.ThemeSupport.ColorUsage} colorUsage
      */
-    _patchHSLA: function(hsla, isSelection, isBackground, isForeground)
+    _patchHSLA: function(hsla, colorUsage)
     {
         var hue = hsla[0];
         var sat = hsla[1];
@@ -1704,10 +1796,10 @@ WebInspector.ThemeSupport.prototype = {
 
         switch (this._themeName) {
         case "dark":
-            if (isSelection)
+            if (colorUsage & WebInspector.ThemeSupport.ColorUsage.Selection)
                 hue = (hue + 0.5) % 1;
-            var minCap = isBackground ? 0.14 : 0;
-            var maxCap = isForeground ? 0.9 : 1;
+            var minCap = colorUsage & WebInspector.ThemeSupport.ColorUsage.Background ? 0.14 : 0;
+            var maxCap = colorUsage & WebInspector.ThemeSupport.ColorUsage.Foreground ? 0.9 : 1;
             lit = 1 - lit;
             if (lit < minCap * 2)
                 lit = minCap + lit / 2;

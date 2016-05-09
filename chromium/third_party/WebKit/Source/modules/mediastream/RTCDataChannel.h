@@ -31,6 +31,7 @@
 #include "platform/heap/Handle.h"
 #include "public/platform/WebRTCDataChannelHandler.h"
 #include "public/platform/WebRTCDataChannelHandlerClient.h"
+#include "wtf/Compiler.h"
 
 namespace blink {
 
@@ -45,12 +46,12 @@ struct WebRTCDataChannelInit;
 
 class MODULES_EXPORT RTCDataChannel final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<RTCDataChannel>
-    , public WebRTCDataChannelHandlerClient {
+    , WTF_NON_EXPORTED_BASE(public WebRTCDataChannelHandlerClient) {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(RTCDataChannel);
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static RTCDataChannel* create(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<WebRTCDataChannelHandler>);
-    static RTCDataChannel* create(ExecutionContext*, RTCPeerConnection*, WebRTCPeerConnectionHandler*, const String& label, const WebRTCDataChannelInit&, ExceptionState&);
+    static RTCDataChannel* create(ExecutionContext*, PassOwnPtr<WebRTCDataChannelHandler>);
+    static RTCDataChannel* create(ExecutionContext*, WebRTCPeerConnectionHandler*, const String& label, const WebRTCDataChannelInit&, ExceptionState&);
     ~RTCDataChannel() override;
 
     ReadyState getHandlerState() const;
@@ -88,13 +89,9 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
-    void stop();
-
     // EventTarget
     const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override;
-
-    void clearWeakMembers(Visitor*);
+    ExecutionContext* getExecutionContext() const override;
 
     // Oilpan: need to eagerly finalize m_handler
     EAGERLY_FINALIZE();
@@ -108,16 +105,14 @@ public:
     void didDetectError() override;
 
 private:
-    RTCDataChannel(ExecutionContext*, RTCPeerConnection*, PassOwnPtr<WebRTCDataChannelHandler>);
+    RTCDataChannel(ExecutionContext*, PassOwnPtr<WebRTCDataChannelHandler>);
 
-    void scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event>);
+    void scheduleDispatchEvent(Event*);
     void scheduledEventTimerFired(Timer<RTCDataChannel>*);
 
-    RawPtrWillBeMember<ExecutionContext> m_executionContext;
+    Member<ExecutionContext> m_executionContext;
 
     OwnPtr<WebRTCDataChannelHandler> m_handler;
-
-    bool m_stopped;
 
     WebRTCDataChannelHandlerClient::ReadyState m_readyState;
 
@@ -128,9 +123,7 @@ private:
     BinaryType m_binaryType;
 
     Timer<RTCDataChannel> m_scheduledEventTimer;
-    WillBeHeapVector<RefPtrWillBeMember<Event>> m_scheduledEvents;
-
-    WeakMember<RTCPeerConnection> m_connection;
+    HeapVector<Member<Event>> m_scheduledEvents;
 
     unsigned m_bufferedAmountLowThreshold;
 

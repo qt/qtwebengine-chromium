@@ -20,8 +20,7 @@ devtools_core_files =
     gypi_values.devtools_host_js_files + gypi_values.devtools_main_js_files +
     gypi_values.devtools_platform_js_files + gypi_values.devtools_sdk_js_files +
     gypi_values.devtools_toolbox_bootstrap_js_files +
-    gypi_values.devtools_ui_js_files + gypi_values.devtools_workspace_js_files +
-    gypi_values.devtools_core_css_files
+    gypi_values.devtools_ui_js_files + gypi_values.devtools_workspace_js_files
 
 devtools_extensions_js_files = gypi_values.devtools_extensions_js_files -
                                [ "<@(devtools_extension_api_files)" ] +
@@ -37,16 +36,16 @@ devtools_modules_js_files =
     gypi_values.devtools_devices_js_files + gypi_values.devtools_diff_js_files +
     gypi_values.devtools_elements_js_files +
     gypi_values.devtools_emulated_devices_js_files +
-    devtools_extensions_js_files +
+    gypi_values.devtools_es_tree_js_files + devtools_extensions_js_files +
     gypi_values.devtools_heap_snapshot_worker_js_files +
     gypi_values.devtools_layers_js_files +
     gypi_values.devtools_network_js_files +
     gypi_values.devtools_profiler_js_files +
-    gypi_values.devtools_promises_js_files +
     gypi_values.devtools_resources_js_files +
+    gypi_values.devtools_sass_js_files +
     gypi_values.devtools_security_js_files +
     gypi_values.devtools_screencast_js_files +
-    gypi_values.devtools_script_formatter_worker_js_files +
+    gypi_values.devtools_formatter_worker_js_files +
     gypi_values.devtools_settings_js_files +
     gypi_values.devtools_snippets_js_files +
     gypi_values.devtools_source_frame_js_files +
@@ -76,26 +75,17 @@ visibility = [ "//third_party/WebKit/*" ]
 group("devtools_frontend_resources") {
   public_deps = [
     ":build_applications",
-    ":copy_compatibility_scripts",
+    ":copy_embedder_scripts",
     ":copy_emulated_devices_images",
     ":copy_inspector_images",
     ":devtools_extension_api",
     ":frontend_protocol_sources",
     ":supported_css_properties",
   ]
-
-  if (!debug_devtools) {
-    # This overwrites application-specific core CSS (devtools.css),
-    # and thus should be guarded out in Debug builds.
-    public_deps += [
-      ":concatenated_inspector_css",
-      ":concatenated_toolbox_css",
-    ]
-  }
 }
 
-copy("copy_compatibility_scripts") {
-  sources = gypi_values.devtools_compatibility_scripts
+copy("copy_embedder_scripts") {
+  sources = gypi_values.devtools_embedder_scripts
   outputs = [
     resources_out_dir + "{{source_file_part}}",
   ]
@@ -122,7 +112,7 @@ action("generate_devtools_grd") {
     ":devtools_frontend_resources",
   ]
   inputs = gypi_values.devtools_image_files + all_devtools_files
-  inputs += gypi_values.devtools_compatibility_scripts
+  inputs += gypi_values.devtools_embedder_scripts
 
   if (debug_devtools) {
     # Debug: all files are picked as-is.
@@ -142,10 +132,8 @@ action("generate_devtools_grd") {
   } else {
     # Release: pick compiled non-remote files and lazy-loaded CSS.
     generated_files = [
-      resources_out_dir + "inspector.css",
       resources_out_dir + "inspector.html",
       resources_out_dir + "inspector.js",
-      resources_out_dir + "toolbox.css",
       resources_out_dir + "toolbox.html",
       resources_out_dir + "toolbox.js",
       resources_out_dir + "accessibility_module.js",
@@ -156,14 +144,15 @@ action("generate_devtools_grd") {
       resources_out_dir + "devices_module.js",
       resources_out_dir + "diff_module.js",
       resources_out_dir + "elements_module.js",
+      resources_out_dir + "es_tree_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
       resources_out_dir + "layers_module.js",
       resources_out_dir + "network_module.js",
       resources_out_dir + "profiler_module.js",
-      resources_out_dir + "promises_module.js",
       resources_out_dir + "resources_module.js",
+      resources_out_dir + "sass_module.js",
       resources_out_dir + "security_module.js",
-      resources_out_dir + "script_formatter_worker_module.js",
+      resources_out_dir + "formatter_worker_module.js",
       resources_out_dir + "settings_module.js",
       resources_out_dir + "snippets_module.js",
       resources_out_dir + "source_frame_module.js",
@@ -190,18 +179,17 @@ action("generate_devtools_grd") {
     "front_end",
   ]
 
-  args =
-      rebase_path(generated_files, root_build_dir) +
-      rebase_path(generated_files, root_build_dir) +
-      rebase_path(gypi_values.devtools_compatibility_scripts, root_build_dir) +
-      static_files_args + [ "--relative_path_dirs" ] +
-      rebase_path(relative_path_dirs, root_build_dir) +
-      [
-        "--images",
-        rebase_path(images_path, root_build_dir),
-        "--output",
-        rebase_path(outfile, root_build_dir),
-      ]
+  args = rebase_path(generated_files, root_build_dir) +
+         rebase_path(generated_files, root_build_dir) +
+         rebase_path(gypi_values.devtools_embedder_scripts, root_build_dir) +
+         static_files_args + [ "--relative_path_dirs" ] +
+         rebase_path(relative_path_dirs, root_build_dir) +
+         [
+           "--images",
+           rebase_path(images_path, root_build_dir),
+           "--output",
+           rebase_path(outfile, root_build_dir),
+         ]
 }
 
 action("devtools_extension_api") {
@@ -287,15 +275,16 @@ action("build_applications") {
       resources_out_dir + "diff_module.js",
       resources_out_dir + "elements_module.js",
       resources_out_dir + "emulated_devices_module.js",
+      resources_out_dir + "es_tree_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
       resources_out_dir + "layers_module.js",
       resources_out_dir + "network_module.js",
       resources_out_dir + "profiler_module.js",
-      resources_out_dir + "promises_module.js",
       resources_out_dir + "resources_module.js",
+      resources_out_dir + "sass_module.js",
       resources_out_dir + "security_module.js",
       resources_out_dir + "screencast_module.js",
-      resources_out_dir + "script_formatter_worker_module.js",
+      resources_out_dir + "formatter_worker_module.js",
       resources_out_dir + "settings_module.js",
       resources_out_dir + "snippets_module.js",
       resources_out_dir + "source_frame_module.js",
@@ -331,8 +320,7 @@ if (debug_devtools) {
   }
 
   copy("copy_runtime_core") {
-    sources = gypi_values.devtools_core_base_files +
-              gypi_values.devtools_core_css_files
+    sources = gypi_values.devtools_core_base_files
     outputs = [
       resources_out_dir + "/{{source_file_part}}",
     ]
@@ -351,35 +339,5 @@ if (debug_devtools) {
     outputs = [
       resources_out_dir + "cm/{{source_file_part}}",
     ]
-  }
-}
-
-if (!debug_devtools) {
-  # Release: Concatenate application CSS.
-  template("concatenate_css") {
-    assert(defined(invoker.app_name), target_name)
-    app_name = invoker.app_name
-
-    action(target_name) {
-      script = "scripts/concatenate_css_files.py"
-
-      input_stylesheet = "front_end/" + app_name + ".css"
-      inputs = [ input_stylesheet ] + gypi_values.devtools_core_css_files
-
-      outputs = [
-        resources_out_dir + app_name + ".css",
-      ]
-
-      args = [ rebase_path(input_stylesheet, root_build_dir) ] +
-             rebase_path(outputs, root_build_dir)
-    }
-  }
-
-  concatenate_css("concatenated_inspector_css") {
-    app_name = "inspector"
-  }
-
-  concatenate_css("concatenated_toolbox_css") {
-    app_name = "toolbox"
   }
 }

@@ -289,10 +289,7 @@ void TextCodecICU::createICUConverter() const
 
     err = U_ZERO_ERROR;
     m_converterICU = ucnv_open(m_encoding.name(), &err);
-#if !LOG_DISABLED
-    if (err == U_AMBIGUOUS_ALIAS_WARNING)
-        WTF_LOG_ERROR("ICU ambiguous alias warning for encoding: %s", m_encoding.name());
-#endif
+    DLOG_IF(ERROR, err == U_AMBIGUOUS_ALIAS_WARNING) << "ICU ambiguous alias warning for encoding: " << m_encoding.name();
     if (m_converterICU)
         ucnv_setFallback(m_converterICU, TRUE);
 }
@@ -305,7 +302,8 @@ int TextCodecICU::decodeToBuffer(UChar* target, UChar* targetLimit, const char*&
     return target - targetStart;
 }
 
-class ErrorCallbackSetter {
+class ErrorCallbackSetter final {
+    STACK_ALLOCATED();
 public:
     ErrorCallbackSetter(UConverter* converter, bool stopOnError)
         : m_converter(converter)
@@ -346,7 +344,7 @@ String TextCodecICU::decode(const char* bytes, size_t length, FlushBehavior flus
         createICUConverter();
         ASSERT(m_converterICU);
         if (!m_converterICU) {
-            WTF_LOG_ERROR("error creating ICU encoder even though encoding was in table");
+            DLOG(ERROR) << "error creating ICU encoder even though encoding was in table";
             return String();
         }
     }
@@ -473,7 +471,8 @@ static void gbkCallbackSubstitute(const void* context, UConverterFromUnicodeArgs
 }
 #endif // USING_SYSTEM_ICU
 
-class TextCodecInput {
+class TextCodecInput final {
+    STACK_ALLOCATED();
 public:
     TextCodecInput(const TextEncoding& encoding, const UChar* characters, size_t length)
         : m_begin(characters)

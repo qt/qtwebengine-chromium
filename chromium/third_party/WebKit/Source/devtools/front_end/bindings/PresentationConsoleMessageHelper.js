@@ -48,6 +48,8 @@ WebInspector.PresentationConsoleMessageHelper = function(workspace)
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.ParsedScriptSource, this._parsedScriptSource, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.FailedToParseScriptSource, this._parsedScriptSource, this);
     WebInspector.targetManager.addModelListener(WebInspector.DebuggerModel, WebInspector.DebuggerModel.Events.GlobalObjectCleared, this._debuggerReset, this);
+
+    this._locationPool = new WebInspector.LiveLocationPool();
 }
 
 WebInspector.PresentationConsoleMessageHelper.prototype = {
@@ -84,11 +86,12 @@ WebInspector.PresentationConsoleMessageHelper.prototype = {
         var debuggerModel = WebInspector.DebuggerModel.fromTarget(message.target());
         if (!debuggerModel)
             return null;
+        var callFrame = message.stackTrace && message.stackTrace.callFrames ? message.stackTrace.callFrames[0] : null;
         // FIXME(62725): stack trace line/column numbers are one-based.
-        var lineNumber = message.stackTrace ? message.stackTrace[0].lineNumber - 1 : message.line - 1;
+        var lineNumber = callFrame ? callFrame.lineNumber - 1 : message.line - 1;
         var columnNumber = message.column ? message.column - 1 : 0;
-        if (message.stackTrace && message.stackTrace[0].columnNumber)
-            columnNumber = message.stackTrace[0].columnNumber - 1;
+        if (callFrame && callFrame.columnNumber)
+            columnNumber = callFrame.columnNumber - 1;
         if (message.scriptId)
             return debuggerModel.createRawLocationByScriptId(message.scriptId, lineNumber, columnNumber);
         return debuggerModel.createRawLocationByURL(message.url || "", lineNumber, columnNumber);
@@ -100,7 +103,7 @@ WebInspector.PresentationConsoleMessageHelper.prototype = {
      */
     _addConsoleMessageToScript: function(message, rawLocation)
     {
-        this._presentationConsoleMessages.push(new WebInspector.PresentationConsoleMessage(message, rawLocation));
+        this._presentationConsoleMessages.push(new WebInspector.PresentationConsoleMessage(message, rawLocation, this._locationPool));
     },
 
     /**
@@ -150,6 +153,7 @@ WebInspector.PresentationConsoleMessageHelper.prototype = {
         for (var i = 0; i < this._presentationConsoleMessages.length; ++i)
             this._presentationConsoleMessages[i].dispose();
         this._presentationConsoleMessages = [];
+        this._locationPool.disposeAll();
     },
 
     _debuggerReset: function()
@@ -162,28 +166,31 @@ WebInspector.PresentationConsoleMessageHelper.prototype = {
  * @constructor
  * @param {!WebInspector.ConsoleMessage} message
  * @param {!WebInspector.DebuggerModel.Location} rawLocation
+ * @param {!WebInspector.LiveLocationPool} locationPool
  */
-WebInspector.PresentationConsoleMessage = function(message, rawLocation)
+WebInspector.PresentationConsoleMessage = function(message, rawLocation, locationPool)
 {
     this._text = message.messageText;
     this._level = message.level === WebInspector.ConsoleMessage.MessageLevel.Error ? WebInspector.UISourceCode.Message.Level.Error : WebInspector.UISourceCode.Message.Level.Warning;
-    this._liveLocation = WebInspector.debuggerWorkspaceBinding.createLiveLocation(rawLocation, this._updateLocation.bind(this));
+    WebInspector.debuggerWorkspaceBinding.createLiveLocation(rawLocation, this._updateLocation.bind(this), locationPool);
 }
 
 WebInspector.PresentationConsoleMessage.prototype = {
     /**
-     * @param {!WebInspector.UILocation} uiLocation
+     * @param {!WebInspector.LiveLocation} liveLocation
      */
-    _updateLocation: function(uiLocation)
+    _updateLocation: function(liveLocation)
     {
         if (this._uiMessage)
             this._uiMessage.remove();
+        var uiLocation = liveLocation.uiLocation();
+        if (!uiLocation)
+            return;
         this._uiMessage = uiLocation.uiSourceCode.addLineMessage(this._level, this._text, uiLocation.lineNumber, uiLocation.columnNumber);
     },
 
     dispose: function()
     {
-        this._liveLocation.dispose();
         if (this._uiMessage)
             this._uiMessage.remove();
     }

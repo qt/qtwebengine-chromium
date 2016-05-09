@@ -10,12 +10,12 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/prefs/json_pref_store.h"
-#include "base/prefs/pref_registry_simple.h"
-#include "base/prefs/pref_service_factory.h"
-#include "base/prefs/pref_store.h"
 #include "chromecast/base/cast_paths.h"
 #include "chromecast/base/pref_names.h"
+#include "components/prefs/json_pref_store.h"
+#include "components/prefs/pref_registry_simple.h"
+#include "components/prefs/pref_service_factory.h"
+#include "components/prefs/pref_store.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromecast {
@@ -38,7 +38,7 @@ base::FilePath GetConfigPath() {
 }  // namespace
 
 // static
-scoped_ptr<PrefService> PrefServiceHelper::CreatePrefService(
+std::unique_ptr<PrefService> PrefServiceHelper::CreatePrefService(
     PrefRegistrySimple* registry) {
   const base::FilePath config_path(GetConfigPath());
   VLOG(1) << "Loading config from " << config_path.value();
@@ -56,7 +56,7 @@ scoped_ptr<PrefService> PrefServiceHelper::CreatePrefService(
 
   RegisterPlatformPrefs(registry);
 
-  base::PrefServiceFactory prefServiceFactory;
+  PrefServiceFactory prefServiceFactory;
   scoped_refptr<base::SequencedTaskRunner> task_runner =
       JsonPrefStore::GetTaskRunnerForFile(
           config_path,
@@ -69,7 +69,8 @@ scoped_ptr<PrefService> PrefServiceHelper::CreatePrefService(
   prefServiceFactory.set_read_error_callback(
       base::Bind(&UserPrefsLoadError, &prefs_read_error));
 
-  scoped_ptr<PrefService> pref_service(prefServiceFactory.Create(registry));
+  std::unique_ptr<PrefService> pref_service(
+      prefServiceFactory.Create(registry));
   if (prefs_read_error != PersistentPrefStore::PREF_READ_ERROR_NONE) {
     LOG(ERROR) << "Cannot initialize chromecast config: "
                << config_path.value()

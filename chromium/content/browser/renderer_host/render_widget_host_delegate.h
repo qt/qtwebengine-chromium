@@ -78,21 +78,17 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // the event itself.
   virtual bool HandleWheelEvent(const blink::WebMouseWheelEvent& event);
 
-  // Notification the user has performed a direct interaction (mouse down, mouse
-  // wheel, raw key down, or gesture tap) while focus was on the page. Informs
-  // the delegate that a user is interacting with a site. Only the first mouse
-  // wheel event during a scroll will trigger this method.
-  virtual void OnUserInteraction(const blink::WebInputEvent::Type type) {}
+  // Notification the user has performed a direct interaction (mouse down,
+  // scroll, raw key down, gesture tap, or browser-initiated navigation) while
+  // focus was on the page. Informs the delegate that a user is interacting with
+  // a site.
+  virtual void OnUserInteraction(RenderWidgetHostImpl* render_widget_host,
+                                 const blink::WebInputEvent::Type type) {}
 
   // Callback to give the browser a chance to handle the specified gesture
   // event before sending it to the renderer.
   // Returns true if the |event| was handled.
   virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
-
-  // Notification the user has made a gesture while focus was on the
-  // page. This is used to avoid uninitiated user downloads (aka carpet
-  // bombing), see DownloadRequestLimiter for details.
-  virtual void OnUserGesture(RenderWidgetHostImpl* render_widget_host) {}
 
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}
@@ -171,14 +167,19 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Notification that the widget has lost the mouse lock.
   virtual void LostMouseLock(RenderWidgetHostImpl* render_widget_host) {}
 
-#if defined(OS_WIN)
-  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();
-#endif
-
-  // Called when the widget has sent a compositor proto.  This is used in Blimp
+  // Called when the widget has sent a compositor proto.  This is used in Btlimp
   // mode with the RemoteChannel compositor.
   virtual void ForwardCompositorProto(RenderWidgetHostImpl* render_widget_host,
                                       const std::vector<uint8_t>& proto) {}
+
+  // Called when the visibility of the RenderFrameProxyHost in outter
+  // WebContents changes. This method is only called on an inner WebContents and
+  // will eventually notify all the RenderWidgetHostViews belonging to that
+  // WebContents.
+  virtual void OnRenderFrameProxyVisibilityChanged(bool visible) {}
+
+  // Update the renderer's cache of the screen rect of the view and window.
+  virtual void SendScreenRects() {}
 
  protected:
   virtual ~RenderWidgetHostDelegate() {}

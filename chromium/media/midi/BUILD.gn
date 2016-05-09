@@ -49,7 +49,14 @@ if (is_android) {
       "//base:base_java",
     ]
 
-    DEPRECATED_java_in_dir = "java/src"
+    java_files = [
+      "java/src/org/chromium/media/midi/MidiDeviceAndroid.java",
+      "java/src/org/chromium/media/midi/MidiInputPortAndroid.java",
+      "java/src/org/chromium/media/midi/MidiManagerAndroid.java",
+      "java/src/org/chromium/media/midi/MidiOutputPortAndroid.java",
+      "java/src/org/chromium/media/midi/UsbMidiDeviceAndroid.java",
+      "java/src/org/chromium/media/midi/UsbMidiDeviceFactoryAndroid.java",
+    ]
   }
 
   generate_jni("midi_jni_headers") {
@@ -148,15 +155,6 @@ component("midi") {
   if (use_udev) {
     deps += [ "//device/udev_linux" ]
   }
-}
-
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("midi_unittests_run") {
-  testonly = true
-  deps = [
-    ":midi_unittests",
-  ]
 }
 
 test("midi_unittests") {

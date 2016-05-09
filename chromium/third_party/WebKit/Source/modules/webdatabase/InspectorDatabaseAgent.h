@@ -29,7 +29,6 @@
 #ifndef InspectorDatabaseAgent_h
 #define InspectorDatabaseAgent_h
 
-#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
@@ -45,14 +44,13 @@ class InspectorDatabaseResource;
 class InspectorFrontend;
 class Page;
 
-typedef String ErrorString;
 
-class MODULES_EXPORT InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent, InspectorFrontend::Database>, public InspectorBackendDispatcher::DatabaseCommandHandler {
+class MODULES_EXPORT InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent, protocol::Frontend::Database>, public protocol::Backend::Database {
     WTF_MAKE_NONCOPYABLE(InspectorDatabaseAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorDatabaseAgent> create(Page* page)
+    static InspectorDatabaseAgent* create(Page* page)
     {
-        return adoptPtrWillBeNoop(new InspectorDatabaseAgent(page));
+        return new InspectorDatabaseAgent(page);
     }
     ~InspectorDatabaseAgent() override;
     DECLARE_VIRTUAL_TRACE();
@@ -63,18 +61,18 @@ public:
 
     // Called from the front-end.
     void enable(ErrorString*) override;
-    void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String>>& names) override;
-    void executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtrWillBeRawPtr<ExecuteSQLCallback>) override;
+    void getDatabaseTableNames(ErrorString*, const String& databaseId, OwnPtr<protocol::Array<String>>* names) override;
+    void executeSQL(ErrorString*, const String& databaseId, const String& query, PassOwnPtr<ExecuteSQLCallback>) override;
 
-    void didOpenDatabase(Database*, const String& domain, const String& name, const String& version);
+    void didOpenDatabase(blink::Database*, const String& domain, const String& name, const String& version);
 private:
     explicit InspectorDatabaseAgent(Page*);
 
-    Database* databaseForId(const String& databaseId);
+    blink::Database* databaseForId(const String& databaseId);
     InspectorDatabaseResource* findByFileName(const String& fileName);
 
-    RawPtrWillBeMember<Page> m_page;
-    typedef PersistentHeapHashMapWillBeHeapHashMap<String, Member<InspectorDatabaseResource>> DatabaseResourcesHeapMap;
+    Member<Page> m_page;
+    typedef HeapHashMap<String, Member<InspectorDatabaseResource>> DatabaseResourcesHeapMap;
     DatabaseResourcesHeapMap m_resources;
     bool m_enabled;
 };

@@ -38,7 +38,7 @@
 
 namespace blink {
 
-static double kCurrentTimeBufferedDelta = 1.0;
+static const double kCurrentTimeBufferedDelta = 1.0;
 
 typedef WTF::HashMap<const char*, Image*> MediaControlImageMap;
 static MediaControlImageMap* gMediaControlImageMap = 0;
@@ -84,8 +84,8 @@ static Image* platformResource(const char* currentName, const char* newName)
 
 static bool hasSource(const HTMLMediaElement* mediaElement)
 {
-    return mediaElement->networkState() != HTMLMediaElement::NETWORK_EMPTY
-        && mediaElement->networkState() != HTMLMediaElement::NETWORK_NO_SOURCE;
+    return mediaElement->getNetworkState() != HTMLMediaElement::NETWORK_EMPTY
+        && mediaElement->getNetworkState() != HTMLMediaElement::NETWORK_NO_SOURCE;
 }
 
 static bool paintMediaButton(GraphicsContext& context, const IntRect& rect, Image* image, bool isEnabled = true)

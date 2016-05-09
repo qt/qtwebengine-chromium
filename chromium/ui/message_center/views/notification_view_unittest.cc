@@ -11,6 +11,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
@@ -30,6 +31,24 @@
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget_delegate.h"
+
+namespace {
+
+scoped_ptr<ui::GestureEvent> GenerateGestureEvent(ui::EventType type) {
+  ui::GestureEventDetails detail(type);
+  scoped_ptr<ui::GestureEvent> event(
+      new ui::GestureEvent(0, 0, 0, base::TimeDelta(), detail));
+  return event;
+}
+
+scoped_ptr<ui::GestureEvent> GenerateGestureVerticalScrollUpdateEvent(int dx) {
+  ui::GestureEventDetails detail(ui::ET_GESTURE_SCROLL_UPDATE, dx, 0);
+  scoped_ptr<ui::GestureEvent> event(
+      new ui::GestureEvent(0, 0, 0, base::TimeDelta(), detail));
+  return event;
+}
+
+}  // anonymouse namespace
 
 namespace message_center {
 
@@ -54,7 +73,9 @@ class NotificationViewTest : public views::ViewsTestBase,
   void TearDown() override;
 
   views::Widget* widget() { return notification_view_->GetWidget(); }
-  NotificationView* notification_view() { return notification_view_.get(); }
+  NotificationView* notification_view() const {
+    return notification_view_.get();
+  }
   Notification* notification() { return notification_.get(); }
   RichNotificationData* data() { return data_.get(); }
 
@@ -155,12 +176,28 @@ class NotificationViewTest : public views::ViewsTestBase,
     }
   }
 
+  views::ImageButton* GetCloseButton() {
+    return notification_view()->close_button_.get();
+  }
+
   void UpdateNotificationViews() {
     notification_view()->CreateOrUpdateViews(*notification());
     notification_view()->Layout();
   }
 
+  float GetNotificationScrollAmount() const {
+    return notification_view()->GetTransform().To2dTranslation().x();
+  }
+
+  bool IsRemoved(const std::string& notification_id) const {
+    return (removed_ids_.find(notification_id) != removed_ids_.end());
+  }
+
+  void RemoveNotificationView() { notification_view_.reset(); }
+
  private:
+  std::set<std::string> removed_ids_;
+
   scoped_ptr<RichNotificationData> data_;
   scoped_ptr<Notification> notification_;
   scoped_ptr<NotificationView> notification_view_;
@@ -216,8 +253,7 @@ void NotificationViewTest::ClickOnNotification(
 void NotificationViewTest::RemoveNotification(
     const std::string& notification_id,
     bool by_user) {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
+  removed_ids_.insert(notification_id);
 }
 
 scoped_ptr<ui::MenuModel> NotificationViewTest::CreateMenuModel(
@@ -319,42 +355,33 @@ TEST_F(NotificationViewTest, TestIconSizing) {
   notification()->set_type(NOTIFICATION_TYPE_SIMPLE);
   ProportionalImageView* view = notification_view()->icon_view_;
 
-  // Icons smaller than the legacy size should be scaled up to it.
-  notification()->set_icon(CreateTestImage(kLegacyIconSize / 2,
-                                           kLegacyIconSize / 2));
+  // Icons smaller than the maximum size should remain unscaled.
+  notification()->set_icon(CreateTestImage(kNotificationIconSize / 2,
+                                           kNotificationIconSize / 4));
   UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kLegacyIconSize, kLegacyIconSize).ToString(),
+  EXPECT_EQ(gfx::Size(kNotificationIconSize / 2,
+                      kNotificationIconSize / 4).ToString(),
             GetImagePaintSize(view).ToString());
 
-  // Icons at the legacy size should be unscaled.
-  notification()->set_icon(CreateTestImage(kLegacyIconSize, kLegacyIconSize));
+  // Icons of exactly the intended icon size should remain unscaled.
+  notification()->set_icon(CreateTestImage(kNotificationIconSize,
+                                           kNotificationIconSize));
   UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kLegacyIconSize, kLegacyIconSize).ToString(),
+  EXPECT_EQ(gfx::Size(kNotificationIconSize, kNotificationIconSize).ToString(),
             GetImagePaintSize(view).ToString());
 
-  // Icons slightly smaller than the preferred size should be scaled down to the
-  // legacy size to avoid having tiny borders (http://crbug.com/232966).
-  notification()->set_icon(CreateTestImage(kIconSize - 1, kIconSize - 1));
+  // Icons over the maximum size should be scaled down, maintaining proportions.
+  notification()->set_icon(CreateTestImage(2 * kNotificationIconSize,
+                                           2 * kNotificationIconSize));
   UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kLegacyIconSize, kLegacyIconSize).ToString(),
+  EXPECT_EQ(gfx::Size(kNotificationIconSize, kNotificationIconSize).ToString(),
             GetImagePaintSize(view).ToString());
 
-  // Icons at the preferred size or above should be scaled down to the preferred
-  // size.
-  notification()->set_icon(CreateTestImage(kIconSize, kIconSize));
+  notification()->set_icon(CreateTestImage(4 * kNotificationIconSize,
+                                           2 * kNotificationIconSize));
   UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kIconSize, kIconSize).ToString(),
-            GetImagePaintSize(view).ToString());
-
-  notification()->set_icon(CreateTestImage(2 * kIconSize, 2 * kIconSize));
-  UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kIconSize, kIconSize).ToString(),
-            GetImagePaintSize(view).ToString());
-
-  // Large, non-square images' aspect ratios should be preserved.
-  notification()->set_icon(CreateTestImage(4 * kIconSize, 2 * kIconSize));
-  UpdateNotificationViews();
-  EXPECT_EQ(gfx::Size(kIconSize, kIconSize / 2).ToString(),
+  EXPECT_EQ(gfx::Size(kNotificationIconSize,
+                      kNotificationIconSize / 2).ToString(),
             GetImagePaintSize(view).ToString());
 }
 
@@ -617,5 +644,65 @@ TEST_F(NotificationViewTest, FormatContextMessageTest) {
   EXPECT_TRUE(base::UTF16ToUTF8(result).find("\xE2\x80\xA6") == 0);
   EXPECT_TRUE(base::UTF16ToUTF8(result).find("hello") == std::string::npos);
 }
+
+TEST_F(NotificationViewTest, SlideOut) {
+  ui::ScopedAnimationDurationScaleMode zero_duration_scope(
+      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION);
+
+  UpdateNotificationViews();
+  std::string notification_id = notification()->id();
+
+  auto event_begin = GenerateGestureEvent(ui::ET_GESTURE_SCROLL_BEGIN);
+  auto event_scroll10 = GenerateGestureVerticalScrollUpdateEvent(-10);
+  auto event_scroll500 = GenerateGestureVerticalScrollUpdateEvent(-500);
+  auto event_end = GenerateGestureEvent(ui::ET_GESTURE_SCROLL_END);
+
+  notification_view()->OnGestureEvent(event_begin.get());
+  notification_view()->OnGestureEvent(event_scroll10.get());
+  EXPECT_FALSE(IsRemoved(notification_id));
+  EXPECT_EQ(-10.f, GetNotificationScrollAmount());
+  notification_view()->OnGestureEvent(event_end.get());
+  EXPECT_FALSE(IsRemoved(notification_id));
+  EXPECT_EQ(0.f, GetNotificationScrollAmount());
+
+  notification_view()->OnGestureEvent(event_begin.get());
+  notification_view()->OnGestureEvent(event_scroll500.get());
+  EXPECT_FALSE(IsRemoved(notification_id));
+  EXPECT_EQ(-500.f, GetNotificationScrollAmount());
+  notification_view()->OnGestureEvent(event_end.get());
+  EXPECT_TRUE(IsRemoved(notification_id));
+}
+
+// Pinning notification is ChromeOS only feature.
+#if defined(OS_CHROMEOS)
+
+TEST_F(NotificationViewTest, SlideOutPinned) {
+  ui::ScopedAnimationDurationScaleMode zero_duration_scope(
+      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION);
+
+  notification()->set_pinned(true);
+  UpdateNotificationViews();
+  std::string notification_id = notification()->id();
+
+  auto event_begin = GenerateGestureEvent(ui::ET_GESTURE_SCROLL_BEGIN);
+  auto event_scroll500 = GenerateGestureVerticalScrollUpdateEvent(-500);
+  auto event_end = GenerateGestureEvent(ui::ET_GESTURE_SCROLL_END);
+
+  notification_view()->OnGestureEvent(event_begin.get());
+  notification_view()->OnGestureEvent(event_scroll500.get());
+  EXPECT_FALSE(IsRemoved(notification_id));
+  EXPECT_LT(-500.f, GetNotificationScrollAmount());
+  notification_view()->OnGestureEvent(event_end.get());
+  EXPECT_FALSE(IsRemoved(notification_id));
+}
+
+TEST_F(NotificationViewTest, Pinned) {
+  notification()->set_pinned(true);
+
+  UpdateNotificationViews();
+  EXPECT_EQ(NULL, GetCloseButton());
+}
+
+#endif // defined(OS_CHROMEOS)
 
 }  // namespace message_center

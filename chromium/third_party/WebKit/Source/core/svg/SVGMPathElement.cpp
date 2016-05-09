@@ -19,7 +19,6 @@
 
 #include "core/svg/SVGMPathElement.h"
 
-#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGAnimateMotionElement.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -52,7 +51,7 @@ SVGMPathElement::~SVGMPathElement()
 void SVGMPathElement::buildPendingResource()
 {
     clearResourceReferences();
-    if (!inDocument())
+    if (!inShadowIncludingDocument())
         return;
 
     AtomicString id;
@@ -83,7 +82,7 @@ void SVGMPathElement::clearResourceReferences()
 Node::InsertionNotificationRequest SVGMPathElement::insertedInto(ContainerNode* rootParent)
 {
     SVGElement::insertedInto(rootParent);
-    if (rootParent->inDocument())
+    if (rootParent->inShadowIncludingDocument())
         buildPendingResource();
     return InsertionDone;
 }
@@ -92,7 +91,7 @@ void SVGMPathElement::removedFrom(ContainerNode* rootParent)
 {
     SVGElement::removedFrom(rootParent);
     notifyParentOfPathChange(rootParent);
-    if (rootParent->inDocument())
+    if (rootParent->inShadowIncludingDocument())
         clearResourceReferences();
 }
 

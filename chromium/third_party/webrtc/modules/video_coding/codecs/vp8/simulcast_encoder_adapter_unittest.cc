@@ -8,33 +8,35 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <vector>
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_encoder_adapter.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_unittest.h"
-#include "webrtc/modules/video_coding/codecs/vp8/vp8_factory.h"
 
 namespace webrtc {
 namespace testing {
 
-static VP8Encoder* CreateTestEncoderAdapter() {
-  VP8EncoderFactoryConfig::set_use_simulcast_adapter(true);
-  return VP8Encoder::Create();
-}
-
 class TestSimulcastEncoderAdapter : public TestVp8Simulcast {
  public:
   TestSimulcastEncoderAdapter()
-      : TestVp8Simulcast(CreateTestEncoderAdapter(), VP8Decoder::Create()) {}
+      : TestVp8Simulcast(new SimulcastEncoderAdapter(new Vp8EncoderFactory()),
+                         VP8Decoder::Create()) {}
 
  protected:
+  class Vp8EncoderFactory : public VideoEncoderFactory {
+   public:
+    VideoEncoder* Create() override { return VP8Encoder::Create(); }
+
+    void Destroy(VideoEncoder* encoder) override { delete encoder; }
+
+    virtual ~Vp8EncoderFactory() {}
+  };
+
   virtual void SetUp() { TestVp8Simulcast::SetUp(); }
-  virtual void TearDown() {
-    TestVp8Simulcast::TearDown();
-    VP8EncoderFactoryConfig::set_use_simulcast_adapter(false);
-  }
+  virtual void TearDown() { TestVp8Simulcast::TearDown(); }
 };
 
 TEST_F(TestSimulcastEncoderAdapter, TestKeyFrameRequestsOnAllStreams) {
@@ -172,7 +174,15 @@ class MockVideoEncoderFactory : public VideoEncoderFactory {
     return encoder;
   }
 
-  void Destroy(VideoEncoder* encoder) override { delete encoder; }
+  void Destroy(VideoEncoder* encoder) override {
+    for (size_t i = 0; i < encoders_.size(); ++i) {
+      if (encoders_[i] == encoder) {
+        encoders_.erase(encoders_.begin() + i);
+        break;
+      }
+    }
+    delete encoder;
+  }
 
   virtual ~MockVideoEncoderFactory() {}
 
@@ -288,10 +298,11 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
               target.codecSpecific.VP8.frameDroppingOn);
     EXPECT_EQ(ref.codecSpecific.VP8.keyFrameInterval,
               target.codecSpecific.VP8.keyFrameInterval);
+    EXPECT_EQ(ref.codecSpecific.VP8.tl_factory,
+              target.codecSpecific.VP8.tl_factory);
     EXPECT_EQ(ref.qpMax, target.qpMax);
     EXPECT_EQ(0, target.numberOfSimulcastStreams);
     EXPECT_EQ(ref.mode, target.mode);
-    EXPECT_EQ(ref.extra_options, target.extra_options);
 
     // No need to compare simulcastStream as numberOfSimulcastStreams should
     // always be 0.
@@ -338,8 +349,8 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
   }
 
  protected:
-  rtc::scoped_ptr<TestSimulcastEncoderAdapterFakeHelper> helper_;
-  rtc::scoped_ptr<VP8Encoder> adapter_;
+  std::unique_ptr<TestSimulcastEncoderAdapterFakeHelper> helper_;
+  std::unique_ptr<VP8Encoder> adapter_;
   VideoCodec codec_;
   int last_encoded_image_width_;
   int last_encoded_image_height_;
@@ -418,6 +429,14 @@ TEST_F(TestSimulcastEncoderAdapterFake, SupportsImplementationName) {
   EXPECT_EQ(0, adapter_->InitEncode(&codec_, 1, 1200));
   EXPECT_STREQ("SimulcastEncoderAdapter (codec1, codec2, codec3)",
                adapter_->ImplementationName());
+
+  // Single streams should not expose "SimulcastEncoderAdapter" in name.
+  adapter_->Release();
+  codec_.numberOfSimulcastStreams = 1;
+  EXPECT_EQ(0, adapter_->InitEncode(&codec_, 1, 1200));
+  adapter_->RegisterEncodeCompleteCallback(this);
+  ASSERT_EQ(1u, helper_->factory()->encoders().size());
+  EXPECT_STREQ("codec1", adapter_->ImplementationName());
 }
 
 TEST_F(TestSimulcastEncoderAdapterFake,

@@ -55,6 +55,7 @@ class HttpProxyClientSocketWrapper : public ProxyClientSocket {
   HttpProxyClientSocketWrapper(
       const std::string& group_name,
       RequestPriority priority,
+      ClientSocketPool::RespectLimits respect_limits,
       base::TimeDelta connect_timeout_duration,
       base::TimeDelta proxy_negotiation_timeout_duration,
       TransportClientSocketPool* transport_pool,
@@ -96,7 +97,6 @@ class HttpProxyClientSocketWrapper : public ProxyClientSocket {
   void SetSubresourceSpeculation() override;
   void SetOmniboxSpeculation() override;
   bool WasEverUsed() const override;
-  bool UsingTCPFastOpen() const override;
   bool WasNpnNegotiated() const override;
   NextProto GetNegotiatedProtocol() const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
@@ -168,6 +168,7 @@ class HttpProxyClientSocketWrapper : public ProxyClientSocket {
 
   const std::string group_name_;
   RequestPriority priority_;
+  ClientSocketPool::RespectLimits respect_limits_;
   const base::TimeDelta connect_timeout_duration_;
   const base::TimeDelta proxy_negotiation_timeout_duration_;
 

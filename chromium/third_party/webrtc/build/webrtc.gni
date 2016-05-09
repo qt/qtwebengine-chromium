@@ -7,12 +7,11 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("//build/config/arm.gni")
+import("//build/config/features.gni")
 import("//build/config/mips.gni")
 import("//build_overrides/webrtc.gni")
 
 declare_args() {
-  build_with_libjingle = true
-
   # Disable this to avoid building the Opus audio codec.
   rtc_include_opus = true
 
@@ -57,20 +56,15 @@ declare_args() {
   # https://gcc.gnu.org/wiki/LinkTimeOptimization
   rtc_use_lto = false
 
-  if (build_with_libjingle) {
-    rtc_include_tests = false
-    rtc_restrict_logging = true
-  } else {
-    rtc_include_tests = true
-    rtc_restrict_logging = false
-  }
+  rtc_include_tests = false
+  rtc_restrict_logging = true
 
   if (is_ios) {
     rtc_build_libjpeg = false
     rtc_enable_protobuf = false
   }
 
-  if (current_cpu == "arm") {
+  if (current_cpu == "arm" || current_cpu == "arm64") {
     rtc_prefer_fixed_point = true
   }
 
@@ -91,20 +85,34 @@ declare_args() {
   # Enabling this may break interop with Android clients that support H264.
   rtc_use_objc_h264 = false
 
-  # Enable this to build H.264 encoder/decoder using third party libraries.
-  # Encoding uses OpenH264 and decoding uses FFmpeg. Because of this, OpenH264
-  # and FFmpeg have to be correctly enabled separately.
-  # - use_openh264=true is required for OpenH264 targets to be defined.
-  # - ffmpeg_branding="Chrome" is one way to support H.264 decoding in FFmpeg.
-  #   FFmpeg can be built with/without H.264 support, see 'ffmpeg_branding'.
-  #   Without it, it compiles but H264DecoderImpl fails to initialize.
+  # Enable this to build OpenH264 encoder/FFmpeg decoder. This is supported on
+  # all platforms except Android and iOS. Because FFmpeg can be built
+  # with/without H.264 support, |ffmpeg_branding| has to separately be set to a
+  # value that includes H.264, for example "Chrome". If FFmpeg is built without
+  # H.264, compilation succeeds but |H264DecoderImpl| fails to initialize. See
+  # also: |rtc_initialize_ffmpeg|.
   # CHECK THE OPENH264, FFMPEG AND H.264 LICENSES/PATENTS BEFORE BUILDING.
   # http://www.openh264.org, https://www.ffmpeg.org/
-  use_third_party_h264 = false  # TODO(hbos): To be used in follow-up CL(s).
+  rtc_use_h264 = proprietary_codecs && !is_android && !is_ios
+
+  # FFmpeg must be initialized for |H264DecoderImpl| to work. This can be done
+  # by WebRTC during |H264DecoderImpl::InitDecode| or externally. FFmpeg must
+  # only be initialized once. Projects that initialize FFmpeg externally, such
+  # as Chromium, must turn this flag off so that WebRTC does not also
+  # initialize.
+  rtc_initialize_ffmpeg = !build_with_chromium
+}
+
+# A second declare_args block, so that declarations within it can
+# depend on the possibly overridden variables in the first
+# declare_args block.
+declare_args() {
+  # Include the iLBC audio codec?
+  rtc_include_ilbc = !(build_with_chromium || build_with_mozilla)
 }
 
 # Make it possible to provide custom locations for some libraries (move these
 # up into declare_args should we need to actually use them for the GN build).
-rtc_libvpx_dir = "//third_party/libvpx_new"
+rtc_libvpx_dir = "//third_party/libvpx"
 rtc_libyuv_dir = "//third_party/libyuv"
 rtc_opus_dir = "//third_party/opus"

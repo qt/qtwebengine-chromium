@@ -35,13 +35,13 @@ class HTMLTableRowElement;
 
 class DeleteSelectionCommand final : public CompositeEditCommand {
 public:
-    static PassRefPtrWillBeRawPtr<DeleteSelectionCommand> create(Document& document, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
+    static RawPtr<DeleteSelectionCommand> create(Document& document, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
     {
-        return adoptRefWillBeNoop(new DeleteSelectionCommand(document, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
+        return new DeleteSelectionCommand(document, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup);
     }
-    static PassRefPtrWillBeRawPtr<DeleteSelectionCommand> create(const VisibleSelection& selection, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
+    static RawPtr<DeleteSelectionCommand> create(const VisibleSelection& selection, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
     {
-        return adoptRefWillBeNoop(new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
+        return new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup);
     }
 
     DECLARE_VIRTUAL_TRACE();
@@ -50,26 +50,26 @@ private:
     DeleteSelectionCommand(Document&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool santizeMarkup);
     DeleteSelectionCommand(const VisibleSelection&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool sanitizeMarkup);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
     EditAction editingAction() const override;
 
     bool preservesTypingStyle() const override;
 
     void initializeStartEnd(Position&, Position&);
     void setStartingSelectionOnSmartDelete(const Position&, const Position&);
-    void initializePositionData();
+    void initializePositionData(EditingState*);
     void saveTypingStyleState();
-    bool handleSpecialCaseBRDelete();
-    void handleGeneralDelete();
+    bool handleSpecialCaseBRDelete(EditingState*);
+    void handleGeneralDelete(EditingState*);
     void fixupWhitespace();
-    void mergeParagraphs();
-    void removePreviouslySelectedEmptyTableRows();
+    void mergeParagraphs(EditingState*);
+    void removePreviouslySelectedEmptyTableRows(EditingState*);
     void calculateTypingStyleAfterDelete();
     void clearTransientState();
-    void makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
-    void removeNode(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable) override;
-    void deleteTextFromNode(PassRefPtrWillBeRawPtr<Text>, unsigned, unsigned) override;
-    void removeRedundantBlocks();
+    void makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss(EditingState*);
+    void removeNode(RawPtr<Node>, EditingState*, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable) override;
+    void deleteTextFromNode(RawPtr<Text>, unsigned, unsigned) override;
+    void removeRedundantBlocks(EditingState*);
 
     bool m_hasSelectionToDelete;
     bool m_smartDelete;
@@ -89,15 +89,15 @@ private:
     Position m_endingPosition;
     Position m_leadingWhitespace;
     Position m_trailingWhitespace;
-    RefPtrWillBeMember<Node> m_startBlock;
-    RefPtrWillBeMember<Node> m_endBlock;
-    RefPtrWillBeMember<EditingStyle> m_typingStyle;
-    RefPtrWillBeMember<EditingStyle> m_deleteIntoBlockquoteStyle;
-    RefPtrWillBeMember<Element> m_startRoot;
-    RefPtrWillBeMember<Element> m_endRoot;
-    RefPtrWillBeMember<HTMLTableRowElement> m_startTableRow;
-    RefPtrWillBeMember<HTMLTableRowElement> m_endTableRow;
-    RefPtrWillBeMember<Node> m_temporaryPlaceholder;
+    Member<Node> m_startBlock;
+    Member<Node> m_endBlock;
+    Member<EditingStyle> m_typingStyle;
+    Member<EditingStyle> m_deleteIntoBlockquoteStyle;
+    Member<Element> m_startRoot;
+    Member<Element> m_endRoot;
+    Member<HTMLTableRowElement> m_startTableRow;
+    Member<HTMLTableRowElement> m_endTableRow;
+    Member<Node> m_temporaryPlaceholder;
 };
 
 } // namespace blink

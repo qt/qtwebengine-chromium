@@ -39,17 +39,17 @@ FEDisplacementMap::FEDisplacementMap(Filter* filter, ChannelSelectorType xChanne
 {
 }
 
-PassRefPtrWillBeRawPtr<FEDisplacementMap> FEDisplacementMap::create(Filter* filter, ChannelSelectorType xChannelSelector,
+FEDisplacementMap* FEDisplacementMap::create(Filter* filter, ChannelSelectorType xChannelSelector,
     ChannelSelectorType yChannelSelector, float scale)
 {
-    return adoptRefWillBeNoop(new FEDisplacementMap(filter, xChannelSelector, yChannelSelector, scale));
+    return new FEDisplacementMap(filter, xChannelSelector, yChannelSelector, scale);
 }
 
-FloatRect FEDisplacementMap::mapPaintRect(const FloatRect& rect, bool)
+FloatRect FEDisplacementMap::mapPaintRect(const FloatRect& rect, bool) const
 {
     FloatRect result = rect;
-    result.inflateX(filter()->applyHorizontalScale(m_scale / 2));
-    result.inflateY(filter()->applyVerticalScale(m_scale / 2));
+    result.inflateX(getFilter()->applyHorizontalScale(m_scale / 2));
+    result.inflateY(getFilter()->applyVerticalScale(m_scale / 2));
     return result;
 }
 
@@ -115,10 +115,10 @@ PassRefPtr<SkImageFilter> FEDisplacementMap::createImageFilter(SkiaImageFilterBu
     RefPtr<SkImageFilter> displ = builder.build(inputEffect(1), operatingColorSpace());
     SkDisplacementMapEffect::ChannelSelectorType typeX = toSkiaMode(m_xChannelSelector);
     SkDisplacementMapEffect::ChannelSelectorType typeY = toSkiaMode(m_yChannelSelector);
-    SkImageFilter::CropRect cropRect = getCropRect(builder.cropOffset());
+    SkImageFilter::CropRect cropRect = getCropRect();
     // FIXME : Only applyHorizontalScale is used and applyVerticalScale is ignored
     // This can be fixed by adding a 2nd scale parameter to SkDisplacementMapEffect
-    return adoptRef(SkDisplacementMapEffect::Create(typeX, typeY, SkFloatToScalar(filter()->applyHorizontalScale(m_scale)), displ.get(), color.get(), &cropRect));
+    return adoptRef(SkDisplacementMapEffect::Create(typeX, typeY, SkFloatToScalar(getFilter()->applyHorizontalScale(m_scale)), displ.get(), color.get(), &cropRect));
 }
 
 static TextStream& operator<<(TextStream& ts, const ChannelSelectorType& type)

@@ -24,6 +24,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task_runner_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_local.h"
 #include "build/build_config.h"
@@ -37,6 +38,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/media_observer.h"
 #include "content/public/browser/media_request_state.h"
 #include "content/public/browser/render_process_host.h"
@@ -60,17 +62,14 @@
 #include "chromeos/audio/cras_audio_handler.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "media/capture/device_monitor_mac.h"
+#endif
+
 namespace content {
 
 base::LazyInstance<base::ThreadLocalPointer<MediaStreamManager>>::Leaky
     g_media_stream_manager_tls_ptr = LAZY_INSTANCE_INITIALIZER;
-
-// Forward declaration of DeviceMonitorMac and its only useable method.
-class DeviceMonitorMac {
- public:
-  void StartMonitoring(
-    const scoped_refptr<base::SingleThreadTaskRunner>& device_task_runner);
-};
 
 namespace {
 // Creates a random label used to identify requests.
@@ -99,12 +98,18 @@ void ParseStreamType(const StreamControls& controls,
                      MediaStreamType* video_type) {
   *audio_type = MEDIA_NO_SERVICE;
   *video_type = MEDIA_NO_SERVICE;
+  const bool audio_support_flag_for_desktop_share =
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableAudioSupportForDesktopShare);
   if (controls.audio.requested) {
     if (!controls.audio.stream_source.empty()) {
        // This is tab or screen capture.
        if (controls.audio.stream_source == kMediaStreamSourceTab) {
          *audio_type = content::MEDIA_TAB_AUDIO_CAPTURE;
        } else if (controls.audio.stream_source == kMediaStreamSourceSystem) {
+         *audio_type = content::MEDIA_DESKTOP_AUDIO_CAPTURE;
+       } else if (audio_support_flag_for_desktop_share &&
+                  controls.audio.stream_source == kMediaStreamSourceDesktop) {
          *audio_type = content::MEDIA_DESKTOP_AUDIO_CAPTURE;
        }
      } else {
@@ -278,7 +283,7 @@ class MediaStreamManager::DeviceRequest {
   }
 
   bool HasUIRequest() const { return ui_request_.get() != nullptr; }
-  scoped_ptr<MediaStreamRequest> DetachUIRequest() {
+  std::unique_ptr<MediaStreamRequest> DetachUIRequest() {
     return std::move(ui_request_);
   }
 
@@ -342,13 +347,13 @@ class MediaStreamManager::DeviceRequest {
   // Currently it is only used by |DEVICE_ACCESS| type.
   MediaStreamManager::MediaRequestResponseCallback callback;
 
-  scoped_ptr<MediaStreamUIProxy> ui_proxy;
+  std::unique_ptr<MediaStreamUIProxy> ui_proxy;
 
   std::string tab_capture_device_id;
 
  private:
   std::vector<MediaRequestState> state_;
-  scoped_ptr<MediaStreamRequest> ui_request_;
+  std::unique_ptr<MediaStreamRequest> ui_request_;
   MediaStreamType audio_type_;
   MediaStreamType video_type_;
   int target_process_id_;
@@ -948,9 +953,9 @@ void MediaStreamManager::StartMonitoringOnUIThread() {
   // fixed.
   tracked_objects::ScopedTracker tracking_profile2(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "458404 MediaStreamManager::GetWorkerTaskRunner"));
+          "458404 MediaStreamManager::GetTaskRunner"));
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      audio_manager_->GetWorkerTaskRunner();
+      audio_manager_->GetTaskRunner();
   // TODO(erikchen): Remove ScopedTracker below once crbug.com/458404 is
   // fixed.
   tracked_objects::ScopedTracker tracking_profile3(
@@ -1101,7 +1106,7 @@ void MediaStreamManager::DeleteRequest(const std::string& label) {
   for (DeviceRequests::iterator request_it = requests_.begin();
        request_it != requests_.end(); ++request_it) {
     if (request_it->first == label) {
-      scoped_ptr<DeviceRequest> request(request_it->second);
+      std::unique_ptr<DeviceRequest> request(request_it->second);
       requests_.erase(request_it);
       return;
     }
@@ -1109,8 +1114,34 @@ void MediaStreamManager::DeleteRequest(const std::string& label) {
   NOTREACHED();
 }
 
-void MediaStreamManager::PostRequestToUI(const std::string& label,
-                                         DeviceRequest* request) {
+void MediaStreamManager::ReadOutputParamsAndPostRequestToUI(
+    const std::string& label,
+    DeviceRequest* request) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // Actual audio parameters are required only for MEDIA_TAB_AUDIO_CAPTURE.
+  // TODO(guidou): MEDIA_TAB_AUDIO_CAPTURE should not be a special case. See
+  // crbug.com/584287.
+  if (request->audio_type() == MEDIA_TAB_AUDIO_CAPTURE) {
+    // Read output parameters on the correct thread for native audio OS calls.
+    // Using base::Unretained is safe since |audio_manager_| is deleted after
+    // its task runner, and MediaStreamManager is deleted on the UI thread,
+    // after the IO thread has been stopped.
+    base::PostTaskAndReplyWithResult(
+        audio_manager_->GetTaskRunner().get(), FROM_HERE,
+        base::Bind(&media::AudioManager::GetDefaultOutputStreamParameters,
+                   base::Unretained(audio_manager_)),
+        base::Bind(&MediaStreamManager::PostRequestToUI, base::Unretained(this),
+                   label, request));
+  } else {
+    PostRequestToUI(label, request, media::AudioParameters());
+  }
+}
+
+void MediaStreamManager::PostRequestToUI(
+    const std::string& label,
+    DeviceRequest* request,
+    const media::AudioParameters& output_parameters) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request->HasUIRequest());
   DVLOG(1) << "PostRequestToUI({label= " << label << "})";
@@ -1124,7 +1155,10 @@ void MediaStreamManager::PostRequestToUI(const std::string& label,
   if (IsVideoMediaType(video_type))
     request->SetState(video_type, MEDIA_REQUEST_STATE_PENDING_APPROVAL);
 
-  if (use_fake_ui_) {
+  // If using the fake UI, it will just auto-select from the available devices.
+  // The fake UI doesn't work for desktop sharing requests since we can't see
+  // its devices from here; always use the real UI for such requests.
+  if (use_fake_ui_ && request->video_type() != MEDIA_DESKTOP_VIDEO_CAPTURE) {
     if (!fake_ui_)
       fake_ui_.reset(new FakeMediaStreamUIProxy());
 
@@ -1152,7 +1186,7 @@ void MediaStreamManager::PostRequestToUI(const std::string& label,
   request->ui_proxy->RequestAccess(
       request->DetachUIRequest(),
       base::Bind(&MediaStreamManager::HandleAccessRequestResponse,
-                 base::Unretained(this), label));
+                 base::Unretained(this), label, output_parameters));
 }
 
 void MediaStreamManager::SetupRequest(const std::string& label) {
@@ -1221,7 +1255,7 @@ void MediaStreamManager::SetupRequest(const std::string& label) {
       return;
     }
   }
-  PostRequestToUI(label, request);
+  ReadOutputParamsAndPostRequestToUI(label, request);
 }
 
 bool MediaStreamManager::SetupDeviceCaptureRequest(DeviceRequest* request) {
@@ -1314,7 +1348,11 @@ bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
     }
   }
 
-  request->CreateUIRequest("", video_device_id);
+  const std::string audio_device_id =
+      request->audio_type() == MEDIA_DESKTOP_AUDIO_CAPTURE ? video_device_id
+                                                           : "";
+
+  request->CreateUIRequest(audio_device_id, video_device_id);
   return true;
 }
 
@@ -1527,7 +1565,7 @@ void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
           "457525 MediaStreamManager::InitializeDeviceManagersOnIOThread 1"));
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!device_task_runner_.get());
-  device_task_runner_ = audio_manager_->GetWorkerTaskRunner();
+  device_task_runner_ = audio_manager_->GetTaskRunner();
 
   // TODO(dalecurtis): Remove ScopedTracker below once crbug.com/457525 is
   // fixed.
@@ -1728,7 +1766,7 @@ void MediaStreamManager::DevicesEnumerated(
         if (!SetupDeviceCaptureRequest(request))
           FinalizeRequestFailed(label, request, MEDIA_DEVICE_NO_HARDWARE);
         else
-          PostRequestToUI(label, request);
+          ReadOutputParamsAndPostRequestToUI(label, request);
         break;
     }
   }
@@ -1754,7 +1792,7 @@ void MediaStreamManager::OnResume() {
 }
 
 void MediaStreamManager::UseFakeUIForTests(
-    scoped_ptr<FakeMediaStreamUIProxy> fake_ui) {
+    std::unique_ptr<FakeMediaStreamUIProxy> fake_ui) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   use_fake_ui_ = true;
   fake_ui_ = std::move(fake_ui);
@@ -1775,21 +1813,14 @@ void MediaStreamManager::UnregisterNativeLogCallback(int renderer_host_id) {
 }
 
 void MediaStreamManager::AddLogMessageOnIOThread(const std::string& message) {
-  // Get render process ids on the IO thread.
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  for (const LabeledDeviceRequest& labeled_request : requests_) {
-    DeviceRequest* const request = labeled_request.second;
-    if (request->request_type == MEDIA_GENERATE_STREAM) {
-      const auto& found = log_callbacks_.find(request->requesting_process_id);
-      if (found != log_callbacks_.end())
-        found->second.Run(message);
-    }
-  }
+  for (const auto& callback : log_callbacks_)
+    callback.second.Run(message);
 }
 
 void MediaStreamManager::HandleAccessRequestResponse(
     const std::string& label,
+    const media::AudioParameters& output_parameters,
     const MediaStreamDevices& devices,
     content::MediaStreamRequestResult result) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -1824,29 +1855,27 @@ void MediaStreamManager::HandleAccessRequestResponse(
     if (device_info.device.type == content::MEDIA_TAB_VIDEO_CAPTURE ||
         device_info.device.type == content::MEDIA_TAB_AUDIO_CAPTURE) {
       device_info.device.id = request->tab_capture_device_id;
-
-      // Initialize the sample_rate and channel_layout here since for audio
-      // mirroring, we don't go through EnumerateDevices where these are usually
-      // initialized.
-      if (device_info.device.type == content::MEDIA_TAB_AUDIO_CAPTURE) {
-        const media::AudioParameters parameters =
-            audio_manager_->GetDefaultOutputStreamParameters();
-        int sample_rate = parameters.sample_rate();
-        // If we weren't able to get the native sampling rate or the sample_rate
-        // is outside the valid range for input devices set reasonable defaults.
-        if (sample_rate <= 0 || sample_rate > 96000)
-          sample_rate = 44100;
-
-        device_info.device.input.sample_rate = sample_rate;
-        device_info.device.input.channel_layout = media::CHANNEL_LAYOUT_STEREO;
-      }
     }
 
-    if (device_info.device.type == request->audio_type()) {
+    // Initialize the sample_rate and channel_layout here since for audio
+    // mirroring, we don't go through EnumerateDevices where these are usually
+    // initialized.
+    if (device_info.device.type == content::MEDIA_TAB_AUDIO_CAPTURE ||
+        device_info.device.type == content::MEDIA_DESKTOP_AUDIO_CAPTURE) {
+      int sample_rate = output_parameters.sample_rate();
+      // If we weren't able to get the native sampling rate or the sample_rate
+      // is outside the valid range for input devices set reasonable defaults.
+      if (sample_rate <= 0 || sample_rate > 96000)
+        sample_rate = 44100;
+
+      device_info.device.input.sample_rate = sample_rate;
+      device_info.device.input.channel_layout = media::CHANNEL_LAYOUT_STEREO;
+    }
+
+    if (device_info.device.type == request->audio_type())
       found_audio = true;
-    } else if (device_info.device.type == request->video_type()) {
+    else if (device_info.device.type == request->video_type())
       found_video = true;
-    }
 
     // If this is request for a new MediaStream, a device is only opened once
     // per render frame. This is so that the permission to use a device can be
@@ -2016,15 +2045,27 @@ void MediaStreamManager::OnMediaStreamUIWindowId(MediaStreamType video_type,
   if (!window_id)
     return;
 
-  // Pass along for desktop capturing. Ignored for other stream types.
-  if (video_type == MEDIA_DESKTOP_VIDEO_CAPTURE) {
-    for (const StreamDeviceInfo& device_info : devices ) {
-      if (device_info.device.type == MEDIA_DESKTOP_VIDEO_CAPTURE) {
-        video_capture_manager_->SetDesktopCaptureWindowId(
-            device_info.session_id, window_id);
-        break;
-      }
-    }
+  if (video_type != MEDIA_DESKTOP_VIDEO_CAPTURE)
+    return;
+
+  // Pass along for desktop screen and window capturing when
+  // DesktopCaptureDevice is used.
+  for (const StreamDeviceInfo& device_info : devices) {
+    if (device_info.device.type != MEDIA_DESKTOP_VIDEO_CAPTURE)
+      continue;
+
+    DesktopMediaID media_id = DesktopMediaID::Parse(device_info.device.id);
+    // WebContentsVideoCaptureDevice is used for tab/webcontents.
+    if (media_id.type == DesktopMediaID::TYPE_WEB_CONTENTS)
+      continue;
+#if defined(USE_AURA)
+    // DesktopCaptureDevicAura is used when aura_id is valid.
+    if (media_id.aura_id > DesktopMediaID::kNullId)
+      continue;
+#endif
+    video_capture_manager_->SetDesktopCaptureWindowId(device_info.session_id,
+                                                      window_id);
+    break;
   }
 }
 

@@ -9,15 +9,50 @@
  *
  */
 
+#include <memory>
+
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/base/arraysize.h"
 #include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_nalu.h"
 
+#if defined(WEBRTC_VIDEO_TOOLBOX_SUPPORTED)
+
 namespace webrtc {
 
 static const uint8_t NALU_TEST_DATA_0[] = {0xAA, 0xBB, 0xCC};
 static const uint8_t NALU_TEST_DATA_1[] = {0xDE, 0xAD, 0xBE, 0xEF};
+
+TEST(H264VideoToolboxNaluTest, TestHasVideoFormatDescription) {
+  const uint8_t sps_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x27};
+  EXPECT_TRUE(H264AnnexBBufferHasVideoFormatDescription(sps_buffer,
+                                                        arraysize(sps_buffer)));
+  const uint8_t other_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x28};
+  EXPECT_FALSE(H264AnnexBBufferHasVideoFormatDescription(
+      other_buffer, arraysize(other_buffer)));
+}
+
+TEST(H264VideoToolboxNaluTest, TestCreateVideoFormatDescription) {
+  const uint8_t sps_pps_buffer[] = {
+    // SPS nalu.
+    0x00, 0x00, 0x00, 0x01,
+    0x27, 0x42, 0x00, 0x1E, 0xAB, 0x40, 0xF0, 0x28, 0xD3, 0x70, 0x20, 0x20,
+    0x20, 0x20,
+    // PPS nalu.
+    0x00, 0x00, 0x00, 0x01,
+    0x28, 0xCE, 0x3C, 0x30
+  };
+  CMVideoFormatDescriptionRef description =
+      CreateVideoFormatDescription(sps_pps_buffer, arraysize(sps_pps_buffer));
+  EXPECT_TRUE(description);
+  if (description) {
+    CFRelease(description);
+    description = nullptr;
+  }
+  const uint8_t other_buffer[] = {0x00, 0x00, 0x00, 0x01, 0x28};
+  EXPECT_FALSE(CreateVideoFormatDescription(other_buffer,
+                                            arraysize(other_buffer)));
+}
 
 TEST(AnnexBBufferReaderTest, TestReadEmptyInput) {
   const uint8_t annex_b_test_data[] = {0x00};
@@ -90,7 +125,7 @@ TEST(AnnexBBufferReaderTest, TestReadMultipleNalus) {
 TEST(AvccBufferWriterTest, TestEmptyOutputBuffer) {
   const uint8_t expected_buffer[] = {0x00};
   const size_t buffer_size = 1;
-  rtc::scoped_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
+  std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
   memset(buffer.get(), 0, buffer_size);
   AvccBufferWriter writer(buffer.get(), 0);
   EXPECT_EQ(0u, writer.BytesRemaining());
@@ -104,7 +139,7 @@ TEST(AvccBufferWriterTest, TestWriteSingleNalu) {
       0x00, 0x00, 0x00, 0x03, 0xAA, 0xBB, 0xCC,
   };
   const size_t buffer_size = arraysize(NALU_TEST_DATA_0) + 4;
-  rtc::scoped_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
+  std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
   AvccBufferWriter writer(buffer.get(), buffer_size);
   EXPECT_EQ(buffer_size, writer.BytesRemaining());
   EXPECT_TRUE(writer.WriteNalu(NALU_TEST_DATA_0, arraysize(NALU_TEST_DATA_0)));
@@ -123,7 +158,7 @@ TEST(AvccBufferWriterTest, TestWriteMultipleNalus) {
   // clang-format on
   const size_t buffer_size =
       arraysize(NALU_TEST_DATA_0) + arraysize(NALU_TEST_DATA_1) + 8;
-  rtc::scoped_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
+  std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
   AvccBufferWriter writer(buffer.get(), buffer_size);
   EXPECT_EQ(buffer_size, writer.BytesRemaining());
   EXPECT_TRUE(writer.WriteNalu(NALU_TEST_DATA_0, arraysize(NALU_TEST_DATA_0)));
@@ -138,7 +173,7 @@ TEST(AvccBufferWriterTest, TestWriteMultipleNalus) {
 TEST(AvccBufferWriterTest, TestOverflow) {
   const uint8_t expected_buffer[] = {0x00, 0x00, 0x00};
   const size_t buffer_size = arraysize(NALU_TEST_DATA_0);
-  rtc::scoped_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
+  std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
   memset(buffer.get(), 0, buffer_size);
   AvccBufferWriter writer(buffer.get(), buffer_size);
   EXPECT_EQ(buffer_size, writer.BytesRemaining());
@@ -149,3 +184,5 @@ TEST(AvccBufferWriterTest, TestOverflow) {
 }
 
 }  // namespace webrtc
+
+#endif  // WEBRTC_VIDEO_TOOLBOX_SUPPORTED

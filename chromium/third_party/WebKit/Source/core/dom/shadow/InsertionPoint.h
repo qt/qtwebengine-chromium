@@ -52,14 +52,12 @@ public:
     bool isShadowInsertionPoint() const;
     bool isContentInsertionPoint() const;
 
-    PassRefPtrWillBeRawPtr<StaticNodeList> getDistributedNodes();
+    RawPtr<StaticNodeList> getDistributedNodes();
 
     virtual bool canAffectSelector() const { return false; }
 
     void attach(const AttachContext& = AttachContext()) override;
     void detach(const AttachContext& = AttachContext()) override;
-
-    bool shouldUseFallbackElements() const;
 
     size_t distributedNodesSize() const { return m_distributedNodes.size(); }
     Node* distributedNodeAt(size_t index)  const { return m_distributedNodes.at(index).get(); }
@@ -85,7 +83,7 @@ private:
     bool m_registeredWithShadowRoot;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>, 1> DestinationInsertionPoints;
+typedef HeapVector<Member<InsertionPoint>, 1> DestinationInsertionPoints;
 
 DEFINE_ELEMENT_TYPE_CASTS(InsertionPoint, isInsertionPoint());
 
@@ -116,7 +114,7 @@ inline ElementShadow* shadowWhereNodeCanBeDistributed(const Node& node)
 
 const InsertionPoint* resolveReprojection(const Node*);
 
-void collectDestinationInsertionPoints(const Node&, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results);
+void collectDestinationInsertionPoints(const Node&, HeapVector<Member<InsertionPoint>, 8>& results);
 
 } // namespace blink
 

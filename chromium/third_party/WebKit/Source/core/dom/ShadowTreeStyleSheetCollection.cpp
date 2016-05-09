@@ -30,6 +30,7 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
+#include "core/dom/StyleChangeReason.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/StyleSheetCandidate.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -48,7 +49,7 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine& engine, Sty
 {
     for (Node* n : m_styleSheetCandidateNodes) {
         StyleSheetCandidate candidate(*n);
-        ASSERT(!candidate.isXSL());
+        DCHECK(!candidate.isXSL());
 
         if (!candidate.isCSSStyle())
             continue;
@@ -57,14 +58,8 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine& engine, Sty
         if (!sheet)
             continue;
 
-        // FIXME: clarify how PREFERRED or ALTERNATE works in shadow trees.
-        // Should we set preferred/selected stylesheets name in shadow trees and
-        // use the name in document?
-        if (candidate.hasPreferrableName(engine.preferredStylesheetSetName()))
-            engine.selectStylesheetSetName(candidate.title());
-
         collection.appendSheetForList(sheet);
-        if (candidate.canBeActivated(engine.preferredStylesheetSetName()))
+        if (candidate.canBeActivated(nullAtom))
             collection.appendActiveStyleSheet(toCSSStyleSheet(sheet));
     }
 }
@@ -94,4 +89,4 @@ void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine& engine
     collection.swap(*this);
 }
 
-}
+} // namespace blink

@@ -108,7 +108,7 @@ SVGParsingError SVGStringList::setValueAsString(const String& data)
     m_values.clear();
 
     if (data.isEmpty())
-        return NoError;
+        return SVGParseStatus::NoError;
 
     if (data.is8Bit()) {
         const LChar* ptr = data.characters8();
@@ -119,7 +119,7 @@ SVGParsingError SVGStringList::setValueAsString(const String& data)
         const UChar* end = ptr + data.length();
         parseInternal(ptr, end);
     }
-    return NoError;
+    return SVGParseStatus::NoError;
 }
 
 String SVGStringList::valueAsString() const
@@ -151,19 +151,19 @@ bool SVGStringList::checkIndexBound(size_t index, ExceptionState& exceptionState
     return true;
 }
 
-void SVGStringList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGStringList::add(SVGPropertyBase* other, SVGElement* contextElement)
 {
     // SVGStringList is never animated.
     ASSERT_NOT_REACHED();
 }
 
-void SVGStringList::calculateAnimatedValue(SVGAnimationElement*, float, unsigned, PassRefPtrWillBeRawPtr<SVGPropertyBase>, PassRefPtrWillBeRawPtr<SVGPropertyBase>, PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*)
+void SVGStringList::calculateAnimatedValue(SVGAnimationElement*, float, unsigned, SVGPropertyBase*, SVGPropertyBase*, SVGPropertyBase*, SVGElement*)
 {
     // SVGStringList is never animated.
     ASSERT_NOT_REACHED();
 }
 
-float SVGStringList::calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*)
+float SVGStringList::calculateDistance(SVGPropertyBase*, SVGElement*)
 {
     // SVGStringList is never animated.
     ASSERT_NOT_REACHED();
@@ -171,4 +171,4 @@ float SVGStringList::calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase>, 
     return -1.0f;
 }
 
-}
+} // namespace blink

@@ -68,11 +68,12 @@ TEST_F(ContextMenuControllerTest, TestCustomMenu)
         "</button>");
 
     // Create right button click event and pass it to context menu controller.
-    RefPtrWillBeRawPtr<Event> event = MouseEvent::create(EventTypeNames::click, false, false,
-        document().domWindow(), 50, 50, 0, 0, 0, 0, 0, PlatformEvent::NoModifiers, 1, 0, nullptr, 0);
+    Event* event = MouseEvent::create(EventTypeNames::click, false, false,
+        document().domWindow(), 50, 50, 0, 0, 0, 0, 0, PlatformEvent::NoModifiers, 1, 0, nullptr, 0,
+        PlatformMouseEvent::RealOrIndistinguishable, String());
     document().getElementById("button_id")->focus();
     event->setTarget(document().getElementById("button_id"));
-    document().page()->contextMenuController().handleContextMenuEvent(event.get());
+    document().page()->contextMenuController().handleContextMenuEvent(event);
 
     // Item 1
     // Item 2
@@ -107,4 +108,4 @@ TEST_F(ContextMenuControllerTest, TestCustomMenu)
     EXPECT_STREQ("Title 10 not checked and Title 8 checked", document().title().utf8().data());
 }
 
-}
+} // namespace blink

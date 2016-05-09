@@ -11,10 +11,10 @@
 #ifndef WEBRTC_CALL_RTC_EVENT_LOG_H_
 #define WEBRTC_CALL_RTC_EVENT_LOG_H_
 
+#include <memory>
 #include <string>
 
 #include "webrtc/base/platform_file.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
 
@@ -30,11 +30,13 @@ class RtcEventLogImpl;
 
 enum class MediaType;
 
+enum PacketDirection { kIncomingPacket = 0, kOutgoingPacket };
+
 class RtcEventLog {
  public:
   virtual ~RtcEventLog() {}
 
-  static rtc::scoped_ptr<RtcEventLog> Create();
+  static std::unique_ptr<RtcEventLog> Create();
 
   // Sets the time that events are stored in the internal event buffer
   // before the user calls StartLogging.  The default is 10 000 000 us = 10 s
@@ -63,13 +65,13 @@ class RtcEventLog {
 
   // Logs the header of an incoming or outgoing RTP packet. packet_length
   // is the total length of the packet, including both header and payload.
-  virtual void LogRtpHeader(bool incoming,
+  virtual void LogRtpHeader(PacketDirection direction,
                             MediaType media_type,
                             const uint8_t* header,
                             size_t packet_length) = 0;
 
   // Logs an incoming or outgoing RTCP packet.
-  virtual void LogRtcpPacket(bool incoming,
+  virtual void LogRtcpPacket(PacketDirection direction,
                              MediaType media_type,
                              const uint8_t* packet,
                              size_t length) = 0;

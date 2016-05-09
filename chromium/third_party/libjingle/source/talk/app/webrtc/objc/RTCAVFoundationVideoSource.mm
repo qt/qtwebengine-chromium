@@ -32,17 +32,22 @@
 #import "RTCPeerConnectionFactory+Internal.h"
 #import "RTCVideoSource+Internal.h"
 
+#include <memory>
+
 @implementation RTCAVFoundationVideoSource
 
 - (instancetype)initWithFactory:(RTCPeerConnectionFactory*)factory
                     constraints:(RTCMediaConstraints*)constraints {
   NSParameterAssert(factory);
-  rtc::scoped_ptr<webrtc::AVFoundationVideoCapturer> capturer;
+  std::unique_ptr<webrtc::AVFoundationVideoCapturer> capturer;
   capturer.reset(new webrtc::AVFoundationVideoCapturer());
-  rtc::scoped_refptr<webrtc::VideoSourceInterface> source =
-      factory.nativeFactory->CreateVideoSource(capturer.release(),
-                                               constraints.constraints);
+  rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> source =
+      factory.nativeFactory->CreateVideoSource(capturer.release(), constraints.constraints);
   return [super initWithMediaSource:source];
+}
+
+- (BOOL)canUseBackCamera {
+  return self.capturer->CanUseBackCamera();
 }
 
 - (BOOL)useBackCamera {

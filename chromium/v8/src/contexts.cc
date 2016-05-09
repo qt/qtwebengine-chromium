@@ -79,6 +79,15 @@ Context* Context::declaration_context() {
   return current;
 }
 
+Context* Context::closure_context() {
+  Context* current = this;
+  while (!current->IsFunctionContext() && !current->IsScriptContext() &&
+         !current->IsNativeContext()) {
+    current = current->previous();
+    DCHECK(current->closure() == closure());
+  }
+  return current;
+}
 
 JSObject* Context::extension_object() {
   DCHECK(IsNativeContext() || IsFunctionContext() || IsBlockContext());
@@ -155,14 +164,16 @@ static Maybe<bool> UnscopableLookup(LookupIterator* it) {
   Handle<Object> unscopables;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, unscopables,
-      Object::GetProperty(it->GetReceiver(),
-                          isolate->factory()->unscopables_symbol()),
+      JSReceiver::GetProperty(Handle<JSReceiver>::cast(it->GetReceiver()),
+                              isolate->factory()->unscopables_symbol()),
       Nothing<bool>());
   if (!unscopables->IsJSReceiver()) return Just(true);
   Handle<Object> blacklist;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, blacklist,
-                                   Object::GetProperty(unscopables, it->name()),
-                                   Nothing<bool>());
+  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+      isolate, blacklist,
+      JSReceiver::GetProperty(Handle<JSReceiver>::cast(unscopables),
+                              it->name()),
+      Nothing<bool>());
   return Just(!blacklist->BooleanValue());
 }
 
@@ -222,6 +233,7 @@ Handle<Object> Context::Lookup(Handle<String> name,
   Handle<Context> context(this, isolate);
 
   bool follow_context_chain = (flags & FOLLOW_CONTEXT_CHAIN) != 0;
+  bool failed_whitelist = false;
   *index = kNotFound;
   *attributes = ABSENT;
   *binding_flags = MISSING_BINDING;
@@ -282,7 +294,7 @@ Handle<Object> Context::Lookup(Handle<String> name,
         if (name->Equals(*isolate->factory()->this_string())) {
           maybe = Just(ABSENT);
         } else {
-          LookupIterator it(object, name);
+          LookupIterator it(object, name, object);
           Maybe<bool> found = UnscopableLookup(&it);
           if (found.IsNothing()) {
             maybe = Nothing<PropertyAttributes>();
@@ -367,6 +379,31 @@ Handle<Object> Context::Lookup(Handle<String> name,
         *binding_flags = MUTABLE_IS_INITIALIZED;
         return context;
       }
+    } else if (context->IsDebugEvaluateContext()) {
+      // Check materialized locals.
+      Object* obj = context->get(EXTENSION_INDEX);
+      if (obj->IsJSReceiver()) {
+        Handle<JSReceiver> extension(JSReceiver::cast(obj));
+        LookupIterator it(extension, name, extension);
+        Maybe<bool> found = JSReceiver::HasProperty(&it);
+        if (found.FromMaybe(false)) {
+          *attributes = NONE;
+          return extension;
+        }
+      }
+      // Check the original context, but do not follow its context chain.
+      obj = context->get(WRAPPED_CONTEXT_INDEX);
+      if (obj->IsContext()) {
+        Handle<Object> result = Context::cast(obj)->Lookup(
+            name, DONT_FOLLOW_CHAINS, index, attributes, binding_flags);
+        if (!result.is_null()) return result;
+      }
+      // Check whitelist. Names that do not pass whitelist shall only resolve
+      // to with, script or native contexts up the context chain.
+      obj = context->get(WHITE_LIST_INDEX);
+      if (obj->IsStringSet()) {
+        failed_whitelist = failed_whitelist || !StringSet::cast(obj)->Has(name);
+      }
     }
 
     // 3. Prepare to continue with the previous (next outermost) context.
@@ -375,7 +412,12 @@ Handle<Object> Context::Lookup(Handle<String> name,
          context->is_declaration_context())) {
       follow_context_chain = false;
     } else {
-      context = Handle<Context>(context->previous(), isolate);
+      do {
+        context = Handle<Context>(context->previous(), isolate);
+        // If we come across a whitelist context, and the name is not
+        // whitelisted, then only consider with, script or native contexts.
+      } while (failed_whitelist && !context->IsScriptContext() &&
+               !context->IsNativeContext() && !context->IsWithContext());
     }
   } while (follow_context_chain);
 
@@ -540,16 +582,6 @@ int Context::IntrinsicIndexForName(Handle<String> string) {
 }
 
 #undef COMPARE_NAME
-
-
-bool Context::IsJSBuiltin(Handle<Context> native_context,
-                          Handle<JSFunction> function) {
-#define COMPARE_FUNCTION(index, type, name) \
-  if (*function == native_context->get(index)) return true;
-  NATIVE_CONTEXT_JS_BUILTINS(COMPARE_FUNCTION);
-#undef COMPARE_FUNCTION
-  return false;
-}
 
 
 #ifdef DEBUG

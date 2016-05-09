@@ -16,8 +16,8 @@
 #include "libyuv/scale.h"  // NOLINT
 
 #include "webrtc/base/checks.h"
-#include "webrtc/common.h"
 #include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
+#include "webrtc/system_wrappers/include/clock.h"
 
 namespace {
 
@@ -95,7 +95,7 @@ int VerifyCodec(const webrtc::VideoCodec* inst) {
 // TL1 FrameDropper's max time to drop frames.
 const float kTl1MaxTimeToDropFrames = 20.0f;
 
-struct ScreenshareTemporalLayersFactory : webrtc::TemporalLayers::Factory {
+struct ScreenshareTemporalLayersFactory : webrtc::TemporalLayersFactory {
   ScreenshareTemporalLayersFactory()
       : tl1_frame_dropper_(kTl1MaxTimeToDropFrames) {}
 
@@ -103,7 +103,8 @@ struct ScreenshareTemporalLayersFactory : webrtc::TemporalLayers::Factory {
 
   virtual webrtc::TemporalLayers* Create(int num_temporal_layers,
                                          uint8_t initial_tl0_pic_idx) const {
-    return new webrtc::ScreenshareLayers(num_temporal_layers, rand());
+    return new webrtc::ScreenshareLayers(num_temporal_layers, rand(),
+                                         webrtc::Clock::GetRealTimeClock());
   }
 
   mutable webrtc::FrameDropper tl0_frame_dropper_;
@@ -181,7 +182,7 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
   }
 
   int number_of_streams = NumberOfStreams(*inst);
-  bool doing_simulcast = (number_of_streams > 1);
+  const bool doing_simulcast = (number_of_streams > 1);
 
   if (doing_simulcast && !ValidSimulcastResolutions(*inst, number_of_streams)) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
@@ -191,10 +192,8 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
 
   // Special mode when screensharing on a single stream.
   if (number_of_streams == 1 && inst->mode == kScreensharing) {
-    screensharing_extra_options_.reset(new Config());
-    screensharing_extra_options_->Set<TemporalLayers::Factory>(
-        new ScreenshareTemporalLayersFactory());
-    codec_.extra_options = screensharing_extra_options_.get();
+    screensharing_tl_factory_.reset(new ScreenshareTemporalLayersFactory());
+    codec_.codecSpecific.VP8.tl_factory = screensharing_tl_factory_.get();
   }
 
   std::string implementation_name;
@@ -231,8 +230,12 @@ int SimulcastEncoderAdapter::InitEncode(const VideoCodec* inst,
       implementation_name += ", ";
     implementation_name += streaminfos_[i].encoder->ImplementationName();
   }
-  implementation_name_ =
-      "SimulcastEncoderAdapter (" + implementation_name + ")";
+  if (doing_simulcast) {
+    implementation_name_ =
+        "SimulcastEncoderAdapter (" + implementation_name + ")";
+  } else {
+    implementation_name_ = implementation_name;
+  }
   return WEBRTC_VIDEO_CODEC_OK;
 }
 

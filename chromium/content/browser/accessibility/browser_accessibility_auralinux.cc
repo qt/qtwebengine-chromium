@@ -23,6 +23,18 @@ static BrowserAccessibilityAuraLinux* ToBrowserAccessibilityAuraLinux(
   return atk_object->m_object;
 }
 
+const BrowserAccessibilityAuraLinux* ToBrowserAccessibilityAuraLinux(
+    const BrowserAccessibility* obj) {
+  DCHECK(!obj || obj->IsNative());
+  return static_cast<const BrowserAccessibilityAuraLinux*>(obj);
+}
+
+BrowserAccessibilityAuraLinux* ToBrowserAccessibilityAuraLinux(
+    BrowserAccessibility* obj) {
+  DCHECK(!obj || obj->IsNative());
+  return static_cast<BrowserAccessibilityAuraLinux*>(obj);
+}
+
 //
 // AtkAction interface.
 //
@@ -140,7 +152,7 @@ static AtkObject* browser_accessibility_accessible_at_point(
     return NULL;
 
   AtkObject* atk_result =
-      result->ToBrowserAccessibilityAuraLinux()->GetAtkObject();
+      ToBrowserAccessibilityAuraLinux(result)->GetAtkObject();
   g_object_ref(atk_result);
   return atk_result;
 }
@@ -177,7 +189,7 @@ static gboolean browser_accessibility_grab_focus(AtkComponent* atk_component) {
   if (!obj)
     return false;
 
-  obj->manager()->SetFocus(obj, true);
+  obj->manager()->SetFocus(*obj);
   return true;
 }
 
@@ -474,7 +486,7 @@ static AtkObject* browser_accessibility_get_parent(AtkObject* atk_object) {
   if (!obj)
     return NULL;
   if (obj->GetParent())
-    return obj->GetParent()->ToBrowserAccessibilityAuraLinux()->GetAtkObject();
+    return ToBrowserAccessibilityAuraLinux(obj->GetParent())->GetAtkObject();
 
   BrowserAccessibilityManagerAuraLinux* manager =
       static_cast<BrowserAccessibilityManagerAuraLinux*>(obj->manager());
@@ -500,9 +512,8 @@ static AtkObject* browser_accessibility_ref_child(AtkObject* atk_object,
   if (index < 0 || index >= static_cast<gint>(obj->PlatformChildCount()))
     return NULL;
 
-  AtkObject* result = obj->InternalGetChild(index)
-                          ->ToBrowserAccessibilityAuraLinux()
-                          ->GetAtkObject();
+  AtkObject* result = ToBrowserAccessibilityAuraLinux(
+      obj->InternalGetChild(index))->GetAtkObject();
   g_object_ref(result);
   return result;
 }
@@ -539,7 +550,7 @@ static AtkStateSet* browser_accessibility_ref_state_set(AtkObject* atk_object) {
 
   if (state & (1 << ui::AX_STATE_FOCUSABLE))
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSABLE);
-  if (obj->manager()->GetFocus(NULL) == obj)
+  if (obj->manager()->GetFocus() == obj)
     atk_state_set_add_state(state_set, ATK_STATE_FOCUSED);
   if (state & (1 << ui::AX_STATE_ENABLED))
     atk_state_set_add_state(state_set, ATK_STATE_ENABLED);
@@ -735,16 +746,6 @@ BrowserAccessibility* BrowserAccessibility::Create() {
   return new BrowserAccessibilityAuraLinux();
 }
 
-const BrowserAccessibilityAuraLinux*
-BrowserAccessibility::ToBrowserAccessibilityAuraLinux() const {
-  return static_cast<const BrowserAccessibilityAuraLinux*>(this);
-}
-
-BrowserAccessibilityAuraLinux*
-BrowserAccessibility::ToBrowserAccessibilityAuraLinux() {
-  return static_cast<BrowserAccessibilityAuraLinux*>(this);
-}
-
 BrowserAccessibilityAuraLinux::BrowserAccessibilityAuraLinux()
     : atk_object_(NULL) {
 }
@@ -782,7 +783,7 @@ void BrowserAccessibilityAuraLinux::OnDataChanged() {
     if (this->GetParent()) {
       atk_object_set_parent(
           atk_object_,
-          this->GetParent()->ToBrowserAccessibilityAuraLinux()->GetAtkObject());
+          ToBrowserAccessibilityAuraLinux(this->GetParent())->GetAtkObject());
     }
   }
 }

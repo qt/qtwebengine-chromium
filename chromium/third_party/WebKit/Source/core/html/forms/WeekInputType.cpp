@@ -47,9 +47,9 @@ static const int weekDefaultStepBase = -259200000; // The first day of 1970-W01.
 static const int weekDefaultStep = 1;
 static const int weekStepScaleFactor = 604800000;
 
-PassRefPtrWillBeRawPtr<InputType> WeekInputType::create(HTMLInputElement& element)
+InputType* WeekInputType::create(HTMLInputElement& element)
 {
-    return adoptRefWillBeNoop(new WeekInputType(element));
+    return new WeekInputType(element);
 }
 
 void WeekInputType::countUsage()
@@ -82,6 +82,11 @@ bool WeekInputType::setMillisecondToDateComponents(double value, DateComponents*
     return date->setMillisecondsSinceEpochForWeek(value);
 }
 
+void WeekInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value != element().sanitizeValue(value))
+        addWarningToConsole("The specified value %s does not conform to the required format.  The format is \"yyyy-Www\" where yyyy is year in four or more digits, and ww is 01-53.", value);
+}
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 String WeekInputType::formatDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState) const

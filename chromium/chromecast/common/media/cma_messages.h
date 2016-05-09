@@ -18,6 +18,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder_config.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
+#include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT
@@ -68,9 +69,7 @@ IPC_MESSAGE_CONTROL2(CmaHostMsg_NotifyPipeWrite,
 
 // Messages from the browser to the renderer process.
 
-IPC_MESSAGE_CONTROL2(CmaMsg_MediaStateChanged,
-                     int /* Media pipeline ID */,
-                     media::PipelineStatus /* Status */)
+IPC_MESSAGE_CONTROL1(CmaMsg_FlushDone, int /* Media pipeline ID */)
 IPC_MESSAGE_CONTROL4(CmaMsg_TimeUpdate,
                      int /* Media pipeline ID */,
                      base::TimeDelta /* Media time */,

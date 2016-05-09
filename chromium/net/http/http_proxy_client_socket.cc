@@ -13,7 +13,6 @@
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_util.h"
 #include "net/base/proxy_delegate.h"
 #include "net/http/http_basic_stream.h"
 #include "net/http/http_network_session.h"
@@ -170,14 +169,6 @@ void HttpProxyClientSocket::SetOmniboxSpeculation() {
 bool HttpProxyClientSocket::WasEverUsed() const {
   if (transport_.get() && transport_->socket()) {
     return transport_->socket()->WasEverUsed();
-  }
-  NOTREACHED();
-  return false;
-}
-
-bool HttpProxyClientSocket::UsingTCPFastOpen() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->UsingTCPFastOpen();
   }
   NOTREACHED();
   return false;

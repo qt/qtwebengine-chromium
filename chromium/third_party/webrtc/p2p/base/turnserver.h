@@ -23,7 +23,7 @@
 #include "webrtc/base/socketaddress.h"
 
 namespace rtc {
-class ByteBuffer;
+class ByteBufferWriter;
 class PacketSocketFactory;
 class Thread;
 }
@@ -199,8 +199,14 @@ class TurnServer : public sigslot::has_slots<> {
   // Specifies the factory to use for creating external sockets.
   void SetExternalSocketFactory(rtc::PacketSocketFactory* factory,
                                 const rtc::SocketAddress& address);
+  // For testing only.
+  std::string SetTimestampForNextNonce(int64_t timestamp) {
+    ts_for_next_nonce_ = timestamp;
+    return GenerateNonce(timestamp);
+  }
 
  private:
+  std::string GenerateNonce(int64_t now) const;
   void OnInternalPacket(rtc::AsyncPacketSocket* socket, const char* data,
                         size_t size, const rtc::SocketAddress& address,
                         const rtc::PacketTime& packet_time);
@@ -221,7 +227,6 @@ class TurnServer : public sigslot::has_slots<> {
   bool CheckAuthorization(TurnServerConnection* conn, const StunMessage* msg,
                           const char* data, size_t size,
                           const std::string& key);
-  std::string GenerateNonce() const;
   bool ValidateNonce(const std::string& nonce) const;
 
   TurnServerAllocation* FindAllocation(TurnServerConnection* conn);
@@ -241,7 +246,7 @@ class TurnServer : public sigslot::has_slots<> {
                                             const rtc::SocketAddress& addr);
 
   void SendStun(TurnServerConnection* conn, StunMessage* msg);
-  void Send(TurnServerConnection* conn, const rtc::ByteBuffer& buf);
+  void Send(TurnServerConnection* conn, const rtc::ByteBufferWriter& buf);
 
   void OnAllocationDestroyed(TurnServerAllocation* allocation);
   void DestroyInternalSocket(rtc::AsyncPacketSocket* socket);
@@ -269,6 +274,10 @@ class TurnServer : public sigslot::has_slots<> {
   rtc::SocketAddress external_addr_;
 
   AllocationMap allocations_;
+
+  // For testing only. If this is non-zero, the next NONCE will be generated
+  // from this value, and it will be reset to 0 after generating the NONCE.
+  int64_t ts_for_next_nonce_ = 0;
 
   friend class TurnServerAllocation;
 };

@@ -10,7 +10,7 @@
       'sources': [
         'platform_verification.mojom',
       ],
-      'includes': [ '../../../third_party/mojo/mojom_bindings_generator.gypi' ],
+      'includes': [ '../../../mojo/mojom_bindings_generator.gypi' ],
     },
     {
       'target_name': 'platform_verification_api',
@@ -18,8 +18,7 @@
       'dependencies': [
         'platform_verification_mojo_bindings',
         '../../../mojo/mojo_base.gyp:mojo_application_bindings',
-        '../../../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../../../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
+        '../../../mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/media/mojo/interfaces/platform_verification.mojom.cc',
@@ -33,7 +32,7 @@
       'sources': [
         'provision_fetcher.mojom',
       ],
-      'includes': [ '../../../third_party/mojo/mojom_bindings_generator.gypi' ],
+      'includes': [ '../../../mojo/mojom_bindings_generator.gypi' ],
     },
     {
       'target_name': 'provision_fetcher_api',
@@ -41,8 +40,7 @@
       'dependencies': [
         'provision_fetcher_mojo_bindings',
         '../../../mojo/mojo_base.gyp:mojo_application_bindings',
-        '../../../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../../../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
+        '../../../mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/media/mojo/interfaces/provision_fetcher.mojom.cc',

@@ -179,7 +179,7 @@ const LayoutSVGResourceContainer* LayoutSVGResourcePattern::resolveContentElemen
     return this;
 }
 
-PassRefPtr<const SkPicture> LayoutSVGResourcePattern::asPicture(const FloatRect& tileBounds,
+PassRefPtr<SkPicture> LayoutSVGResourcePattern::asPicture(const FloatRect& tileBounds,
     const AffineTransform& tileTransform) const
 {
     ASSERT(!m_shouldCollectPatternAttributes);
@@ -205,4 +205,4 @@ PassRefPtr<const SkPicture> LayoutSVGResourcePattern::asPicture(const FloatRect&
     return pictureBuilder.endRecording();
 }
 
-}
+} // namespace blink

@@ -60,6 +60,37 @@ WebServiceWorkerClientType getClientType(const String& type)
     return WebServiceWorkerClientTypeWindow;
 }
 
+class GetCallback : public WebServiceWorkerClientCallbacks {
+public:
+    explicit GetCallback(ScriptPromiseResolver* resolver)
+        : m_resolver(resolver) { }
+    ~GetCallback() override { }
+
+    void onSuccess(std::unique_ptr<WebServiceWorkerClientInfo> webClient) override
+    {
+        OwnPtr<WebServiceWorkerClientInfo> client = adoptPtr(webClient.release());
+        if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped())
+            return;
+        if (!client) {
+            // Resolve the promise with undefined.
+            m_resolver->resolve();
+            return;
+        }
+        m_resolver->resolve(ServiceWorkerClient::take(m_resolver, client.release()));
+    }
+
+    void onError(const WebServiceWorkerError& error) override
+    {
+        if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error));
+    }
+
+private:
+    Persistent<ScriptPromiseResolver> m_resolver;
+    WTF_MAKE_NONCOPYABLE(GetCallback);
+};
+
 } // namespace
 
 ServiceWorkerClients* ServiceWorkerClients::create()
@@ -71,9 +102,23 @@ ServiceWorkerClients::ServiceWorkerClients()
 {
 }
 
+ScriptPromise ServiceWorkerClients::get(ScriptState* scriptState, const String& id)
+{
+    ExecutionContext* executionContext = scriptState->getExecutionContext();
+    // TODO(jungkees): May be null due to worker termination: http://crbug.com/413518.
+    if (!executionContext)
+        return ScriptPromise();
+
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    ServiceWorkerGlobalScopeClient::from(executionContext)->getClient(id, new GetCallback(resolver));
+    return promise;
+}
+
 ScriptPromise ServiceWorkerClients::matchAll(ScriptState* scriptState, const ClientQueryOptions& options)
 {
-    ExecutionContext* executionContext = scriptState->executionContext();
+    ExecutionContext* executionContext = scriptState->getExecutionContext();
     // FIXME: May be null due to worker termination: http://crbug.com/413518.
     if (!executionContext)
         return ScriptPromise();
@@ -90,7 +135,7 @@ ScriptPromise ServiceWorkerClients::matchAll(ScriptState* scriptState, const Cli
 
 ScriptPromise ServiceWorkerClients::claim(ScriptState* scriptState)
 {
-    ExecutionContext* executionContext = scriptState->executionContext();
+    ExecutionContext* executionContext = scriptState->getExecutionContext();
 
     // FIXME: May be null due to worker termination: http://crbug.com/413518.
     if (!executionContext)
@@ -108,7 +153,7 @@ ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const S
 {
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    ExecutionContext* context = scriptState->executionContext();
+    ExecutionContext* context = scriptState->getExecutionContext();
 
     KURL parsedUrl = KURL(toWorkerGlobalScope(context)->location()->url(), url);
     if (!parsedUrl.isValid()) {
@@ -116,7 +161,7 @@ ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const S
         return promise;
     }
 
-    if (!context->securityOrigin()->canDisplay(parsedUrl)) {
+    if (!context->getSecurityOrigin()->canDisplay(parsedUrl)) {
         resolver->reject(V8ThrowException::createTypeError(scriptState->isolate(), "'" + parsedUrl.elidedString() + "' cannot be opened."));
         return promise;
     }

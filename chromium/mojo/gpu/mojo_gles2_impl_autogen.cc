@@ -576,6 +576,10 @@ const GLubyte* MojoGLES2Impl::GetString(GLenum name) {
   MojoGLES2MakeCurrent(context_);
   return glGetString(name);
 }
+const GLubyte* MojoGLES2Impl::GetStringi(GLenum name, GLuint index) {
+  NOTREACHED() << "Unimplemented GetStringi.";
+  return 0;
+}
 void MojoGLES2Impl::GetSynciv(GLsync sync,
                               GLenum pname,
                               GLsizei bufsize,
@@ -1630,14 +1634,6 @@ void MojoGLES2Impl::LoseContextCHROMIUM(GLenum current, GLenum other) {
   MojoGLES2MakeCurrent(context_);
   glLoseContextCHROMIUM(current, other);
 }
-GLuint MojoGLES2Impl::InsertSyncPointCHROMIUM() {
-  MojoGLES2MakeCurrent(context_);
-  return glInsertSyncPointCHROMIUM();
-}
-void MojoGLES2Impl::WaitSyncPointCHROMIUM(GLuint sync_point) {
-  MojoGLES2MakeCurrent(context_);
-  glWaitSyncPointCHROMIUM(sync_point);
-}
 GLuint64 MojoGLES2Impl::InsertFenceSyncCHROMIUM() {
   MojoGLES2MakeCurrent(context_);
   return glInsertFenceSyncCHROMIUM();
@@ -1712,6 +1708,10 @@ void MojoGLES2Impl::SwapInterval(GLint interval) {
 void MojoGLES2Impl::FlushDriverCachesCHROMIUM() {
   MojoGLES2MakeCurrent(context_);
   glFlushDriverCachesCHROMIUM();
+}
+GLuint MojoGLES2Impl::GetLastFlushIdCHROMIUM() {
+  MojoGLES2MakeCurrent(context_);
+  return glGetLastFlushIdCHROMIUM();
 }
 void MojoGLES2Impl::MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) {
   MojoGLES2MakeCurrent(context_);
@@ -1924,6 +1924,14 @@ void MojoGLES2Impl::BindFragDataLocationEXT(GLuint program,
 GLint MojoGLES2Impl::GetFragDataIndexEXT(GLuint program, const char* name) {
   MojoGLES2MakeCurrent(context_);
   return glGetFragDataIndexEXT(program, name);
+}
+void MojoGLES2Impl::UniformMatrix4fvStreamTextureMatrixCHROMIUM(
+    GLint location,
+    GLboolean transpose,
+    const GLfloat* default_value) {
+  MojoGLES2MakeCurrent(context_);
+  glUniformMatrix4fvStreamTextureMatrixCHROMIUM(location, transpose,
+                                                default_value);
 }
 
 }  // namespace mojo

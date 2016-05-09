@@ -76,7 +76,7 @@ public:
     virtual void setMode(const AtomicString&);
 
     enum ReadinessState { NotLoaded = 0, Loading = 1, Loaded = 2, FailedToLoad = 3 };
-    ReadinessState readinessState() const { return m_readinessState; }
+    ReadinessState getReadinessState() const { return m_readinessState; }
     void setReadinessState(ReadinessState state) { m_readinessState = state; }
 
     TextTrackCueList* cues();
@@ -115,7 +115,7 @@ public:
 
     // EventTarget methods
     const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override;
+    ExecutionContext* getExecutionContext() const override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -146,7 +146,7 @@ private:
     bool m_hasBeenConfigured;
 };
 
-DEFINE_TRACK_TYPE_CASTS(TextTrack, TrackBase::TextTrack);
+DEFINE_TRACK_TYPE_CASTS(TextTrack, WebMediaPlayer::TextTrack);
 
 } // namespace blink
 

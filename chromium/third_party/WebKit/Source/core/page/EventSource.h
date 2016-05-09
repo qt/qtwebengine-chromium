@@ -32,28 +32,28 @@
 #ifndef EventSource_h
 #define EventSource_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
+#include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
+#include "core/page/EventSourceParser.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
+#include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class EventSourceInit;
 class ExceptionState;
-class MessageEvent;
 class ResourceResponse;
-class TextResourceDecoder;
-class ThreadableLoader;
 
-class EventSource final : public RefCountedGarbageCollectedEventTargetWithInlineData<EventSource>, private ThreadableLoaderClient, public ActiveDOMObject {
+class CORE_EXPORT EventSource final : public RefCountedGarbageCollectedEventTargetWithInlineData<EventSource>, private ThreadableLoaderClient, public ActiveScriptWrappable, public ActiveDOMObject, public EventSourceParser::Client {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(EventSource);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(EventSource);
+    USING_GARBAGE_COLLECTED_MIXIN(EventSource);
 public:
     static EventSource* create(ExecutionContext*, const String& url, const EventSourceInit&, ExceptionState&);
     ~EventSource() override;
@@ -63,10 +63,11 @@ public:
     String url() const;
     bool withCredentials() const;
 
-    typedef short State;
-    static const State CONNECTING = 0;
-    static const State OPEN = 1;
-    static const State CLOSED = 2;
+    enum State : short {
+        CONNECTING = 0,
+        OPEN = 1,
+        CLOSED = 2
+    };
 
     State readyState() const;
 
@@ -77,7 +78,7 @@ public:
     void close();
 
     const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override;
+    ExecutionContext* getExecutionContext() const override;
 
     // ActiveDOMObject
     //
@@ -87,7 +88,8 @@ public:
     // asynchronous events from the loader won't be invoked.
     void stop() override;
 
-    bool hasPendingActivity() const override;
+    // ActiveScriptWrappable
+    bool hasPendingActivity() const final;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -101,31 +103,29 @@ private:
     void didFailAccessControlCheck(const ResourceError&) override;
     void didFailRedirectCheck() override;
 
+    void onMessageEvent(const AtomicString& event, const String& data, const AtomicString& id) override;
+    void onReconnectionTimeSet(unsigned long long reconnectionTime) override;
+
     void scheduleInitialConnect();
     void connect();
     void networkRequestEnded();
     void scheduleReconnect();
     void connectTimerFired(Timer<EventSource>*);
     void abortConnectionAttempt();
-    void parseEventStream();
-    void parseEventStreamLine(unsigned pos, int fieldLength, int lineLength);
-    PassRefPtrWillBeRawPtr<MessageEvent> createMessageEvent();
 
-    KURL m_url;
+    // The original URL specified when constructing EventSource instance. Used
+    // for the 'url' attribute getter.
+    const KURL m_url;
+    // The URL used to connect to the server, which may be different from
+    // |m_url| as it may be redirected.
+    KURL m_currentURL;
     bool m_withCredentials;
     State m_state;
 
-    OwnPtr<TextResourceDecoder> m_decoder;
-    RefPtr<ThreadableLoader> m_loader;
+    Member<EventSourceParser> m_parser;
+    OwnPtr<ThreadableLoader> m_loader;
     Timer<EventSource> m_connectTimer;
-    Vector<UChar> m_receiveBuf;
-    bool m_discardTrailingNewline;
-    bool m_requestInFlight;
 
-    AtomicString m_eventName;
-    Vector<UChar> m_data;
-    AtomicString m_currentlyParsedEventId;
-    AtomicString m_lastEventId;
     unsigned long long m_reconnectDelay;
     String m_eventStreamOrigin;
 };

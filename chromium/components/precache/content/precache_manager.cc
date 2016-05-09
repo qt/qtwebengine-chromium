@@ -13,12 +13,12 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/precache/core/precache_database.h"
 #include "components/precache/core/precache_switches.h"
+#include "components/prefs/pref_service.h"
 #include "components/sync_driver/sync_service.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/browser_context.h"
@@ -59,10 +59,16 @@ PrecacheManager::PrecacheManager(
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
       base::Bind(base::IgnoreResult(&PrecacheDatabase::Init),
-                 precache_database_, db_path));
+                 base::Unretained(precache_database_.get()), db_path));
 }
 
-PrecacheManager::~PrecacheManager() {}
+PrecacheManager::~PrecacheManager() {
+  // DeleteSoon posts a non-nestable task to the task runner, so any previously
+  // posted tasks that rely on an Unretained precache_database_ will finish
+  // before it is deleted.
+  BrowserThread::DeleteSoon(BrowserThread::DB, FROM_HERE,
+                            precache_database_.release());
+}
 
 bool PrecacheManager::IsInExperimentGroup() const {
   // Verify IsPrecachingAllowed() before calling FieldTrialList::FindFullName().
@@ -121,7 +127,8 @@ void PrecacheManager::StartPrecaching(
     BrowserThread::PostTask(
         BrowserThread::DB, FROM_HERE,
         base::Bind(&PrecacheDatabase::DeleteExpiredPrecacheHistory,
-                   precache_database_, base::Time::Now()));
+                   base::Unretained(precache_database_.get()),
+                   base::Time::Now()));
 
     // Request NumTopHosts() top hosts. Note that PrecacheFetcher is further
     // bound by the value of PrecacheConfigurationSettings.top_sites_count, as
@@ -209,8 +216,9 @@ void PrecacheManager::RecordStatsForFetchInternal(
     // by precaching.
     BrowserThread::PostTask(
         BrowserThread::DB, FROM_HERE,
-        base::Bind(&PrecacheDatabase::RecordURLPrefetch, precache_database_,
-                   url, latency, fetch_time, size, was_cached));
+        base::Bind(&PrecacheDatabase::RecordURLPrefetch,
+                   base::Unretained(precache_database_.get()), url, latency,
+                   fetch_time, size, was_cached));
   } else {
     bool is_connection_cellular =
         net::NetworkChangeNotifier::IsConnectionCellular(
@@ -218,8 +226,9 @@ void PrecacheManager::RecordStatsForFetchInternal(
 
     BrowserThread::PostTask(
         BrowserThread::DB, FROM_HERE,
-        base::Bind(&PrecacheDatabase::RecordURLNonPrefetch, precache_database_,
-                   url, latency, fetch_time, size, was_cached, host_rank,
+        base::Bind(&PrecacheDatabase::RecordURLNonPrefetch,
+                   base::Unretained(precache_database_.get()), url, latency,
+                   fetch_time, size, was_cached, host_rank,
                    is_connection_cellular));
   }
 }
@@ -230,7 +239,8 @@ void PrecacheManager::ClearHistory() {
   // base::SequencedTaskRunner for details.
   BrowserThread::PostNonNestableTask(
       BrowserThread::DB, FROM_HERE,
-      base::Bind(&PrecacheDatabase::ClearHistory, precache_database_));
+      base::Bind(&PrecacheDatabase::ClearHistory,
+                 base::Unretained(precache_database_.get())));
 }
 
 void PrecacheManager::Shutdown() {

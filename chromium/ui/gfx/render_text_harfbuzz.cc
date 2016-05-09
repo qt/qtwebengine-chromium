@@ -28,6 +28,7 @@
 #include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/harfbuzz_font_skia.h"
 #include "ui/gfx/range/range_f.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/gfx/utf16_indexing.h"
 
@@ -460,7 +461,8 @@ class HarfBuzzLineBreaker {
     }
 
     const size_t valid_end_pos = std::max(
-        segment.char_range.start(), FindValidBoundaryBefore(text_, end_pos));
+        segment.char_range.start(),
+        static_cast<uint32_t>(FindValidBoundaryBefore(text_, end_pos)));
     if (end_pos != valid_end_pos) {
       end_pos = valid_end_pos;
       width = run.GetGlyphWidthForCharRange(
@@ -472,8 +474,9 @@ class HarfBuzzLineBreaker {
     // not separate surrogate pair or combining characters.
     // See RenderTextTest.Multiline_MinWidth for an example.
     if (width == 0 && available_width_ == max_width_) {
-      end_pos = std::min(segment.char_range.end(),
-                         FindValidBoundaryAfter(text_, end_pos + 1));
+      end_pos = std::min(
+          segment.char_range.end(),
+          static_cast<uint32_t>(FindValidBoundaryAfter(text_, end_pos + 1)));
     }
 
     return end_pos;
@@ -1501,12 +1504,14 @@ bool RenderTextHarfBuzz::ShapeRunWithFont(const base::string16& text,
     DCHECK_LE(infos[i].codepoint, std::numeric_limits<uint16_t>::max());
     run->glyphs[i] = static_cast<uint16_t>(infos[i].codepoint);
     run->glyph_to_char[i] = infos[i].cluster;
-    const SkScalar x_offset = SkFixedToScalar(hb_positions[i].x_offset);
-    const SkScalar y_offset = SkFixedToScalar(hb_positions[i].y_offset);
+    const SkScalar x_offset =
+        HarfBuzzUnitsToSkiaScalar(hb_positions[i].x_offset);
+    const SkScalar y_offset =
+        HarfBuzzUnitsToSkiaScalar(hb_positions[i].y_offset);
     run->positions[i].set(run->width + x_offset, -y_offset);
     run->width += (glyph_width_for_test_ > 0)
                       ? glyph_width_for_test_
-                      : SkFixedToFloat(hb_positions[i].x_advance);
+                      : HarfBuzzUnitsToFloat(hb_positions[i].x_advance);
     // Round run widths if subpixel positioning is off to match native behavior.
     if (!run->render_params.subpixel_positioning)
       run->width = std::floor(run->width + 0.5f);

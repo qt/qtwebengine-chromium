@@ -54,7 +54,7 @@ public:
 
 private:
     PassOwnPtr<PatternData> buildPatternData(const LayoutObject&);
-    PassRefPtr<const SkPicture> asPicture(const FloatRect& tile, const AffineTransform&) const;
+    PassRefPtr<SkPicture> asPicture(const FloatRect& tile, const AffineTransform&) const;
     PatternData* patternForLayoutObject(const LayoutObject&);
 
     const LayoutSVGResourceContainer* resolveContentElement() const;
@@ -81,6 +81,6 @@ private:
     HashMap<const LayoutObject*, OwnPtr<PatternData>> m_patternMap;
 };
 
-}
+} // namespace blink
 
 #endif

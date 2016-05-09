@@ -10,6 +10,7 @@
 #include "printing/printing_export.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
+#include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 
 namespace printing {
 
@@ -36,13 +37,14 @@ namespace IPC {
 template <>
 struct ParamTraits<printing::PdfRenderSettings> {
   typedef printing::PdfRenderSettings param_type;
-  static void Write(Message* m, const param_type& p) {
+  static void Write(base::Pickle* m, const param_type& p) {
     WriteParam(m, p.area_);
     WriteParam(m, p.dpi_);
     WriteParam(m, p.autorotate_);
   }
 
-  static bool Read(const Message* m, base::PickleIterator* iter,
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
                    param_type* r) {
     return ReadParam(m, iter, &r->area_) &&
         ReadParam(m, iter, &r->dpi_) &&

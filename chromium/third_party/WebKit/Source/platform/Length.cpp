@@ -26,84 +26,10 @@
 
 #include "platform/CalculationValue.h"
 #include "platform/animation/AnimationUtilities.h"
-#include "wtf/ASCIICType.h"
-#include "wtf/text/StringBuffer.h"
-#include "wtf/text/WTFString.h"
 
 using namespace WTF;
 
 namespace blink {
-
-template<typename CharType>
-static unsigned splitLength(const CharType* data, unsigned length, unsigned& intLength, unsigned& doubleLength)
-{
-    ASSERT(length);
-
-    unsigned i = 0;
-    while (i < length && isSpaceOrNewline(data[i]))
-        ++i;
-    if (i < length && (data[i] == '+' || data[i] == '-'))
-        ++i;
-    while (i < length && isASCIIDigit(data[i]))
-        ++i;
-    intLength = i;
-    while (i < length && (isASCIIDigit(data[i]) || data[i] == '.'))
-        ++i;
-    doubleLength = i;
-
-    // IE quirk: Skip whitespace between the number and the % character (20 % => 20%).
-    while (i < length && isSpaceOrNewline(data[i]))
-        ++i;
-
-    return i;
-}
-
-template<typename CharType>
-static Length parseHTMLAreaCoordinate(const CharType* data, unsigned length)
-{
-    unsigned intLength;
-    unsigned doubleLength;
-    splitLength(data, length, intLength, doubleLength);
-
-    return Length(charactersToIntStrict(data, intLength), Fixed);
-}
-
-// FIXME: Per HTML5, this should follow the "rules for parsing a list of integers".
-Vector<Length> parseHTMLAreaElementCoords(const String& string)
-{
-    unsigned length = string.length();
-    StringBuffer<LChar> spacified(length);
-    for (unsigned i = 0; i < length; i++) {
-        UChar cc = string[i];
-        if (cc > '9' || (cc < '0' && cc != '-' && cc != '.'))
-            spacified[i] = ' ';
-        else
-            spacified[i] = cc;
-    }
-    RefPtr<StringImpl> str = spacified.release();
-    str = str->simplifyWhiteSpace();
-    ASSERT(str->is8Bit());
-
-    if (!str->length())
-        return Vector<Length>();
-
-    unsigned len = str->count(' ') + 1;
-    Vector<Length> r(len);
-
-    unsigned i = 0;
-    unsigned pos = 0;
-    size_t pos2;
-
-    while ((pos2 = str->find(' ', pos)) != kNotFound) {
-        r[i++] = parseHTMLAreaCoordinate(str->characters8() + pos, pos2 - pos);
-        pos = pos2 + 1;
-    }
-    r[i] = parseHTMLAreaCoordinate(str->characters8() + pos, str->length() - pos);
-
-    ASSERT(i == len - 1);
-
-    return r;
-}
 
 class CalculationValueHandleMap {
     USING_FAST_MALLOC(CalculationValueHandleMap);
@@ -176,14 +102,14 @@ Length Length::blendMixedTypes(const Length& from, double progress, ValueRange r
 {
     ASSERT(from.isSpecified());
     ASSERT(isSpecified());
-    PixelsAndPercent fromPixelsAndPercent = from.pixelsAndPercent();
-    PixelsAndPercent toPixelsAndPercent = pixelsAndPercent();
+    PixelsAndPercent fromPixelsAndPercent = from.getPixelsAndPercent();
+    PixelsAndPercent toPixelsAndPercent = getPixelsAndPercent();
     const float pixels = blink::blend(fromPixelsAndPercent.pixels, toPixelsAndPercent.pixels, progress);
     const float percent = blink::blend(fromPixelsAndPercent.percent, toPixelsAndPercent.percent, progress);
     return Length(CalculationValue::create(PixelsAndPercent(pixels, percent), range));
 }
 
-PixelsAndPercent Length::pixelsAndPercent() const
+PixelsAndPercent Length::getPixelsAndPercent() const
 {
     switch (type()) {
     case Fixed:
@@ -191,7 +117,7 @@ PixelsAndPercent Length::pixelsAndPercent() const
     case Percent:
         return PixelsAndPercent(0, value());
     case Calculated:
-        return calculationValue().pixelsAndPercent();
+        return getCalculationValue().getPixelsAndPercent();
     default:
         ASSERT_NOT_REACHED();
         return PixelsAndPercent(0, 0);
@@ -200,7 +126,7 @@ PixelsAndPercent Length::pixelsAndPercent() const
 
 Length Length::subtractFromOneHundredPercent() const
 {
-    PixelsAndPercent result = pixelsAndPercent();
+    PixelsAndPercent result = getPixelsAndPercent();
     result.pixels = -result.pixels;
     result.percent = 100 - result.percent;
     if (result.pixels && result.percent)
@@ -216,16 +142,16 @@ Length Length::zoom(double factor) const
     case Fixed:
         return Length(getFloatValue() * factor, Fixed);
     case Calculated: {
-        PixelsAndPercent result = pixelsAndPercent();
+        PixelsAndPercent result = getPixelsAndPercent();
         result.pixels *= factor;
-        return Length(CalculationValue::create(result, calculationValue().valueRange()));
+        return Length(CalculationValue::create(result, getCalculationValue().getValueRange()));
     }
     default:
         return *this;
     }
 }
 
-CalculationValue& Length::calculationValue() const
+CalculationValue& Length::getCalculationValue() const
 {
     ASSERT(isCalculated());
     return calcHandles().get(calculationHandle());
@@ -234,7 +160,7 @@ CalculationValue& Length::calculationValue() const
 void Length::incrementCalculatedRef() const
 {
     ASSERT(isCalculated());
-    calculationValue().ref();
+    getCalculationValue().ref();
 }
 
 void Length::decrementCalculatedRef() const
@@ -246,7 +172,7 @@ void Length::decrementCalculatedRef() const
 float Length::nonNanCalculatedValue(LayoutUnit maxValue) const
 {
     ASSERT(isCalculated());
-    float result = calculationValue().evaluate(maxValue.toFloat());
+    float result = getCalculationValue().evaluate(maxValue.toFloat());
     if (std::isnan(result))
         return 0;
     return result;
@@ -254,7 +180,7 @@ float Length::nonNanCalculatedValue(LayoutUnit maxValue) const
 
 bool Length::isCalculatedEqual(const Length& o) const
 {
-    return isCalculated() && (&calculationValue() == &o.calculationValue() || calculationValue() == o.calculationValue());
+    return isCalculated() && (&getCalculationValue() == &o.getCalculationValue() || getCalculationValue() == o.getCalculationValue());
 }
 
 struct SameSizeAsLength {

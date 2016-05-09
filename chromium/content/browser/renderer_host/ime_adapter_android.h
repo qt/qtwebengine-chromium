@@ -7,7 +7,10 @@
 
 #include <jni.h>
 
+#include <vector>
+
 #include "base/android/jni_weak_ref.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace content {
 
@@ -75,10 +78,14 @@ class ImeAdapterAndroid {
                              int before,
                              int after);
   void ResetImeAdapter(JNIEnv*, const base::android::JavaParamRef<jobject>&);
+  bool RequestTextInputStateUpdate(JNIEnv*,
+                                   const base::android::JavaParamRef<jobject>&);
+  bool IsImeThreadEnabled(JNIEnv*, const base::android::JavaParamRef<jobject>&);
 
   // Called from native -> java
   void CancelComposition();
   void FocusedNodeChanged(bool is_editable_node);
+  void SetCharacterBounds(const std::vector<gfx::RectF>& rects);
 
  private:
   RenderWidgetHostImpl* GetRenderWidgetHostImpl();

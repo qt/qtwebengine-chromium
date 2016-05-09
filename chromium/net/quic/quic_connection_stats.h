@@ -19,13 +19,14 @@ namespace net {
 // Structure to hold stats for a QuicConnection.
 struct NET_EXPORT_PRIVATE QuicConnectionStats {
   QuicConnectionStats();
+  QuicConnectionStats(const QuicConnectionStats& other);
   ~QuicConnectionStats();
 
   NET_EXPORT_PRIVATE friend std::ostream& operator<<(
       std::ostream& os,
       const QuicConnectionStats& s);
 
-  QuicByteCount bytes_sent;  // Includes retransmissions, fec.
+  QuicByteCount bytes_sent;  // Includes retransmissions.
   QuicPacketCount packets_sent;
   // Non-retransmitted bytes sent in a stream frame.
   QuicByteCount stream_bytes_sent;
@@ -34,7 +35,7 @@ struct NET_EXPORT_PRIVATE QuicConnectionStats {
 
   // These include version negotiation and public reset packets, which do not
   // have packet numbers or frame data.
-  QuicByteCount bytes_received;  // Includes duplicate data for a stream, fec.
+  QuicByteCount bytes_received;  // Includes duplicate data for a stream.
   // Includes packets which were not processable.
   QuicPacketCount packets_received;
   // Excludes packets which were not processable.
@@ -53,8 +54,9 @@ struct NET_EXPORT_PRIVATE QuicConnectionStats {
   QuicPacketCount slowstart_packets_sent;
   // Number of packets lost exiting slow start.
   QuicPacketCount slowstart_packets_lost;
+  // Number of bytes lost exiting slow start.
+  QuicByteCount slowstart_bytes_lost;
 
-  QuicPacketCount packets_revived;
   QuicPacketCount packets_dropped;  // Duplicate or less than least unacked.
   size_t crypto_retransmit_count;
   // Count of times the loss detection alarm fired.  At least one packet should

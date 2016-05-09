@@ -20,19 +20,6 @@ namespace blink {
 
 void InlinePainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && !paintInfo.context.paintController().skippingCache()) {
-        if (m_layoutInline.paintOffsetChanged(paintOffset)) {
-            paintInfo.context.paintController().invalidatePaintOffset(m_layoutInline);
-            LineBoxListPainter(*m_layoutInline.lineBoxes()).invalidateLineBoxPaintOffsets(paintInfo);
-        }
-        // Set previousPaintOffset here in case that m_layoutInline paints nothing and no
-        // LayoutObjectDrawingRecorder updates its previousPaintOffset.
-        // TODO(wangxianzhu): Integrate paint offset checking into new paint invalidation.
-        m_layoutInline.mutableForPainting().setPreviousPaintOffset(paintOffset);
-    }
-
-    // FIXME: When Skia supports annotation rect covering (https://code.google.com/p/skia/issues/detail?id=3872),
-    // this rect may be covered by foreground and descendant drawings. Then we may need a dedicated paint phase.
     if (paintInfo.phase == PaintPhaseForeground && paintInfo.isPrinting())
         ObjectPainter(m_layoutInline).addPDFURLRectIfNeeded(paintInfo, paintOffset);
 

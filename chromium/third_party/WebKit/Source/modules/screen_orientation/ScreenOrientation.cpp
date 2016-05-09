@@ -16,12 +16,13 @@
 #include "public/platform/modules/screen_orientation/WebScreenOrientationType.h"
 
 // This code assumes that WebScreenOrientationType values are included in WebScreenOrientationLockType.
-#define STATIC_ASSERT_MATCHING_ENUM(enum1, enum2) \
-    static_assert(static_cast<unsigned>(blink::enum1) == static_cast<unsigned>(blink::enum2), "mismatching enum values")
-STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitPrimary, WebScreenOrientationLockPortraitPrimary);
-STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitSecondary, WebScreenOrientationLockPortraitSecondary);
-STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapePrimary, WebScreenOrientationLockLandscapePrimary);
-STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapeSecondary, WebScreenOrientationLockLandscapeSecondary);
+#define STATIC_ASSERT_ENUM(a, b)                              \
+    static_assert(static_cast<int>(a) == static_cast<int>(b), \
+        "mismatching enum: " #a)
+STATIC_ASSERT_ENUM(blink::WebScreenOrientationPortraitPrimary, blink::WebScreenOrientationLockPortraitPrimary);
+STATIC_ASSERT_ENUM(blink::WebScreenOrientationPortraitSecondary, blink::WebScreenOrientationLockPortraitSecondary);
+STATIC_ASSERT_ENUM(blink::WebScreenOrientationLandscapePrimary, blink::WebScreenOrientationLockLandscapePrimary);
+STATIC_ASSERT_ENUM(blink::WebScreenOrientationLandscapeSecondary, blink::WebScreenOrientationLockLandscapeSecondary);
 
 namespace blink {
 
@@ -32,14 +33,14 @@ struct ScreenOrientationInfo {
 
 static ScreenOrientationInfo* orientationsMap(unsigned& length)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, portraitPrimary, ("portrait-primary", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, portraitSecondary, ("portrait-secondary", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, landscapePrimary, ("landscape-primary", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, landscapeSecondary, ("landscape-secondary", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, any, ("any", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, portrait, ("portrait", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, landscape, ("landscape", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, natural, ("natural", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, portraitPrimary, ("portrait-primary"));
+    DEFINE_STATIC_LOCAL(const AtomicString, portraitSecondary, ("portrait-secondary"));
+    DEFINE_STATIC_LOCAL(const AtomicString, landscapePrimary, ("landscape-primary"));
+    DEFINE_STATIC_LOCAL(const AtomicString, landscapeSecondary, ("landscape-secondary"));
+    DEFINE_STATIC_LOCAL(const AtomicString, any, ("any"));
+    DEFINE_STATIC_LOCAL(const AtomicString, portrait, ("portrait"));
+    DEFINE_STATIC_LOCAL(const AtomicString, landscape, ("landscape"));
+    DEFINE_STATIC_LOCAL(const AtomicString, natural, ("natural"));
 
     static ScreenOrientationInfo orientationMap[] = {
         { portraitPrimary, WebScreenOrientationLockPortraitPrimary },
@@ -122,7 +123,7 @@ const WTF::AtomicString& ScreenOrientation::interfaceName() const
     return EventTargetNames::ScreenOrientation;
 }
 
-ExecutionContext* ScreenOrientation::executionContext() const
+ExecutionContext* ScreenOrientation::getExecutionContext() const
 {
     if (!m_frame)
         return 0;

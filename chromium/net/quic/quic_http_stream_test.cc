@@ -9,27 +9,32 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/net_errors.h"
 #include "net/base/socket_performance_watcher.h"
 #include "net/base/test_completion_callback.h"
+#include "net/base/test_data_directory.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_util.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_chromium_client_session.h"
 #include "net/quic/quic_chromium_client_stream.h"
 #include "net/quic/quic_chromium_connection_helper.h"
+#include "net/quic/quic_chromium_packet_reader.h"
+#include "net/quic/quic_chromium_packet_writer.h"
 #include "net/quic/quic_connection.h"
-#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_http_utils.h"
-#include "net/quic/quic_packet_reader.h"
 #include "net/quic/quic_write_blocked_list.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
@@ -45,9 +50,11 @@
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_protocol.h"
+#include "net/test/cert_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using std::string;
 using testing::_;
 using testing::AnyNumber;
 using testing::Return;
@@ -57,7 +64,7 @@ namespace test {
 namespace {
 
 const char kUploadData[] = "Really nifty data!";
-const char kDefaultServerHostName[] = "www.google.com";
+const char kDefaultServerHostName[] = "www.example.org";
 const uint16_t kDefaultServerPort = 80;
 
 class TestQuicConnection : public QuicConnection {
@@ -123,25 +130,25 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   // Holds a packet to be written to the wire, and the IO mode that should
   // be used by the mock socket when performing the write.
   struct PacketToWrite {
-    PacketToWrite(IoMode mode, QuicEncryptedPacket* packet)
+    PacketToWrite(IoMode mode, QuicReceivedPacket* packet)
         : mode(mode), packet(packet) {}
     PacketToWrite(IoMode mode, int rv) : mode(mode), packet(nullptr), rv(rv) {}
     IoMode mode;
-    QuicEncryptedPacket* packet;
+    QuicReceivedPacket* packet;
     int rv;
   };
 
   QuicHttpStreamTest()
-      : net_log_(BoundNetLog()),
-        use_closing_stream_(false),
+      : use_closing_stream_(false),
         crypto_config_(CryptoTestUtils::ProofVerifierForTesting()),
         read_buffer_(new IOBufferWithSize(4096)),
-        connection_id_(2),
+        promise_id_(kServerDataStreamId1),
         stream_id_(kClientDataStreamId1),
+        connection_id_(2),
         maker_(GetParam(), connection_id_, &clock_, kDefaultServerHostName),
-        random_generator_(0) {
-    IPAddressNumber ip;
-    CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
+        random_generator_(0),
+        response_offset_(0) {
+    IPAddress ip(192, 0, 2, 33);
     peer_addr_ = IPEndPoint(ip, 443);
     self_addr_ = IPEndPoint(ip, 8435);
     clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
@@ -155,7 +162,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   }
 
   // Adds a packet to the list of expected writes.
-  void AddWrite(scoped_ptr<QuicEncryptedPacket> packet) {
+  void AddWrite(scoped_ptr<QuicReceivedPacket> packet) {
     writes_.push_back(PacketToWrite(SYNCHRONOUS, packet.release()));
   }
 
@@ -164,14 +171,14 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   }
 
   // Returns the packet to be written at position |pos|.
-  QuicEncryptedPacket* GetWrite(size_t pos) { return writes_[pos].packet; }
+  QuicReceivedPacket* GetWrite(size_t pos) { return writes_[pos].packet; }
 
   bool AtEof() {
     return socket_data_->AllReadDataConsumed() &&
            socket_data_->AllWriteDataConsumed();
   }
 
-  void ProcessPacket(scoped_ptr<QuicEncryptedPacket> packet) {
+  void ProcessPacket(scoped_ptr<QuicReceivedPacket> packet) {
     connection_->ProcessUdpPacket(self_addr_, peer_addr_, *packet);
   }
 
@@ -185,13 +192,13 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         mock_writes_[i] = MockWrite(writes_[i].mode, writes_[i].packet->data(),
                                     writes_[i].packet->length());
       }
-    };
+    }
 
     socket_data_.reset(new StaticSocketDataProvider(
         nullptr, 0, mock_writes_.get(), writes_.size()));
 
-    MockUDPClientSocket* socket =
-        new MockUDPClientSocket(socket_data_.get(), net_log_.net_log());
+    scoped_ptr<MockUDPClientSocket> socket(new MockUDPClientSocket(
+        socket_data_.get(), net_log_.bound().net_log()));
     socket->Connect(peer_addr_);
     runner_ = new TestTaskRunner(&clock_);
     send_algorithm_ = new MockSendAlgorithm();
@@ -205,7 +212,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         .WillRepeatedly(Return(kMaxPacketSize));
     EXPECT_CALL(*send_algorithm_, PacingRate())
         .WillRepeatedly(Return(QuicBandwidth::Zero()));
-    EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, _, _))
+    EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, _))
         .WillRepeatedly(Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, BandwidthEstimate())
         .WillRepeatedly(Return(QuicBandwidth::Zero()));
@@ -214,92 +221,190 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                                                    &random_generator_));
     connection_ = new TestQuicConnection(
         SupportedVersions(GetParam()), connection_id_, peer_addr_,
-        helper_.get(), new QuicDefaultPacketWriter(socket));
+        helper_.get(), new QuicChromiumPacketWriter(socket.get()));
     connection_->set_visitor(&visitor_);
     connection_->SetSendAlgorithm(send_algorithm_);
+
+    // Load a certificate that is valid for *.example.org
+    scoped_refptr<X509Certificate> test_cert(
+        ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem"));
+    EXPECT_TRUE(test_cert.get());
+
+    verify_details_.cert_verify_result.verified_cert = test_cert;
+    verify_details_.cert_verify_result.is_issued_by_known_root = true;
+    crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details_);
+
     session_.reset(new QuicChromiumClientSession(
-        connection_, scoped_ptr<DatagramClientSocket>(socket),
+        connection_, std::move(socket),
         /*stream_factory=*/nullptr, &crypto_client_stream_factory_, &clock_,
-        &transport_security_state_, make_scoped_ptr((QuicServerInfo*)nullptr),
+        &transport_security_state_,
+        make_scoped_ptr(static_cast<QuicServerInfo*>(nullptr)),
         QuicServerId(kDefaultServerHostName, kDefaultServerPort,
                      PRIVACY_MODE_DISABLED),
         kQuicYieldAfterPacketsRead,
         QuicTime::Delta::FromMilliseconds(kQuicYieldAfterDurationMilliseconds),
         /*cert_verify_flags=*/0, DefaultQuicConfig(), &crypto_config_,
-        "CONNECTION_UNKNOWN", base::TimeTicks::Now(),
+        "CONNECTION_UNKNOWN", base::TimeTicks::Now(), &push_promise_index_,
         base::ThreadTaskRunnerHandle::Get().get(),
-        /*socket_performance_watcher=*/nullptr, nullptr));
+        /*socket_performance_watcher=*/nullptr, net_log_.bound().net_log()));
     session_->Initialize();
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_
                       ? new AutoClosingStream(session_->GetWeakPtr())
                       : new QuicHttpStream(session_->GetWeakPtr()));
+
+    promised_stream_.reset(use_closing_stream_
+                               ? new AutoClosingStream(session_->GetWeakPtr())
+                               : new QuicHttpStream(session_->GetWeakPtr()));
+
+    push_promise_[":path"] = "/bar";
+    push_promise_[":authority"] = "www.example.org";
+    push_promise_[":version"] = "HTTP/1.1";
+    push_promise_[":method"] = "GET";
+    push_promise_[":scheme"] = "https";
+
+    promised_response_[":status"] = "200 OK";
+    promised_response_[":version"] = "HTTP/1.1";
+    promised_response_["content-type"] = "text/plain";
+
+    promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+
+    serialized_push_promise_ =
+        SpdyUtils::SerializeUncompressedHeaders(push_promise_);
   }
 
-  void SetRequest(const std::string& method,
-                  const std::string& path,
+  void SetRequest(const string& method,
+                  const string& path,
                   RequestPriority priority) {
     request_headers_ = maker_.GetRequestHeaders(method, "http", path);
   }
 
-  void SetResponse(const std::string& status, const std::string& body) {
+  void SetResponse(const string& status, const string& body) {
     response_headers_ = maker_.GetResponseHeaders(status);
     response_data_ = body;
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructDataPacket(
+  scoped_ptr<QuicReceivedPacket> InnerConstructDataPacket(
+      QuicPacketNumber packet_number,
+      QuicStreamId stream_id,
+      bool should_include_version,
+      bool fin,
+      QuicStreamOffset offset,
+      base::StringPiece data) {
+    return maker_.MakeDataPacket(packet_number, stream_id,
+                                 should_include_version, fin, offset, data);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructDataPacket(
       QuicPacketNumber packet_number,
       bool should_include_version,
       bool fin,
       QuicStreamOffset offset,
       base::StringPiece data) {
-    return maker_.MakeDataPacket(packet_number, stream_id_,
-                                 should_include_version, fin, offset, data);
+    return InnerConstructDataPacket(packet_number, stream_id_,
+                                    should_include_version, fin, offset, data);
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructRequestHeadersPacket(
+  scoped_ptr<QuicReceivedPacket> InnerConstructRequestHeadersPacket(
       QuicPacketNumber packet_number,
+      QuicStreamId stream_id,
+      bool should_include_version,
       bool fin,
       RequestPriority request_priority,
       size_t* spdy_headers_frame_length) {
     SpdyPriority priority =
         ConvertRequestPriorityToQuicPriority(request_priority);
     return maker_.MakeRequestHeadersPacket(
-        packet_number, stream_id_, kIncludeVersion, fin, priority,
+        packet_number, stream_id, should_include_version, fin, priority,
         request_headers_, spdy_headers_frame_length);
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructResponseHeadersPacket(
+  scoped_ptr<QuicReceivedPacket> ConstructRequestHeadersPacket(
       QuicPacketNumber packet_number,
       bool fin,
+      RequestPriority request_priority,
       size_t* spdy_headers_frame_length) {
-    return maker_.MakeResponseHeadersPacket(
-        packet_number, stream_id_, !kIncludeVersion, fin, response_headers_,
+    return InnerConstructRequestHeadersPacket(
+        packet_number, stream_id_, kIncludeVersion, fin, request_priority,
         spdy_headers_frame_length);
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructRstStreamPacket(
+  scoped_ptr<QuicReceivedPacket> InnerConstructResponseHeadersPacket(
+      QuicPacketNumber packet_number,
+      QuicStreamId stream_id,
+      bool fin,
+      size_t* spdy_headers_frame_length) {
+    return maker_.MakeResponseHeadersPacket(
+        packet_number, stream_id, !kIncludeVersion, fin, response_headers_,
+        spdy_headers_frame_length, &response_offset_);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructResponseHeadersPacket(
+      QuicPacketNumber packet_number,
+      bool fin,
+      size_t* spdy_headers_frame_length) {
+    return InnerConstructResponseHeadersPacket(packet_number, stream_id_, fin,
+                                               spdy_headers_frame_length);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructResponseHeadersPacketWithOffset(
+      QuicPacketNumber packet_number,
+      bool fin,
+      size_t* spdy_headers_frame_length,
+      QuicStreamOffset* offset) {
+    return maker_.MakeResponseHeadersPacket(
+        packet_number, stream_id_, !kIncludeVersion, fin, response_headers_,
+        spdy_headers_frame_length, offset);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructResponseTrailersPacket(
+      QuicPacketNumber packet_number,
+      bool fin,
+      const SpdyHeaderBlock& trailers,
+      size_t* spdy_headers_frame_length,
+      QuicStreamOffset* offset) {
+    return maker_.MakeResponseHeadersPacket(packet_number, stream_id_,
+                                            !kIncludeVersion, fin, trailers,
+                                            spdy_headers_frame_length, offset);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructRstStreamPacket(
       QuicPacketNumber packet_number) {
     return maker_.MakeRstPacket(
         packet_number, true, stream_id_,
         AdjustErrorForVersion(QUIC_RST_ACKNOWLEDGEMENT, GetParam()));
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructRstStreamCancelledPacket(
+  scoped_ptr<QuicReceivedPacket> ConstructRstStreamCancelledPacket(
       QuicPacketNumber packet_number) {
     return maker_.MakeRstPacket(packet_number, !kIncludeVersion, stream_id_,
                                 QUIC_STREAM_CANCELLED);
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructAckAndRstStreamPacket(
+  scoped_ptr<QuicReceivedPacket> ConstructRstStreamVaryMismatchPacket(
       QuicPacketNumber packet_number) {
-    return maker_.MakeAckAndRstPacket(packet_number, !kIncludeVersion,
-                                      stream_id_, QUIC_STREAM_CANCELLED, 2, 1,
-                                      !kIncludeCongestionFeedback);
+    return maker_.MakeRstPacket(packet_number, !kIncludeVersion, promise_id_,
+                                QUIC_PROMISE_VARY_MISMATCH);
   }
 
-  scoped_ptr<QuicEncryptedPacket> ConstructAckPacket(
+  scoped_ptr<QuicReceivedPacket> ConstructAckAndRstStreamPacket(
+      QuicPacketNumber packet_number,
+      QuicPacketNumber largest_received,
+      QuicPacketNumber ack_least_unacked,
+      QuicPacketNumber stop_least_unacked) {
+    return maker_.MakeAckAndRstPacket(
+        packet_number, !kIncludeVersion, stream_id_, QUIC_STREAM_CANCELLED,
+        largest_received, ack_least_unacked, stop_least_unacked,
+        !kIncludeCongestionFeedback);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructAckAndRstStreamPacket(
+      QuicPacketNumber packet_number) {
+    return ConstructAckAndRstStreamPacket(packet_number, 2, 1, 1);
+  }
+
+  scoped_ptr<QuicReceivedPacket> ConstructAckPacket(
       QuicPacketNumber packet_number,
       QuicPacketNumber largest_received,
       QuicPacketNumber least_unacked) {
@@ -307,7 +412,15 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                                 !kIncludeCongestionFeedback);
   }
 
-  BoundNetLog net_log_;
+  void ReceivePromise(QuicStreamId id) {
+    QuicChromiumClientStream* stream =
+        QuicHttpStreamPeer::GetQuicChromiumClientStream(stream_.get());
+    stream->OnStreamHeaders(serialized_push_promise_);
+
+    stream->OnPromiseHeadersComplete(id, serialized_push_promise_.size());
+  }
+
+  BoundTestNetLog net_log_;
   bool use_closing_stream_;
   MockSendAlgorithm* send_algorithm_;
   scoped_refptr<TestTaskRunner> runner_;
@@ -327,19 +440,30 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   scoped_refptr<IOBufferWithSize> read_buffer_;
   SpdyHeaderBlock request_headers_;
   SpdyHeaderBlock response_headers_;
-  std::string request_data_;
-  std::string response_data_;
+  string request_data_;
+  string response_data_;
+  QuicClientPushPromiseIndex push_promise_index_;
+
+  // For server push testing
+  scoped_ptr<QuicHttpStream> promised_stream_;
+  SpdyHeaderBlock push_promise_;
+  SpdyHeaderBlock promised_response_;
+  const QuicStreamId promise_id_;
+  string promise_url_;
+  string serialized_push_promise_;
+  const QuicStreamId stream_id_;
 
  private:
   const QuicConnectionId connection_id_;
-  const QuicStreamId stream_id_;
   QuicTestPacketMaker maker_;
   IPEndPoint self_addr_;
   IPEndPoint peer_addr_;
   MockRandom random_generator_;
+  ProofVerifyDetailsChromium verify_details_;
   MockCryptoClientStreamFactory crypto_client_stream_factory_;
   scoped_ptr<StaticSocketDataProvider> socket_data_;
   std::vector<PacketToWrite> writes_;
+  QuicStreamOffset response_offset_;
 };
 
 INSTANTIATE_TEST_CASE_P(Version,
@@ -356,6 +480,17 @@ TEST_P(QuicHttpStreamTest, CanReuseConnection) {
   EXPECT_FALSE(stream_->CanReuseConnection());
 }
 
+TEST_P(QuicHttpStreamTest, DisableConnectionMigrationForStream) {
+  request_.load_flags |= LOAD_DISABLE_CONNECTION_MIGRATION;
+  Initialize();
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+  QuicChromiumClientStream* client_stream =
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(stream_.get());
+  EXPECT_FALSE(client_stream->can_migrate());
+}
+
 TEST_P(QuicHttpStreamTest, GetRequest) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
   size_t spdy_request_header_frame_length;
@@ -364,10 +499,11 @@ TEST_P(QuicHttpStreamTest, GetRequest) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -376,7 +512,7 @@ TEST_P(QuicHttpStreamTest, GetRequest) {
 
   EXPECT_EQ(ERR_IO_PENDING, stream_->ReadResponseHeaders(callback_.callback()));
 
-  SetResponse("404 Not Found", std::string());
+  SetResponse("404 Not Found", string());
   size_t spdy_response_header_frame_length;
   ProcessPacket(ConstructResponseHeadersPacket(
       2, kFin, &spdy_response_header_frame_length));
@@ -404,6 +540,98 @@ TEST_P(QuicHttpStreamTest, GetRequest) {
             stream_->GetTotalReceivedBytes());
 }
 
+// QuicHttpStream does not currently support trailers. It should ignore
+// trailers upon receiving them.
+TEST_P(QuicHttpStreamTest, GetRequestWithTrailers) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  size_t spdy_request_header_frame_length;
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, DEFAULT_PRIORITY,
+                                         &spdy_request_header_frame_length));
+  AddWrite(ConstructAckPacket(2, 3, 1));  // Ack the data packet.
+
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  EXPECT_EQ(OK,
+            stream_->SendRequest(headers_, &response_, callback_.callback()));
+
+  // Ack the request.
+  ProcessPacket(ConstructAckPacket(1, 0, 0));
+
+  EXPECT_EQ(ERR_IO_PENDING, stream_->ReadResponseHeaders(callback_.callback()));
+
+  SetResponse("200 OK", string());
+
+  // Send the response headers.
+  size_t spdy_response_header_frame_length;
+  QuicStreamOffset offset = 0;
+  ProcessPacket(ConstructResponseHeadersPacketWithOffset(
+      2, !kFin, &spdy_response_header_frame_length, &offset));
+  // Now that the headers have been processed, the callback will return.
+  EXPECT_EQ(OK, callback_.WaitForResult());
+  ASSERT_TRUE(response_.headers.get());
+  EXPECT_EQ(200, response_.headers->response_code());
+  EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
+  EXPECT_FALSE(response_.response_time.is_null());
+  EXPECT_FALSE(response_.request_time.is_null());
+
+  // Send the response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(
+      ConstructDataPacket(3, false, !kFin, /*offset=*/0, kResponseBody));
+  SpdyHeaderBlock trailers;
+  size_t spdy_trailers_frame_length;
+  trailers["foo"] = "bar";
+  trailers[kFinalOffsetHeaderKey] = base::IntToString(strlen(kResponseBody));
+  ProcessPacket(ConstructResponseTrailersPacket(
+      4, kFin, trailers, &spdy_trailers_frame_length, &offset));
+
+  // Make sure trailers are processed.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(static_cast<int>(strlen(kResponseBody)),
+            stream_->ReadResponseBody(read_buffer_.get(), read_buffer_->size(),
+                                      callback_.callback()));
+  EXPECT_TRUE(stream_->IsResponseBodyComplete());
+
+  EXPECT_EQ(OK,
+            stream_->ReadResponseBody(read_buffer_.get(), read_buffer_->size(),
+                                      callback_.callback()));
+
+  EXPECT_TRUE(stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+
+  // QuicHttpStream::GetTotalSent/ReceivedBytes currently only includes the
+  // headers and payload.
+  EXPECT_EQ(static_cast<int64_t>(spdy_request_header_frame_length),
+            stream_->GetTotalSentBytes());
+  EXPECT_EQ(
+      static_cast<int64_t>(spdy_response_header_frame_length +
+                           strlen(kResponseBody) + +spdy_trailers_frame_length),
+      stream_->GetTotalReceivedBytes());
+  // Check that NetLog was filled as expected.
+  TestNetLogEntry::List entries;
+  net_log_.GetEntries(&entries);
+  size_t pos = ExpectLogContainsSomewhere(
+      entries, /*min_offset=*/0,
+      NetLog::TYPE_QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS,
+      NetLog::PHASE_NONE);
+  pos = ExpectLogContainsSomewhere(
+      entries, /*min_offset=*/pos,
+      NetLog::TYPE_QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS,
+      NetLog::PHASE_NONE);
+  ExpectLogContainsSomewhere(
+      entries, /*min_offset=*/pos,
+      NetLog::TYPE_QUIC_CHROMIUM_CLIENT_STREAM_SEND_REQUEST_HEADERS,
+      NetLog::PHASE_NONE);
+}
+
 // Regression test for http://crbug.com/288128
 TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
@@ -413,10 +641,11 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -429,7 +658,7 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   headers[":status"] = "200 OK";
   headers[":version"] = "HTTP/1.1";
   headers["content-type"] = "text/plain";
-  headers["big6"] = std::string(1000, 'x');  // Lots of x's.
+  headers["big6"] = string(1000, 'x');  // Lots of x's.
 
   response_headers_ = headers;
   size_t spdy_response_headers_frame_length;
@@ -463,18 +692,45 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendRequest) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
 
-  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+  session_->connection()->CloseConnection(
+      QUIC_NO_ERROR, "test", ConnectionCloseBehavior::SILENT_CLOSE);
 
   EXPECT_EQ(ERR_CONNECTION_CLOSED,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
   EXPECT_EQ(0, stream_->GetTotalSentBytes());
   EXPECT_EQ(0, stream_->GetTotalReceivedBytes());
+}
+
+// Regression test for http://crbug.com/584441
+TEST_P(QuicHttpStreamTest, GetSSLInfoAfterSessionClosed) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  SSLInfo ssl_info;
+  EXPECT_FALSE(ssl_info.is_valid());
+  stream_->GetSSLInfo(&ssl_info);
+  EXPECT_TRUE(ssl_info.is_valid());
+
+  session_->connection()->CloseConnection(
+      QUIC_NO_ERROR, "test", ConnectionCloseBehavior::SILENT_CLOSE);
+
+  SSLInfo ssl_info2;
+  stream_->GetSSLInfo(&ssl_info2);
+  EXPECT_TRUE(ssl_info2.is_valid());
 }
 
 TEST_P(QuicHttpStreamTest, LogGranularQuicConnectionError) {
@@ -487,10 +743,11 @@ TEST_P(QuicHttpStreamTest, LogGranularQuicConnectionError) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -517,10 +774,11 @@ TEST_P(QuicHttpStreamTest, DoNotLogGranularQuicErrorIfHandshakeNotConfirmed) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -551,15 +809,17 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeReadResponseHeaders) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
 
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
-  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+  session_->connection()->CloseConnection(
+      QUIC_NO_ERROR, "test", ConnectionCloseBehavior::SILENT_CLOSE);
 
   EXPECT_NE(OK, stream_->ReadResponseHeaders(callback_.callback()));
 
@@ -585,12 +845,13 @@ TEST_P(QuicHttpStreamTest, SendPostRequest) {
       new UploadBytesElementReader(kUploadData, strlen(kUploadData))));
   ElementsUploadDataStream upload_data_stream(std::move(element_readers), 0);
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(CompletionCallback()));
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -598,7 +859,7 @@ TEST_P(QuicHttpStreamTest, SendPostRequest) {
   ProcessPacket(ConstructAckPacket(1, 0, 0));
 
   // Send the response headers (but not the body).
-  SetResponse("200 OK", std::string());
+  SetResponse("200 OK", string());
   size_t spdy_response_headers_frame_length;
   ProcessPacket(ConstructResponseHeadersPacket(
       2, !kFin, &spdy_response_headers_frame_length));
@@ -647,13 +908,14 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
   upload_data_stream.AppendData(kUploadData, chunk_size, false);
 
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(
                     TestCompletionCallback().callback()));
 
-  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  ASSERT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   ASSERT_EQ(ERR_IO_PENDING,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -664,7 +926,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
   ProcessPacket(ConstructAckPacket(1, 0, 0));
 
   // Send the response headers (but not the body).
-  SetResponse("200 OK", std::string());
+  SetResponse("200 OK", string());
   size_t spdy_response_headers_frame_length;
   ProcessPacket(ConstructResponseHeadersPacket(
       2, !kFin, &spdy_response_headers_frame_length));
@@ -714,13 +976,14 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithFinalEmptyDataPacket) {
   upload_data_stream.AppendData(kUploadData, chunk_size, false);
 
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(
                     TestCompletionCallback().callback()));
 
-  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  ASSERT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   ASSERT_EQ(ERR_IO_PENDING,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -730,7 +993,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithFinalEmptyDataPacket) {
   ProcessPacket(ConstructAckPacket(1, 0, 0));
 
   // Send the response headers (but not the body).
-  SetResponse("200 OK", std::string());
+  SetResponse("200 OK", string());
   size_t spdy_response_headers_frame_length;
   ProcessPacket(ConstructResponseHeadersPacket(
       2, !kFin, &spdy_response_headers_frame_length));
@@ -776,13 +1039,14 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithOneEmptyDataPacket) {
   ChunkedUploadDataStream upload_data_stream(0);
 
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(
                     TestCompletionCallback().callback()));
 
-  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  ASSERT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   ASSERT_EQ(ERR_IO_PENDING,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -792,7 +1056,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithOneEmptyDataPacket) {
   ProcessPacket(ConstructAckPacket(1, 0, 0));
 
   // Send the response headers (but not the body).
-  SetResponse("200 OK", std::string());
+  SetResponse("200 OK", string());
   size_t spdy_response_headers_frame_length;
   ProcessPacket(ConstructResponseHeadersPacket(
       2, !kFin, &spdy_response_headers_frame_length));
@@ -836,10 +1100,11 @@ TEST_P(QuicHttpStreamTest, DestroyedEarly) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
@@ -874,23 +1139,23 @@ TEST_P(QuicHttpStreamTest, Priority) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, MEDIUM, net_log_,
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, MEDIUM, net_log_.bound(),
                                           callback_.callback()));
 
   // Check that priority is highest.
   QuicChromiumClientStream* reliable_stream =
       QuicHttpStreamPeer::GetQuicChromiumClientStream(stream_.get());
   DCHECK(reliable_stream);
-  DCHECK_EQ(kV3HighestPriority, reliable_stream->Priority());
+  DCHECK_EQ(kV3HighestPriority, reliable_stream->priority());
 
   EXPECT_EQ(OK,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 
   // Check that priority has now dropped back to MEDIUM.
   DCHECK_EQ(MEDIUM,
-            ConvertQuicPriorityToRequestPriority(reliable_stream->Priority()));
+            ConvertQuicPriorityToRequestPriority(reliable_stream->priority()));
 
   // Ack the request.
   ProcessPacket(ConstructAckPacket(1, 0, 0));
@@ -923,9 +1188,9 @@ TEST_P(QuicHttpStreamTest, CheckPriorityWithNoDelegate) {
   Initialize();
 
   request_.method = "GET";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
 
-  EXPECT_EQ(OK, stream_->InitializeStream(&request_, MEDIUM, net_log_,
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, MEDIUM, net_log_.bound(),
                                           callback_.callback()));
 
   // Check that priority is highest.
@@ -934,12 +1199,12 @@ TEST_P(QuicHttpStreamTest, CheckPriorityWithNoDelegate) {
   DCHECK(reliable_stream);
   QuicChromiumClientStream::Delegate* delegate = reliable_stream->GetDelegate();
   DCHECK(delegate);
-  DCHECK_EQ(kV3HighestPriority, reliable_stream->Priority());
+  DCHECK_EQ(kV3HighestPriority, reliable_stream->priority());
 
   // Set Delegate to nullptr and make sure Priority returns highest
   // priority.
   reliable_stream->SetDelegate(nullptr);
-  DCHECK_EQ(kV3HighestPriority, reliable_stream->Priority());
+  DCHECK_EQ(kV3HighestPriority, reliable_stream->priority());
   reliable_stream->SetDelegate(delegate);
 
   EXPECT_EQ(0, stream_->GetTotalSentBytes());
@@ -954,13 +1219,14 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendHeadersComplete) {
   ChunkedUploadDataStream upload_data_stream(0);
 
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(
                     TestCompletionCallback().callback()));
 
-  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  ASSERT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   ASSERT_EQ(ERR_QUIC_PROTOCOL_ERROR,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
 }
@@ -978,15 +1244,442 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendBodyComplete) {
   upload_data_stream.AppendData(kUploadData, chunk_size, false);
 
   request_.method = "POST";
-  request_.url = GURL("http://www.google.com/");
+  request_.url = GURL("http://www.example.org/");
   request_.upload_data_stream = &upload_data_stream;
   ASSERT_EQ(OK, request_.upload_data_stream->Init(
                     TestCompletionCallback().callback()));
 
-  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY, net_log_,
-                                          callback_.callback()));
+  ASSERT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
   ASSERT_EQ(ERR_QUIC_PROTOCOL_ERROR,
             stream_->SendRequest(headers_, &response_, callback_.callback()));
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushGetRequest) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+  ReceivePromise(promise_id_);
+  EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  request_.url = GURL(promise_url_);
+
+  // Make the second stream that will exercise the first step of the
+  // server push rendezvous mechanism.
+  EXPECT_EQ(OK, promised_stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                                   net_log_.bound(),
+                                                   callback_.callback()));
+
+  // Receive the promised response headers.
+  response_headers_ = promised_response_;
+  size_t spdy_response_headers_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      1, promise_id_, false, &spdy_response_headers_frame_length));
+
+  // Receive the promised response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(
+      InnerConstructDataPacket(2, promise_id_, false, kFin, 0, kResponseBody));
+
+  // Now sending a matching request will have successful rendezvous
+  // with the promised stream.
+  EXPECT_EQ(OK, promised_stream_->SendRequest(headers_, &response_,
+                                              callback_.callback()));
+
+  EXPECT_EQ(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      promise_id_);
+
+  // The headers will be immediately available.
+  EXPECT_EQ(OK, promised_stream_->ReadResponseHeaders(callback_.callback()));
+
+  // As will be the body.
+  EXPECT_EQ(
+      static_cast<int>(strlen(kResponseBody)),
+      promised_stream_->ReadResponseBody(
+          read_buffer_.get(), read_buffer_->size(), callback_.callback()));
+  EXPECT_TRUE(promised_stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+
+  EXPECT_EQ(0, stream_->GetTotalSentBytes());
+  EXPECT_EQ(0, stream_->GetTotalReceivedBytes());
+  EXPECT_EQ(0, promised_stream_->GetTotalSentBytes());
+  EXPECT_EQ(static_cast<int64_t>(spdy_response_headers_frame_length +
+                                 strlen(kResponseBody)),
+            promised_stream_->GetTotalReceivedBytes());
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushGetRequestSlowResponse) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+  ReceivePromise(promise_id_);
+  EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  request_.url = GURL(promise_url_);
+
+  // Make the second stream that will exercise the first step of the
+  // server push rendezvous mechanism.
+  EXPECT_EQ(OK, promised_stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                                   net_log_.bound(),
+                                                   callback_.callback()));
+
+  // Now sending a matching request will rendezvous with the promised
+  // stream, but pending secondary validation.
+  EXPECT_EQ(ERR_IO_PENDING, promised_stream_->SendRequest(
+                                headers_, &response_, callback_.callback()));
+
+  // Receive the promised response headers.
+  response_headers_ = promised_response_;
+  size_t spdy_response_headers_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      1, promise_id_, false, &spdy_response_headers_frame_length));
+
+  // Receive the promised response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(
+      InnerConstructDataPacket(2, promise_id_, false, kFin, 0, kResponseBody));
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Rendezvous should have succeeded now, so the promised stream
+  // should point at our push stream, and we should be able read
+  // headers and data from it.
+  EXPECT_EQ(OK, callback_.WaitForResult());
+
+  EXPECT_EQ(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      promise_id_);
+
+  EXPECT_EQ(OK, promised_stream_->ReadResponseHeaders(callback_.callback()));
+
+  EXPECT_EQ(
+      static_cast<int>(strlen(kResponseBody)),
+      promised_stream_->ReadResponseBody(
+          read_buffer_.get(), read_buffer_->size(), callback_.callback()));
+
+  // Callback should return
+  EXPECT_TRUE(promised_stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+
+  EXPECT_EQ(0, stream_->GetTotalSentBytes());
+  EXPECT_EQ(0, stream_->GetTotalReceivedBytes());
+  EXPECT_EQ(0, promised_stream_->GetTotalSentBytes());
+  EXPECT_EQ(static_cast<int64_t>(spdy_response_headers_frame_length +
+                                 strlen(kResponseBody)),
+            promised_stream_->GetTotalReceivedBytes());
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushCrossOriginOK) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+
+  push_promise_[":authority"] = "mail.example.org";
+  promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+  serialized_push_promise_ =
+      SpdyUtils::SerializeUncompressedHeaders(push_promise_);
+
+  ReceivePromise(promise_id_);
+  EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  request_.url = GURL(promise_url_);
+
+  // Make the second stream that will exercise the first step of the
+  // server push rendezvous mechanism.
+  EXPECT_EQ(OK, promised_stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                                   net_log_.bound(),
+                                                   callback_.callback()));
+
+  // Receive the promised response headers.
+  response_headers_ = promised_response_;
+  size_t spdy_response_headers_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      1, promise_id_, false, &spdy_response_headers_frame_length));
+
+  // Receive the promised response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(
+      InnerConstructDataPacket(2, promise_id_, false, kFin, 0, kResponseBody));
+
+  // Now sending a matching request will have successful rendezvous
+  // with the promised stream.
+  EXPECT_EQ(OK, promised_stream_->SendRequest(headers_, &response_,
+                                              callback_.callback()));
+
+  EXPECT_EQ(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      promise_id_);
+
+  // The headers will be immediately available.
+  EXPECT_EQ(OK, promised_stream_->ReadResponseHeaders(callback_.callback()));
+
+  // As will be the body.
+  EXPECT_EQ(
+      static_cast<int>(strlen(kResponseBody)),
+      promised_stream_->ReadResponseBody(
+          read_buffer_.get(), read_buffer_->size(), callback_.callback()));
+  EXPECT_TRUE(promised_stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+
+  EXPECT_EQ(0, stream_->GetTotalSentBytes());
+  EXPECT_EQ(0, stream_->GetTotalReceivedBytes());
+  EXPECT_EQ(0, promised_stream_->GetTotalSentBytes());
+  EXPECT_EQ(static_cast<int64_t>(spdy_response_headers_frame_length +
+                                 strlen(kResponseBody)),
+            promised_stream_->GetTotalReceivedBytes());
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushCrossOriginFail) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+  push_promise_[":authority"] = "www.notexample.org";
+  promise_url_ = SpdyUtils::GetUrlFromHeaderBlock(push_promise_);
+  serialized_push_promise_ =
+      SpdyUtils::SerializeUncompressedHeaders(push_promise_);
+
+  ReceivePromise(promise_id_);
+  // The promise will have been rejected because the cert doesn't
+  // match.
+  EXPECT_EQ(session_->GetPromisedByUrl(promise_url_), nullptr);
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushVaryCheckOK) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  push_promise_["accept-encoding"] = "gzip";
+  serialized_push_promise_ =
+      SpdyUtils::SerializeUncompressedHeaders(push_promise_);
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+  ReceivePromise(promise_id_);
+  EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  request_.url = GURL(promise_url_);
+
+  // Make the second stream that will exercise the first step of the
+  // server push rendezvous mechanism.
+  EXPECT_EQ(OK, promised_stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                                   net_log_.bound(),
+                                                   callback_.callback()));
+
+  headers_.SetHeader("accept-encoding", "gzip");
+
+  // Now sending a matching request will rendezvous with the promised
+  // stream, but pending secondary validation.
+  EXPECT_EQ(ERR_IO_PENDING, promised_stream_->SendRequest(
+                                headers_, &response_, callback_.callback()));
+
+  // Receive the promised response headers.
+  promised_response_["vary"] = "accept-encoding";
+  response_headers_ = promised_response_;
+  size_t spdy_response_headers_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      1, promise_id_, false, &spdy_response_headers_frame_length));
+
+  // Receive the promised response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(
+      InnerConstructDataPacket(2, promise_id_, false, kFin, 0, kResponseBody));
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Rendezvous should have succeeded now, so the promised stream
+  // should point at our push stream, and we should be able read
+  // headers and data from it.
+  EXPECT_EQ(OK, callback_.WaitForResult());
+
+  EXPECT_EQ(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      promise_id_);
+
+  EXPECT_EQ(OK, promised_stream_->ReadResponseHeaders(callback_.callback()));
+
+  EXPECT_EQ(
+      static_cast<int>(strlen(kResponseBody)),
+      promised_stream_->ReadResponseBody(
+          read_buffer_.get(), read_buffer_->size(), callback_.callback()));
+
+  // Callback should return
+  EXPECT_TRUE(promised_stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+
+  EXPECT_EQ(0, stream_->GetTotalSentBytes());
+  EXPECT_EQ(0, stream_->GetTotalReceivedBytes());
+  EXPECT_EQ(0, promised_stream_->GetTotalSentBytes());
+  EXPECT_EQ(static_cast<int64_t>(spdy_response_headers_frame_length +
+                                 strlen(kResponseBody)),
+            promised_stream_->GetTotalReceivedBytes());
+}
+
+TEST_P(QuicHttpStreamTest, ServerPushVaryCheckFail) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  request_headers_[":scheme"] = "https";
+  request_headers_[":path"] = "/bar";
+  request_headers_["accept-encoding"] = "sdch";
+
+  size_t spdy_request_header_frame_length;
+  AddWrite(ConstructRstStreamVaryMismatchPacket(1));
+  AddWrite(InnerConstructRequestHeadersPacket(
+      2, stream_id_ + 2, !kIncludeVersion, kFin, DEFAULT_PRIORITY,
+      &spdy_request_header_frame_length));
+  AddWrite(ConstructAckPacket(3, 3, 1));
+  AddWrite(ConstructRstStreamCancelledPacket(4));
+  Initialize();
+
+  // Initialize the first stream, for receiving the promise on.
+  request_.method = "GET";
+  request_.url = GURL("http://www.example.org/");
+
+  EXPECT_EQ(OK,
+            stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                      net_log_.bound(), callback_.callback()));
+
+  push_promise_["accept-encoding"] = "gzip";
+  serialized_push_promise_ =
+      SpdyUtils::SerializeUncompressedHeaders(push_promise_);
+
+  // TODO(ckrasic) - could do this via constructing a PUSH_PROMISE
+  // packet, but does it matter?
+  ReceivePromise(promise_id_);
+  EXPECT_NE(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  request_.url = GURL(promise_url_);
+
+  // Make the second stream that will exercise the first step of the
+  // server push rendezvous mechanism.
+  EXPECT_EQ(OK, promised_stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                                   net_log_.bound(),
+                                                   callback_.callback()));
+
+  headers_.SetHeader("accept-encoding", "sdch");
+
+  // Now sending a matching request will rendezvous with the promised
+  // stream, but pending secondary validation.
+  EXPECT_EQ(ERR_IO_PENDING, promised_stream_->SendRequest(
+                                headers_, &response_, callback_.callback()));
+
+  // Receive the promised response headers.
+  promised_response_["vary"] = "accept-encoding";
+  response_headers_ = promised_response_;
+  size_t spdy_response_headers_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      1, promise_id_, false, &spdy_response_headers_frame_length));
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Rendezvous should have failed due to vary mismatch, so the
+  // promised stream should have been aborted, and instead we have a
+  // new, regular client initiated stream.
+  EXPECT_EQ(OK, callback_.WaitForResult());
+
+  // Not a server-initiated stream.
+  EXPECT_NE(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      promise_id_);
+
+  // Instead, a new client-initiated stream.
+  EXPECT_EQ(
+      QuicHttpStreamPeer::GetQuicChromiumClientStream(promised_stream_.get())
+          ->id(),
+      stream_id_ + 2);
+
+  // After rendezvous failure, the push stream has been cancelled.
+  EXPECT_EQ(session_->GetPromisedByUrl(promise_url_), nullptr);
+
+  // The rest of the test verifies that the retried as
+  // client-initiated version of |promised_stream_| works as intended.
+
+  // Ack the request.
+  ProcessPacket(ConstructAckPacket(2, 0, 0));
+
+  SetResponse("404 Not Found", string());
+  size_t spdy_response_header_frame_length;
+  ProcessPacket(InnerConstructResponseHeadersPacket(
+      3, stream_id_ + 2, kFin, &spdy_response_header_frame_length));
+
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(OK, promised_stream_->ReadResponseHeaders(callback_.callback()));
+  ASSERT_TRUE(response_.headers.get());
+  EXPECT_EQ(404, response_.headers->response_code());
+  EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
+  EXPECT_FALSE(response_.response_time.is_null());
+  EXPECT_FALSE(response_.request_time.is_null());
+
+  // There is no body, so this should return immediately.
+  EXPECT_EQ(
+      0, promised_stream_->ReadResponseBody(
+             read_buffer_.get(), read_buffer_->size(), callback_.callback()));
+  EXPECT_TRUE(promised_stream_->IsResponseBodyComplete());
+
+  stream_->Close(true);
+
+  EXPECT_TRUE(AtEof());
+
+  // QuicHttpStream::GetTotalSent/ReceivedBytes currently only includes the
+  // headers and payload.
+  EXPECT_EQ(static_cast<int64_t>(spdy_request_header_frame_length),
+            promised_stream_->GetTotalSentBytes());
+  EXPECT_EQ(static_cast<int64_t>(spdy_response_header_frame_length),
+            promised_stream_->GetTotalReceivedBytes());
 }
 
 }  // namespace test

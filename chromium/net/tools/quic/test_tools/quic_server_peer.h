@@ -9,7 +9,6 @@
 
 namespace net {
 
-namespace tools {
 
 class QuicDispatcher;
 class QuicServer;
@@ -20,7 +19,6 @@ namespace test {
 class QuicServerPeer {
  public:
   static bool SetSmallSocket(QuicServer* server);
-  static void DisableRecvmmsg(QuicServer* server);
   static QuicDispatcher* GetDispatcher(QuicServer* server);
   static void SetReader(QuicServer* server, QuicPacketReader* reader);
 
@@ -29,7 +27,6 @@ class QuicServerPeer {
 };
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_QUIC_SERVER_PEER_H_

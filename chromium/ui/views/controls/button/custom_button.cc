@@ -5,12 +5,17 @@
 #include "ui/views/controls/button/custom_button.h"
 
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/base/material_design/material_design_controller.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/animation/throb_animation.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/color_palette.h"
 #include "ui/gfx/screen.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/animation/ink_drop_delegate.h"
+#include "ui/views/animation/ink_drop_hover.h"
 #include "ui/views/controls/button/blue_button.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
@@ -26,20 +31,51 @@
 
 namespace views {
 
-// How long the hover animation takes if uninterrupted.
-static const int kHoverFadeDurationMs = 150;
+namespace {
 
-// static
-const char CustomButton::kViewClassName[] = "CustomButton";
+// How long the hover animation takes if uninterrupted.
+const int kHoverFadeDurationMs = 150;
+
+// The amount to enlarge the focus border in all directions relative to the
+// button.
+const int kFocusBorderOutset = -2;
+
+// The corner radius of the focus border roundrect.
+const int kFocusBorderCornerRadius = 3;
+
+class MdFocusRing : public views::View {
+ public:
+  MdFocusRing() {
+    SetPaintToLayer(true);
+    layer()->SetFillsBoundsOpaquely(false);
+
+    // Don't accept input events.
+    SetEnabled(false);
+  }
+  ~MdFocusRing() override {}
+
+  void OnPaint(gfx::Canvas* canvas) override {
+    CustomButton::PaintMdFocusRing(canvas, this);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MdFocusRing);
+};
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // CustomButton, public:
 
 // static
+const char CustomButton::kViewClassName[] = "CustomButton";
+
+// static
 const CustomButton* CustomButton::AsCustomButton(const views::View* view) {
-  return AsCustomButton(const_cast<views::View*>(view));
+  return AsCustomButton(const_cast<View*>(view));
 }
 
+// static
 CustomButton* CustomButton::AsCustomButton(views::View* view) {
   if (view) {
     const char* classname = view->GetClassName();
@@ -53,6 +89,19 @@ CustomButton* CustomButton::AsCustomButton(views::View* view) {
     }
   }
   return NULL;
+}
+
+// static
+void CustomButton::PaintMdFocusRing(gfx::Canvas* canvas, views::View* view) {
+  SkPaint paint;
+  paint.setAntiAlias(true);
+  paint.setColor(view->GetNativeTheme()->GetSystemColor(
+      ui::NativeTheme::kColorId_CallToActionColor));
+  paint.setStyle(SkPaint::kStroke_Style);
+  paint.setStrokeWidth(1);
+  gfx::RectF rect(view->GetLocalBounds());
+  rect.Inset(gfx::InsetsF(0.5));
+  canvas->DrawRoundRect(rect, kFocusBorderCornerRadius, paint);
 }
 
 CustomButton::~CustomButton() {}
@@ -106,7 +155,7 @@ void CustomButton::SetHotTracked(bool is_hot_tracked) {
     SetState(is_hot_tracked ? STATE_HOVERED : STATE_NORMAL);
 
   if (is_hot_tracked)
-    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_HOVER, true);
 }
 
 bool CustomButton::IsHotTracked() const {
@@ -116,13 +165,9 @@ bool CustomButton::IsHotTracked() const {
 ////////////////////////////////////////////////////////////////////////////////
 // CustomButton, View overrides:
 
-void CustomButton::Layout() {
-  Button::Layout();
-  if (ink_drop_delegate_)
-    ink_drop_delegate_->OnLayout();
-}
-
 void CustomButton::OnEnabledChanged() {
+  // TODO(bruthig): Is there any reason we are not calling
+  // Button::OnEnabledChanged() here?
   if (enabled() ? (state_ != STATE_DISABLED) : (state_ == STATE_DISABLED))
     return;
 
@@ -130,6 +175,9 @@ void CustomButton::OnEnabledChanged() {
     SetState(ShouldEnterHoveredState() ? STATE_HOVERED : STATE_NORMAL);
   else
     SetState(STATE_DISABLED);
+
+  if (ink_drop_delegate_)
+    ink_drop_delegate_->SetHovered(ShouldShowInkDropHover());
 }
 
 const char* CustomButton::GetClassName() const {
@@ -139,7 +187,8 @@ const char* CustomButton::GetClassName() const {
 bool CustomButton::OnMousePressed(const ui::MouseEvent& event) {
   if (state_ == STATE_DISABLED)
     return true;
-  if (ShouldEnterPushedState(event) && HitTestPoint(event.location())) {
+  if (state_ != STATE_PRESSED && ShouldEnterPushedState(event) &&
+      HitTestPoint(event.location())) {
     SetState(STATE_PRESSED);
     if (ink_drop_delegate_)
       ink_drop_delegate_->OnAction(views::InkDropState::ACTION_PENDING);
@@ -183,8 +232,12 @@ void CustomButton::OnMouseReleased(const ui::MouseEvent& event) {
 }
 
 void CustomButton::OnMouseCaptureLost() {
-  // Starting a drag results in a MouseCaptureLost, we need to ignore it.
-  if (state_ != STATE_DISABLED && !InDrag())
+  // Starting a drag results in a MouseCaptureLost. Reset button state.
+  // TODO(varkha) While in drag only reset the state with Material Design.
+  // The same logic may applies everywhere so gather any feedback and update.
+  bool reset_button_state =
+      !InDrag() || ui::MaterialDesignController::IsModeMaterial();
+  if (state_ != STATE_DISABLED && reset_button_state)
     SetState(STATE_NORMAL);
   if (ink_drop_delegate_)
     ink_drop_delegate_->OnAction(views::InkDropState::HIDDEN);
@@ -272,6 +325,13 @@ bool CustomButton::AcceleratorPressed(const ui::Accelerator& accelerator) {
   return true;
 }
 
+bool CustomButton::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
+  // If this button is focused and the user presses space or enter, don't let
+  // that be treated as an accelerator.
+  return (event.key_code() == ui::VKEY_SPACE) ||
+         (event.key_code() == ui::VKEY_RETURN);
+}
+
 void CustomButton::ShowContextMenu(const gfx::Point& p,
                                    ui::MenuSourceType source_type) {
   if (!context_menu_controller())
@@ -281,6 +341,10 @@ void CustomButton::ShowContextMenu(const gfx::Point& p,
   // we won't get a mouse exited and reset state. Reset it now to be sure.
   if (state_ != STATE_DISABLED)
     SetState(STATE_NORMAL);
+  if (hide_ink_drop_when_showing_context_menu_ && ink_drop_delegate_) {
+    ink_drop_delegate_->SetHovered(false);
+    ink_drop_delegate_->OnAction(InkDropState::HIDDEN);
+  }
   View::ShowContextMenu(p, source_type);
 }
 
@@ -318,6 +382,14 @@ void CustomButton::VisibilityChanged(View* starting_from, bool visible) {
   SetState(visible && ShouldEnterHoveredState() ? STATE_HOVERED : STATE_NORMAL);
 }
 
+scoped_ptr<InkDropHover> CustomButton::CreateInkDropHover() const {
+  return ShouldShowInkDropHover() ? Button::CreateInkDropHover() : nullptr;
+}
+
+SkColor CustomButton::GetInkDropBaseColor() const {
+  return ink_drop_base_color_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // CustomButton, gfx::AnimationDelegate implementation:
 
@@ -326,23 +398,34 @@ void CustomButton::AnimationProgressed(const gfx::Animation* animation) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// CustomButton, views::InkDropHost implementation:
+// CustomButton, View overrides (public):
 
-void CustomButton::AddInkDropLayer(ui::Layer* ink_drop_layer) {
-  SetPaintToLayer(true);
-  SetFillsBoundsOpaquely(false);
-  layer()->Add(ink_drop_layer);
-  layer()->StackAtBottom(ink_drop_layer);
+void CustomButton::Layout() {
+  Button::Layout();
+  gfx::Rect focus_bounds = GetLocalBounds();
+  focus_bounds.Inset(gfx::Insets(kFocusBorderOutset));
+  if (md_focus_ring_)
+    md_focus_ring_->SetBoundsRect(focus_bounds);
 }
 
-void CustomButton::RemoveInkDropLayer(ui::Layer* ink_drop_layer) {
-  layer()->Remove(ink_drop_layer);
-  SetFillsBoundsOpaquely(true);
-  SetPaintToLayer(false);
+void CustomButton::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (!details.is_add && state_ != STATE_DISABLED)
+    SetState(STATE_NORMAL);
 }
 
-gfx::Point CustomButton::CalculateInkDropCenter() const {
-  return GetLocalBounds().CenterPoint();
+void CustomButton::OnFocus() {
+  Button::OnFocus();
+  if (md_focus_ring_)
+    md_focus_ring_->SetVisible(true);
+}
+
+void CustomButton::OnBlur() {
+  Button::OnBlur();
+  if (IsHotTracked())
+    SetState(STATE_NORMAL);
+  if (md_focus_ring_)
+    md_focus_ring_->SetVisible(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -359,7 +442,10 @@ CustomButton::CustomButton(ButtonListener* listener)
       ink_drop_delegate_(nullptr),
       notify_action_(NOTIFY_ON_RELEASE),
       has_ink_drop_action_on_click_(false),
-      ink_drop_action_on_click_(InkDropState::QUICK_ACTION) {
+      ink_drop_action_on_click_(InkDropState::ACTION_TRIGGERED),
+      hide_ink_drop_when_showing_context_menu_(true),
+      ink_drop_base_color_(gfx::kPlaceholderColor),
+      md_focus_ring_(nullptr) {
   hover_animation_.SetSlideDuration(kHoverFadeDurationMs);
 }
 
@@ -375,6 +461,10 @@ bool CustomButton::IsTriggerableEvent(const ui::Event& event) {
 
 bool CustomButton::ShouldEnterPushedState(const ui::Event& event) {
   return IsTriggerableEvent(event);
+}
+
+bool CustomButton::ShouldShowInkDropHover() const {
+  return enabled() && IsMouseHovered() && !InDrag();
 }
 
 bool CustomButton::ShouldEnterHoveredState() {
@@ -401,25 +491,16 @@ bool CustomButton::ShouldEnterHoveredState() {
   return check_mouse_position && IsMouseHovered();
 }
 
+void CustomButton::UseMdFocusRing() {
+  DCHECK(!md_focus_ring_);
+  md_focus_ring_ = new MdFocusRing();
+  AddChildView(md_focus_ring_);
+  md_focus_ring_->SetVisible(false);
+  set_request_focus_on_press(false);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-// CustomButton, View overrides (protected):
-
-void CustomButton::OnBoundsChanged(const gfx::Rect& previous_bounds) {
-  Button::OnBoundsChanged(previous_bounds);
-  if (ink_drop_delegate_)
-    ink_drop_delegate_->OnLayout();
-}
-
-void CustomButton::ViewHierarchyChanged(
-    const ViewHierarchyChangedDetails& details) {
-  if (!details.is_add && state_ != STATE_DISABLED)
-    SetState(STATE_NORMAL);
-}
-
-void CustomButton::OnBlur() {
-  if (IsHotTracked())
-    SetState(STATE_NORMAL);
-}
+// CustomButton, Button overrides (protected):
 
 void CustomButton::NotifyClick(const ui::Event& event) {
   if (ink_drop_delegate() && has_ink_drop_action_on_click_)

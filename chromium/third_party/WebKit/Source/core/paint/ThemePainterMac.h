@@ -32,11 +32,10 @@ class LayoutThemeMac;
 
 class ThemePainterMac final : public ThemePainter {
 public:
-    ThemePainterMac(LayoutThemeMac& layoutTheme) : m_layoutTheme(layoutTheme) { }
+    ThemePainterMac(LayoutThemeMac&, Theme*);
 
 private:
     bool paintCapsLockIndicator(const LayoutObject&, const PaintInfo&, const IntRect&) override;
-    bool paintMeter(const LayoutObject&, const PaintInfo&, const IntRect&) override;
     bool paintTextField(const LayoutObject&, const PaintInfo&, const IntRect&) override;
     bool paintTextArea(const LayoutObject&, const PaintInfo&, const IntRect&) override;
     bool paintMenuList(const LayoutObject&, const PaintInfo&, const IntRect&) override;

@@ -22,8 +22,9 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/mime_util.h"
 #include "media/base/video_frame.h"
-#include "media/capture/webm_muxer.h"
+#include "media/muxers/webm_muxer.h"
 #include "third_party/WebKit/public/platform/WebMediaRecorderHandlerClient.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
 using base::TimeDelta;
@@ -32,7 +33,9 @@ using base::TimeTicks;
 namespace content {
 
 MediaRecorderHandler::MediaRecorderHandler()
-    : use_vp9_(false),
+    : video_bits_per_second_(0),
+      audio_bits_per_second_(0),
+      use_vp9_(false),
       recording_(false),
       client_(nullptr),
       weak_factory_(this) {}
@@ -84,7 +87,9 @@ bool MediaRecorderHandler::initialize(
     blink::WebMediaRecorderHandlerClient* client,
     const blink::WebMediaStream& media_stream,
     const blink::WebString& type,
-    const blink::WebString& codecs) {
+    const blink::WebString& codecs,
+    int32_t audio_bits_per_second,
+    int32_t video_bits_per_second) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   // Save histogram data so we can see how much MediaStream Recorder is used.
   // The histogram counts the number of calls to the JS API.
@@ -100,6 +105,8 @@ bool MediaRecorderHandler::initialize(
   DCHECK(client);
   client_ = client;
 
+  audio_bits_per_second_ = audio_bits_per_second;
+  video_bits_per_second_ = video_bits_per_second;
   return true;
 }
 
@@ -128,17 +135,22 @@ bool MediaRecorderHandler::start(int timeslice) {
     return false;
   }
 
-  const bool use_audio_tracks =
-      !audio_tracks.isEmpty() &&
-      MediaStreamAudioTrack::GetTrack(audio_tracks[0]);
+  const bool use_video_tracks = !video_tracks.isEmpty() &&
+                                video_tracks[0].isEnabled() &&
+                                video_tracks[0].source().getReadyState() ==
+                                    blink::WebMediaStreamSource::ReadyStateLive;
+  const bool use_audio_tracks = !audio_tracks.isEmpty() &&
+                                MediaStreamAudioTrack::From(audio_tracks[0]) &&
+                                audio_tracks[0].isEnabled() &&
+                                audio_tracks[0].source().getReadyState() ==
+                                    blink::WebMediaStreamSource::ReadyStateLive;
 
   webm_muxer_.reset(new media::WebmMuxer(
-      use_vp9_ ? media::kCodecVP9 : media::kCodecVP8,
-      video_tracks.size() > 0, use_audio_tracks,
-      base::Bind(&MediaRecorderHandler::WriteData,
-                 weak_factory_.GetWeakPtr())));
+      use_vp9_ ? media::kCodecVP9 : media::kCodecVP8, use_video_tracks,
+      use_audio_tracks, base::Bind(&MediaRecorderHandler::WriteData,
+                                   weak_factory_.GetWeakPtr())));
 
-  if (!video_tracks.isEmpty()) {
+  if (use_video_tracks) {
     // TODO(mcasas): The muxer API supports only one video track. Extend it to
     // several video tracks, see http://crbug.com/528523.
     LOG_IF(WARNING, video_tracks.size() > 1u)
@@ -152,8 +164,8 @@ bool MediaRecorderHandler::start(int timeslice) {
         media::BindToCurrentLoop(base::Bind(
             &MediaRecorderHandler::OnEncodedVideo, weak_factory_.GetWeakPtr()));
 
-    video_recorders_.push_back(
-        new VideoTrackRecorder(use_vp9_, video_track, on_encoded_video_cb));
+    video_recorders_.push_back(new VideoTrackRecorder(
+        use_vp9_, video_track, on_encoded_video_cb, video_bits_per_second_));
   }
 
   if (use_audio_tracks) {
@@ -170,8 +182,8 @@ bool MediaRecorderHandler::start(int timeslice) {
         media::BindToCurrentLoop(base::Bind(
             &MediaRecorderHandler::OnEncodedAudio, weak_factory_.GetWeakPtr()));
 
-    audio_recorders_.push_back(
-        new AudioTrackRecorder(audio_track, on_encoded_audio_cb));
+    audio_recorders_.push_back(new AudioTrackRecorder(
+        audio_track, on_encoded_audio_cb, audio_bits_per_second_));
   }
 
   recording_ = true;
@@ -195,6 +207,9 @@ void MediaRecorderHandler::pause() {
   recording_ = false;
   for (const auto& video_recorder : video_recorders_)
     video_recorder->Pause();
+  for (const auto& audio_recorder : audio_recorders_)
+    audio_recorder->Pause();
+  webm_muxer_->Pause();
 }
 
 void MediaRecorderHandler::resume() {
@@ -203,11 +218,14 @@ void MediaRecorderHandler::resume() {
   recording_ = true;
   for (const auto& video_recorder : video_recorders_)
     video_recorder->Resume();
+  for (const auto& audio_recorder : audio_recorders_)
+    audio_recorder->Resume();
+  webm_muxer_->Resume();
 }
 
 void MediaRecorderHandler::OnEncodedVideo(
     const scoped_refptr<media::VideoFrame>& video_frame,
-    scoped_ptr<std::string> encoded_data,
+    std::unique_ptr<std::string> encoded_data,
     TimeTicks timestamp,
     bool is_key_frame) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
@@ -217,9 +235,10 @@ void MediaRecorderHandler::OnEncodedVideo(
                               is_key_frame);
 }
 
-void MediaRecorderHandler::OnEncodedAudio(const media::AudioParameters& params,
-                                          scoped_ptr<std::string> encoded_data,
-                                          base::TimeTicks timestamp) {
+void MediaRecorderHandler::OnEncodedAudio(
+    const media::AudioParameters& params,
+    std::unique_ptr<std::string> encoded_data,
+    base::TimeTicks timestamp) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   if (webm_muxer_)
     webm_muxer_->OnEncodedAudio(params, std::move(encoded_data), timestamp);
@@ -227,7 +246,6 @@ void MediaRecorderHandler::OnEncodedAudio(const media::AudioParameters& params,
 
 void MediaRecorderHandler::WriteData(base::StringPiece data) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
-
   // Non-buffered mode does not need to check timestamps.
   if (timeslice_.is_zero()) {
     client_->writeData(data.data(), data.length(), true  /* lastInSlice */);

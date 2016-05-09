@@ -68,13 +68,13 @@ bool SVGStaticStringList::isAnimating() const
     return false;
 }
 
-PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGStaticStringList::createAnimatedValue()
+SVGPropertyBase* SVGStaticStringList::createAnimatedValue()
 {
     ASSERT_NOT_REACHED();
     return nullptr;
 }
 
-void SVGStaticStringList::setAnimatedValue(PassRefPtrWillBeRawPtr<SVGPropertyBase>)
+void SVGStaticStringList::setAnimatedValue(SVGPropertyBase*)
 {
     ASSERT_NOT_REACHED();
 }
@@ -102,4 +102,4 @@ SVGParsingError SVGStaticStringList::setBaseValueAsString(const String& value)
     return m_value->setValueAsString(value);
 }
 
-}
+} // namespace blink

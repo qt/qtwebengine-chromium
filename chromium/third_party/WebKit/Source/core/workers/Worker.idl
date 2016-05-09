@@ -28,7 +28,8 @@
 // https://html.spec.whatwg.org/#dedicated-workers-and-the-worker-interface
 
 [
-    ActiveDOMObject,
+    ActiveScriptWrappable,
+    DependentLifetime,
     Constructor(DOMString scriptUrl),
     ConstructorCallWith=ExecutionContext,
     GarbageCollected,

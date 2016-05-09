@@ -96,14 +96,14 @@ unsigned LayoutListBox::size() const
 
 LayoutUnit LayoutListBox::defaultItemHeight() const
 {
-    return style()->fontMetrics().height() + defaultPaddingBottom;
+    return LayoutUnit(style()->getFontMetrics().height() + defaultPaddingBottom);
 }
 
 LayoutUnit LayoutListBox::itemHeight() const
 {
     HTMLSelectElement* select = selectElement();
     if (!select)
-        return 0;
+        return LayoutUnit();
     Element* baseItem = ElementTraversal::firstChild(*select);
     if (!baseItem)
         return defaultItemHeight();
@@ -140,15 +140,15 @@ void LayoutListBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, L
 {
     LayoutBlockFlow::computeIntrinsicLogicalWidths(minLogicalWidth, maxLogicalWidth);
     if (style()->width().hasPercent())
-        minLogicalWidth = 0;
+        minLogicalWidth = LayoutUnit();
 }
 
 void LayoutListBox::scrollToRect(const LayoutRect& rect)
 {
     if (hasOverflowClip()) {
         ASSERT(layer());
-        ASSERT(layer()->scrollableArea());
-        layer()->scrollableArea()->scrollIntoView(rect, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
+        ASSERT(layer()->getScrollableArea());
+        layer()->getScrollableArea()->scrollIntoView(rect, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
     }
 }
 

@@ -28,6 +28,7 @@
 
 #include "core/CoreExport.h"
 #include "core/dom/Range.h"
+#include "core/editing/iterators/ForwardsTextBuffer.h"
 #include "core/layout/LayoutText.h"
 #include "wtf/text/WTFString.h"
 
@@ -46,7 +47,7 @@ public:
     String substring(unsigned position, unsigned length) const;
     void appendTextToStringBuilder(StringBuilder&, unsigned position = 0, unsigned maxLength = UINT_MAX) const;
 
-    void emitCharacter(UChar, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset);
+    void spliceBuffer(UChar, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset);
     void emitText(Node* textNode, LayoutText* layoutObject, int textStartOffset, int textEndOffset);
     void emitAltText(Node*);
     void updateForReplacedElement(Node* baseNode);
@@ -62,24 +63,7 @@ public:
         m_textLength = 0;
     }
 
-    template<typename BufferType>
-    void appendTextTo(BufferType& output, unsigned position = 0) const
-    {
-        ASSERT_WITH_SECURITY_IMPLICATION(position <= static_cast<unsigned>(length()));
-        unsigned lengthToAppend = length() - position;
-        if (!lengthToAppend)
-            return;
-        if (m_singleCharacterBuffer) {
-            ASSERT(!position);
-            ASSERT(length() == 1);
-            output.append(&m_singleCharacterBuffer, 1);
-        } else if (positionNode()) {
-            flushPositionOffsets();
-            string().appendTo(output, positionStartOffset() + position, lengthToAppend);
-        } else {
-            ASSERT_NOT_REACHED(); // "We shouldn't be attempting to append text that doesn't exist.";
-        }
-    }
+    void appendTextTo(ForwardsTextBuffer* output, unsigned position, unsigned lengthToAppend) const;
 
 private:
     int m_textLength;
@@ -90,8 +74,8 @@ private:
     UChar m_singleCharacterBuffer;
 
     // The current text and its position, in the form to be returned from the iterator.
-    RawPtrWillBeMember<Node> m_positionNode;
-    mutable RawPtrWillBeMember<Node> m_positionOffsetBaseNode;
+    Member<Node> m_positionNode;
+    mutable Member<Node> m_positionOffsetBaseNode;
     mutable int m_positionStartOffset;
     mutable int m_positionEndOffset;
 

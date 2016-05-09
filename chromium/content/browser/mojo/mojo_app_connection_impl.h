@@ -7,24 +7,26 @@
 
 #include "base/macros.h"
 #include "content/public/browser/mojo_app_connection.h"
-#include "mojo/shell/public/interfaces/service_provider.mojom.h"
-
-class GURL;
+#include "mojo/shell/public/interfaces/interface_provider.mojom.h"
 
 namespace content {
 
 // Implementation of the app connection mechanism provided to browser code.
 class MojoAppConnectionImpl : public MojoAppConnection {
  public:
-  MojoAppConnectionImpl(const GURL& url, const GURL& requestor_url);
+  // Takes a BrowserContext and derives a mojo userid from it for this
+  // connection.
+  MojoAppConnectionImpl(const std::string& user_id,
+                        const std::string& name,
+                        const std::string& requestor_name);
   ~MojoAppConnectionImpl() override;
 
  private:
   // MojoAppConnection:
-  void ConnectToService(const std::string& service_name,
-                        mojo::ScopedMessagePipeHandle handle) override;
+  void GetInterface(const std::string& interface_name,
+                    mojo::ScopedMessagePipeHandle handle) override;
 
-  mojo::ServiceProviderPtr services_;
+  mojo::shell::mojom::InterfaceProviderPtr interfaces_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoAppConnectionImpl);
 };

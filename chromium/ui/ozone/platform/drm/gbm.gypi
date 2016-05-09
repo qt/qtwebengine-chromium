@@ -13,7 +13,6 @@
     'internal_ozone_platforms': [
       'gbm',
     ],
-    'use_mesa_platform_null%': 0,
     'use_drm_atomic%': 0,
   },
   'targets': [
@@ -34,6 +33,8 @@
       'target_name': 'ozone_platform_gbm',
       'type': 'static_library',
       'dependencies': [
+        'ozone.gyp:ozone_base',
+        'ozone.gyp:ozone_common',
         '../../base/base.gyp:base',
         '../../build/linux/system.gyp:libdrm',
         '../../third_party/minigbm/minigbm.gyp:minigbm',
@@ -58,6 +59,8 @@
       'sources': [
         'client_native_pixmap_factory_gbm.cc',
         'client_native_pixmap_factory_gbm.h',
+        'common/client_native_pixmap_dmabuf.cc',
+        'common/client_native_pixmap_dmabuf.h',
         'common/drm_util.cc',
         'common/drm_util.h',
         'common/scoped_drm_types.cc',
@@ -113,6 +116,8 @@
         'gpu/hardware_display_plane_manager.h',
         'gpu/hardware_display_plane_manager_legacy.cc',
         'gpu/hardware_display_plane_manager_legacy.h',
+        'gpu/inter_thread_messaging_proxy.cc',
+        'gpu/inter_thread_messaging_proxy.h',
         'gpu/overlay_plane.cc',
         'gpu/overlay_plane.h',
         'gpu/page_flip_request.cc',
@@ -121,19 +126,14 @@
         'gpu/proxy_helpers.h',
         'gpu/screen_manager.cc',
         'gpu/screen_manager.h',
-        'host/channel_observer.h',
         'host/drm_cursor.cc',
         'host/drm_cursor.h',
-        'host/drm_cursor_core.cc',
-        'host/drm_cursor_core.h',
         'host/drm_device_handle.cc',
         'host/drm_device_handle.h',
         'host/drm_display_host.cc',
         'host/drm_display_host.h',
         'host/drm_display_host_manager.cc',
         'host/drm_display_host_manager.h',
-        'host/drm_display_host_manager_core.cc',
-        'host/drm_display_host_manager_core.h',
         'host/drm_gpu_platform_support_host.cc',
         'host/drm_gpu_platform_support_host.h',
         'host/drm_native_display_delegate.cc',
@@ -146,19 +146,14 @@
         'host/drm_window_host.h',
         'host/drm_window_host_manager.cc',
         'host/drm_window_host_manager.h',
+        'host/gpu_thread_adapter.h',
+        'host/gpu_thread_observer.h',
+        'mus_thread_proxy.cc',
+        'mus_thread_proxy.h',
         'ozone_platform_gbm.cc',
         'ozone_platform_gbm.h',
       ],
       'conditions': [
-        ['use_vgem_map==1', {
-          'dependencies': [
-            '../ozone/ozone.gyp:vgem_map',
-          ],
-          'sources': [
-            'common/client_native_pixmap_vgem.cc',
-            'common/client_native_pixmap_vgem.h',
-          ],
-        }],
         ['use_drm_atomic == 1', {
           'sources': [
             'gpu/hardware_display_plane_atomic.cc',
@@ -177,7 +172,7 @@
         '../../skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        'ozone.gyp:ozone',
+        'ozone.gyp:ozone_platform',
         'drm_atomic',
       ],
       'export_dependent_settings': [

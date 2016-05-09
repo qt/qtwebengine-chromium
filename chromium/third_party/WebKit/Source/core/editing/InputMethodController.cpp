@@ -40,6 +40,7 @@
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/page/ChromeClient.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
@@ -56,9 +57,9 @@ InputMethodController::SelectionOffsetsScope::~SelectionOffsetsScope()
 
 // ----------------------------
 
-PassOwnPtrWillBeRawPtr<InputMethodController> InputMethodController::create(LocalFrame& frame)
+RawPtr<InputMethodController> InputMethodController::create(LocalFrame& frame)
 {
-    return adoptPtrWillBeNoop(new InputMethodController(frame));
+    return new InputMethodController(frame);
 }
 
 InputMethodController::InputMethodController(LocalFrame& frame)
@@ -130,17 +131,19 @@ static void dispatchCompositionEndEvent(LocalFrame& frame, const String& text)
     if (!target)
         return;
 
-    RefPtrWillBeRawPtr<CompositionEvent> event =
+    RawPtr<CompositionEvent> event =
         CompositionEvent::create(EventTypeNames::compositionend, frame.domWindow(), text);
     target->dispatchEvent(event);
 }
 
-bool InputMethodController::confirmComposition(const String& text)
+bool InputMethodController::confirmComposition(const String& text, ConfirmCompositionBehavior confirmBehavior)
 {
     if (!hasComposition())
         return false;
 
-    Editor::RevealSelectionScope revealSelectionScope(&editor());
+    Optional<Editor::RevealSelectionScope> revealSelectionScope;
+    if (confirmBehavior == KeepSelection)
+        revealSelectionScope.emplace(&editor());
 
     // If the composition was set from existing text and didn't change, then
     // there's nothing to do here (and we should avoid doing anything as that
@@ -188,8 +191,8 @@ bool InputMethodController::confirmCompositionOrInsertText(const String& text, C
         return true;
     }
 
-    if (confirmBehavior != KeepSelection)
-        return confirmComposition();
+    if (confirmBehavior == DoNotKeepSelection)
+        return confirmComposition(composingText(), DoNotKeepSelection);
 
     SelectionOffsetsScope selectionOffsetsScope(this);
     return confirmComposition();
@@ -238,7 +241,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
     // Updates styles before setting selection for composition to prevent
     // inserting the previous composition text into text nodes oddly.
     // See https://bugs.webkit.org/show_bug.cgi?id=46868
-    frame().document()->updateLayoutTreeIfNeeded();
+    frame().document()->updateLayoutTree();
 
     selectComposition();
 
@@ -261,7 +264,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
         // 3. Canceling the ongoing composition.
         //    Send a compositionend event when function deletes the existing composition node, i.e.
         //    !hasComposition() && test.isEmpty().
-        RefPtrWillBeRawPtr<CompositionEvent> event = nullptr;
+        RawPtr<CompositionEvent> event = nullptr;
         if (!hasComposition()) {
             // We should send a compositionstart event only when the given text is not empty because this
             // function doesn't create a composition node when the text is empty.
@@ -321,7 +324,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
 
     unsigned start = std::min(baseOffset + selectionStart, extentOffset);
     unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
-    RefPtrWillBeRawPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
+    RawPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
     frame().selection().setSelectedRange(selectedRange.get(), TextAffinity::Downstream, SelectionDirectionalMode::NonDirectional, NotUserTriggered);
 
     if (underlines.isEmpty()) {
@@ -349,11 +352,11 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
         return;
 
     const Position start = range.startPosition();
-    if (editableRootForPosition(start) != editable)
+    if (rootEditableElementOf(start) != editable)
         return;
 
     const Position end = range.endPosition();
-    if (editableRootForPosition(end) != editable)
+    if (rootEditableElementOf(end) != editable)
         return;
 
     clear();
@@ -381,7 +384,7 @@ EphemeralRange InputMethodController::compositionEphemeralRange() const
     return EphemeralRange(m_compositionRange.get());
 }
 
-PassRefPtrWillBeRawPtr<Range> InputMethodController::compositionRange() const
+RawPtr<Range> InputMethodController::compositionRange() const
 {
     return hasComposition() ? m_compositionRange : nullptr;
 }

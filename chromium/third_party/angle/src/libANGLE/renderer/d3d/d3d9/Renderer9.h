@@ -85,6 +85,8 @@ class Renderer9 : public RendererD3D
                                   GLenum depthBufferFormat,
                                   EGLint orientation) override;
 
+    CompilerImpl *createCompiler() override;
+
     gl::Error allocateEventQuery(IDirect3DQuery9 **outQuery);
     void freeEventQuery(IDirect3DQuery9* query);
 
@@ -119,16 +121,20 @@ class Renderer9 : public RendererD3D
                             GLenum drawMode,
                             const std::vector<D3DUniform *> &uniformArray) override;
     virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount, bool usesPointSize);
-    virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances, SourceIndexData *sourceInfo);
+    virtual gl::Error applyVertexBuffer(const gl::State &state,
+                                        GLenum mode,
+                                        GLint first,
+                                        GLsizei count,
+                                        GLsizei instances,
+                                        TranslatedIndexData *indexInfo);
     gl::Error applyIndexBuffer(const gl::Data &data,
                                const GLvoid *indices,
                                GLsizei count,
                                GLenum mode,
                                GLenum type,
-                               TranslatedIndexData *indexInfo,
-                               SourceIndexData *sourceIndexInfo) override;
+                               TranslatedIndexData *indexInfo) override;
 
-    void applyTransformFeedbackBuffers(const gl::State &state) override;
+    gl::Error applyTransformFeedbackBuffers(const gl::State &state) override;
 
     gl::Error clear(const ClearParameters &clearParams,
                     const gl::FramebufferAttachment *colorBuffer,
@@ -231,6 +237,9 @@ class Renderer9 : public RendererD3D
     // Transform Feedback creation
     virtual TransformFeedbackImpl* createTransformFeedback();
 
+    // Stream Creation
+    StreamImpl *createStream(const egl::AttributeMap &attribs) override;
+
     // Buffer-to-texture and Texture-to-buffer copies
     virtual bool supportsFastCopyBufferToTexture(GLenum internalFormat) const;
     virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTargetD3D *destRenderTarget,
@@ -246,6 +255,9 @@ class Renderer9 : public RendererD3D
     bool getLUID(LUID *adapterLuid) const override;
     VertexConversionType getVertexConversionType(gl::VertexFormatType vertexFormatType) const override;
     GLenum getVertexComponentType(gl::VertexFormatType vertexFormatType) const override;
+    gl::ErrorOrResult<unsigned int> getVertexSpaceRequired(const gl::VertexAttribute &attrib,
+                                                           GLsizei count,
+                                                           GLsizei instances) const override;
 
     gl::Error copyToRenderTarget(IDirect3DSurface9 *dest, IDirect3DSurface9 *source, bool fromManaged);
 
@@ -263,6 +275,7 @@ class Renderer9 : public RendererD3D
   private:
     gl::Error drawArraysImpl(const gl::Data &data,
                              GLenum mode,
+                             GLint startVertex,
                              GLsizei count,
                              GLsizei instances) override;
     gl::Error drawElementsImpl(const gl::Data &data,
@@ -384,6 +397,7 @@ class Renderer9 : public RendererD3D
     UINT mMaxNullColorbufferLRU;
 
     DeviceD3D *mEGLDevice;
+    std::vector<TranslatedAttribute> mTranslatedAttribCache;
 };
 
 }

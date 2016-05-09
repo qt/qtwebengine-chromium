@@ -8,12 +8,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "storage/common/data_element.h"
 #include "third_party/WebKit/public/platform/WebThreadSafeData.h"
@@ -45,6 +46,7 @@ class CONTENT_EXPORT BlobConsolidation {
     ConsolidatedItem(storage::DataElement::Type type,
                      uint64_t offset,
                      uint64_t length);
+    ConsolidatedItem(const ConsolidatedItem& other);
     ~ConsolidatedItem();
 
     storage::DataElement::Type type;
@@ -82,6 +84,11 @@ class CONTENT_EXPORT BlobConsolidation {
     return consolidated_items_;
   }
 
+  // These are all of the blobs referenced in the construction of this blob.
+  const std::set<std::string> referenced_blobs() const {
+    return referenced_blobs_;
+  }
+
   size_t total_memory() const { return total_memory_; }
 
   // Reads memory from the given item into the given buffer. Returns:
@@ -98,6 +105,7 @@ class CONTENT_EXPORT BlobConsolidation {
 
  private:
   size_t total_memory_;
+  std::set<std::string> referenced_blobs_;
   std::vector<ConsolidatedItem> consolidated_items_;
 
   DISALLOW_COPY_AND_ASSIGN(BlobConsolidation);

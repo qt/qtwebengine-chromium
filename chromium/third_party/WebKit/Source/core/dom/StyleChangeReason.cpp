@@ -5,7 +5,6 @@
 #include "core/dom/StyleChangeReason.h"
 
 #include "platform/TraceEvent.h"
-#include "wtf/MainThread.h"
 #include "wtf/StaticConstructors.h"
 
 namespace blink {
@@ -14,9 +13,11 @@ namespace StyleChangeReason {
 const char ActiveStylesheetsUpdate[] = "ActiveStylesheetsUpdate";
 const char Animation[] = "Animation";
 const char Attribute[] = "Attribute";
+const char CleanupPlaceholderStyles[] = "CleanupPlaceholderStyles";
 const char CompositorProxy[] = "CompositorProxy";
 const char ControlValue[] = "ControlValue";
 const char Control[] = "Control";
+const char DeclarativeContent[] = "Extension declarativeContent.css";
 const char DesignMode[] = "DesignMode";
 const char Drag[] = "Drag";
 const char FontSizeChange[] = "FontSizeChange";
@@ -33,6 +34,7 @@ const char PseudoClass[] = "PseudoClass";
 const char SVGContainerSizeChange[] = "SVGContainerSizeChange";
 const char SVGCursor[] = "SVGCursor";
 const char SVGFilterLayerUpdate[] = "SVGFilterLayerUpdate";
+const char Settings[] = "Settings";
 const char Shadow[] = "Shadow";
 const char SiblingSelector[] = "SiblingSelector";
 const char StyleInvalidator[] = "StyleInvalidator";
@@ -43,7 +45,7 @@ const char VisitedLink[] = "VisitedLink";
 const char VisuallyOrdered[] = "VisuallyOrdered";
 const char WritingModeChange[] = "WritingModeChange";
 const char Zoom[] = "Zoom";
-} // namespace StyleChangeReasonForTracing
+} // namespace StyleChangeReason
 
 namespace StyleChangeExtraData {
 DEFINE_GLOBAL(AtomicString, Active)
@@ -55,14 +57,14 @@ DEFINE_GLOBAL(AtomicString, Unresolved)
 
 void init()
 {
-    ASSERT(isMainThread());
+    DCHECK(isMainThread());
 
-    new (NotNull, (void*)&Active) AtomicString(":active", AtomicString::ConstructFromLiteral);
-    new (NotNull, (void*)&Disabled) AtomicString(":disabled", AtomicString::ConstructFromLiteral);
-    new (NotNull, (void*)&Focus) AtomicString(":focus", AtomicString::ConstructFromLiteral);
-    new (NotNull, (void*)&Hover) AtomicString(":hover", AtomicString::ConstructFromLiteral);
-    new (NotNull, (void*)&Past) AtomicString(":past", AtomicString::ConstructFromLiteral);
-    new (NotNull, (void*)&Unresolved) AtomicString(":unresolved", AtomicString::ConstructFromLiteral);
+    new (NotNull, (void*)&Active) AtomicString(":active");
+    new (NotNull, (void*)&Disabled) AtomicString(":disabled");
+    new (NotNull, (void*)&Focus) AtomicString(":focus");
+    new (NotNull, (void*)&Hover) AtomicString(":hover");
+    new (NotNull, (void*)&Past) AtomicString(":past");
+    new (NotNull, (void*)&Unresolved) AtomicString(":unresolved");
 }
 
 } // namespace StyleChangeExtraData

@@ -29,6 +29,7 @@
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/loader/DocumentLoader.h"
+#include "platform/Histogram.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -38,9 +39,9 @@ inline HTMLResourcePreloader::HTMLResourcePreloader(Document& document)
 {
 }
 
-PassOwnPtrWillBeRawPtr<HTMLResourcePreloader> HTMLResourcePreloader::create(Document& document)
+RawPtr<HTMLResourcePreloader> HTMLResourcePreloader::create(Document& document)
 {
-    return adoptPtrWillBeNoop(new HTMLResourcePreloader(document));
+    return new HTMLResourcePreloader(document);
 }
 
 DEFINE_TRACE(HTMLResourcePreloader)
@@ -73,9 +74,11 @@ void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload, const Ne
     if (request.url().protocolIsData())
         return;
     if (preload->resourceType() == Resource::Script || preload->resourceType() == Resource::CSSStyleSheet || preload->resourceType() == Resource::ImportResource)
-        request.setCharset(preload->charset().isEmpty() ? m_document->characterSet().string() : preload->charset());
+        request.setCharset(preload->charset().isEmpty() ? m_document->characterSet().getString() : preload->charset());
     request.setForPreload(true);
-    Platform::current()->histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
+    int duration = static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime()));
+    DEFINE_STATIC_LOCAL(CustomCountHistogram, preloadDelayHistogram, ("WebCore.PreloadDelayMs", 0, 2000, 20));
+    preloadDelayHistogram.count(duration);
     m_document->loader()->startPreload(preload->resourceType(), request);
 }
 

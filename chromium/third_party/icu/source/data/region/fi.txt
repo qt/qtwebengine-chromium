@@ -1,16 +1,42 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2014 International Business Machines
+// * Copyright (C) 2015 International Business Machines
 // * Corporation and others. All Rights Reserved.
 // * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
 // * Source File: <path>/common/main/fi.xml
 // *
 // ***************************************************************************
-/**
- * ICU <specials> source: <path>/common/main/fi.xml
- */
 fi{
     Countries{
+        001{"maailma"}
+        002{"Afrikka"}
+        003{"Pohjois-Amerikka"}
+        005{"Etelä-Amerikka"}
+        009{"Oseania"}
+        011{"Länsi-Afrikka"}
+        013{"Väli-Amerikka"}
+        014{"Itä-Afrikka"}
+        015{"Pohjois-Afrikka"}
+        017{"Keski-Afrikka"}
+        018{"eteläinen Afrikka"}
+        019{"Amerikka"}
+        021{"pohjoinen Amerikka"}
+        029{"Karibia"}
+        030{"Itä-Aasia"}
+        034{"Etelä-Aasia"}
+        035{"Kaakkois-Aasia"}
+        039{"Etelä-Eurooppa"}
+        053{"Australaasia"}
+        054{"Melanesia"}
+        057{"Mikronesia"}
+        061{"Polynesia"}
+        142{"Aasia"}
+        143{"Keski-Aasia"}
+        145{"Länsi-Aasia"}
+        150{"Eurooppa"}
+        151{"Itä-Eurooppa"}
+        154{"Pohjois-Eurooppa"}
+        155{"Länsi-Eurooppa"}
         419{"Latinalainen Amerikka"}
         AC{"Ascension-saari"}
         AD{"Andorra"}
@@ -94,7 +120,7 @@ fi{
         FO{"Färsaaret"}
         FR{"Ranska"}
         GA{"Gabon"}
-        GB{"Yhdistynyt kuningaskunta"}
+        GB{"Iso-Britannia"}
         GD{"Grenada"}
         GE{"Georgia"}
         GF{"Ranskan Guayana"}
@@ -236,7 +262,7 @@ fi{
         TA{"Tristan da Cunha"}
         TC{"Turks- ja Caicossaaret"}
         TD{"Tšad"}
-        TF{"Ranskan ulkopuoliset eteläiset alueet"}
+        TF{"Ranskan eteläiset alueet"}
         TG{"Togo"}
         TH{"Thaimaa"}
         TJ{"Tadžikistan"}
@@ -273,6 +299,10 @@ fi{
         ZW{"Zimbabwe"}
         ZZ{"tuntematon alue"}
     }
+    Countries%short{
+        GB{"Britannia"}
+        US{"USA"}
+    }
     Countries%variant{
         CD{"Kongo-Kinshasa"}
         CG{"Kongo-Brazzaville"}
@@ -281,9 +311,5 @@ fi{
         MK{"EJT Makedonia"}
         TL{"Timor-Leste"}
     }
-    CountriesShort{
-        GB{"Britannia"}
-        US{"USA"}
-    }
-    Version{"2.1.8.9"}
+    Version{"2.1.19.14"}
 }

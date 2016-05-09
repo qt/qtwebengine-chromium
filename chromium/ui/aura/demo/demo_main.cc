@@ -30,7 +30,7 @@
 #include "ui/gl/gl_surface.h"
 
 #if defined(USE_X11)
-#include "ui/gfx/x/x11_connection.h"
+#include "ui/gfx/x/x11_connection.h"  // nogncheck
 #endif
 
 #if defined(OS_WIN)
@@ -150,7 +150,7 @@ int DemoMain() {
   aura::Env::GetInstance()->set_context_factory(context_factory.get());
   scoped_ptr<aura::TestScreen> test_screen(
       aura::TestScreen::Create(gfx::Size()));
-  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
+  gfx::Screen::SetScreenInstance(test_screen.get());
   scoped_ptr<aura::WindowTreeHost> host(
       test_screen->CreateHostForPrimaryDisplay());
   scoped_ptr<DemoWindowTreeClient> window_tree_client(

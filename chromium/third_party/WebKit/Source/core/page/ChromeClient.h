@@ -35,6 +35,8 @@
 #include "platform/PopupMenu.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "public/platform/BlameContext.h"
+#include "public/platform/WebEventListenerProperties.h"
 #include "public/platform/WebFocusType.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
@@ -53,7 +55,6 @@ class Frame;
 class FloatPoint;
 class GraphicsContext;
 class GraphicsLayer;
-class GraphicsLayerFactory;
 class HitTestResult;
 class HTMLFormControlElement;
 class HTMLInputElement;
@@ -64,7 +65,7 @@ class Node;
 class Page;
 class PaintArtifact;
 class PopupOpeningObserver;
-class WebCompositorAnimationTimeline;
+class CompositorAnimationTimeline;
 class WebFrameScheduler;
 
 struct CompositedSelection;
@@ -160,7 +161,7 @@ public:
 
     virtual void annotatedRegionsChanged() = 0;
 
-    virtual PassOwnPtrWillBeRawPtr<ColorChooser> openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
+    virtual ColorChooser* openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
 
     // This function is used for:
     //  - Mandatory date/time choosers if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -168,7 +169,7 @@ public:
     //    returns true, if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     //  - <datalist> UI for date/time input types regardless of
     //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
+    virtual DateTimeChooser* openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 
     virtual void openTextDataListChooser(HTMLInputElement&)= 0;
 
@@ -176,9 +177,6 @@ public:
 
     // Asychronous request to enumerate all files in a directory chosen by the user.
     virtual void enumerateChosenDirectory(FileChooser*) = 0;
-
-    // Allows ports to customize the type of graphics layers created by this page.
-    virtual GraphicsLayerFactory* graphicsLayerFactory() const { return nullptr; }
 
     // Pass 0 as the GraphicsLayer to detach the root layer.
     // This sets the graphics layer for the LocalFrame's WebWidget, if it has
@@ -189,8 +187,8 @@ public:
     // the underlying web widget to composite it.
     virtual void didPaint(const PaintArtifact&) { }
 
-    virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
-    virtual void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
+    virtual void attachCompositorAnimationTimeline(CompositorAnimationTimeline*, LocalFrame* localRoot) { }
+    virtual void detachCompositorAnimationTimeline(CompositorAnimationTimeline*, LocalFrame* localRoot) { }
 
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
@@ -198,13 +196,16 @@ public:
     virtual void clearCompositedSelection() { }
     virtual void updateCompositedSelection(const CompositedSelection&) { }
 
-    virtual void needTouchEvents(bool) = 0;
+    virtual void setEventListenerProperties(WebEventListenerClass, WebEventListenerProperties) = 0;
+    virtual WebEventListenerProperties eventListenerProperties(WebEventListenerClass) const = 0;
+    virtual void setHasScrollEventHandlers(bool) = 0;
+    virtual bool hasScrollEventHandlers() const = 0;
 
     virtual void setTouchAction(TouchAction) = 0;
 
     // Checks if there is an opened popup, called by LayoutMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
-    virtual PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) = 0;
+    virtual PopupMenu* openPopupMenu(LocalFrame&, HTMLSelectElement&) = 0;
     virtual DOMWindow* pagePopupWindowForTesting() const = 0;
 
     virtual void postAccessibilityNotification(AXObject*, AXObjectCache::AXNotification) { }
@@ -227,7 +228,7 @@ public:
 
     virtual bool isChromeClientImpl() const { return false; }
 
-    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element>>&, LocalFrame*) { }
+    virtual void didAssociateFormControls(const HeapVector<Member<Element>>&, LocalFrame*) { }
     virtual void didChangeValueInTextField(HTMLFormControlElement&) { }
     virtual void didEndEditingOnTextField(HTMLInputElement&) { }
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
@@ -258,16 +259,14 @@ public:
     // that this is comprehensive.
     virtual void didObserveNonGetFetchFromScript() const {}
 
-    virtual PassOwnPtr<WebFrameScheduler> createFrameScheduler() = 0;
-
-    float screenToViewport(float) const override;
+    virtual PassOwnPtr<WebFrameScheduler> createFrameScheduler(BlameContext*) = 0;
 
 protected:
     ~ChromeClient() override { }
 
     virtual void showMouseOverURL(const HitTestResult&) = 0;
     virtual void setWindowRect(const IntRect&) = 0;
-    virtual bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String& message, bool isReload) = 0;
+    virtual bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, bool isReload) = 0;
     virtual bool openJavaScriptAlertDelegate(LocalFrame*, const String&) = 0;
     virtual bool openJavaScriptConfirmDelegate(LocalFrame*, const String&) = 0;
     virtual bool openJavaScriptPromptDelegate(LocalFrame*, const String& message, const String& defaultValue, String& result) = 0;

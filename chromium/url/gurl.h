@@ -8,9 +8,9 @@
 #include <stddef.h>
 
 #include <iosfwd>
+#include <memory>
 #include <string>
 
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "url/third_party/mozilla/url_parse.h"
@@ -56,8 +56,8 @@ class URL_EXPORT GURL {
   GURL(const GURL& other);
 
   // The strings to this contructor should be UTF-8 / UTF-16.
-  explicit GURL(const std::string& url_string);
-  explicit GURL(const base::string16& url_string);
+  explicit GURL(base::StringPiece url_string);
+  explicit GURL(base::StringPiece16 url_string);
 
   // Constructor for URLs that have already been parsed and canonicalized. This
   // is used for conversions from KURL, for example. The caller must supply all
@@ -214,6 +214,9 @@ class URL_EXPORT GURL {
 
   // Returns true if the scheme is "http" or "https".
   bool SchemeIsHTTPOrHTTPS() const;
+
+  // Returns true if the scheme is valid for use as a referrer.
+  bool SchemeIsValidForReferrer() const;
 
   // Returns true is the scheme is "ws" or "wss".
   bool SchemeIsWSOrWSS() const;
@@ -405,7 +408,8 @@ class URL_EXPORT GURL {
   GURL(const std::string& url_string, RetainWhiteSpaceSelector);
 
   template<typename STR>
-  void InitCanonical(const STR& input_spec, bool trim_path_end);
+  void InitCanonical(base::BasicStringPiece<STR> input_spec,
+                     bool trim_path_end);
 
   void InitializeFromCanonicalSpec();
 
@@ -433,7 +437,7 @@ class URL_EXPORT GURL {
   url::Parsed parsed_;
 
   // Used for nested schemes [currently only filesystem:].
-  scoped_ptr<GURL> inner_url_;
+  std::unique_ptr<GURL> inner_url_;
 };
 
 // Stream operator so GURL can be used in assertion statements.

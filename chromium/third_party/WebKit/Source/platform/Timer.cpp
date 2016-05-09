@@ -47,7 +47,7 @@ TimerBase::TimerBase(WebTaskRunner* webTaskRunner)
     , m_repeatInterval(0)
     , m_cancellableTimerTask(nullptr)
     , m_webTaskRunner(webTaskRunner)
-#if ENABLE(ASSERT)
+#if DCHECK_IS_ON()
     , m_thread(currentThread())
 #endif
 {
@@ -65,7 +65,7 @@ void TimerBase::start(double nextFireInterval, double repeatInterval, const WebT
 
     m_location = caller;
     m_repeatInterval = repeatInterval;
-    setNextFireTime(monotonicallyIncreasingTime(), nextFireInterval);
+    setNextFireTime(timerMonotonicallyIncreasingTime(), nextFireInterval);
 }
 
 void TimerBase::stop()
@@ -82,13 +82,13 @@ void TimerBase::stop()
 double TimerBase::nextFireInterval() const
 {
     ASSERT(isActive());
-    double current = monotonicallyIncreasingTime();
+    double current = timerMonotonicallyIncreasingTime();
     if (m_nextFireTime < current)
         return 0;
     return m_nextFireTime - current;
 }
 
-WebTaskRunner* TimerBase::timerTaskRunner()
+WebTaskRunner* TimerBase::timerTaskRunner() const
 {
     return m_webTaskRunner;
 }
@@ -117,17 +117,19 @@ void TimerBase::runInternal()
         return;
 
     TRACE_EVENT0("blink", "TimerBase::run");
-    ASSERT_WITH_MESSAGE(m_thread == currentThread(), "Timer posted by %s %s was run on a different thread", m_location.functionName(), m_location.fileName());
+#if DCHECK_IS_ON()
+    DCHECK_EQ(m_thread, currentThread()) << "Timer posted by " << m_location.functionName() << " " << m_location.fileName() << " was run on a different thread";
+#endif
     TRACE_EVENT_SET_SAMPLING_STATE("blink", "BlinkInternal");
 
     if (m_repeatInterval) {
-        double now = monotonicallyIncreasingTime();
+        double now = timerMonotonicallyIncreasingTime();
         // This computation should be drift free, and it will cope if we miss a beat,
         // which can easily happen if the thread is busy.  It will also cope if we get
         // called slightly before m_unalignedNextFireTime, which can happen due to lack
         // of timer precision.
         double intervalToNextFireTime = m_repeatInterval - fmod(now - m_nextFireTime, m_repeatInterval);
-        setNextFireTime(monotonicallyIncreasingTime(), intervalToNextFireTime);
+        setNextFireTime(timerMonotonicallyIncreasingTime(), intervalToNextFireTime);
     } else {
         m_nextFireTime = 0;
     }
@@ -143,7 +145,12 @@ bool TimerBase::Comparator::operator()(const TimerBase* a, const TimerBase* b) c
 // static
 WebTaskRunner* TimerBase::UnthrottledWebTaskRunner()
 {
-    return Platform::current()->currentThread()->taskRunner();
+    return Platform::current()->currentThread()->getWebTaskRunner();
+}
+
+double TimerBase::timerMonotonicallyIncreasingTime() const
+{
+    return timerTaskRunner()->monotonicallyIncreasingVirtualTimeSeconds();
 }
 
 } // namespace blink

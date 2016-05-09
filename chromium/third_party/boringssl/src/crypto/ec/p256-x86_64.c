@@ -39,15 +39,6 @@
     !defined(OPENSSL_SMALL)
 
 
-#if defined(__GNUC__)
-#define ALIGN(x) __attribute((aligned(x)))
-#elif defined(_MSC_VER)
-#define ALIGN(x) __declspec(align(x))
-#else
-#define ALIGN(x)
-#endif
-
-#define ALIGNPTR(p, N) ((uint8_t *)p + N - (size_t)p % N)
 #define P256_LIMBS (256 / BN_BITS2)
 
 typedef struct {
@@ -214,9 +205,7 @@ static void ecp_nistz256_mod_inverse(BN_ULONG r[P256_LIMBS],
 
   ecp_nistz256_sqr_mont(res, res);
   ecp_nistz256_sqr_mont(res, res);
-  ecp_nistz256_mul_mont(res, res, in);
-
-  memcpy(r, res, sizeof(res));
+  ecp_nistz256_mul_mont(r, res, in);
 }
 
 /* ecp_nistz256_bignum_to_field_elem copies the contents of |in| to |out| and
@@ -245,7 +234,7 @@ static int ecp_nistz256_windowed_mul(const EC_GROUP *group, P256_POINT *r,
   /* A |P256_POINT| is (3 * 32) = 96 bytes, and the 64-byte alignment should
    * add no more than 63 bytes of overhead. Thus, |table| should require
    * ~1599 ((96 * 16) + 63) bytes of stack space. */
-  ALIGN(64) P256_POINT table[16];
+  alignas(64) P256_POINT table[16];
   uint8_t p_str[33];
 
 
@@ -326,7 +315,7 @@ static int ecp_nistz256_windowed_mul(const EC_GROUP *group, P256_POINT *r,
   ecp_nistz256_point_add(&row[16 - 1], &row[15 - 1], &row[1 - 1]);
 
   BN_ULONG tmp[P256_LIMBS];
-  ALIGN(32) P256_POINT h;
+  alignas(32) P256_POINT h;
   unsigned index = 255;
   unsigned wvalue = p_str[(index - 1) / 8];
   wvalue = (wvalue >> ((index - 1) % 8)) & kMask;
@@ -390,7 +379,7 @@ static int ecp_nistz256_points_mul(
   static const unsigned kWindowSize = 7;
   static const unsigned kMask = (1 << (7 /* kWindowSize */ + 1)) - 1;
 
-  ALIGN(32) union {
+  alignas(32) union {
     P256_POINT p;
     P256_POINT_AFFINE a;
   } t, p;
@@ -398,17 +387,6 @@ static int ecp_nistz256_points_mul(
   int ret = 0;
   BN_CTX *new_ctx = NULL;
   int ctx_started = 0;
-
-  /* Need 256 bits for space for all coordinates. */
-  if (bn_wexpand(&r->X, P256_LIMBS) == NULL ||
-      bn_wexpand(&r->Y, P256_LIMBS) == NULL ||
-      bn_wexpand(&r->Z, P256_LIMBS) == NULL) {
-    OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
-    goto err;
-  }
-  r->X.top = P256_LIMBS;
-  r->Y.top = P256_LIMBS;
-  r->Z.top = P256_LIMBS;
 
   if (g_scalar != NULL) {
     if (BN_num_bits(g_scalar) > 256 || BN_is_negative(g_scalar)) {
@@ -503,15 +481,12 @@ static int ecp_nistz256_points_mul(
     }
   }
 
-  memcpy(r->X.d, p.p.X, sizeof(p.p.X));
-  memcpy(r->Y.d, p.p.Y, sizeof(p.p.Y));
-  memcpy(r->Z.d, p.p.Z, sizeof(p.p.Z));
-
   /* Not constant-time, but we're only operating on the public output. */
-  bn_correct_top(&r->X);
-  bn_correct_top(&r->Y);
-  bn_correct_top(&r->Z);
-  r->Z_is_one = BN_is_one(&r->Z);
+  if (!bn_set_words(&r->X, p.p.X, P256_LIMBS) ||
+      !bn_set_words(&r->Y, p.p.Y, P256_LIMBS) ||
+      !bn_set_words(&r->Z, p.p.Z, P256_LIMBS)) {
+    return 0;
+  }
 
   ret = 1;
 
@@ -576,7 +551,6 @@ const EC_METHOD *EC_GFp_nistz256_method(void) {
   static const EC_METHOD ret = {
       ec_GFp_mont_group_init,
       ec_GFp_mont_group_finish,
-      ec_GFp_mont_group_clear_finish,
       ec_GFp_mont_group_copy,
       ec_GFp_mont_group_set_curve,
       ecp_nistz256_get_affine,
@@ -586,7 +560,6 @@ const EC_METHOD *EC_GFp_nistz256_method(void) {
       ec_GFp_mont_field_sqr,
       ec_GFp_mont_field_encode,
       ec_GFp_mont_field_decode,
-      ec_GFp_mont_field_set_to_one,
   };
 
   return &ret;

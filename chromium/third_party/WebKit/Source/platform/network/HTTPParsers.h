@@ -40,6 +40,8 @@
 
 namespace blink {
 
+class Suborigin;
+
 typedef enum {
     ContentDispositionNone,
     ContentDispositionInline,
@@ -91,12 +93,18 @@ struct CacheControlHeader {
     }
 };
 
-PLATFORM_EXPORT ContentDispositionType contentDispositionType(const String&);
+PLATFORM_EXPORT ContentDispositionType getContentDispositionType(const String&);
 PLATFORM_EXPORT bool isValidHTTPHeaderValue(const String&);
 PLATFORM_EXPORT bool isValidHTTPFieldContentRFC7230(const String&);
 PLATFORM_EXPORT bool isValidHTTPToken(const String&);
 PLATFORM_EXPORT bool parseHTTPRefresh(const String& refresh, bool fromHttpEquivMeta, double& delay, String& url);
 PLATFORM_EXPORT double parseDate(const String&);
+
+// Given a Media Type (like "foo/bar; baz=gazonk" - usually from the
+// 'Content-Type' HTTP header), extract and return the "type/subtype" portion
+// ("foo/bar").
+// Note: This function does not in any way check that the "type/subtype" pair
+// is well-formed.
 PLATFORM_EXPORT AtomicString extractMIMETypeFromMediaType(const AtomicString&);
 PLATFORM_EXPORT String extractCharsetFromMediaType(const String&);
 PLATFORM_EXPORT void findCharsetInMediaType(const String& mediaType, unsigned& charsetPos, unsigned& charsetLen, unsigned start = 0);
@@ -104,9 +112,14 @@ PLATFORM_EXPORT ReflectedXSSDisposition parseXSSProtectionHeader(const String& h
 PLATFORM_EXPORT XFrameOptionsDisposition parseXFrameOptionsHeader(const String&);
 PLATFORM_EXPORT CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlHeader, const AtomicString& pragmaHeader);
 PLATFORM_EXPORT void parseCommaDelimitedHeader(const String& headerValue, CommaDelimitedHeaderSet&);
+// Returns true on success, otherwise false. The Suborigin argument must be a
+// non-null return argument. |messages| is a list of messages based on any
+// parse warnings or errors. Even if parseSuboriginHeader returns true, there
+// may be Strings in |messages|.
+PLATFORM_EXPORT bool parseSuboriginHeader(const String& header, Suborigin*, WTF::Vector<String>& messages);
 
 PLATFORM_EXPORT ContentTypeOptionsDisposition parseContentTypeOptionsHeader(const String& header);
 
-}
+} // namespace blink
 
 #endif

@@ -15,6 +15,7 @@
 namespace blink {
 
 class GraphicsContext;
+class GraphicsLayer;
 class WebDisplayItemList;
 
 // The output of painting, consisting of a series of drawings in paint order,
@@ -23,17 +24,27 @@ class WebDisplayItemList;
 //
 // It represents a particular state of the world, and should be immutable
 // (const) to most of its users.
+//
+// Unless its dangerous accessors are used, it promises to be in a reasonable
+// state (e.g. chunk bounding boxes computed).
+//
+// Reminder: moved-from objects may not be in a known state. They can only
+// safely be assigned to or destroyed.
 class PLATFORM_EXPORT PaintArtifact final {
     DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(PaintArtifact);
 public:
     PaintArtifact();
+    PaintArtifact(DisplayItemList, Vector<PaintChunk>);
+    PaintArtifact(PaintArtifact&&);
     ~PaintArtifact();
+
+    PaintArtifact& operator=(PaintArtifact&&);
 
     bool isEmpty() const { return m_displayItemList.isEmpty(); }
 
-    DisplayItemList& displayItemList() { return m_displayItemList; }
-    const DisplayItemList& displayItemList() const { return m_displayItemList; }
+    DisplayItemList& getDisplayItemList() { return m_displayItemList; }
+    const DisplayItemList& getDisplayItemList() const { return m_displayItemList; }
 
     Vector<PaintChunk>& paintChunks() { return m_paintChunks; }
     const Vector<PaintChunk>& paintChunks() const { return m_paintChunks; }
@@ -54,6 +65,8 @@ public:
 private:
     DisplayItemList m_displayItemList;
     Vector<PaintChunk> m_paintChunks;
+
+    friend class PaintControllerTest;
 };
 
 } // namespace blink

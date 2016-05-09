@@ -32,16 +32,16 @@
 #define CSSGridTemplateAreasValue_h
 
 #include "core/css/CSSValue.h"
-#include "core/style/GridCoordinate.h"
+#include "core/style/GridArea.h"
 #include "wtf/text/StringHash.h"
 
 namespace blink {
 
 class CSSGridTemplateAreasValue : public CSSValue {
 public:
-    static PassRefPtrWillBeRawPtr<CSSGridTemplateAreasValue> create(const NamedGridAreaMap& gridAreaMap, size_t rowCount, size_t columnCount)
+    static CSSGridTemplateAreasValue* create(const NamedGridAreaMap& gridAreaMap, size_t rowCount, size_t columnCount)
     {
-        return adoptRefWillBeNoop(new CSSGridTemplateAreasValue(gridAreaMap, rowCount, columnCount));
+        return new CSSGridTemplateAreasValue(gridAreaMap, rowCount, columnCount);
     }
     ~CSSGridTemplateAreasValue() { }
 

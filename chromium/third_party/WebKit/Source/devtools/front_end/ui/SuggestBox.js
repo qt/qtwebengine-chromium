@@ -67,8 +67,14 @@ WebInspector.SuggestBox = function(suggestBoxDelegate, maxItemsHeight)
     this._detailsPopup = this._container.createChild("div", "suggest-box details-popup monospace");
     this._detailsPopup.classList.add("hidden");
     this._asyncDetailsCallback = null;
-    this._asyncDetailsPromises = /** @type {!Map<number, !Promise>} */ ({});
+    /** @type {!Map<number, !Promise<{detail: string, description: string}>>} */
+    this._asyncDetailsPromises = new Map();
 }
+
+/**
+ * @typedef Array.<{title: string, className: (string|undefined)}>
+ */
+WebInspector.SuggestBox.Suggestions;
 
 WebInspector.SuggestBox.prototype = {
     /**
@@ -239,11 +245,12 @@ WebInspector.SuggestBox.prototype = {
     /**
      * @param {string} prefix
      * @param {string} text
+     * @param {string|undefined} className
      * @param {number} index
      */
-    _createItemElement: function(prefix, text, index)
+    _createItemElement: function(prefix, text, className, index)
     {
-        var element = createElementWithClass("div", "suggest-box-content-item source-code");
+        var element = createElementWithClass("div", "suggest-box-content-item source-code " + (className || ""));
         element.tabIndex = -1;
         if (prefix && prefix.length && !text.indexOf(prefix)) {
             element.createChild("span", "prefix").textContent = prefix;
@@ -258,40 +265,40 @@ WebInspector.SuggestBox.prototype = {
     },
 
     /**
-     * @param {!Array.<string>} items
+     * @param {!WebInspector.SuggestBox.Suggestions} items
      * @param {string} userEnteredText
      * @param {function(number): !Promise<{detail:string, description:string}>=} asyncDetails
      */
     _updateItems: function(items, userEnteredText, asyncDetails)
     {
         this._length = items.length;
-        this._asyncDetailsPromises = {};
+        this._asyncDetailsPromises.clear();
         this._asyncDetailsCallback = asyncDetails;
         this._element.removeChildren();
         delete this._selectedElement;
 
         for (var i = 0; i < items.length; ++i) {
             var item = items[i];
-            var currentItemElement = this._createItemElement(userEnteredText, item, i);
+            var currentItemElement = this._createItemElement(userEnteredText, item.title, item.className, i);
             this._element.appendChild(currentItemElement);
         }
     },
 
     /**
      * @param {number} index
-     * @return {!Promise<({detail: string, description: string}|undefined)>}
+     * @return {!Promise<?{detail: string, description: string}>}
      */
     _asyncDetails: function(index)
     {
         if (!this._asyncDetailsCallback)
-            return Promise.resolve();
-        if (!this._asyncDetailsPromises[index])
-            this._asyncDetailsPromises[index] = this._asyncDetailsCallback(index);
-        return this._asyncDetailsPromises[index];
+            return Promise.resolve(/** @type {?{description: string, detail: string}} */(null));
+        if (!this._asyncDetailsPromises.has(index))
+            this._asyncDetailsPromises.set(index, this._asyncDetailsCallback(index));
+        return /** @type {!Promise<?{detail: string, description: string}>} */(this._asyncDetailsPromises.get(index));
     },
 
     /**
-     * @param {{detail: string, description: string}=} details
+     * @param {?{detail: string, description: string}} details
      */
     _showDetailsPopup: function(details)
     {
@@ -326,7 +333,7 @@ WebInspector.SuggestBox.prototype = {
             this._selectedElement.scrollIntoViewIfNeeded(false);
 
         /**
-         * @param {{detail: string, description: string}=} details
+         * @param {?{detail: string, description: string}} details
          * @this {WebInspector.SuggestBox}
          */
         function showDetails(details)
@@ -337,7 +344,7 @@ WebInspector.SuggestBox.prototype = {
     },
 
     /**
-     * @param {!Array.<string>} completions
+     * @param {!WebInspector.SuggestBox.Suggestions} completions
      * @param {boolean} canShowForSingleItem
      * @param {string} userEnteredText
      */
@@ -350,7 +357,7 @@ WebInspector.SuggestBox.prototype = {
             return true;
 
         // Do not show a single suggestion if it is the same as user-entered prefix, even if allowed to show single-item suggest boxes.
-        return canShowForSingleItem && completions[0] !== userEnteredText;
+        return canShowForSingleItem && completions[0].title !== userEnteredText;
     },
 
     _ensureRowCountPerViewport: function()
@@ -365,7 +372,7 @@ WebInspector.SuggestBox.prototype = {
 
     /**
      * @param {!AnchorBox} anchorBox
-     * @param {!Array.<string>} completions
+     * @param {!WebInspector.SuggestBox.Suggestions} completions
      * @param {number} selectedIndex
      * @param {boolean} canShowForSingleItem
      * @param {string} userEnteredText

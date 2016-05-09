@@ -50,7 +50,7 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
   VideoLayerImpl(
       LayerTreeImpl* tree_impl,
       int id,
-      const scoped_refptr<VideoFrameProviderClientImpl>& provider_client_impl,
+      scoped_refptr<VideoFrameProviderClientImpl> provider_client_impl,
       media::VideoRotation video_rotation);
 
   const char* LayerTypeAsString() const override;
@@ -63,6 +63,9 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
 
   scoped_ptr<VideoResourceUpdater> updater_;
   VideoFrameExternalResources::ResourceType frame_resource_type_;
+  float frame_resource_offset_;
+  float frame_resource_multiplier_;
+
   struct FrameResource {
     FrameResource(ResourceId id,
                   gfx::Size size_in_pixels,

@@ -27,12 +27,12 @@ void ScreenOrientationController::provideTo(LocalFrame& frame, WebScreenOrientat
     ASSERT(RuntimeEnabledFeatures::screenOrientationEnabled());
 
     ScreenOrientationController* controller = new ScreenOrientationController(frame, client);
-    WillBeHeapSupplement<LocalFrame>::provideTo(frame, supplementName(), adoptPtrWillBeNoop(controller));
+    Supplement<LocalFrame>::provideTo(frame, supplementName(), controller);
 }
 
 ScreenOrientationController* ScreenOrientationController::from(LocalFrame& frame)
 {
-    return static_cast<ScreenOrientationController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName()));
+    return static_cast<ScreenOrientationController*>(Supplement<LocalFrame>::from(frame, supplementName()));
 }
 
 ScreenOrientationController::ScreenOrientationController(LocalFrame& frame, WebScreenOrientationClient* client)
@@ -40,9 +40,6 @@ ScreenOrientationController::ScreenOrientationController(LocalFrame& frame, WebS
     , PlatformEventController(frame.page())
     , m_client(client)
     , m_dispatchEventTimer(this, &ScreenOrientationController::dispatchEventTimerFired)
-    , m_override(false)
-    , m_overrideType(WebScreenOrientationUndefined)
-    , m_overrideAngle(0)
 {
 }
 
@@ -76,16 +73,6 @@ WebScreenOrientationType ScreenOrientationController::computeOrientation(const I
     }
 }
 
-unsigned short ScreenOrientationController::effectiveAngle(ChromeClient& chromeClient)
-{
-    return m_override ? m_overrideAngle : chromeClient.screenInfo().orientationAngle;
-}
-
-WebScreenOrientationType ScreenOrientationController::effectiveType(ChromeClient& chromeClient)
-{
-    return m_override ? m_overrideType : chromeClient.screenInfo().orientationType;
-}
-
 void ScreenOrientationController::updateOrientation()
 {
     ASSERT(m_orientation);
@@ -93,20 +80,21 @@ void ScreenOrientationController::updateOrientation()
     ASSERT(frame()->host());
 
     ChromeClient& chromeClient = frame()->host()->chromeClient();
-    WebScreenOrientationType orientationType = effectiveType(chromeClient);
+    WebScreenInfo screenInfo = chromeClient.screenInfo();
+    WebScreenOrientationType orientationType = screenInfo.orientationType;
     if (orientationType == WebScreenOrientationUndefined) {
         // The embedder could not provide us with an orientation, deduce it ourselves.
-        orientationType = computeOrientation(chromeClient.screenInfo().rect, effectiveAngle(chromeClient));
+        orientationType = computeOrientation(chromeClient.screenInfo().rect, screenInfo.orientationAngle);
     }
     ASSERT(orientationType != WebScreenOrientationUndefined);
 
     m_orientation->setType(orientationType);
-    m_orientation->setAngle(effectiveAngle(chromeClient));
+    m_orientation->setAngle(screenInfo.orientationAngle);
 }
 
 bool ScreenOrientationController::isActiveAndVisible() const
 {
-    return m_orientation && frame() && page() && page()->visibilityState() == PageVisibilityStateVisible;
+    return m_orientation && frame() && page() && page()->isPageVisible();
 }
 
 void ScreenOrientationController::pageVisibilityChanged()
@@ -118,7 +106,7 @@ void ScreenOrientationController::pageVisibilityChanged()
 
     // The orientation type and angle are tied in a way that if the angle has
     // changed, the type must have changed.
-    unsigned short currentAngle = effectiveAngle(frame()->host()->chromeClient());
+    unsigned short currentAngle = frame()->host()->chromeClient().screenInfo().orientationAngle;
 
     // FIXME: sendOrientationChangeEvent() currently send an event all the
     // children of the frame, so it should only be called on the frame on
@@ -141,7 +129,7 @@ void ScreenOrientationController::notifyOrientationChanged()
     // Keep track of the frames that need to be notified before notifying the
     // current frame as it will prevent side effects from the change event
     // handlers.
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> childFrames;
+    HeapVector<Member<LocalFrame>> childFrames;
     for (Frame* child = frame()->tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
             childFrames.append(toLocalFrame(child));
@@ -182,20 +170,6 @@ void ScreenOrientationController::unlock()
     m_client->unlockOrientation();
 }
 
-void ScreenOrientationController::setOverride(WebScreenOrientationType type, unsigned short angle)
-{
-    m_override = true;
-    m_overrideType = type;
-    m_overrideAngle = angle;
-    notifyOrientationChanged();
-}
-
-void ScreenOrientationController::clearOverride()
-{
-    m_override = false;
-    notifyOrientationChanged();
-}
-
 void ScreenOrientationController::dispatchEventTimerFired(Timer<ScreenOrientationController>*)
 {
     if (!m_orientation)
@@ -230,7 +204,7 @@ void ScreenOrientationController::willDetachFrameHost()
 
 void ScreenOrientationController::notifyDispatcher()
 {
-    if (m_orientation && page()->visibilityState() == PageVisibilityStateVisible)
+    if (m_orientation && page()->isPageVisible())
         startUpdating();
     else
         stopUpdating();
@@ -240,7 +214,7 @@ DEFINE_TRACE(ScreenOrientationController)
 {
     visitor->trace(m_orientation);
     LocalFrameLifecycleObserver::trace(visitor);
-    WillBeHeapSupplement<LocalFrame>::trace(visitor);
+    Supplement<LocalFrame>::trace(visitor);
     PlatformEventController::trace(visitor);
 }
 

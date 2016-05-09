@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
@@ -156,9 +158,21 @@ IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBrowserTest,
     EXPECT_TRUE(observer.last_navigation_succeeded());
   }
 
-  // The RenderFrameHost should not have changed.
-  EXPECT_EQ(initial_rfh, static_cast<WebContentsImpl*>(shell()->web_contents())
-                             ->GetFrameTree()->root()->current_frame_host());
+  // The RenderFrameHost should not have changed unless site-per-process is
+  // enabled.
+  if (SiteIsolationPolicy::AreCrossProcessFramesPossible()) {
+    EXPECT_NE(initial_rfh,
+              static_cast<WebContentsImpl*>(shell()->web_contents())
+                  ->GetFrameTree()
+                  ->root()
+                  ->current_frame_host());
+  } else {
+    EXPECT_EQ(initial_rfh,
+              static_cast<WebContentsImpl*>(shell()->web_contents())
+                  ->GetFrameTree()
+                  ->root()
+                  ->current_frame_host());
+  }
 }
 
 // Ensure that browser side navigation handles navigation failures.
@@ -186,6 +200,32 @@ IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBrowserTest, FailedNavigation) {
         shell()->web_contents()->GetController().GetLastCommittedEntry();
     EXPECT_EQ(PAGE_TYPE_ERROR, entry->GetPageType());
   }
+}
+
+// Ensure that browser side navigation handles POST navigations correctly.
+IN_PROC_BROWSER_TEST_F(BrowserSideNavigationBrowserTest, POSTNavigation) {
+  GURL url(embedded_test_server()->GetURL("/session_history/form.html"));
+  GURL post_url = embedded_test_server()->GetURL("/echotitle");
+
+  // Navigate to a page with a form.
+  TestNavigationObserver observer(shell()->web_contents());
+  NavigateToURL(shell(), url);
+  EXPECT_EQ(url, observer.last_navigation_url());
+  EXPECT_TRUE(observer.last_navigation_succeeded());
+
+  // Submit the form.
+  GURL submit_url("javascript:submitForm('isubmit')");
+  NavigateToURL(shell(), submit_url);
+
+  // Check that a proper POST navigation was done.
+  EXPECT_EQ("text=&select=a",
+            base::UTF16ToASCII(shell()->web_contents()->GetTitle()));
+  EXPECT_EQ(post_url, shell()->web_contents()->GetLastCommittedURL());
+  EXPECT_TRUE(shell()
+                  ->web_contents()
+                  ->GetController()
+                  .GetActiveEntry()
+                  ->GetHasPostData());
 }
 
 }  // namespace content

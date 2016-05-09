@@ -147,6 +147,9 @@ PepperFileIOHost::UIThreadStuff::UIThreadStuff() {
   resolved_render_process_id = base::kNullProcessId;
 }
 
+PepperFileIOHost::UIThreadStuff::UIThreadStuff(const UIThreadStuff& other) =
+    default;
+
 PepperFileIOHost::UIThreadStuff::~UIThreadStuff() {}
 
 int32_t PepperFileIOHost::OnHostMsgOpen(
@@ -195,7 +198,6 @@ int32_t PepperFileIOHost::OnHostMsgOpen(
         case storage::kFileSystemTypeDeviceMedia:
         case storage::kFileSystemTypePicasa:
         case storage::kFileSystemTypeItunes:
-        case storage::kFileSystemTypeIphoto:
           break;
         default:
           return PP_ERROR_NOACCESS;

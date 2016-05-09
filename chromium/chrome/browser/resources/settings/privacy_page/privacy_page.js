@@ -14,12 +14,13 @@
  *      </settings-privacy-page>
  *      ... other pages ...
  *    </iron-animated-pages>
- *
- * @group Chrome Settings Elements
- * @element settings-privacy-page
  */
 Polymer({
   is: 'settings-privacy-page',
+
+  behaviors: [
+    I18nBehavior,
+  ],
 
   properties: {
     /**
@@ -37,14 +38,6 @@ Polymer({
       type: Object,
       notify: true,
     },
-
-    /**
-     * The origin selected by the user.
-     */
-    originSelected: {
-      type: String,
-      observer: 'onSelectedOriginChanged_',
-    }
   },
 
   ready: function() {
@@ -53,7 +46,13 @@ Polymer({
 
   /** @private */
   onManageCertificatesTap_: function() {
+<if expr="use_nss_certs">
     this.$.pages.setSubpageChain(['manage-certificates']);
+</if>
+<if expr="is_win or is_macosx">
+    settings.PrivacyPageBrowserProxyImpl.getInstance().
+      showManageSSLCertificates();
+</if>
   },
 
   /** @private */
@@ -63,11 +62,6 @@ Polymer({
 
   /** @private */
   onClearBrowsingDataTap_: function() {
-    this.$.pages.setSubpageChain(['clear-browsing-data']);
-  },
-
-  onSelectedOriginChanged_: function() {
-    this.$.pages.setSubpageChain(
-        ['site-settings', 'site-settings-category', 'site-details']);
+    this.$.pages.querySelector('settings-clear-browsing-data-dialog').open();
   },
 });

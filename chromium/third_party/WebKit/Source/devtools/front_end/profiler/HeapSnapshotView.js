@@ -149,7 +149,7 @@ WebInspector.HeapSnapshotView = function(dataDisplayDelegate, profile)
     this._constructorsDataGrid.setNameFilter(this._classNameFilter);
     this._diffDataGrid.setNameFilter(this._classNameFilter);
 
-    this._selectedSizeText = new WebInspector.ToolbarLabel();
+    this._selectedSizeText = new WebInspector.ToolbarText();
 
     this._popoverHelper = new WebInspector.ObjectPopoverHelper(this.element, this._getHoverAnchor.bind(this), this._resolveObjectForPopover.bind(this), undefined, true);
 
@@ -1610,7 +1610,7 @@ WebInspector.HeapProfileHeader.prototype = {
                 fileOutputStream.close();
             } else if (this._tempFile) {
                 var delegate = new WebInspector.SaveSnapshotOutputStreamDelegate(this);
-                this._tempFile.writeToOutputSteam(fileOutputStream, delegate);
+                this._tempFile.copyToOutputStream(fileOutputStream, delegate);
             } else {
                 this._onTempFileReady = onOpen.bind(this, accepted);
                 this._updateSaveProgress(0, 1);

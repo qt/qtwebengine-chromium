@@ -45,15 +45,15 @@
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<ScheduledAction> ScheduledAction::create(ScriptState* scriptState, const ScriptValue& handler, const Vector<ScriptValue>& arguments)
+RawPtr<ScheduledAction> ScheduledAction::create(ScriptState* scriptState, const ScriptValue& handler, const Vector<ScriptValue>& arguments)
 {
     ASSERT(handler.isFunction());
-    return adoptPtrWillBeNoop(new ScheduledAction(scriptState, handler, arguments));
+    return new ScheduledAction(scriptState, handler, arguments);
 }
 
-PassOwnPtrWillBeRawPtr<ScheduledAction> ScheduledAction::create(ScriptState* scriptState, const String& handler)
+RawPtr<ScheduledAction> ScheduledAction::create(ScriptState* scriptState, const String& handler)
 {
-    return adoptPtrWillBeNoop(new ScheduledAction(scriptState, handler));
+    return new ScheduledAction(scriptState, handler);
 }
 
 DEFINE_TRACE(ScheduledAction)
@@ -135,7 +135,7 @@ void ScheduledAction::execute(WorkerGlobalScope* worker)
         createLocalHandlesForArgs(&info);
         V8ScriptRunner::callFunction(m_function.newLocal(m_scriptState->isolate()), worker, m_scriptState->context()->Global(), info.size(), info.data(), m_scriptState->isolate());
     } else {
-        worker->script()->evaluate(m_code);
+        worker->scriptController()->evaluate(m_code);
     }
 }
 

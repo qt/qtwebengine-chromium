@@ -30,6 +30,7 @@
 
 #include "core/dom/Range.h"
 #include "core/layout/LayoutText.h"
+#include "core/layout/api/LineLayoutAPIShim.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/LayoutUnit.h"
 
@@ -127,8 +128,8 @@ AXObject* AXInlineTextBox::computeParent() const
     if (!m_inlineTextBox || !m_axObjectCache)
         return 0;
 
-    LineLayoutText lineLayoutText = m_inlineTextBox->lineLayoutItem();
-    return m_axObjectCache->getOrCreate(lineLayoutText);
+    LineLayoutText lineLayoutText = m_inlineTextBox->getLineLayoutItem();
+    return m_axObjectCache->getOrCreate(LineLayoutAPIShim::layoutObjectFrom(lineLayoutText));
 }
 
 // In addition to LTR and RTL direction, edit fields also support
@@ -138,7 +139,7 @@ AccessibilityTextDirection AXInlineTextBox::textDirection() const
     if (!m_inlineTextBox)
         return AXObject::textDirection();
 
-    switch (m_inlineTextBox->direction()) {
+    switch (m_inlineTextBox->getDirection()) {
     case AbstractInlineTextBox::LeftToRight:
         return AccessibilityTextDirectionLTR;
     case AbstractInlineTextBox::RightToLeft:

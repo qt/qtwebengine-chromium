@@ -50,6 +50,7 @@ WorkerException = message_pool.WorkerException
 
 class TestRunInterruptedException(Exception):
     """Raised when a test run should be stopped immediately."""
+
     def __init__(self, reason):
         Exception.__init__(self)
         self.reason = reason
@@ -60,6 +61,7 @@ class TestRunInterruptedException(Exception):
 
 
 class LayoutTestRunner(object):
+
     def __init__(self, options, port, printer, results_directory, test_is_slow_fn):
         self._options = options
         self._port = port
@@ -97,8 +99,8 @@ class LayoutTestRunner(object):
 
         self._printer.write_update('Sharding tests ...')
         locked_shards, unlocked_shards = self._sharder.shard_tests(test_inputs,
-            int(self._options.child_processes), self._options.fully_parallel,
-            self._options.run_singly or (self._options.batch_size == 1))
+                                                                   int(self._options.child_processes), self._options.fully_parallel,
+                                                                   self._options.run_singly or (self._options.batch_size == 1))
 
         # We don't have a good way to coordinate the workers so that they don't
         # try to run the shards that need a lock. The easiest solution is to
@@ -178,7 +180,8 @@ class LayoutTestRunner(object):
             "Exiting early after %d crashes and %d timeouts." % (run_results.unexpected_crashes, run_results.unexpected_timeouts))
 
     def _update_summary_with_result(self, run_results, result):
-        expected = self._expectations.matches_an_expected_result(result.test_name, result.type, self._options.pixel_tests or result.reftest_type, self._options.enable_sanitizer)
+        expected = self._expectations.matches_an_expected_result(
+            result.test_name, result.type, self._options.pixel_tests or result.reftest_type, self._options.enable_sanitizer)
         exp_str = self._expectations.get_expectations_string(result.test_name)
         got_str = self._expectations.expectation_to_string(result.type)
 
@@ -196,7 +199,7 @@ class LayoutTestRunner(object):
             return method(source, *args)
         raise AssertionError('unknown message %s received from %s, args=%s' % (name, source, repr(args)))
 
-    def _handle_started_test(self, worker_name, test_input, test_timeout_sec):
+    def _handle_started_test(self, worker_name, test_input):
         self._printer.print_started_test(test_input.test_name)
 
     def _handle_finished_test_list(self, worker_name, list_name):
@@ -212,6 +215,7 @@ class LayoutTestRunner(object):
 
 
 class Worker(object):
+
     def __init__(self, caller, results_directory, options):
         self._caller = caller
         self._worker_number = caller.worker_number
@@ -279,12 +283,11 @@ class Worker(object):
             stop_when_done = True
 
         self._update_test_input(test_input)
-        test_timeout_sec = self._timeout(test_input)
         start = time.time()
         device_failed = False
 
         _log.debug("%s %s started" % (self._name, test_input.test_name))
-        self._caller.post('started_test', test_input, test_timeout_sec)
+        self._caller.post('started_test', test_input)
         result = single_test_runner.run_single_test(
             self._port, self._options, self._results_directory, self._name,
             self._primary_driver, self._secondary_driver, test_input,
@@ -303,18 +306,6 @@ class Worker(object):
         _log.debug("%s cleaning up" % self._name)
         self._kill_driver(self._primary_driver, "primary")
         self._kill_driver(self._secondary_driver, "secondary")
-
-    def _timeout(self, test_input):
-        """Compute the appropriate timeout value for a test."""
-        # The driver watchdog uses 2.5x the timeout; we want to be
-        # larger than that. We also add a little more padding if we're
-        # running tests in a separate thread.
-        #
-        # Note that we need to convert the test timeout from a
-        # string value in milliseconds to a float for Python.
-
-        # FIXME: Can we just return the test_input.timeout now?
-        driver_timeout_sec = 3.0 * float(test_input.timeout) / 1000.0
 
     def _kill_driver(self, driver, label):
         # Be careful about how and when we kill the driver; if driver.stop()
@@ -364,6 +355,7 @@ class TestShard(object):
 
 
 class Sharder(object):
+
     def __init__(self, test_split_fn, max_locked_shards):
         self._split = test_split_fn
         self._max_locked_shards = max_locked_shards
@@ -435,7 +427,7 @@ class Sharder(object):
         # The locked shards still need to be limited to self._max_locked_shards in order to not
         # overload the http server for the http tests.
         return (self._resize_shards(locked_virtual_shards + locked_shards, self._max_locked_shards, 'locked_shard'),
-            unlocked_virtual_shards + unlocked_shards)
+                unlocked_virtual_shards + unlocked_shards)
 
     def _shard_by_directory(self, test_inputs):
         """Returns two lists of shards, each shard containing all the files in a directory.

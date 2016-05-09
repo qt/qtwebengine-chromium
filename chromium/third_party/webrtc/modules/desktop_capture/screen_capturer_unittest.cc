@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "webrtc/modules/desktop_capture/screen_capturer.h"
 
 #include "testing/gmock/include/gmock/gmock.h"
@@ -28,15 +30,13 @@ namespace webrtc {
 
 class ScreenCapturerTest : public testing::Test {
  public:
-  SharedMemory* CreateSharedMemory(size_t size);
-
   void SetUp() override {
     capturer_.reset(
         ScreenCapturer::Create(DesktopCaptureOptions::CreateDefault()));
   }
 
  protected:
-  rtc::scoped_ptr<ScreenCapturer> capturer_;
+  std::unique_ptr<ScreenCapturer> capturer_;
   MockScreenCapturerCallback callback_;
 };
 
@@ -54,9 +54,19 @@ class FakeSharedMemory : public SharedMemory {
   RTC_DISALLOW_COPY_AND_ASSIGN(FakeSharedMemory);
 };
 
-SharedMemory* ScreenCapturerTest::CreateSharedMemory(size_t size) {
-  return new FakeSharedMemory(new char[size], size);
-}
+class FakeSharedMemoryFactory : public SharedMemoryFactory {
+ public:
+  FakeSharedMemoryFactory() {}
+  ~FakeSharedMemoryFactory() override {}
+
+  rtc::scoped_ptr<SharedMemory> CreateSharedMemory(size_t size) override {
+    return rtc::scoped_ptr<SharedMemory>(
+        new FakeSharedMemory(new char[size], size));
+  }
+
+ private:
+  RTC_DISALLOW_COPY_AND_ASSIGN(FakeSharedMemoryFactory);
+};
 
 TEST_F(ScreenCapturerTest, GetScreenListAndSelectScreen) {
   webrtc::ScreenCapturer::ScreenList screens;
@@ -76,10 +86,6 @@ TEST_F(ScreenCapturerTest, Capture) {
   DesktopFrame* frame = NULL;
   EXPECT_CALL(callback_, OnCaptureCompleted(_))
       .WillOnce(SaveArg<0>(&frame));
-
-  EXPECT_CALL(callback_, CreateSharedMemory(_))
-      .Times(AnyNumber())
-      .WillRepeatedly(Return(static_cast<SharedMemory*>(NULL)));
 
   capturer_->Start(&callback_);
   capturer_->Capture(DesktopRegion());
@@ -109,11 +115,9 @@ TEST_F(ScreenCapturerTest, UseSharedBuffers) {
   EXPECT_CALL(callback_, OnCaptureCompleted(_))
       .WillOnce(SaveArg<0>(&frame));
 
-  EXPECT_CALL(callback_, CreateSharedMemory(_))
-      .Times(AnyNumber())
-      .WillRepeatedly(Invoke(this, &ScreenCapturerTest::CreateSharedMemory));
-
   capturer_->Start(&callback_);
+  capturer_->SetSharedMemoryFactory(
+      rtc::scoped_ptr<SharedMemoryFactory>(new FakeSharedMemoryFactory()));
   capturer_->Capture(DesktopRegion());
 
   ASSERT_TRUE(frame);

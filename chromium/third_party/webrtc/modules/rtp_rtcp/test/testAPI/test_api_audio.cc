@@ -86,7 +86,6 @@ class RtpRtcpAudioTest : public ::testing::Test {
   ~RtpRtcpAudioTest() {}
 
   void SetUp() override {
-    audioFeedback = new NullRtpAudioFeedback();
     data_receiver1 = new VerifyingAudioReceiver();
     data_receiver2 = new VerifyingAudioReceiver();
     rtp_callback = new RTPCallback();
@@ -106,21 +105,17 @@ class RtpRtcpAudioTest : public ::testing::Test {
     configuration.clock = &fake_clock;
     configuration.receive_statistics = receive_statistics1_.get();
     configuration.outgoing_transport = transport1;
-    configuration.audio_messages = audioFeedback;
 
     module1 = RtpRtcp::CreateRtpRtcp(configuration);
     rtp_receiver1_.reset(RtpReceiver::CreateAudioReceiver(
-        &fake_clock, audioFeedback, data_receiver1, NULL,
-        rtp_payload_registry1_.get()));
+        &fake_clock, data_receiver1, NULL, rtp_payload_registry1_.get()));
 
     configuration.receive_statistics = receive_statistics2_.get();
     configuration.outgoing_transport = transport2;
-    configuration.audio_messages = audioFeedback;
 
     module2 = RtpRtcp::CreateRtpRtcp(configuration);
     rtp_receiver2_.reset(RtpReceiver::CreateAudioReceiver(
-        &fake_clock, audioFeedback, data_receiver2, NULL,
-        rtp_payload_registry2_.get()));
+        &fake_clock, data_receiver2, NULL, rtp_payload_registry2_.get()));
 
     transport1->SetSendModule(module2, rtp_payload_registry2_.get(),
                               rtp_receiver2_.get(), receive_statistics2_.get());
@@ -133,7 +128,6 @@ class RtpRtcpAudioTest : public ::testing::Test {
     delete module2;
     delete transport1;
     delete transport2;
-    delete audioFeedback;
     delete data_receiver1;
     delete data_receiver2;
     delete rtp_callback;
@@ -151,7 +145,6 @@ class RtpRtcpAudioTest : public ::testing::Test {
   VerifyingAudioReceiver* data_receiver2;
   LoopBackTransport* transport1;
   LoopBackTransport* transport2;
-  NullRtpAudioFeedback* audioFeedback;
   RTPCallback* rtp_callback;
   uint32_t test_ssrc;
   uint32_t test_timestamp;
@@ -322,7 +315,7 @@ TEST_F(RtpRtcpAudioTest, DTMF) {
         (voice_codec.rate < 0) ? 0 : voice_codec.rate));
 
   // Start DTMF test.
-  uint32_t timeStamp = 160;
+  int timeStamp = 160;
 
   // Send a DTMF tone using RFC 2833 (4733).
   for (int i = 0; i < 16; i++) {

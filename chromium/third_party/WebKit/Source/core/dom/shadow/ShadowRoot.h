@@ -53,15 +53,15 @@ enum class ShadowRootType {
 
 class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
+    USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
     friend class WTF::DoublyLinkedListNode<ShadowRoot>;
 public:
     // FIXME: Current implementation does not work well if a shadow root is dynamically created.
     // So multiple shadow subtrees in several elements are prohibited.
     // See https://github.com/w3c/webcomponents/issues/102 and http://crbug.com/234020
-    static PassRefPtrWillBeRawPtr<ShadowRoot> create(Document& document, ShadowRootType type)
+    static RawPtr<ShadowRoot> create(Document& document, ShadowRootType type)
     {
-        return adoptRefWillBeNoop(new ShadowRoot(document, type));
+        return new ShadowRoot(document, type);
     }
 
     void recalcStyle(StyleRecalcChange);
@@ -78,6 +78,8 @@ public:
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
     ShadowRoot* olderShadowRootForBindings() const;
+
+    String mode() const { return (type() == ShadowRootType::V0 || type() == ShadowRootType::Open) ? "open" : "closed"; };
 
     bool isOpenOrV0() const { return type() == ShadowRootType::V0 || type() == ShadowRootType::Open; }
 
@@ -106,13 +108,17 @@ public:
     unsigned numberOfStyles() const { return m_numberOfStyles; }
 
     HTMLShadowElement* shadowInsertionPointOfYoungerShadowRoot() const;
-    void setShadowInsertionPointOfYoungerShadowRoot(PassRefPtrWillBeRawPtr<HTMLShadowElement>);
+    void setShadowInsertionPointOfYoungerShadowRoot(RawPtr<HTMLShadowElement>);
 
     void didAddInsertionPoint(InsertionPoint*);
     void didRemoveInsertionPoint(InsertionPoint*);
-    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& descendantInsertionPoints();
+    const HeapVector<Member<InsertionPoint>>& descendantInsertionPoints();
 
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
+
+    void didAddSlot();
+    void didRemoveSlot();
+    const HeapVector<Member<HTMLSlotElement>>& descendantSlots();
 
     // Make protected methods from base class public here.
     using TreeScope::setDocument;
@@ -126,7 +132,7 @@ public:
     String innerHTML() const;
     void setInnerHTML(const String&, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool, ExceptionState&);
+    RawPtr<Node> cloneNode(bool, ExceptionState&);
 
     StyleSheetList* styleSheets();
 
@@ -152,19 +158,23 @@ private:
     void invalidateDescendantInsertionPoints();
 
     // ShadowRoots should never be cloned.
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool) override { return nullptr; }
+    RawPtr<Node> cloneNode(bool) override { return nullptr; }
 
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
     bool isOrphan() const { return !host(); }
 
-    RawPtrWillBeMember<ShadowRoot> m_prev;
-    RawPtrWillBeMember<ShadowRoot> m_next;
-    OwnPtrWillBeMember<ShadowRootRareData> m_shadowRootRareData;
-    unsigned m_numberOfStyles : 27;
+    void invalidateDescendantSlots();
+    unsigned descendantSlotCount() const;
+
+    Member<ShadowRoot> m_prev;
+    Member<ShadowRoot> m_next;
+    Member<ShadowRootRareData> m_shadowRootRareData;
+    unsigned m_numberOfStyles : 26;
     unsigned m_type : 2;
     unsigned m_registeredWithParentShadowRoot : 1;
     unsigned m_descendantInsertionPointsIsValid : 1;
     unsigned m_delegatesFocus : 1;
+    unsigned m_descendantSlotsIsValid : 1;
 };
 
 inline Element* ShadowRoot::activeElement() const

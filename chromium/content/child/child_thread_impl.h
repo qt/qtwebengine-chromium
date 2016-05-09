@@ -8,10 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/power_monitor/power_monitor.h"
@@ -20,18 +20,16 @@
 #include "build/build_config.h"
 #include "content/child/mojo/mojo_application.h"
 #include "content/common/content_export.h"
-#include "content/common/message_router.h"
-#include "content/common/mojo/channel_init.h"
 #include "content/public/child/child_thread.h"
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
 #include "ipc/ipc_platform_file.h"
+#include "ipc/message_router.h"
 
 namespace base {
 class MessageLoop;
 }  // namespace base
 
 namespace IPC {
-class AttachmentBrokerUnprivileged;
 class MessageFilter;
 class ScopedIPCSupport;
 class SyncChannel;
@@ -80,6 +78,7 @@ class CONTENT_EXPORT ChildThreadImpl
   // should be joined in Shutdown().
   ~ChildThreadImpl() override;
   virtual void Shutdown();
+  void ShutdownDiscardableSharedMemoryManager();
 
   // IPC::Sender implementation:
   bool Send(IPC::Message* msg) override;
@@ -89,20 +88,22 @@ class CONTENT_EXPORT ChildThreadImpl
   void PreCacheFont(const LOGFONT& log_font) override;
   void ReleaseCachedFonts() override;
 #endif
+  void RecordAction(const base::UserMetricsAction& action) override;
+  void RecordComputedAction(const std::string& action) override;
 
   IPC::SyncChannel* channel() { return channel_.get(); }
 
-  MessageRouter* GetRouter();
+  IPC::MessageRouter* GetRouter();
 
   // Allocates a block of shared memory of the given size. Returns NULL on
   // failure.
   // Note: On posix, this requires a sync IPC to the browser process,
   // but on windows the child process directly allocates the block.
-  scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t buf_size);
+  std::unique_ptr<base::SharedMemory> AllocateSharedMemory(size_t buf_size);
 
   // A static variant that can be called on background threads provided
   // the |sender| passed in is safe to use on background threads.
-  static scoped_ptr<base::SharedMemory> AllocateSharedMemory(
+  static std::unique_ptr<base::SharedMemory> AllocateSharedMemory(
       size_t buf_size,
       IPC::Sender* sender);
 
@@ -203,7 +204,7 @@ class CONTENT_EXPORT ChildThreadImpl
   scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner();
 
  private:
-  class ChildThreadMessageRouter : public MessageRouter {
+  class ChildThreadMessageRouter : public IPC::MessageRouter {
    public:
     // |sender| must outlive this object.
     explicit ChildThreadMessageRouter(IPC::Sender* sender);
@@ -220,27 +221,25 @@ class CONTENT_EXPORT ChildThreadImpl
 
   // We create the channel first without connecting it so we can add filters
   // prior to any messages being received, then connect it afterwards.
-  void ConnectChannel(bool use_mojo_channel);
+  void ConnectChannel(bool use_mojo_channel,
+                      mojo::ScopedMessagePipeHandle handle);
 
   // IPC message handlers.
   void OnShutdown();
   void OnSetProfilerStatus(tracked_objects::ThreadData::Status status);
   void OnGetChildProfilerData(int sequence_number, int current_profiling_phase);
   void OnProfilingPhaseCompleted(int profiling_phase);
-  void OnBindExternalMojoShellHandle(const IPC::PlatformFileForTransit& file);
-  void OnSetMojoParentPipeHandle(const IPC::PlatformFileForTransit& file);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   void OnSetIPCLoggingEnabled(bool enable);
 #endif
 
   void EnsureConnected();
 
-  scoped_ptr<IPC::ScopedIPCSupport> mojo_ipc_support_;
-  scoped_ptr<MojoApplication> mojo_application_;
+  std::unique_ptr<IPC::ScopedIPCSupport> mojo_ipc_support_;
+  std::unique_ptr<MojoApplication> mojo_application_;
 
   std::string channel_name_;
-  scoped_ptr<IPC::AttachmentBrokerUnprivileged> attachment_broker_;
-  scoped_ptr<IPC::SyncChannel> channel_;
+  std::unique_ptr<IPC::SyncChannel> channel_;
 
   // Allows threads other than the main thread to send sync messages.
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
@@ -252,9 +251,9 @@ class CONTENT_EXPORT ChildThreadImpl
   ChildThreadMessageRouter router_;
 
   // Handles resource loads for this process.
-  scoped_ptr<ResourceDispatcher> resource_dispatcher_;
+  std::unique_ptr<ResourceDispatcher> resource_dispatcher_;
 
-  scoped_ptr<WebSocketDispatcher> websocket_dispatcher_;
+  std::unique_ptr<WebSocketDispatcher> websocket_dispatcher_;
 
   // The OnChannelError() callback was invoked - the channel is dead, don't
   // attempt to communicate.
@@ -262,9 +261,9 @@ class CONTENT_EXPORT ChildThreadImpl
 
   base::MessageLoop* message_loop_;
 
-  scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
+  std::unique_ptr<FileSystemDispatcher> file_system_dispatcher_;
 
-  scoped_ptr<QuotaDispatcher> quota_dispatcher_;
+  std::unique_ptr<QuotaDispatcher> quota_dispatcher_;
 
   scoped_refptr<ChildHistogramMessageFilter> histogram_message_filter_;
 
@@ -278,20 +277,18 @@ class CONTENT_EXPORT ChildThreadImpl
 
   scoped_refptr<PushDispatcher> push_dispatcher_;
 
-  scoped_ptr<ChildSharedBitmapManager> shared_bitmap_manager_;
+  std::unique_ptr<ChildSharedBitmapManager> shared_bitmap_manager_;
 
-  scoped_ptr<ChildGpuMemoryBufferManager> gpu_memory_buffer_manager_;
+  std::unique_ptr<ChildGpuMemoryBufferManager> gpu_memory_buffer_manager_;
 
-  scoped_ptr<ChildDiscardableSharedMemoryManager>
+  std::unique_ptr<ChildDiscardableSharedMemoryManager>
       discardable_shared_memory_manager_;
 
-  scoped_ptr<base::PowerMonitor> power_monitor_;
+  std::unique_ptr<base::PowerMonitor> power_monitor_;
 
   scoped_refptr<ChildMessageFilter> geofencing_message_filter_;
 
   scoped_refptr<base::SequencedTaskRunner> browser_process_io_runner_;
-
-  ChannelInit mojo_shell_channel_init_;
 
   base::WeakPtrFactory<ChildThreadImpl> channel_connected_factory_;
 
@@ -299,6 +296,7 @@ class CONTENT_EXPORT ChildThreadImpl
 };
 
 struct ChildThreadImpl::Options {
+  Options(const Options& other);
   ~Options();
 
   class Builder;
@@ -307,6 +305,7 @@ struct ChildThreadImpl::Options {
   bool use_mojo_channel;
   scoped_refptr<base::SequencedTaskRunner> browser_process_io_runner;
   std::vector<IPC::MessageFilter*> startup_filters;
+  mojo::MessagePipeHandle in_process_message_pipe_handle;
 
  private:
   Options();

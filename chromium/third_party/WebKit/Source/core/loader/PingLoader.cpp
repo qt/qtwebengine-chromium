@@ -67,8 +67,8 @@ static void finishPingRequestInitialization(ResourceRequest& request, LocalFrame
 
 void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 {
-    if (!frame->document()->securityOrigin()->canDisplay(url)) {
-        FrameLoader::reportLocalLoadFailed(frame, url.string());
+    if (!frame->document()->getSecurityOrigin()->canDisplay(url)) {
+        FrameLoader::reportLocalLoadFailed(frame, url.getString());
         return;
     }
 
@@ -93,16 +93,14 @@ void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const
 
     RefPtr<SecurityOrigin> pingOrigin = SecurityOrigin::create(pingURL);
     // addAdditionalRequestHeaders() will have added a referrer for same origin requests,
-    // but the spec omits the referrer for same origin.
-    if (frame->document()->securityOrigin()->isSameSchemeHostPort(pingOrigin.get()))
-        request.clearHTTPReferrer();
+    // but the spec omits the referrer.
+    request.clearHTTPReferrer();
 
-    request.setHTTPHeaderField(HTTPNames::Ping_To, AtomicString(destinationURL.string()));
+    request.setHTTPHeaderField(HTTPNames::Ping_To, AtomicString(destinationURL.getString()));
 
     // Ping-From follows the same rules as the default referrer beahavior for subresource requests.
-    // FIXME: Should Ping-From obey ReferrerPolicy?
-    if (!SecurityPolicy::shouldHideReferrer(pingURL, frame->document()->url().string()))
-        request.setHTTPHeaderField(HTTPNames::Ping_From, AtomicString(frame->document()->url().string()));
+    if (!SecurityPolicy::shouldHideReferrer(pingURL, frame->document()->url().getString()))
+        request.setHTTPHeaderField(HTTPNames::Ping_From, AtomicString(frame->document()->url().getString()));
 
     FetchInitiatorInfo initiatorInfo;
     initiatorInfo.name = FetchInitiatorTypeNames::ping;
@@ -119,7 +117,7 @@ void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, P
 
     FetchInitiatorInfo initiatorInfo;
     initiatorInfo.name = FetchInitiatorTypeNames::violationreport;
-    PingLoader::start(frame, request, initiatorInfo, SecurityOrigin::create(reportURL)->isSameSchemeHostPort(frame->document()->securityOrigin()) ? AllowStoredCredentials : DoNotAllowStoredCredentials);
+    PingLoader::start(frame, request, initiatorInfo, SecurityOrigin::create(reportURL)->isSameSchemeHostPort(frame->document()->getSecurityOrigin()) ? AllowStoredCredentials : DoNotAllowStoredCredentials);
 }
 
 void PingLoader::start(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
@@ -127,9 +125,9 @@ void PingLoader::start(LocalFrame* frame, ResourceRequest& request, const FetchI
     if (MixedContentChecker::shouldBlockFetch(frame, request, request.url()))
         return;
 
-    // Leak the ping loader, since it will kill itself as soon as it receives a response.
-    RefPtrWillBeRawPtr<PingLoader> loader = adoptRefWillBeNoop(new PingLoader(frame, request, initiatorInfo, credentialsAllowed));
-    loader->ref();
+    // The loader keeps itself alive until it receives a response and disposes itself.
+    PingLoader* loader = new PingLoader(frame, request, initiatorInfo, credentialsAllowed);
+    ASSERT_UNUSED(loader, loader);
 }
 
 PingLoader::PingLoader(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
@@ -137,6 +135,7 @@ PingLoader::PingLoader(LocalFrame* frame, ResourceRequest& request, const FetchI
     , m_timeout(this, &PingLoader::timeout)
     , m_url(request.url())
     , m_identifier(createUniqueIdentifier())
+    , m_keepAlive(this)
 {
     frame->loader().client()->didDispatchPingLoader(request.url());
 
@@ -166,7 +165,7 @@ void PingLoader::dispose()
         m_loader->cancel();
         m_loader = nullptr;
     }
-    deref();
+    m_keepAlive.clear();
 }
 
 void PingLoader::didReceiveResponse(WebURLLoader*, const WebURLResponse& response)

@@ -75,7 +75,9 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
         const GURL& original_url_via_service_worker,
         blink::WebServiceWorkerResponseType response_type_via_service_worker,
         base::TimeTicks worker_start_time,
-        base::TimeTicks service_worker_ready_time) = 0;
+        base::TimeTicks service_worker_ready_time,
+        bool response_is_in_cache_storage,
+        const std::string& response_cache_storage_cache_name) = 0;
 
     // Returns the ServiceWorkerVersion fetch events for this request job should
     // be dispatched to. If no appropriate worker can be determined, returns
@@ -92,9 +94,6 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
     // Called to signal that loading failed, and that the resource being loaded
     // was a main resource.
     virtual void MainResourceLoadFailed() {}
-
-    // Returns the origin of the page/context which initiated this request.
-    virtual GURL GetRequestingOrigin() = 0;
   };
 
   ServiceWorkerURLRequestJob(
@@ -106,10 +105,11 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
       FetchRequestMode request_mode,
       FetchCredentialsMode credentials_mode,
       FetchRedirectMode redirect_mode,
-      bool is_main_resource_load,
+      ResourceType resource_type,
       RequestContextType request_context_type,
       RequestContextFrameType frame_type,
       scoped_refptr<ResourceRequestBody> body,
+      ServiceWorkerFetchType fetch_type,
       Delegate* delegate);
 
   ~ServiceWorkerURLRequestJob() override;
@@ -190,10 +190,11 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
 
   // For FORWARD_TO_SERVICE_WORKER case.
   void DidPrepareFetchEvent();
-  void DidDispatchFetchEvent(ServiceWorkerStatusCode status,
-                             ServiceWorkerFetchEventResult fetch_result,
-                             const ServiceWorkerResponse& response,
-                             scoped_refptr<ServiceWorkerVersion> version);
+  void DidDispatchFetchEvent(
+      ServiceWorkerStatusCode status,
+      ServiceWorkerFetchEventResult fetch_result,
+      const ServiceWorkerResponse& response,
+      const scoped_refptr<ServiceWorkerVersion>& version);
 
   // Populates |http_response_headers_|.
   void CreateResponseHeader(int status_code,
@@ -227,6 +228,8 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   // Wrapper that gathers parameters to |on_start_completed_callback_| and then
   // calls it.
   void OnStartCompleted() const;
+
+  bool IsMainResourceLoad() const;
 
   // Not owned.
   Delegate* delegate_;
@@ -262,7 +265,7 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   FetchRequestMode request_mode_;
   FetchCredentialsMode credentials_mode_;
   FetchRedirectMode redirect_mode_;
-  const bool is_main_resource_load_;
+  const ResourceType resource_type_;
   RequestContextType request_context_type_;
   RequestContextFrameType frame_type_;
   bool fall_back_required_;
@@ -271,9 +274,13 @@ class CONTENT_EXPORT ServiceWorkerURLRequestJob
   scoped_refptr<ResourceRequestBody> body_;
   scoped_ptr<storage::BlobDataHandle> request_body_blob_data_handle_;
   scoped_refptr<ServiceWorkerVersion> streaming_version_;
+  ServiceWorkerFetchType fetch_type_;
 
   ResponseBodyType response_body_type_ = UNKNOWN;
   bool did_record_result_ = false;
+
+  bool response_is_in_cache_storage_ = false;
+  std::string response_cache_storage_cache_name_;
 
   base::WeakPtrFactory<ServiceWorkerURLRequestJob> weak_factory_;
 

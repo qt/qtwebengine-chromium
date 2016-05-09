@@ -92,38 +92,31 @@ String.prototype.findAll = function(string)
 }
 
 /**
- * @return {!Array.<number>}
- */
-String.prototype.lineEndings = function()
-{
-    if (!this._lineEndings) {
-        this._lineEndings = this.findAll("\n");
-        this._lineEndings.push(this.length);
-    }
-    return this._lineEndings;
-}
-
-/**
- * @return {number}
- */
-String.prototype.lineCount = function()
-{
-    var lineEndings = this.lineEndings();
-    return lineEndings.length;
-}
-
-/**
  * @return {string}
  */
-String.prototype.lineAt = function(lineNumber)
+String.prototype.replaceControlCharacters = function()
 {
-    var lineEndings = this.lineEndings();
-    var lineStart = lineNumber > 0 ? lineEndings[lineNumber - 1] + 1 : 0;
-    var lineEnd = lineEndings[lineNumber];
-    var lineContent = this.substring(lineStart, lineEnd);
-    if (lineContent.length > 0 && lineContent.charAt(lineContent.length - 1) === "\r")
-        lineContent = lineContent.substring(0, lineContent.length - 1);
-    return lineContent;
+    // Replace C0 and C1 control character sets with printable character.
+    // Do not replace '\t', \n' and '\r'.
+    return this.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u0080-\u009f]/g, "�");
+}
+
+/**
+ * @return {boolean}
+ */
+String.prototype.isWhitespace = function()
+{
+    return /^\s*$/.test(this);
+}
+
+/**
+ * @return {!Array.<number>}
+ */
+String.prototype.computeLineEndings = function()
+{
+    var endings = this.findAll("\n");
+    endings.push(this.length);
+    return endings;
 }
 
 /**
@@ -259,15 +252,6 @@ String.prototype.compareTo = function(other)
 }
 
 /**
- * @param {string} href
- * @return {?string}
- */
-function sanitizeHref(href)
-{
-    return href && href.trim().toLowerCase().startsWith("javascript:") ? null : href;
-}
-
-/**
  * @return {string}
  */
 String.prototype.removeURLFragment = function()
@@ -286,10 +270,21 @@ String.hashCode = function(string)
 {
     if (!string)
         return 0;
-    var result = 0;
-    for (var i = 0; i < string.length; ++i)
-        result = (result * 3 + string.charCodeAt(i)) | 0;
-    return result;
+    // Hash algorithm for substrings is described in "Über die Komplexität der Multiplikation in
+    // eingeschränkten Branchingprogrammmodellen" by Woelfe.
+    // http://opendatastructures.org/versions/edition-0.1d/ods-java/node33.html#SECTION00832000000000000000
+    var p = ((1 << 30) * 4 - 5); // prime: 2^32 - 5
+    var z = 0x5033d967;          // 32 bits from random.org
+    var z2 = 0x59d2f15d;         // random odd 32 bit number
+    var s = 0;
+    var zi = 1;
+    for (var i = 0; i < string.length; i++) {
+        var xi = string.charCodeAt(i) * z2;
+        s = (s + zi * xi) % p;
+        zi = (zi * z) % p;
+    }
+    s = (s + zi * (p - 1)) % p;
+    return Math.abs(s|0);
 }
 
 /**
@@ -936,23 +931,6 @@ Object.defineProperty(Array.prototype, "mergeOrdered",
 
 }());
 
-
-/**
- * @param {!T} object
- * @param {!Array.<!S>} list
- * @param {function(!T,!S):number=} comparator
- * @param {boolean=} insertionIndexAfter
- * @return {number}
- * @template T,S
- */
-function insertionIndexForObjectInListSortedByFunction(object, list, comparator, insertionIndexAfter)
-{
-    if (insertionIndexAfter)
-        return list.upperBound(object, comparator);
-    else
-        return list.lowerBound(object, comparator);
-}
-
 /**
  * @param {string} format
  * @param {...*} var_arg
@@ -1191,7 +1169,7 @@ function createSearchRegex(query, caseSensitive, isRegex)
  */
 function createPlainTextSearchRegex(query, flags)
 {
-    // This should be kept the same as the one in ContentSearchUtils.cpp.
+    // This should be kept the same as the one in V8StringUtil.cpp.
     var regexSpecialCharacters = String.regexSpecialCharacters();
     var regex = "";
     for (var i = 0; i < query.length; ++i) {
@@ -1243,25 +1221,36 @@ function numberToStringWithSpacesPadding(value, symbolsCount)
 }
 
 /**
- * @param {!Iterator.<T>} iterator
- * @return {!Array.<T>}
- * @template T
- */
-Array.from = function(iterator)
-{
-    var values = [];
-    for (var iteratorValue = iterator.next(); !iteratorValue.done; iteratorValue = iterator.next())
-        values.push(iteratorValue.value);
-    return values;
-}
-
-/**
  * @return {!Array.<T>}
  * @template T
  */
 Set.prototype.valuesArray = function()
 {
     return Array.from(this.values());
+}
+
+/**
+ * @param {!Iterable<T>|!Array<!T>} iterable
+ * @template T
+ */
+Set.prototype.addAll = function(iterable)
+{
+    for (var e of iterable)
+        this.add(e);
+}
+
+/**
+ * @param {!Iterable<T>|!Array<!T>} iterable
+ * @return {boolean}
+ * @template T
+ */
+Set.prototype.containsAll = function(iterable)
+{
+    for (var e of iterable) {
+        if (!this.has(e))
+            return false;
+    }
+    return true;
 }
 
 /**
@@ -1276,9 +1265,7 @@ Map.prototype.remove = function(key)
 }
 
 /**
- * @return {!Array.<V>}
- * @template K, V
- * @this {Map.<K, V>}
+ * @return {!Array<!VALUE>}
  */
 Map.prototype.valuesArray = function()
 {
@@ -1286,9 +1273,7 @@ Map.prototype.valuesArray = function()
 }
 
 /**
- * @return {!Array.<K>}
- * @template K, V
- * @this {Map.<K, V>}
+ * @return {!Array<!KEY>}
  */
 Map.prototype.keysArray = function()
 {
@@ -1339,6 +1324,19 @@ Multimap.prototype = {
     has: function(key)
     {
         return this._map.has(key);
+    },
+
+    /**
+     * @param {K} key
+     * @param {V} value
+     * @return {boolean}
+     */
+    hasValue: function(key, value)
+    {
+        var set = this._map.get(key);
+        if (!set)
+            return false;
+        return set.has(value);
     },
 
     /**

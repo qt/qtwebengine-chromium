@@ -5,8 +5,9 @@
 #ifndef MASH_WM_FRAME_DEFAULT_HEADER_PAINTER_H_
 #define MASH_WM_FRAME_DEFAULT_HEADER_PAINTER_H_
 
+#include <memory>
+
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "mash/wm/frame/header_painter.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/animation/animation_delegate.h"
@@ -46,7 +47,6 @@ class DefaultHeaderPainter : public HeaderPainter,
   int GetHeaderHeightForPainting() const override;
   void SetHeaderHeightForPainting(int height) override;
   void SchedulePaintForTitle() override;
-  void UpdateLeftViewXInset(int left_view_x_inset) override;
 
   // Sets the left header view for the header. Passing NULL removes the view.
   void UpdateLeftHeaderView(views::View* left_header_view);
@@ -68,9 +68,6 @@ class DefaultHeaderPainter : public HeaderPainter,
 
   // Paints the header/content separator.
   void PaintHeaderContentSeparator(gfx::Canvas* canvas);
-
-  // Layout the left header view.
-  void LayoutLeftHeaderView();
 
   // Whether light caption images should be used. This is the case when the
   // background of the frame is dark.
@@ -96,7 +93,6 @@ class DefaultHeaderPainter : public HeaderPainter,
   views::Widget* frame_;
   views::View* view_;
   views::View* left_header_view_;  // May be NULL.
-  int left_view_x_inset_;
   SkColor active_frame_color_;
   SkColor inactive_frame_color_;
   FrameCaptionButtonContainerView* caption_button_container_;
@@ -110,7 +106,7 @@ class DefaultHeaderPainter : public HeaderPainter,
   // Whether the header is painted for the first time.
   bool initial_paint_;
 
-  scoped_ptr<gfx::SlideAnimation> activation_animation_;
+  std::unique_ptr<gfx::SlideAnimation> activation_animation_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultHeaderPainter);
 };

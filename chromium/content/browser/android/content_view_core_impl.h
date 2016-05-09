@@ -16,6 +16,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/process.h"
+#include "content/browser/android/content_view_core_impl_observer.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
@@ -26,6 +27,10 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
+
+namespace cc {
+struct ViewportSelectionBound;
+}
 
 namespace ui {
 class WindowAndroid;
@@ -69,6 +74,9 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 int start_offset,
                                 int end_offset)>& callback) override;
 
+  void AddObserver(ContentViewCoreImplObserver* observer);
+  void RemoveObserver(ContentViewCoreImplObserver* observer);
+
   // ViewAndroid implementation
   base::android::ScopedJavaLocalRef<jobject> GetViewAndroidDelegate()
       const override;
@@ -84,6 +92,9 @@ class ContentViewCoreImpl : public ContentViewCore,
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
 
+  void UpdateWindowAndroid(JNIEnv* env,
+                           const base::android::JavaParamRef<jobject>& obj,
+                           jlong window_android);
   void OnJavaContentViewCoreDestroyed(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj);
@@ -134,7 +145,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                               const base::android::JavaParamRef<jobject>& obj,
                               jlong time_ms,
                               jfloat x,
-                              jfloat y);
+                              jfloat y,
+                              jint tool_type);
   jboolean SendMouseWheelEvent(JNIEnv* env,
                                const base::android::JavaParamRef<jobject>& obj,
                                jlong time_ms,
@@ -207,10 +219,6 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 jfloat y1,
                                 jfloat x2,
                                 jfloat y2);
-  void MoveCaret(JNIEnv* env,
-                 const base::android::JavaParamRef<jobject>& obj,
-                 jfloat x,
-                 jfloat y);
   void DismissTextHandles(JNIEnv* env,
                           const base::android::JavaParamRef<jobject>& obj);
   void SetTextHandlesTemporarilyHidden(
@@ -236,7 +244,6 @@ class ContentViewCoreImpl : public ContentViewCore,
                 jboolean focused);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
-  void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
   void SetAllowJavascriptInterfacesInspection(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj,
@@ -313,7 +320,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const gfx::SizeF& viewport_size,
                        const gfx::Vector2dF& controls_offset,
                        const gfx::Vector2dF& content_offset,
-                       bool is_mobile_optimized_hint);
+                       bool is_mobile_optimized_hint,
+                       const cc::ViewportSelectionBound& selection_start);
 
   void ForceUpdateImeAdapter(long native_ime_adapter);
   void UpdateImeAdapter(long native_ime_adapter,
@@ -363,6 +371,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Returns the viewport size after accounting for the viewport offset.
   gfx::Size GetViewSize() const;
 
+  gfx::Size GetViewSizeWithOSKHidden() const;
+
   void SetAccessibilityEnabledInternal(bool enabled);
 
   bool IsFullscreenRequiredForOrientationLock() const;
@@ -386,8 +396,6 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void OnShowUnhandledTapUIIfNeeded(int x_dip, int y_dip);
 
-  // returns page density (dpi) X page scale
-  float GetScaleFactor() const;
  private:
   class ContentViewUserData;
 
@@ -453,6 +461,9 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // The owning window that has a hold of main application activity.
   ui::WindowAndroid* window_android_;
+
+  // Observer to notify of lifecyle changes.
+  base::ObserverList<ContentViewCoreImplObserver> observer_list_;
 
   // The cache of device's current orientation set from Java side, this value
   // will be sent to Renderer once it is ready.

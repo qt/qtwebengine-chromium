@@ -6,6 +6,8 @@
 
 #include <windows.h>
 
+#include <tuple>
+
 #include "base/process/process.h"
 #include "ipc/attachment_broker_messages.h"
 #include "ipc/brokerable_attachment.h"
@@ -59,7 +61,7 @@ void AttachmentBrokerPrivilegedWin::OnDuplicateWinHandle(
   if (!AttachmentBrokerMsg_DuplicateWinHandle::Read(&message, &param))
     return;
   IPC::internal::HandleAttachmentWin::WireFormat wire_format =
-      base::get<0>(param);
+      std::get<0>(param);
 
   if (wire_format.destination_process == base::kNullProcessId) {
     LogError(NO_DESTINATION);
@@ -84,8 +86,9 @@ void AttachmentBrokerPrivilegedWin::RouteDuplicatedHandle(
   // Another process is the destination.
   base::ProcessId dest = wire_format.destination_process;
   base::AutoLock auto_lock(*get_lock());
-  Sender* sender = GetSenderWithProcessId(dest);
-  if (!sender) {
+  AttachmentBrokerPrivileged::EndpointRunnerPair pair =
+      GetSenderWithProcessId(dest);
+  if (!pair.first) {
     // Assuming that this message was not sent from a malicious process, the
     // channel endpoint that would have received this message will block
     // forever.
@@ -96,7 +99,8 @@ void AttachmentBrokerPrivilegedWin::RouteDuplicatedHandle(
   }
 
   LogError(DESTINATION_FOUND);
-  sender->Send(new AttachmentBrokerMsg_WinHandleHasBeenDuplicated(wire_format));
+  SendMessageToEndpoint(
+      pair, new AttachmentBrokerMsg_WinHandleHasBeenDuplicated(wire_format));
 }
 
 AttachmentBrokerPrivilegedWin::HandleWireFormat

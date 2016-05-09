@@ -31,8 +31,10 @@
 #include "platform/graphics/BitmapImage.h"
 
 #include "platform/SharedBuffer.h"
+#include "platform/graphics/BitmapImageMetrics.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/graphics/ImageObserver.h"
+#include "platform/testing/HistogramTester.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -40,7 +42,8 @@ namespace blink {
 
 class BitmapImageTest : public ::testing::Test {
 public:
-    class FakeImageObserver : public ImageObserver {
+    class FakeImageObserver : public GarbageCollectedFinalized<FakeImageObserver>, public ImageObserver {
+        USING_GARBAGE_COLLECTED_MIXIN(FakeImageObserver);
     public:
         FakeImageObserver() : m_lastDecodedSizeChangedDelta(0) { }
 
@@ -78,6 +81,8 @@ public:
     size_t frameDecodedSize(size_t frame) { return m_image->m_frames[frame].m_frameBytes; }
     size_t decodedFramesCount() const { return m_image->m_frames.size(); }
 
+    void setFirstFrameNotComplete() { m_image->m_frames[0].m_isComplete = false; }
+
     void loadImage(const char* fileName, bool loadAllFrames = true)
     {
         RefPtr<SharedBuffer> imageData = readFile(fileName);
@@ -112,6 +117,16 @@ public:
         m_image->advanceAnimation(0);
     }
 
+    int repetitionCount()
+    {
+        return m_image->repetitionCount(true);
+    }
+
+    int animationFinished()
+    {
+        return m_image->m_animationFinished;
+    }
+
     PassRefPtr<Image> imageForDefaultFrame()
     {
         return m_image->imageForDefaultFrame();
@@ -121,10 +136,11 @@ protected:
     void SetUp() override
     {
         DeferredImageDecoder::setEnabled(m_enableDeferredDecoding);
-        m_image = BitmapImage::create(&m_imageObserver);
+        m_imageObserver = new FakeImageObserver;
+        m_image = BitmapImage::create(m_imageObserver.get());
     }
 
-    FakeImageObserver m_imageObserver;
+    Persistent<FakeImageObserver> m_imageObserver;
     RefPtr<BitmapImage> m_image;
 
 private:
@@ -139,8 +155,8 @@ TEST_F(BitmapImageTest, destroyDecodedDataExceptCurrentFrame)
     setCurrentFrame(frame);
     size_t size = frameDecodedSize(frame);
     destroyDecodedData(false);
-    EXPECT_LT(m_imageObserver.m_lastDecodedSizeChangedDelta, 0);
-    EXPECT_GE(m_imageObserver.m_lastDecodedSizeChangedDelta, -static_cast<int>(totalSize - size));
+    EXPECT_LT(m_imageObserver->m_lastDecodedSizeChangedDelta, 0);
+    EXPECT_GE(m_imageObserver->m_lastDecodedSizeChangedDelta, -static_cast<int>(totalSize - size));
 }
 
 TEST_F(BitmapImageTest, destroyAllDecodedData)
@@ -149,7 +165,7 @@ TEST_F(BitmapImageTest, destroyAllDecodedData)
     size_t totalSize = decodedSize();
     EXPECT_GT(totalSize, 0u);
     destroyDecodedData(true);
-    EXPECT_EQ(-static_cast<int>(totalSize), m_imageObserver.m_lastDecodedSizeChangedDelta);
+    EXPECT_EQ(-static_cast<int>(totalSize), m_imageObserver->m_lastDecodedSizeChangedDelta);
     EXPECT_EQ(0u, decodedSize());
 }
 
@@ -161,6 +177,22 @@ TEST_F(BitmapImageTest, maybeAnimated)
         advanceAnimation();
     }
     EXPECT_FALSE(m_image->maybeAnimated());
+}
+
+TEST_F(BitmapImageTest, animationRepetitions)
+{
+    loadImage("/LayoutTests/fast/images/resources/full2loop.gif");
+    int expectedRepetitionCount = 2;
+    EXPECT_EQ(expectedRepetitionCount, repetitionCount());
+
+    // We actually loop once more than stored repetition count.
+    for (int repeat = 0; repeat < expectedRepetitionCount + 1; ++repeat) {
+        for (size_t i = 0; i < frameCount(); ++i) {
+            EXPECT_FALSE(animationFinished());
+            advanceAnimation();
+        }
+    }
+    EXPECT_TRUE(animationFinished());
 }
 
 TEST_F(BitmapImageTest, isAllDataReceived)
@@ -230,19 +262,35 @@ TEST_F(BitmapImageTest, icoHasWrongFrameDimensions)
 TEST_F(BitmapImageTest, correctDecodedDataSize)
 {
     // When requesting a frame of a multi-frame GIF causes another frame to be
-    // decoded as well, both frames' sizes should be included in the decoded
-    // size changed notification.
+    // decoded as well, both frames' sizes should be reported by the source and
+    // thus included in the decoded size changed notification.
     loadImage("/LayoutTests/fast/images/resources/anim_none.gif", false);
     frameAtIndex(1);
     int frameSize = static_cast<int>(m_image->size().area() * sizeof(ImageFrame::PixelData));
-    EXPECT_EQ(frameSize * 2, m_imageObserver.m_lastDecodedSizeChangedDelta);
+    EXPECT_EQ(frameSize * 2, m_imageObserver->m_lastDecodedSizeChangedDelta);
 
     // Trying to destroy all data except an undecoded frame should cause the
     // decoder to seek backwards and preserve the most recent previous frame
     // necessary to decode that undecoded frame, and destroy all other frames.
     setCurrentFrame(2);
     destroyDecodedData(false);
-    EXPECT_EQ(-frameSize, m_imageObserver.m_lastDecodedSizeChangedDelta);
+    EXPECT_EQ(-frameSize, m_imageObserver->m_lastDecodedSizeChangedDelta);
+}
+
+TEST_F(BitmapImageTest, recachingFrameAfterDataChanged)
+{
+    loadImage("/LayoutTests/fast/images/resources/green.jpg");
+    setFirstFrameNotComplete();
+    EXPECT_GT(m_imageObserver->m_lastDecodedSizeChangedDelta, 0);
+    m_imageObserver->m_lastDecodedSizeChangedDelta = 0;
+
+    // Calling dataChanged causes the cache to flush, but doesn't affect the
+    // source's decoded frames. It shouldn't affect decoded size.
+    m_image->dataChanged(true);
+    EXPECT_EQ(0, m_imageObserver->m_lastDecodedSizeChangedDelta);
+    // Recaching the first frame also shouldn't affect decoded size.
+    m_image->imageForCurrentFrame();
+    EXPECT_EQ(0, m_imageObserver->m_lastDecodedSizeChangedDelta);
 }
 
 class BitmapImageDeferredDecodingTest : public BitmapImageTest {
@@ -257,14 +305,73 @@ TEST_F(BitmapImageDeferredDecodingTest, correctDecodedDataSize)
     loadImage("/LayoutTests/fast/images/resources/anim_none.gif", false);
     frameAtIndex(1);
     int frameSize = static_cast<int>(m_image->size().area() * sizeof(ImageFrame::PixelData));
-    EXPECT_EQ(frameSize, m_imageObserver.m_lastDecodedSizeChangedDelta);
+    EXPECT_EQ(frameSize, m_imageObserver->m_lastDecodedSizeChangedDelta);
     frameAtIndex(0);
 
     // Trying to destroy all data except an undecoded frame should go ahead and
     // destroy all other frames.
     setCurrentFrame(2);
     destroyDecodedData(false);
-    EXPECT_EQ(-frameSize * 2, m_imageObserver.m_lastDecodedSizeChangedDelta);
+    EXPECT_EQ(-frameSize * 2, m_imageObserver->m_lastDecodedSizeChangedDelta);
 }
+
+template <typename HistogramEnumType>
+struct HistogramTestParams {
+    const char* filename;
+    HistogramEnumType type;
+};
+
+template <typename HistogramEnumType>
+class BitmapHistogramTest
+    : public BitmapImageTest
+    , public ::testing::WithParamInterface<HistogramTestParams<HistogramEnumType>> {
+protected:
+    void runTest(const char* histogramName)
+    {
+        HistogramTester histogramTester;
+        loadImage(this->GetParam().filename);
+        histogramTester.expectUniqueSample(histogramName, this->GetParam().type, 1);
+    }
+};
+
+using DecodedImageTypeHistogramTest = BitmapHistogramTest<BitmapImageMetrics::DecodedImageType>;
+
+TEST_P(DecodedImageTypeHistogramTest, ImageType)
+{
+    runTest("Blink.DecodedImageType");
+}
+
+DecodedImageTypeHistogramTest::ParamType kDecodedImageTypeHistogramTestParams[] = {
+    {"/LayoutTests/fast/images/resources/green.jpg", BitmapImageMetrics::ImageJPEG},
+    {"/LayoutTests/fast/images/resources/palatted-color-png-gamma-one-color-profile.png", BitmapImageMetrics::ImagePNG},
+    {"/LayoutTests/fast/images/resources/animated-10color.gif", BitmapImageMetrics::ImageGIF},
+    {"/LayoutTests/fast/images/resources/webp-color-profile-lossy.webp", BitmapImageMetrics::ImageWebP},
+    {"/LayoutTests/fast/images/resources/wrong-frame-dimensions.ico", BitmapImageMetrics::ImageICO},
+    {"/LayoutTests/fast/images/resources/lenna.bmp", BitmapImageMetrics::ImageBMP}
+};
+
+INSTANTIATE_TEST_CASE_P(DecodedImageTypeHistogramTest, DecodedImageTypeHistogramTest,
+    ::testing::ValuesIn(kDecodedImageTypeHistogramTestParams));
+
+using DecodedImageOrientationHistogramTest = BitmapHistogramTest<ImageOrientationEnum>;
+
+TEST_P(DecodedImageOrientationHistogramTest, ImageOrientation)
+{
+    runTest("Blink.DecodedImage.Orientation");
+}
+
+DecodedImageOrientationHistogramTest::ParamType kDecodedImageOrientationHistogramTestParams[] = {
+    {"/LayoutTests/fast/images/resources/exif-orientation-1-ul.jpg", OriginTopLeft},
+    {"/LayoutTests/fast/images/resources/exif-orientation-2-ur.jpg", OriginTopRight},
+    {"/LayoutTests/fast/images/resources/exif-orientation-3-lr.jpg", OriginBottomRight},
+    {"/LayoutTests/fast/images/resources/exif-orientation-4-lol.jpg", OriginBottomLeft},
+    {"/LayoutTests/fast/images/resources/exif-orientation-5-lu.jpg", OriginLeftTop},
+    {"/LayoutTests/fast/images/resources/exif-orientation-6-ru.jpg", OriginRightTop},
+    {"/LayoutTests/fast/images/resources/exif-orientation-7-rl.jpg", OriginRightBottom},
+    {"/LayoutTests/fast/images/resources/exif-orientation-8-llo.jpg", OriginLeftBottom}
+};
+
+INSTANTIATE_TEST_CASE_P(DecodedImageOrientationHistogramTest, DecodedImageOrientationHistogramTest,
+    ::testing::ValuesIn(kDecodedImageOrientationHistogramTestParams));
 
 } // namespace blink

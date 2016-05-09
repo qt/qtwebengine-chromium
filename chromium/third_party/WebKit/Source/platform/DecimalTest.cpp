@@ -43,7 +43,7 @@ std::ostream& operator<<(std::ostream& os, const Decimal& decimal)
     return os
         << "encode(" << String::number(data.coefficient()).ascii().data()
         << ", " << String::number(data.exponent()).ascii().data()
-        << ", " << (data.sign() == Decimal::Negative ? "Negative" : "Positive")
+        << ", " << (data.getSign() == Decimal::Negative ? "Negative" : "Positive")
         << ")=" << decimal.toString().ascii().data();
 }
 
@@ -112,7 +112,7 @@ protected:
 #define EXPECT_DECIMAL_ENCODED_DATA_EQ(expectedCoefficient, expectedExponent,  expectedSign, decimal) \
     EXPECT_EQ((expectedCoefficient), (decimal).value().coefficient()); \
     EXPECT_EQ((expectedExponent), (decimal).value().exponent()); \
-    EXPECT_EQ(Decimal::expectedSign, (decimal).value().sign());
+    EXPECT_EQ(Decimal::expectedSign, (decimal).value().getSign());
 
 #define EXPECT_DECIMAL_STREQ(expected, decimal) EXPECT_STREQ((expected), (decimal).toString().ascii().data())
 
@@ -581,6 +581,9 @@ TEST_F(DecimalTest, Floor)
     EXPECT_EQ(Decimal(-2), encode(19, -1, Negative).floor());
     EXPECT_EQ(Decimal(-2), encode(193332, -5, Negative).floor());
     EXPECT_EQ(Decimal(-13), encode(12002, -3, Negative).floor());
+
+    // crbug.com/572769
+    EXPECT_EQ(Decimal(-1), encode(992971299197409433, -18, Negative).floor());
 }
 
 TEST_F(DecimalTest, FloorBigExponent)

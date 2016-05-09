@@ -27,6 +27,10 @@ void ContentBrowserClient::PostAfterStartupTask(
   task_runner->PostTask(from_here, task);
 }
 
+bool ContentBrowserClient::IsBrowserStartupComplete() {
+  return true;
+}
+
 WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
   return nullptr;
@@ -55,23 +59,6 @@ bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
 
 bool ContentBrowserClient::LogWebUIUrl(const GURL& web_ui_url) const {
   return false;
-}
-
-net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
-    BrowserContext* browser_context,
-    ProtocolHandlerMap* protocol_handlers,
-    URLRequestInterceptorScopedVector request_interceptors) {
-  return nullptr;
-}
-
-net::URLRequestContextGetter*
-ContentBrowserClient::CreateRequestContextForStoragePartition(
-    BrowserContext* browser_context,
-    const base::FilePath& partition_path,
-    bool in_memory,
-    ProtocolHandlerMap* protocol_handlers,
-    URLRequestInterceptorScopedVector request_interceptors) {
-  return nullptr;
 }
 
 bool ContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -161,6 +148,10 @@ bool ContentBrowserClient::AllowServiceWorker(const GURL& scope,
   return true;
 }
 
+bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
+  return false;
+}
+
 bool ContentBrowserClient::AllowGetCookie(const GURL& url,
                                           const GURL& first_party,
                                           const net::CookieList& cookie_list,
@@ -181,16 +172,6 @@ bool ContentBrowserClient::AllowSetCookie(const GURL& url,
 }
 
 bool ContentBrowserClient::AllowSaveLocalState(ResourceContext* context) {
-  return true;
-}
-
-bool ContentBrowserClient::AllowWorkerDatabase(
-    const GURL& url,
-    const base::string16& name,
-    const base::string16& display_name,
-    unsigned long estimated_size,
-    ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_frames) {
   return true;
 }
 
@@ -221,6 +202,18 @@ bool ContentBrowserClient::AllowWebRTCIdentityCache(const GURL& url,
 bool ContentBrowserClient::AllowKeygen(const GURL& url,
                                        content::ResourceContext* context) {
   return true;
+}
+
+ContentBrowserClient::AllowWebBluetoothResult
+ContentBrowserClient::AllowWebBluetooth(
+    content::BrowserContext* browser_context,
+    const url::Origin& requesting_origin,
+    const url::Origin& embedding_origin) {
+  return AllowWebBluetoothResult::ALLOW;
+}
+
+std::string ContentBrowserClient::GetWebBluetoothBlacklist() {
+  return std::string();
 }
 
 QuotaPermissionContext* ContentBrowserClient::CreateQuotaPermissionContext() {
@@ -356,10 +349,6 @@ DevToolsManagerDelegate* ContentBrowserClient::GetDevToolsManagerDelegate() {
 
 TracingDelegate* ContentBrowserClient::GetTracingDelegate() {
   return nullptr;
-}
-
-bool ContentBrowserClient::IsNPAPIEnabled() {
-  return false;
 }
 
 bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(

@@ -28,7 +28,6 @@
 #include "core/CoreExport.h"
 #include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/fetch/ImageResource.h"
-#include "core/fetch/ResourcePtr.h"
 #include "core/page/DragActions.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/heap/Handle.h"
@@ -89,7 +88,7 @@ public:
 
     PassOwnPtr<DragImage> createDragImage(IntPoint& dragLocation, LocalFrame*) const;
     void declareAndWriteDragImage(Element*, const KURL&, const String& title);
-    void writeURL(const KURL&, const String&);
+    void writeURL(Node*, const KURL&, const String&);
     void writeSelection(const FrameSelection&);
 
     void setAccessPolicy(DataTransferAccessPolicy);
@@ -131,8 +130,8 @@ private:
     Member<DataObject> m_dataObject;
 
     IntPoint m_dragLoc;
-    ResourcePtr<ImageResource> m_dragImage;
-    RefPtrWillBeMember<Node> m_dragImageElement;
+    Member<ImageResource> m_dragImage;
+    Member<Node> m_dragImageElement;
 };
 
 DragOperation convertDropZoneOperationToDragOperation(const String& dragOperation);

@@ -22,7 +22,6 @@
 
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
-#include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/ScriptRunner.h"
@@ -37,9 +36,9 @@ inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedBy
 {
 }
 
-PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
+SVGScriptElement* SVGScriptElement::create(Document& document, bool insertedByParser)
 {
-    return adoptRefWillBeNoop(new SVGScriptElement(document, insertedByParser, false));
+    return new SVGScriptElement(document, insertedByParser, false);
 }
 
 void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
@@ -115,7 +114,7 @@ String SVGScriptElement::charsetAttributeValue() const
 
 String SVGScriptElement::typeAttributeValue() const
 {
-    return getAttribute(SVGNames::typeAttr).string();
+    return getAttribute(SVGNames::typeAttr).getString();
 }
 
 String SVGScriptElement::languageAttributeValue() const
@@ -148,9 +147,9 @@ bool SVGScriptElement::hasSourceAttribute() const
     return href()->isSpecified();
 }
 
-PassRefPtrWillBeRawPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
+RawPtr<Element> SVGScriptElement::cloneElementWithoutAttributesAndChildren()
 {
-    return adoptRefWillBeNoop(new SVGScriptElement(document(), false, m_loader->alreadyStarted()));
+    return new SVGScriptElement(document(), false, m_loader->alreadyStarted());
 }
 
 void SVGScriptElement::dispatchLoadEvent()

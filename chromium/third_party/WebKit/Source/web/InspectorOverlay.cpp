@@ -42,16 +42,16 @@
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorOverlayHost.h"
 #include "core/inspector/LayoutEditor.h"
-#include "core/layout/LayoutView.h"
+#include "core/layout/api/LayoutViewItem.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
-#include "platform/JSONValues.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/CullRect.h"
 #include "platform/graphics/paint/DisplayItemCacheSkipper.h"
+#include "platform/inspector_protocol/Values.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
 #include "web/PageOverlay.h"
@@ -71,9 +71,9 @@ Node* hoveredNodeForPoint(LocalFrame* frame, const IntPoint& pointInRootFrame, b
         hitType |= HitTestRequest::IgnorePointerEventsNone;
     HitTestRequest request(hitType);
     HitTestResult result(request, frame->view()->rootFrameToContents(pointInRootFrame));
-    frame->contentLayoutObject()->hitTest(result);
+    frame->contentLayoutItem().hitTest(result);
     Node* node = result.innerPossiblyPseudoNode();
-    while (node && node->nodeType() == Node::TEXT_NODE)
+    while (node && node->getNodeType() == Node::TEXT_NODE)
         node = node->parentNode();
     return node;
 }
@@ -117,20 +117,20 @@ public:
         // Skip cache because the following paint may conflict with the view's real painting.
         DisplayItemCacheSkipper cacheSkipper(graphicsContext);
         FrameView* view = m_overlay->overlayMainFrame()->view();
-        ASSERT(!view->needsLayout());
+        DCHECK(!view->needsLayout());
         view->paint(graphicsContext, CullRect(IntRect(0, 0, view->width(), view->height())));
     }
 
 private:
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    Member<InspectorOverlay> m_overlay;
 };
 
 
 class InspectorOverlay::InspectorOverlayChromeClient final : public EmptyChromeClient {
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorOverlayChromeClient> create(ChromeClient& client, InspectorOverlay& overlay)
+    static InspectorOverlayChromeClient* create(ChromeClient& client, InspectorOverlay& overlay)
     {
-        return adoptPtrWillBeNoop(new InspectorOverlayChromeClient(client, overlay));
+        return new InspectorOverlayChromeClient(client, overlay);
     }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
@@ -172,15 +172,18 @@ private:
         , m_overlay(&overlay)
     { }
 
-    RawPtrWillBeMember<ChromeClient> m_client;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    Member<ChromeClient> m_client;
+    Member<InspectorOverlay> m_overlay;
 };
 
 
 InspectorOverlay::InspectorOverlay(WebViewImpl* webViewImpl)
     : m_webViewImpl(webViewImpl)
     , m_overlayHost(InspectorOverlayHost::create())
+    , m_drawViewSize(false)
+    , m_resizeTimerActive(false)
     , m_omitTooltip(false)
+    , m_timer(this, &InspectorOverlay::onTimer)
     , m_suspendCount(0)
     , m_inLayout(false)
     , m_needsUpdate(false)
@@ -190,7 +193,7 @@ InspectorOverlay::InspectorOverlay(WebViewImpl* webViewImpl)
 
 InspectorOverlay::~InspectorOverlay()
 {
-    ASSERT(!m_overlayPage);
+    DCHECK(!m_overlayPage);
 }
 
 DEFINE_TRACE(InspectorOverlay)
@@ -292,9 +295,9 @@ bool InspectorOverlay::handleInputEvent(const WebInputEvent& inputEvent)
     return handled;
 }
 
-void InspectorOverlay::setPausedInDebuggerMessage(const String* message)
+void InspectorOverlay::setPausedInDebuggerMessage(const String& message)
 {
-    m_pausedInDebuggerMessage = message ? *message : String();
+    m_pausedInDebuggerMessage = message;
     scheduleUpdate();
 }
 
@@ -360,7 +363,7 @@ bool InspectorOverlay::isEmpty()
 {
     if (m_suspendCount)
         return true;
-    bool hasVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad  || !m_pausedInDebuggerMessage.isNull();
+    bool hasVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad  || (m_resizeTimerActive && m_drawViewSize) || !m_pausedInDebuggerMessage.isNull();
     return !hasVisibleElements && m_inspectMode == InspectorDOMAgent::NotSearching;
 }
 
@@ -383,7 +386,7 @@ void InspectorOverlay::rebuildOverlayPage()
     if (!view)
         return;
 
-    IntRect visibleRectInDocument = view->scrollableArea()->visibleContentRect();
+    IntRect visibleRectInDocument = view->getScrollableArea()->visibleContentRect();
     IntSize viewportSize = m_webViewImpl->page()->frameHost().visualViewport().size();
     toLocalFrame(overlayPage()->mainFrame())->view()->resize(viewportSize);
     overlayPage()->frameHost().visualViewport().setSize(viewportSize);
@@ -392,13 +395,14 @@ void InspectorOverlay::rebuildOverlayPage()
     drawNodeHighlight();
     drawQuadHighlight();
     drawPausedInDebuggerMessage();
+    drawViewSize();
     if (m_layoutEditor && !m_highlightNode)
         m_layoutEditor->rebuild();
 }
 
-static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
+static PassOwnPtr<protocol::DictionaryValue> buildObjectForSize(const IntSize& size)
 {
-    RefPtr<JSONObject> result = JSONObject::create();
+    OwnPtr<protocol::DictionaryValue> result = protocol::DictionaryValue::create();
     result->setNumber("width", size.width());
     result->setNumber("height", size.height());
     return result.release();
@@ -410,7 +414,7 @@ void InspectorOverlay::drawNodeHighlight()
         return;
 
     String selectors = m_nodeHighlightConfig.selectorList;
-    RefPtrWillBeRawPtr<StaticElementList> elements = nullptr;
+    StaticElementList* elements = nullptr;
     TrackExceptionState exceptionState;
     ContainerNode* queryBase = m_highlightNode->containingShadowRoot();
     if (!queryBase)
@@ -421,7 +425,7 @@ void InspectorOverlay::drawNodeHighlight()
         for (unsigned i = 0; i < elements->length(); ++i) {
             Element* element = elements->item(i);
             InspectorHighlight highlight(element, m_nodeHighlightConfig, false);
-            RefPtr<JSONObject> highlightJSON = highlight.asJSONObject();
+            OwnPtr<protocol::DictionaryValue> highlightJSON = highlight.asProtocolValue();
             evaluateInOverlay("drawHighlight", highlightJSON.release());
         }
     }
@@ -431,7 +435,7 @@ void InspectorOverlay::drawNodeHighlight()
     if (m_eventTargetNode)
         highlight.appendEventTargetQuads(m_eventTargetNode.get(), m_nodeHighlightConfig);
 
-    RefPtr<JSONObject> highlightJSON = highlight.asJSONObject();
+    OwnPtr<protocol::DictionaryValue> highlightJSON = highlight.asProtocolValue();
     evaluateInOverlay("drawHighlight", highlightJSON.release());
 }
 
@@ -442,13 +446,19 @@ void InspectorOverlay::drawQuadHighlight()
 
     InspectorHighlight highlight;
     highlight.appendQuad(*m_highlightQuad, m_quadHighlightConfig.content, m_quadHighlightConfig.contentOutline);
-    evaluateInOverlay("drawHighlight", highlight.asJSONObject());
+    evaluateInOverlay("drawHighlight", highlight.asProtocolValue());
 }
 
 void InspectorOverlay::drawPausedInDebuggerMessage()
 {
     if (m_inspectMode == InspectorDOMAgent::NotSearching && !m_pausedInDebuggerMessage.isNull())
         evaluateInOverlay("drawPausedInDebuggerMessage", m_pausedInDebuggerMessage);
+}
+
+void InspectorOverlay::drawViewSize()
+{
+    if (m_resizeTimerActive && m_drawViewSize)
+        evaluateInOverlay("drawViewSize", "");
 }
 
 Page* InspectorOverlay::overlayPage()
@@ -458,10 +468,10 @@ Page* InspectorOverlay::overlayPage()
 
     ScriptForbiddenScope::AllowUserAgentScript allowScript;
 
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FrameLoaderClient>, dummyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
+    DEFINE_STATIC_LOCAL(FrameLoaderClient, dummyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
     Page::PageClients pageClients;
     fillWithEmptyClients(pageClients);
-    ASSERT(!m_overlayChromeClient);
+    DCHECK(!m_overlayChromeClient);
     m_overlayChromeClient = InspectorOverlayChromeClient::create(m_webViewImpl->page()->chromeClient(), *this);
     pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = Page::create(pageClients);
@@ -485,8 +495,8 @@ Page* InspectorOverlay::overlayPage()
     // through some non-composited paint function.
     overlaySettings.setAcceleratedCompositingEnabled(false);
 
-    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(dummyFrameLoaderClient.get(), &m_overlayPage->frameHost(), 0);
-    frame->setView(FrameView::create(frame.get()));
+    LocalFrame* frame = LocalFrame::create(&dummyFrameLoaderClient, &m_overlayPage->frameHost(), 0);
+    frame->setView(FrameView::create(frame));
     frame->init();
     FrameLoader& loader = frame->loader();
     frame->view()->setCanHaveScrollbars(false);
@@ -495,13 +505,13 @@ Page* InspectorOverlay::overlayPage()
     const WebData& overlayPageHTMLResource = Platform::current()->loadResource("InspectorOverlayPage.html");
     RefPtr<SharedBuffer> data = SharedBuffer::create(overlayPageHTMLResource.data(), overlayPageHTMLResource.size());
     loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data, "text/html", "UTF-8", KURL(), ForceSynchronousLoad)));
-    v8::Isolate* isolate = toIsolate(frame.get());
-    ScriptState* scriptState = ScriptState::forMainWorld(frame.get());
-    ASSERT(scriptState);
+    v8::Isolate* isolate = toIsolate(frame);
+    ScriptState* scriptState = ScriptState::forMainWorld(frame);
+    DCHECK(scriptState);
     ScriptState::Scope scope(scriptState);
     v8::Local<v8::Object> global = scriptState->context()->Global();
     v8::Local<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), global, isolate);
-    ASSERT(!overlayHostObj.IsEmpty());
+    DCHECK(!overlayHostObj.IsEmpty());
     v8CallOrCrash(global->Set(scriptState->context(), v8AtomicString(isolate, "InspectorOverlayHost"), overlayHostObj));
 
 #if OS(WIN)
@@ -522,7 +532,7 @@ LocalFrame* InspectorOverlay::overlayMainFrame()
 
 void InspectorOverlay::reset(const IntSize& viewportSize, const IntPoint& documentScrollOffset)
 {
-    RefPtr<JSONObject> resetData = JSONObject::create();
+    OwnPtr<protocol::DictionaryValue> resetData = protocol::DictionaryValue::create();
     resetData->setNumber("deviceScaleFactor", m_webViewImpl->page()->deviceScaleFactor());
     resetData->setNumber("pageScaleFactor", m_webViewImpl->page()->pageScaleFactor());
     resetData->setObject("viewportSize", buildObjectForSize(viewportSize));
@@ -535,17 +545,17 @@ void InspectorOverlay::reset(const IntSize& viewportSize, const IntPoint& docume
 void InspectorOverlay::evaluateInOverlay(const String& method, const String& argument)
 {
     ScriptForbiddenScope::AllowUserAgentScript allowScript;
-    RefPtr<JSONArray> command = JSONArray::create();
-    command->pushString(method);
-    command->pushString(argument);
+    OwnPtr<protocol::ListValue> command = protocol::ListValue::create();
+    command->pushValue(protocol::StringValue::create(method));
+    command->pushValue(protocol::StringValue::create(argument));
     toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
-void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument)
+void InspectorOverlay::evaluateInOverlay(const String& method, PassOwnPtr<protocol::Value> argument)
 {
     ScriptForbiddenScope::AllowUserAgentScript allowScript;
-    RefPtr<JSONArray> command = JSONArray::create();
-    command->pushString(method);
+    OwnPtr<protocol::ListValue> command = protocol::ListValue::create();
+    command->pushValue(protocol::StringValue::create(method));
     command->pushValue(argument);
     toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
@@ -558,6 +568,12 @@ String InspectorOverlay::evaluateInOverlayForTest(const String& script)
     return toCoreStringWithUndefinedOrNullCheck(string);
 }
 
+void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
+{
+    m_resizeTimerActive = false;
+    scheduleUpdate();
+}
+
 void InspectorOverlay::clear()
 {
     if (m_layoutEditor)
@@ -568,8 +584,10 @@ void InspectorOverlay::clear()
         m_overlayPage.clear();
         m_overlayChromeClient.clear();
     }
+    m_resizeTimerActive = false;
     m_pausedInDebuggerMessage = String();
     m_inspectMode = InspectorDOMAgent::NotSearching;
+    m_timer.stop();
     hideHighlight();
 }
 
@@ -591,37 +609,37 @@ void InspectorOverlay::overlaySteppedOver()
 
 void InspectorOverlay::overlayStartedPropertyChange(const String& property)
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_layoutEditor->overlayStartedPropertyChange(property);
 }
 
 void InspectorOverlay::overlayPropertyChanged(float value)
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_layoutEditor->overlayPropertyChanged(value);
 }
 
 void InspectorOverlay::overlayEndedPropertyChange()
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_layoutEditor->overlayEndedPropertyChange();
 }
 
 void InspectorOverlay::overlayNextSelector()
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_layoutEditor->nextSelector();
 }
 
 void InspectorOverlay::overlayPreviousSelector()
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_layoutEditor->previousSelector();
 }
 
 void InspectorOverlay::overlayClearSelection(bool commitChanges)
 {
-    ASSERT(m_layoutEditor);
+    DCHECK(m_layoutEditor);
     m_hoveredNodeForInspectMode = m_layoutEditor->element();
 
     if (commitChanges)
@@ -650,9 +668,18 @@ void InspectorOverlay::profilingStopped()
     --m_suspendCount;
 }
 
-void InspectorOverlay::pageLayoutInvalidated()
+void InspectorOverlay::pageLayoutInvalidated(bool resized)
 {
+    if (resized && m_drawViewSize) {
+        m_resizeTimerActive = true;
+        m_timer.startOneShot(1, BLINK_FROM_HERE);
+    }
     scheduleUpdate();
+}
+
+void InspectorOverlay::setShowViewportSizeOnResize(bool show)
+{
+    m_drawViewSize = show;
 }
 
 bool InspectorOverlay::handleMouseMove(const PlatformMouseEvent& event)
@@ -661,7 +688,7 @@ bool InspectorOverlay::handleMouseMove(const PlatformMouseEvent& event)
         return false;
 
     LocalFrame* frame = m_webViewImpl->mainFrameImpl()->frame();
-    if (!frame->view() || !frame->contentLayoutObject())
+    if (!frame->view() || frame->contentLayoutItem().isNull())
         return false;
     Node* node = hoveredNodeForEvent(frame, event, event.shiftKey());
 

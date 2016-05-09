@@ -21,7 +21,6 @@
 <translation id="1699664235656412242">Закрийте всі вікна Chromium (зокрема вікна в режимі Windows 8) і повторіть спробу.</translation>
 <translation id="1708666629004767631">Доступна нова, надійніша версія Chromium.</translation>
 <translation id="1725059042853530269">Файл <ph name="FILE_NAME" /> може погіршити перегляд веб-сторінок, тому Chromium блокує його.</translation>
-<translation id="1745962126679160932">Chromium надійно зберігатиме вашу інформацію, тож вам не потрібно буде вводити її знову. Але під час майбутніх платежів ви все одно маєте підтверджувати код безпеки картки.</translation>
 <translation id="1774152462503052664">Дозволити Chromium працювати у фоновому режимі</translation>
 <translation id="1779356040007214683">Щоб зробити Chromium безпечнішим, ми вимкнути деякі розширення, джерелом яких не є <ph name="IDS_EXTENSION_WEB_STORE_TITLE" />, і які, можливо, було додано без вашого відома.</translation>
 <translation id="1808667845054772817">Перевстановити Chromium</translation>
@@ -31,6 +30,7 @@
 <translation id="1929939181775079593">Chromium не відповідає. Перезапустити зараз?</translation>
 <translation id="1967743265616885482">Відомо, що модуль із такою назвою конфліктує з Chromium.</translation>
 <translation id="2077129598763517140">Використовувати апаратне прискорення, якщо доступно</translation>
+<translation id="2103655854491303969">Панель запуску додатків Chromium більше не доступна.</translation>
 <translation id="2117181891440368863">Chromium підтвердив, що компанія <ph name="ISSUER" /> видала сертифікат цього веб-сайту. Сервер надав інформацію про прозорість сертифіката, але вона недійсна.</translation>
 <translation id="2119636228670142020">Про &amp;ОС Chromium</translation>
 <translation id="2158734852934720349">Ліцензії ОС Chromium із відкритим кодом</translation>
@@ -46,6 +46,7 @@
 <translation id="2535480412977113886">ОС Chromium не вдалося синхронізувати ваші дані, оскільки дані для входу в обліковий запис застаріли.</translation>
 <translation id="2558641060352364164">Цей сайт використовує Chromium Frame. Ми припиняємо підтримку цього плагіна. Видаліть його та встановіть сучасний веб-переглядач.</translation>
 <translation id="2572494885440352020">Помічник Chromium</translation>
+<translation id="2595977381794111014">Відкривайте додатки за допомогою ярлика <ph name="APPS_ICON_IMAGE" /> на панелі закладок Chromium.</translation>
 <translation id="2602806952220118310">Chromium – сповіщення</translation>
 <translation id="2636877269779209383">Chromium потрібен доступ до камери, щоб використовувати її на цьому сайті.</translation>
 <translation id="2648074677641340862">Під час встановлення сталася помилка операційної системи. Завантажте Chromium ще раз.</translation>
@@ -100,19 +101,18 @@
 <translation id="4330585738697551178">Відомо, що цей модуль конфліктує з Chromium.</translation>
 <translation id="4423735387467980091">Налаштування та керування Chromium</translation>
 <translation id="4458285410772214805">Щоб зміна почала діяти, вийдіть і ввійдіть знову.</translation>
-<translation id="4488676065623537541">Ваші платіжні дані збережено в Chromium.</translation>
 <translation id="4549794359424059447">Наступні версії Chromium не підтримуватимуть Windows XP та Windows Vista.</translation>
 <translation id="4567424176335768812">Ви ввійшли як <ph name="USER_EMAIL_ADDRESS" />. Ваші закладки, історія й інші налаштування будуть доступні на всіх пристроях, на яких ви ввійдете в цей обліковий запис.</translation>
 <translation id="457845228957001925">Важлива інформація про ваші дані Chromium</translation>
 <translation id="459535195905078186">Програми Chromium</translation>
 <translation id="4677944499843243528">Схоже, профіль використовується іншим процесом Chromium (<ph name="PROCESS_ID" />) на іншому комп’ютері (<ph name="HOST_NAME" />). Chromium заблокував профіль, щоб запобігти його спотворенню. Якщо ви впевнені, що жоден інший процес не використовує цей профіль, розблокуйте профіль і перезапустіть Chromium.</translation>
-<translation id="473775607612524610">Оновити</translation>
 <translation id="4743926867934016338">Прийняти й шукати</translation>
 <translation id="4888717733111232871">Вхідне правило для Chromium дозволяє трафік mDNS.</translation>
 <translation id="4943838377383847465">Chromium у фоновому режимі.</translation>
 <translation id="4987820182225656817">Гості можуть анонімно користуватися Chromium.</translation>
 <translation id="4994636714258228724">Додати себе в Chromium</translation>
 <translation id="5032989939245619637">Зберігати дані в Chromium</translation>
+<translation id="5116586539350239523">Chromium надійно зберігатиме ваші особисті дані, тож вам не потрібно буде вводити їх знову.</translation>
 <translation id="5358375970380395591">Ви входите, використовуючи дані облікового запису, яким керує адміністратор. Адміністратор може контролювати ваш профіль Chromium. Ваші дані Chromium, як-от програми, закладки, історія, паролі й інші налаштування, буде назавжди пов’язано з обліковим записом <ph name="USER_NAME" />. Ці дані можна видалити на інформаційній панелі Облікових записів Google, але ви не зможете пов’язати їх з іншим обліковим записом. <ph name="LEARN_MORE" /></translation>
 <translation id="5398878173008909840">Доступна нова версія Chromium.</translation>
 <translation id="5427571867875391349">Зробити Chromium веб-переглядачем за умовчанням</translation>
@@ -128,7 +128,6 @@
 <translation id="5859963531214966875">Наступні версії Chromium не підтримуватимуть цю систему Linux.</translation>
 <translation id="5862307444128926510">Вітаємо в Chromium</translation>
 <translation id="5877064549588274448">Канал змінено. Перезапустіть пристрій, щоб застосувати зміни.</translation>
-<translation id="5909170354645388250">Не використовується в Chromium. Заповнювач для синхронізації карт ресурсу. Потрібен один аргумент: $1.</translation>
 <translation id="5942225298871134766">Chromium додасть його в <ph name="SAVED_PASSWORD_LINK" /> і запам’ятає для наступного разу.</translation>
 <translation id="5942520288919337908">Розширення <ph name="EXTENSION_NAME" /> додано в Chromium.</translation>
 <translation id="59625444380784159">Дані ваших контактів допоможуть швидше заповнювати форми в Chromium.</translation>
@@ -140,7 +139,6 @@
 <translation id="6334986366598267305">Користуватися Chromium у своєму обліковому записі Google на спільних комп’ютерах стало легше.</translation>
 <translation id="6373523479360886564">Дійсно видалити Chromium?</translation>
 <translation id="6403826409255603130">Chromium – це веб-переглядач, який запускає веб-сторінки та програми з блискавичною швидкістю. Він швидкий, надійний і зручний у користуванні. Вбудований у Chromium захист від шкідливих програм і фішингу гарантує ще більшу безпеку під час перегляду веб-сторінок.</translation>
-<translation id="6424492062988593837">Chromium став ще кращим! Доступна нова версія.</translation>
 <translation id="6475912303565314141">Також указує сторінку, яка відкривається під час запуску Chromium.</translation>
 <translation id="6485906693002546646">Ви синхронізуєте дані Chromium через обліковий запис <ph name="PROFILE_EMAIL" />. Щоб оновити параметри синхронізації або використовувати Chromium без облікового запису Google, перейдіть на сторінку <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6510925080656968729">Видалити Chromium</translation>
@@ -209,7 +207,6 @@ Chromium не може відновити ваші налаштування.</tr
 <translation id="8586442755830160949">Авторське право <ph name="YEAR" /> Автори Chromium. Усі права захищено.</translation>
 <translation id="8621669128220841554">Не вдалося встановити через невизначену помилку. Завантажте Chromium ще раз.</translation>
 <translation id="8628626585870903697">У Chromium немає засобу перегляду файлів PDF, який потрібен для перегляду версії для друку.</translation>
-<translation id="8684913864886094367">Chromium було неправильно закрито.</translation>
 <translation id="8697124171261953979">Розширення також змінило сторінку, яка відкривається під час запуску Chromium або пошуку в універсальному вікні пошуку.</translation>
 <translation id="8704119203788522458">Це ваш Chromium</translation>
 <translation id="872034308864968620">Дозволити Chromium працювати у фоновому режимі</translation>

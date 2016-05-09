@@ -24,6 +24,7 @@
 #ifndef HTMLImageElement_h
 #define HTMLImageElement_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/html/HTMLElement.h"
@@ -39,17 +40,18 @@ namespace blink {
 class HTMLFormElement;
 class ImageCandidate;
 class ShadowRoot;
+class ImageBitmapOptions;
 
-class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource, public ImageBitmapSource {
+class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource, public ImageBitmapSource, public ActiveScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class ViewportChangeListener;
 
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&);
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&);
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width);
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
+    static RawPtr<HTMLImageElement> create(Document&);
+    static RawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static RawPtr<HTMLImageElement> createForJSConstructor(Document&);
+    static RawPtr<HTMLImageElement> createForJSConstructor(Document&, int width);
+    static RawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     ~HTMLImageElement() override;
     DECLARE_VIRTUAL_TRACE();
@@ -82,12 +84,9 @@ public:
 
     bool complete() const;
 
-    bool hasPendingActivity() const { return imageLoader().hasPendingActivity(); }
+    bool hasPendingActivity() const final { return imageLoader().hasPendingActivity(); }
 
     bool canContainRangeEndPoint() const override { return false; }
-
-    void addClient(ImageLoaderClient* client) { imageLoader().addClient(client); }
-    void removeClient(ImageLoaderClient* client) { imageLoader().removeClient(client); }
 
     const AtomicString imageSourceURL() const override;
 
@@ -98,11 +97,11 @@ public:
     virtual void ensurePrimaryContent();
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint, SnapshotReason, const FloatSize&) const override;
     bool isSVGSource() const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
-    FloatSize elementSize() const override;
-    FloatSize defaultDestinationSize() const override;
+    FloatSize elementSize(const FloatSize&) const override;
+    FloatSize defaultDestinationSize(const FloatSize&) const override;
     const KURL& sourceURL() const override;
     bool isOpaque() const override;
 
@@ -112,14 +111,14 @@ public:
     void setUseFallbackContent();
     void setIsFallbackImage() { m_isFallbackImage = true; }
 
-    FetchRequest::ResourceWidth resourceWidth();
+    FetchRequest::ResourceWidth getResourceWidth();
     float sourceSize(Element&);
 
     void forceReload() const;
 
     // ImageBitmapSource implementation
     IntSize bitmapSourceSize() const override;
-    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, ExceptionState&) override;
+    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, const ImageBitmapOptions&, ExceptionState&) override;
 
 protected:
     explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
@@ -161,16 +160,14 @@ private:
     void notifyViewportChanged();
     void createMediaQueryListIfDoesNotExist();
 
-    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
-    RefPtrWillBeMember<ViewportChangeListener> m_listener;
-    WeakPtrWillBeMember<HTMLFormElement> m_form;
+    Member<HTMLImageLoader> m_imageLoader;
+    Member<ViewportChangeListener> m_listener;
+    Member<HTMLFormElement> m_form;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
-    RefPtrWillBeMember<HTMLSourceElement> m_source;
+    Member<HTMLSourceElement> m_source;
     unsigned m_formWasSetByParser : 1;
     unsigned m_elementCreatedByParser : 1;
-    // Intrinsic sizing is viewport dependant if the 'w' descriptor was used for the picked resource.
-    unsigned m_intrinsicSizingViewportDependant : 1;
     unsigned m_useFallbackContent : 1;
     unsigned m_isFallbackImage : 1;
 

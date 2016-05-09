@@ -24,6 +24,7 @@
 #include "base/trace_event/trace_event.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/renderers/gpu_video_accelerator_factories.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "ui/gfx/buffer_format_util.h"
@@ -49,7 +50,6 @@ class GpuMemoryBufferVideoFramePool::PoolImpl
       : media_task_runner_(media_task_runner),
         worker_task_runner_(worker_task_runner),
         gpu_factories_(gpu_factories),
-        texture_target_(gpu_factories->ImageTextureTarget()),
         output_format_(PIXEL_FORMAT_UNKNOWN) {
     DCHECK(media_task_runner_);
     DCHECK(worker_task_runner_);
@@ -140,13 +140,9 @@ class GpuMemoryBufferVideoFramePool::PoolImpl
 
   // Callback called when a VideoFrame generated with GetFrameResources is no
   // longer referenced.
-  // This could be called by any thread.
+  // This must be called on the thread where |media_task_runner_| is current.
   void MailboxHoldersReleased(FrameResources* frame_resources,
                               const gpu::SyncToken& sync_token);
-
-  // Return frame resources to the pool. This has to be called on the thread
-  // where |media_task_runner_| is current.
-  void ReturnFrameResources(FrameResources* frame_resources);
 
   // Delete resources. This has to be called on the thread where |task_runner|
   // is current.
@@ -164,7 +160,6 @@ class GpuMemoryBufferVideoFramePool::PoolImpl
   // Pool of resources.
   std::list<FrameResources*> resources_pool_;
 
-  const unsigned texture_target_;
   // TODO(dcastagna): change the following type from VideoPixelFormat to
   // BufferFormat.
   VideoPixelFormat output_format_;
@@ -204,8 +199,7 @@ unsigned ImageInternalFormat(VideoPixelFormat format, size_t plane) {
       return GL_RED_EXT;
     case PIXEL_FORMAT_NV12:
       DCHECK_LE(plane, 1u);
-      DLOG(WARNING) << "NV12 format not supported yet";
-      return 0;  // TODO(andresantoso): Implement extension for NV12.
+      return GL_RGB_YCBCR_420V_CHROMIUM;
     case PIXEL_FORMAT_UYVY:
       DCHECK_EQ(0u, plane);
       return GL_RGB_YCBCR_422_CHROMIUM;
@@ -387,6 +381,12 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::CreateHardwareFrame(
     case PIXEL_FORMAT_RGB32:
     case PIXEL_FORMAT_MJPEG:
     case PIXEL_FORMAT_MT21:
+    case PIXEL_FORMAT_YUV420P9:
+    case PIXEL_FORMAT_YUV422P9:
+    case PIXEL_FORMAT_YUV444P9:
+    case PIXEL_FORMAT_YUV420P10:
+    case PIXEL_FORMAT_YUV422P10:
+    case PIXEL_FORMAT_YUV444P10:
     case PIXEL_FORMAT_UNKNOWN:
       frame_ready_cb.Run(video_frame);
       return;
@@ -555,8 +555,11 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
   // Set up the planes creating the mailboxes needed to refer to the textures.
   for (size_t i = 0; i < num_planes; i += planes_per_copy) {
     PlaneResource& plane_resource = frame_resources->plane_resources[i];
+    const gfx::BufferFormat buffer_format =
+        GpuMemoryBufferFormat(output_format_, i);
+    unsigned texture_target = gpu_factories_->ImageTextureTarget(buffer_format);
     // Bind the texture and create or rebind the image.
-    gles2->BindTexture(texture_target_, plane_resource.texture_id);
+    gles2->BindTexture(texture_target, plane_resource.texture_id);
 
     if (plane_resource.gpu_memory_buffer && !plane_resource.image_id) {
       const size_t width =
@@ -567,13 +570,12 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
           plane_resource.gpu_memory_buffer->AsClientBuffer(), width, height,
           ImageInternalFormat(output_format_, i));
     } else if (plane_resource.image_id) {
-      gles2->ReleaseTexImage2DCHROMIUM(texture_target_,
-                                       plane_resource.image_id);
+      gles2->ReleaseTexImage2DCHROMIUM(texture_target, plane_resource.image_id);
     }
     if (plane_resource.image_id)
-      gles2->BindTexImage2DCHROMIUM(texture_target_, plane_resource.image_id);
+      gles2->BindTexImage2DCHROMIUM(texture_target, plane_resource.image_id);
     mailbox_holders[i] = gpu::MailboxHolder(plane_resource.mailbox,
-                                            gpu::SyncToken(), texture_target_);
+                                            gpu::SyncToken(), texture_target);
   }
 
   // Insert a sync_token, this is needed to make sure that the textures the
@@ -589,8 +591,8 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
 
   scoped_refptr<VideoFrame> frame;
 
-  auto release_mailbox_callback =
-      base::Bind(&PoolImpl::MailboxHoldersReleased, this, frame_resources);
+  auto release_mailbox_callback = BindToCurrentLoop(
+      base::Bind(&PoolImpl::MailboxHoldersReleased, this, frame_resources));
 
   // Create the VideoFrame backed by native textures.
   gfx::Size visible_size = video_frame->visible_rect().size();
@@ -631,6 +633,9 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::
     frame->metadata()->SetTimeTicks(VideoFrameMetadata::REFERENCE_TIME,
                                     render_time);
   }
+
+  frame->metadata()->SetBoolean(VideoFrameMetadata::READ_LOCK_FENCES_ENABLED,
+                                true);
 
   frame_ready_cb.Run(frame);
 }
@@ -693,14 +698,15 @@ GpuMemoryBufferVideoFramePool::PoolImpl::GetOrCreateFrameResources(
         plane_resource.size, buffer_format,
         gfx::BufferUsage::GPU_READ_CPU_READ_WRITE);
 
+    unsigned texture_target = gpu_factories_->ImageTextureTarget(buffer_format);
     gles2->GenTextures(1, &plane_resource.texture_id);
-    gles2->BindTexture(texture_target_, plane_resource.texture_id);
-    gles2->TexParameteri(texture_target_, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    gles2->TexParameteri(texture_target_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    gles2->TexParameteri(texture_target_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    gles2->TexParameteri(texture_target_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    gles2->BindTexture(texture_target, plane_resource.texture_id);
+    gles2->TexParameteri(texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gles2->TexParameteri(texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    gles2->TexParameteri(texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    gles2->TexParameteri(texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     gles2->GenMailboxCHROMIUM(plane_resource.mailbox.name);
-    gles2->ProduceTextureCHROMIUM(texture_target_, plane_resource.mailbox.name);
+    gles2->ProduceTextureCHROMIUM(texture_target, plane_resource.mailbox.name);
   }
   return frame_resources;
 }
@@ -727,19 +733,12 @@ void GpuMemoryBufferVideoFramePool::PoolImpl::DeleteFrameResources(
   }
 }
 
-// Called when a VideoFrame is no longer references.
+// Called when a VideoFrame is no longer referenced.
+// Put back the resources in the pool.
 void GpuMemoryBufferVideoFramePool::PoolImpl::MailboxHoldersReleased(
     FrameResources* frame_resources,
-    const gpu::SyncToken& sync_token) {
-  // Return the resource on the media thread.
-  media_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&PoolImpl::ReturnFrameResources, this, frame_resources));
-}
-
-// Put back the resources in the pool.
-void GpuMemoryBufferVideoFramePool::PoolImpl::ReturnFrameResources(
-    FrameResources* frame_resources) {
+    const gpu::SyncToken& release_sync_token) {
+  DCHECK(media_task_runner_->BelongsToCurrentThread());
   auto it = std::find(resources_pool_.begin(), resources_pool_.end(),
                       frame_resources);
   DCHECK(it != resources_pool_.end());

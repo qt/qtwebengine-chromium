@@ -20,12 +20,7 @@
 #include "build/build_config.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
-#include "content/common/gpu/gpu_config.h"
-#include "content/common/gpu/gpu_memory_buffer_factory.h"
-#include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/media/gpu_jpeg_decode_accelerator.h"
-#include "content/common/gpu/media/gpu_video_decode_accelerator.h"
-#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
+#include "content/common/gpu_host_messages.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
@@ -38,6 +33,9 @@
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
+#include "gpu/ipc/common/gpu_memory_buffer_support.h"
+#include "gpu/ipc/service/gpu_config.h"
+#include "gpu/ipc/service/gpu_memory_buffer_factory.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
@@ -64,7 +62,7 @@
 
 #if defined(USE_X11)
 #include "ui/base/x/x11_util.h"
-#include "ui/gfx/x/x11_switches.h"
+#include "ui/gfx/x/x11_switches.h"  // nogncheck
 #endif
 
 #if defined(OS_LINUX)
@@ -121,8 +119,8 @@ bool GpuProcessLogMessageHandler(int severity,
                                  const std::string& str) {
   std::string header = str.substr(0, message_start);
   std::string message = str.substr(message_start);
-  deferred_messages.Get().push(new GpuHostMsg_OnLogMessage(
-      severity, header, message));
+  deferred_messages.Get().push(
+      new GpuHostMsg_OnLogMessage(severity, header, message));
   return false;
 }
 
@@ -251,6 +249,11 @@ int GpuMain(const MainFunctionParams& parameters) {
   VaapiWrapper::PreSandboxInitialization();
 #endif
 
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  // Set thread priority before sandbox initialization.
+  base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::DISPLAY);
+#endif
+
   // Warm up resources that don't need access to GPUInfo.
   if (WarmUpSandbox(command_line)) {
 #if defined(OS_LINUX)
@@ -309,6 +312,10 @@ int GpuMain(const MainFunctionParams& parameters) {
       // (Chrome OS, Android) or where workarounds may be dependent on GL_VENDOR
       // and GL_RENDERER strings which are lazily computed (Linux).
       if (!command_line.HasSwitch(switches::kDisableGpuDriverBugWorkarounds)) {
+        // TODO: this can not affect disabled extensions, since they're already
+        // initialized in the bindings. This should be moved before bindings
+        // initialization. However, populating GPUInfo fully works only on
+        // Android. Other platforms would need the bindings to query GL strings.
         gpu::ApplyGpuDriverBugWorkarounds(
             gpu_info, const_cast<base::CommandLine*>(&command_line));
       }
@@ -366,26 +373,24 @@ int GpuMain(const MainFunctionParams& parameters) {
 #elif defined(OS_MACOSX)
     gpu_info.sandboxed = Sandbox::SandboxIsCurrentlyActive();
 #endif
-
-    gpu_info.video_decode_accelerator_capabilities =
-        content::GpuVideoDecodeAccelerator::GetCapabilities();
-    gpu_info.video_encode_accelerator_supported_profiles =
-        content::GpuVideoEncodeAccelerator::GetSupportedProfiles();
-    gpu_info.jpeg_decode_accelerator_supported =
-        content::GpuJpegDecodeAccelerator::IsSupported();
   } else {
     dead_on_arrival = true;
   }
 
   logging::SetLogMessageHandler(NULL);
 
-  scoped_ptr<GpuMemoryBufferFactory> gpu_memory_buffer_factory;
-  if (GpuMemoryBufferFactory::GetNativeType() != gfx::EMPTY_BUFFER)
-    gpu_memory_buffer_factory = GpuMemoryBufferFactory::CreateNativeType();
+  scoped_ptr<gpu::GpuMemoryBufferFactory> gpu_memory_buffer_factory;
+  if (gpu::GetNativeGpuMemoryBufferType() != gfx::EMPTY_BUFFER)
+    gpu_memory_buffer_factory = gpu::GpuMemoryBufferFactory::CreateNativeType();
 
   gpu::SyncPointManager sync_point_manager(false);
 
-  GpuProcess gpu_process;
+  base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  io_thread_priority = base::ThreadPriority::DISPLAY;
+#endif
+
+  GpuProcess gpu_process(io_thread_priority);
 
   GpuChildThread* child_thread = new GpuChildThread(
       watchdog_thread.get(), dead_on_arrival, gpu_info, deferred_messages.Get(),

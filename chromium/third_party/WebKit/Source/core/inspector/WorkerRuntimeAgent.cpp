@@ -31,13 +31,12 @@
 #include "core/inspector/WorkerRuntimeAgent.h"
 
 #include "bindings/core/v8/ScriptState.h"
-#include "core/inspector/InjectedScript.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace blink {
 
-WorkerRuntimeAgent::WorkerRuntimeAgent(InjectedScriptManager* injectedScriptManager, V8Debugger* debugger, WorkerGlobalScope* workerGlobalScope, InspectorRuntimeAgent::Client* client)
-    : InspectorRuntimeAgent(injectedScriptManager, debugger, client)
+WorkerRuntimeAgent::WorkerRuntimeAgent(V8RuntimeAgent* agent, WorkerGlobalScope* workerGlobalScope, InspectorRuntimeAgent::Client* client)
+    : InspectorRuntimeAgent(agent, client)
     , m_workerGlobalScope(workerGlobalScope)
 {
 }
@@ -58,23 +57,6 @@ void WorkerRuntimeAgent::enable(ErrorString* errorString)
         return;
 
     InspectorRuntimeAgent::enable(errorString);
-    ScriptState* scriptState = m_workerGlobalScope->script()->scriptState();
-    reportExecutionContextCreated(scriptState, "", m_workerGlobalScope->url(), "", "");
-}
-
-ScriptState* WorkerRuntimeAgent::defaultScriptState()
-{
-    return m_workerGlobalScope->script()->scriptState();
-}
-
-void WorkerRuntimeAgent::muteConsole()
-{
-    // We don't need to mute console for workers.
-}
-
-void WorkerRuntimeAgent::unmuteConsole()
-{
-    // We don't need to mute console for workers.
 }
 
 } // namespace blink

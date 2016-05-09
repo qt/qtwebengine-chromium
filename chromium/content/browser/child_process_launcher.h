@@ -15,13 +15,14 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "mojo/edk/embedder/platform_channel_pair.h"
 
 namespace base {
 class CommandLine;
 }
 
 namespace content {
-class SandboxedProcessLauncherDelegate;
 
 // Launches a process asynchronously and notifies the client of the process
 // handle when it's available.  It's used to avoid blocking the calling thread
@@ -95,14 +96,15 @@ class CONTENT_EXPORT ChildProcessLauncher : public base::NonThreadSafe {
   // client went away.
   static void DidLaunch(base::WeakPtr<ChildProcessLauncher> instance,
                         bool terminate_on_shutdown,
-                        bool zygote,
+                        ZygoteHandle zygote,
 #if defined(OS_ANDROID)
                         base::ScopedFD ipcfd,
+                        base::ScopedFD mojo_fd,
 #endif
                         base::Process process);
 
   // Notifies the client about the result of the operation.
-  void Notify(bool zygote,
+  void Notify(ZygoteHandle zygote,
 #if defined(OS_ANDROID)
               base::ScopedFD ipcfd,
 #endif
@@ -122,11 +124,14 @@ class CONTENT_EXPORT ChildProcessLauncher : public base::NonThreadSafe {
   base::Process process_;
   base::TerminationStatus termination_status_;
   int exit_code_;
-  bool zygote_;
+  ZygoteHandle zygote_;
   bool starting_;
   // Controls whether the child process should be terminated on browser
   // shutdown. Default behavior is to terminate the child.
   const bool terminate_child_on_shutdown_;
+
+  // Platform channel used to establish Mojo IPC.
+  mojo::edk::PlatformChannelPair mojo_platform_channel_;
 
   base::WeakPtrFactory<ChildProcessLauncher> weak_factory_;
 

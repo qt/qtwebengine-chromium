@@ -25,8 +25,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
-#include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
+#include "third_party/WebKit/public/web/WebFrameWidget.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
@@ -71,31 +71,6 @@ void PlatformPollFreemem(void) {
 // though the comment of WebColor says it is in RGBA.
 const blink::WebColor kColorBlack = 0xFF000000;
 
-class CastRenderViewObserver : content::RenderViewObserver {
- public:
-  CastRenderViewObserver(CastContentRendererClient* client,
-                         content::RenderView* render_view);
-  ~CastRenderViewObserver() override {}
-
-  void DidClearWindowObject(blink::WebLocalFrame* frame) override;
-
- private:
-  CastContentRendererClient* const client_;
-
-  DISALLOW_COPY_AND_ASSIGN(CastRenderViewObserver);
-};
-
-CastRenderViewObserver::CastRenderViewObserver(
-    CastContentRendererClient* client,
-    content::RenderView* render_view)
-    : content::RenderViewObserver(render_view),
-      client_(client) {
-}
-
-void CastRenderViewObserver::DidClearWindowObject(blink::WebLocalFrame* frame) {
-  client_->AddRendererNativeBindings(frame);
-}
-
 }  // namespace
 
 CastContentRendererClient::CastContentRendererClient()
@@ -105,10 +80,6 @@ CastContentRendererClient::CastContentRendererClient()
 }
 
 CastContentRendererClient::~CastContentRendererClient() {
-}
-
-void CastContentRendererClient::AddRendererNativeBindings(
-    blink::WebLocalFrame* frame) {
 }
 
 void CastContentRendererClient::RenderThreadStarted() {
@@ -148,7 +119,8 @@ void CastContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   blink::WebView* webview = render_view->GetWebView();
   if (webview) {
-    webview->setBaseBackgroundColor(kColorBlack);
+    blink::WebFrameWidget* web_frame_widget = render_view->GetWebFrameWidget();
+    web_frame_widget->setBaseBackgroundColor(kColorBlack);
 
     // The following settings express consistent behaviors across Cast
     // embedders, though Android has enabled by default for mobile browsers.
@@ -166,9 +138,6 @@ void CastContentRendererClient::RenderViewCreated(
     // application running.
     webview->settings()->setOfflineWebApplicationCacheEnabled(false);
   }
-
-  // Note: RenderView will own the lifetime of its observer.
-  new CastRenderViewObserver(this, render_view);
 }
 
 void CastContentRendererClient::AddKeySystems(
@@ -177,7 +146,7 @@ void CastContentRendererClient::AddKeySystems(
 }
 
 #if !defined(OS_ANDROID)
-scoped_ptr<::media::RendererFactory>
+std::unique_ptr<::media::RendererFactory>
 CastContentRendererClient::CreateMediaRendererFactory(
     ::content::RenderFrame* render_frame,
     ::media::GpuVideoAcceleratorFactories* gpu_factories,
@@ -186,7 +155,7 @@ CastContentRendererClient::CreateMediaRendererFactory(
   if (!cmd_line->HasSwitch(switches::kEnableCmaMediaPipeline))
     return nullptr;
 
-  return scoped_ptr<::media::RendererFactory>(
+  return std::unique_ptr<::media::RendererFactory>(
       new chromecast::media::ChromecastMediaRendererFactory(
           gpu_factories, render_frame->GetRoutingID()));
 }

@@ -9,14 +9,13 @@
 
 namespace blink {
 
-class ExecutionContext;
 class ScriptWrappable;
 class WorkerOrWorkletScriptController;
 
 class CORE_EXPORT WorkerOrWorkletGlobalScope : public ExecutionContext {
 public:
-    virtual ScriptWrappable* scriptWrappable() const = 0;
-    virtual WorkerOrWorkletScriptController* script() = 0;
+    virtual ScriptWrappable* getScriptWrappable() const = 0;
+    virtual WorkerOrWorkletScriptController* scriptController() = 0;
 };
 
 DEFINE_TYPE_CASTS(WorkerOrWorkletGlobalScope, ExecutionContext, context, (context->isWorkerGlobalScope() || context->isWorkletGlobalScope()), (context.isWorkerGlobalScope() || context.isWorkletGlobalScope()));

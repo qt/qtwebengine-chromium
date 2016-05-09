@@ -51,10 +51,10 @@ inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner&
 {
 }
 
-PassRefPtrWillBeRawPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
+RawPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
 {
-    RefPtrWillBeRawPtr<SpinButtonElement> element = adoptRefWillBeNoop(new SpinButtonElement(document, spinButtonOwner));
-    element->setShadowPseudoId(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
+    RawPtr<SpinButtonElement> element = new SpinButtonElement(document, spinButtonOwner);
+    element->setShadowPseudoId(AtomicString("-webkit-inner-spin-button"));
     element->setAttribute(idAttr, ShadowElementNames::spinButton());
     return element.release();
 }
@@ -93,7 +93,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             // The following functions of HTMLInputElement may run JavaScript
             // code which detaches this shadow node. We need to take a reference
             // and check layoutObject() after such function calls.
-            RefPtrWillBeRawPtr<Node> protector(this);
+            RawPtr<Node> protector(this);
             if (m_spinButtonOwner)
                 m_spinButtonOwner->focusAndSelectSpinButtonOwner();
             if (layoutObject()) {
@@ -189,13 +189,13 @@ void SpinButtonElement::doStepAction(int amount)
 void SpinButtonElement::releaseCapture(EventDispatch eventDispatch)
 {
     stopRepeatingTimer();
-    if (m_capturing) {
-        if (LocalFrame* frame = document().frame()) {
-            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
-            m_capturing = false;
-            if (Page* page = document().page())
-                page->chromeClient().unregisterPopupOpeningObserver(this);
-        }
+    if (!m_capturing)
+        return;
+    if (LocalFrame* frame = document().frame()) {
+        frame->eventHandler().setCapturingMouseEventsNode(nullptr);
+        m_capturing = false;
+        if (Page* page = document().page())
+            page->chromeClient().unregisterPopupOpeningObserver(this);
     }
     if (m_spinButtonOwner)
         m_spinButtonOwner->spinButtonDidReleaseMouseCapture(eventDispatch);
@@ -262,4 +262,4 @@ DEFINE_TRACE(SpinButtonElement)
     HTMLDivElement::trace(visitor);
 }
 
-}
+} // namespace blink

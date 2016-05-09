@@ -36,6 +36,12 @@ message NavigationStateChangeMessage {
   // TODO(dtrainor): Figure out exactly what we want to send here.  Loading may
   // mean different things for different contexts (crbug.com/563626).
   optional bool loading = 4;
+  
+  // Denotes whether the page load has been finished. While |loading| above will
+  // be true when any resources are being loaded from the network,
+  // |page_load_completed| is set to true when the initial page load has
+  // completed.
+  optional bool page_load_completed = 5;
 }
 
 message NavigationMessage {
@@ -54,6 +60,6 @@ message NavigationMessage {
 
   optional Type type = 1;
 
-  optional NavigationStateChangeMessage navigation_state_change = 1000;
+  optional NavigationStateChangeMessage navigation_state_changed = 1000;
   optional LoadUrlMessage load_url = 1001;
 }

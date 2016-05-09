@@ -30,6 +30,7 @@
 
 #include "bindings/core/v8/V8GCController.h"
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/RetainedDOMInfo.h"
 #include "bindings/core/v8/V8AbstractEventListener.h"
 #include "bindings/core/v8/V8Binding.h"
@@ -43,12 +44,14 @@
 #include "core/dom/TemplateContentDocumentFragment.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/svg/SVGElement.h"
+#include "platform/Histogram.h"
 #include "platform/TraceEvent.h"
+#include "public/platform/BlameContext.h"
+#include "public/platform/Platform.h"
 #include "wtf/Partitions.h"
 #include "wtf/Vector.h"
 #include <algorithm>
@@ -75,10 +78,7 @@ static void addReferencesForNodeWithEventListeners(v8::Isolate* isolate, Node* n
 Node* V8GCController::opaqueRootForGC(v8::Isolate*, Node* node)
 {
     ASSERT(node);
-    // FIXME: Remove the special handling for image elements.
-    // Maybe should image elements be active DOM nodes?
-    // See https://code.google.com/p/chromium/issues/detail?id=164882
-    if (node->inDocument() || (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity())) {
+    if (node->inShadowIncludingDocument()) {
         Document& document = node->document();
         if (HTMLImportsController* controller = document.importsController())
             return controller->master();
@@ -120,9 +120,7 @@ public:
 
         v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
         ASSERT(V8DOMWrapper::hasInternalFieldsSet(wrapper));
-        const WrapperTypeInfo* type = toWrapperTypeInfo(wrapper);
-        ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(wrapper);
-        if (activeDOMObject && activeDOMObject->hasPendingActivity()) {
+        if (toWrapperTypeInfo(wrapper)->hasPendingActivity(wrapper)) {
             v8::Persistent<v8::Object>::Cast(*value).MarkActive();
             return;
         }
@@ -131,14 +129,6 @@ public:
             ASSERT(V8Node::hasInstance(wrapper, m_isolate));
             Node* node = V8Node::toImpl(wrapper);
             if (node->hasEventListeners()) {
-                v8::Persistent<v8::Object>::Cast(*value).MarkActive();
-                return;
-            }
-            // FIXME: Remove the special handling for image elements.
-            // The same special handling is in V8GCController::opaqueRootForGC().
-            // Maybe should image elements be active DOM nodes?
-            // See https://code.google.com/p/chromium/issues/detail?id=164882
-            if (isHTMLImageElement(*node) && toHTMLImageElement(*node).hasPendingActivity()) {
                 v8::Persistent<v8::Object>::Cast(*value).MarkActive();
                 return;
             }
@@ -174,16 +164,18 @@ public:
         v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
         ASSERT(V8DOMWrapper::hasInternalFieldsSet(wrapper));
 
-        if (value->IsIndependent())
-            return;
-
         const WrapperTypeInfo* type = toWrapperTypeInfo(wrapper);
-
-        ActiveDOMObject* activeDOMObject = type->toActiveDOMObject(wrapper);
-        if (activeDOMObject && activeDOMObject->hasPendingActivity()) {
+        if (type->hasPendingActivity(wrapper)) {
+            // If you hit this assert, you'll need to add a [DependentiLifetime]
+            // extended attribute to the DOM interface. A DOM interface that
+            // overrides hasPendingActivity must be marked as [DependentiLifetime].
+            RELEASE_ASSERT(!value->IsIndependent());
             m_isolate->SetObjectGroupId(*value, liveRootId());
             ++m_domObjectsWithPendingActivity;
         }
+
+        if (value->IsIndependent())
+            return;
 
         if (classId == WrapperTypeInfo::NodeClassId) {
             ASSERT(V8Node::hasInstance(wrapper, m_isolate));
@@ -237,7 +229,7 @@ private:
     // v8 guarantees that Blink will not regain control while a v8 GC runs
     // (=> no Oilpan GCs will be triggered), hence raw, untraced members
     // can safely be kept here.
-    Vector<RawPtrWillBeUntracedMember<Node>> m_groupsWhichNeedRetainerInfo;
+    Vector<UntracedMember<Node>> m_groupsWhichNeedRetainerInfo;
     int m_domObjectsWithPendingActivity;
     bool m_liveRootGroupIdSet;
     bool m_constructRetainedObjectInfos;
@@ -267,60 +259,52 @@ void objectGroupingForMajorGC(v8::Isolate* isolate, bool constructRetainedObject
 
 void gcPrologueForMajorGC(v8::Isolate* isolate, bool constructRetainedObjectInfos)
 {
-    if (isMainThread()) {
-        {
-            TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMMajorGC");
-            objectGroupingForMajorGC(isolate, constructRetainedObjectInfos);
-        }
-        V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
-        TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8MajorGC");
-    } else {
-        objectGroupingForMajorGC(isolate, constructRetainedObjectInfos);
-    }
+    objectGroupingForMajorGC(isolate, constructRetainedObjectInfos);
 }
 
-}
+} // namespace
 
 void V8GCController::gcPrologue(v8::Isolate* isolate, v8::GCType type, v8::GCCallbackFlags flags)
 {
     if (isMainThread())
         ScriptForbiddenScope::enter();
 
+    // Attribute garbage collection to the all frames instead of a specific
+    // frame.
+    if (BlameContext* blameContext = Platform::current()->topLevelBlameContext())
+        blameContext->Enter();
+
     // TODO(haraken): A GC callback is not allowed to re-enter V8. This means
     // that it's unsafe to run Oilpan's GC in the GC callback because it may
     // run finalizers that call into V8. To avoid the risk, we should post
     // a task to schedule the Oilpan's GC.
     // (In practice, there is no finalizer that calls into V8 and thus is safe.)
-    if (ThreadState::current())
-        ThreadState::current()->willStartV8GC();
 
     v8::HandleScope scope(isolate);
     switch (type) {
     case v8::kGCTypeScavenge:
+        if (ThreadState::current())
+            ThreadState::current()->willStartV8GC(BlinkGC::V8MinorGC);
+
         TRACE_EVENT_BEGIN1("devtools.timeline,v8", "MinorGC", "usedHeapSizeBefore", usedHeapSize(isolate));
-        if (isMainThread()) {
-            TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "DOMMinorGC");
-        }
         visitWeakHandlesForMinorGC(isolate);
-        if (isMainThread()) {
-            V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
-            TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8MinorGC");
-        }
         break;
     case v8::kGCTypeMarkSweepCompact:
+        if (ThreadState::current())
+            ThreadState::current()->willStartV8GC(BlinkGC::V8MajorGC);
+
         TRACE_EVENT_BEGIN2("devtools.timeline,v8", "MajorGC", "usedHeapSizeBefore", usedHeapSize(isolate), "type", "atomic pause");
         gcPrologueForMajorGC(isolate, flags & v8::kGCCallbackFlagConstructRetainedObjectInfos);
         break;
     case v8::kGCTypeIncrementalMarking:
+        if (ThreadState::current())
+            ThreadState::current()->willStartV8GC(BlinkGC::V8MajorGC);
+
         TRACE_EVENT_BEGIN2("devtools.timeline,v8", "MajorGC", "usedHeapSizeBefore", usedHeapSize(isolate), "type", "incremental marking");
         gcPrologueForMajorGC(isolate, flags & v8::kGCCallbackFlagConstructRetainedObjectInfos);
         break;
     case v8::kGCTypeProcessWeakCallbacks:
         TRACE_EVENT_BEGIN2("devtools.timeline,v8", "MajorGC", "usedHeapSizeBefore", usedHeapSize(isolate), "type", "weak processing");
-        if (isMainThread()) {
-            V8PerIsolateData::from(isolate)->setPreviousSamplingState(TRACE_EVENT_GET_SAMPLING_STATE());
-            TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMajorGC");
-        }
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -332,33 +316,20 @@ void V8GCController::gcEpilogue(v8::Isolate* isolate, v8::GCType type, v8::GCCal
     switch (type) {
     case v8::kGCTypeScavenge:
         TRACE_EVENT_END1("devtools.timeline,v8", "MinorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
-        if (isMainThread()) {
-            TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
-        }
         // TODO(haraken): Remove this. See the comment in gcPrologue.
         if (ThreadState::current())
             ThreadState::current()->scheduleV8FollowupGCIfNeeded(BlinkGC::V8MinorGC);
         break;
     case v8::kGCTypeMarkSweepCompact:
         TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
-        if (isMainThread()) {
-            TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
-        }
+        if (ThreadState::current())
+            ThreadState::current()->scheduleV8FollowupGCIfNeeded(BlinkGC::V8MajorGC);
         break;
     case v8::kGCTypeIncrementalMarking:
         TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
-        if (isMainThread()) {
-            TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
-        }
         break;
     case v8::kGCTypeProcessWeakCallbacks:
         TRACE_EVENT_END1("devtools.timeline,v8", "MajorGC", "usedHeapSizeAfter", usedHeapSize(isolate));
-        if (isMainThread()) {
-            TRACE_EVENT_SET_NONCONST_SAMPLING_STATE(V8PerIsolateData::from(isolate)->previousSamplingState());
-        }
-        // TODO(haraken): Remove this. See the comment in gcPrologue.
-        if (ThreadState::current())
-            ThreadState::current()->scheduleV8FollowupGCIfNeeded(BlinkGC::V8MajorGC);
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -367,10 +338,13 @@ void V8GCController::gcEpilogue(v8::Isolate* isolate, v8::GCType type, v8::GCCal
     if (isMainThread())
         ScriptForbiddenScope::exit();
 
+    if (BlameContext* blameContext = Platform::current()->topLevelBlameContext())
+        blameContext->Leave();
+
     // v8::kGCCallbackFlagForced forces a Blink heap garbage collection
     // when a garbage collection was forced from V8. This is either used
     // for tests that force GCs from JavaScript to verify that objects die
-    // when expected, or when handling memory pressure notifications.
+    // when expected.
     if (flags & v8::kGCCallbackFlagForced) {
         // This single GC is not enough for two reasons:
         //   (1) The GC is not precise because the GC scans on-stack pointers conservatively.
@@ -381,17 +355,27 @@ void V8GCController::gcEpilogue(v8::Isolate* isolate, v8::GCType type, v8::GCCal
         // Regarding (1), we force a precise GC at the end of the current event loop. So if you want
         // to collect all garbage, you need to wait until the next event loop.
         // Regarding (2), it would be OK in practice to trigger only one GC per gcEpilogue, because
-        // GCController.collectAll() forces 7 V8's GC.
+        // GCController.collectAll() forces multiple V8's GC.
         Heap::collectGarbage(BlinkGC::HeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
 
         // Forces a precise GC at the end of the current event loop.
         if (ThreadState::current()) {
-            // Temporary asserts to diagnose crbug.com/571207's failure to transition
-            // to FullGCScheduled.
-            RELEASE_ASSERT(!ThreadState::current()->isSweepingInProgress());
             RELEASE_ASSERT(!ThreadState::current()->isInGC());
             ThreadState::current()->setGCState(ThreadState::FullGCScheduled);
         }
+    }
+
+    // v8::kGCCallbackFlagCollectAllAvailableGarbage is used when V8 handles
+    // low memory notifications.
+    if (flags & v8::kGCCallbackFlagCollectAllAvailableGarbage) {
+        // This single GC is not enough. See the above comment.
+        Heap::collectGarbage(BlinkGC::HeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
+
+        // Do not force a precise GC at the end of the current event loop.
+        // According to UMA stats, the collection rate of the precise GC
+        // scheduled at the end of the low memory handling is extremely low,
+        // because the above conservative GC is sufficient for collecting
+        // most objects. So we intentionally don't schedule a precise GC here.
     }
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
@@ -410,25 +394,6 @@ void V8GCController::collectAllGarbageForTesting(v8::Isolate* isolate)
 {
     for (unsigned i = 0; i < 5; i++)
         isolate->RequestGarbageCollectionForTesting(v8::Isolate::kFullGarbageCollection);
-}
-
-void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
-{
-    // TODO(haraken): Oilpan should report the amount of memory used
-    // by DOM nodes as well. Currently Partitions::currentDOMMemoryUsage()
-    // just returns 0.
-#if !ENABLE(OILPAN)
-    if (!isMainThread())
-        return;
-
-    static size_t lastUsageReportedToV8 = 0;
-
-    size_t currentUsage = WTF::Partitions::currentDOMMemoryUsage();
-    int64_t diff = static_cast<int64_t>(currentUsage) - static_cast<int64_t>(lastUsageReportedToV8);
-    isolate->AdjustAmountOfExternalAllocatedMemory(diff);
-
-    lastUsageReportedToV8 = currentUsage;
-#endif
 }
 
 class DOMWrapperTracer : public v8::PersistentHandleVisitor {
@@ -457,6 +422,68 @@ void V8GCController::traceDOMWrappers(v8::Isolate* isolate, Visitor* visitor)
 {
     DOMWrapperTracer tracer(visitor);
     isolate->VisitHandlesWithClassIds(&tracer);
+}
+
+class PendingActivityVisitor : public v8::PersistentHandleVisitor {
+public:
+    PendingActivityVisitor(v8::Isolate* isolate, ExecutionContext* executionContext)
+        : m_isolate(isolate)
+        , m_executionContext(executionContext)
+        , m_pendingActivityFound(false)
+    {
+    }
+
+    void VisitPersistentHandle(v8::Persistent<v8::Value>* value, uint16_t classId) override
+    {
+        // If we have already found any wrapper that has a pending activity,
+        // we don't need to check other wrappers.
+        if (m_pendingActivityFound)
+            return;
+
+        if (classId != WrapperTypeInfo::NodeClassId && classId != WrapperTypeInfo::ObjectClassId)
+            return;
+
+        v8::Local<v8::Object> wrapper = v8::Local<v8::Object>::New(m_isolate, v8::Persistent<v8::Object>::Cast(*value));
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(wrapper));
+        // The ExecutionContext check is heavy, so it should be done at the last.
+        if (toWrapperTypeInfo(wrapper)->hasPendingActivity(wrapper)
+            // TODO(haraken): Currently we don't have a way to get a creation
+            // context from a wrapper. We should implement the way and enable
+            // the following condition.
+            //
+            // This condition affects only compositor workers, where one isolate
+            // is shared by multiple workers. If we don't have the condition,
+            // a worker object for a compositor worker doesn't get collected
+            // until all compositor workers in the same isolate lose pending
+            // activities. In other words, not having the condition delays
+            // destruction of a worker object of a compositor worker.
+            //
+            /* && toExecutionContext(wrapper->creationContext()) == m_executionContext */
+            )
+            m_pendingActivityFound = true;
+    }
+
+    bool pendingActivityFound() const { return m_pendingActivityFound; }
+
+private:
+    v8::Isolate* m_isolate;
+    Persistent<ExecutionContext> m_executionContext;
+    bool m_pendingActivityFound;
+};
+
+bool V8GCController::hasPendingActivity(v8::Isolate* isolate, ExecutionContext* executionContext)
+{
+    // V8GCController::hasPendingActivity is used only when a worker checks if
+    // the worker contains any wrapper that has pending activities.
+    ASSERT(!isMainThread());
+
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, scanPendingActivityHistogram, new CustomCountHistogram("Blink.ScanPendingActivityDuration", 1, 1000, 50));
+    double startTime = WTF::currentTimeMS();
+    v8::HandleScope scope(isolate);
+    PendingActivityVisitor visitor(isolate, executionContext);
+    toIsolate(executionContext)->VisitHandlesWithClassIds(&visitor);
+    scanPendingActivityHistogram.count(static_cast<int>(WTF::currentTimeMS() - startTime));
+    return visitor.pendingActivityFound();
 }
 
 } // namespace blink

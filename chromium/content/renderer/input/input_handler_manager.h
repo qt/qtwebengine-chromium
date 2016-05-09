@@ -8,6 +8,7 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "content/renderer/render_view_impl.h"
 
@@ -32,12 +33,13 @@ class RendererScheduler;
 namespace content {
 
 class InputHandlerWrapper;
+class SynchronousInputHandlerProxyClient;
 class InputHandlerManagerClient;
 struct DidOverscrollParams;
 
 // InputHandlerManager class manages InputHandlerProxy instances for
 // the WebViews in this renderer.
-class InputHandlerManager {
+class CONTENT_EXPORT InputHandlerManager {
  public:
   // |task_runner| is the SingleThreadTaskRunner of the compositor thread. The
   // underlying MessageLoop and supplied |client| and the |renderer_scheduler|
@@ -46,28 +48,38 @@ class InputHandlerManager {
   InputHandlerManager(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       InputHandlerManagerClient* client,
+      SynchronousInputHandlerProxyClient* sync_handler_client,
       scheduler::RendererScheduler* renderer_scheduler);
-  ~InputHandlerManager();
+  virtual ~InputHandlerManager();
 
   // Callable from the main thread only.
-  void AddInputHandler(
-      int routing_id,
-      const base::WeakPtr<cc::InputHandler>& input_handler,
-      const base::WeakPtr<RenderViewImpl>& render_view_impl,
-      bool enable_smooth_scrolling);
+  void AddInputHandler(int routing_id,
+                       const base::WeakPtr<cc::InputHandler>& input_handler,
+                       const base::WeakPtr<RenderViewImpl>& render_view_impl,
+                       bool enable_smooth_scrolling,
+                       bool enable_wheel_gestures);
 
   void ObserveWheelEventAndResultOnMainThread(
       int routing_id,
       const blink::WebMouseWheelEvent& wheel_event,
       const cc::InputHandlerScrollResult& scroll_result);
 
+  void ObserveGestureEventAndResultOnMainThread(
+      int routing_id,
+      const blink::WebGestureEvent& gesture_event,
+      const cc::InputHandlerScrollResult& scroll_result);
+
+  void NotifyInputEventHandledOnMainThread(int routing_id,
+                                           blink::WebInputEvent::Type);
+
   // Callback only from the compositor's thread.
   void RemoveInputHandler(int routing_id);
 
   // Called from the compositor's thread.
-  InputEventAckState HandleInputEvent(int routing_id,
-                                      const blink::WebInputEvent* input_event,
-                                      ui::LatencyInfo* latency_info);
+  virtual InputEventAckState HandleInputEvent(
+      int routing_id,
+      const blink::WebInputEvent* input_event,
+      ui::LatencyInfo* latency_info);
 
   // Called from the compositor's thread.
   void DidOverscroll(int routing_id, const DidOverscrollParams& params);
@@ -85,21 +97,32 @@ class InputHandlerManager {
       const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner,
       const base::WeakPtr<cc::InputHandler>& input_handler,
       const base::WeakPtr<RenderViewImpl>& render_view_impl,
-      bool enable_smooth_scrolling);
+      bool enable_smooth_scrolling,
+      bool enable_wheel_gestures);
 
   void ObserveWheelEventAndResultOnCompositorThread(
       int routing_id,
       const blink::WebMouseWheelEvent& wheel_event,
       const cc::InputHandlerScrollResult& scroll_result);
 
+  void ObserveGestureEventAndResultOnCompositorThread(
+      int routing_id,
+      const blink::WebGestureEvent& gesture_event,
+      const cc::InputHandlerScrollResult& scroll_result);
+
+  void NotifyInputEventHandledOnCompositorThread(int routing_id,
+                                                 blink::WebInputEvent::Type);
+
   typedef base::ScopedPtrHashMap<int,  // routing_id
                                  scoped_ptr<InputHandlerWrapper>>
       InputHandlerMap;
   InputHandlerMap input_handlers_;
 
-  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  InputHandlerManagerClient* client_;
-  scheduler::RendererScheduler* renderer_scheduler_;  // Not owned.
+  const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  InputHandlerManagerClient* const client_;
+  // May be null.
+  SynchronousInputHandlerProxyClient* const synchronous_handler_proxy_client_;
+  scheduler::RendererScheduler* const renderer_scheduler_;  // Not owned.
 };
 
 }  // namespace content

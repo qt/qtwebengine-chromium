@@ -6,7 +6,6 @@
 #define MASH_WM_PROPERTY_UTIL_H_
 
 #include "components/mus/public/cpp/window.h"
-#include "components/mus/public/interfaces/window_manager.mojom.h"
 #include "components/mus/public/interfaces/window_manager_constants.mojom.h"
 #include "mash/wm/public/interfaces/container.mojom.h"
 
@@ -27,6 +26,7 @@ class Shadow;
 // Utility functions to read values from properties & convert them to the
 // appropriate types.
 
+void SetWindowShowState(mus::Window* window, mus::mojom::ShowState show_state);
 mus::mojom::ShowState GetWindowShowState(const mus::Window* window);
 
 void SetWindowUserSetBounds(mus::Window* window, const gfx::Rect& bounds);
@@ -37,17 +37,21 @@ gfx::Size GetWindowPreferredSize(const mus::Window* window);
 
 mojom::Container GetRequestedContainer(const mus::Window* window);
 
-mus::mojom::ResizeBehavior GetResizeBehavior(const mus::Window* window);
+// Returns a bitfield of kResizeBehavior* values from
+// window_manager_constants.mojom.
+int32_t GetResizeBehavior(const mus::Window* window);
 
 void SetRestoreBounds(mus::Window* window, const gfx::Rect& bounds);
 gfx::Rect GetRestoreBounds(const mus::Window* window);
 
 void SetShadow(mus::Window* window, Shadow* shadow);
-Shadow* GetShadow(mus::Window* window);
+Shadow* GetShadow(const mus::Window* window);
 
-mus::mojom::WindowType GetWindowType(mus::Window* window);
+mus::mojom::WindowType GetWindowType(const mus::Window* window);
 mus::mojom::WindowType GetWindowType(
     const mus::Window::SharedProperties& window);
+
+base::string16 GetWindowTitle(const mus::Window* window);
 
 }  // namespace wm
 }  // namespace mash

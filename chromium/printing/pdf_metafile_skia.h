@@ -7,9 +7,9 @@
 
 #include <stdint.h>
 
-#include "base/logging.h"
+#include <memory>
+
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "printing/metafile.h"
 #include "skia/ext/platform_canvas.h"
@@ -71,20 +71,20 @@ class PRINTING_EXPORT PdfMetafileSkia : public Metafile {
 #endif  // if defined(OS_CHROMEOS) || defined(OS_ANDROID)
 
   // Return a new metafile containing just the current page in draft mode.
-  scoped_ptr<PdfMetafileSkia> GetMetafileForCurrentPage();
+  std::unique_ptr<PdfMetafileSkia> GetMetafileForCurrentPage();
 
   // This method calls StartPage and then returns an appropriate
   // PlatformCanvas implementation bound to the context created by
-  // StartPage or NULL on error.  The skia::PlatformCanvas pointer that
+  // StartPage or NULL on error.  The SkCanvas pointer that
   // is returned is owned by this PdfMetafileSkia object and does not
   // need to be ref()ed or unref()ed.  The canvas will remain valid
   // until FinishPage() or FinishDocument() is called.
-  skia::PlatformCanvas* GetVectorCanvasForNewPage(const gfx::Size& page_size,
-                                                  const gfx::Rect& content_area,
-                                                  const float& scale_factor);
+  SkCanvas* GetVectorCanvasForNewPage(const gfx::Size& page_size,
+                                      const gfx::Rect& content_area,
+                                      const float& scale_factor);
 
  private:
-  scoped_ptr<PdfMetafileSkiaData> data_;
+  std::unique_ptr<PdfMetafileSkiaData> data_;
 
   DISALLOW_COPY_AND_ASSIGN(PdfMetafileSkia);
 };

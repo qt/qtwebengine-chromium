@@ -65,6 +65,11 @@ class QuicHeadersStream::SpdyFramerVisitor
     CloseConnection("SPDY DATA frame received.");
   }
 
+  void OnStreamEnd(SpdyStreamId stream_id) override {
+    // The framer invokes OnStreamEnd after processing a SYN_STREAM
+    // or SYN_REPLY frame that had the fin bit set.
+  }
+
   void OnStreamPadding(SpdyStreamId stream_id, size_t len) override {
     CloseConnection("SPDY frame padding received.");
   }
@@ -218,11 +223,10 @@ size_t QuicHeadersStream::WriteHeaders(QuicStreamId stream_id,
     headers_frame.set_has_priority(true);
     headers_frame.set_priority(priority);
   }
-  scoped_ptr<SpdySerializedFrame> frame(
-      spdy_framer_.SerializeFrame(headers_frame));
-  WriteOrBufferData(StringPiece(frame->data(), frame->size()), false,
+  SpdySerializedFrame frame(spdy_framer_.SerializeFrame(headers_frame));
+  WriteOrBufferData(StringPiece(frame.data(), frame.size()), false,
                     ack_listener);
-  return frame->size();
+  return frame.size();
 }
 
 size_t QuicHeadersStream::WritePushPromise(
@@ -241,11 +245,10 @@ size_t QuicHeadersStream::WritePushPromise(
   // response headers.
   push_promise.set_fin(false);
 
-  scoped_ptr<SpdySerializedFrame> frame(
-      spdy_framer_.SerializeFrame(push_promise));
-  WriteOrBufferData(StringPiece(frame->data(), frame->size()), false,
+  SpdySerializedFrame frame(spdy_framer_.SerializeFrame(push_promise));
+  WriteOrBufferData(StringPiece(frame.data(), frame.size()), false,
                     ack_listener);
-  return frame->size();
+  return frame.size();
 }
 
 void QuicHeadersStream::OnDataAvailable() {
@@ -277,10 +280,6 @@ void QuicHeadersStream::OnDataAvailable() {
   }
 }
 
-SpdyPriority QuicHeadersStream::Priority() const {
-  return net::kV3HighestPriority;
-}
-
 void QuicHeadersStream::OnHeaders(SpdyStreamId stream_id,
                                   bool has_priority,
                                   SpdyPriority priority,
@@ -308,11 +307,6 @@ void QuicHeadersStream::OnHeaders(SpdyStreamId stream_id,
 void QuicHeadersStream::OnPushPromise(SpdyStreamId stream_id,
                                       SpdyStreamId promised_stream_id,
                                       bool end) {
-  if (!supports_push_promise_) {
-    CloseConnectionWithDetails(QUIC_INVALID_HEADERS_STREAM_DATA,
-                               "SPDY PUSH_PROMISE not supported.");
-    return;
-  }
   DCHECK_EQ(kInvalidStreamId, stream_id_);
   DCHECK_EQ(kInvalidStreamId, promised_stream_id_);
   stream_id_ = stream_id;

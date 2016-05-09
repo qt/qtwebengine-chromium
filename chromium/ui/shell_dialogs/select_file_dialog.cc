@@ -13,33 +13,21 @@
 #include "ui/shell_dialogs/select_file_dialog_factory.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "ui/shell_dialogs/shell_dialogs_delegate.h"
-
-#if defined(OS_WIN)
-#include "ui/shell_dialogs/select_file_dialog_win.h"
-#elif defined(OS_MACOSX)
-#include "ui/shell_dialogs/select_file_dialog_mac.h"
-#elif defined(OS_ANDROID)
-#include "ui/shell_dialogs/select_file_dialog_android.h"
-#elif defined(USE_AURA) && defined(OS_LINUX) && !defined(OS_CHROMEOS)
-#include "ui/shell_dialogs/linux_shell_dialog.h"
-#endif
 
 namespace {
 
 // Optional dialog factory. Leaked.
 ui::SelectFileDialogFactory* dialog_factory_ = NULL;
 
-// The global shell dialogs delegate.
-ui::ShellDialogsDelegate* g_shell_dialogs_delegate_ = NULL;
-
 }  // namespace
 
 namespace ui {
 
 SelectFileDialog::FileTypeInfo::FileTypeInfo()
-    : include_all_files(false),
-      support_drive(false) {}
+    : include_all_files(false), allowed_paths(NATIVE_PATH) {}
+
+SelectFileDialog::FileTypeInfo::FileTypeInfo(const FileTypeInfo& other) =
+    default;
 
 SelectFileDialog::FileTypeInfo::~FileTypeInfo() {}
 
@@ -81,24 +69,7 @@ scoped_refptr<SelectFileDialog> SelectFileDialog::Create(
       return dialog;
   }
 
-#if defined(USE_AURA) && defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  const ui::LinuxShellDialog* shell_dialogs = ui::LinuxShellDialog::instance();
-  if (shell_dialogs)
-    return shell_dialogs->CreateSelectFileDialog(listener, policy);
-#endif
-
-#if defined(OS_WIN)
-  // TODO(ananta)
-  // Fix this for Chrome ASH on Windows.
-  return CreateDefaultWinSelectFileDialog(listener, policy);
-#elif defined(OS_MACOSX) && !defined(USE_AURA)
-  return CreateMacSelectFileDialog(listener, policy);
-#elif defined(OS_ANDROID)
-  return CreateAndroidSelectFileDialog(listener, policy);
-#else
-  NOTIMPLEMENTED();
-  return NULL;
-#endif
+  return CreateSelectFileDialog(listener, policy);
 }
 
 void SelectFileDialog::SelectFile(
@@ -134,11 +105,6 @@ bool SelectFileDialog::HasMultipleFileTypeChoices() {
   return HasMultipleFileTypeChoicesImpl();
 }
 
-// static
-void SelectFileDialog::SetShellDialogsDelegate(ShellDialogsDelegate* delegate) {
-  g_shell_dialogs_delegate_ = delegate;
-}
-
 SelectFileDialog::SelectFileDialog(Listener* listener,
                                    ui::SelectFilePolicy* policy)
     : listener_(listener),
@@ -151,10 +117,6 @@ SelectFileDialog::~SelectFileDialog() {}
 void SelectFileDialog::CancelFileSelection(void* params) {
   if (listener_)
     listener_->FileSelectionCanceled(params);
-}
-
-ShellDialogsDelegate* SelectFileDialog::GetShellDialogsDelegate() {
-  return g_shell_dialogs_delegate_;
 }
 
 }  // namespace ui

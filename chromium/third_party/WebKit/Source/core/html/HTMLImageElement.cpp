@@ -33,8 +33,8 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/Deprecation.h"
 #include "core/frame/ImageBitmap.h"
-#include "core/frame/UseCounter.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -42,16 +42,17 @@
 #include "core/html/HTMLSourceElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
+#include "core/imagebitmap/ImageBitmapOptions.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutImage.h"
+#include "core/layout/api/LayoutImageItem.h"
 #include "core/page/Page.h"
 #include "core/style/ContentData.h"
 #include "core/svg/graphics/SVGImageForContainer.h"
 #include "platform/ContentType.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/MIMETypeRegistry.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
 namespace blink {
@@ -60,9 +61,9 @@ using namespace HTMLNames;
 
 class HTMLImageElement::ViewportChangeListener final : public MediaQueryListListener {
 public:
-    static RefPtrWillBeRawPtr<ViewportChangeListener> create(HTMLImageElement* element)
+    static RawPtr<ViewportChangeListener> create(HTMLImageElement* element)
     {
-        return adoptRefWillBeNoop(new ViewportChangeListener(element));
+        return new ViewportChangeListener(element);
     }
 
     void notifyMediaQueryChanged() override
@@ -81,23 +82,23 @@ public:
     }
 private:
     explicit ViewportChangeListener(HTMLImageElement* element) : m_element(element) { }
-    RawPtrWillBeMember<HTMLImageElement> m_element;
+    Member<HTMLImageElement> m_element;
 };
 
 HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form, bool createdByParser)
     : HTMLElement(imgTag, document)
+    , ActiveScriptWrappable(this)
     , m_imageLoader(HTMLImageLoader::create(this))
     , m_imageDevicePixelRatio(1.0f)
     , m_source(nullptr)
     , m_formWasSetByParser(false)
     , m_elementCreatedByParser(createdByParser)
-    , m_intrinsicSizingViewportDependant(false)
     , m_useFallbackContent(false)
     , m_isFallbackImage(false)
     , m_referrerPolicy(ReferrerPolicyDefault)
 {
     setHasCustomStyleCallbacks();
-    if (form && form->inDocument()) {
+    if (form && form->inShadowIncludingDocument()) {
 #if ENABLE(OILPAN)
         m_form = form;
 #else
@@ -109,14 +110,14 @@ HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form, bo
     }
 }
 
-PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
+RawPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
 {
-    return adoptRefWillBeNoop(new HTMLImageElement(document));
+    return new HTMLImageElement(document);
 }
 
-PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+RawPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    return adoptRefWillBeNoop(new HTMLImageElement(document, form, createdByParser));
+    return new HTMLImageElement(document, form, createdByParser);
 }
 
 HTMLImageElement::~HTMLImageElement()
@@ -148,24 +149,24 @@ void HTMLImageElement::notifyViewportChanged()
     selectSourceURL(ImageLoader::UpdateSizeChanged);
 }
 
-PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document)
+RawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document)
 {
-    RefPtrWillBeRawPtr<HTMLImageElement> image = adoptRefWillBeNoop(new HTMLImageElement(document));
+    RawPtr<HTMLImageElement> image = new HTMLImageElement(document);
     image->m_elementCreatedByParser = false;
     return image.release();
 }
 
-PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width)
+RawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width)
 {
-    RefPtrWillBeRawPtr<HTMLImageElement> image = adoptRefWillBeNoop(new HTMLImageElement(document));
+    RawPtr<HTMLImageElement> image = new HTMLImageElement(document);
     image->setWidth(width);
     image->m_elementCreatedByParser = false;
     return image.release();
 }
 
-PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
+RawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
 {
-    RefPtrWillBeRawPtr<HTMLImageElement> image = adoptRefWillBeNoop(new HTMLImageElement(document));
+    RawPtr<HTMLImageElement> image = new HTMLImageElement(document);
     image->setWidth(width);
     image->setHeight(height);
     image->m_elementCreatedByParser = false;
@@ -250,14 +251,25 @@ void HTMLImageElement::setBestFitURLAndDPRFromImageCandidate(const ImageCandidat
     float candidateDensity = candidate.density();
     if (candidateDensity >= 0)
         m_imageDevicePixelRatio = 1.0 / candidateDensity;
-    if (candidate.resourceWidth() > 0) {
-        m_intrinsicSizingViewportDependant = true;
+
+    bool intrinsicSizingViewportDependant = false;
+    if (candidate.getResourceWidth() > 0) {
+        intrinsicSizingViewportDependant = true;
         UseCounter::count(document(), UseCounter::SrcsetWDescriptor);
     } else if (!candidate.srcOrigin()) {
         UseCounter::count(document(), UseCounter::SrcsetXDescriptor);
     }
     if (layoutObject() && layoutObject()->isImage())
-        toLayoutImage(layoutObject())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
+        LayoutImageItem(toLayoutImage(layoutObject())).setImageDevicePixelRatio(m_imageDevicePixelRatio);
+
+    if (intrinsicSizingViewportDependant) {
+        if (!m_listener)
+            m_listener = ViewportChangeListener::create(this);
+
+        document().mediaQueryMatcher().addViewportListener(m_listener);
+    } else if (m_listener) {
+        document().mediaQueryMatcher().removeViewportListener(m_listener);
+    }
 }
 
 void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& value)
@@ -273,7 +285,7 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
         selectSourceURL(ImageLoader::UpdateIgnorePreviousError);
     } else if (name == usemapAttr) {
         setIsLink(!value.isNull());
-    } else if (RuntimeEnabledFeatures::referrerPolicyAttributeEnabled() && name == referrerpolicyAttr) {
+    } else if (name == referrerpolicyAttr) {
         m_referrerPolicy = ReferrerPolicyDefault;
         if (!value.isNull())
             SecurityPolicy::referrerPolicyFromString(value, &m_referrerPolicy);
@@ -320,7 +332,7 @@ ImageCandidate HTMLImageElement::findBestFitImageFromPictureParent()
 
         HTMLSourceElement* source = toHTMLSourceElement(child);
         if (!source->fastGetAttribute(srcAttr).isNull())
-            UseCounter::countDeprecation(document(), UseCounter::PictureSourceSrc);
+            Deprecation::countDeprecation(document(), UseCounter::PictureSourceSrc);
         String srcset = source->fastGetAttribute(srcsetAttr);
         if (srcset.isEmpty())
             continue;
@@ -369,8 +381,8 @@ void HTMLImageElement::attach(const AttachContext& context)
         if (m_isFallbackImage) {
             float deviceScaleFactor = blink::deviceScaleFactor(layoutImage->frame());
             std::pair<Image*, float> brokenImageAndImageScaleFactor = ImageResource::brokenImage(deviceScaleFactor);
-            ImageResource* newImageResource = new ImageResource(brokenImageAndImageScaleFactor.first);
-            layoutImage->imageResource()->setImageResource(newImageResource);
+            RawPtr<ImageResource> newImageResource = ImageResource::create(brokenImageAndImageScaleFactor.first);
+            layoutImage->imageResource()->setImageResource(newImageResource.get());
         }
         if (layoutImageResource->hasImage())
             return;
@@ -399,7 +411,7 @@ Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode*
 
     // If we have been inserted from a layoutObject-less document,
     // our loader may have not fetched the image, so do it now.
-    if ((insertionPoint->inDocument() && !imageLoader().image()) || imageWasModified)
+    if ((insertionPoint->inShadowIncludingDocument() && !imageLoader().image()) || imageWasModified)
         imageLoader().updateFromElement(ImageLoader::UpdateNormal, m_referrerPolicy);
 
     return HTMLElement::insertedInto(insertionPoint);
@@ -478,10 +490,10 @@ const String& HTMLImageElement::currentSrc() const
     // The currentSrc IDL attribute must return the img element's current request's current URL.
     // Initially, the pending request turns into current request when it is either available or broken.
     // We use the image's dimensions as a proxy to it being in any of these states.
-    if (!imageLoader().image() || !imageLoader().image()->image() || !imageLoader().image()->image()->width())
+    if (!imageLoader().image() || !imageLoader().image()->getImage() || !imageLoader().image()->getImage()->width())
         return emptyAtom;
 
-    return imageLoader().image()->url().string();
+    return imageLoader().image()->url().getString();
 }
 
 bool HTMLImageElement::isURLAttribute(const Attribute& attribute) const
@@ -584,7 +596,7 @@ Image* HTMLImageElement::imageContents()
     if (!imageLoader().imageComplete())
         return nullptr;
 
-    return imageLoader().image()->image();
+    return imageLoader().image()->getImage();
 }
 
 bool HTMLImageElement::isInteractiveContent() const
@@ -592,7 +604,7 @@ bool HTMLImageElement::isInteractiveContent() const
     return fastHasAttribute(usemapAttr);
 }
 
-PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint) const
+PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint, SnapshotReason, const FloatSize& defaultObjectSize) const
 {
     if (!complete() || !cachedImage()) {
         *status = IncompleteSourceImageStatus;
@@ -605,11 +617,13 @@ PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* s
     }
 
     RefPtr<Image> sourceImage;
-    if (cachedImage()->image()->isSVGImage()) {
-        sourceImage = SVGImageForContainer::create(toSVGImage(cachedImage()->image()),
-            cachedImage()->image()->size(), 1, document().completeURL(imageSourceURL()));
+    if (cachedImage()->getImage()->isSVGImage()) {
+        SVGImage* svgImage = toSVGImage(cachedImage()->getImage());
+        IntSize imageSize = roundedIntSize(svgImage->concreteObjectSize(defaultObjectSize));
+        sourceImage = SVGImageForContainer::create(svgImage,
+            imageSize, 1, document().completeURL(imageSourceURL()));
     } else {
-        sourceImage = cachedImage()->image();
+        sourceImage = cachedImage()->getImage();
     }
 
     *status = NormalSourceImageStatus;
@@ -618,7 +632,7 @@ PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* s
 
 bool HTMLImageElement::isSVGSource() const
 {
-    return cachedImage() && cachedImage()->image()->isSVGImage();
+    return cachedImage() && cachedImage()->getImage()->isSVGImage();
 }
 
 bool HTMLImageElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
@@ -629,23 +643,30 @@ bool HTMLImageElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigi
     return !image->isAccessAllowed(destinationSecurityOrigin);
 }
 
-FloatSize HTMLImageElement::elementSize() const
+FloatSize HTMLImageElement::elementSize(const FloatSize& defaultObjectSize) const
 {
     ImageResource* image = cachedImage();
     if (!image)
         return FloatSize();
+
+    if (image->getImage() && image->getImage()->isSVGImage())
+        return toSVGImage(cachedImage()->getImage())->concreteObjectSize(defaultObjectSize);
 
     return FloatSize(image->imageSize(LayoutObject::shouldRespectImageOrientation(layoutObject()), 1.0f));
 }
 
-FloatSize HTMLImageElement::defaultDestinationSize() const
+FloatSize HTMLImageElement::defaultDestinationSize(const FloatSize& defaultObjectSize) const
 {
     ImageResource* image = cachedImage();
     if (!image)
         return FloatSize();
+
+    if (image->getImage() && image->getImage()->isSVGImage())
+        return toSVGImage(cachedImage()->getImage())->concreteObjectSize(defaultObjectSize);
+
     LayoutSize size;
     size = image->imageSize(LayoutObject::shouldRespectImageOrientation(layoutObject()), 1.0f);
-    if (layoutObject() && layoutObject()->isLayoutImage() && image->image() && !image->image()->hasRelativeWidth())
+    if (layoutObject() && layoutObject()->isLayoutImage() && image->getImage() && !image->getImage()->hasRelativeSize())
         size.scale(toLayoutImage(layoutObject())->imageDevicePixelRatio());
     return FloatSize(size);
 }
@@ -660,7 +681,7 @@ static bool sourceSizeValue(Element& element, Document& currentDocument, float& 
     return exists;
 }
 
-FetchRequest::ResourceWidth HTMLImageElement::resourceWidth()
+FetchRequest::ResourceWidth HTMLImageElement::getResourceWidth()
 {
     FetchRequest::ResourceWidth resourceWidth;
     Element* element = m_source.get();
@@ -684,14 +705,14 @@ void HTMLImageElement::forceReload() const
     imageLoader().updateFromElement(ImageLoader::UpdateForcedReload, m_referrerPolicy);
 }
 
-ScriptPromise HTMLImageElement::createImageBitmap(ScriptState* scriptState, EventTarget& eventTarget, int sx, int sy, int sw, int sh, ExceptionState& exceptionState)
+ScriptPromise HTMLImageElement::createImageBitmap(ScriptState* scriptState, EventTarget& eventTarget, int sx, int sy, int sw, int sh, const ImageBitmapOptions& options, ExceptionState& exceptionState)
 {
     ASSERT(eventTarget.toDOMWindow());
     if (!cachedImage()) {
         exceptionState.throwDOMException(InvalidStateError, "No image can be retrieved from the provided element.");
         return ScriptPromise();
     }
-    if (cachedImage()->image()->isSVGImage()) {
+    if (cachedImage()->getImage()->isSVGImage()) {
         exceptionState.throwDOMException(InvalidStateError, "The image element contains an SVG image, which is unsupported.");
         return ScriptPromise();
     }
@@ -699,7 +720,7 @@ ScriptPromise HTMLImageElement::createImageBitmap(ScriptState* scriptState, Even
         exceptionState.throwDOMException(IndexSizeError, String::format("The source %s provided is 0.", sw ? "height" : "width"));
         return ScriptPromise();
     }
-    return ImageBitmapSource::fulfillImageBitmap(scriptState, ImageBitmap::create(this, IntRect(sx, sy, sw, sh), eventTarget.toDOMWindow()->document()));
+    return ImageBitmapSource::fulfillImageBitmap(scriptState, ImageBitmap::create(this, IntRect(sx, sy, sw, sh), eventTarget.toDOMWindow()->document(), options));
 }
 
 void HTMLImageElement::selectSourceURL(ImageLoader::UpdateFromElementBehavior behavior)
@@ -718,16 +739,26 @@ void HTMLImageElement::selectSourceURL(ImageLoader::UpdateFromElementBehavior be
         candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), sourceSize(*this), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr), &document());
         setBestFitURLAndDPRFromImageCandidate(candidate);
     }
-    if (m_intrinsicSizingViewportDependant && !m_listener) {
-        m_listener = ViewportChangeListener::create(this);
-        document().mediaQueryMatcher().addViewportListener(m_listener);
-    }
     imageLoader().updateFromElement(behavior, m_referrerPolicy);
 
     // Images such as data: uri's can return immediately and may already have errored out.
-    bool imageHasLoaded = imageLoader().image() && !imageLoader().image()->errorOccurred();
+    bool imageHasLoaded = imageLoader().image() && !imageLoader().image()->isLoading() && !imageLoader().image()->errorOccurred();
     bool imageStillLoading = !imageHasLoaded && imageLoader().hasPendingActivity() && !imageLoader().hasPendingError() && !imageSourceURL().isEmpty();
-    if (imageHasLoaded || imageStillLoading)
+    bool imageHasImage = imageLoader().image() && imageLoader().image()->hasImage();
+
+    // Icky special case for deferred images:
+    // A deferred image is not loading, does have pending activity, does not
+    // have an error, but it does have an ImageResource associated
+    // with it, so imageHasLoaded will be true even though the image hasn't
+    // actually loaded. Fixing the definition of imageHasLoaded isn't
+    // sufficient, because a deferred image does have pending activity, does not
+    // have a pending error, and does have a source URL, so if imageHasLoaded
+    // was correct, imageStillLoading would become wrong.
+    //
+    // Instead of dealing with that, there's a separate check that the
+    // ImageResource has non-null image data associated with it, which isn't
+    // folded into imageHasLoaded above.
+    if ((imageHasLoaded && imageHasImage) || imageStillLoading)
         ensurePrimaryContent();
     else
         ensureFallbackContent();
@@ -811,4 +842,4 @@ IntSize HTMLImageElement::bitmapSourceSize() const
     return IntSize(lSize.width(), lSize.height());
 }
 
-}
+} // namespace blink

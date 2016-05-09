@@ -63,9 +63,9 @@ public:
     long long estimatedLength;
 };
 
-PassOwnPtrWillBeRawPtr<ProgressTracker> ProgressTracker::create(LocalFrame* frame)
+ProgressTracker* ProgressTracker::create(LocalFrame* frame)
 {
-    return adoptPtrWillBeNoop(new ProgressTracker(frame));
+    return new ProgressTracker(frame);
 }
 
 ProgressTracker::ProgressTracker(LocalFrame* frame)
@@ -278,4 +278,4 @@ void ProgressTracker::completeProgress(unsigned long identifier)
     m_progressItems.remove(identifier);
 }
 
-}
+} // namespace blink

@@ -79,13 +79,13 @@ public:
 private:
     PassRefPtr<EncodedFormData> generateViolationReport(const XSSInfo&);
 
-    RawPtrWillBeMember<Document> m_document;
+    Member<Document> m_document;
     bool m_didSendNotifications;
     KURL m_reportURL;
 };
 
 typedef Vector<OwnPtr<XSSInfo>> XSSInfoStream;
 
-}
+} // namespace blink
 
 #endif

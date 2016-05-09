@@ -28,16 +28,15 @@ void DeviceSingleWindowEventController::didUpdateData()
     dispatchDeviceEvent(lastEvent());
 }
 
-void DeviceSingleWindowEventController::dispatchDeviceEvent(PassRefPtrWillBeRawPtr<Event> prpEvent)
+void DeviceSingleWindowEventController::dispatchDeviceEvent(Event* event)
 {
     if (!document().domWindow() || document().activeDOMObjectsAreSuspended() || document().activeDOMObjectsAreStopped())
         return;
 
-    RefPtrWillBeRawPtr<Event> event = prpEvent;
     document().domWindow()->dispatchEvent(event);
 
     if (m_needsCheckingNullEvents) {
-        if (isNullEvent(event.get()))
+        if (isNullEvent(event))
             stopUpdating();
         else
             m_needsCheckingNullEvents = false;
@@ -49,7 +48,7 @@ void DeviceSingleWindowEventController::didAddEventListener(LocalDOMWindow* wind
     if (eventType != eventTypeName())
         return;
 
-    if (page() && page()->visibilityState() == PageVisibilityStateVisible)
+    if (page() && page()->isPageVisible())
         startUpdating();
 
     m_hasEventListener = true;

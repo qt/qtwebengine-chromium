@@ -13,7 +13,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "components/mus/public/interfaces/window_manager.mojom.h"
+#include "components/mus/public/interfaces/window_tree.mojom.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_tree_host_observer.h"
 #include "ui/platform_window/platform_window_delegate.h"
@@ -23,21 +23,19 @@
 namespace aura {
 namespace client {
 class DefaultCaptureClient;
+class ScreenPositionClient;
 class WindowTreeClient;
 }
 class Window;
 }
 
 namespace mojo {
-class Shell;
+class Connector;
 }
 
 namespace mus {
 class Window;
-
-namespace mojom {
-class WindowManager;
-}
+class WindowTreeConnection;
 }
 
 namespace wm {
@@ -47,7 +45,6 @@ class FocusController;
 namespace views {
 class SurfaceContextFactory;
 class WidgetDelegate;
-struct WindowManagerClientAreaInsets;
 class WindowTreeHostMus;
 
 // An implementation of NativeWidget that binds to a mus::Window. Because Aura
@@ -61,7 +58,7 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
                                          public aura::WindowTreeHostObserver {
  public:
   NativeWidgetMus(internal::NativeWidgetDelegate* delegate,
-                  mojo::Shell* shell,
+                  mojo::Connector* connector,
                   mus::Window* window,
                   mus::mojom::SurfaceType surface_type);
   ~NativeWidgetMus() override;
@@ -72,7 +69,12 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
       const Widget::InitParams& init_params,
       std::map<std::string, std::vector<uint8_t>>* properties);
 
+  // Notifies all widgets the frame constants changed in some way.
+  static void NotifyFrameChanged(mus::WindowTreeConnection* connection);
+
   mus::Window* window() { return window_; }
+
+  aura::Window* GetRootWindow();
 
   void OnPlatformWindowClosed();
   void OnActivationChanged(bool active);
@@ -141,7 +143,6 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
   void SetFullscreen(bool fullscreen) override;
   bool IsFullscreen() const override;
   void SetOpacity(unsigned char opacity) override;
-  void SetUseDragFrame(bool use_drag_frame) override;
   void FlashFrame(bool flash_frame) override;
   void RunShellDrag(View* view,
                     const ui::OSExchangeData& data,
@@ -198,9 +199,12 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
   void OnHostCloseRequested(const aura::WindowTreeHost* host) override;
 
  private:
-  mus::Window* window_;
+  class MusWindowObserver;
 
-  mojo::Shell* shell_;
+  void OnMusWindowVisibilityChanging(mus::Window* window);
+  void OnMusWindowVisibilityChanged(mus::Window* window);
+
+  mus::Window* window_;
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
@@ -210,6 +214,10 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
   // See class documentation for Widget in widget.h for a note about ownership.
   Widget::InitParams::Ownership ownership_;
 
+  // Functions with the same name require the mus::WindowObserver to be in
+  // a separate class.
+  scoped_ptr<MusWindowObserver> mus_window_observer_;
+
   // Aura configuration.
   scoped_ptr<SurfaceContextFactory> context_factory_;
   scoped_ptr<WindowTreeHostMus> window_tree_host_;
@@ -217,6 +225,7 @@ class VIEWS_MUS_EXPORT NativeWidgetMus : public internal::NativeWidgetPrivate,
   scoped_ptr<wm::FocusController> focus_client_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
+  scoped_ptr<aura::client::ScreenPositionClient> screen_position_client_;
   base::WeakPtrFactory<NativeWidgetMus> close_widget_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeWidgetMus);

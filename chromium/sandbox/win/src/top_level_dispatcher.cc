@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/filesystem_dispatcher.h"
 #include "sandbox/win/src/handle_dispatcher.h"
@@ -47,6 +46,7 @@ TopLevelDispatcher::TopLevelDispatcher(PolicyBase* policy) : policy_(policy) {
   ipc_targets_[IPC_CREATEPROCESSW_TAG] = dispatcher;
   ipc_targets_[IPC_NTOPENPROCESSTOKEN_TAG] = dispatcher;
   ipc_targets_[IPC_NTOPENPROCESSTOKENEX_TAG] = dispatcher;
+  ipc_targets_[IPC_CREATETHREAD_TAG] = dispatcher;
   thread_process_dispatcher_.reset(dispatcher);
 
   dispatcher = new SyncDispatcher(policy_);

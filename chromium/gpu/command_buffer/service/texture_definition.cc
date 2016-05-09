@@ -13,6 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_local.h"
+// gl_stream_texture_image.h is included to work around crbug.com/595189, a
+// compiler bug in VS 2015 Update 2 RC.
+#include "gpu/command_buffer/service/gl_stream_texture_image.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_implementation.h"
@@ -310,6 +313,8 @@ TextureDefinition::LevelInfo::LevelInfo(GLenum target,
       cleared_rect(cleared_rect) {
 }
 
+TextureDefinition::LevelInfo::LevelInfo(const LevelInfo& other) = default;
+
 TextureDefinition::LevelInfo::~LevelInfo() {}
 
 TextureDefinition::TextureDefinition()
@@ -357,6 +362,8 @@ TextureDefinition::TextureDefinition(
                           level.type, level.cleared_rect);
 }
 
+TextureDefinition::TextureDefinition(const TextureDefinition& other) = default;
+
 TextureDefinition::~TextureDefinition() {
 }
 
@@ -388,11 +395,13 @@ void TextureDefinition::UpdateTextureInternal(Texture* texture) const {
   if (defined_) {
     texture->face_infos_.resize(1);
     texture->face_infos_[0].level_infos.resize(1);
-    texture->SetLevelInfo(NULL, level_info_.target, 0,
+    texture->SetLevelInfo(level_info_.target, 0,
                           level_info_.internal_format, level_info_.width,
                           level_info_.height, level_info_.depth,
                           level_info_.border, level_info_.format,
                           level_info_.type, level_info_.cleared_rect);
+    texture->face_infos_[0].level_infos.resize(
+        texture->face_infos_[0].num_mip_levels);
   }
 
   if (image_buffer_.get()) {
@@ -405,10 +414,10 @@ void TextureDefinition::UpdateTextureInternal(Texture* texture) const {
 
   texture->target_ = target_;
   texture->SetImmutable(immutable_);
-  texture->min_filter_ = min_filter_;
-  texture->mag_filter_ = mag_filter_;
-  texture->wrap_s_ = wrap_s_;
-  texture->wrap_t_ = wrap_t_;
+  texture->sampler_state_.min_filter = min_filter_;
+  texture->sampler_state_.mag_filter = mag_filter_;
+  texture->sampler_state_.wrap_s = wrap_s_;
+  texture->sampler_state_.wrap_t = wrap_t_;
   texture->usage_ = usage_;
 }
 
@@ -438,10 +447,10 @@ void TextureDefinition::UpdateTexture(Texture* texture) const {
 
 bool TextureDefinition::Matches(const Texture* texture) const {
   DCHECK(target_ == texture->target());
-  if (texture->min_filter_ != min_filter_ ||
-      texture->mag_filter_ != mag_filter_ ||
-      texture->wrap_s_ != wrap_s_ ||
-      texture->wrap_t_ != wrap_t_ ||
+  if (texture->sampler_state_.min_filter != min_filter_ ||
+      texture->sampler_state_.mag_filter != mag_filter_ ||
+      texture->sampler_state_.wrap_s != wrap_s_ ||
+      texture->sampler_state_.wrap_t != wrap_t_ ||
       texture->SafeToRenderFrom() != SafeToRenderFrom()) {
     return false;
   }

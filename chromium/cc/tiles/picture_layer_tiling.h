@@ -9,10 +9,10 @@
 #include <stdint.h>
 
 #include <map>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
@@ -31,7 +31,7 @@ class TracedValue;
 
 namespace cc {
 
-class DisplayListRasterSource;
+class RasterSource;
 class PictureLayerTiling;
 class PrioritizedTile;
 
@@ -67,21 +67,14 @@ struct TileMapKey {
   int index_y;
 };
 
-}  // namespace cc
-
-namespace BASE_HASH_NAMESPACE {
-template <>
-struct hash<cc::TileMapKey> {
-  size_t operator()(const cc::TileMapKey& key) const {
+struct TileMapKeyHash {
+  size_t operator()(const TileMapKey& key) const {
     uint16_t value1 = static_cast<uint16_t>(key.index_x);
     uint16_t value2 = static_cast<uint16_t>(key.index_y);
     uint32_t value1_32 = value1;
     return (value1_32 << 16) | value2;
   }
 };
-}  // namespace BASE_HASH_NAMESPACE
-
-namespace cc {
 
 class CC_EXPORT PictureLayerTiling {
  public:
@@ -98,14 +91,13 @@ class CC_EXPORT PictureLayerTiling {
   static scoped_ptr<PictureLayerTiling> Create(
       WhichTree tree,
       float contents_scale,
-      scoped_refptr<DisplayListRasterSource> raster_source,
+      scoped_refptr<RasterSource> raster_source,
       PictureLayerTilingClient* client,
       size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content_pixels);
 
-  void SetRasterSourceAndResize(
-      scoped_refptr<DisplayListRasterSource> raster_source);
+  void SetRasterSourceAndResize(scoped_refptr<RasterSource> raster_source);
   void Invalidate(const Region& layer_invalidation);
   void CreateMissingTilesInLiveTilesRect();
   void TakeTilesAndPropertiesFrom(PictureLayerTiling* pending_twin,
@@ -129,8 +121,8 @@ class CC_EXPORT PictureLayerTiling {
     can_require_tiles_for_activation_ = can_require_tiles;
   }
 
-  DisplayListRasterSource* raster_source() const {
-    return raster_source_.get();
+  const scoped_refptr<RasterSource>& raster_source() const {
+    return raster_source_;
   }
   gfx::Size tiling_size() const { return tiling_data_.tiling_size(); }
   gfx::Rect live_tiles_rect() const { return live_tiles_rect_; }
@@ -140,7 +132,7 @@ class CC_EXPORT PictureLayerTiling {
 
   Tile* TileAt(int i, int j) const {
     TileMap::const_iterator iter = tiles_.find(TileMapKey(i, j));
-    return iter == tiles_.end() ? nullptr : iter->second;
+    return iter == tiles_.end() ? nullptr : iter->second.get();
   }
 
   bool has_tiles() const { return !tiles_.empty(); }
@@ -152,9 +144,9 @@ class CC_EXPORT PictureLayerTiling {
 
   void VerifyNoTileNeedsRaster() const {
 #if DCHECK_IS_ON()
-    for (const auto tile_pair : tiles_) {
+    for (const auto& tile_pair : tiles_) {
       DCHECK(!tile_pair.second->draw_info().NeedsRaster() ||
-             IsTileOccluded(tile_pair.second));
+             IsTileOccluded(tile_pair.second.get()));
     }
 #endif  // DCHECK_IS_ON()
   }
@@ -167,13 +159,13 @@ class CC_EXPORT PictureLayerTiling {
   std::vector<Tile*> AllTilesForTesting() const {
     std::vector<Tile*> all_tiles;
     for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-      all_tiles.push_back(it->second);
+      all_tiles.push_back(it->second.get());
     return all_tiles;
   }
 
   void UpdateAllRequiredStateForTesting() {
     for (const auto& key_tile_pair : tiles_)
-      UpdateRequiredStatesOnTile(key_tile_pair.second);
+      UpdateRequiredStatesOnTile(key_tile_pair.second.get());
   }
   std::map<const Tile*, PrioritizedTile>
   UpdateAndGetAllPrioritizedTilesForTesting() const;
@@ -274,7 +266,7 @@ class CC_EXPORT PictureLayerTiling {
     EVENTUALLY_RECT
   };
 
-  using TileMap = base::ScopedPtrHashMap<TileMapKey, ScopedTilePtr>;
+  using TileMap = std::unordered_map<TileMapKey, ScopedTilePtr, TileMapKeyHash>;
 
   struct FrameVisibleRect {
     gfx::Rect visible_rect_in_content_space;
@@ -283,7 +275,7 @@ class CC_EXPORT PictureLayerTiling {
 
   PictureLayerTiling(WhichTree tree,
                      float contents_scale,
-                     scoped_refptr<DisplayListRasterSource> raster_source,
+                     scoped_refptr<RasterSource> raster_source,
                      PictureLayerTilingClient* client,
                      size_t tiling_interest_area_padding,
                      float skewport_target_time_in_seconds,
@@ -382,7 +374,7 @@ class CC_EXPORT PictureLayerTiling {
   const float contents_scale_;
   PictureLayerTilingClient* const client_;
   const WhichTree tree_;
-  scoped_refptr<DisplayListRasterSource> raster_source_;
+  scoped_refptr<RasterSource> raster_source_;
   TileResolution resolution_;
   bool may_contain_low_resolution_tiles_;
 
@@ -411,9 +403,10 @@ class CC_EXPORT PictureLayerTiling {
   bool has_soon_border_rect_tiles_;
   bool has_eventually_rect_tiles_;
   bool all_tiles_done_;
+  bool invalidated_since_last_compute_priority_rects_;
 
  private:
-  DISALLOW_ASSIGN(PictureLayerTiling);
+  DISALLOW_COPY_AND_ASSIGN(PictureLayerTiling);
 };
 
 }  // namespace cc

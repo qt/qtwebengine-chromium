@@ -34,7 +34,7 @@
 
 namespace blink {
 
-SplitTextNodeCommand::SplitTextNodeCommand(PassRefPtrWillBeRawPtr<Text> text, int offset)
+SplitTextNodeCommand::SplitTextNodeCommand(RawPtr<Text> text, int offset)
     : SimpleEditCommand(text->document())
     , m_text2(text)
     , m_offset(offset)
@@ -49,7 +49,7 @@ SplitTextNodeCommand::SplitTextNodeCommand(PassRefPtrWillBeRawPtr<Text> text, in
     ASSERT(m_offset < m_text2->length());
 }
 
-void SplitTextNodeCommand::doApply()
+void SplitTextNodeCommand::doApply(EditingState*)
 {
     ContainerNode* parent = m_text2->parentNode();
     if (!parent || !parent->hasEditableStyle())

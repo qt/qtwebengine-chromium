@@ -2,19 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
@@ -42,16 +43,18 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
   ~AsyncRevalidationManagerBrowserTest() override {}
 
   void SetUp() override {
+    base::FeatureList::ClearInstanceForTesting();
+    std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
+    feature_list->InitializeFromCommandLine(
+        "StaleWhileRevalidate2", std::string());
+    base::FeatureList::SetInstance(std::move(feature_list));
+
     ASSERT_TRUE(embedded_test_server()->InitializeAndListen());
     ContentBrowserTest::SetUp();
   }
 
   void SetUpOnMainThread() override {
     embedded_test_server()->StartAcceptingConnections();
-  }
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitch("enable-stale-while-revalidate");
   }
 
   base::RunLoop* run_loop() { return &run_loop_; }
@@ -80,13 +83,15 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
  private:
   // A request handler which increases the number in the title tag on every
   // request.
-  scoped_ptr<HttpResponse> CountingRequestHandler(const HttpRequest& request) {
+  std::unique_ptr<HttpResponse> CountingRequestHandler(
+      const HttpRequest& request) {
     if (request.relative_url != kCountedHtmlPath)
       return nullptr;
 
     int version = ++requests_counted_;
 
-    scoped_ptr<BasicHttpResponse> http_response(StaleWhileRevalidateHeaders());
+    std::unique_ptr<BasicHttpResponse> http_response(
+        StaleWhileRevalidateHeaders());
     http_response->set_content(
         base::StringPrintf("<title>Version %d</title>", version));
 
@@ -98,7 +103,8 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
   }
 
   // A request handler which increases a cookie value on every request.
-  scoped_ptr<HttpResponse> CookieRequestHandler(const HttpRequest& request) {
+  std::unique_ptr<HttpResponse> CookieRequestHandler(
+      const HttpRequest& request) {
     static const char kHtml[] =
         "<script>\n"
         "var intervalId;\n"
@@ -117,7 +123,8 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
 
     int version = ++requests_counted_;
 
-    scoped_ptr<BasicHttpResponse> http_response(StaleWhileRevalidateHeaders());
+    std::unique_ptr<BasicHttpResponse> http_response(
+        StaleWhileRevalidateHeaders());
     http_response->AddCustomHeader("Set-Cookie",
                                    base::StringPrintf("version=%d", version));
     http_response->set_content(kHtml);
@@ -126,8 +133,8 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
   }
 
   // Generate the standard response headers common to all request handlers.
-  scoped_ptr<BasicHttpResponse> StaleWhileRevalidateHeaders() {
-    scoped_ptr<BasicHttpResponse> http_response(new BasicHttpResponse);
+  std::unique_ptr<BasicHttpResponse> StaleWhileRevalidateHeaders() {
+    std::unique_ptr<BasicHttpResponse> http_response(new BasicHttpResponse);
     http_response->set_code(net::HTTP_OK);
     http_response->set_content_type("text/html; charset=utf-8");
     http_response->AddCustomHeader("Cache-Control",
@@ -150,6 +157,10 @@ class AsyncRevalidationManagerBrowserTest : public ContentBrowserTest {
 // triggers an async revalidation.
 IN_PROC_BROWSER_TEST_F(AsyncRevalidationManagerBrowserTest,
                        StaleWhileRevalidateIsApplied) {
+  // PlzNavigate: Stale while revalidate is disabled.
+  // TODO(clamy): Re-enable the test when there is support.
+  if (IsBrowserSideNavigationEnabled())
+    return;
   RegisterCountingRequestHandler();
   GURL url(embedded_test_server()->GetURL(kCountedHtmlPath));
 
@@ -173,6 +184,10 @@ IN_PROC_BROWSER_TEST_F(AsyncRevalidationManagerBrowserTest,
 // The fresh cache entry must become visible once the async revalidation request
 // has been sent.
 IN_PROC_BROWSER_TEST_F(AsyncRevalidationManagerBrowserTest, CacheIsUpdated) {
+  // PlzNavigate: Stale while revalidate is disabled.
+  // TODO(clamy): Re-enable the test when there is support.
+  if (IsBrowserSideNavigationEnabled())
+    return;
   using base::ASCIIToUTF16;
   RegisterCountingRequestHandler();
   GURL url(embedded_test_server()->GetURL(kCountedHtmlPath));
@@ -201,6 +216,10 @@ IN_PROC_BROWSER_TEST_F(AsyncRevalidationManagerBrowserTest, CacheIsUpdated) {
 // applied immediately.
 IN_PROC_BROWSER_TEST_F(AsyncRevalidationManagerBrowserTest,
                        CookieSetAsynchronously) {
+  // PlzNavigate: Stale while revalidate is disabled.
+  // TODO(clamy): Re-enable the test when there is support.
+  if (IsBrowserSideNavigationEnabled())
+    return;
   RegisterCookieRequestHandler();
   GURL url(embedded_test_server()->GetURL(kCookieHtmlPath));
 

@@ -39,10 +39,11 @@ OS_ARCH_COMBOS = [
 # perlasm system.
 NON_PERL_FILES = {
     ('linux', 'arm'): [
-        'src/crypto/chacha/chacha_vec_arm.S',
-        'src/crypto/cpu-arm-asm.S',
-        'src/crypto/curve25519/asm/x25519-arm.S',
+        'src/crypto/curve25519/asm/x25519-asm-arm.S',
         'src/crypto/poly1305/poly1305_arm_asm.S',
+    ],
+    ('linux', 'x86_64'): [
+        'src/crypto/curve25519/asm/x25519-asm-x86_64.S',
     ],
 }
 
@@ -489,6 +490,8 @@ def main(platforms):
 
   with open('src/util/all_tests.json', 'r') as f:
     tests = json.load(f)
+  # Skip tests for libdecrepit. Consumers import that manually.
+  tests = [test for test in tests if not test[0].startswith("decrepit/")]
   test_binaries = set([test[0] for test in tests])
   test_sources = set([
       test.replace('.cc', '').replace('.c', '').replace(

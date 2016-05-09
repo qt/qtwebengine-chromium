@@ -37,12 +37,22 @@
 #include "ipc/ipc_switches.h"
 #include "ui/base/ui_base_switches.h"
 
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+#include "content/public/browser/zygote_handle_linux.h"
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox_policy.h"
 #include "sandbox/win/src/sandbox_types.h"
 #endif
 
 namespace content {
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+namespace {
+ZygoteHandle g_utility_zygote;
+}  // namespace
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 
 // NOTE: changes to this class need to be reviewed by the security team.
 class UtilitySandboxedProcessLauncherDelegate
@@ -58,7 +68,9 @@ class UtilitySandboxedProcessLauncherDelegate
         launch_elevated_(launch_elevated)
 #elif defined(OS_POSIX)
         env_(env),
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
         no_sandbox_(no_sandbox),
+#endif  // !defined(OS_MACOSX)  && !defined(OS_ANDROID)
         ipc_fd_(host->TakeClientFileDescriptor())
 #endif  // OS_WIN
   {}
@@ -88,9 +100,13 @@ class UtilitySandboxedProcessLauncherDelegate
 
 #elif defined(OS_POSIX)
 
-  bool ShouldUseZygote() override {
-    return !no_sandbox_ && exposed_dir_.empty();
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+  ZygoteHandle* GetZygote() override {
+    if (no_sandbox_ || !exposed_dir_.empty())
+      return nullptr;
+    return GetGenericZygote();
   }
+#endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
   base::EnvironmentMap GetEnvironment() override { return env_; }
   base::ScopedFD TakeIpcFd() override { return std::move(ipc_fd_); }
 #endif  // OS_WIN
@@ -106,7 +122,9 @@ class UtilitySandboxedProcessLauncherDelegate
   bool launch_elevated_;
 #elif defined(OS_POSIX)
   base::EnvironmentMap env_;
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
   bool no_sandbox_;
+#endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
   base::ScopedFD ipc_fd_;
 #endif  // OS_WIN
 };
@@ -139,6 +157,7 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
 #endif
       started_(false),
       name_(base::ASCIIToUTF16("utility process")),
+      mojo_application_host_(new MojoApplicationHost),
       weak_ptr_factory_(this) {
 }
 
@@ -199,26 +218,26 @@ void UtilityProcessHostImpl::SetEnv(const base::EnvironmentMap& env) {
 
 #endif  // OS_POSIX
 
-bool UtilityProcessHostImpl::StartMojoMode() {
-  CHECK(!mojo_application_host_);
-  mojo_application_host_.reset(new MojoApplicationHost);
-
-  bool mojo_result = mojo_application_host_->Init();
-  if (!mojo_result)
-    return false;
-
+bool UtilityProcessHostImpl::Start() {
   return StartProcess();
 }
 
 ServiceRegistry* UtilityProcessHostImpl::GetServiceRegistry() {
-  if (mojo_application_host_)
-    return mojo_application_host_->service_registry();
-  return nullptr;
+  DCHECK(mojo_application_host_);
+  return mojo_application_host_->service_registry();
 }
 
 void UtilityProcessHostImpl::SetName(const base::string16& name) {
   name_ = name;
 }
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+// static
+void UtilityProcessHostImpl::EarlyZygoteLaunch() {
+  DCHECK(!g_utility_zygote);
+  g_utility_zygote = CreateZygote();
+}
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 
 bool UtilityProcessHostImpl::StartProcess() {
   if (started_)
@@ -227,6 +246,10 @@ bool UtilityProcessHostImpl::StartProcess() {
 
   if (is_batch_mode_)
     return true;
+
+  bool mojo_result = mojo_application_host_->Init();
+  if (!mojo_result)
+    return false;
 
   // Name must be set or metrics_service will crash in any test which
   // launches a UtilityProcessHost.
@@ -296,7 +319,6 @@ bool UtilityProcessHostImpl::StartProcess() {
 
     // Browser command-line switches to propagate to the utility process.
     static const char* const kSwitchNames[] = {
-      switches::kDebugPluginLoading,
       switches::kNoSandbox,
       switches::kProfilerTiming,
 #if defined(OS_MACOSX)
@@ -371,15 +393,14 @@ void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {
 }
 
 void UtilityProcessHostImpl::OnProcessLaunched() {
-  if (mojo_application_host_) {
-    base::ProcessHandle handle;
-    if (RenderProcessHost::run_renderer_in_process())
-      handle = base::GetCurrentProcessHandle();
-    else
-      handle = process_->GetData().handle;
+  DCHECK(mojo_application_host_);
+  base::ProcessHandle handle;
+  if (RenderProcessHost::run_renderer_in_process())
+    handle = base::GetCurrentProcessHandle();
+  else
+    handle = process_->GetData().handle;
 
-    mojo_application_host_->Activate(this, handle);
-  }
+  mojo_application_host_->Activate(this, handle);
 }
 
 }  // namespace content

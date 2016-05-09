@@ -111,9 +111,9 @@ class TransportControllerTest : public testing::Test,
     FakeTransportChannel* channel2 = CreateChannel("video", 1);
     ASSERT_NE(nullptr, channel2);
 
-    TransportDescription local_desc(
-        std::vector<std::string>(), kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-        cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+    TransportDescription local_desc(std::vector<std::string>(), kIceUfrag1,
+                                    kIcePwd1, cricket::ICEMODE_FULL,
+                                    cricket::CONNECTIONROLE_ACTPASS, nullptr);
     std::string err;
     transport_controller_->SetLocalTransportDescription(
         "audio", local_desc, cricket::CA_OFFER, &err);
@@ -134,10 +134,10 @@ class TransportControllerTest : public testing::Test,
     channel2->SetConnectionCount(1);
   }
 
-  cricket::IceConfig CreateIceConfig(int receiving_timeout_ms,
+  cricket::IceConfig CreateIceConfig(int receiving_timeout,
                                      bool gather_continually) {
     cricket::IceConfig config;
-    config.receiving_timeout_ms = receiving_timeout_ms;
+    config.receiving_timeout = receiving_timeout;
     config.gather_continually = gather_continually;
     return config;
   }
@@ -303,28 +303,27 @@ TEST_F(TransportControllerTest, TestSetAndGetLocalCertificate) {
 
 TEST_F(TransportControllerTest, TestGetRemoteSSLCertificate) {
   rtc::FakeSSLCertificate fake_certificate("fake_data");
-  rtc::scoped_ptr<rtc::SSLCertificate> returned_certificate;
 
   FakeTransportChannel* channel = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel);
 
   channel->SetRemoteSSLCertificate(&fake_certificate);
-  EXPECT_TRUE(transport_controller_->GetRemoteSSLCertificate(
-      "audio", returned_certificate.accept()));
+  rtc::scoped_ptr<rtc::SSLCertificate> returned_certificate =
+      transport_controller_->GetRemoteSSLCertificate("audio");
+  EXPECT_TRUE(returned_certificate);
   EXPECT_EQ(fake_certificate.ToPEMString(),
             returned_certificate->ToPEMString());
 
   // Should fail if called for a nonexistant transport.
-  EXPECT_FALSE(transport_controller_->GetRemoteSSLCertificate(
-      "video", returned_certificate.accept()));
+  EXPECT_FALSE(transport_controller_->GetRemoteSSLCertificate("video"));
 }
 
 TEST_F(TransportControllerTest, TestSetLocalTransportDescription) {
   FakeTransportChannel* channel = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel);
-  TransportDescription local_desc(
-      std::vector<std::string>(), kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-      cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+  TransportDescription local_desc(std::vector<std::string>(), kIceUfrag1,
+                                  kIcePwd1, cricket::ICEMODE_FULL,
+                                  cricket::CONNECTIONROLE_ACTPASS, nullptr);
   std::string err;
   EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
       "audio", local_desc, cricket::CA_OFFER, &err));
@@ -341,9 +340,9 @@ TEST_F(TransportControllerTest, TestSetLocalTransportDescription) {
 TEST_F(TransportControllerTest, TestSetRemoteTransportDescription) {
   FakeTransportChannel* channel = CreateChannel("audio", 1);
   ASSERT_NE(nullptr, channel);
-  TransportDescription remote_desc(
-      std::vector<std::string>(), kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-      cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+  TransportDescription remote_desc(std::vector<std::string>(), kIceUfrag1,
+                                   kIcePwd1, cricket::ICEMODE_FULL,
+                                   cricket::CONNECTIONROLE_ACTPASS, nullptr);
   std::string err;
   EXPECT_TRUE(transport_controller_->SetRemoteTransportDescription(
       "audio", remote_desc, cricket::CA_OFFER, &err));
@@ -371,16 +370,16 @@ TEST_F(TransportControllerTest, TestReadyForRemoteCandidates) {
   EXPECT_FALSE(transport_controller_->ReadyForRemoteCandidates("audio"));
 
   std::string err;
-  TransportDescription remote_desc(
-      std::vector<std::string>(), kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-      cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+  TransportDescription remote_desc(std::vector<std::string>(), kIceUfrag1,
+                                   kIcePwd1, cricket::ICEMODE_FULL,
+                                   cricket::CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(transport_controller_->SetRemoteTransportDescription(
       "audio", remote_desc, cricket::CA_OFFER, &err));
   EXPECT_FALSE(transport_controller_->ReadyForRemoteCandidates("audio"));
 
-  TransportDescription local_desc(
-      std::vector<std::string>(), kIceUfrag2, kIcePwd2, cricket::ICEMODE_FULL,
-      cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+  TransportDescription local_desc(std::vector<std::string>(), kIceUfrag2,
+                                  kIcePwd2, cricket::ICEMODE_FULL,
+                                  cricket::CONNECTIONROLE_ACTPASS, nullptr);
   EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
       "audio", local_desc, cricket::CA_ANSWER, &err));
   EXPECT_TRUE(transport_controller_->ReadyForRemoteCandidates("audio"));
@@ -650,9 +649,9 @@ TEST_F(TransportControllerTest, TestSignalCandidatesGathered) {
   ASSERT_NE(nullptr, channel);
 
   // Transport won't signal candidates until it has a local description.
-  TransportDescription local_desc(
-      std::vector<std::string>(), kIceUfrag1, kIcePwd1, cricket::ICEMODE_FULL,
-      cricket::CONNECTIONROLE_ACTPASS, nullptr, Candidates());
+  TransportDescription local_desc(std::vector<std::string>(), kIceUfrag1,
+                                  kIcePwd1, cricket::ICEMODE_FULL,
+                                  cricket::CONNECTIONROLE_ACTPASS, nullptr);
   std::string err;
   EXPECT_TRUE(transport_controller_->SetLocalTransportDescription(
       "audio", local_desc, cricket::CA_OFFER, &err));

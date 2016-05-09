@@ -37,6 +37,7 @@ struct CONTENT_EXPORT ServiceWorkerVersionInfo {
                            int process_id,
                            int thread_id,
                            int devtools_agent_route_id);
+  ServiceWorkerVersionInfo(const ServiceWorkerVersionInfo& other);
   ~ServiceWorkerVersionInfo();
 
   ServiceWorkerVersion::RunningStatus running_status;
@@ -55,7 +56,6 @@ struct CONTENT_EXPORT ServiceWorkerVersionInfo {
 struct CONTENT_EXPORT ServiceWorkerRegistrationInfo {
  public:
   enum DeleteFlag { IS_NOT_DELETED, IS_DELETED };
-  enum ForceUpdateOnPageLoad { IS_NOT_FORCED, IS_FORCED };
   ServiceWorkerRegistrationInfo();
   ServiceWorkerRegistrationInfo(const GURL& pattern,
                                 int64_t registration_id,
@@ -64,17 +64,16 @@ struct CONTENT_EXPORT ServiceWorkerRegistrationInfo {
       const GURL& pattern,
       int64_t registration_id,
       DeleteFlag delete_flag,
-      ForceUpdateOnPageLoad force_update_on_page_load,
       const ServiceWorkerVersionInfo& active_version,
       const ServiceWorkerVersionInfo& waiting_version,
       const ServiceWorkerVersionInfo& installing_version,
       int64_t active_version_total_size_bytes);
+  ServiceWorkerRegistrationInfo(const ServiceWorkerRegistrationInfo& other);
   ~ServiceWorkerRegistrationInfo();
 
   GURL pattern;
   int64_t registration_id;
   DeleteFlag delete_flag;
-  ForceUpdateOnPageLoad force_update_on_page_load;
   ServiceWorkerVersionInfo active_version;
   ServiceWorkerVersionInfo waiting_version;
   ServiceWorkerVersionInfo installing_version;

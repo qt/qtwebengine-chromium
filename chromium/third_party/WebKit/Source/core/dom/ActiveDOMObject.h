@@ -40,13 +40,9 @@ public:
     // suspendIfNeeded() should be called exactly once after object construction to synchronize
     // the suspend state with that in ExecutionContext.
     void suspendIfNeeded();
-#if ENABLE(ASSERT)
+#if DCHECK_IS_ON()
     bool suspendIfNeededCalled() const { return m_suspendIfNeededCalled; }
 #endif
-
-    // Should return true if there's any pending asynchronous activity, and so
-    // this object must not be garbage collected.
-    virtual bool hasPendingActivity() const;
 
     // These methods have an empty default implementation so that subclasses
     // which don't need special treatment can skip implementation.
@@ -60,7 +56,7 @@ protected:
     virtual ~ActiveDOMObject();
 
 private:
-#if ENABLE(ASSERT)
+#if DCHECK_IS_ON()
     bool m_suspendIfNeededCalled;
 #endif
 };

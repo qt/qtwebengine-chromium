@@ -29,7 +29,7 @@
 
 namespace blink {
 
-AppendNodeCommand::AppendNodeCommand(PassRefPtrWillBeRawPtr<ContainerNode> parent, PassRefPtrWillBeRawPtr<Node> node)
+AppendNodeCommand::AppendNodeCommand(RawPtr<ContainerNode> parent, RawPtr<Node> node)
     : SimpleEditCommand(parent->document())
     , m_parent(parent)
     , m_node(node)
@@ -41,7 +41,7 @@ AppendNodeCommand::AppendNodeCommand(PassRefPtrWillBeRawPtr<ContainerNode> paren
     ASSERT(m_parent->hasEditableStyle() || !m_parent->inActiveDocument());
 }
 
-void AppendNodeCommand::doApply()
+void AppendNodeCommand::doApply(EditingState*)
 {
     if (!m_parent->hasEditableStyle() && m_parent->inActiveDocument())
         return;

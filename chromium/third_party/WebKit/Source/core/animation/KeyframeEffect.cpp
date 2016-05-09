@@ -53,26 +53,26 @@ KeyframeEffect* KeyframeEffect::create(Element* target, EffectModel* model, cons
     return new KeyframeEffect(target, model, timing, priority, eventDelegate);
 }
 
-KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(ExecutionContext* executionContext, Element* element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, double duration, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
-    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(duration));
+    return create(element, EffectInput::convert(element, effectInput, executionContext, exceptionState), TimingInput::convert(duration));
 }
-KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const KeyframeEffectOptions& timingInput, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(ExecutionContext* executionContext, Element* element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, const KeyframeEffectOptions& timingInput, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
-    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(timingInput));
+    return create(element, EffectInput::convert(element, effectInput, executionContext, exceptionState), TimingInput::convert(timingInput, &element->document()));
 }
-KeyframeEffect* KeyframeEffect::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+KeyframeEffect* KeyframeEffect::create(ExecutionContext* executionContext, Element* element, const EffectModelOrDictionarySequenceOrDictionary& effectInput, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectNoTiming);
-    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), Timing());
+    return create(element, EffectInput::convert(element, effectInput, executionContext, exceptionState), Timing());
 }
 
 KeyframeEffect::KeyframeEffect(Element* target, EffectModel* model, const Timing& timing, Priority priority, EventDelegate* eventDelegate)
@@ -82,10 +82,6 @@ KeyframeEffect::KeyframeEffect(Element* target, EffectModel* model, const Timing
     , m_sampledEffect(nullptr)
     , m_priority(priority)
 {
-#if !ENABLE(OILPAN)
-    if (m_target)
-        m_target->ensureElementAnimations().addEffect(this);
-#endif
 }
 
 KeyframeEffect::~KeyframeEffect()
@@ -219,7 +215,8 @@ void KeyframeEffect::updateChildrenAndEffects() const
 {
     if (!m_model)
         return;
-    if (isInEffect())
+    ASSERT(animation());
+    if (isInEffect() && !animation()->effectSuppressed())
         const_cast<KeyframeEffect*>(this)->applyEffects();
     else if (m_sampledEffect)
         const_cast<KeyframeEffect*>(this)->clearEffects();
@@ -230,7 +227,7 @@ double KeyframeEffect::calculateTimeToEffectChange(bool forwards, double localTi
     const double start = specifiedTiming().startDelay;
     const double end = start + activeDurationInternal();
 
-    switch (phase()) {
+    switch (getPhase()) {
     case PhaseNone:
         return std::numeric_limits<double>::infinity();
     case PhaseBefore:
@@ -262,20 +259,10 @@ double KeyframeEffect::calculateTimeToEffectChange(bool forwards, double localTi
     }
 }
 
-#if !ENABLE(OILPAN)
-void KeyframeEffect::notifyElementDestroyed()
+void KeyframeEffect::notifySampledEffectRemovedFromAnimationStack()
 {
-    // If our animation is kept alive just by the sampledEffect, we might get our
-    // destructor called when we call SampledEffect::clear(), so we need to
-    // clear m_sampledEffect first.
-    m_target = nullptr;
-    clearEventDelegate();
-    SampledEffect* sampledEffect = m_sampledEffect;
     m_sampledEffect = nullptr;
-    if (sampledEffect)
-        sampledEffect->clear();
 }
-#endif
 
 bool KeyframeEffect::isCandidateForAnimationOnCompositor(double animationPlaybackRate) const
 {

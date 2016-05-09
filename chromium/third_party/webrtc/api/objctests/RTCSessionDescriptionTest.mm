@@ -36,7 +36,7 @@
       description.nativeDescription;
 
   EXPECT_EQ(RTCSdpTypeAnswer,
-      [RTCSessionDescription typeForString:nativeDescription->type()]);
+      [RTCSessionDescription typeForStdString:nativeDescription->type()]);
 
   std::string sdp;
   nativeDescription->ToString(&sdp);
@@ -55,7 +55,7 @@
       [[RTCSessionDescription alloc] initWithNativeDescription:
       nativeDescription];
   EXPECT_EQ(webrtc::SessionDescriptionInterface::kAnswer,
-      [RTCSessionDescription stringForType:description.type]);
+      [RTCSessionDescription stdStringForType:description.type]);
   EXPECT_TRUE([[self sdp] isEqualToString:description.sdp]);
 }
 
@@ -81,7 +81,7 @@
            "a=sendrecv\r\n"
            "a=rtcp-mux\r\n"
            "a=rtpmap:111 opus/48000/2\r\n"
-           "a=fmtp:111 minptime=10; useinbandfec=1\r\n"
+           "a=fmtp:111 minptime=10;useinbandfec=1\r\n"
            "a=rtpmap:103 ISAC/16000\r\n"
            "a=rtpmap:9 G722/8000\r\n"
            "a=rtpmap:0 PCMU/8000\r\n"

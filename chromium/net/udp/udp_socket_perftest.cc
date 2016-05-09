@@ -10,7 +10,6 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
 #include "net/test/net_test_suite.h"
 #include "net/udp/udp_client_socket.h"
@@ -54,11 +53,10 @@ class UDPSocketPerfTest : public PlatformTest {
 void CreateUDPAddress(const std::string& ip_str,
                       uint16_t port,
                       IPEndPoint* address) {
-  IPAddressNumber ip_number;
-  bool rv = ParseIPLiteralToNumber(ip_str, &ip_number);
-  if (!rv)
+  IPAddress ip_address;
+  if (!ip_address.AssignFromIPLiteral(ip_str))
     return;
-  *address = IPEndPoint(ip_number, port);
+  *address = IPEndPoint(ip_address, port);
 }
 
 void UDPSocketPerfTest::WritePacketsToSocket(UDPClientSocket* socket,

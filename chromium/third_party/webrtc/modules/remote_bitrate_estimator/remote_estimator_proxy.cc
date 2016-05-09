@@ -52,21 +52,14 @@ void RemoteEstimatorProxy::IncomingPacket(int64_t arrival_time_ms,
   }
   rtc::CritScope cs(&lock_);
   media_ssrc_ = header.ssrc;
+
   OnPacketArrival(header.extension.transportSequenceNumber, arrival_time_ms);
 }
-
-void RemoteEstimatorProxy::RemoveStream(unsigned int ssrc) {}
 
 bool RemoteEstimatorProxy::LatestEstimate(std::vector<unsigned int>* ssrcs,
                                           unsigned int* bitrate_bps) const {
   return false;
 }
-
-bool RemoteEstimatorProxy::GetStats(
-    ReceiveBandwidthEstimatorStats* output) const {
-  return false;
-}
-
 
 int64_t RemoteEstimatorProxy::TimeUntilNextProcess() {
   int64_t now = clock_->TimeInMilliseconds();
@@ -78,11 +71,9 @@ int64_t RemoteEstimatorProxy::TimeUntilNextProcess() {
   return time_until_next;
 }
 
-int32_t RemoteEstimatorProxy::Process() {
-  // TODO(sprang): Perhaps we need a dedicated thread here instead?
-
+void RemoteEstimatorProxy::Process() {
   if (TimeUntilNextProcess() > 0)
-    return 0;
+    return;
   last_process_time_ms_ = clock_->TimeInMilliseconds();
 
   bool more_to_build = true;
@@ -95,8 +86,6 @@ int32_t RemoteEstimatorProxy::Process() {
       more_to_build = false;
     }
   }
-
-  return 0;
 }
 
 void RemoteEstimatorProxy::OnPacketArrival(uint16_t sequence_number,
@@ -117,7 +106,10 @@ void RemoteEstimatorProxy::OnPacketArrival(uint16_t sequence_number,
     window_start_seq_ = seq;
   }
 
-  RTC_DCHECK(packet_arrival_times_.end() == packet_arrival_times_.find(seq));
+  // We are only interested in the first time a packet is received.
+  if (packet_arrival_times_.find(seq) != packet_arrival_times_.end())
+    return;
+
   packet_arrival_times_[seq] = arrival_time;
 }
 

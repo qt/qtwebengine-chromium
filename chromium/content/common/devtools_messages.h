@@ -43,7 +43,6 @@
 #include <string>
 
 #include "content/common/content_export.h"
-#include "content/public/common/common_param_traits.h"
 #include "content/public/common/console_message_level.h"
 #include "ipc/ipc_message_macros.h"
 
@@ -102,6 +101,19 @@ IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_DispatchOnInspectorBackend,
 IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_InspectElement,
                     int /* x */,
                     int /* y */)
+
+// ACK for DevToolsAgentHostMsg_RequestNewWindow message.
+IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_RequestNewWindow_ACK,
+                    bool /* success */)
+
+//-----------------------------------------------------------------------------
+// These are messages sent from renderer's DevToolsAgent to browser.
+
+// Requests new DevTools window being opened for frame in the same process
+// with given routing id.
+IPC_MESSAGE_ROUTED1(DevToolsAgentHostMsg_RequestNewWindow,
+                    int /* frame_route_id */)
+
 
 //-----------------------------------------------------------------------------
 // These are messages sent from the browser to the renderer.

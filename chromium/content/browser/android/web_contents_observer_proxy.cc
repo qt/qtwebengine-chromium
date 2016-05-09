@@ -11,8 +11,10 @@
 #include "base/android/scoped_java_ref.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/android/media_metadata_android.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/navigation_handle.h"
 #include "jni/WebContentsObserverProxy_jni.h"
 
 using base::android::AttachCurrentThread;
@@ -74,6 +76,17 @@ void WebContentsObserverProxy::RenderProcessGone(
       termination_status == base::TERMINATION_STATUS_OOM_PROTECTED;
   Java_WebContentsObserverProxy_renderProcessGone(env, obj.obj(),
                                                   was_oom_protected);
+}
+
+void WebContentsObserverProxy::DidFinishNavigation(
+    NavigationHandle* navigation_handle) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(java_observer_);
+  ScopedJavaLocalRef<jstring> jstring_url(
+      ConvertUTF8ToJavaString(env, web_contents()->GetVisibleURL().spec()));
+  Java_WebContentsObserverProxy_didFinishNavigation(
+      env, obj.obj(), navigation_handle->IsInMainFrame(),
+      navigation_handle->IsErrorPage(), navigation_handle->HasCommitted());
 }
 
 void WebContentsObserverProxy::DidStartLoading() {
@@ -144,6 +157,7 @@ void WebContentsObserverProxy::DidNavigateMainFrame(
   // that would also be valid for a fragment navigation.
   bool is_fragment_navigation =
       urls_same_ignoring_fragment && details.is_in_page;
+
   Java_WebContentsObserverProxy_didNavigateMainFrame(
       env, obj.obj(), jstring_url.obj(), jstring_base_url.obj(),
       details.is_navigation_to_different_page(), is_fragment_navigation,
@@ -294,14 +308,18 @@ void WebContentsObserverProxy::DidStartNavigationToPendingEntry(
       env, obj.obj(), jstring_url.obj());
 }
 
-void WebContentsObserverProxy::MediaSessionStateChanged(bool is_controllable,
-                                                        bool is_suspended) {
+void WebContentsObserverProxy::MediaSessionStateChanged(
+    bool is_controllable,
+    bool is_suspended,
+    const MediaMetadata& metadata) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> obj(java_observer_);
+  ScopedJavaLocalRef<jobject> j_metadata =
+      MediaMetadataAndroid::CreateJavaObject(env, metadata);
 
   Java_WebContentsObserverProxy_mediaSessionStateChanged(
-      env, obj.obj(), is_controllable, is_suspended);
+      env, obj.obj(), is_controllable, is_suspended, j_metadata.obj());
 }
 
 void WebContentsObserverProxy::SetToBaseURLForDataURLIfNeeded(

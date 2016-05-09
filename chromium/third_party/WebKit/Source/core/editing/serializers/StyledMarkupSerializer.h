@@ -53,14 +53,14 @@ private:
     const PositionTemplate<Strategy> m_end;
     const EAbsoluteURLs m_shouldResolveURLs;
     const EAnnotateForInterchange m_shouldAnnotate;
-    const RefPtrWillBeMember<Node> m_highestNodeToBeSerialized;
+    const Member<Node> m_highestNodeToBeSerialized;
     const ConvertBlocksToInlines m_convertBlocksToInlines;
-    RawPtrWillBeMember<Node> m_lastClosed;
-    RefPtrWillBeMember<EditingStyle> m_wrappingStyle;
+    Member<Node> m_lastClosed;
+    Member<EditingStyle> m_wrappingStyle;
 };
 
 extern template class StyledMarkupSerializer<EditingStrategy>;
-extern template class StyledMarkupSerializer<EditingInComposedTreeStrategy>;
+extern template class StyledMarkupSerializer<EditingInFlatTreeStrategy>;
 
 } // namespace blink
 

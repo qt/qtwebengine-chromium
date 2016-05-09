@@ -27,7 +27,6 @@
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
@@ -351,12 +350,12 @@ bool CopyDirectory(const FilePath& from_path,
 #endif  // !defined(OS_NACL_NONSFI)
 
 bool SetNonBlocking(int fd) {
-  int flags = fcntl(fd, F_GETFL, 0);
+  const int flags = fcntl(fd, F_GETFL);
   if (flags == -1)
     return false;
   if (flags & O_NONBLOCK)
     return true;
-  if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+  if (HANDLE_EINTR(fcntl(fd, F_SETFL, flags | O_NONBLOCK)) == -1)
     return false;
   return true;
 }

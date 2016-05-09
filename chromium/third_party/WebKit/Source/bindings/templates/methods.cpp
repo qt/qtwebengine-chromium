@@ -1,4 +1,4 @@
-{% from 'utilities.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value, check_api_experiment %}
+{% from 'utilities.cpp' import declare_enum_validation_variable, v8_value_to_local_cpp_value, check_origin_trial %}
 
 {##############################################################################}
 {% macro generate_method(method, world_suffix) %}
@@ -116,7 +116,7 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
 {% macro generate_argument_var_declaration(argument) %}
 {# FIXME: remove EventListener special case #}
 {% if argument.idl_type == 'EventListener' %}
-RefPtrWillBeRawPtr<{{argument.idl_type}}> {{argument.name}}
+RawPtr<{{argument.idl_type}}> {{argument.name}}
 {%- else %}
 {{argument.cpp_type}} {{argument.name}}
 {%- endif %}{# argument.idl_type == 'EventListener' #}
@@ -251,7 +251,7 @@ ExecutionContext* executionContext = currentExecutionContext(info.GetIsolate());
 {% endif %}
 {% if method.is_call_with_script_arguments %}
 {# [CallWith=ScriptArguments] #}
-RefPtrWillBeRawPtr<ScriptArguments> scriptArguments(createScriptArguments(scriptState, info, {{method.number_of_arguments}}));
+RawPtr<ScriptArguments> scriptArguments(ScriptArguments::create(scriptState, info, {{method.number_of_arguments}}));
 {% endif %}
 {% if method.is_call_with_document %}
 {# [ConstructorCallWith=Document] #}
@@ -400,7 +400,7 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
     UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{overloads.measure_all_as}});
     {% endif %}
     {% if overloads.deprecate_all_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
+    Deprecation::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{overloads.deprecate_all_as}});
     {% endif %}
     {# First resolve by length #}
     {# 2. Initialize argcount to be min(maxarg, n). #}
@@ -419,7 +419,7 @@ static void {{overloads.name}}Method{{world_suffix}}(const v8::FunctionCallbackI
             UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
             {% endif %}
             {% if method.deprecate_as and not overloads.deprecate_all_as %}
-            UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+            Deprecation::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
             {% endif %}
             {{method.name}}{{method.overload_index}}Method{{world_suffix}}(info);
             return;
@@ -475,7 +475,7 @@ void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, const v
         exceptionState.throwIfNeeded();
         return;
     }
-    OwnPtrWillBeRawPtr<MessagePortArray> ports = adoptPtrWillBeNoop(new MessagePortArray);
+    RawPtr<MessagePortArray> ports = new MessagePortArray;
     ArrayBufferArray arrayBuffers;
     ImageBitmapArray imageBitmaps;
     if (info.Length() > 1) {
@@ -499,16 +499,15 @@ void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, const v
 {% macro method_callback(method, world_suffix) %}
 static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMMethod");
     {% if not method.overloads %}{# Overloaded methods are measured in overload_resolution_method() #}
     {% if method.measure_as %}
     UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.measure_as('Method')}});
     {% endif %}
     {% if method.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
+    Deprecation::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{method.deprecate_as}});
     {% endif %}
-    {% if method.is_api_experiment_enabled %}
-    {{check_api_experiment(method) | indent}}
+    {% if method.origin_trial_enabled_function %}
+    {{check_origin_trial(method) | indent}}
     {% endif %}
     {% endif %}{# not method.overloads #}
     {% if world_suffix in method.activity_logging_world_list %}
@@ -531,7 +530,6 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
     {% else %}
     {{cpp_class_or_partial}}V8Internal::{{method.name}}Method{{world_suffix}}(info);
     {% endif %}
-    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 {% endmacro %}
 
@@ -540,12 +538,9 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
 {% macro origin_safe_method_getter(method, world_suffix) %}
 static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    {% set signature = 'v8::Local<v8::Signature>()'
-                       if method.is_do_not_check_signature else
-                       'v8::Signature::New(info.GetIsolate(), %s::domTemplate(info.GetIsolate()))' % v8_class %}
+    {% set signature = 'v8::Signature::New(info.GetIsolate(), %s::domTemplate(info.GetIsolate()))' % v8_class %}
     static int domTemplateKey; // This address is used for a key to look up the dom template.
     V8PerIsolateData* data = V8PerIsolateData::from(info.GetIsolate());
-    {# FIXME: 1 case of [DoNotCheckSignature] in Window.idl may differ #}
     v8::Local<v8::FunctionTemplate> domTemplate = data->domTemplate(&domTemplateKey, {{cpp_class}}V8Internal::{{method.name}}MethodCallback{{world_suffix}}, v8Undefined(), {{signature}}, {{method.length}});
 
     // It is unsafe to use info.Holder() because OriginSafeMethodGetter is called
@@ -573,9 +568,7 @@ static void {{method.name}}OriginSafeMethodGetter{{world_suffix}}(const v8::Prop
 
 static void {{method.name}}OriginSafeMethodGetterCallback{{world_suffix}}(v8::Local<v8::Name>, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     {{cpp_class}}V8Internal::{{method.name}}OriginSafeMethodGetter{{world_suffix}}(info);
-    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 {% endmacro %}
 
@@ -695,7 +688,7 @@ V8DOMConfiguration::installMethod(isolate, {{instance_template}}, {{prototype_te
 {% macro install_conditionally_enabled_methods() %}
 {% if conditionally_enabled_methods %}
 {# Define operations with limited exposure #}
-v8::Local<v8::Signature> defaultSignature = v8::Signature::New(isolate, domTemplate(isolate));
+v8::Local<v8::Signature> signature = v8::Signature::New(isolate, domTemplate(isolate));
 ExecutionContext* executionContext = toExecutionContext(prototypeObject->CreationContext());
 ASSERT(executionContext);
 {% for method in conditionally_enabled_methods %}
@@ -706,7 +699,7 @@ ASSERT(executionContext);
                           if method.overloads else
                           method.runtime_enabled_function) %}
 const V8DOMConfiguration::MethodConfiguration {{method.name}}MethodConfiguration = {{method_configuration(method)}};
-V8DOMConfiguration::installMethod(isolate, v8::Local<v8::Object>(), prototypeObject, interfaceObject, defaultSignature, {{method.name}}MethodConfiguration);
+V8DOMConfiguration::installMethod(isolate, v8::Local<v8::Object>(), prototypeObject, interfaceObject, signature, {{method.name}}MethodConfiguration);
 {% endfilter %}{# runtime_enabled() #}
 {% endfilter %}{# exposed() #}
 {% endfor %}

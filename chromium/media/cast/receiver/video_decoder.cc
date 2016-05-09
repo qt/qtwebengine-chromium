@@ -20,8 +20,8 @@
 // VPX_CODEC_DISABLE_COMPAT excludes parts of the libvpx API that provide
 // backwards compatibility for legacy applications using the library.
 #define VPX_CODEC_DISABLE_COMPAT 1
-#include "third_party/libvpx_new/source/libvpx/vpx/vp8dx.h"
-#include "third_party/libvpx_new/source/libvpx/vpx/vpx_decoder.h"
+#include "third_party/libvpx/source/libvpx/vpx/vp8dx.h"
+#include "third_party/libvpx/source/libvpx/vpx/vpx_decoder.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -66,6 +66,8 @@ class VideoDecoder::ImplBase
     const scoped_refptr<VideoFrame> decoded_frame = Decode(
         encoded_frame->mutable_bytes(),
         static_cast<int>(encoded_frame->data.size()));
+    decoded_frame->set_timestamp(
+        encoded_frame->rtp_timestamp.ToTimeDelta(kVideoFrequency));
 
     scoped_ptr<FrameEvent> decode_event(new FrameEvent());
     decode_event->timestamp = cast_environment_->Clock()->NowTicks();

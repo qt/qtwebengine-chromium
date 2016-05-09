@@ -33,14 +33,24 @@ public:
     static PassOwnPtr<WebThreadSupportingGC> createForThread(WebThread*);
     ~WebThreadSupportingGC();
 
-    void postTask(const WebTraceLocation& location, WebTaskRunner::Task* task)
+    void postTask(const WebTraceLocation& location, PassOwnPtr<SameThreadClosure> task)
     {
-        m_thread->taskRunner()->postTask(location, task);
+        m_thread->getWebTaskRunner()->postTask(location, task);
     }
 
-    void postDelayedTask(const WebTraceLocation& location, WebTaskRunner::Task* task, long long delayMs)
+    void postDelayedTask(const WebTraceLocation& location, PassOwnPtr<SameThreadClosure> task, long long delayMs)
     {
-        m_thread->taskRunner()->postDelayedTask(location, task, delayMs);
+        m_thread->getWebTaskRunner()->postDelayedTask(location, task, delayMs);
+    }
+
+    void postTask(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
+    {
+        m_thread->getWebTaskRunner()->postTask(location, task);
+    }
+
+    void postDelayedTask(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task, long long delayMs)
+    {
+        m_thread->getWebTaskRunner()->postDelayedTask(location, task, delayMs);
     }
 
     bool isCurrentThread() const
@@ -79,6 +89,6 @@ private:
     OwnPtr<WebThread> m_owningThread;
 };
 
-}
+} // namespace blink
 
 #endif

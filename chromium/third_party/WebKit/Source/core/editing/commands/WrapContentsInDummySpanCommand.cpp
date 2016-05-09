@@ -31,7 +31,7 @@
 
 namespace blink {
 
-WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtrWillBeRawPtr<Element> element)
+WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(RawPtr<Element> element)
     : SimpleEditCommand(element->document())
     , m_element(element)
 {
@@ -49,7 +49,7 @@ void WrapContentsInDummySpanCommand::executeApply()
     m_element->appendChild(m_dummySpan.get(), IGNORE_EXCEPTION);
 }
 
-void WrapContentsInDummySpanCommand::doApply()
+void WrapContentsInDummySpanCommand::doApply(EditingState*)
 {
     m_dummySpan = HTMLSpanElement::create(document());
 

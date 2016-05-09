@@ -10,10 +10,10 @@
  */
 WebInspector.TracingModel = function(backingStorage)
 {
-    this.reset();
-    // Set backing storage after reset so that we do not perform
-    // an extra reset of backing storage -- this is not free.
     this._backingStorage = backingStorage;
+    // Avoid extra reset of the storage as it's expensive.
+    this._firstWritePending = true;
+    this.reset();
 }
 
 /**
@@ -55,31 +55,13 @@ WebInspector.TracingModel.DevToolsTimelineEventCategory = "disabled-by-default-d
 
 WebInspector.TracingModel.FrameLifecycleEventCategory = "cc,devtools";
 
-WebInspector.TracingModel._nestableAsyncEventsString =
-    WebInspector.TracingModel.Phase.NestableAsyncBegin +
-    WebInspector.TracingModel.Phase.NestableAsyncEnd +
-    WebInspector.TracingModel.Phase.NestableAsyncInstant;
-
-WebInspector.TracingModel._legacyAsyncEventsString =
-    WebInspector.TracingModel.Phase.AsyncBegin +
-    WebInspector.TracingModel.Phase.AsyncEnd +
-    WebInspector.TracingModel.Phase.AsyncStepInto +
-    WebInspector.TracingModel.Phase.AsyncStepPast;
-
-WebInspector.TracingModel._flowEventsString =
-    WebInspector.TracingModel.Phase.FlowBegin +
-    WebInspector.TracingModel.Phase.FlowStep +
-    WebInspector.TracingModel.Phase.FlowEnd;
-
-WebInspector.TracingModel._asyncEventsString = WebInspector.TracingModel._nestableAsyncEventsString + WebInspector.TracingModel._legacyAsyncEventsString;
-
 /**
  * @param {string} phase
  * @return {boolean}
  */
 WebInspector.TracingModel.isNestableAsyncPhase = function(phase)
 {
-    return WebInspector.TracingModel._nestableAsyncEventsString.indexOf(phase) >= 0;
+    return phase === "b" || phase === "e" || phase === "n";
 }
 
 /**
@@ -88,7 +70,7 @@ WebInspector.TracingModel.isNestableAsyncPhase = function(phase)
  */
 WebInspector.TracingModel.isAsyncBeginPhase = function(phase)
 {
-    return phase === WebInspector.TracingModel.Phase.AsyncBegin || phase === WebInspector.TracingModel.Phase.NestableAsyncBegin;
+    return phase === "S" || phase === "b";
 }
 
 /**
@@ -97,7 +79,7 @@ WebInspector.TracingModel.isAsyncBeginPhase = function(phase)
  */
 WebInspector.TracingModel.isAsyncPhase = function(phase)
 {
-    return WebInspector.TracingModel._asyncEventsString.indexOf(phase) >= 0;
+    return WebInspector.TracingModel.isNestableAsyncPhase(phase) || phase === "S" || phase === "T" || phase === "F" || phase === "p";
 }
 
 /**
@@ -106,7 +88,7 @@ WebInspector.TracingModel.isAsyncPhase = function(phase)
  */
 WebInspector.TracingModel.isFlowPhase = function(phase)
 {
-    return WebInspector.TracingModel._flowEventsString.indexOf(phase) >= 0;
+    return phase === "s" || phase === "t" || phase === "f";
 }
 
 /**
@@ -175,7 +157,9 @@ WebInspector.TracingModel.prototype = {
     tracingComplete: function()
     {
         this._processPendingAsyncEvents();
+        this._backingStorage.appendString(this._firstWritePending ? "[]" : "]");
         this._backingStorage.finishWriting();
+        this._firstWritePending = false;
         for (var process of Object.values(this._processById)) {
             for (var thread of Object.values(process._threads))
                 thread.tracingComplete();
@@ -190,9 +174,10 @@ WebInspector.TracingModel.prototype = {
         this._minimumRecordTime = 0;
         this._maximumRecordTime = 0;
         this._devToolsMetadataEvents = [];
-        if (this._backingStorage)
+        if (!this._firstWritePending)
             this._backingStorage.reset();
-        this._appendDelimiter = false;
+
+        this._firstWritePending = true;
         /** @type {!Array<!WebInspector.TracingModel.Event>} */
         this._asyncEvents = [];
         /** @type {!Map<string, !WebInspector.TracingModel.AsyncEvent>} */
@@ -215,9 +200,8 @@ WebInspector.TracingModel.prototype = {
         }
 
         var eventsDelimiter = ",\n";
-        if (this._appendDelimiter)
-            this._backingStorage.appendString(eventsDelimiter);
-        this._appendDelimiter = true;
+        this._backingStorage.appendString(this._firstWritePending ? "[" : eventsDelimiter);
+        this._firstWritePending = false;
         var stringPayload = JSON.stringify(payload);
         var isAccessible = payload.ph === WebInspector.TracingModel.Phase.SnapshotObject;
         var backingStorage = null;
@@ -227,27 +211,28 @@ WebInspector.TracingModel.prototype = {
         else
             this._backingStorage.appendString(stringPayload);
 
-        if (payload.ph !== WebInspector.TracingModel.Phase.Metadata) {
-            var timestamp = payload.ts / 1000;
-            // We do allow records for unrelated threads to arrive out-of-order,
-            // so there's a chance we're getting records from the past.
-            if (timestamp && (!this._minimumRecordTime || timestamp < this._minimumRecordTime))
-                this._minimumRecordTime = timestamp;
-            var endTimeStamp = (payload.ts + (payload.dur || 0)) / 1000;
-            this._maximumRecordTime = Math.max(this._maximumRecordTime, endTimeStamp);
-            var event = process._addEvent(payload);
-            if (!event)
-                return;
-            // Build async event when we've got events from all threads & processes, so we can sort them and process in the
-            // chronological order. However, also add individual async events to the thread flow (above), so we can easily
-            // display them on the same chart as other events, should we choose so.
-            if (WebInspector.TracingModel.isAsyncPhase(payload.ph))
-                this._asyncEvents.push(event);
-            event._setBackingStorage(backingStorage);
-            if (event.hasCategory(WebInspector.TracingModel.DevToolsMetadataEventCategory))
-                this._devToolsMetadataEvents.push(event);
+        var timestamp = payload.ts / 1000;
+        // We do allow records for unrelated threads to arrive out-of-order,
+        // so there's a chance we're getting records from the past.
+        if (timestamp && (!this._minimumRecordTime || timestamp < this._minimumRecordTime))
+            this._minimumRecordTime = timestamp;
+        var endTimeStamp = (payload.ts + (payload.dur || 0)) / 1000;
+        this._maximumRecordTime = Math.max(this._maximumRecordTime, endTimeStamp);
+        var event = process._addEvent(payload);
+        if (!event)
             return;
-        }
+        // Build async event when we've got events from all threads & processes, so we can sort them and process in the
+        // chronological order. However, also add individual async events to the thread flow (above), so we can easily
+        // display them on the same chart as other events, should we choose so.
+        if (WebInspector.TracingModel.isAsyncPhase(payload.ph))
+            this._asyncEvents.push(event);
+        event._setBackingStorage(backingStorage);
+        if (event.hasCategory(WebInspector.TracingModel.DevToolsMetadataEventCategory))
+            this._devToolsMetadataEvents.push(event);
+
+        if (payload.ph !== WebInspector.TracingModel.Phase.Metadata)
+            return;
+
         switch (payload.name) {
         case WebInspector.TracingModel.MetadataEvent.ProcessSortIndex:
             process._setSortIndex(payload.args["sort_index"]);
@@ -462,7 +447,7 @@ WebInspector.TracingModel.Event = function(categories, name, phase, startTime, t
     this.warning = null;
     /** @type {?WebInspector.TracingModel.Event} */
     this.initiator = null;
-    /** @type {?Array.<!ConsoleAgent.CallFrame>} */
+    /** @type {?Array.<!RuntimeAgent.CallFrame>} */
     this.stackTrace = null;
     /** @type {?Element} */
     this.previewElement = null;
@@ -491,6 +476,9 @@ WebInspector.TracingModel.Event.fromPayload = function(payload, thread)
         event.setEndTime((payload.ts + payload.dur) / 1000);
     if (payload.id)
         event.id = payload.id;
+    if (payload.bind_id)
+        event.bind_id = payload.bind_id;
+
     return event;
 }
 
@@ -558,6 +546,16 @@ WebInspector.TracingModel.Event.prototype = {
 WebInspector.TracingModel.Event.compareStartTime = function (a, b)
 {
     return a.startTime - b.startTime;
+}
+
+/**
+ * @param {!WebInspector.TracingModel.Event} a
+ * @param {!WebInspector.TracingModel.Event} b
+ * @return {number}
+ */
+WebInspector.TracingModel.Event.compareStartAndEndTime = function (a, b)
+{
+    return a.startTime - b.startTime || (b.endTime != undefined && a.endTime !== undefined && b.endTime - a.endTime) || 0;
 }
 
 /**
@@ -839,7 +837,7 @@ WebInspector.TracingModel.Thread = function(process, id)
 WebInspector.TracingModel.Thread.prototype = {
     tracingComplete: function()
     {
-        this._asyncEvents.stableSort(WebInspector.TracingModel.Event.compareStartTime);
+        this._asyncEvents.stableSort(WebInspector.TracingModel.Event.compareStartAndEndTime);
         this._events.stableSort(WebInspector.TracingModel.Event.compareStartTime);
         var phases = WebInspector.TracingModel.Phase;
         var stack = [];

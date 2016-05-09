@@ -38,7 +38,7 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/decoder_buffer_queue.h"
 #include "media/base/demuxer.h"
-#include "media/base/pipeline.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_deleters.h"
@@ -190,6 +190,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   FFmpegDemuxer(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
                 DataSource* data_source,
                 const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
+                const MediaTracksUpdatedCB& media_tracks_updated_cb,
                 const scoped_refptr<MediaLog>& media_log);
   ~FFmpegDemuxer() override;
 
@@ -199,6 +200,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
                   const PipelineStatusCB& status_cb,
                   bool enable_text_tracks) override;
   void Stop() override;
+  void StartWaitingForSeek(base::TimeDelta seek_time) override;
+  void CancelPendingSeek(base::TimeDelta seek_time) override;
   void Seek(base::TimeDelta time, const PipelineStatusCB& cb) override;
   base::Time GetTimelineOffset() const override;
   DemuxerStream* GetStream(DemuxerStream::Type type) override;
@@ -328,6 +331,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   scoped_ptr<FFmpegGlue> glue_;
 
   const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
+
+  const MediaTracksUpdatedCB media_tracks_updated_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;

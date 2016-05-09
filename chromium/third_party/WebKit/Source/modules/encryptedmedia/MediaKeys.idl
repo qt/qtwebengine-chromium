@@ -29,8 +29,8 @@ enum MediaKeySessionType {
 };
 
 [
-    ActiveDOMObject,
-    RuntimeEnabled=EncryptedMedia,
+    ActiveScriptWrappable,
+    DependentLifetime,
     GarbageCollected,
 ] interface MediaKeys {
     [CallWith=ScriptState, RaisesException] MediaKeySession createSession(optional MediaKeySessionType sessionType = "temporary");

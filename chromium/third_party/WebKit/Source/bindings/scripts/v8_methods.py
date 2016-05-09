@@ -47,7 +47,6 @@ from v8_utilities import (has_extended_attribute_value, is_unforgeable,
 # interface's configure*Template() function.
 CUSTOM_REGISTRATION_EXTENDED_ATTRIBUTES = frozenset([
     'DoNotCheckSecurity',
-    'DoNotCheckSignature',
 ])
 
 
@@ -84,7 +83,7 @@ def method_context(interface, method, is_visible=True):
 
     is_call_with_script_arguments = has_extended_attribute_value(method, 'CallWith', 'ScriptArguments')
     if is_call_with_script_arguments:
-        includes.update(['bindings/core/v8/ScriptCallStackFactory.h',
+        includes.update(['bindings/core/v8/ScriptCallStack.h',
                          'core/inspector/ScriptArguments.h'])
     is_call_with_script_state = has_extended_attribute_value(method, 'CallWith', 'ScriptState')
     is_call_with_this_value = has_extended_attribute_value(method, 'CallWith', 'ThisValue')
@@ -118,18 +117,12 @@ def method_context(interface, method, is_visible=True):
     if 'LenientThis' in extended_attributes:
         raise Exception('[LenientThis] is not supported for operations.')
 
-    if 'APIExperimentEnabled' in extended_attributes:
-        includes.add('core/experiments/ExperimentalFeatures.h')
-        includes.add('core/inspector/ConsoleMessage.h')
-
     argument_contexts = [
         argument_context(interface, method, argument, index, is_visible=is_visible)
         for index, argument in enumerate(arguments)]
 
     return {
         'activity_logging_world_list': v8_utilities.activity_logging_world_list(method),  # [ActivityLogging]
-        'api_experiment_enabled': v8_utilities.api_experiment_enabled_function(method),  # [APIExperimentEnabled]
-        'api_experiment_enabled_per_interface': v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
         'arguments': argument_contexts,
         'argument_declarations_for_private_script':
             argument_declarations_for_private_script(interface, method),
@@ -157,7 +150,6 @@ def method_context(interface, method, is_visible=True):
             any(True for argument_context in argument_contexts
                 if argument_context['is_optional_without_default_value']),
         'idl_type': idl_type.base_type,
-        'is_api_experiment_enabled': v8_utilities.api_experiment_enabled_function(method) or v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
         'is_call_with_execution_context': has_extended_attribute_value(method, 'CallWith', 'ExecutionContext'),
         'is_call_with_script_arguments': is_call_with_script_arguments,
         'is_call_with_script_state': is_call_with_script_state,
@@ -170,7 +162,6 @@ def method_context(interface, method, is_visible=True):
         'is_custom_call_epilogue': is_custom_call_epilogue,
         'is_custom_element_callbacks': is_custom_element_callbacks,
         'is_do_not_check_security': is_do_not_check_security,
-        'is_do_not_check_signature': 'DoNotCheckSignature' in extended_attributes,
         'is_explicit_nullable': idl_type.is_explicit_nullable,
         'is_implemented_in_private_script': is_implemented_in_private_script,
         'is_partial_interface_member':
@@ -194,6 +185,7 @@ def method_context(interface, method, is_visible=True):
         'on_interface': v8_utilities.on_interface(interface, method),
         'on_prototype': v8_utilities.on_prototype(interface, method),
         'only_exposed_to_private_script': is_only_exposed_to_private_script,
+        'origin_trial_enabled_function': v8_utilities.origin_trial_enabled_function_name(method, interface),  # [OriginTrialEnabled]
         'private_script_v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
             extended_attributes, 'v8Value', 'cppValue', isolate='scriptState->isolate()', bailout_return_value='false'),
         'property_attributes': property_attributes(interface, method),

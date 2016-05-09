@@ -97,8 +97,8 @@ class RootView;
 //      The Widget instance owns its NativeWidget. This state implies someone
 //      else wants to control the lifetime of this object. When they destroy
 //      the Widget it is responsible for destroying the NativeWidget (from its
-//      destructor).
-//
+//      destructor). This is often used to place a Widget in a scoped_ptr<> or
+//      on the stack in a test.
 class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                             public ui::EventSource,
                             public FocusTraversable,
@@ -202,25 +202,27 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
     InitParams();
     explicit InitParams(Type type);
+    InitParams(const InitParams& other);
     ~InitParams();
 
     Type type;
-    // If NULL, a default implementation will be constructed.
+    // If null, a default implementation will be constructed. The default
+    // implementation deletes itself when the Widget closes.
     WidgetDelegate* delegate;
     bool child;
     // If TRANSLUCENT_WINDOW, the widget may be fully or partially transparent.
-    // Translucent windows may not always be supported. Use
-    // IsTranslucentWindowOpacitySupported to determine if translucent windows
-    // are supported.
     // If OPAQUE_WINDOW, we can perform optimizations based on the widget being
-    // fully opaque.  Defaults to TRANSLUCENT_WINDOW if
-    // ViewsDelegate::UseTransparentWindows().  Defaults to OPAQUE_WINDOW for
-    // non-window widgets.
+    // fully opaque.
+    // Default is based on ViewsDelegate::GetOpacityForInitParams().  Defaults
+    // to OPAQUE_WINDOW for non-window widgets.
+    // Translucent windows may not always be supported. Use
+    // IsTranslucentWindowOpacitySupported to determine whether they are.
     WindowOpacity opacity;
     bool accept_events;
     Activatable activatable;
     bool keep_on_top;
     bool visible_on_all_workspaces;
+    // See Widget class comment above.
     Ownership ownership;
     bool mirror_origin_in_rtl;
     ShadowType shadow_type;
@@ -242,8 +244,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // When set, this value is used as the Widget's NativeWidget implementation.
     // The Widget will not construct a default one. Default is NULL.
     NativeWidget* native_widget;
-    // If provided, sets the native theme for this widget.
-    ui::NativeTheme* native_theme;
     // Aura-only. Provides a DesktopWindowTreeHost implementation to use instead
     // of the default one.
     // TODO(beng): Figure out if there's a better way to expose this, e.g. get
@@ -273,23 +273,18 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // If true then the widget uses software compositing. Defaults to false.
     // Only used on Windows.
     bool force_software_compositing;
+
+    // Used if widget is not activatable to do determine if mouse events should
+    // be sent to the widget.
+    bool wants_mouse_events_when_inactive = false;
   };
 
   Widget();
   ~Widget() override;
 
-  // Creates a toplevel window with no context. These methods should only be
-  // used in cases where there is no contextual information because we're
-  // creating a toplevel window connected to no other event.
-  //
-  // If you have any parenting or context information, or can pass that
-  // information, prefer the WithParent or WithContext versions of these
-  // methods.
-  static Widget* CreateWindow(WidgetDelegate* delegate);
-  static Widget* CreateWindowWithBounds(WidgetDelegate* delegate,
-                                        const gfx::Rect& bounds);
-
-  // Creates a decorated window Widget with the specified properties.
+  // Creates a decorated window Widget with the specified properties. The
+  // returned Widget is owned by its NativeWidget; see Widget class comment for
+  // details.
   static Widget* CreateWindowWithParent(WidgetDelegate* delegate,
                                         gfx::NativeView parent);
   static Widget* CreateWindowWithParentAndBounds(WidgetDelegate* delegate,
@@ -297,6 +292,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                                                  const gfx::Rect& bounds);
 
   // Creates a decorated window Widget in the same desktop context as |context|.
+  // The returned Widget is owned by its NativeWidget; see Widget class comment
+  // for details.
   static Widget* CreateWindowWithContext(WidgetDelegate* delegate,
                                          gfx::NativeWindow context);
   static Widget* CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
@@ -498,12 +495,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Returns whether the Widget is the currently active window.
   virtual bool IsActive() const;
 
-  // Prevents the window from being rendered as deactivated. This state is
-  // reset automatically as soon as the window becomes activated again. There is
-  // no ability to control the state through this API as this leads to sync
-  // problems.
-  void DisableInactiveRendering();
-
   // Sets the widget to be on top of all other widgets in the windowing system.
   void SetAlwaysOnTop(bool on_top);
 
@@ -531,10 +522,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // in the Z-order to become visible, depending on the capabilities of the
   // underlying windowing system.
   void SetOpacity(unsigned char opacity);
-
-  // Sets whether or not the window should show its frame as a "transient drag
-  // frame" - slightly transparent and without the standard window controls.
-  void SetUseDragFrame(bool use_drag_frame);
 
   // Flashes the frame of the window to draw attention to it. Currently only
   // implemented on Windows for non-Aura.
@@ -565,7 +552,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     return const_cast<ui::NativeTheme*>(
         const_cast<const Widget*>(this)->GetNativeTheme());
   }
-  const ui::NativeTheme* GetNativeTheme() const;
+  virtual const ui::NativeTheme* GetNativeTheme() const;
 
   // Returns the FocusManager for this widget.
   // Note that all widgets in a widget hierarchy share the same focus manager.
@@ -775,8 +762,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   bool IsModal() const override;
   bool IsDialogBox() const override;
   bool CanActivate() const override;
-  bool IsInactiveRenderingDisabled() const override;
-  void EnableInactiveRendering() override;
+  bool IsAlwaysRenderAsActive() const override;
+  void SetAlwaysRenderAsActive(bool always_render_as_active) override;
   void OnNativeWidgetActivationChanged(bool active) override;
   void OnNativeFocus() override;
   void OnNativeBlur() override;
@@ -838,11 +825,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
  private:
   friend class ComboboxTest;
+  friend class CustomButtonTest;
   friend class TextfieldTest;
-
-  // Sets the value of |disable_inactive_rendering_|. If the value changes,
-  // both the NonClientView and WidgetDelegate are notified.
-  void SetInactiveRenderingDisabled(bool value);
 
   // Persists the window's restored position and "show" state using the
   // window delegate.
@@ -865,10 +849,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
                                ui::WindowShowState* show_state);
 
   internal::NativeWidgetPrivate* native_widget_;
-
-  // If non-null, the native theme for this widget. Otherwise the native theme
-  // comes from |native_widget_|.
-  ui::NativeTheme* native_theme_;
 
   base::ObserverList<WidgetObserver> observers_;
 
@@ -914,7 +894,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // True when the window should be rendered as active, regardless of whether
   // or not it actually is.
-  bool disable_inactive_rendering_;
+  bool always_render_as_active_;
 
   // Set to true if the widget is in the process of closing.
   bool widget_closed_;

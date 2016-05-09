@@ -12,7 +12,7 @@ set -ex
 # We only need the nss/lib directory, but hg requires us to check out the
 # complete nss source tree.
 rm -rf nss
-hg clone -u NSS_3_21_RTM https://hg.mozilla.org/projects/nss
+hg clone -u NSS_3_23_RTM https://hg.mozilla.org/projects/nss
 
 # Rename one of the utf8.c files to avoid name conflict.
 mv nss/lib/base/utf8.c nss/lib/base/nssutf8.c
@@ -62,6 +62,8 @@ find nss/lib/freebl -type f \
     ! -name alghmac.h ! -name arcfive.c ! -name arcfour.c \
     ! -name blapi.h ! -name blapii.h ! -name blapit.h \
     ! -name camellia.c ! -name camellia.h \
+    ! -name chacha20.c ! -name chacha20.h ! -name chacha20_vec.c \
+    ! -name chacha20poly1305.c ! -name chacha20poly1305.h \
     ! -name ctr.c ! -name ctr.h ! -name cts.c ! -name cts.h \
     ! -name des.c ! -name des.h ! -name desblapi.c ! -name dh.c \
     ! -name drbg.c ! -name dsa.c ! -name ec.c \
@@ -85,6 +87,8 @@ find nss/lib/freebl -type f \
     ! -name mplogic.c ! -name mplogic.h ! -name mpmontg.c \
     ! -name mpprime.c ! -name mpprime.h \
     ! -name mp_gf2m-priv.h ! -name mp_gf2m.c ! -name mp_gf2m.h \
+    ! -name poly1305-donna-x64-sse2-incremental-source.c \
+    ! -name poly1305.c ! -name poly1305.h \
     ! -name primes.c ! -name pqg.c ! -name pqg.h ! -name rawhash.c \
     ! -name rijndael.c ! -name rijndael.h ! -name rijndael32.tab \
     ! -name rsa.c ! -name rsapkcs.c ! -name secmpi.h \

@@ -9,6 +9,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/gpu_export.h"
 
@@ -28,7 +29,8 @@ class GPU_EXPORT CopyTextureCHROMIUMResourceManager {
   CopyTextureCHROMIUMResourceManager();
   ~CopyTextureCHROMIUMResourceManager();
 
-  void Initialize(const gles2::GLES2Decoder* decoder);
+  void Initialize(const gles2::GLES2Decoder* decoder,
+                  const gles2::FeatureInfo::FeatureFlags& feature_flags);
   void Destroy();
 
   void DoCopyTexture(const gles2::GLES2Decoder* decoder,
@@ -64,6 +66,28 @@ class GPU_EXPORT CopyTextureCHROMIUMResourceManager {
                         bool flip_y,
                         bool premultiply_alpha,
                         bool unpremultiply_alpha);
+
+  void DoCopySubTextureWithTransform(const gles2::GLES2Decoder* decoder,
+                                     GLenum source_target,
+                                     GLuint source_id,
+                                     GLenum source_internal_format,
+                                     GLenum dest_target,
+                                     GLuint dest_id,
+                                     GLenum dest_internal_format,
+                                     GLint xoffset,
+                                     GLint yoffset,
+                                     GLint x,
+                                     GLint y,
+                                     GLsizei width,
+                                     GLsizei height,
+                                     GLsizei dest_width,
+                                     GLsizei dest_height,
+                                     GLsizei source_width,
+                                     GLsizei source_height,
+                                     bool flip_y,
+                                     bool premultiply_alpha,
+                                     bool unpremultiply_alpha,
+                                     const GLfloat transform_matrix[16]);
 
   // This will apply a transform on the texture coordinates before sampling
   // the source texture and copying to the destination texture. The transform
@@ -138,6 +162,7 @@ class GPU_EXPORT CopyTextureCHROMIUMResourceManager {
   typedef int ProgramMapKey;
   typedef base::hash_map<ProgramMapKey, ProgramInfo> ProgramMap;
   ProgramMap programs_;
+  GLuint vertex_array_object_id_;
   GLuint buffer_id_;
   GLuint framebuffer_;
 

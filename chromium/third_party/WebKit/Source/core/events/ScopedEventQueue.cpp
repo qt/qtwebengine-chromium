@@ -58,9 +58,9 @@ void ScopedEventQueue::initialize()
     s_instance = instance.leakPtr();
 }
 
-void ScopedEventQueue::enqueueEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
+void ScopedEventQueue::enqueueEventDispatchMediator(EventDispatchMediator* mediator)
 {
-    if (m_scopingLevel)
+    if (shouldQueueEvents())
         m_queuedEventDispatchMediators.append(mediator);
     else
         dispatchEvent(mediator);
@@ -68,14 +68,14 @@ void ScopedEventQueue::enqueueEventDispatchMediator(PassRefPtrWillBeRawPtr<Event
 
 void ScopedEventQueue::dispatchAllEvents()
 {
-    WillBeHeapVector<RefPtrWillBeMember<EventDispatchMediator>> queuedEventDispatchMediators;
+    HeapVector<Member<EventDispatchMediator>> queuedEventDispatchMediators;
     queuedEventDispatchMediators.swap(m_queuedEventDispatchMediators);
 
     for (size_t i = 0; i < queuedEventDispatchMediators.size(); i++)
         dispatchEvent(queuedEventDispatchMediators[i].release());
 }
 
-void ScopedEventQueue::dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator) const
+void ScopedEventQueue::dispatchEvent(EventDispatchMediator* mediator) const
 {
     ASSERT(mediator->event().target());
     Node* node = mediator->event().target()->toNode();
@@ -103,4 +103,4 @@ void ScopedEventQueue::decrementScopingLevel()
         dispatchAllEvents();
 }
 
-}
+} // namespace blink

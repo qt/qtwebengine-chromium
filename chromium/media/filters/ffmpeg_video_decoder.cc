@@ -20,7 +20,6 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
-#include "media/base/pipeline.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
@@ -94,7 +93,10 @@ int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
   if (format == PIXEL_FORMAT_UNKNOWN)
     return AVERROR(EINVAL);
   DCHECK(format == PIXEL_FORMAT_YV12 || format == PIXEL_FORMAT_YV16 ||
-         format == PIXEL_FORMAT_YV24);
+         format == PIXEL_FORMAT_YV24 || format == PIXEL_FORMAT_YUV420P9 ||
+         format == PIXEL_FORMAT_YUV420P10 || format == PIXEL_FORMAT_YUV422P9 ||
+         format == PIXEL_FORMAT_YUV422P10 || format == PIXEL_FORMAT_YUV444P9 ||
+         format == PIXEL_FORMAT_YUV444P10);
 
   gfx::Size size(codec_context->width, codec_context->height);
   const int ret = av_image_check_size(size.width(), size.height(), 0, NULL);
@@ -168,7 +170,7 @@ std::string FFmpegVideoDecoder::GetDisplayName() const {
 
 void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                     bool low_delay,
-                                    const SetCdmReadyCB& /* set_cdm_ready_cb */,
+                                    CdmContext* /* cdm_context */,
                                     const InitCB& init_cb,
                                     const OutputCB& output_cb) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -209,12 +211,12 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   DecodeCB decode_cb_bound = BindToCurrentLoop(decode_cb);
 
   if (state_ == kError) {
-    decode_cb_bound.Run(kDecodeError);
+    decode_cb_bound.Run(DecodeStatus::DECODE_ERROR);
     return;
   }
 
   if (state_ == kDecodeFinished) {
-    decode_cb_bound.Run(kOk);
+    decode_cb_bound.Run(DecodeStatus::OK);
     return;
   }
 
@@ -246,7 +248,7 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
     has_produced_frame = false;
     if (!FFmpegDecode(buffer, &has_produced_frame)) {
       state_ = kError;
-      decode_cb_bound.Run(kDecodeError);
+      decode_cb_bound.Run(DecodeStatus::DECODE_ERROR);
       return;
     }
     // Repeat to flush the decoder after receiving EOS buffer.
@@ -257,7 +259,7 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
 
   // VideoDecoderShim expects that |decode_cb| is called only after
   // |output_cb_|.
-  decode_cb_bound.Run(kOk);
+  decode_cb_bound.Run(DecodeStatus::OK);
 }
 
 void FFmpegVideoDecoder::Reset(const base::Closure& closure) {

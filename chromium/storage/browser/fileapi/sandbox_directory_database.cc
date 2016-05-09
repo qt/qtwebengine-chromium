@@ -7,7 +7,9 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+
 #include <algorithm>
+#include <memory>
 #include <set>
 #include <stack>
 
@@ -193,7 +195,8 @@ DatabaseCheckHelper::DatabaseCheckHelper(
 }
 
 bool DatabaseCheckHelper::IsDatabaseEmpty() {
-  scoped_ptr<leveldb::Iterator> itr(db_->NewIterator(leveldb::ReadOptions()));
+  std::unique_ptr<leveldb::Iterator> itr(
+      db_->NewIterator(leveldb::ReadOptions()));
   itr->SeekToFirst();
   return !itr->Valid();
 }
@@ -204,7 +207,8 @@ bool DatabaseCheckHelper::ScanDatabase() {
   int64_t max_file_id = -1;
   std::set<FileId> file_ids;
 
-  scoped_ptr<leveldb::Iterator> itr(db_->NewIterator(leveldb::ReadOptions()));
+  std::unique_ptr<leveldb::Iterator> itr(
+      db_->NewIterator(leveldb::ReadOptions()));
   for (itr->SeekToFirst(); itr->Valid(); itr->Next()) {
     std::string key = itr->key().ToString();
     if (base::StartsWith(key, kChildLookupPrefix,
@@ -480,7 +484,8 @@ bool SandboxDirectoryDatabase::ListChildren(
   DCHECK(children);
   std::string child_key_prefix = GetChildListingKeyPrefix(parent_id);
 
-  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(leveldb::ReadOptions()));
+  std::unique_ptr<leveldb::Iterator> iter(
+      db_->NewIterator(leveldb::ReadOptions()));
   iter->Seek(child_key_prefix);
   children->clear();
   while (iter->Valid() && base::StartsWith(iter->key().ToString(),
@@ -844,11 +849,15 @@ void SandboxDirectoryDatabase::ReportInitStatus(
 
 bool SandboxDirectoryDatabase::StoreDefaultValues() {
   // Verify that this is a totally new database, and initialize it.
-  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(leveldb::ReadOptions()));
-  iter->SeekToFirst();
-  if (iter->Valid()) {  // DB was not empty--we shouldn't have been called.
-    LOG(ERROR) << "File system origin database is corrupt!";
-    return false;
+  {
+    // Scope the iterator to ensure deleted before database is closed.
+    std::unique_ptr<leveldb::Iterator> iter(
+        db_->NewIterator(leveldb::ReadOptions()));
+    iter->SeekToFirst();
+    if (iter->Valid()) {  // DB was not empty--we shouldn't have been called.
+      LOG(ERROR) << "File system origin database is corrupt!";
+      return false;
+    }
   }
   // This is always the first write into the database.  If we ever add a
   // version number, it should go in this transaction too.

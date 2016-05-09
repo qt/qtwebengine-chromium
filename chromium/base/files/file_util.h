@@ -19,7 +19,6 @@
 #include "base/base_export.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 
@@ -154,9 +153,9 @@ BASE_EXPORT bool ReadFileToString(const FilePath& path, std::string* contents);
 // |max_size|.
 // |contents| may be NULL, in which case this function is useful for its side
 // effect of priming the disk cache (could be used for unit tests).
-BASE_EXPORT bool ReadFileToString(const FilePath& path,
-                                  std::string* contents,
-                                  size_t max_size);
+BASE_EXPORT bool ReadFileToStringWithMaxSize(const FilePath& path,
+                                             std::string* contents,
+                                             size_t max_size);
 
 #if defined(OS_POSIX)
 
@@ -289,6 +288,10 @@ BASE_EXPORT bool DevicePathToDriveLetterPath(const FilePath& device_path,
 // be resolved with this function.
 BASE_EXPORT bool NormalizeToNativeFilePath(const FilePath& path,
                                            FilePath* nt_path);
+
+// Given an existing file in |path|, returns whether this file is on a network
+// drive or not. If |path| does not exist, this function returns false.
+BASE_EXPORT bool IsOnNetworkDrive(const base::FilePath& path);
 #endif
 
 // This function will return if the given file is a symlink or not.

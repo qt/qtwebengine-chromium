@@ -28,7 +28,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/PseudoElement.h"
-#include "core/dom/shadow/ComposedTreeTraversal.h"
+#include "core/dom/shadow/FlatTreeTraversal.h"
 #include "core/layout/LayoutObject.h"
 
 namespace blink {
@@ -54,25 +54,25 @@ void ParentDetails::didTraverseInsertionPoint(const InsertionPoint* insertionPoi
 ContainerNode* parent(const Node& node, ParentDetails* details)
 {
     // TODO(hayato): Uncomment this once we can be sure LayoutTreeBuilderTraversal::parent() is used only for a node in a document.
-    // ASSERT(node.inDocument());
-    return ComposedTreeTraversal::parent(node, details);
+    // DCHECK(node.inShadowIncludingDocument());
+    return FlatTreeTraversal::parent(node, details);
 }
 
 Node* nextSibling(const Node& node)
 {
     if (node.isBeforePseudoElement()) {
-        if (Node* next = ComposedTreeTraversal::firstChild(*ComposedTreeTraversal::parent(node)))
+        if (Node* next = FlatTreeTraversal::firstChild(*FlatTreeTraversal::parent(node)))
             return next;
     } else {
-        if (Node* next = ComposedTreeTraversal::nextSibling(node))
+        if (Node* next = FlatTreeTraversal::nextSibling(node))
             return next;
         if (node.isAfterPseudoElement())
             return 0;
     }
 
-    Node* parent = ComposedTreeTraversal::parent(node);
+    Node* parent = FlatTreeTraversal::parent(node);
     if (parent && parent->isElementNode())
-        return toElement(parent)->pseudoElement(AFTER);
+        return toElement(parent)->pseudoElement(PseudoIdAfter);
 
     return 0;
 }
@@ -80,25 +80,25 @@ Node* nextSibling(const Node& node)
 Node* previousSibling(const Node& node)
 {
     if (node.isAfterPseudoElement()) {
-        if (Node* previous = ComposedTreeTraversal::lastChild(*ComposedTreeTraversal::parent(node)))
+        if (Node* previous = FlatTreeTraversal::lastChild(*FlatTreeTraversal::parent(node)))
             return previous;
     } else {
-        if (Node* previous = ComposedTreeTraversal::previousSibling(node))
+        if (Node* previous = FlatTreeTraversal::previousSibling(node))
             return previous;
         if (node.isBeforePseudoElement())
             return 0;
     }
 
-    Node* parent = ComposedTreeTraversal::parent(node);
+    Node* parent = FlatTreeTraversal::parent(node);
     if (parent && parent->isElementNode())
-        return toElement(parent)->pseudoElement(BEFORE);
+        return toElement(parent)->pseudoElement(PseudoIdBefore);
 
     return 0;
 }
 
 static Node* lastChild(const Node& node)
 {
-    return ComposedTreeTraversal::lastChild(node);
+    return FlatTreeTraversal::lastChild(node);
 }
 
 static Node* pseudoAwarePreviousSibling(const Node& node)
@@ -112,7 +112,7 @@ static Node* pseudoAwarePreviousSibling(const Node& node)
                 return child;
         }
         if (!node.isBeforePseudoElement())
-            return toElement(parentNode)->pseudoElement(BEFORE);
+            return toElement(parentNode)->pseudoElement(PseudoIdBefore);
     }
     return previousNode;
 }
@@ -121,13 +121,13 @@ static Node* pseudoAwareLastChild(const Node& node)
 {
     if (node.isElementNode()) {
         const Element& currentElement = toElement(node);
-        Node* last = currentElement.pseudoElement(AFTER);
+        Node* last = currentElement.pseudoElement(PseudoIdAfter);
         if (last)
             return last;
 
         last = lastChild(currentElement);
         if (!last)
-            last = currentElement.pseudoElement(BEFORE);
+            last = currentElement.pseudoElement(PseudoIdBefore);
         return last;
     }
 
@@ -149,7 +149,7 @@ Node* previous(const Node& node, const Node* stayWithin)
 
 Node* firstChild(const Node& node)
 {
-    return ComposedTreeTraversal::firstChild(node);
+    return FlatTreeTraversal::firstChild(node);
 }
 
 static Node* pseudoAwareNextSibling(const Node& node)
@@ -163,7 +163,7 @@ static Node* pseudoAwareNextSibling(const Node& node)
                 return child;
         }
         if (!node.isAfterPseudoElement())
-            return toElement(parentNode)->pseudoElement(AFTER);
+            return toElement(parentNode)->pseudoElement(PseudoIdAfter);
     }
     return nextNode;
 }
@@ -172,12 +172,12 @@ static Node* pseudoAwareFirstChild(const Node& node)
 {
     if (node.isElementNode()) {
         const Element& currentElement = toElement(node);
-        Node* first = currentElement.pseudoElement(BEFORE);
+        Node* first = currentElement.pseudoElement(PseudoIdBefore);
         if (first)
             return first;
         first = firstChild(currentElement);
         if (!first)
-            first = currentElement.pseudoElement(AFTER);
+            first = currentElement.pseudoElement(PseudoIdAfter);
         return first;
     }
 
@@ -186,8 +186,8 @@ static Node* pseudoAwareFirstChild(const Node& node)
 
 static Node* nextAncestorSibling(const Node& node, const Node* stayWithin)
 {
-    ASSERT(!pseudoAwareNextSibling(node));
-    ASSERT(node != stayWithin);
+    DCHECK(!pseudoAwareNextSibling(node));
+    DCHECK_NE(node, stayWithin);
     for (Node* parentNode = parent(node); parentNode; parentNode = parent(*parentNode)) {
         if (parentNode == stayWithin)
             return 0;
@@ -237,9 +237,9 @@ LayoutObject* nextInTopLayer(const Element& element)
 {
     if (!element.isInTopLayer())
         return 0;
-    const WillBeHeapVector<RefPtrWillBeMember<Element>>& topLayerElements = element.document().topLayerElements();
+    const HeapVector<Member<Element>>& topLayerElements = element.document().topLayerElements();
     size_t position = topLayerElements.find(&element);
-    ASSERT(position != kNotFound);
+    DCHECK_NE(position, kNotFound);
     for (size_t i = position + 1; i < topLayerElements.size(); ++i) {
         if (LayoutObject* layoutObject = topLayerElements[i]->layoutObject())
             return layoutObject;
@@ -247,6 +247,6 @@ LayoutObject* nextInTopLayer(const Element& element)
     return 0;
 }
 
-}
+} // namespace LayoutTreeBuilderTraversal
 
-} // namespace
+} // namespace blink

@@ -57,11 +57,16 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 #if defined(OS_POSIX)
   void SetEnv(const base::EnvironmentMap& env) override;
 #endif
-  bool StartMojoMode() override;
+  bool Start() override;
   ServiceRegistry* GetServiceRegistry() override;
   void SetName(const base::string16& name) override;
 
   void set_child_flags(int flags) { child_flags_ = flags; }
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+  // Launch the zygote early in the browser startup.
+  static void EarlyZygoteLaunch();
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 
  private:
   // Starts a process if necessary.  Returns true if it succeeded or a process

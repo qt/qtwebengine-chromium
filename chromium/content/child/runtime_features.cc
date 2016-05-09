@@ -19,25 +19,12 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 
-#if defined(OS_ANDROID)
-#include <cpu-features.h>
-#include "base/android/build_info.h"
-#include "media/base/android/media_codec_util.h"
-#endif
-
 using blink::WebRuntimeFeatures;
 
 namespace content {
 
 static void SetRuntimeFeatureDefaultsForPlatform() {
 #if defined(OS_ANDROID)
-  // MSE/EME implementation needs Android MediaCodec API.
-  if (!media::MediaCodecUtil::IsMediaCodecAvailable()) {
-    WebRuntimeFeatures::enableMediaSource(false);
-    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
-    WebRuntimeFeatures::enableEncryptedMedia(false);
-  }
-
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
   // Android does not yet support SharedWorker. crbug.com/154571
@@ -61,8 +48,8 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableCompositedSelectionUpdate(true);
 #endif
 
-#if !(defined OS_ANDROID || defined OS_CHROMEOS || defined OS_IOS)
-    // Only Android, ChromeOS, and IOS support NetInfo right now.
+#if !(defined OS_ANDROID || defined OS_CHROMEOS)
+    // Only Android, ChromeOS support NetInfo right now.
     WebRuntimeFeatures::enableNetworkInformation(false);
 #endif
 }
@@ -72,19 +59,19 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
-  if (base::FeatureList::IsEnabled(features::kExperimentalFramework))
-    WebRuntimeFeatures::enableExperimentalFramework(true);
+  WebRuntimeFeatures::enableExperimentalFramework(
+      base::FeatureList::IsEnabled(features::kExperimentalFramework));
 
   if (command_line.HasSwitch(switches::kEnableWebBluetooth))
     WebRuntimeFeatures::enableWebBluetooth(true);
+
+  if (!base::FeatureList::IsEnabled(features::kWebUsb))
+    WebRuntimeFeatures::enableWebUsb(false);
 
   SetRuntimeFeatureDefaultsForPlatform();
 
   if (command_line.HasSwitch(switches::kDisableDatabases))
     WebRuntimeFeatures::enableDatabase(false);
-
-  if (command_line.HasSwitch(switches::kDisableMediaSource))
-    WebRuntimeFeatures::enableMediaSource(false);
 
   if (command_line.HasSwitch(switches::kDisableNotifications)) {
     WebRuntimeFeatures::enableNotifications(false);
@@ -93,20 +80,14 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enablePushMessaging(false);
   }
 
+  if (command_line.HasSwitch(switches::kEnableNotificationActionIcons))
+    WebRuntimeFeatures::enableNotificationActionIcons(true);
+
   if (command_line.HasSwitch(switches::kDisableSharedWorkers))
     WebRuntimeFeatures::enableSharedWorker(false);
 
-  if (command_line.HasSwitch(switches::kDisableWebAudio))
-    WebRuntimeFeatures::enableWebAudio(false);
-
   if (command_line.HasSwitch(switches::kDisableSpeechAPI))
     WebRuntimeFeatures::enableScriptedSpeech(false);
-
-  if (command_line.HasSwitch(switches::kDisableEncryptedMedia))
-    WebRuntimeFeatures::enableEncryptedMedia(false);
-
-  if (command_line.HasSwitch(switches::kEnablePrefixedEncryptedMedia))
-    WebRuntimeFeatures::enablePrefixedEncryptedMedia(true);
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
@@ -129,8 +110,27 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
 
-  if (command_line.HasSwitch(switches::kEnableWebGLImageChromium))
-    WebRuntimeFeatures::enableWebGLImageChromium(true);
+#if defined(OS_MACOSX)
+  bool enable_canvas_2d_image_chromium = command_line.HasSwitch(
+      switches::kEnableGpuMemoryBufferCompositorResources) &&
+      !command_line.HasSwitch(switches::kDisable2dCanvasImageChromium) &&
+      !command_line.HasSwitch(switches::kDisableGpu);
+#else
+  bool enable_canvas_2d_image_chromium = false;
+#endif
+  WebRuntimeFeatures::enableCanvas2dImageChromium(
+      enable_canvas_2d_image_chromium);
+
+#if defined(OS_MACOSX)
+  bool enable_web_gl_image_chromium = command_line.HasSwitch(
+      switches::kEnableGpuMemoryBufferCompositorResources) &&
+      !command_line.HasSwitch(switches::kDisableWebGLImageChromium) &&
+      !command_line.HasSwitch(switches::kDisableGpu);
+#else
+  bool enable_web_gl_image_chromium =
+      command_line.HasSwitch(switches::kEnableWebGLImageChromium);
+#endif
+  WebRuntimeFeatures::enableWebGLImageChromium(enable_web_gl_image_chromium);
 
   if (command_line.HasSwitch(switches::kForceOverlayFullscreenVideo))
     WebRuntimeFeatures::forceOverlayFullscreenVideo(true);
@@ -147,8 +147,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableNetworkInformation(true);
   }
 
-  if (command_line.HasSwitch(switches::kEnableCredentialManagerAPI))
-    WebRuntimeFeatures::enableCredentialManagerAPI(true);
+  if (!base::FeatureList::IsEnabled(features::kCredentialManagementAPI))
+    WebRuntimeFeatures::enableCredentialManagerAPI(false);
 
   if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
     WebRuntimeFeatures::enableReducedReferrerGranularity(true);
@@ -173,11 +173,31 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::enablePresentationAPI(false);
 
-  if (base::FeatureList::IsEnabled(features::kWebFontsIntervention))
+  if (base::FeatureList::IsEnabled(features::kWebFontsIntervention)) {
     WebRuntimeFeatures::enableWebFontsIntervention(true);
+    if (command_line.HasSwitch(switches::kEnableWebFontsInterventionTrigger))
+      WebRuntimeFeatures::enableWebFontsInterventionTrigger(true);
+  }
+
+  if (base::FeatureList::IsEnabled(features::kScrollAnchoring))
+    WebRuntimeFeatures::enableScrollAnchoring(true);
 
   if (command_line.HasSwitch(switches::kEnableSlimmingPaintV2))
     WebRuntimeFeatures::enableSlimmingPaintV2(true);
+
+  if (base::FeatureList::IsEnabled(features::kRenderingPipelineThrottling))
+    WebRuntimeFeatures::enableRenderingPipelineThrottling(true);
+
+  // Note that it might already by true for OS_ANDROID, above.  This is for
+  // non-android versions.
+  if (base::FeatureList::IsEnabled(features::kNewMediaPlaybackUi))
+    WebRuntimeFeatures::enableNewMediaPlaybackUi(true);
+
+  if (base::FeatureList::IsEnabled(features::kDocumentWriteEvaluator))
+    WebRuntimeFeatures::enableDocumentWriteEvaluator(true);
+
+  WebRuntimeFeatures::enableMediaDocumentDownloadButton(
+      base::FeatureList::IsEnabled(features::kMediaDocumentDownloadButton));
 
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.

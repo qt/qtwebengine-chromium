@@ -8,12 +8,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
@@ -81,17 +81,15 @@ class PPAPI_PROXY_EXPORT SerializedVar {
   ~SerializedVar();
 
   // Backend implementation for IPC::ParamTraits<SerializedVar>.
-  void WriteToMessage(IPC::Message* m) const {
-    inner_->WriteToMessage(m);
-  }
+  void WriteToMessage(base::Pickle* m) const { inner_->WriteToMessage(m); }
   // If ReadFromMessage has been called, WriteDataToMessage will write the var
   // that has been read from ReadFromMessage back to a message. This is used
   // when converting handles for use in NaCl.
-  void WriteDataToMessage(IPC::Message* m,
+  void WriteDataToMessage(base::Pickle* m,
                           const HandleWriter& handle_writer) const {
     inner_->WriteDataToMessage(m, handle_writer);
   }
-  bool ReadFromMessage(const IPC::Message* m, base::PickleIterator* iter) {
+  bool ReadFromMessage(const base::Pickle* m, base::PickleIterator* iter) {
     return inner_->ReadFromMessage(m, iter);
   }
 
@@ -144,10 +142,10 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     // it was just received off the wire, without any serialization rules.
     void ForceSetVarValueForTest(PP_Var value);
 
-    void WriteToMessage(IPC::Message* m) const;
-    void WriteDataToMessage(IPC::Message* m,
+    void WriteToMessage(base::Pickle* m) const;
+    void WriteDataToMessage(base::Pickle* m,
                             const HandleWriter& handle_writer) const;
-    bool ReadFromMessage(const IPC::Message* m, base::PickleIterator* iter);
+    bool ReadFromMessage(const base::Pickle* m, base::PickleIterator* iter);
 
     // Sets the cleanup mode. See the CleanupMode enum below.
     void SetCleanupModeToEndSendPassRef();
@@ -200,7 +198,7 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     // which means we cannot create some types of PP_Var
     // (e.g. PP_VARTYPE_STRING). The data is stored in |raw_var_data_| and the
     // PP_Var is constructed when |GetVar()| is called.
-    scoped_ptr<RawVarDataGraph> raw_var_data_;
+    std::unique_ptr<RawVarDataGraph> raw_var_data_;
 
     DISALLOW_COPY_AND_ASSIGN(Inner);
   };

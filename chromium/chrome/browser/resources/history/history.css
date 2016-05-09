@@ -38,13 +38,21 @@ html[dir='rtl'] #notification-bar {
   float: left;
 }
 
-#notification-bar.alone {
+#top-container.overflow #notification-bar {
   float: left;
   margin-top: 12px;
 }
 
-html[dir='rtl'] #notification-bar.alone {
+html[dir='rtl'] #top-container.overflow #notification-bar {
   float: right;
+}
+
+#notification-bar span {
+  display: block;
+}
+
+#notification-bar span + span {
+  margin: 1em 0;
 }
 
 #filter-controls,
@@ -71,6 +79,10 @@ html[dir='rtl'] #notification-bar.alone {
 
 html[dir='rtl'] #editing-controls {
   float: right;
+}
+
+#top-container.overflow #editing-controls {
+  float: none;
 }
 
 #editing-controls button:first-of-type {
@@ -334,12 +346,6 @@ html[dir='rtl'] .number-visits {
   margin-top: 1px;
 }
 
-html[dir='rtl'] .entry .title,
-html[dir='rtl'] .site-domain {
-  /* Put the favicon on the right. */
-  background-position-x: right;
-}
-
 .entry .time {
   color: rgb(151, 156, 160);
   max-width: 90px;
@@ -447,36 +453,27 @@ html[dir='rtl'] .site-domain {
   white-space: nowrap;
 }
 
-.entry .visit-entry,
-.site-domain {
-  /* Make room for the favicon. */
-  -webkit-padding-start: 16px;
-}
-
-.entry .visit-entry,
-.site-domain,
-.blocked-indicator {
-  /* Control the favicon appearance. */
-  background-position-y: center;
-  background-repeat: no-repeat;
-  background-size: 16px;
-}
-
-html[dir='rtl'] .entry .visit-entry,
-html[dir='rtl'] .site-domain,
-html[dir='rtl'] .blocked-indicator {
-  background-position-x: right;
-}
-
 /* TODO(sergiu): If this is the final icon replace it with a separate resource.
  */
 .entry .blocked-indicator {
-  -webkit-padding-start: 20px;  /* 16px for favicon, 4px for <a> padding. */
-  background-image: url(../ssl/images/roadblock.png);
+  -webkit-padding-start: 4px;  /* For <a> padding. */
 }
 
 .blocked-indicator .title {
   color: rgb(151, 156, 160);
+}
+
+.blocked-icon {
+  background-image: url(../ssl/images/roadblock.png)
+}
+
+.favicon {
+  background-position-y: center;
+  background-repeat: no-repeat;
+  background-size: 16px;
+  flex-shrink: 0;
+  height: 16px;
+  width: 16px;
 }
 
 .site-domain button:hover {

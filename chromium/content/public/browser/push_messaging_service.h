@@ -19,6 +19,7 @@ namespace content {
 
 class BrowserContext;
 class ServiceWorkerContext;
+struct PushSubscriptionOptions;
 
 // A push service-agnostic interface that the Push API uses for talking to
 // push messaging services like GCM. Must only be used on the UI thread.
@@ -49,24 +50,22 @@ class CONTENT_EXPORT PushMessagingService {
   // origins and push registrations.
   virtual GURL GetPushEndpoint() = 0;
 
-  // Subscribe the given |sender_id| with the push messaging service in a
-  // document context. The frame is known and a permission UI may be displayed
-  // to the user.
+  // Subscribe the given |options.sender_info| with the push messaging service
+  // in a document context. The frame is known and a permission UI may be
+  // displayed to the user.
   virtual void SubscribeFromDocument(const GURL& requesting_origin,
                                      int64_t service_worker_registration_id,
-                                     const std::string& sender_id,
                                      int renderer_id,
                                      int render_frame_id,
-                                     bool user_visible,
+                                     const PushSubscriptionOptions& options,
                                      const RegisterCallback& callback) = 0;
 
-  // Subscribe the given |sender_id| with the push messaging service. The frame
-  // is not known so if permission was not previously granted by the user this
-  // request should fail.
+  // Subscribe the given |options.sender_info| with the push messaging service.
+  // The frame is not known so if permission was not previously granted by the
+  // user this request should fail.
   virtual void SubscribeFromWorker(const GURL& requesting_origin,
                                    int64_t service_worker_registration_id,
-                                   const std::string& sender_id,
-                                   bool user_visible,
+                                   const PushSubscriptionOptions& options,
                                    const RegisterCallback& callback) = 0;
 
   // Retrieves the encryption information associated with the subscription
@@ -83,13 +82,11 @@ class CONTENT_EXPORT PushMessagingService {
                            const std::string& sender_id,
                            const UnregisterCallback& callback) = 0;
 
-  // Checks the permission status for the requesting origin. Permission is only
-  // ever granted when the requesting origin matches the top level embedding
-  // origin. The |user_visible| boolean indicates whether the permission status
-  // only has to cover push messages resulting in visible effects to the user.
+  // Checks the permission status for the |origin|. The |user_visible| boolean
+  // indicates whether the permission status only has to cover push messages
+  // resulting in visible effects to the user.
   virtual blink::WebPushPermissionStatus GetPermissionStatus(
-      const GURL& requesting_origin,
-      const GURL& embedding_origin,
+      const GURL& origin,
       bool user_visible) = 0;
 
   // Returns whether subscriptions that do not mandate user visible UI upon

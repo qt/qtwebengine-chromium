@@ -657,8 +657,16 @@ void Decoder::DecodeExt2(Instruction* instr) {
       Format(instr, "subfc'. 'rt, 'ra, 'rb");
       return;
     }
+    case SUBFEX: {
+      Format(instr, "subfe'. 'rt, 'ra, 'rb");
+      return;
+    }
     case ADDCX: {
       Format(instr, "addc'.   'rt, 'ra, 'rb");
+      return;
+    }
+    case ADDEX: {
+      Format(instr, "adde'.   'rt, 'ra, 'rb");
       return;
     }
     case CNTLZWX: {
@@ -1073,14 +1081,12 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
   out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%08x       ",
                               instr->InstructionBits());
 
-#if ABI_USES_FUNCTION_DESCRIPTORS
-  // The first field will be identified as a jump table entry.  We emit the rest
-  // of the structure as zero, so just skip past them.
-  if (instr->InstructionBits() == 0) {
+  if (ABI_USES_FUNCTION_DESCRIPTORS && instr->InstructionBits() == 0) {
+    // The first field will be identified as a jump table entry.  We
+    // emit the rest of the structure as zero, so just skip past them.
     Format(instr, "constant");
     return Instruction::kInstrSize;
   }
-#endif
 
   switch (instr->OpcodeValue() << 26) {
     case TWI: {

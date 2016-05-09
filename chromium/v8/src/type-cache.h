@@ -13,12 +13,13 @@ namespace internal {
 class TypeCache final {
  private:
   // This has to be first for the initialization magic to work.
+  base::AccountingAllocator allocator;
   Zone zone_;
 
  public:
   static TypeCache const& Get();
 
-  TypeCache() = default;
+  TypeCache() : zone_(&allocator) {}
 
   Type* const kInt8 =
       CreateNative(CreateRange<int8_t>(), Type::UntaggedIntegral8());
@@ -111,10 +112,6 @@ class TypeCache final {
   // [0, String::kMaxLength].
   Type* const kStringLengthType =
       CreateNative(CreateRange(0.0, String::kMaxLength), Type::TaggedSigned());
-
-  // When initializing arrays, we'll unfold the loop if the number of
-  // elements is known to be of this type.
-  Type* const kElementLoopUnrollType = CreateRange(0.0, 16.0);
 
 #define TYPED_ARRAY(TypeName, type_name, TYPE_NAME, ctype, size) \
   Type* const k##TypeName##Array = CreateArray(k##TypeName);

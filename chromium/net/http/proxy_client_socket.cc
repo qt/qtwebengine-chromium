@@ -8,7 +8,6 @@
 #include "base/strings/stringprintf.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
@@ -22,7 +21,7 @@ namespace {
 void CopyHeaderValues(scoped_refptr<HttpResponseHeaders> source,
                       scoped_refptr<HttpResponseHeaders> dest,
                       const std::string& header_name) {
-  void* iter = NULL;
+  size_t iter = 0;
   std::string header_value;
 
   while (source->EnumerateHeader(&iter, header_name, &header_value))
@@ -59,7 +58,8 @@ int ProxyClientSocket::HandleProxyAuthChallenge(HttpAuthController* auth,
                                                 HttpResponseInfo* response,
                                                 const BoundNetLog& net_log) {
   DCHECK(response->headers.get());
-  int rv = auth->HandleAuthChallenge(response->headers, false, true, net_log);
+  int rv = auth->HandleAuthChallenge(response->headers, response->ssl_info,
+                                     false, true, net_log);
   response->auth_challenge = auth->auth_info();
   if (rv == OK)
     return ERR_PROXY_AUTH_REQUESTED;

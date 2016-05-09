@@ -25,12 +25,19 @@
 namespace webrtc {
 namespace vcm {
 
-VideoReceiver::VideoReceiver(Clock* clock, EventFactory* event_factory)
+VideoReceiver::VideoReceiver(Clock* clock,
+                             EventFactory* event_factory,
+                             NackSender* nack_sender,
+                             KeyFrameRequestSender* keyframe_request_sender)
     : clock_(clock),
       process_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       _receiveCritSect(CriticalSectionWrapper::CreateCriticalSection()),
       _timing(clock_),
-      _receiver(&_timing, clock_, event_factory),
+      _receiver(&_timing,
+                clock_,
+                event_factory,
+                nack_sender,
+                keyframe_request_sender),
       _decodedFrameCallback(&_timing, clock_),
       _frameTypeCallback(NULL),
       _receiveStatsCallback(NULL),
@@ -43,9 +50,10 @@ VideoReceiver::VideoReceiver(Clock* clock, EventFactory* event_factory)
 #endif
       _frameFromFile(),
       _scheduleKeyRequest(false),
+      drop_frames_until_keyframe_(false),
       max_nack_list_size_(0),
-      pre_decode_image_callback_(NULL),
       _codecDataBase(nullptr, nullptr),
+      pre_decode_image_callback_(NULL),
       _receiveStatsTimer(1000, clock_),
       _retransmissionTimer(10, clock_),
       _keyRequestTimer(500, clock_) {
@@ -62,9 +70,7 @@ VideoReceiver::~VideoReceiver() {
 #endif
 }
 
-int32_t VideoReceiver::Process() {
-  int32_t returnValue = VCM_OK;
-
+void VideoReceiver::Process() {
   // Receive-side statistics
   if (_receiveStatsTimer.TimeUntilProcess() == 0) {
     _receiveStatsTimer.Processed();
@@ -107,12 +113,12 @@ int32_t VideoReceiver::Process() {
       CriticalSectionScoped cs(process_crit_sect_.get());
       request_key_frame = _scheduleKeyRequest && _frameTypeCallback != NULL;
     }
-    if (request_key_frame) {
-      const int32_t ret = RequestKeyFrame();
-      if (ret != VCM_OK && returnValue == VCM_OK) {
-        returnValue = ret;
-      }
-    }
+    if (request_key_frame)
+      RequestKeyFrame();
+  }
+
+  if (_receiver.TimeUntilNextProcess() == 0) {
+    _receiver.Process();
   }
 
   // Packet retransmission requests
@@ -134,9 +140,6 @@ int32_t VideoReceiver::Process() {
       int32_t ret = VCM_OK;
       if (request_key_frame) {
         ret = RequestKeyFrame();
-        if (ret != VCM_OK && returnValue == VCM_OK) {
-          returnValue = ret;
-        }
       }
       if (ret == VCM_OK && !nackList.empty()) {
         CriticalSectionScoped cs(process_crit_sect_.get());
@@ -146,8 +149,6 @@ int32_t VideoReceiver::Process() {
       }
     }
   }
-
-  return returnValue;
 }
 
 int64_t VideoReceiver::TimeUntilNextProcess() {
@@ -160,6 +161,8 @@ int64_t VideoReceiver::TimeUntilNextProcess() {
   }
   timeUntilNextProcess =
       VCM_MIN(timeUntilNextProcess, _keyRequestTimer.TimeUntilProcess());
+  timeUntilNextProcess =
+      VCM_MIN(timeUntilNextProcess, _receiver.TimeUntilNextProcess());
 
   return timeUntilNextProcess;
 }
@@ -282,6 +285,19 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
   if (!frame)
     return VCM_FRAME_NOT_READY;
 
+  {
+    CriticalSectionScoped cs(process_crit_sect_.get());
+    if (drop_frames_until_keyframe_) {
+      // Still getting delta frames, schedule another keyframe request as if
+      // decode failed.
+      if (frame->FrameType() != kVideoFrameKey) {
+        _scheduleKeyRequest = true;
+        _receiver.ReleaseFrame(frame);
+        return VCM_FRAME_NOT_READY;
+      }
+      drop_frames_until_keyframe_ = false;
+    }
+  }
   CriticalSectionScoped cs(_receiveCritSect);
 
   // If this frame was too late, we should adjust the delay accordingly
@@ -380,25 +396,6 @@ int32_t VideoReceiver::Decode(const VCMEncodedFrame& frame) {
   return ret;
 }
 
-// Reset the decoder state
-int32_t VideoReceiver::ResetDecoder() {
-  bool reset_key_request = false;
-  {
-    CriticalSectionScoped cs(_receiveCritSect);
-    if (_decoder != NULL) {
-      _receiver.Reset();
-      _timing.Reset();
-      reset_key_request = true;
-      _decoder->Reset();
-    }
-  }
-  if (reset_key_request) {
-    CriticalSectionScoped cs(process_crit_sect_.get());
-    _scheduleKeyRequest = false;
-  }
-  return VCM_OK;
-}
-
 // Register possible receive codecs, can be called multiple times
 int32_t VideoReceiver::RegisterReceiveCodec(const VideoCodec* receiveCodec,
                                             int32_t numberOfCores,
@@ -449,8 +446,11 @@ int32_t VideoReceiver::IncomingPacket(const uint8_t* incomingPayload,
   // TODO(holmer): Investigate if this somehow should use the key frame
   // request scheduling to throttle the requests.
   if (ret == VCM_FLUSH_INDICATOR) {
+    {
+      CriticalSectionScoped process_cs(process_crit_sect_.get());
+      drop_frames_until_keyframe_ = true;
+    }
     RequestKeyFrame();
-    ResetDecoder();
   } else if (ret < 0) {
     return ret;
   }

@@ -10,11 +10,13 @@
     '../base/base.gyp:base',
     '../base/base.gyp:base_i18n',
     '../crypto/crypto.gyp:crypto',
-    '../mojo/mojo_base.gyp:mojo_environment_chromium',
-    '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
+    '../mojo/mojo_edk.gyp:mojo_system_impl',
     '../ui/base/ui_base.gyp:ui_base',
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/gfx/gfx.gyp:gfx_geometry',
+    'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
+  ],
+  'export_dependent_settings': [
     'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
   ],
   'sources': [
@@ -25,6 +27,7 @@
     'app/android/content_jni_onload.cc',
     'app/android/content_main.cc',
     'app/android/content_main.h',
+    'app/android/download_main.cc',
     'app/android/library_loader_hooks.cc',
     'app/android/library_loader_hooks.h',
     'app/content_main.cc',
@@ -40,12 +43,6 @@
     'public/app/content_main_runner.h',
   ],
   'conditions': [
-    ['((OS=="linux" and os_posix==1 and use_aura==1) or OS=="android") and use_allocator!="none"', {
-      'dependencies': [
-        # This is needed by app/content_main_runner.cc
-        '../base/allocator/allocator.gyp:allocator',
-      ],
-    }],
     ['OS=="android"', {
       'sources!': [
         'app/content_main.cc',
@@ -53,6 +50,8 @@
       'dependencies': [
         'content.gyp:content_jni_headers',
         '../build/android/ndk.gyp:cpu_features',
+        '../device/usb/usb.gyp:device_usb',
+        '../gpu/gpu.gyp:gpu_ipc_common',
         '../skia/skia.gyp:skia',
         '../ui/android/ui_android.gyp:ui_android',
       ],

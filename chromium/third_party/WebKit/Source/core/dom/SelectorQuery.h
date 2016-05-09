@@ -49,8 +49,8 @@ public:
     void initialize(const CSSSelectorList&);
     bool matches(Element&) const;
     Element* closest(Element&) const;
-    PassRefPtrWillBeRawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
-    PassRefPtrWillBeRawPtr<Element> queryFirst(ContainerNode& rootNode) const;
+    RawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
+    RawPtr<Element> queryFirst(ContainerNode& rootNode) const;
 
 private:
     bool canUseFastQuery(const ContainerNode& rootNode) const;
@@ -85,7 +85,7 @@ private:
     bool m_needsUpdatedDistribution : 1;
 };
 
-class SelectorQuery {
+class CORE_EXPORT SelectorQuery {
     WTF_MAKE_NONCOPYABLE(SelectorQuery);
     USING_FAST_MALLOC(SelectorQuery);
 public:
@@ -93,8 +93,8 @@ public:
 
     bool matches(Element&) const;
     Element* closest(Element&) const;
-    PassRefPtrWillBeRawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
-    PassRefPtrWillBeRawPtr<Element> queryFirst(ContainerNode& rootNode) const;
+    RawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
+    RawPtr<Element> queryFirst(ContainerNode& rootNode) const;
 private:
     explicit SelectorQuery(CSSSelectorList);
 
@@ -112,6 +112,6 @@ private:
     HashMap<AtomicString, OwnPtr<SelectorQuery>> m_entries;
 };
 
-}
+} // namespace blink
 
 #endif

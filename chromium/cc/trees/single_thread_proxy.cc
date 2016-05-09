@@ -17,6 +17,7 @@
 #include "cc/scheduler/compositor_timing_history.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/scoped_abort_remaining_swap_promises.h"
@@ -67,14 +68,28 @@ void SingleThreadProxy::Start(
 
     scoped_ptr<CompositorTimingHistory> compositor_timing_history(
         new CompositorTimingHistory(
+            scheduler_settings.using_synchronous_renderer_compositor,
             CompositorTimingHistory::BROWSER_UMA,
             layer_tree_host_->rendering_stats_instrumentation()));
+
+    BeginFrameSource* frame_source = external_begin_frame_source_.get();
+    if (!scheduler_settings.throttle_frame_production) {
+      // Unthrottled source takes precedence over external sources.
+      unthrottled_begin_frame_source_.reset(new BackToBackBeginFrameSource(
+          task_runner_provider_->MainThreadTaskRunner()));
+      frame_source = unthrottled_begin_frame_source_.get();
+    }
+    if (!frame_source) {
+      synthetic_begin_frame_source_.reset(new SyntheticBeginFrameSource(
+          task_runner_provider_->MainThreadTaskRunner(),
+          BeginFrameArgs::DefaultInterval()));
+      frame_source = synthetic_begin_frame_source_.get();
+    }
 
     scheduler_on_impl_thread_ =
         Scheduler::Create(this, scheduler_settings, layer_tree_host_->id(),
                           task_runner_provider_->MainThreadTaskRunner(),
-                          external_begin_frame_source_.get(),
-                          std::move(compositor_timing_history));
+                          frame_source, std::move(compositor_timing_history));
   }
 
   layer_tree_host_impl_ = layer_tree_host_->CreateLayerTreeHostImpl(this);
@@ -98,7 +113,7 @@ void SingleThreadProxy::FinishAllRendering() {
 
 bool SingleThreadProxy::IsStarted() const {
   DCHECK(task_runner_provider_->IsMainThread());
-  return layer_tree_host_impl_;
+  return !!layer_tree_host_impl_;
 }
 
 bool SingleThreadProxy::CommitToActiveTree() const {
@@ -115,14 +130,6 @@ void SingleThreadProxy::SetVisible(bool visible) {
 
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetVisible(layer_tree_host_impl_->visible());
-}
-
-void SingleThreadProxy::SetThrottleFrameProduction(bool throttle) {
-  TRACE_EVENT1("cc", "SingleThreadProxy::SetThrottleFrameProduction",
-               "throttle", throttle);
-  DebugScopedSetImplThread impl(task_runner_provider_);
-  if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->SetThrottleFrameProduction(throttle);
 }
 
 void SingleThreadProxy::RequestNewOutputSurface() {
@@ -180,7 +187,7 @@ const RendererCapabilities& SingleThreadProxy::GetRendererCapabilities() const {
 void SingleThreadProxy::SetNeedsAnimate() {
   TRACE_EVENT0("cc", "SingleThreadProxy::SetNeedsAnimate");
   DCHECK(task_runner_provider_->IsMainThread());
-  client_->ScheduleAnimation();
+  client_->RequestScheduleAnimation();
   if (animate_requested_)
     return;
   animate_requested_ = true;
@@ -285,7 +292,7 @@ void SingleThreadProxy::CommitComplete() {
 
 void SingleThreadProxy::SetNeedsCommit() {
   DCHECK(task_runner_provider_->IsMainThread());
-  client_->ScheduleComposite();
+  client_->RequestScheduleComposite();
   if (commit_requested_)
     return;
   commit_requested_ = true;
@@ -298,7 +305,7 @@ void SingleThreadProxy::SetNeedsRedraw(const gfx::Rect& damage_rect) {
   TRACE_EVENT0("cc", "SingleThreadProxy::SetNeedsRedraw");
   DCHECK(task_runner_provider_->IsMainThread());
   DebugScopedSetImplThread impl(task_runner_provider_);
-  client_->ScheduleComposite();
+  client_->RequestScheduleComposite();
   SetNeedsRedrawRectOnImplThread(damage_rect);
 }
 
@@ -376,7 +383,7 @@ void SingleThreadProxy::NotifyReadyToDraw() {
 }
 
 void SingleThreadProxy::SetNeedsRedrawOnImplThread() {
-  client_->ScheduleComposite();
+  client_->RequestScheduleComposite();
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetNeedsRedraw();
 }
@@ -384,7 +391,7 @@ void SingleThreadProxy::SetNeedsRedrawOnImplThread() {
 void SingleThreadProxy::SetNeedsOneBeginImplFrameOnImplThread() {
   TRACE_EVENT0("cc",
                "SingleThreadProxy::SetNeedsOneBeginImplFrameOnImplThread");
-  client_->ScheduleComposite();
+  client_->RequestScheduleComposite();
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetNeedsOneBeginImplFrame();
 }
@@ -402,7 +409,7 @@ void SingleThreadProxy::SetNeedsRedrawRectOnImplThread(
 }
 
 void SingleThreadProxy::SetNeedsCommitOnImplThread() {
-  client_->ScheduleComposite();
+  client_->RequestScheduleComposite();
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetNeedsBeginMainFrame();
 }
@@ -470,8 +477,17 @@ void SingleThreadProxy::DidLoseOutputSurfaceOnImplThread() {
 
 void SingleThreadProxy::CommitVSyncParameters(base::TimeTicks timebase,
                                               base::TimeDelta interval) {
-  if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->CommitVSyncParameters(timebase, interval);
+  if (authoritative_vsync_interval_ != base::TimeDelta()) {
+    interval = authoritative_vsync_interval_;
+  } else if (interval == base::TimeDelta()) {
+    // TODO(brianderson): We should not be receiving 0 intervals.
+    interval = BeginFrameArgs::DefaultInterval();
+  }
+
+  last_vsync_timebase_ = timebase;
+
+  if (synthetic_begin_frame_source_)
+    synthetic_begin_frame_source_->OnUpdateVSyncParameters(timebase, interval);
 }
 
 void SingleThreadProxy::SetEstimatedParentDrawTime(base::TimeDelta draw_time) {
@@ -706,7 +722,11 @@ void SingleThreadProxy::SetChildrenNeedBeginFrames(
 
 void SingleThreadProxy::SetAuthoritativeVSyncInterval(
     const base::TimeDelta& interval) {
-  scheduler_on_impl_thread_->SetAuthoritativeVSyncInterval(interval);
+  authoritative_vsync_interval_ = interval;
+  if (synthetic_begin_frame_source_) {
+    synthetic_begin_frame_source_->OnUpdateVSyncParameters(last_vsync_timebase_,
+                                                           interval);
+  }
 }
 
 void SingleThreadProxy::WillBeginImplFrame(const BeginFrameArgs& args) {
@@ -865,6 +885,10 @@ void SingleThreadProxy::UpdateTopControlsState(TopControlsState constraints,
                                                TopControlsState current,
                                                bool animate) {
   NOTREACHED() << "Top Controls are used only in threaded mode";
+}
+
+void SingleThreadProxy::SetOutputIsSecure(bool output_is_secure) {
+  layer_tree_host_impl_->set_output_is_secure(output_is_secure);
 }
 
 void SingleThreadProxy::DidFinishImplFrame() {

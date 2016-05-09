@@ -20,7 +20,7 @@ class HTMLSelectElement;
 
 class PopupMenuImpl final : public PopupMenu, public PagePopupClient {
 public:
-    static PassRefPtrWillBeRawPtr<PopupMenuImpl> create(ChromeClientImpl*, HTMLSelectElement&);
+    static PopupMenuImpl* create(ChromeClientImpl*, HTMLSelectElement&);
     ~PopupMenuImpl() override;
     DECLARE_VIRTUAL_TRACE();
 
@@ -38,7 +38,7 @@ private:
     void addElementStyle(ItemIterationContext&, HTMLElement&);
 
     // PopupMenu functions:
-    void show(const FloatQuad& controlPosition, const IntSize& controlSize, int index) override;
+    void show() override;
     void hide() override;
     void disconnectClient() override;
     void updateFromElement() override;
@@ -53,12 +53,12 @@ private:
     Locale& locale() override;
     void didClosePopup() override;
 
-    RawPtrWillBeMember<ChromeClientImpl> m_chromeClient;
-    RawPtrWillBeMember<HTMLSelectElement> m_ownerElement;
+    Member<ChromeClientImpl> m_chromeClient;
+    Member<HTMLSelectElement> m_ownerElement;
     PagePopup* m_popup;
     bool m_needsUpdate;
 };
 
-}
+} // namespace blink
 
 #endif // PopupMenuImpl_h

@@ -26,7 +26,7 @@
 
 #include "core/CoreExport.h"
 #include "core/css/CSSStyleSheet.h"
-#include "core/dom/DOMSettableTokenList.h"
+#include "core/dom/DOMTokenList.h"
 #include "core/dom/IconURL.h"
 #include "core/fetch/ResourceOwner.h"
 #include "core/fetch/StyleSheetResource.h"
@@ -57,14 +57,14 @@ using LinkEventSender = EventSender<HTMLLinkElement>;
 // sticking current way so far.
 //
 class LinkStyle final : public LinkResource, ResourceOwner<StyleSheetResource> {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(LinkStyle);
+    USING_GARBAGE_COLLECTED_MIXIN(LinkStyle);
 public:
-    static PassOwnPtrWillBeRawPtr<LinkStyle> create(HTMLLinkElement* owner);
+    static RawPtr<LinkStyle> create(HTMLLinkElement* owner);
 
     explicit LinkStyle(HTMLLinkElement* owner);
     ~LinkStyle() override;
 
-    Type type() const override { return Style; }
+    LinkResourceType type() const override { return Style; }
     void process() override;
     void ownerRemoved() override;
     bool hasLoaded() const override { return m_loadedSheet; }
@@ -118,7 +118,7 @@ private:
         m_fetchFollowingCORS = false;
     }
 
-    RefPtrWillBeMember<CSSStyleSheet> m_sheet;
+    Member<CSSStyleSheet> m_sheet;
     DisabledState m_disabledState;
     PendingSheetType m_pendingSheetType;
     bool m_loading;
@@ -128,11 +128,11 @@ private:
 };
 
 
-class CORE_EXPORT HTMLLinkElement final : public HTMLElement, public LinkLoaderClient, private DOMSettableTokenListObserver {
+class CORE_EXPORT HTMLLinkElement final : public HTMLElement, public LinkLoaderClient, private DOMTokenListObserver {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLLinkElement);
+    USING_GARBAGE_COLLECTED_MIXIN(HTMLLinkElement);
 public:
-    static PassRefPtrWillBeRawPtr<HTMLLinkElement> create(Document&, bool createdByParser);
+    static RawPtr<HTMLLinkElement> create(Document&, bool createdByParser);
     ~HTMLLinkElement() override;
 
     KURL href() const;
@@ -142,10 +142,11 @@ public:
     String asValue() const { return m_as; }
     const LinkRelAttribute& relAttribute() const { return m_relAttribute; }
     DOMTokenList& relList() const { return static_cast<DOMTokenList&>(*m_relList); }
+    String scope() const { return m_scope; }
 
     const AtomicString& type() const;
 
-    IconType iconType() const;
+    IconType getIconType() const;
 
     // the icon sizes as parsed from the HTML attribute
     const Vector<IntSize>& iconSizes() const;
@@ -161,7 +162,7 @@ public:
     bool isDisabled() const { return linkStyle() && linkStyle()->isDisabled(); }
     bool isEnabledViaScript() const { return linkStyle() && linkStyle()->isEnabledViaScript(); }
 
-    DOMSettableTokenList* sizes() const;
+    DOMTokenList* sizes() const;
 
     void dispatchPendingEvent(LinkEventSender*);
     void scheduleEvent();
@@ -172,7 +173,7 @@ public:
     bool shouldLoadLink() override;
 
     // For LinkStyle
-    bool loadLink(const String& type, const String& as, const KURL&);
+    bool loadLink(const String& type, const String& as, const String& media, const KURL&);
     bool isAlternate() const { return linkStyle()->isUnset() && m_relAttribute.isAlternate(); }
     bool shouldProcessStyle() { return linkResourceToProcess() && linkStyle(); }
     bool isCreatedByParser() const { return m_createdByParser; }
@@ -213,19 +214,20 @@ private:
     void didSendLoadForLinkPrerender() override;
     void didSendDOMContentLoadedForLinkPrerender() override;
 
-    // From DOMSettableTokenListObserver
+    // From DOMTokenListObserver
     void valueWasSet() final;
 
-    OwnPtrWillBeMember<LinkResource> m_link;
-    LinkLoader m_linkLoader;
+    Member<LinkResource> m_link;
+    Member<LinkLoader> m_linkLoader;
 
     String m_type;
     String m_as;
     String m_media;
-    RefPtrWillBeMember<DOMSettableTokenList> m_sizes;
+    Member<DOMTokenList> m_sizes;
     Vector<IntSize> m_iconSizes;
-    OwnPtrWillBeMember<RelList> m_relList;
+    Member<RelList> m_relList;
     LinkRelAttribute m_relAttribute;
+    String m_scope;
 
     bool m_createdByParser;
     bool m_isInShadowTree;

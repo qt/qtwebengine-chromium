@@ -9,9 +9,6 @@
 #include "base/guid.h"
 #include "base/stl_util.h"
 #include "base/time/time.h"
-#include "content/browser/frame_host/frame_tree.h"
-#include "content/browser/frame_host/frame_tree_node.h"
-#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
@@ -20,46 +17,16 @@
 #include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/render_widget_host_view.h"
-#include "content/public/browser/web_contents.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/child_process_host.h"
 
 namespace content {
 
 namespace {
-
-ServiceWorkerClientInfo FocusOnUIThread(int render_process_id,
-                                        int render_frame_id) {
-  RenderFrameHostImpl* render_frame_host =
-      RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderFrameHost(render_frame_host));
-
-  if (!render_frame_host || !web_contents)
-    return ServiceWorkerClientInfo();
-
-  FrameTreeNode* frame_tree_node = render_frame_host->frame_tree_node();
-
-  // Focus the frame in the frame tree node, in case it has changed.
-  frame_tree_node->frame_tree()->SetFocusedFrame(
-      frame_tree_node, render_frame_host->GetSiteInstance());
-
-  // Focus the frame's view to make sure the frame is now considered as focused.
-  render_frame_host->GetView()->Focus();
-
-  // Move the web contents to the foreground.
-  web_contents->Activate();
-
-  return ServiceWorkerProviderHost::GetWindowClientInfoOnUI(render_process_id,
-                                                            render_frame_id);
-}
 
 // PlzNavigate
 // Next ServiceWorkerProviderHost ID for navigations, starts at -2 and keeps
@@ -218,25 +185,21 @@ void ServiceWorkerProviderHost::SetControllerVersionAttribute(
       notify_controllerchange));
 }
 
-bool ServiceWorkerProviderHost::SetHostedVersionId(int64_t version_id) {
-  if (!context_)
-    return true;  // System is shutting down.
+bool ServiceWorkerProviderHost::SetHostedVersion(
+    ServiceWorkerVersion* version) {
+  // TODO(falken): Unclear why we check active_version. Should this just check
+  // that IsProviderForClient() is false?
   if (active_version())
     return false;  // Unexpected bad message.
 
-  ServiceWorkerVersion* live_version = context_->GetLiveVersion(version_id);
-  if (!live_version)
-    return true;  // Was deleted before it got started.
-
-  ServiceWorkerVersionInfo info = live_version->GetInfo();
-  if (info.running_status != ServiceWorkerVersion::STARTING ||
-      info.process_id != render_process_id_) {
+  DCHECK_EQ(ServiceWorkerVersion::STARTING, version->running_status());
+  if (version->embedded_worker()->process_id() != render_process_id_) {
     // If we aren't trying to start this version in our process
     // something is amiss.
     return false;
   }
 
-  running_hosted_version_ = live_version;
+  running_hosted_version_ = version;
   return true;
 }
 
@@ -433,50 +396,6 @@ void ServiceWorkerProviderHost::PostMessageToClient(
   Send(new ServiceWorkerMsg_MessageToDocument(params));
 }
 
-void ServiceWorkerProviderHost::Focus(const GetClientInfoCallback& callback) {
-  if (provider_type_ != SERVICE_WORKER_PROVIDER_FOR_WINDOW) {
-    callback.Run(ServiceWorkerClientInfo());
-    return;
-  }
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&FocusOnUIThread, render_process_id_, route_id_), callback);
-}
-
-void ServiceWorkerProviderHost::GetWindowClientInfo(
-    const GetClientInfoCallback& callback) const {
-  if (provider_type_ != SERVICE_WORKER_PROVIDER_FOR_WINDOW) {
-    callback.Run(ServiceWorkerClientInfo());
-    return;
-  }
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&ServiceWorkerProviderHost::GetWindowClientInfoOnUI,
-                 render_process_id_, route_id_),
-      callback);
-}
-
-// static
-ServiceWorkerClientInfo ServiceWorkerProviderHost::GetWindowClientInfoOnUI(
-    int render_process_id,
-    int render_frame_id) {
-  RenderFrameHostImpl* render_frame_host =
-      RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
-  if (!render_frame_host)
-    return ServiceWorkerClientInfo();
-
-  // TODO(mlamouri,michaeln): it is possible to end up collecting information
-  // for a frame that is actually being navigated and isn't exactly what we are
-  // expecting.
-  return ServiceWorkerClientInfo(
-      render_frame_host->GetVisibilityState(), render_frame_host->IsFocused(),
-      render_frame_host->GetLastCommittedURL(),
-      render_frame_host->GetParent() ? REQUEST_CONTEXT_FRAME_TYPE_NESTED
-                                     : REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
-      render_frame_host->frame_tree_node()->last_focus_time(),
-      blink::WebServiceWorkerClientTypeWindow);
-}
-
 void ServiceWorkerProviderHost::AddScopedProcessReferenceToPattern(
     const GURL& pattern) {
   associated_patterns_.push_back(pattern);
@@ -592,12 +511,11 @@ void ServiceWorkerProviderHost::SendSetVersionAttributesMessage(
     return;
 
   if (!IsReadyToSendMessages()) {
-    queued_events_.push_back(
-        base::Bind(&ServiceWorkerProviderHost::SendSetVersionAttributesMessage,
-                   AsWeakPtr(), registration_handle_id, changed_mask,
-                   make_scoped_refptr(installing_version),
-                   make_scoped_refptr(waiting_version),
-                   make_scoped_refptr(active_version)));
+    queued_events_.push_back(base::Bind(
+        &ServiceWorkerProviderHost::SendSetVersionAttributesMessage,
+        AsWeakPtr(), registration_handle_id, changed_mask,
+        base::RetainedRef(installing_version),
+        base::RetainedRef(waiting_version), base::RetainedRef(active_version)));
     return;
   }
 

@@ -567,10 +567,6 @@
     "dependencies": ["permission:launcherSearchProvider"],
     "contexts": ["blessed_extension"]
   },
-  "location": {
-    "dependencies": ["permission:location"],
-    "contexts": ["blessed_extension"]
-  },
   "logPrivate": {
     "dependencies": ["permission:logPrivate"],
     "contexts": ["blessed_extension"]
@@ -674,10 +670,6 @@
     "dependencies": ["permission:preferencesPrivate"],
     "contexts": ["blessed_extension"]
   },
-  "principalsPrivate": {
-    "dependencies": ["permission:principalsPrivate"],
-    "contexts": ["blessed_extension"]
-  },
   "privacy": {
     "dependencies": ["permission:privacy"],
     "contexts": ["blessed_extension"]
@@ -709,18 +701,6 @@
     "dependencies": ["permission:rtcPrivate"],
     "contexts": ["blessed_extension"]
   },
-  "searchEnginesPrivate": [{
-    "dependencies": ["permission:searchEnginesPrivate"],
-    "contexts": ["blessed_extension"]
-  }, {
-    "channel": "trunk",
-    "contexts": ["webui"],
-    "matches": [
-      "chrome://md-settings/*",
-      "chrome://settings/*",
-      "chrome://settings-frame/*"
-    ]
-  }],
   "sessions": {
     "dependencies": ["permission:sessions"],
     "contexts": ["blessed_extension"]

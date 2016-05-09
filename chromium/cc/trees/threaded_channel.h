@@ -83,7 +83,6 @@ class CC_EXPORT ThreadedChannel : public ChannelMain, public ChannelImpl {
   ~ThreadedChannel() override;
 
   // ChannelMain Implementation
-  void SetThrottleFrameProductionOnImpl(bool throttle) override;
   void UpdateTopControlsStateOnImpl(TopControlsState constraints,
                                     TopControlsState current,
                                     bool animate) override;
@@ -132,9 +131,6 @@ class CC_EXPORT ThreadedChannel : public ChannelMain, public ChannelImpl {
       override;
   void BeginMainFrame(
       scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state) override;
-
-  // Should be called on impl thread only.
-  ProxyImpl* GetProxyImplForTesting() const;
 
  protected:
   ThreadedChannel(ProxyMain* proxy_main,

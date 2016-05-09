@@ -106,7 +106,6 @@ View::View()
       enabled_(true),
       notify_enter_exit_on_child_(false),
       registered_for_visible_bounds_notification_(false),
-      clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
       snap_layer_to_pixel_boundary_(false),
       flip_canvas_on_paint_for_rtl_ui_(false),
@@ -178,11 +177,25 @@ void View::AddChildViewAt(View* view, int index) {
   // Sets the prev/next focus views.
   InitFocusSiblings(view, index);
 
-  // Let's insert the view.
   view->parent_ = this;
   children_.insert(children_.begin() + index, view);
 
-  views::Widget* widget = GetWidget();
+  // Ensure the layer tree matches the view tree before calling to any client
+  // code. This way if client code further modifies the view tree we are in a
+  // sane state.
+  const bool did_reparent_any_layers = view->UpdateParentLayers();
+  Widget* widget = GetWidget();
+  if (did_reparent_any_layers && widget)
+    widget->UpdateRootLayers();
+
+  ReorderLayers();
+
+  // Make sure the visibility of the child layers are correct.
+  // If any of the parent View is hidden, then the layers of the subtree
+  // rooted at |this| should be hidden. Otherwise, all the child layers should
+  // inherit the visibility of the owner View.
+  view->UpdateLayerVisibility();
+
   if (widget) {
     const ui::NativeTheme* new_theme = view->GetNativeTheme();
     if (new_theme != old_theme)
@@ -195,23 +208,18 @@ void View::AddChildViewAt(View* view, int index) {
     v->ViewHierarchyChangedImpl(false, details);
 
   view->PropagateAddNotifications(details);
+
   UpdateTooltip();
+
   if (widget) {
     RegisterChildrenForVisibleBoundsNotification(view);
+
     if (view->visible())
       view->SchedulePaint();
   }
 
   if (layout_manager_.get())
     layout_manager_->ViewAdded(this, view);
-
-  ReorderLayers();
-
-  // Make sure the visibility of the child layers are correct.
-  // If any of the parent View is hidden, then the layers of the subtree
-  // rooted at |this| should be hidden. Otherwise, all the child layers should
-  // inherit the visibility of the owner View.
-  UpdateLayerVisibility();
 }
 
 void View::ReorderChildView(View* view, int index) {
@@ -319,10 +327,6 @@ gfx::Rect View::GetLocalBounds() const {
   return gfx::Rect(size());
 }
 
-gfx::Rect View::GetLayerBoundsInPixel() const {
-  return layer()->GetTargetBounds();
-}
-
 gfx::Insets View::GetInsets() const {
   return border_.get() ? border_->GetInsets() : gfx::Insets();
 }
@@ -409,8 +413,10 @@ void View::SetVisible(bool visible) {
     AdvanceFocusIfNecessary();
 
     // Notify the parent.
-    if (parent_)
+    if (parent_) {
       parent_->ChildVisibilityChanged(this);
+      parent_->NotifyAccessibilityEvent(ui::AX_EVENT_CHILDREN_CHANGED, false);
+    }
 
     // This notifies all sub-views recursively.
     PropagateVisibilityNotifications(this, visible_);
@@ -710,7 +716,7 @@ void View::ConvertPointFromScreen(const View* dst, gfx::Point* p) {
   if (!widget)
     return;
   *p -= widget->GetClientAreaBoundsInScreen().OffsetFromOrigin();
-  views::View::ConvertPointFromWidget(dst, p);
+  ConvertPointFromWidget(dst, p);
 }
 
 gfx::Rect View::ConvertRectToParent(const gfx::Rect& rect) const {
@@ -798,16 +804,17 @@ void View::Paint(const ui::PaintContext& parent_context) {
   // std::optional once we can do so.
   ui::ClipRecorder clip_recorder(parent_context);
   if (paint_relative_to_parent) {
-    // Set the clip rect to the bounds of this View. Note that the X (or left)
-    // position we pass to ClipRect takes into consideration whether or not the
-    // View uses a right-to-left layout so that we paint the View in its
-    // mirrored position if need be.
-    gfx::Rect clip_rect_in_parent = bounds();
-    clip_rect_in_parent.Inset(clip_insets_);
-    if (parent_)
-      clip_rect_in_parent.set_x(
-          parent_->GetMirroredXForRect(clip_rect_in_parent));
-    clip_recorder.ClipRect(clip_rect_in_parent);
+    // Set the clip rect to the bounds of this View, or |clip_path_| if it's
+    // been set. Note that the X (or left) position we pass to ClipRect takes
+    // into consideration whether or not the View uses a right-to-left layout so
+    // that we paint the View in its mirrored position if need be.
+    if (clip_path_.isEmpty()) {
+      clip_recorder.ClipRect(GetMirroredBounds());
+    } else {
+      gfx::Path clip_path_in_parent = clip_path_;
+      clip_path_in_parent.offset(GetMirroredX(), y());
+      clip_recorder.ClipPathWithAntiAliasing(clip_path_in_parent);
+    }
   }
 
   ui::TransformRecorder transform_recorder(context);
@@ -946,8 +953,7 @@ bool View::IsMouseHovered() const {
   if (!GetWidget()->IsMouseEventsEnabled())
     return false;
 
-  gfx::Point cursor_pos(gfx::Screen::GetScreenFor(
-      GetWidget()->GetNativeView())->GetCursorScreenPoint());
+  gfx::Point cursor_pos(gfx::Screen::GetScreen()->GetCursorScreenPoint());
   ConvertPointFromScreen(this, &cursor_pos);
   return HitTestPoint(cursor_pos);
 }
@@ -1025,7 +1031,7 @@ void View::OnMouseEvent(ui::MouseEvent* event) {
       return;
 
     case ui::ET_MOUSEWHEEL:
-      if (OnMouseWheel(*static_cast<ui::MouseWheelEvent*>(event)))
+      if (OnMouseWheel(*event->AsMouseWheelEvent()))
         event->SetHandled();
       break;
 
@@ -1436,12 +1442,6 @@ void View::OnPaintBorder(gfx::Canvas* canvas) {
 
 // Accelerated Painting --------------------------------------------------------
 
-void View::SetFillsBoundsOpaquely(bool fills_bounds_opaquely) {
-  // This method should not have the side-effect of creating the layer.
-  if (layer())
-    layer()->SetFillsBoundsOpaquely(fills_bounds_opaquely);
-}
-
 gfx::Vector2d View::CalculateOffsetToAncestorWithLayer(
     ui::Layer** layer_parent) {
   if (layer()) {
@@ -1805,39 +1805,47 @@ void View::DoRemoveChildView(View* view,
   DCHECK(view);
 
   const Views::iterator i(std::find(children_.begin(), children_.end(), view));
+  if (i == children_.end())
+    return;
+
   scoped_ptr<View> view_to_be_deleted;
-  if (i != children_.end()) {
-    if (update_focus_cycle) {
-      // Let's remove the view from the focus traversal.
-      View* next_focusable = view->next_focusable_view_;
-      View* prev_focusable = view->previous_focusable_view_;
-      if (prev_focusable)
-        prev_focusable->next_focusable_view_ = next_focusable;
-      if (next_focusable)
-        next_focusable->previous_focusable_view_ = prev_focusable;
-    }
-
-    if (GetWidget()) {
-      UnregisterChildrenForVisibleBoundsNotification(view);
-      if (view->visible())
-        view->SchedulePaint();
-      GetWidget()->NotifyWillRemoveView(view);
-    }
-
-    view->PropagateRemoveNotifications(this, new_parent);
-    view->parent_ = NULL;
-    view->UpdateLayerVisibility();
-
-    if (delete_removed_view && !view->owned_by_client_)
-      view_to_be_deleted.reset(view);
-
-    children_.erase(i);
+  if (update_focus_cycle) {
+    View* next_focusable = view->next_focusable_view_;
+    View* prev_focusable = view->previous_focusable_view_;
+    if (prev_focusable)
+      prev_focusable->next_focusable_view_ = next_focusable;
+    if (next_focusable)
+      next_focusable->previous_focusable_view_ = prev_focusable;
   }
+
+  Widget* widget = GetWidget();
+  if (widget) {
+    UnregisterChildrenForVisibleBoundsNotification(view);
+    if (view->visible())
+      view->SchedulePaint();
+
+    if (!new_parent || new_parent->GetWidget() != widget)
+      widget->NotifyWillRemoveView(view);
+  }
+
+  // Make sure the layers belonging to the subtree rooted at |view| get
+  // removed.
+  view->OrphanLayers();
+  if (widget)
+    widget->UpdateRootLayers();
+
+  view->PropagateRemoveNotifications(this, new_parent);
+  view->parent_ = nullptr;
+
+  if (delete_removed_view && !view->owned_by_client_)
+    view_to_be_deleted.reset(view);
+
+  children_.erase(i);
 
   if (update_tool_tip)
     UpdateTooltip();
 
-  if (layout_manager_.get())
+  if (layout_manager_)
     layout_manager_->ViewRemoved(this, view);
 }
 
@@ -1876,20 +1884,6 @@ void View::ViewHierarchyChangedImpl(
       if (details.child == this)
         UnregisterAccelerators(true);
     }
-  }
-
-  if (details.is_add && layer() && !layer()->parent()) {
-    UpdateParentLayer();
-    Widget* widget = GetWidget();
-    if (widget)
-      widget->UpdateRootLayers();
-  } else if (!details.is_add && details.child == this) {
-    // Make sure the layers belonging to the subtree rooted at |child| get
-    // removed from layers that do not belong in the same subtree.
-    OrphanLayers();
-    Widget* widget = GetWidget();
-    if (widget)
-      widget->UpdateRootLayers();
   }
 
   ViewHierarchyChanged(details);
@@ -2116,14 +2110,23 @@ void View::CreateLayer() {
   SchedulePaintOnParent();
 }
 
-void View::UpdateParentLayers() {
+bool View::UpdateParentLayers() {
   // Attach all top-level un-parented layers.
-  if (layer() && !layer()->parent()) {
-    UpdateParentLayer();
-  } else {
-    for (int i = 0, count = child_count(); i < count; ++i)
-      child_at(i)->UpdateParentLayers();
+  if (layer()) {
+    if (!layer()->parent()) {
+      UpdateParentLayer();
+      return true;
+    }
+    // The layers of any child views are already in place, so we can stop
+    // iterating here.
+    return false;
   }
+  bool result = false;
+  for (int i = 0, count = child_count(); i < count; ++i) {
+    if (child_at(i)->UpdateParentLayers())
+      result = true;
+  }
+  return result;
 }
 
 void View::OrphanLayers() {

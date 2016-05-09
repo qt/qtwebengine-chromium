@@ -37,8 +37,6 @@ class SkCanvas;
 namespace cc {
 class ContentLayer;
 class CopyOutputRequest;
-class DelegatedFrameProvider;
-class DelegatedRendererLayer;
 class Layer;
 class NinePatchLayer;
 class ResourceUpdateQueue;
@@ -54,6 +52,7 @@ namespace ui {
 class Compositor;
 class LayerAnimator;
 class LayerOwner;
+class LayerThreadedAnimationDelegate;
 
 // Layer manages a texture, transform and a set of child Layers. Any View that
 // has enabled layers ends up creating a Layer to manage the texture.
@@ -74,9 +73,6 @@ class COMPOSITOR_EXPORT Layer
   Layer();
   explicit Layer(LayerType type);
   ~Layer() override;
-
-  static const cc::LayerSettings& UILayerSettings();
-  static void InitializeUILayerSettings();
 
   // Retrieves the Layer's compositor. The Layer will walk up its parent chain
   // to locate it. Returns NULL if the Layer is not attached to a compositor.
@@ -284,10 +280,6 @@ class COMPOSITOR_EXPORT Layer
   void SetTextureFlipped(bool flipped);
   bool TextureFlipped() const;
 
-  // Begins showing delegated frames from the |frame_provider|.
-  void SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
-                               gfx::Size frame_size_in_dip);
-
   // Begins showing content from a surface with a particular id.
   void SetShowSurface(cc::SurfaceId surface_id,
                       const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
@@ -297,8 +289,7 @@ class COMPOSITOR_EXPORT Layer
                       gfx::Size frame_size_in_dip);
 
   bool has_external_content() {
-    return texture_layer_.get() || delegated_renderer_layer_.get() ||
-           surface_layer_.get();
+    return texture_layer_.get() || surface_layer_.get();
   }
 
   // Show a solid color instead of delegated or surface contents.
@@ -369,13 +360,11 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface() const { return force_render_surface_; }
 
   // LayerClient
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
+  scoped_ptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo(
       cc::Layer* layer) override;
 
   // Whether this layer has animations waiting to get sent to its cc::Layer.
-  bool HasPendingThreadedAnimations() {
-    return pending_threaded_animations_.size() != 0;
-  }
+  bool HasPendingThreadedAnimationsForTesting() const;
 
   // Triggers a call to SwitchToLayer.
   void SwitchCCLayerForTest();
@@ -409,10 +398,9 @@ class COMPOSITOR_EXPORT Layer
   float GetGrayscaleForAnimation() const override;
   SkColor GetColorForAnimation() const override;
   float GetDeviceScaleFactor() const override;
-  void AddThreadedAnimation(scoped_ptr<cc::Animation> animation) override;
-  void RemoveThreadedAnimation(int animation_id) override;
-  LayerAnimatorCollection* GetLayerAnimatorCollection() override;
   cc::Layer* GetCcLayer() const override;
+  LayerThreadedAnimationDelegate* GetThreadedAnimationDelegate() override;
+  LayerAnimatorCollection* GetLayerAnimatorCollection() override;
 
   // Creates a corresponding composited layer for |type_|.
   void CreateCcLayer();
@@ -429,12 +417,6 @@ class COMPOSITOR_EXPORT Layer
 
   // Cleanup |cc_layer_| and replaces it with |new_layer|.
   void SwitchToLayer(scoped_refptr<cc::Layer> new_layer);
-
-  // We cannot send animations to our cc_layer_ until we have been added to a
-  // layer tree. Instead, we hold on to these animations in
-  // pending_threaded_animations_, and expect SendPendingThreadedAnimations to
-  // be called once we have been added to a tree.
-  void SendPendingThreadedAnimations();
 
   void SetCompositorForAnimatorsInTree(Compositor* compositor);
   void ResetCompositorForAnimatorsInTree(Compositor* compositor);
@@ -497,17 +479,12 @@ class COMPOSITOR_EXPORT Layer
 
   scoped_refptr<LayerAnimator> animator_;
 
-  // Animations that are passed to AddThreadedAnimation before this layer is
-  // added to a tree.
-  std::vector<scoped_ptr<cc::Animation>> pending_threaded_animations_;
-
   // Ownership of the layer is held through one of the strongly typed layer
   // pointers, depending on which sort of layer this is.
   scoped_refptr<cc::Layer> content_layer_;
   scoped_refptr<cc::NinePatchLayer> nine_patch_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
-  scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
   scoped_refptr<cc::SurfaceLayer> surface_layer_;
   cc::Layer* cc_layer_;
 

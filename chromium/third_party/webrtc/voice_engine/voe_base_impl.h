@@ -13,6 +13,7 @@
 
 #include "webrtc/voice_engine/include/voe_base.h"
 
+#include "webrtc/base/criticalsection.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/voice_engine/shared_data.h"
 
@@ -31,6 +32,9 @@ class VoEBaseImpl : public VoEBase,
            AudioProcessing* audioproc = nullptr) override;
   AudioProcessing* audio_processing() override {
     return shared_->audio_processing();
+  }
+  AudioDeviceModule* audio_device_module() override {
+    return shared_->audio_device();
   }
   int Terminate() override;
 
@@ -138,7 +142,7 @@ class VoEBaseImpl : public VoEBase,
   // channel.
   int InitializeChannel(voe::ChannelOwner* channel_owner);
   VoiceEngineObserver* voiceEngineObserverPtr_;
-  CriticalSectionWrapper& callbackCritSect_;
+  rtc::CriticalSection callbackCritSect_;
 
   AudioFrame audioFrame_;
   voe::SharedData* shared_;

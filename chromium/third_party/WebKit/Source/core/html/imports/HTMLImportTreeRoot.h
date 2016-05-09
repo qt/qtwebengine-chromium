@@ -16,7 +16,7 @@ class KURL;
 
 class HTMLImportTreeRoot : public HTMLImport {
 public:
-    static PassOwnPtrWillBeRawPtr<HTMLImportTreeRoot> create(Document*);
+    static RawPtr<HTMLImportTreeRoot> create(Document*);
 
     ~HTMLImportTreeRoot() override;
     void dispose();
@@ -29,7 +29,7 @@ public:
 
     void scheduleRecalcState();
 
-    HTMLImportChild* add(PassOwnPtrWillBeRawPtr<HTMLImportChild>);
+    HTMLImportChild* add(RawPtr<HTMLImportChild>);
     HTMLImportChild* find(const KURL&) const;
 
     DECLARE_VIRTUAL_TRACE();
@@ -39,16 +39,16 @@ private:
 
     void recalcTimerFired(Timer<HTMLImportTreeRoot>*);
 
-    RawPtrWillBeMember<Document> m_document;
+    Member<Document> m_document;
     Timer<HTMLImportTreeRoot> m_recalcTimer;
 
     // List of import which has been loaded or being loaded.
-    typedef WillBeHeapVector<OwnPtrWillBeMember<HTMLImportChild>> ImportList;
+    typedef HeapVector<Member<HTMLImportChild>> ImportList;
     ImportList m_imports;
 };
 
 DEFINE_TYPE_CASTS(HTMLImportTreeRoot, HTMLImport, import, import->isRoot(), import.isRoot());
 
-}
+} // namespace blink
 
 #endif

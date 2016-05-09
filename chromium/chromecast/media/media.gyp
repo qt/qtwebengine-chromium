@@ -16,6 +16,18 @@
       '../..',  # Root of Chromium checkout
       '../public/',  # Public APIs
     ],
+    'target_conditions': [
+      ['_type=="executable"', {
+        'ldflags': [
+          # Allow  OEMs to override default libraries that are shipped with
+          # cast receiver package by installed OEM-specific libraries in
+          # /oem_cast_shlib.
+          '-Wl,-rpath=/oem_cast_shlib',
+          # Some shlibs are built in same directory of executables.
+          '-Wl,-rpath=\$$ORIGIN',
+        ],
+      }],
+    ],
   },
   'targets': [
     {
@@ -23,6 +35,7 @@
       'type': '<(component)',
       'dependencies': [
         '../../media/media.gyp:media',
+        'cma_backend_manager',
       ],
       'sources': [
         'audio/cast_audio_manager.cc',
@@ -55,6 +68,8 @@
         'base/media_codec_support.h',
         'base/media_message_loop.cc',
         'base/media_message_loop.h',
+        'base/media_resource_tracker.cc',
+        'base/media_resource_tracker.h',
         'base/video_plane_controller.cc',
         'base/video_plane_controller.h',
       ],
@@ -83,14 +98,6 @@
         'cdm/browser_cdm_cast.h',
         'cdm/chromecast_init_data.cc',
         'cdm/chromecast_init_data.h',
-      ],
-      'conditions': [
-        ['use_playready==1', {
-          'sources': [
-            'cdm/playready_drm_delegate_android.cc',
-            'cdm/playready_drm_delegate_android.h',
-          ],
-        }],
       ],
     },
     {
@@ -124,6 +131,8 @@
         'cma/base/decoder_buffer_adapter.h',
         'cma/base/decoder_config_adapter.cc',
         'cma/base/decoder_config_adapter.h',
+        'cma/base/demuxer_stream_adapter.cc',
+        'cma/base/demuxer_stream_adapter.h',
         'cma/base/media_task_runner.cc',
         'cma/base/media_task_runner.h',
         'cma/base/simple_media_task_runner.cc',
@@ -146,6 +155,24 @@
         'cma/backend/media_pipeline_backend_default.h',
         'cma/backend/video_decoder_default.cc',
         'cma/backend/video_decoder_default.h',
+      ],
+    },
+    {
+      'target_name': 'cma_backend_manager',
+      'type': '<(component)',
+      'dependencies': [
+        '../../base/base.gyp:base',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'cma/backend/audio_decoder_wrapper.cc',
+        'cma/backend/audio_decoder_wrapper.h',
+        'cma/backend/media_pipeline_backend_manager.cc',
+        'cma/backend/media_pipeline_backend_manager.h',
+        'cma/backend/media_pipeline_backend_wrapper.cc',
+        'cma/backend/media_pipeline_backend_wrapper.h',
       ],
     },
     {
@@ -196,6 +223,8 @@
         'cma/ipc_streamer/decoder_buffer_base_marshaller.h',
         'cma/ipc_streamer/decrypt_config_marshaller.cc',
         'cma/ipc_streamer/decrypt_config_marshaller.h',
+        'cma/ipc_streamer/encryption_scheme_marshaller.cc',
+        'cma/ipc_streamer/encryption_scheme_marshaller.h',
         'cma/ipc_streamer/video_decoder_config_marshaller.cc',
         'cma/ipc_streamer/video_decoder_config_marshaller.h',
       ],
@@ -266,11 +295,16 @@
       ],
       'sources': [
         'audio/cast_audio_output_stream_unittest.cc',
+        'base/media_resource_tracker_unittest.cc',
         'cdm/chromecast_init_data_unittest.cc',
         'cma/backend/audio_video_pipeline_device_unittest.cc',
         'cma/base/balanced_media_task_runner_unittest.cc',
         'cma/base/buffering_controller_unittest.cc',
         'cma/base/buffering_frame_provider_unittest.cc',
+        'cma/base/demuxer_stream_adapter_unittest.cc',
+        'cma/base/demuxer_stream_for_test.cc',
+        'cma/base/demuxer_stream_for_test.h',
+        'cma/base/multi_demuxer_stream_adapter_unittest.cc',
         'cma/ipc/media_message_fifo_unittest.cc',
         'cma/ipc/media_message_unittest.cc',
         'cma/ipc_streamer/av_streamer_unittest.cc',
@@ -285,13 +319,32 @@
         'cma/test/mock_frame_provider.h',
         'cma/test/run_all_unittests.cc',
       ],
-      'ldflags': [
-        # Allow  OEMs to override default libraries that are shipped with
-        # cast receiver package by installed OEM-specific libraries in
-        # /oem_cast_shlib.
-        '-Wl,-rpath=/oem_cast_shlib',
-        # Some shlibs are built in same directory of executables.
-        '-Wl,-rpath=\$$ORIGIN',
+      'conditions': [
+        ['chromecast_branding=="public"', {
+          'dependencies': [
+            # Link default libcast_media_1.0 statically not to link dummy one
+            # dynamically for public unittests.
+            'libcast_media_1.0_default_core',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'cast_multizone_backend_unittests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        'cast_media',
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:test_support_base',
+        '../../chromecast/chromecast.gyp:cast_metrics_test_support',
+        '../../media/media.gyp:media_test_support',
+        '../../testing/gmock.gyp:gmock',
+        '../../testing/gtest.gyp:gtest',
+        '../../testing/gtest.gyp:gtest_main',
+      ],
+      'sources': [
+        'cma/backend/multizone_backend_unittest.cc',
+        'cma/test/run_all_unittests.cc',
       ],
       'conditions': [
         ['chromecast_branding=="public"', {
@@ -320,6 +373,8 @@
       'target_name': 'libcast_media_1.0_default_core',
       'type': '<(component)',
       'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/chromecast/chromecast.gyp:cast_base',
         '../../chromecast/chromecast.gyp:cast_public_api',
         'default_cma_backend'
       ],

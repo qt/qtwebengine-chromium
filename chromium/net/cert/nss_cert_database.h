@@ -13,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "crypto/scoped_nss_types.h"
@@ -65,6 +66,7 @@ class NET_EXPORT NSSCertDatabase {
   struct NET_EXPORT ImportCertFailure {
    public:
     ImportCertFailure(const scoped_refptr<X509Certificate>& cert, int err);
+    ImportCertFailure(const ImportCertFailure& other);
     ~ImportCertFailure();
 
     scoped_refptr<X509Certificate> certificate;

@@ -47,7 +47,7 @@ WebInspector.SettingsScreen = function()
     this._tabbedPane.insertBeforeTabStrip(settingsLabelElement);
     this._tabbedPane.setShrinkableTabs(false);
     this._tabbedPane.setVerticalTabLayout(true);
-    this._tabbedPane.appendTab("general", WebInspector.UIString("General"), new WebInspector.GenericSettingsTab());
+    this._tabbedPane.appendTab("preferences", WebInspector.UIString("Preferences"), new WebInspector.GenericSettingsTab());
     this._tabbedPane.appendTab("workspace", WebInspector.UIString("Workspace"), new WebInspector.WorkspaceSettingsTab());
     this._tabbedPane.appendTab("blackbox", WebInspector.manageBlackboxingSettingsTabLabel(), new WebInspector.FrameworkBlackboxSettingsTab());
     if (Runtime.experiments.supportEnabled())
@@ -66,7 +66,7 @@ WebInspector.SettingsScreen.prototype = {
      */
     wasShown: function()
     {
-        this._tabbedPane.selectTab("general");
+        this._tabbedPane.selectTab("preferences");
         this._tabbedPane.show(this.contentElement);
         WebInspector.VBox.prototype.wasShown.call(this);
     },
@@ -156,7 +156,7 @@ WebInspector.SettingsTab.prototype = {
  */
 WebInspector.GenericSettingsTab = function()
 {
-    WebInspector.SettingsTab.call(this, WebInspector.UIString("General"), "general-tab-content");
+    WebInspector.SettingsTab.call(this, WebInspector.UIString("Preferences"), "preferences-tab-content");
 
     /** @const */
     var explicitSectionOrder = ["", "Appearance", "Elements", "Sources", "Network", "Profiler", "Console", "Extensions"];
@@ -187,7 +187,7 @@ WebInspector.GenericSettingsTab.isSettingVisible = function(extension)
     var descriptor = extension.descriptor();
     if (!("title" in descriptor))
         return false;
-    if (!(("category" in descriptor) || ("parentSettingName" in descriptor)))
+    if (!("category" in descriptor))
         return false;
     return true;
 }
@@ -207,18 +207,6 @@ WebInspector.GenericSettingsTab.prototype = {
         var uiTitle = WebInspector.UIString(extension.title(WebInspector.platform()));
 
         var sectionElement = this._sectionElement(sectionName);
-        var parentSettingName = descriptor["parentSettingName"];
-        var parentSettingElement = parentSettingName ? this._nameToSettingElement.get(descriptor["parentSettingName"]) : null;
-        var parentFieldset = null;
-        if (parentSettingElement) {
-            parentFieldset = parentSettingElement.__fieldset;
-            if (!parentFieldset) {
-                parentFieldset = WebInspector.SettingsUI.createSettingFieldset(WebInspector.moduleSetting(parentSettingName));
-                parentSettingElement.appendChild(parentFieldset);
-                parentSettingElement.__fieldset = parentFieldset;
-            }
-        }
-
         var settingControl;
 
         switch (descriptor["settingType"]) {
@@ -229,9 +217,9 @@ WebInspector.GenericSettingsTab.prototype = {
             var descriptorOptions = descriptor["options"];
             var options = new Array(descriptorOptions.length);
             for (var i = 0; i < options.length; ++i) {
-                // The third array item flags that the option name is "raw" (non-i18n-izable).
-                var optionName = descriptorOptions[i][2] ? descriptorOptions[i][0] : WebInspector.UIString(descriptorOptions[i][0]);
-                options[i] = [optionName, descriptorOptions[i][1]];
+                // The "raw" flag indicates text is non-i18n-izable.
+                var optionName = descriptorOptions[i]["raw"] ? descriptorOptions[i]["text"] : WebInspector.UIString(descriptorOptions[i]["text"]);
+                options[i] = [optionName, descriptorOptions[i]["value"]];
             }
             settingControl = this._createSelectSetting(uiTitle, options, setting);
             break;
@@ -240,7 +228,7 @@ WebInspector.GenericSettingsTab.prototype = {
             return;
         }
         this._nameToSettingElement.set(settingName, settingControl);
-        (parentFieldset || sectionElement).appendChild(/** @type {!Element} */ (settingControl));
+        sectionElement.appendChild(/** @type {!Element} */ (settingControl));
     },
 
     /**
@@ -293,8 +281,7 @@ WebInspector.WorkspaceSettingsTab = function()
     WebInspector.isolatedFileSystemManager.addEventListener(WebInspector.IsolatedFileSystemManager.Events.FileSystemAdded, this._fileSystemAdded, this);
     WebInspector.isolatedFileSystemManager.addEventListener(WebInspector.IsolatedFileSystemManager.Events.FileSystemRemoved, this._fileSystemRemoved, this);
 
-    var folderExcludeSetting = WebInspector.isolatedFileSystemManager.workspaceFolderExcludePatternSetting();
-    var folderExcludePatternInput = WebInspector.SettingsUI.createSettingInputField(WebInspector.UIString("Folder exclude pattern"), folderExcludeSetting, false, 0, "270px", WebInspector.SettingsUI.regexValidator);
+    var folderExcludePatternInput = this._createFolderExcludePatternInput();
     folderExcludePatternInput.classList.add("folder-exclude-pattern");
     this.containerElement.appendChild(folderExcludePatternInput);
 
@@ -314,6 +301,38 @@ WebInspector.WorkspaceSettingsTab = function()
 }
 
 WebInspector.WorkspaceSettingsTab.prototype = {
+    /**
+     * @return {!Element}
+     */
+    _createFolderExcludePatternInput: function()
+    {
+        var p = createElement("p");
+        var labelElement = p.createChild("label");
+        labelElement.textContent = WebInspector.UIString("Folder exclude pattern");
+        var inputElement = p.createChild("input");
+        inputElement.type = "text";
+        inputElement.style.width = "270px";
+        var folderExcludeSetting = WebInspector.isolatedFileSystemManager.workspaceFolderExcludePatternSetting();
+        var setValue = WebInspector.bindInput(inputElement, folderExcludeSetting.set.bind(folderExcludeSetting), regexValidator, false);
+        folderExcludeSetting.addChangeListener(() => setValue.call(null, folderExcludeSetting.get()));
+        setValue(folderExcludeSetting.get());
+        return p;
+
+        /**
+         * @param {string} value
+         * @return {boolean}
+         */
+        function regexValidator(value)
+        {
+            var regex;
+            try {
+                regex = new RegExp(value);
+            } catch (e) {
+            }
+            return !!regex;
+        }
+    },
+
     /**
      * @param {!WebInspector.IsolatedFileSystem} fileSystem
      */
@@ -540,7 +559,7 @@ WebInspector.SettingsController.Revealer.prototype = {
             if (!WebInspector.GenericSettingsTab.isSettingVisible(extension))
                 return;
             if (extension.descriptor()["settingName"] === setting.name) {
-                WebInspector._settingsController.showSettingsScreen("general");
+                WebInspector._settingsController.showSettingsScreen("preferences");
                 success = true;
             }
         }
@@ -552,7 +571,7 @@ WebInspector.SettingsController.Revealer.prototype = {
         {
             var settings = extension.descriptor()["settings"];
             if (settings && settings.indexOf(setting.name) !== -1) {
-                WebInspector._settingsController.showSettingsScreen("general");
+                WebInspector._settingsController.showSettingsScreen("preferences");
                 success = true;
             }
         }

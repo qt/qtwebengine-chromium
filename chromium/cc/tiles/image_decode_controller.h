@@ -5,49 +5,63 @@
 #ifndef CC_TILES_IMAGE_DECODE_CONTROLLER_H_
 #define CC_TILES_IMAGE_DECODE_CONTROLLER_H_
 
-#include <stdint.h>
-
-#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "cc/base/cc_export.h"
-#include "cc/playback/discardable_image_map.h"
-#include "cc/raster/tile_task_runner.h"
-#include "skia/ext/refptr.h"
+#include "cc/playback/decoded_draw_image.h"
+#include "cc/playback/draw_image.h"
 
 namespace cc {
 
-class ImageDecodeController {
+class ImageDecodeTask;
+
+// ImageDecodeController is responsible for generating decode tasks, decoding
+// images, storing images in cache, and being able to return the decoded images
+// when requested.
+
+// ImageDecodeController is responsible for the following things:
+// 1. Given a DrawImage, it can return an ImageDecodeTask which when run will
+//    decode and cache the resulting image. If the image does not need a task to
+//    be decoded, then nullptr will be returned. The return value of the
+//    function indicates whether the image was or is going to be locked, so an
+//    unlock will be required.
+// 2. Given a cache key and a DrawImage, it can decode the image and store it in
+//    the cache. Note that it is important that this function is only accessed
+//    via an image decode task.
+// 3. Given a DrawImage, it can return a DecodedDrawImage, which represented the
+//    decoded version of the image. Note that if the image is not in the cache
+//    and it needs to be scaled/decoded, then this decode will happen as part of
+//    getting the image. As such, this should only be accessed from a raster
+//    thread.
+class CC_EXPORT ImageDecodeController {
  public:
-  ImageDecodeController();
-  ~ImageDecodeController();
+  virtual ~ImageDecodeController() {}
 
-  scoped_refptr<ImageDecodeTask> GetTaskForImage(const DrawImage& image,
-                                                 int layer_id,
-                                                 uint64_t prepare_tiles_id);
+  // Fill in an ImageDecodeTask which will decode the given image when run. In
+  // case the image is already cached, fills in nullptr. Returns true if the
+  // image needs to be unreffed when the caller is finished with it.
+  //
+  // This is called by the tile manager (on the compositor thread) when creating
+  // a raster task.
+  virtual bool GetTaskForImageAndRef(const DrawImage& image,
+                                     uint64_t prepare_tiles_id,
+                                     scoped_refptr<ImageDecodeTask>* task) = 0;
+  // Unrefs an image. When the tile is finished, this should be called for every
+  // GetTaskForImageAndRef call that returned true.
+  virtual void UnrefImage(const DrawImage& image) = 0;
 
-  // Note that this function has to remain thread safe.
-  void DecodeImage(const SkImage* image);
+  // Returns a decoded draw image. This may cause a decode if the image was not
+  // predecoded.
+  //
+  // This is called by a raster task (on a worker thread) when an image is
+  // required.
+  virtual DecodedDrawImage GetDecodedImageForDraw(const DrawImage& image) = 0;
+  // Unrefs an image. This should be called for every GetDecodedImageForDraw
+  // when the draw with the image is finished.
+  virtual void DrawWithImageFinished(const DrawImage& image,
+                                     const DecodedDrawImage& decoded_image) = 0;
 
-  // TODO(vmpstr): This should go away once the controller is decoding images
-  // based on priority and memory.
-  void AddLayerUsedCount(int layer_id);
-  void SubtractLayerUsedCount(int layer_id);
-
-  void OnImageDecodeTaskCompleted(int layer_id,
-                                  const SkImage* image,
-                                  bool was_canceled);
-
- private:
-  scoped_refptr<ImageDecodeTask> CreateTaskForImage(const SkImage* image,
-                                                    int layer_id,
-                                                    uint64_t prepare_tiles_id);
-
-  using ImageTaskMap = base::hash_map<uint32_t, scoped_refptr<ImageDecodeTask>>;
-  using LayerImageTaskMap = base::hash_map<int, ImageTaskMap>;
-  LayerImageTaskMap image_decode_tasks_;
-
-  using LayerCountMap = base::hash_map<int, int>;
-  LayerCountMap used_layer_counts_;
+  // This function informs the controller that now is a good time to clean up
+  // memory. This is called periodically from the compositor thread.
+  virtual void ReduceCacheUsage() = 0;
 };
 
 }  // namespace cc

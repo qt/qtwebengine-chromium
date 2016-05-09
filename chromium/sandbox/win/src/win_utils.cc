@@ -7,9 +7,9 @@
 #include <stddef.h>
 
 #include <map>
+#include <memory>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/win/pe_image.h"
 #include "sandbox/win/src/internal_types.h"
@@ -226,7 +226,7 @@ bool SameObject(HANDLE handle, const wchar_t* full_path) {
 
   // This may end with a backslash.
   const wchar_t kBackslash = '\\';
-  if (path[path.length() - 1] == kBackslash)
+  if (path.back() == kBackslash)
     path = path.substr(0, path.length() - 1);
 
   // Perfect match (case-insesitive check).
@@ -294,7 +294,7 @@ bool ConvertToLongPath(base::string16* path) {
   }
 
   DWORD size = MAX_PATH;
-  scoped_ptr<wchar_t[]> long_path_buf(new wchar_t[size]);
+  std::unique_ptr<wchar_t[]> long_path_buf(new wchar_t[size]);
 
   DWORD return_value = ::GetLongPathName(temp_path.c_str(), long_path_buf.get(),
                                          size);
@@ -355,7 +355,7 @@ bool GetPathFromHandle(HANDLE handle, base::string16* path) {
   NTSTATUS status = NtQueryObject(handle, ObjectNameInformation, name, size,
                                   &size);
 
-  scoped_ptr<BYTE[]> name_ptr;
+  std::unique_ptr<BYTE[]> name_ptr;
   if (size) {
     name_ptr.reset(new BYTE[size]);
     name = reinterpret_cast<OBJECT_NAME_INFORMATION*>(name_ptr.get());

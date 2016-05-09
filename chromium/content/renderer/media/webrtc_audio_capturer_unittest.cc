@@ -5,7 +5,7 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "content/public/renderer/media_stream_audio_sink.h"
-#include "content/renderer/media/mock_media_constraint_factory.h"
+#include "content/renderer/media/mock_constraint_factory.h"
 #include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
@@ -76,67 +76,70 @@ class WebRtcAudioCapturerTest : public testing::Test {
 
   void VerifyAudioParams(const blink::WebMediaConstraints& constraints,
                          bool need_audio_processing) {
-    capturer_ = WebRtcAudioCapturer::CreateCapturer(
-        -1, StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE, "", "",
-                             params_.sample_rate(), params_.channel_layout(),
-                             params_.frames_per_buffer()),
-        constraints, NULL, NULL);
-    capturer_source_ = new MockCapturerSource();
-    EXPECT_CALL(*capturer_source_.get(), Initialize(_, capturer_.get(), -1));
-    EXPECT_CALL(*capturer_source_.get(), SetAutomaticGainControl(true));
-    EXPECT_CALL(*capturer_source_.get(), Start());
-    capturer_->SetCapturerSource(capturer_source_, params_);
+    const std::unique_ptr<WebRtcAudioCapturer> capturer =
+        WebRtcAudioCapturer::CreateCapturer(
+            -1, StreamDeviceInfo(
+                    MEDIA_DEVICE_AUDIO_CAPTURE, "", "", params_.sample_rate(),
+                    params_.channel_layout(), params_.frames_per_buffer()),
+            constraints, nullptr, nullptr);
+    const scoped_refptr<MockCapturerSource> capturer_source(
+        new MockCapturerSource());
+    EXPECT_CALL(*capturer_source.get(), Initialize(_, capturer.get(), -1));
+    EXPECT_CALL(*capturer_source.get(), SetAutomaticGainControl(true));
+    EXPECT_CALL(*capturer_source.get(), Start());
+    capturer->SetCapturerSource(capturer_source, params_);
 
     scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
         WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
-    track_.reset(new WebRtcLocalAudioTrack(adapter.get(), capturer_, NULL));
-    track_->Start();
+    const std::unique_ptr<WebRtcLocalAudioTrack> track(
+        new WebRtcLocalAudioTrack(adapter.get()));
+    capturer->AddTrack(track.get());
 
     // Connect a mock sink to the track.
-    scoped_ptr<MockMediaStreamAudioSink> sink(new MockMediaStreamAudioSink());
-    track_->AddSink(sink.get());
+    std::unique_ptr<MockMediaStreamAudioSink> sink(
+        new MockMediaStreamAudioSink());
+    track->AddSink(sink.get());
 
     int delay_ms = 65;
     bool key_pressed = true;
     double volume = 0.9;
 
-    scoped_ptr<media::AudioBus> audio_bus = media::AudioBus::Create(params_);
+    std::unique_ptr<media::AudioBus> audio_bus =
+        media::AudioBus::Create(params_);
     audio_bus->Zero();
 
     media::AudioCapturerSource::CaptureCallback* callback =
         static_cast<media::AudioCapturerSource::CaptureCallback*>(
-            capturer_.get());
+            capturer.get());
 
     // Verify the sink is getting the correct values.
     EXPECT_CALL(*sink, FormatIsSet());
     EXPECT_CALL(*sink, OnDataCallback()).Times(AtLeast(1));
     callback->Capture(audio_bus.get(), delay_ms, volume, key_pressed);
 
-    track_->RemoveSink(sink.get());
-    EXPECT_CALL(*capturer_source_.get(), Stop());
-    capturer_->Stop();
+    track->RemoveSink(sink.get());
+    EXPECT_CALL(*capturer_source.get(), Stop());
+    capturer->Stop();
   }
 
   media::AudioParameters params_;
-  scoped_refptr<MockCapturerSource> capturer_source_;
-  scoped_refptr<WebRtcAudioCapturer> capturer_;
-  scoped_ptr<WebRtcLocalAudioTrack> track_;
 };
 
 TEST_F(WebRtcAudioCapturerTest, VerifyAudioParamsWithAudioProcessing) {
   // Turn off the default constraints to verify that the sink will get packets
   // with a buffer size smaller than 10ms.
-  MockMediaConstraintFactory constraint_factory;
+  MockConstraintFactory constraint_factory;
   constraint_factory.DisableDefaultAudioConstraints();
   VerifyAudioParams(constraint_factory.CreateWebMediaConstraints(), false);
 }
 
 TEST_F(WebRtcAudioCapturerTest, FailToCreateCapturerWithWrongConstraints) {
-  MockMediaConstraintFactory constraint_factory;
+  MockConstraintFactory constraint_factory;
   const std::string dummy_constraint = "dummy";
-  constraint_factory.AddMandatory(dummy_constraint, true);
+  // Set a non-audio constraint.
+  constraint_factory.basic().width.setExact(240);
 
-  scoped_refptr<WebRtcAudioCapturer> capturer(
+  std::unique_ptr<WebRtcAudioCapturer> capturer(
       WebRtcAudioCapturer::CreateCapturer(
           0, StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE, "", "",
                               params_.sample_rate(), params_.channel_layout(),

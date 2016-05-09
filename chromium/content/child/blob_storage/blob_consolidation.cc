@@ -35,6 +35,9 @@ BlobConsolidation::ConsolidatedItem::ConsolidatedItem(DataElement::Type type,
       expected_modification_time(0) {
 }
 
+BlobConsolidation::ConsolidatedItem::ConsolidatedItem(
+    const ConsolidatedItem& other) = default;
+
 BlobConsolidation::BlobConsolidation() : total_memory_(0) {
 }
 
@@ -80,6 +83,7 @@ void BlobConsolidation::AddBlobItem(const std::string& uuid,
       ConsolidatedItem(DataElement::TYPE_BLOB, offset, length));
   ConsolidatedItem& item = consolidated_items_.back();
   item.blob_uuid = uuid;
+  referenced_blobs_.insert(uuid);
 }
 
 void BlobConsolidation::AddFileSystemItem(const GURL& url,

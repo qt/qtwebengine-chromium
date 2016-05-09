@@ -35,15 +35,13 @@ class EventListener;
 
 class ProcessingInstruction final : public CharacterData, private ResourceOwner<StyleSheetResource> {
     DEFINE_WRAPPERTYPEINFO();
+    USING_GARBAGE_COLLECTED_MIXIN(ProcessingInstruction);
 public:
-    static PassRefPtrWillBeRawPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
+    static RawPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
     ~ProcessingInstruction() override;
     DECLARE_VIRTUAL_TRACE();
 
     const String& target() const { return m_target; }
-
-    void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
-
     const String& localHref() const { return m_localHref; }
     StyleSheet* sheet() const { return m_sheet.get(); }
 
@@ -54,7 +52,7 @@ public:
     bool isLoading() const;
 
     // For XSLT
-    class DetachableEventListener : public WillBeGarbageCollectedMixin {
+    class DetachableEventListener : public GarbageCollectedMixin {
     public:
         virtual ~DetachableEventListener() { }
         virtual EventListener* toEventListener() = 0;
@@ -62,18 +60,9 @@ public:
         virtual void detach() = 0;
 
         DEFINE_INLINE_VIRTUAL_TRACE() { }
-
-#if !ENABLE(OILPAN)
-        void ref() { refDetachableEventListener(); }
-        void deref() { derefDetachableEventListener(); }
-
-    private:
-        virtual void refDetachableEventListener() = 0;
-        virtual void derefDetachableEventListener() = 0;
-#endif
     };
 
-    void setEventListenerForXSLT(PassRefPtrWillBeRawPtr<DetachableEventListener> listener) { m_listenerForXSLT = listener; }
+    void setEventListenerForXSLT(RawPtr<DetachableEventListener> listener) { m_listenerForXSLT = listener; }
     EventListener* eventListenerForXSLT();
     void clearEventListenerForXSLT();
 
@@ -81,8 +70,8 @@ private:
     ProcessingInstruction(Document&, const String& target, const String& data);
 
     String nodeName() const override;
-    NodeType nodeType() const override;
-    PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) override;
+    NodeType getNodeType() const override;
+    RawPtr<Node> cloneNode(bool deep) override;
 
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void removedFrom(ContainerNode*) override;
@@ -104,21 +93,20 @@ private:
     String m_localHref;
     String m_title;
     String m_media;
-    RefPtrWillBeMember<StyleSheet> m_sheet;
+    Member<StyleSheet> m_sheet;
     bool m_loading;
     bool m_alternate;
-    bool m_createdByParser;
     bool m_isCSS;
     bool m_isXSL;
 
-    RefPtrWillBeMember<DetachableEventListener> m_listenerForXSLT;
+    Member<DetachableEventListener> m_listenerForXSLT;
 };
 
-DEFINE_NODE_TYPE_CASTS(ProcessingInstruction, nodeType() == Node::PROCESSING_INSTRUCTION_NODE);
+DEFINE_NODE_TYPE_CASTS(ProcessingInstruction, getNodeType() == Node::PROCESSING_INSTRUCTION_NODE);
 
 inline bool isXSLStyleSheet(const Node& node)
 {
-    return node.nodeType() == Node::PROCESSING_INSTRUCTION_NODE && toProcessingInstruction(node).isXSL();
+    return node.getNodeType() == Node::PROCESSING_INSTRUCTION_NODE && toProcessingInstruction(node).isXSL();
 }
 
 } // namespace blink

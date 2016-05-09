@@ -22,18 +22,19 @@ ChromecastMediaRendererFactory::ChromecastMediaRendererFactory(
 ChromecastMediaRendererFactory::~ChromecastMediaRendererFactory() {
 }
 
-scoped_ptr<::media::Renderer> ChromecastMediaRendererFactory::CreateRenderer(
+std::unique_ptr<::media::Renderer>
+ChromecastMediaRendererFactory::CreateRenderer(
     const scoped_refptr<base::SingleThreadTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& worker_task_runner,
     ::media::AudioRendererSink* audio_renderer_sink,
-    ::media::VideoRendererSink* video_renderer_sink) {
+    ::media::VideoRendererSink* video_renderer_sink,
+    const ::media::RequestSurfaceCB& request_surface_cb) {
   // TODO(erickung): crbug.com/443956. Need to provide right LoadType.
   LoadType cma_load_type = kLoadTypeMediaSource;
-  scoped_ptr<MediaPipelineProxy> cma_media_pipeline(new MediaPipelineProxy(
-      render_frame_id_,
-      content::RenderThread::Get()->GetIOMessageLoopProxy(),
+  std::unique_ptr<MediaPipelineProxy> cma_media_pipeline(new MediaPipelineProxy(
+      render_frame_id_, content::RenderThread::Get()->GetIOMessageLoopProxy(),
       cma_load_type));
-  scoped_ptr<CmaRenderer> cma_renderer(new CmaRenderer(
+  std::unique_ptr<CmaRenderer> cma_renderer(new CmaRenderer(
       std::move(cma_media_pipeline), video_renderer_sink, gpu_factories_));
   return std::move(cma_renderer);
 }

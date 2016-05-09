@@ -169,7 +169,7 @@ class SpdySMTestBase : public ::testing::TestWithParam<SpdyMajorVersion> {
                                     acceptor_.get(),
                                     GetParam()));
 
-    spdy_framer_.reset(new BufferedSpdyFramer(GetParam(), true));
+    spdy_framer_.reset(new BufferedSpdyFramer(GetParam()));
     spdy_framer_visitor_.reset(new SpdyFramerVisitor);
     spdy_framer_->set_visitor(spdy_framer_visitor_.get());
   }
@@ -236,7 +236,8 @@ TEST_P(SpdySMProxyTest, OnStreamFrameData) {
   SpdyHeaderBlock block;
   testing::MockFunction<void(int)> checkpoint;  // NOLINT
 
-  scoped_ptr<SpdyFrame> frame(spdy_framer_->CreatePingFrame(12, false));
+  scoped_ptr<SpdySerializedFrame> frame(
+      spdy_framer_->CreatePingFrame(12, false));
   block[":method"] = "GET";
   block[":host"] = "www.example.com";
   block[":path"] = "/path";

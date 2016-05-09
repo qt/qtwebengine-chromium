@@ -16,7 +16,7 @@ secondary_source = "//build/secondary/"
 # "gn check" or "gn gen --check".
 check_targets = [
   #"//apps/*",  # Medium-hard.
-  #"//ash/*",  # Medium-hard.
+  "//ash/*",
   "//base/*",
   "//blink/*",
   "//breakpad/*",
@@ -36,8 +36,20 @@ check_targets = [
   "//components/*",
 
   #"//content/*",  # A whole lot of errors.
-  "//content/public/common:result_codes",
-  "//content/public/common:static_switches",
+  "//content/gpu/*",
+  "//content/public/*",
+  "//content/renderer/*",
+
+  #"//content/shell/*",  # Needs Android fix, bug 597020.
+
+  #"//content/test/*",  # A couple of errors left.
+  "//content/test:content_gl_benchmark",
+  "//content/test:content_gl_tests",
+  "//content/test:content_perftests",
+  "//content/test:content_site_isolation_browsertests",
+  "//content/test:content_test_mojo_bindings",
+  "//content/test:content_unittests",
+  "//content/test:test_support",
   "//courgette/*",
   "//crypto/*",
   "//data/*",
@@ -48,22 +60,19 @@ check_targets = [
   "//gin/*",
   "//google_apis/*",
   "//google_update/*",
-
-  #"//gpu/*",  # Lots of errors.
-  "//gpu:*",
+  "//gpu/*",
 
   #"//ios/*",
   "//ipc/*",
 
   #"//jingle/*",
-  "//mandoline/*",
   "//mash/*",
 
   #"//media/*",  # Lots of errors.
   "mojo/*",
 
   #"//native_client/*",
-  #"//net/*",  # Needs GN binary changes to work on Android.
+  "//net/*",
 
   #"//pdf/*",  # Medium-hard.
   #"//ppapi/*",  # Lots of errors.
@@ -71,7 +80,8 @@ check_targets = [
   "//printing/*",
 
   #"//remoting/*",  # Medium-hard.
-  #"//rlz/*",  # Needs checking on Windows.
+  "//rlz/*",
+
   #"//sandbox/*",  # Medium-hard.
   "//sdch/*",
   "//skia/*",
@@ -81,7 +91,10 @@ check_targets = [
   "//testing/*",
 
   #"//third_party/*",  # May not ever want this.
+  "//third_party/hunspell/*",
   "//third_party/kasko/*",
+  "//third_party/libaddressinput/*",
+  "//third_party/libphonenumber/*",
   "//third_party/WebKit/Source/*",
   "//tools/*",
 
@@ -104,7 +117,6 @@ check_targets = [
   "//ui/keyboard/*",
   "//ui/login/*",
   "//ui/message_center/*",
-  "//ui/metro_viewer/*",
   "//ui/mojo/*",
   "//ui/native_theme/*",
   "//ui/platform_window/*",
@@ -130,6 +142,7 @@ check_targets = [
 exec_script_whitelist = [
   "//android_webview/BUILD.gn",
   "//ash/BUILD.gn",
+  "//build/config/BUILD.gn",
   "//build/config/android/config.gni",
   "//build/config/android/internal_rules.gni",
   "//build/config/android/rules.gni",
@@ -172,11 +185,9 @@ exec_script_whitelist = [
   "//clank/native/BUILD.gn",
 
   "//components/domain_reliability/BUILD.gn",
-  "//components/scheduler/scheduler.gni",
   "//content/browser/browser.gni",
   "//content/child/child.gni",
   "//content/common/common.gni",
-  "//content/content.gni",
   "//content/public/android/BUILD.gn",
   "//content/renderer/renderer.gni",
   "//content/test/BUILD.gn",

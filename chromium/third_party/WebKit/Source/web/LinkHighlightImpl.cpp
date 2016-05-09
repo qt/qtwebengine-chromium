@@ -35,15 +35,16 @@
 #include "core/layout/compositing/CompositedLayerMapping.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/animation/CompositorAnimationCurve.h"
+#include "platform/animation/CompositorFloatAnimationCurve.h"
 #include "platform/graphics/Color.h"
+#include "platform/graphics/CompositorFactory.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebCompositorAnimationCurve.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebDisplayItemList.h"
-#include "public/platform/WebFloatAnimationCurve.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebLayer.h"
 #include "public/platform/WebRect.h"
@@ -74,25 +75,22 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owningWebViewImpl)
     , m_isAnimating(false)
     , m_startTime(monotonicallyIncreasingTime())
 {
-    ASSERT(m_node);
-    ASSERT(owningWebViewImpl);
+    DCHECK(m_node);
+    DCHECK(owningWebViewImpl);
     WebCompositorSupport* compositorSupport = Platform::current()->compositorSupport();
-    ASSERT(compositorSupport);
+    DCHECK(compositorSupport);
     m_contentLayer = adoptPtr(compositorSupport->createContentLayer(this));
     m_clipLayer = adoptPtr(compositorSupport->createLayer());
     m_clipLayer->setTransformOrigin(WebFloatPoint3D());
     m_clipLayer->addChild(m_contentLayer->layer());
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
-        m_compositorPlayer = adoptPtr(compositorSupport->createAnimationPlayer());
-        ASSERT(m_compositorPlayer);
-        m_compositorPlayer->setAnimationDelegate(this);
-        if (m_owningWebViewImpl->linkHighlightsTimeline())
-            m_owningWebViewImpl->linkHighlightsTimeline()->playerAttached(*this);
-        m_compositorPlayer->attachLayer(m_contentLayer->layer());
-    } else {
-        owningWebViewImpl->registerForAnimations(m_contentLayer->layer());
-        m_contentLayer->layer()->setAnimationDelegate(this);
-    }
+
+    m_compositorPlayer = adoptPtr(CompositorFactory::current().createAnimationPlayer());
+    DCHECK(m_compositorPlayer);
+    m_compositorPlayer->setAnimationDelegate(this);
+    if (m_owningWebViewImpl->linkHighlightsTimeline())
+        m_owningWebViewImpl->linkHighlightsTimeline()->playerAttached(*this);
+    m_compositorPlayer->attachLayer(m_contentLayer->layer());
+
     m_contentLayer->layer()->setDrawsContent(true);
     m_contentLayer->layer()->setOpacity(1);
     m_geometryNeedsUpdate = true;
@@ -100,13 +98,11 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owningWebViewImpl)
 
 LinkHighlightImpl::~LinkHighlightImpl()
 {
-    if (m_compositorPlayer) {
-        if (m_compositorPlayer->isLayerAttached())
-            m_compositorPlayer->detachLayer();
-        if (m_owningWebViewImpl->linkHighlightsTimeline())
-            m_owningWebViewImpl->linkHighlightsTimeline()->playerDestroyed(*this);
-        m_compositorPlayer->setAnimationDelegate(nullptr);
-    }
+    if (m_compositorPlayer->isLayerAttached())
+        m_compositorPlayer->detachLayer();
+    if (m_owningWebViewImpl->linkHighlightsTimeline())
+        m_owningWebViewImpl->linkHighlightsTimeline()->playerDestroyed(*this);
+    m_compositorPlayer->setAnimationDelegate(nullptr);
     m_compositorPlayer.clear();
 
     clearGraphicsLayerLinkHighlightPointer();
@@ -150,7 +146,7 @@ void LinkHighlightImpl::attachLinkHighlightToCompositingLayer(const LayoutBoxMod
 
 static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpaceQuad, LayoutObject* targetLayoutObject, const LayoutBoxModelObject& paintInvalidationContainer, FloatQuad& compositedSpaceQuad)
 {
-    ASSERT(targetLayoutObject);
+    DCHECK(targetLayoutObject);
     for (unsigned i = 0; i < 4; ++i) {
         IntPoint point;
         switch (i) {
@@ -164,7 +160,7 @@ static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpace
         point = targetLayoutObject->frame()->view()->contentsToRootFrame(point);
         point = paintInvalidationContainer.frame()->view()->rootFrameToContents(point);
         FloatPoint floatPoint = paintInvalidationContainer.absoluteToLocal(point, UseTransforms);
-        PaintLayer::mapPointToPaintBackingCoordinates(&paintInvalidationContainer, floatPoint);
+        PaintLayer::mapPointInPaintInvalidationContainerToBacking(paintInvalidationContainer, floatPoint);
 
         switch (i) {
         case 0: compositedSpaceQuad.setP1(floatPoint); break;
@@ -220,7 +216,7 @@ bool LinkHighlightImpl::computeHighlightLayerPathAndPosition(const LayoutBoxMode
     // Get quads for node in absolute coordinates.
     Vector<FloatQuad> quads;
     computeQuads(*m_node, quads);
-    ASSERT(quads.size());
+    DCHECK(quads.size());
     Path newPath;
 
     for (size_t quadIndex = 0; quadIndex < quads.size(); ++quadIndex) {
@@ -275,10 +271,10 @@ void LinkHighlightImpl::paintContents(WebDisplayItemList* webDisplayItemList, We
     paint.setStyle(SkPaint::kFill_Style);
     paint.setFlags(SkPaint::kAntiAlias_Flag);
     paint.setColor(m_node->layoutObject()->style()->tapHighlightColor().rgb());
-    canvas->drawPath(m_path.skPath(), paint);
+    canvas->drawPath(m_path.getSkPath(), paint);
 
-    RefPtr<const SkPicture> picture = adoptRef(recorder.endRecording());
-    webDisplayItemList->appendDrawingItem(WebRect(visualRect.x(), visualRect.y(), visualRect.width(), visualRect.height()), picture.get());
+    webDisplayItemList->appendDrawingItem(WebRect(visualRect.x(), visualRect.y(),
+        visualRect.width(), visualRect.height()), recorder.finishRecordingAsPicture());
 }
 
 void LinkHighlightImpl::startHighlightAnimationIfNeeded()
@@ -294,25 +290,20 @@ void LinkHighlightImpl::startHighlightAnimationIfNeeded()
 
     m_contentLayer->layer()->setOpacity(startOpacity);
 
-    WebCompositorSupport* compositorSupport = Platform::current()->compositorSupport();
+    OwnPtr<CompositorFloatAnimationCurve> curve = adoptPtr(CompositorFactory::current().createFloatAnimationCurve());
 
-    OwnPtr<WebFloatAnimationCurve> curve = adoptPtr(compositorSupport->createFloatAnimationCurve());
-
-    curve->add(WebFloatKeyframe(0, startOpacity));
+    curve->add(CompositorFloatKeyframe(0, startOpacity));
     // Make sure we have displayed for at least minPreFadeDuration before starting to fade out.
     float extraDurationRequired = std::max(0.f, minPreFadeDuration - static_cast<float>(monotonicallyIncreasingTime() - m_startTime));
     if (extraDurationRequired)
-        curve->add(WebFloatKeyframe(extraDurationRequired, startOpacity));
+        curve->add(CompositorFloatKeyframe(extraDurationRequired, startOpacity));
     // For layout tests we don't fade out.
-    curve->add(WebFloatKeyframe(fadeDuration + extraDurationRequired, layoutTestMode() ? startOpacity : 0));
+    curve->add(CompositorFloatKeyframe(fadeDuration + extraDurationRequired, layoutTestMode() ? startOpacity : 0));
 
-    OwnPtr<WebCompositorAnimation> animation = adoptPtr(compositorSupport->createAnimation(*curve, WebCompositorAnimation::TargetPropertyOpacity));
+    OwnPtr<CompositorAnimation> animation = adoptPtr(CompositorFactory::current().createAnimation(*curve, CompositorTargetProperty::OPACITY));
 
     m_contentLayer->layer()->setDrawsContent(true);
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled())
-        m_compositorPlayer->addAnimation(animation.leakPtr());
-    else
-        m_contentLayer->layer()->addAnimation(animation.leakPtr());
+    m_compositorPlayer->addAnimation(animation.leakPtr());
 
     invalidate();
     m_owningWebViewImpl->scheduleAnimation();
@@ -382,7 +373,7 @@ WebLayer* LinkHighlightImpl::layer()
     return clipLayer();
 }
 
-WebCompositorAnimationPlayer* LinkHighlightImpl::compositorPlayer() const
+CompositorAnimationPlayer* LinkHighlightImpl::compositorPlayer() const
 {
     return m_compositorPlayer.get();
 }

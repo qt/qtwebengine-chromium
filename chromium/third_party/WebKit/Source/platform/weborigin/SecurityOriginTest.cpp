@@ -34,6 +34,7 @@
 #include "platform/blob/BlobURL.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "platform/weborigin/Suborigin.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
@@ -157,15 +158,17 @@ TEST_F(SecurityOriginTest, IsPotentiallyTrustworthy)
         SCOPED_TRACE(i);
         RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString(inputs[i].url);
         String errorMessage;
-        EXPECT_EQ(inputs[i].accessGranted, origin->isPotentiallyTrustworthy(errorMessage));
-        EXPECT_EQ(inputs[i].accessGranted, errorMessage.isEmpty());
+        EXPECT_EQ(inputs[i].accessGranted, origin->isPotentiallyTrustworthy());
     }
 
     // Unique origins are not considered secure.
     RefPtr<SecurityOrigin> uniqueOrigin = SecurityOrigin::createUnique();
-    String errorMessage;
-    EXPECT_FALSE(uniqueOrigin->isPotentiallyTrustworthy(errorMessage));
-    EXPECT_EQ("Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).", errorMessage);
+    EXPECT_FALSE(uniqueOrigin->isPotentiallyTrustworthy());
+    // ... unless they are specially marked as such.
+    uniqueOrigin->setUniqueOriginIsPotentiallyTrustworthy(true);
+    EXPECT_TRUE(uniqueOrigin->isPotentiallyTrustworthy());
+    uniqueOrigin->setUniqueOriginIsPotentiallyTrustworthy(false);
+    EXPECT_FALSE(uniqueOrigin->isPotentiallyTrustworthy());
 }
 
 TEST_F(SecurityOriginTest, IsSecure)
@@ -218,19 +221,21 @@ TEST_F(SecurityOriginTest, Suborigins)
     RuntimeEnabledFeatures::setSuboriginsEnabled(true);
 
     RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString("https://test.com");
+    Suborigin suborigin;
+    suborigin.setName("foobar");
     EXPECT_FALSE(origin->hasSuborigin());
-    origin->addSuborigin("foobar");
+    origin->addSuborigin(suborigin);
     EXPECT_TRUE(origin->hasSuborigin());
-    EXPECT_EQ("foobar", origin->suboriginName());
+    EXPECT_EQ("foobar", origin->suborigin()->name());
 
     origin = SecurityOrigin::createFromString("https://foobar_test.com");
     EXPECT_EQ("https", origin->protocol());
     EXPECT_EQ("test.com", origin->host());
-    EXPECT_EQ("foobar", origin->suboriginName());
+    EXPECT_EQ("foobar", origin->suborigin()->name());
 
     origin = SecurityOrigin::createFromString("https://foobar_test.com");
     EXPECT_TRUE(origin->hasSuborigin());
-    EXPECT_EQ("foobar", origin->suboriginName());
+    EXPECT_EQ("foobar", origin->suborigin()->name());
 
     origin = SecurityOrigin::createFromString("https://foobar+test.com");
     EXPECT_FALSE(origin->hasSuborigin());
@@ -242,7 +247,8 @@ TEST_F(SecurityOriginTest, Suborigins)
     EXPECT_FALSE(origin->hasSuborigin());
 
     origin = SecurityOrigin::createFromString("https://foobar_test.com");
-    EXPECT_DEATH(origin->addSuborigin("shouldhitassert"), "");
+    Suborigin emptySuborigin;
+    EXPECT_DEATH(origin->addSuborigin(emptySuborigin), "");
 }
 
 TEST_F(SecurityOriginTest, SuboriginsParsing)
@@ -261,14 +267,26 @@ TEST_F(SecurityOriginTest, SuboriginsParsing)
     StringBuilder builder;
 
     origin = SecurityOrigin::createFromString("https://foobar_test.com");
-    origin->buildRawString(builder);
+    origin->buildRawString(builder, true);
     EXPECT_EQ("https://foobar_test.com", builder.toString());
+    EXPECT_EQ("https://foobar_test.com", origin->toString());
+    builder.clear();
+    origin->buildRawString(builder, false);
+    EXPECT_EQ("https://test.com", builder.toString());
+    EXPECT_EQ("https://test.com", origin->toPhysicalOriginString());
 
+    Suborigin suboriginObj;
+    suboriginObj.setName("foobar");
     builder.clear();
     origin = SecurityOrigin::createFromString("https://test.com");
-    origin->addSuborigin("foobar");
-    origin->buildRawString(builder);
+    origin->addSuborigin(suboriginObj);
+    origin->buildRawString(builder, true);
     EXPECT_EQ("https://foobar_test.com", builder.toString());
+    EXPECT_EQ("https://foobar_test.com", origin->toString());
+    builder.clear();
+    origin->buildRawString(builder, false);
+    EXPECT_EQ("https://test.com", builder.toString());
+    EXPECT_EQ("https://test.com", origin->toPhysicalOriginString());
 }
 
 TEST_F(SecurityOriginTest, SuboriginsIsSameSchemeHostPortAndSuborigin)

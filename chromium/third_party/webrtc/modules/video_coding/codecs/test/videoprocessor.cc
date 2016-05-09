@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "webrtc/system_wrappers/include/cpu_info.h"
@@ -225,7 +226,10 @@ bool VideoProcessorImpl::ProcessFrame(int frame_number) {
   }
 }
 
-void VideoProcessorImpl::FrameEncoded(const EncodedImage& encoded_image) {
+void VideoProcessorImpl::FrameEncoded(
+    webrtc::VideoCodecType codec,
+    const EncodedImage& encoded_image,
+    const webrtc::RTPFragmentationHeader* fragmentation) {
   // Timestamp is frame number, so this gives us #dropped frames.
   int num_dropped_from_prev_encode =
       encoded_image._timeStamp - prev_time_stamp_ - 1;
@@ -276,12 +280,18 @@ void VideoProcessorImpl::FrameEncoded(const EncodedImage& encoded_image) {
         assert(false);
     }
   }
-  rtc::scoped_ptr<uint8_t[]> copied_buffer(new uint8_t[encoded_image._length]);
+
+  // Make a raw copy of the |encoded_image| buffer.
+  size_t copied_buffer_size = encoded_image._length +
+                              EncodedImage::GetBufferPaddingBytes(codec);
+  std::unique_ptr<uint8_t[]> copied_buffer(new uint8_t[copied_buffer_size]);
   memcpy(copied_buffer.get(), encoded_image._buffer, encoded_image._length);
+  // The image to feed to the decoder.
   EncodedImage copied_image;
   memcpy(&copied_image, &encoded_image, sizeof(copied_image));
-  copied_image._size = copied_image._length;
+  copied_image._size = copied_buffer_size;
   copied_image._buffer = copied_buffer.get();
+
   if (!exclude_this_frame) {
     stat.packets_dropped =
         packet_manipulator_->ManipulatePackets(&copied_image);
@@ -341,7 +351,7 @@ void VideoProcessorImpl::FrameDecoded(const VideoFrame& image) {
     }
     // TODO(mikhal): Extracting the buffer for now - need to update test.
     size_t length = CalcBufferSize(kI420, up_image.width(), up_image.height());
-    rtc::scoped_ptr<uint8_t[]> image_buffer(new uint8_t[length]);
+    std::unique_ptr<uint8_t[]> image_buffer(new uint8_t[length]);
     int extracted_length = ExtractBuffer(up_image, length, image_buffer.get());
     assert(extracted_length > 0);
     // Update our copy of the last successful frame:
@@ -355,7 +365,7 @@ void VideoProcessorImpl::FrameDecoded(const VideoFrame& image) {
     // Update our copy of the last successful frame:
     // TODO(mikhal): Add as a member function, so won't be allocated per frame.
     size_t length = CalcBufferSize(kI420, image.width(), image.height());
-    rtc::scoped_ptr<uint8_t[]> image_buffer(new uint8_t[length]);
+    std::unique_ptr<uint8_t[]> image_buffer(new uint8_t[length]);
     int extracted_length = ExtractBuffer(image, length, image_buffer.get());
     assert(extracted_length > 0);
     memcpy(last_successful_frame_buffer_, image_buffer.get(), extracted_length);
@@ -412,12 +422,17 @@ int32_t VideoProcessorImpl::VideoProcessorEncodeCompleteCallback::Encoded(
     const EncodedImage& encoded_image,
     const webrtc::CodecSpecificInfo* codec_specific_info,
     const webrtc::RTPFragmentationHeader* fragmentation) {
-  video_processor_->FrameEncoded(encoded_image);  // Forward to parent class.
+  // Forward to parent class.
+  RTC_CHECK(codec_specific_info);
+  video_processor_->FrameEncoded(codec_specific_info->codecType,
+                                 encoded_image,
+                                 fragmentation);
   return 0;
 }
 int32_t VideoProcessorImpl::VideoProcessorDecodeCompleteCallback::Decoded(
     VideoFrame& image) {
-  video_processor_->FrameDecoded(image);  // forward to parent class
+  // Forward to parent class.
+  video_processor_->FrameDecoded(image);
   return 0;
 }
 

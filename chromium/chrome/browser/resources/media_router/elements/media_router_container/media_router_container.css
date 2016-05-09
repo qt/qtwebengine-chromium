@@ -2,24 +2,19 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-:root {
-  --container-header-height: 52px;
-}
-
 .active-sink {
-  color: rgb(33, 150, 243);
+  color: var(--paper-blue-700);
 }
 
 .cast-mode-icon,
 .sink-icon {
   -webkit-padding-end: 12px;
-  -webkit-padding-start: 16px;
-  height: 16px;
-  width: 16px;
+  -webkit-padding-start: var(--dialog-padding-start);
+  height: var(--non-navigation-icon-size);
+  width: var(--non-navigation-icon-size);
 }
 
 #cast-mode-list {
-  margin-top: var(--container-header-height);
   padding-bottom: 12px;
   padding-top: 4px;
 }
@@ -27,20 +22,19 @@
 #container-header {
   position: fixed;
   width: 100%;
-  z-index: 1;
 }
 
 #device-missing {
   align-items: center;
   background-color: white;
   display: flex;
-  height: 120px;
   justify-content: center;
-  margin-top: var(--container-header-height);
+  margin: 60px 0;
 }
 
 #device-missing a {
-  color: rgba(33, 150, 243, 0.87);
+  color: var(--paper-blue-700);
+  margin: 8px 0;
   text-decoration: none;
 }
 
@@ -54,27 +48,40 @@
   justify-content: flex-end;
 }
 
-#first-run-flow {
-  background-color: rgb(33, 150, 243);
-  padding: 24px 16px 4px 16px;
-  position: fixed;
-  z-index: 1;
+#first-run-cloud-checkbox,
+#first-run-flow-cloud-pref,
+#first-run-text {
+  font-size: 1.0em;
+  line-height: 1.5em;
 }
 
+#first-run-cloud-checkbox,
 #first-run-text,
 #first-run-title {
   color: white;
   padding-bottom: 24px;
 }
 
-#first-run-text {
-  font-size: 1.0em;
-  line-height: 1.5em;
+#first-run-cloud-checkbox::shadow #checkboxLabel {
+  -webkit-padding-start: var(-dialog-padding-start);
+}
+
+#first-run-flow {
+  background-color: var(--paper-blue-700);
+  box-sizing: border-box;
+  padding: 24px 16px 4px 16px;
+  position: fixed;
+  width: 100%;
 }
 
 #first-run-flow a {
   color: white;
   text-decoration: none;
+}
+
+#first-run-flow-cloud-pref {
+  color: white;
+  display: flex;
 }
 
 .first-run-learn-more {
@@ -87,13 +94,28 @@
 }
 
 #issue-banner {
-  margin-top: var(--container-header-height);
   width: 100%;
 }
 
 #issue-banner.non-blocking {
   bottom: 0;
+  display: block;
   margin-top: 0;
+}
+
+#no-search-matches {
+  color: rgb(112, 112, 112);
+  display: block;
+  font-size: 1.2 em;
+  padding-bottom: 20px;
+  padding-top: 20px;
+  text-align: center;
+}
+
+paper-checkbox {
+  --paper-checkbox-checked-color: white;
+  --paper-checkbox-checkmark-color: var(--paper-blue-700);
+  --paper-checkbox-unchecked-color: white;
 }
 
 paper-item {
@@ -118,16 +140,27 @@ paper-menu {
   padding-top: 4px;
 }
 
+#search-input-container {
+  flex-grow: 1;
+}
+
 #searching-devices-spinner {
   height: 30px;
   width: 30px;
 }
 
 #share-screen-text {
-  -webkit-padding-start: 16px;
-  color: rgb(150, 150, 150);
+  -webkit-padding-start: var(--dialog-padding-start);
+  color: var(--paper-grey-600);
+  cursor: default;
+  font-weight: normal;
   padding-bottom: 4px;
   padding-top: 12px;
+}
+
+#share-screen-text::after {
+  background-color: white;
+  font-weight: normal;
 }
 
 .sink-content {
@@ -138,24 +171,61 @@ paper-menu {
 
 .sink-domain {
   -webkit-padding-start: 6px;
-  color: rgb(150, 150, 150);
+  color: var(--paper-grey-600);
+  /* TODO(crbug/589697): Handle overflow of very long domain names. */
+}
+
+#sink-list {
+  padding-bottom: 0;
+}
+
+.sink-name {
+  min-width: 10%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sink-search.bottom {
+  padding-bottom: 16px;
+}
+
+/* Separate icon class is a consequence of box-sizing: border-box set by
+ * paper-icon-button. This should achieve the same dimensions as .sink-icon.
+ */
+#sink-search-icon {
+  -webkit-margin-start: 4px;
+  -webkit-padding-end: 12px;
+  -webkit-padding-start: 12px;
+}
+
+#sink-search-input {
+  --paper-input-container: {
+    margin: 8px 0;
+    padding: 0;
+  };
+  --paper-input-container-focus-color: rgb(33, 150, 243);
+  --paper-input-container-input: {
+    font-size: 12px;
+  };
+  --paper-input-container-label: {
+    font-size: 12px;
+  };
+  -webkit-margin-end: 31px;
+  box-sizing: border-box;
 }
 
 .sink-subtext {
-  color: rgb(150, 150, 150);
+  color: var(--paper-grey-600);
   padding-top: 8px;
 }
 
 .sink-text {
-  -webkit-padding-end: 26px;
+  -webkit-padding-end: var(--dialog-padding-end);
+  display: inline-flex;
   flex-direction: row;
+  flex-flow: row nowrap;
   line-height: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   width: 250px;
 }
 
-#route-details {
-  margin-top: var(--container-header-height);
-}

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ostream>
 #include <utility>
 #include <vector>
 
@@ -10,6 +11,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/base/elements_upload_data_stream.h"
+#include "net/base/ip_address.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
 #include "net/base/upload_bytes_element_reader.h"
@@ -27,6 +29,7 @@
 #include "net/proxy/proxy_service.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/cert_test_util.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
@@ -40,10 +43,8 @@ using base::StringPiece;
 
 namespace net {
 
-using tools::QuicInMemoryCache;
-using tools::QuicServer;
-using tools::test::QuicInMemoryCachePeer;
-using tools::test::ServerThread;
+using test::QuicInMemoryCachePeer;
+using test::ServerThread;
 
 namespace test {
 
@@ -74,9 +75,24 @@ class TestTransactionFactory : public HttpTransactionFactory {
   scoped_ptr<HttpNetworkSession> session_;
 };
 
+struct TestParams {
+  explicit TestParams(bool use_stateless_rejects)
+      : use_stateless_rejects(use_stateless_rejects) {}
+
+  friend std::ostream& operator<<(std::ostream& os, const TestParams& p) {
+    os << "{ use_stateless_rejects: " << p.use_stateless_rejects << " }";
+    return os;
+  }
+  bool use_stateless_rejects;
+};
+
+std::vector<TestParams> GetTestParams() {
+  return std::vector<TestParams>{TestParams(true), TestParams(false)};
+}
+
 }  // namespace
 
-class QuicEndToEndTest : public PlatformTest {
+class QuicEndToEndTest : public ::testing::TestWithParam<TestParams> {
  protected:
   QuicEndToEndTest()
       : host_resolver_impl_(CreateResolverImpl()),
@@ -94,6 +110,9 @@ class QuicEndToEndTest : public PlatformTest {
     params_.enable_quic = true;
     params_.quic_clock = nullptr;
     params_.quic_random = nullptr;
+    if (GetParam().use_stateless_rejects) {
+      params_.quic_connection_options.push_back(kSREJ);
+    }
     params_.host_resolver = &host_resolver_;
     params_.cert_verifier = &cert_verifier_;
     params_.transport_security_state = &transport_security_state_;
@@ -102,8 +121,12 @@ class QuicEndToEndTest : public PlatformTest {
     params_.ssl_config_service = ssl_config_service_.get();
     params_.http_auth_handler_factory = auth_handler_factory_.get();
     params_.http_server_properties = http_server_properties.GetWeakPtr();
+    channel_id_service_.reset(
+        new ChannelIDService(new DefaultChannelIDStore(nullptr),
+                             base::ThreadTaskRunnerHandle::Get()));
+    params_.channel_id_service = channel_id_service_.get();
 
-    net::CertVerifyResult verify_result;
+    CertVerifyResult verify_result;
     verify_result.verified_cert = ImportCertFromFile(
         GetTestCertsDirectory(), "quic_test.example.com.crt");
     cert_verifier_.AddResultForCertAndHost(verify_result.verified_cert.get(),
@@ -136,8 +159,8 @@ class QuicEndToEndTest : public PlatformTest {
 
     // To simplify the test, and avoid the race with the HTTP request, we force
     // QUIC for these requests.
-    params_.origin_to_force_quic_on =
-        HostPortPair::FromString("test.example.com:443");
+    params_.origins_to_force_quic_on.insert(
+        HostPortPair::FromString("test.example.com:443"));
 
     transaction_factory_.reset(new TestTransactionFactory(params_));
   }
@@ -149,16 +172,15 @@ class QuicEndToEndTest : public PlatformTest {
 
   // Starts the QUIC server listening on a random port.
   void StartServer() {
-    IPAddressNumber ip;
-    CHECK(ParseIPLiteralToNumber("127.0.0.1", &ip));
-    server_address_ = IPEndPoint(ip, 0);
+    server_address_ = IPEndPoint(IPAddress(127, 0, 0, 1), 0);
     server_config_.SetInitialStreamFlowControlWindowToSend(
         kInitialStreamFlowControlWindowForTest);
     server_config_.SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
+    server_config_options_.token_binding_enabled = true;
     QuicServer* server =
         new QuicServer(CryptoTestUtils::ProofSourceForTesting(), server_config_,
-                       QuicSupportedVersions());
+                       server_config_options_, QuicSupportedVersions());
     server_thread_.reset(new ServerThread(server, server_address_,
                                           strike_register_no_startup_period_));
     server_thread_->Initialize();
@@ -225,6 +247,7 @@ class QuicEndToEndTest : public PlatformTest {
   scoped_ptr<MockHostResolver> host_resolver_impl_;
   MappedHostResolver host_resolver_;
   MockCertVerifier cert_verifier_;
+  scoped_ptr<ChannelIDService> channel_id_service_;
   TransportSecurityState transport_security_state_;
   scoped_ptr<CTVerifier> cert_transparency_verifier_;
   scoped_refptr<SSLConfigServiceDefaults> ssl_config_service_;
@@ -240,11 +263,16 @@ class QuicEndToEndTest : public PlatformTest {
   IPEndPoint server_address_;
   std::string server_hostname_;
   QuicConfig server_config_;
+  QuicCryptoServerConfig::ConfigOptions server_config_options_;
   bool server_started_;
   bool strike_register_no_startup_period_;
 };
 
-TEST_F(QuicEndToEndTest, LargeGetWithNoPacketLoss) {
+INSTANTIATE_TEST_CASE_P(Tests,
+                        QuicEndToEndTest,
+                        ::testing::ValuesIn(GetTestParams()));
+
+TEST_P(QuicEndToEndTest, LargeGetWithNoPacketLoss) {
   std::string response(10 * 1024, 'x');
 
   AddToCache(request_.url.PathForRequest(), 200, "OK", response);
@@ -259,13 +287,32 @@ TEST_F(QuicEndToEndTest, LargeGetWithNoPacketLoss) {
   CheckResponse(consumer, "HTTP/1.1 200", response);
 }
 
+TEST_P(QuicEndToEndTest, TokenBinding) {
+  // Enable token binding and re-initialize the TestTransactionFactory.
+  params_.enable_token_binding = true;
+  transaction_factory_.reset(new TestTransactionFactory(params_));
+
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                   transaction_factory_.get());
+  consumer.Start(&request_, BoundNetLog());
+
+  // Will terminate when the last consumer completes.
+  base::MessageLoop::current()->Run();
+
+  CheckResponse(consumer, "HTTP/1.1 200", kResponseBody);
+  HttpRequestHeaders headers;
+  ASSERT_TRUE(consumer.transaction()->GetFullRequestHeaders(&headers));
+  EXPECT_TRUE(headers.HasHeader(HttpRequestHeaders::kTokenBinding));
+}
+
 // crbug.com/559173
 #if defined(THREAD_SANITIZER)
-#define MAYBE_LargePostWithNoPacketLoss DISABLED_LargePostWithNoPacketLoss
+TEST_P(QuicEndToEndTest, DISABLED_LargePostWithNoPacketLoss) {
 #else
-#define MAYBE_LargePostWithNoPacketLoss LargePostWithNoPacketLoss
+TEST_P(QuicEndToEndTest, LargePostWithNoPacketLoss) {
 #endif
-TEST_F(QuicEndToEndTest, MAYBE_LargePostWithNoPacketLoss) {
   InitializePostRequest(1024 * 1024);
 
   AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
@@ -282,11 +329,10 @@ TEST_F(QuicEndToEndTest, MAYBE_LargePostWithNoPacketLoss) {
 
 // crbug.com/559173
 #if defined(THREAD_SANITIZER)
-#define MAYBE_LargePostWithPacketLoss DISABLED_LargePostWithPacketLoss
+TEST_P(QuicEndToEndTest, DISABLED_LargePostWithPacketLoss) {
 #else
-#define MAYBE_LargePostWithPacketLoss LargePostWithPacketLoss
+TEST_P(QuicEndToEndTest, LargePostWithPacketLoss) {
 #endif
-TEST_F(QuicEndToEndTest, MAYBE_LargePostWithPacketLoss) {
   // FLAGS_fake_packet_loss_percentage = 30;
   InitializePostRequest(1024 * 1024);
 
@@ -305,11 +351,10 @@ TEST_F(QuicEndToEndTest, MAYBE_LargePostWithPacketLoss) {
 
 // crbug.com/536845
 #if defined(THREAD_SANITIZER)
-#define MAYBE_UberTest DISABLED_UberTest
+TEST_P(QuicEndToEndTest, DISABLED_UberTest) {
 #else
-#define MAYBE_UberTest UberTest
+TEST_P(QuicEndToEndTest, UberTest) {
 #endif
-TEST_F(QuicEndToEndTest, MAYBE_UberTest) {
   // FLAGS_fake_packet_loss_percentage = 30;
 
   const char kResponseBody[] = "some really big response body";

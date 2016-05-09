@@ -31,7 +31,9 @@
 
 #include "platform/FontFamilyNames.h"
 
+#include "platform/Histogram.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/fonts/AcceptLanguagesResolver.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCacheClient.h"
 #include "platform/fonts/FontCacheKey.h"
@@ -57,12 +59,13 @@ using namespace WTF;
 
 namespace blink {
 
-#if !OS(WIN)
+#if !OS(WIN) && !OS(LINUX)
 FontCache::FontCache()
     : m_purgePreventCount(0)
+    , m_fontManager(nullptr)
 {
 }
-#endif // !OS(WIN)
+#endif // !OS(WIN) && !OS(LINUX)
 
 typedef HashMap<FontCacheKey, OwnPtr<FontPlatformData>, FontCacheKeyHash, FontCacheKeyTraits> FontPlatformDataCache;
 typedef HashMap<FallbackListCompositeKey, OwnPtr<ShapeCache>, FallbackListCompositeKeyHash, FallbackListCompositeKeyTraits> FallbackListShaperCache;
@@ -70,9 +73,12 @@ typedef HashMap<FallbackListCompositeKey, OwnPtr<ShapeCache>, FallbackListCompos
 static FontPlatformDataCache* gFontPlatformDataCache = nullptr;
 static FallbackListShaperCache* gFallbackListShaperCache = nullptr;
 
+SkFontMgr* FontCache::s_fontManager = nullptr;
+
 #if OS(WIN)
 bool FontCache::s_useDirectWrite = false;
-IDWriteFactory* FontCache::s_directWriteFactory = 0;
+bool FontCache::s_antialiasedTextEnabled = false;
+bool FontCache::s_lcdTextEnabled = false;
 bool FontCache::s_useSubpixelPositioning = false;
 float FontCache::s_deviceScaleFactor = 1.0;
 #endif // OS(WIN)
@@ -146,6 +152,14 @@ FontVerticalDataCache& fontVerticalDataCacheInstance()
     return fontVerticalDataCache;
 }
 
+void FontCache::setFontManager(const RefPtr<SkFontMgr>& fontManager)
+{
+    ASSERT(!s_fontManager);
+    s_fontManager = fontManager.get();
+    // Explicitly AddRef since we're going to hold on to the object for the life of the program.
+    s_fontManager->ref();
+}
+
 PassRefPtr<OpenTypeVerticalData> FontCache::getVerticalData(const FontFileKey& key, const FontPlatformData& platformData)
 {
     FontVerticalDataCache& fontVerticalDataCache = fontVerticalDataCacheInstance();
@@ -158,6 +172,11 @@ PassRefPtr<OpenTypeVerticalData> FontCache::getVerticalData(const FontFileKey& k
         verticalData.clear();
     fontVerticalDataCache.set(key, verticalData);
     return verticalData;
+}
+
+void FontCache::acceptLanguagesChanged(const String& acceptLanguages)
+{
+    AcceptLanguagesResolver::acceptLanguagesChanged(acceptLanguages);
 }
 
 static FontDataCache* gFontDataCache = 0;
@@ -250,7 +269,8 @@ static inline void purgeFallbackListShaperCache()
         }
         gFallbackListShaperCache->clear();
     }
-    Platform::current()->histogramCustomCounts("Blink.Fonts.ShapeCache", items, 1, 1000000, 50);
+    DEFINE_STATIC_LOCAL(CustomCountHistogram, shapeCacheHistogram, ("Blink.Fonts.ShapeCache", 1, 1000000, 50));
+    shapeCacheHistogram.count(items);
 }
 
 void FontCache::invalidateShapeCache()
@@ -275,11 +295,11 @@ void FontCache::purge(PurgeSeverity PurgeSeverity)
 
 static bool invalidateFontCache = false;
 
-WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient>>& fontCacheClients()
+HeapHashSet<WeakMember<FontCacheClient>>& fontCacheClients()
 {
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient>>>, clients, (adoptPtrWillBeNoop(new WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient>>())));
+    DEFINE_STATIC_LOCAL(HeapHashSet<WeakMember<FontCacheClient>>, clients, (new HeapHashSet<WeakMember<FontCacheClient>>));
     invalidateFontCache = true;
-    return *clients;
+    return clients;
 }
 
 void FontCache::addClient(FontCacheClient* client)
@@ -287,14 +307,6 @@ void FontCache::addClient(FontCacheClient* client)
     ASSERT(!fontCacheClients().contains(client));
     fontCacheClients().add(client);
 }
-
-#if !ENABLE(OILPAN)
-void FontCache::removeClient(FontCacheClient* client)
-{
-    ASSERT(fontCacheClients().contains(client));
-    fontCacheClients().remove(client);
-}
-#endif
 
 static unsigned short gGeneration = 0;
 
@@ -317,11 +329,11 @@ void FontCache::invalidate()
 
     gGeneration++;
 
-    WillBeHeapVector<RefPtrWillBeMember<FontCacheClient>> clients;
+    HeapVector<Member<FontCacheClient>> clients;
     size_t numClients = fontCacheClients().size();
     clients.reserveInitialCapacity(numClients);
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient>>::iterator end = fontCacheClients().end();
-    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient>>::iterator it = fontCacheClients().begin(); it != end; ++it)
+    HeapHashSet<WeakMember<FontCacheClient>>::iterator end = fontCacheClients().end();
+    for (HeapHashSet<WeakMember<FontCacheClient>>::iterator it = fontCacheClients().begin(); it != end; ++it)
         clients.append(*it);
 
     ASSERT(numClients == clients.size());

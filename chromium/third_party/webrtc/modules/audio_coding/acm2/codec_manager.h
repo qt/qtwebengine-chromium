@@ -15,9 +15,9 @@
 
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/base/optional.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_checker.h"
 #include "webrtc/modules/audio_coding/acm2/rent_a_codec.h"
+#include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module_typedefs.h"
 #include "webrtc/common_types.h"
 
@@ -42,6 +42,9 @@ class CodecManager final {
   const CodecInst* GetCodecInst() const {
     return send_codec_inst_ ? &*send_codec_inst_ : nullptr;
   }
+
+  void UnsetCodecInst() { send_codec_inst_ = rtc::Optional<CodecInst>(); }
+
   const RentACodec::StackParameters* GetStackParams() const {
     return &codec_stack_params_;
   }
@@ -52,6 +55,30 @@ class CodecManager final {
   bool SetVAD(bool enable, ACMVADMode mode);
 
   bool SetCodecFEC(bool enable_codec_fec);
+
+  // Uses the provided Rent-A-Codec to create a new encoder stack, if we have a
+  // complete specification; if so, it is then passed to set_encoder. On error,
+  // returns false.
+  bool MakeEncoder(RentACodec* rac, AudioCodingModule* acm) {
+    RTC_DCHECK(rac);
+    RTC_DCHECK(acm);
+    if (!codec_stack_params_.speech_encoder && send_codec_inst_) {
+      // We have no speech encoder, but we have a specification for making one.
+      auto enc = rac->RentEncoder(*send_codec_inst_);
+      if (!enc)
+        return false;
+      codec_stack_params_.speech_encoder = std::move(enc);
+    }
+    auto stack = rac->RentEncoderStack(&codec_stack_params_);
+    if (stack) {
+      // Give new encoder stack to the ACM.
+      acm->SetEncoder(std::move(stack));
+    } else {
+      // The specification was good but incomplete, so we have no encoder stack
+      // to give to the ACM.
+    }
+    return true;
+  }
 
  private:
   rtc::ThreadChecker thread_checker_;

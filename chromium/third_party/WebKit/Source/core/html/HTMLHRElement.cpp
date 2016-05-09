@@ -74,7 +74,7 @@ void HTMLHRElement::collectStyleForPresentationAttribute(const QualifiedName& na
         if (!hasAttribute(colorAttr)) {
             addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderStyle, CSSValueSolid);
 
-            RefPtrWillBeRawPtr<CSSColorValue> darkGrayValue = cssValuePool().createColorValue(Color::darkGray);
+            RawPtr<CSSColorValue> darkGrayValue = cssValuePool().createColorValue(Color::darkGray);
             style->setProperty(CSSPropertyBorderColor, darkGrayValue);
             style->setProperty(CSSPropertyBackgroundColor, darkGrayValue);
         }
@@ -90,4 +90,4 @@ void HTMLHRElement::collectStyleForPresentationAttribute(const QualifiedName& na
     }
 }
 
-}
+} // namespace blink

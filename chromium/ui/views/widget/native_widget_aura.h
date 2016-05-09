@@ -42,8 +42,8 @@ class VIEWS_EXPORT NativeWidgetAura
  public:
   explicit NativeWidgetAura(internal::NativeWidgetDelegate* delegate);
 
-  // Called internally by NativeWidget implementations to associate
-  // |native_widget| with |window|.
+  // Called internally by NativeWidgetAura and DesktopNativeWidgetAura to
+  // associate |native_widget| with |window|.
   static void RegisterNativeWidgetForWindow(
       internal::NativeWidgetPrivate* native_widget,
       aura::Window* window);
@@ -108,7 +108,6 @@ class VIEWS_EXPORT NativeWidgetAura
   void SetFullscreen(bool fullscreen) override;
   bool IsFullscreen() const override;
   void SetOpacity(unsigned char opacity) override;
-  void SetUseDragFrame(bool use_drag_frame) override;
   void FlashFrame(bool flash_frame) override;
   void RunShellDrag(View* view,
                     const ui::OSExchangeData& data,

@@ -16,6 +16,7 @@ namespace internal {
 // Give alias names to registers for calling conventions.
 const Register kReturnRegister0 = {Register::kCode_eax};
 const Register kReturnRegister1 = {Register::kCode_edx};
+const Register kReturnRegister2 = {Register::kCode_edi};
 const Register kJSFunctionRegister = {Register::kCode_edi};
 const Register kContextRegister = {Register::kCode_esi};
 const Register kInterpreterAccumulatorRegister = {Register::kCode_eax};
@@ -42,6 +43,8 @@ enum PointersToHereCheck {
 };
 
 enum RegisterValueType { REGISTER_VALUE_IS_SMI, REGISTER_VALUE_IS_INT32 };
+
+enum class ReturnAddressState { kOnStack, kNotOnStack };
 
 #ifdef DEBUG
 bool AreAliased(Register reg1, Register reg2, Register reg3 = no_reg,
@@ -105,6 +108,16 @@ class MacroAssembler: public Assembler {
     CompareRoot(with, index);
     j(not_equal, if_not_equal, if_not_equal_distance);
   }
+
+  // These functions do not arrange the registers in any particular order so
+  // they are not useful for calls that can cause a GC.  The caller can
+  // exclude up to 3 registers that do not need to be saved and restored.
+  void PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
+                       Register exclusion2 = no_reg,
+                       Register exclusion3 = no_reg);
+  void PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
+                      Register exclusion2 = no_reg,
+                      Register exclusion3 = no_reg);
 
   // ---------------------------------------------------------------------------
   // GC Support
@@ -206,6 +219,11 @@ class MacroAssembler: public Assembler {
       PointersToHereCheck pointers_to_here_check_for_value =
           kPointersToHereMaybeInteresting);
 
+  // Notify the garbage collector that we wrote a code entry into a
+  // JSFunction. Only scratch is clobbered by the operation.
+  void RecordWriteCodeEntryField(Register js_function, Register code_entry,
+                                 Register scratch);
+
   // For page containing |object| mark the region covering the object's map
   // dirty. |object| is the object being stored into, |map| is the Map object
   // that was stored.
@@ -218,14 +236,14 @@ class MacroAssembler: public Assembler {
   void DebugBreak();
 
   // Generates function and stub prologue code.
-  void StubPrologue();
+  void StubPrologue(StackFrame::Type type);
   void Prologue(bool code_pre_aging);
 
   // Enter specific kind of exit frame. Expects the number of
   // arguments in register eax and sets up the number of arguments in
   // register edi and the pointer to the first argument in register
   // esi.
-  void EnterExitFrame(bool save_doubles);
+  void EnterExitFrame(int argc, bool save_doubles);
 
   void EnterApiExitFrame(int argc);
 
@@ -270,6 +288,9 @@ class MacroAssembler: public Assembler {
   void StoreToSafepointRegisterSlot(Register dst, Immediate src);
   void LoadFromSafepointRegisterSlot(Register dst, Register src);
 
+  // Nop, because x87 does not have a root register.
+  void InitializeRootRegister() {}
+
   void LoadHeapObject(Register result, Handle<HeapObject> object);
   void CmpHeapObject(Register reg, Handle<HeapObject> object);
   void PushHeapObject(Handle<HeapObject> object);
@@ -299,6 +320,20 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // JavaScript invokes
 
+  // Removes current frame and its arguments from the stack preserving
+  // the arguments and a return address pushed to the stack for the next call.
+  // |ra_state| defines whether return address is already pushed to stack or
+  // not. Both |callee_args_count| and |caller_args_count_reg| do not include
+  // receiver. |callee_args_count| is not modified, |caller_args_count_reg|
+  // is trashed. |number_of_temp_values_after_return_address| specifies
+  // the number of words pushed to the stack after the return address. This is
+  // to allow "allocation" of scratch registers that this function requires
+  // by saving their values on the stack.
+  void PrepareForTailCall(const ParameterCount& callee_args_count,
+                          Register caller_args_count_reg, Register scratch0,
+                          Register scratch1, ReturnAddressState ra_state,
+                          int number_of_temp_values_after_return_address);
+
   // Invoke the JavaScript function code by either calling or jumping.
 
   void InvokeFunctionCode(Register function, Register new_target,
@@ -325,13 +360,12 @@ class MacroAssembler: public Assembler {
                       const ParameterCount& actual, InvokeFlag flag,
                       const CallWrapper& call_wrapper);
 
-  // Invoke specified builtin JavaScript function.
-  void InvokeBuiltin(int native_context_index, InvokeFlag flag,
-                     const CallWrapper& call_wrapper = NullCallWrapper());
-
-  // Store the function for the given builtin in the target register.
-  void GetBuiltinFunction(Register target, int native_context_index);
-
+  void ShlPair(Register high, Register low, uint8_t imm8);
+  void ShlPair_cl(Register high, Register low);
+  void ShrPair(Register high, Register low, uint8_t imm8);
+  void ShrPair_cl(Register high, Register src);
+  void SarPair(Register high, Register low, uint8_t imm8);
+  void SarPair_cl(Register high, Register low);
 
   // Expression support
   // Support for constant splitting.
@@ -497,6 +531,7 @@ class MacroAssembler: public Assembler {
 
   // Abort execution if argument is not a number, enabled via --debug-code.
   void AssertNumber(Register object);
+  void AssertNotNumber(Register object);
 
   // Abort execution if argument is not a smi, enabled via --debug-code.
   void AssertSmi(Register object);
@@ -516,6 +551,9 @@ class MacroAssembler: public Assembler {
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
   void AssertBoundFunction(Register object);
+
+  // Abort execution if argument is not a JSReceiver, enabled via --debug-code.
+  void AssertReceiver(Register object);
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
@@ -742,12 +780,6 @@ class MacroAssembler: public Assembler {
   void Popcnt(Register dst, Register src) { Popcnt(dst, Operand(src)); }
   void Popcnt(Register dst, const Operand& src);
 
-  // Emit call to the code we are currently generating.
-  void CallSelf() {
-    Handle<Code> self(reinterpret_cast<Code**>(CodeObject().location()));
-    call(self, RelocInfo::CODE_TARGET);
-  }
-
   // Move if the registers are not identical.
   void Move(Register target, Register source);
 
@@ -755,6 +787,7 @@ class MacroAssembler: public Assembler {
   void Move(Register dst, const Immediate& x);
   void Move(const Operand& dst, const Immediate& x);
 
+  void Move(Register dst, Handle<Object> handle) { LoadObject(dst, handle); }
   void Move(Register dst, Smi* source) { Move(dst, Immediate(source)); }
 
   // Push a handle value.

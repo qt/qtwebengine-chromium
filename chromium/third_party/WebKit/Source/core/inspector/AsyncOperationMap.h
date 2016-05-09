@@ -5,8 +5,8 @@
 #ifndef AsyncOperationMap_h
 #define AsyncOperationMap_h
 
-#include "core/inspector/v8/V8DebuggerAgent.h"
 #include "platform/heap/Handle.h"
+#include "platform/v8_inspector/public/V8DebuggerAgent.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -17,7 +17,7 @@ template <class K>
 class AsyncOperationMap final {
     DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
-    using MapType = WillBeHeapHashMap<K, int>;
+    using MapType = HeapHashMap<K, int>;
     explicit AsyncOperationMap(V8DebuggerAgent* debuggerAgent)
         : m_debuggerAgent(debuggerAgent)
     {

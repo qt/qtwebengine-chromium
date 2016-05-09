@@ -51,7 +51,7 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl : public HttpStreamFactory {
       WebSocketHandshakeStreamBase::CreateHelper* create_helper,
       const BoundNetLog& net_log) override;
 
-  HttpStreamRequest* RequestBidirectionalStreamJob(
+  HttpStreamRequest* RequestBidirectionalStreamImpl(
       const HttpRequestInfo& info,
       RequestPriority priority,
       const SSLConfig& server_ssl_config,
@@ -69,6 +69,7 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl : public HttpStreamFactory {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HttpStreamFactoryImplRequestTest, SetPriority);
+  FRIEND_TEST_ALL_PREFIXES(HttpStreamFactoryImplRequestTest, DelayMainJob);
 
   class NET_EXPORT_PRIVATE Request;
   class NET_EXPORT_PRIVATE Job;
@@ -83,11 +84,13 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl : public HttpStreamFactory {
       const SSLConfig& proxy_ssl_config,
       HttpStreamRequest::Delegate* delegate,
       WebSocketHandshakeStreamBase::CreateHelper* create_helper,
+      HttpStreamRequest::StreamType stream_type,
       const BoundNetLog& net_log);
 
   AlternativeService GetAlternativeServiceFor(
       const HttpRequestInfo& request_info,
-      HttpStreamRequest::Delegate* delegate);
+      HttpStreamRequest::Delegate* delegate,
+      HttpStreamRequest::StreamType stream_type);
 
   // Detaches |job| from |request|.
   void OrphanJob(Job* job, const Request* request);
@@ -118,8 +121,7 @@ class NET_EXPORT_PRIVATE HttpStreamFactoryImpl : public HttpStreamFactory {
   // Called when the Preconnect completes. Used for testing.
   virtual void OnPreconnectsCompleteInternal() {}
 
-  // Returns true if QUIC is whitelisted for |host|, which should be
-  // the result of calling ApplyHostMappingRules().
+  // Returns true if QUIC is whitelisted for |host|.
   bool IsQuicWhitelistedForHost(const std::string& host);
 
   HttpNetworkSession* const session_;

@@ -26,6 +26,7 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "url/url_constants.h"
 
+using blink::WebCachePolicy;
 using blink::WebFrame;
 using blink::WebVector;
 using blink::WebURL;
@@ -117,7 +118,7 @@ namespace content {
 
 ImageDownloaderImpl::ImageDownloaderImpl(
     RenderFrame* render_frame,
-    mojo::InterfaceRequest<image_downloader::ImageDownloader> request)
+    mojo::InterfaceRequest<content::mojom::ImageDownloader> request)
     : RenderFrameObserver(render_frame), binding_(this, std::move(request)) {
   DCHECK(render_frame);
 }
@@ -128,7 +129,7 @@ ImageDownloaderImpl::~ImageDownloaderImpl() {
 // static
 void ImageDownloaderImpl::CreateMojoService(
     RenderFrame* render_frame,
-    mojo::InterfaceRequest<image_downloader::ImageDownloader> request) {
+    mojo::InterfaceRequest<content::mojom::ImageDownloader> request) {
   DVLOG(1) << "ImageDownloaderImpl::CreateService";
   DCHECK(render_frame);
 
@@ -136,13 +137,12 @@ void ImageDownloaderImpl::CreateMojoService(
 }
 
 // ImageDownloader methods:
-void ImageDownloaderImpl::DownloadImage(
-    image_downloader::DownloadRequestPtr req,
-    const DownloadImageCallback& callback) {
-  const GURL image_url = req->url.To<GURL>();
-  bool is_favicon = req->is_favicon;
-  uint32_t max_image_size = req->max_bitmap_size;
-  bool bypass_cache = req->bypass_cache;
+void ImageDownloaderImpl::DownloadImage(const mojo::String& url,
+                                        bool is_favicon,
+                                        uint32_t max_bitmap_size,
+                                        bool bypass_cache,
+                                        const DownloadImageCallback& callback) {
+  const GURL image_url = url.To<GURL>();
 
   std::vector<SkBitmap> result_images;
   std::vector<gfx::Size> result_original_image_sizes;
@@ -150,12 +150,12 @@ void ImageDownloaderImpl::DownloadImage(
   if (image_url.SchemeIs(url::kDataScheme)) {
     SkBitmap data_image = ImageFromDataUrl(image_url);
     if (!data_image.empty()) {
-      result_images.push_back(ResizeImage(data_image, max_image_size));
+      result_images.push_back(ResizeImage(data_image, max_bitmap_size));
       result_original_image_sizes.push_back(
           gfx::Size(data_image.width(), data_image.height()));
     }
   } else {
-    if (FetchImage(image_url, is_favicon, max_image_size, bypass_cache,
+    if (FetchImage(image_url, is_favicon, max_bitmap_size, bypass_cache,
                    callback)) {
       // Will complete asynchronously via ImageDownloaderImpl::DidFetchImage
       return;
@@ -177,8 +177,8 @@ bool ImageDownloaderImpl::FetchImage(const GURL& image_url,
   image_fetchers_.push_back(new MultiResolutionImageResourceFetcher(
       image_url, frame, 0, is_favicon ? WebURLRequest::RequestContextFavicon
                                       : WebURLRequest::RequestContextImage,
-      bypass_cache ? WebURLRequest::ReloadBypassingCache
-                   : WebURLRequest::UseProtocolCachePolicy,
+      bypass_cache ? WebCachePolicy::BypassingCache
+                   : WebCachePolicy::UseProtocolCachePolicy,
       base::Bind(&ImageDownloaderImpl::DidFetchImage, base::Unretained(this),
                  max_image_size, callback)));
   return true;
@@ -212,15 +212,9 @@ void ImageDownloaderImpl::ReplyDownloadResult(
     const std::vector<SkBitmap>& result_images,
     const std::vector<gfx::Size>& result_original_image_sizes,
     const DownloadImageCallback& callback) {
-  image_downloader::DownloadResultPtr result =
-      image_downloader::DownloadResult::New();
-
-  result->http_status_code = http_status_code;
-  result->images = mojo::Array<skia::BitmapPtr>::From(result_images);
-  result->original_image_sizes =
-      mojo::Array<mojo::SizePtr>::From(result_original_image_sizes);
-
-  callback.Run(std::move(result));
+  callback.Run(http_status_code,
+               mojo::Array<skia::mojom::BitmapPtr>::From(result_images),
+               mojo::Array<mojo::SizePtr>::From(result_original_image_sizes));
 }
 
 }  // namespace content

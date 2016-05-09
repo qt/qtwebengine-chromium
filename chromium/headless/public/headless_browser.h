@@ -5,66 +5,61 @@
 #ifndef HEADLESS_PUBLIC_HEADLESS_BROWSER_H_
 #define HEADLESS_PUBLIC_HEADLESS_BROWSER_H_
 
+#include <memory>
+#include <string>
+
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "headless/public/headless_export.h"
+#include "net/base/host_port_pair.h"
+#include "net/base/ip_endpoint.h"
 
 namespace base {
+class MessagePump;
 class SingleThreadTaskRunner;
-
-namespace trace_event {
-class TraceConfig;
-}
 }
 
 namespace gfx {
 class Size;
 }
 
-namespace net {
-class URLRequestContextGetter;
-}
-
 namespace headless {
-class WebContents;
+class HeadlessWebContents;
 
+// This class represents the global headless browser instance. To get a pointer
+// to one, call |HeadlessBrowserMain| to initiate the browser main loop. An
+// instance of |HeadlessBrowser| will be passed to the callback given to that
+// function.
 class HEADLESS_EXPORT HeadlessBrowser {
  public:
-  static HeadlessBrowser* Get();
-
   struct Options;
 
-  // Main routine for running browser.
-  // Takes command line args and callback to run as soon as browser starts.
-  static int Run(
-      const Options& options,
-      const base::Callback<void(HeadlessBrowser*)>& on_browser_start_callback);
+  // Create a new browser tab which navigates to |initial_url|. |size| is in
+  // physical pixels.
+  virtual std::unique_ptr<HeadlessWebContents> CreateWebContents(
+      const GURL& initial_url,
+      const gfx::Size& size) = 0;
 
-  // Create a new browser tab.
-  virtual scoped_ptr<WebContents> CreateWebContents(const gfx::Size& size) = 0;
+  // Returns a task runner for submitting work to the browser main thread.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> BrowserMainThread()
+      const = 0;
 
-  virtual scoped_refptr<base::SingleThreadTaskRunner> BrowserMainThread() = 0;
-  virtual scoped_refptr<base::SingleThreadTaskRunner> RendererMainThread() = 0;
-
-  // Requests browser to stop as soon as possible.
-  // |Run| will return as soon as browser stops.
-  virtual void Stop() = 0;
-
-  virtual void StartTracing(const base::trace_event::TraceConfig& trace_config,
-                            const base::Closure& on_tracing_started) = 0;
-  virtual void StopTracing(const std::string& log_file_name,
-                           const base::Closure& on_tracing_stopped) = 0;
+  // Requests browser to stop as soon as possible. |Run| will return as soon as
+  // browser stops.
+  virtual void Shutdown() = 0;
 
  protected:
+  HeadlessBrowser() {}
   virtual ~HeadlessBrowser() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HeadlessBrowser);
 };
 
+// Embedding API overrides for the headless browser.
 struct HeadlessBrowser::Options {
+  Options(const Options& other);
   ~Options();
 
   class Builder;
@@ -76,20 +71,16 @@ struct HeadlessBrowser::Options {
   std::string user_agent;
   std::string navigator_platform;
 
-  static const int kInvalidPort = -1;
-  // If not null, create start devtools for remote debugging
-  // on specified port.
-  int devtools_http_port;
+  // Address at which DevTools should listen for connections. Disabled by
+  // default.
+  net::IPEndPoint devtools_endpoint;
 
-  // Optional URLRequestContextGetter for customizing network stack.
-  // Allows overriding:
-  // - Cookie storage
-  // - HTTP cache
-  // - SSL config
-  // - Proxy service
-  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter;
+  // Address of the HTTP/HTTPS proxy server to use. The system proxy settings
+  // are used by default.
+  net::HostPortPair proxy_server;
 
-  scoped_ptr<base::MessagePump> message_pump;
+  // Optional message pump that overrides the default. Must outlive the browser.
+  base::MessagePump* message_pump;
 
  private:
   Options(int argc, const char** argv);
@@ -98,12 +89,13 @@ struct HeadlessBrowser::Options {
 class HeadlessBrowser::Options::Builder {
  public:
   Builder(int argc, const char** argv);
+  Builder();
   ~Builder();
 
   Builder& SetUserAgent(const std::string& user_agent);
-  Builder& EnableDevToolsServer(int port);
-  Builder& SetURLRequestContextGetter(
-      scoped_refptr<net::URLRequestContextGetter> url_request_context_getter);
+  Builder& EnableDevToolsServer(const net::IPEndPoint& endpoint);
+  Builder& SetMessagePump(base::MessagePump* message_pump);
+  Builder& SetProxyServer(const net::HostPortPair& proxy_server);
 
   Options Build();
 
@@ -112,6 +104,15 @@ class HeadlessBrowser::Options::Builder {
 
   DISALLOW_COPY_AND_ASSIGN(Builder);
 };
+
+// Main entry point for running the headless browser. This function constructs
+// the headless browser instance, passing it to the given
+// |on_browser_start_callback| callback. Note that since this function executes
+// the main loop, it will only return after HeadlessBrowser::Shutdown() is
+// called, returning the exit code for the process.
+int HeadlessBrowserMain(
+    const HeadlessBrowser::Options& options,
+    const base::Callback<void(HeadlessBrowser*)>& on_browser_start_callback);
 
 }  // namespace headless
 

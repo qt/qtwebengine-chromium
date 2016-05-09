@@ -12,6 +12,7 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/proto/cached_network_parameters.pb.h"
 #include "net/quic/quic_framer.h"
@@ -25,8 +26,6 @@
 namespace net {
 
 class ProofVerifier;
-
-namespace tools {
 
 class QuicPacketWriterWrapper;
 
@@ -68,7 +67,9 @@ class MockableQuicClient : public QuicClient {
 };
 
 // A toy QUIC client used for testing, mostly following the SimpleClient APIs.
-class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
+class QuicTestClient : public test::SimpleClient,
+                       public QuicSpdyStream::Visitor,
+                       public QuicClientPushPromiseIndex::Delegate {
  public:
   QuicTestClient(IPEndPoint server_address,
                  const std::string& server_hostname,
@@ -127,10 +128,10 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
   // DFATAL if called by users of SimpleClient.
   ssize_t SendAndWaitForResponse(const void* buffer, size_t size) override;
   void Bind(IPEndPoint* local_address) override;
-  void MigrateSocket(const IPAddressNumber& new_host) override;
+  void MigrateSocket(const IPAddress& new_host) override;
   std::string SerializeMessage(const HTTPMessage& message) override;
-  IPAddressNumber bind_to_address() const override;
-  void set_bind_to_address(IPAddressNumber address) override;
+  IPAddress bind_to_address() const override;
+  void set_bind_to_address(const IPAddress& address) override;
   const IPEndPoint& address() const override;
   size_t requests_sent() const override;
 
@@ -139,6 +140,12 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
 
   // From QuicSpdyStream::Visitor
   void OnClose(QuicSpdyStream* stream) override;
+
+  // From QuicClientPushPromiseIndex::Delegate
+  bool CheckVary(const SpdyHeaderBlock& client_request,
+                 const SpdyHeaderBlock& promise_request,
+                 const SpdyHeaderBlock& promise_response) override;
+  void OnRendezvousResult(QuicSpdyStream*) override;
 
   // Configures client_ to take ownership of and use the writer.
   // Must be called before initial connect.
@@ -150,8 +157,8 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
   // Returns nullptr if the maximum number of streams have already been created.
   QuicSpdyClientStream* GetOrCreateStream();
 
-  // Calls GetorCreateStream(), sends the request on the stream, and
-  // stores the reuest in case it needs to be resent.  If |headers| is
+  // Calls GetOrCreateStream(), sends the request on the stream, and
+  // stores the request in case it needs to be resent.  If |headers| is
   // null, only the body will be sent on the stream.
   ssize_t GetOrCreateStreamAndSendRequest(const BalsaHeaders* headers,
                                           StringPiece body,
@@ -178,10 +185,6 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
 
   void set_priority(SpdyPriority priority) { priority_ = priority; }
 
-  // Sets client's FEC policy. This policy applies to the data stream(s), and
-  // also to the headers and crypto streams.
-  void SetFecPolicy(FecPolicy fec_policy);
-
   void WaitForWriteToFlush();
 
   EpollServer* epoll_server() { return &epoll_server_; }
@@ -191,6 +194,10 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
   }
 
   bool allow_bidirectional_data() const { return allow_bidirectional_data_; }
+
+  size_t num_requests() const { return num_requests_; }
+
+  size_t num_responses() const { return num_responses_; }
 
  protected:
   QuicTestClient();
@@ -223,6 +230,8 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
   // Given a uri, creates a simple HTTPMessage request message for testing.
   static void FillInRequest(const std::string& uri, HTTPMessage* message);
 
+  bool HaveActiveStream();
+
   EpollServer epoll_server_;
   scoped_ptr<MockableQuicClient> client_;  // The actual client
   QuicSpdyClientStream* stream_;
@@ -231,7 +240,7 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
 
   bool response_complete_;
   bool response_headers_complete_;
-  mutable BalsaHeaders headers_;
+  mutable BalsaHeaders response_headers_;
 
   // Parsed response trailers (if present), copied from the stream in OnClose.
   SpdyHeaderBlock response_trailers_;
@@ -252,18 +261,21 @@ class QuicTestClient : public SimpleClient, public QuicSpdyStream::Visitor {
   bool auto_reconnect_;
   // Should we buffer the response body? Defaults to true.
   bool buffer_body_;
-  // FEC policy for data sent by this client.
-  FecPolicy fec_policy_;
   // When true allows the sending of a request to continue while the response is
   // arriving.
   bool allow_bidirectional_data_;
+  // For async push promise rendezvous, validation may fail in which
+  // case the request should be retried.
+  std::unique_ptr<TestClientDataToResend> push_promise_data_to_resend_;
+  // Number of requests/responses this client has sent/received.
+  size_t num_requests_;
+  size_t num_responses_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicTestClient);
 };
 
 }  // namespace test
 
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_QUIC_TEST_CLIENT_H_

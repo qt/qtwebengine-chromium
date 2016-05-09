@@ -11,7 +11,9 @@
 #include <string>
 
 #include "base/strings/string_util.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "content/common/service_worker/service_worker_client_info.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/request_context_frame_type.h"
 #include "content/public/common/request_context_type.h"
@@ -87,7 +89,8 @@ enum FetchCredentialsMode {
   FETCH_CREDENTIALS_MODE_OMIT,
   FETCH_CREDENTIALS_MODE_SAME_ORIGIN,
   FETCH_CREDENTIALS_MODE_INCLUDE,
-  FETCH_CREDENTIALS_MODE_LAST = FETCH_CREDENTIALS_MODE_INCLUDE
+  FETCH_CREDENTIALS_MODE_PASSWORD,
+  FETCH_CREDENTIALS_MODE_LAST = FETCH_CREDENTIALS_MODE_PASSWORD
 };
 
 enum class FetchRedirectMode {
@@ -104,6 +107,12 @@ enum ServiceWorkerFetchEventResult {
   // Service worker provided a ServiceWorkerResponse.
   SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
   SERVICE_WORKER_FETCH_EVENT_LAST = SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE
+};
+
+enum class ServiceWorkerFetchType {
+  FETCH,
+  FOREIGN_FETCH,
+  LAST = FOREIGN_FETCH
 };
 
 struct ServiceWorkerCaseInsensitiveCompare {
@@ -123,6 +132,7 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
                             const ServiceWorkerHeaderMap& headers,
                             const Referrer& referrer,
                             bool is_reload);
+  ServiceWorkerFetchRequest(const ServiceWorkerFetchRequest& other);
   ~ServiceWorkerFetchRequest();
 
   FetchRequestMode mode;
@@ -139,6 +149,7 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   FetchRedirectMode redirect_mode;
   std::string client_id;
   bool is_reload;
+  ServiceWorkerFetchType fetch_type;
 };
 
 // Represents a response to a fetch.
@@ -152,7 +163,11 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
                         const std::string& blob_uuid,
                         uint64_t blob_size,
                         const GURL& stream_url,
-                        blink::WebServiceWorkerResponseError error);
+                        blink::WebServiceWorkerResponseError error,
+                        base::Time response_time,
+                        bool is_in_cache_storage,
+                        const std::string& cache_storage_cache_name);
+  ServiceWorkerResponse(const ServiceWorkerResponse& other);
   ~ServiceWorkerResponse();
 
   GURL url;
@@ -164,11 +179,19 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   uint64_t blob_size;
   GURL stream_url;
   blink::WebServiceWorkerResponseError error;
+  base::Time response_time;
+  bool is_in_cache_storage = false;
+  std::string cache_storage_cache_name;
 };
 
 // Represents initialization info for a WebServiceWorker object.
 struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   ServiceWorkerObjectInfo();
+
+  // Returns whether the instance is valid. A valid instance has valid
+  // |handle_id| and |version_id|.
+  bool IsValid() const;
+
   int handle_id;
   GURL url;
   blink::WebServiceWorkerState state;
@@ -216,6 +239,18 @@ struct ServiceWorkerClientQueryOptions {
   ServiceWorkerClientQueryOptions();
   blink::WebServiceWorkerClientType client_type;
   bool include_uncontrolled;
+};
+
+struct ExtendableMessageEventSource {
+  ExtendableMessageEventSource();
+  explicit ExtendableMessageEventSource(
+      const ServiceWorkerClientInfo& client_info);
+  explicit ExtendableMessageEventSource(
+      const ServiceWorkerObjectInfo& service_worker_info);
+
+  // Exactly one of these infos should be valid.
+  ServiceWorkerClientInfo client_info;
+  ServiceWorkerObjectInfo service_worker_info;
 };
 
 }  // namespace content

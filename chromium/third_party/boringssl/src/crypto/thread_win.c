@@ -31,9 +31,13 @@
 OPENSSL_COMPILE_ASSERT(sizeof(CRYPTO_MUTEX) >= sizeof(CRITICAL_SECTION),
                        CRYPTO_MUTEX_too_small);
 
-static void run_once(CRYPTO_once_t *in_once, void (*init)(void *), void *arg) {
-  volatile LONG *once = in_once;
+union run_once_arg_t {
+  void (*func)(void);
+  void *data;
+};
 
+static void run_once(CRYPTO_once_t *once, void (*init)(union run_once_arg_t),
+                     union run_once_arg_t arg) {
   /* Values must be aligned. */
   assert((((uintptr_t) once) & 3) == 0);
 
@@ -74,17 +78,13 @@ static void run_once(CRYPTO_once_t *in_once, void (*init)(void *), void *arg) {
   }
 }
 
-static void call_once_init(void *arg) {
-  void (*init_func)(void);
-  /* MSVC does not like casting between data and function pointers. */
-  memcpy(&init_func, &arg, sizeof(void *));
-  init_func();
+static void call_once_init(union run_once_arg_t arg) {
+  arg.func();
 }
 
 void CRYPTO_once(CRYPTO_once_t *in_once, void (*init)(void)) {
-  void *arg;
-  /* MSVC does not like casting between data and function pointers. */
-  memcpy(&arg, &init, sizeof(void *));
+  union run_once_arg_t arg;
+  arg.func = init;
   run_once(in_once, call_once_init, arg);
 }
 
@@ -111,16 +111,18 @@ void CRYPTO_MUTEX_cleanup(CRYPTO_MUTEX *lock) {
   DeleteCriticalSection((CRITICAL_SECTION *) lock);
 }
 
-static void static_lock_init(void *arg) {
-  struct CRYPTO_STATIC_MUTEX *lock = arg;
+static void static_lock_init(union run_once_arg_t arg) {
+  struct CRYPTO_STATIC_MUTEX *lock = arg.data;
   if (!InitializeCriticalSectionAndSpinCount(&lock->lock, 0x400)) {
     abort();
   }
 }
 
 void CRYPTO_STATIC_MUTEX_lock_read(struct CRYPTO_STATIC_MUTEX *lock) {
+  union run_once_arg_t arg;
+  arg.data = lock;
   /* Since we have to support Windows XP, read locks are actually exclusive. */
-  run_once(&lock->once, static_lock_init, lock);
+  run_once(&lock->once, static_lock_init, arg);
   EnterCriticalSection(&lock->lock);
 }
 
@@ -148,9 +150,14 @@ static void thread_local_init(void) {
   g_thread_local_failed = (g_thread_local_key == TLS_OUT_OF_INDEXES);
 }
 
-static void NTAPI thread_local_destructor(PVOID module,
-                                          DWORD reason, PVOID reserved) {
-  if (DLL_THREAD_DETACH != reason && DLL_PROCESS_DETACH != reason) {
+static void NTAPI thread_local_destructor(PVOID module, DWORD reason,
+                                          PVOID reserved) {
+  /* Only free memory on |DLL_THREAD_DETACH|, not |DLL_PROCESS_DETACH|. In
+   * VS2015's debug runtime, the C runtime has been unloaded by the time
+   * |DLL_PROCESS_DETACH| runs. See https://crbug.com/575795. This is consistent
+   * with |pthread_key_create| which does not call destructors on process exit,
+   * only thread exit. */
+  if (reason != DLL_THREAD_DETACH) {
     return;
   }
 

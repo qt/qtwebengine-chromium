@@ -29,6 +29,9 @@
 
 #import "talk/app/webrtc/objc/RTCEnumConverter.h"
 #import "talk/app/webrtc/objc/RTCICEServer+Internal.h"
+#import "talk/app/webrtc/objc/public/RTCLogging.h"
+
+#include <memory>
 
 @implementation RTCConfiguration
 
@@ -40,6 +43,7 @@
 @synthesize audioJitterBufferMaxPackets = _audioJitterBufferMaxPackets;
 @synthesize iceConnectionReceivingTimeout = _iceConnectionReceivingTimeout;
 @synthesize iceBackupCandidatePairPingInterval = _iceBackupCandidatePairPingInterval;
+@synthesize keyType = _keyType;
 
 - (instancetype)init {
   if (self = [super init]) {
@@ -53,6 +57,7 @@
     _audioJitterBufferMaxPackets = config.audio_jitter_buffer_max_packets;
     _iceConnectionReceivingTimeout = config.ice_connection_receiving_timeout;
     _iceBackupCandidatePairPingInterval = config.ice_backup_candidate_pair_ping_interval;
+    _keyType = kRTCEncryptionKeyTypeECDSA;
   }
   return self;
 }
@@ -91,6 +96,17 @@
   nativeConfig.audio_jitter_buffer_max_packets = _audioJitterBufferMaxPackets;
   nativeConfig.ice_connection_receiving_timeout = _iceConnectionReceivingTimeout;
   nativeConfig.ice_backup_candidate_pair_ping_interval = _iceBackupCandidatePairPingInterval;
+  if (_keyType == kRTCEncryptionKeyTypeECDSA) {
+    std::unique_ptr<rtc::SSLIdentity> identity(
+        rtc::SSLIdentity::Generate(webrtc::kIdentityName, rtc::KT_ECDSA));
+    if (identity) {
+      nativeConfig.certificates.push_back(
+          rtc::RTCCertificate::Create(
+              rtc::UniqueToScoped(std::move(identity))));
+    } else {
+      RTCLogWarning(@"Failed to generate ECDSA identity. RSA will be used.");
+    }
+  }
   return nativeConfig;
 }
 

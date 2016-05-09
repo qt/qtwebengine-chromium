@@ -70,6 +70,8 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
       : server_crypto_config_(QuicCryptoServerConfig::TESTING,
                               QuicRandom::GetInstance(),
                               CryptoTestUtils::ProofSourceForTesting()),
+        server_compressed_certs_cache_(
+            QuicCompressedCertsCache::kQuicCompressedCertsCacheSize),
         server_id_(kServerHostname, kServerPort, PRIVACY_MODE_DISABLED),
         client_crypto_config_(CryptoTestUtils::ProofVerifierForTesting()) {
     FLAGS_enable_quic_stateless_reject_support = false;
@@ -107,11 +109,10 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
   void InitializeServer() {
     TestQuicSpdyServerSession* server_session = nullptr;
     helpers_.push_back(new MockConnectionHelper);
-
-    CreateServerSessionForTest(server_id_, QuicTime::Delta::FromSeconds(100000),
-                               supported_versions_, helpers_.back(),
-                               &server_crypto_config_, &server_connection_,
-                               &server_session);
+    CreateServerSessionForTest(
+        server_id_, QuicTime::Delta::FromSeconds(100000), supported_versions_,
+        helpers_.back(), &server_crypto_config_,
+        &server_compressed_certs_cache_, &server_connection_, &server_session);
     CHECK(server_session);
     server_session_.reset(server_session);
     CryptoTestUtils::FakeServerOptions options;
@@ -145,7 +146,7 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
   }
 
   bool AsyncStrikeRegisterVerification() {
-    if (server_connection_->version() > QUIC_VERSION_30) {
+    if (server_connection_->version() > QUIC_VERSION_32) {
       return false;
     }
     return GetParam();
@@ -186,6 +187,7 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
   PacketSavingConnection* server_connection_;
   scoped_ptr<TestQuicSpdyServerSession> server_session_;
   QuicCryptoServerConfig server_crypto_config_;
+  QuicCompressedCertsCache server_compressed_certs_cache_;
   QuicServerId server_id_;
 
   // Client state
@@ -232,6 +234,9 @@ TEST_P(QuicCryptoServerStreamTest, StatelessRejectAfterCHLO) {
                               true);
   Initialize();
 
+  EXPECT_CALL(*server_connection_,
+              CloseConnection(QUIC_CRYPTO_HANDSHAKE_STATELESS_REJECT, _, _));
+
   InitializeFakeClient(/* supports_stateless_rejects= */ true);
   AdvanceHandshakeWithFakeClient();
 
@@ -256,7 +261,6 @@ TEST_P(QuicCryptoServerStreamTest, StatelessRejectAfterCHLO) {
   EXPECT_EQ(expected_id, server_designated_connection_id);
   EXPECT_FALSE(client_state->has_server_designated_connection_id());
   ASSERT_TRUE(client_state->IsComplete(QuicWallTime::FromUNIXSeconds(0)));
-  EXPECT_FALSE(server_connection_->connected());
 }
 
 TEST_P(QuicCryptoServerStreamTest, ConnectedAfterStatelessHandshake) {
@@ -292,8 +296,6 @@ TEST_P(QuicCryptoServerStreamTest, ConnectedAfterStatelessHandshake) {
 
   InitializeFakeClient(/* supports_stateless_rejects= */ true);
 
-  client_stream()->CryptoConnect();
-
   // In the stateless case, the second handshake contains a server-nonce, so the
   // AsyncStrikeRegisterVerification() case will still succeed (unlike a 0-RTT
   // handshake).
@@ -302,7 +304,7 @@ TEST_P(QuicCryptoServerStreamTest, ConnectedAfterStatelessHandshake) {
   // On the second round, encryption will be established.
   EXPECT_TRUE(server_stream()->encryption_established());
   EXPECT_TRUE(server_stream()->handshake_confirmed());
-  EXPECT_EQ(2, server_stream()->NumHandshakeMessages());
+  EXPECT_EQ(1, server_stream()->NumHandshakeMessages());
   EXPECT_EQ(1, server_stream()->NumHandshakeMessagesWithServerNonces());
 }
 
@@ -377,11 +379,10 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
         server_stream());
   }
 
-  if (FLAGS_require_strike_register_or_server_nonce &&
-      !AsyncStrikeRegisterVerification()) {
-    EXPECT_EQ(2, client_stream()->num_sent_client_hellos());
-  } else {
+  if (AsyncStrikeRegisterVerification()) {
     EXPECT_EQ(1, client_stream()->num_sent_client_hellos());
+  } else {
+    EXPECT_EQ(2, client_stream()->num_sent_client_hellos());
   }
 }
 
@@ -389,9 +390,9 @@ TEST_P(QuicCryptoServerStreamTest, MessageAfterHandshake) {
   FLAGS_quic_require_fix = false;
   Initialize();
   CompleteCryptoHandshake();
-  EXPECT_CALL(*server_connection_,
-              SendConnectionCloseWithDetails(
-                  QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE, _));
+  EXPECT_CALL(
+      *server_connection_,
+      CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE, _, _));
   message_.set_tag(kCHLO);
   ConstructHandshakeMessage();
   server_stream()->OnStreamFrame(
@@ -405,8 +406,8 @@ TEST_P(QuicCryptoServerStreamTest, BadMessageType) {
 
   message_.set_tag(kSHLO);
   ConstructHandshakeMessage();
-  EXPECT_CALL(*server_connection_, SendConnectionCloseWithDetails(
-                                       QUIC_INVALID_CRYPTO_MESSAGE_TYPE, _));
+  EXPECT_CALL(*server_connection_,
+              CloseConnection(QUIC_INVALID_CRYPTO_MESSAGE_TYPE, _, _));
   server_stream()->OnStreamFrame(
       QuicStreamFrame(kCryptoStreamId, /*fin=*/false, /*offset=*/0,
                       message_data_->AsStringPiece()));
@@ -485,7 +486,6 @@ TEST_P(QuicCryptoServerStreamTest, NoTokenBindingWithoutClientSupport) {
 TEST_P(QuicCryptoServerStreamTest, CancelRPCBeforeVerificationCompletes) {
   // Tests that the client can close the connection while the remote strike
   // register verification RPC is still pending.
-  ValueRestore<bool> old_flag(&FLAGS_quic_set_client_hello_cb_nullptr, true);
 
   // Set version to QUIC_VERSION_25 as QUIC_VERSION_26 and later don't support
   // asynchronous strike register RPCs.
@@ -518,8 +518,8 @@ TEST_P(QuicCryptoServerStreamTest, CancelRPCBeforeVerificationCompletes) {
 
   // While waiting for the asynchronous verification to complete, the client
   // decides to close the connection.
-  server_session_->connection()->CloseConnection(QUIC_NO_ERROR,
-                                                 /*from_peer=*/true);
+  server_session_->connection()->CloseConnection(
+      QUIC_NO_ERROR, "", ConnectionCloseBehavior::SILENT_CLOSE);
 
   // The outstanding nonce verification RPC now completes.
   strike_register_client_->RunPendingVerifications();

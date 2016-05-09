@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
@@ -206,13 +207,15 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                            ServiceWorkerProviderHost* provider_host,
                            const UpdateCallback& callback);
 
-  // Used in DevTools to update the service worker registration without
-  // consulting the browser cache while loading the controlled page. The loading
-  // is delayed until the update completes and the new worker is activated. The
-  // new worker skips the waiting state and immediately becomes active after
-  // installed.
-  void SetForceUpdateOnPageLoad(int64_t registration_id,
-                                bool force_update_on_page_load);
+  // Used in DevTools to update the service worker registrations without
+  // consulting the browser cache while loading the controlled page. The
+  // loading is delayed until the update completes and the new worker is
+  // activated. The new worker skips the waiting state and immediately
+  // becomes active after installed.
+  bool force_update_on_page_load() { return force_update_on_page_load_; }
+  void set_force_update_on_page_load(bool force_update_on_page_load) {
+    force_update_on_page_load_ = force_update_on_page_load;
+  }
 
   // This class maintains collections of live instances, this class
   // does not own these object or influence their lifetime.
@@ -276,6 +279,12 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       const GURL& other_url,
       const ServiceWorkerContext::CheckHasServiceWorkerCallback callback);
 
+  void UpdateVersionFailureCount(int64_t version_id,
+                                 ServiceWorkerStatusCode status);
+  // Returns the count of consecutive start worker failures for the given
+  // version. The count resets to zero when the worker successfully starts.
+  int GetVersionFailureCount(int64_t version_id);
+
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -307,6 +316,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void DidGetAllRegistrationsForUnregisterForOrigin(
       const UnregistrationCallback& result,
       const GURL& origin,
+      ServiceWorkerStatusCode status,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
   void DidFindRegistrationForCheckHasServiceWorker(
@@ -330,12 +340,14 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   std::map<int64_t, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64_t, ServiceWorkerVersion*> live_versions_;
   std::map<int64_t, scoped_refptr<ServiceWorkerVersion>> protected_versions_;
+  std::map<int64_t /* version_id */, int /* count */> failure_counts_;
 
   // PlzNavigate
   // Map of ServiceWorkerNavigationHandleCores used for navigation requests.
   std::map<int, ServiceWorkerNavigationHandleCore*>
       navigation_handle_cores_map_;
 
+  bool force_update_on_page_load_;
   int next_handle_id_;
   int next_registration_handle_id_;
   // Set in RegisterServiceWorker(), cleared in ClearAllServiceWorkersForTest().

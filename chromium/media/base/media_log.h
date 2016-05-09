@@ -17,7 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log_event.h"
-#include "media/base/pipeline.h"
+#include "media/base/pipeline_impl.h"
 #include "media/base/pipeline_status.h"
 
 namespace media {
@@ -44,6 +44,9 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
   // with it.
   virtual void AddEvent(scoped_ptr<MediaLogEvent> event);
 
+  // Retrieve an error message, if any.
+  virtual std::string GetLastErrorMessage();
+
   // Helper methods to create events and their parameters.
   scoped_ptr<MediaLogEvent> CreateEvent(MediaLogEvent::Type type);
   scoped_ptr<MediaLogEvent> CreateBooleanEvent(
@@ -57,7 +60,7 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
   scoped_ptr<MediaLogEvent> CreateLoadEvent(const std::string& url);
   scoped_ptr<MediaLogEvent> CreateSeekEvent(float seconds);
   scoped_ptr<MediaLogEvent> CreatePipelineStateChangedEvent(
-      Pipeline::State state);
+      PipelineImpl::State state);
   scoped_ptr<MediaLogEvent> CreatePipelineErrorEvent(PipelineStatus error);
   scoped_ptr<MediaLogEvent> CreateVideoSizeSetEvent(
       size_t width, size_t height);
@@ -70,10 +73,8 @@ class MEDIA_EXPORT MediaLog : public base::RefCountedThreadSafe<MediaLog> {
 
   // Report a property change without an accompanying event.
   void SetStringProperty(const std::string& key, const std::string& value);
-  void SetIntegerProperty(const std::string& key, int value);
   void SetDoubleProperty(const std::string& key, double value);
   void SetBooleanProperty(const std::string& key, bool value);
-  void SetTimeProperty(const std::string& key, base::TimeDelta value);
 
  protected:
   friend class base::RefCountedThreadSafe<MediaLog>;

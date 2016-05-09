@@ -34,7 +34,7 @@
 #include "core/dom/DOMTypedArray.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentVisibilityObserver.h"
-#include "core/fileapi/FileCallback.h"
+#include "core/fileapi/BlobCallback.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/canvas/CanvasDrawListener.h"
 #include "core/html/canvas/CanvasImageSource.h"
@@ -57,14 +57,18 @@ class CanvasRenderingContextFactory;
 class GraphicsContext;
 class HTMLCanvasElement;
 class Image;
+class ImageBitmapOptions;
 class ImageBuffer;
 class ImageBufferSurface;
 class ImageData;
 class IntSize;
 
+class CanvasRenderingContext2DOrWebGLRenderingContextOrWebGL2RenderingContextOrImageBitmapRenderingContext;
+typedef CanvasRenderingContext2DOrWebGLRenderingContextOrWebGL2RenderingContextOrImageBitmapRenderingContext RenderingContext;
+
 class CORE_EXPORT HTMLCanvasElement final : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient, public ImageBitmapSource {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
+    USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
     DECLARE_NODE_FACTORY(HTMLCanvasElement);
     ~HTMLCanvasElement() override;
@@ -89,19 +93,22 @@ public:
         reset();
     }
 
-    // Called by HTMLCanvasElement's V8 bindings.
-    ScriptValue getContext(ScriptState*, const String&, const CanvasContextCreationAttributes&);
     // Called by Document::getCSSCanvasContext as well as above getContext().
     CanvasRenderingContext* getCanvasRenderingContext(const String&, const CanvasContextCreationAttributes&);
 
     bool isPaintable() const;
 
-    static String toEncodingMimeType(const String& mimeType);
+    enum EncodeReason {
+        EncodeReasonToDataURL = 0,
+        EncodeReasonToBlobCallback = 1,
+        NumberOfEncodeReasons
+    };
+    static String toEncodingMimeType(const String& mimeType, const EncodeReason);
     String toDataURL(const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&) const;
     String toDataURL(const String& mimeType, ExceptionState& exceptionState) const { return toDataURL(mimeType, ScriptValue(), exceptionState); }
 
-    void toBlob(FileCallback*, const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&);
-    void toBlob(FileCallback* callback, const String& mimeType, ExceptionState& exceptionState) { return toBlob(callback, mimeType, ScriptValue(), exceptionState); }
+    void toBlob(BlobCallback*, const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&);
+    void toBlob(BlobCallback* callback, const String& mimeType, ExceptionState& exceptionState) { return toBlob(callback, mimeType, ScriptValue(), exceptionState); }
 
     // Used for canvas capture.
     void addListener(CanvasDrawListener*);
@@ -113,10 +120,9 @@ public:
     void paint(GraphicsContext&, const LayoutRect&);
 
     SkCanvas* drawingCanvas() const;
-    void disableDeferral() const;
+    void disableDeferral(DisableDeferralReason) const;
     SkCanvas* existingDrawingCanvas() const;
 
-    void setRenderingContext(PassOwnPtrWillBeRawPtr<CanvasRenderingContext>);
     CanvasRenderingContext* renderingContext() const { return m_context.get(); }
 
     void ensureUnacceleratedImageBuffer();
@@ -124,7 +130,7 @@ public:
     PassRefPtr<Image> copiedImage(SourceDrawingBuffer, AccelerationHint) const;
     void clearCopiedImage();
 
-    SecurityOrigin* securityOrigin() const;
+    SecurityOrigin* getSecurityOrigin() const;
     bool originClean() const;
     void setOriginTainted() { m_originClean = false; }
 
@@ -148,11 +154,12 @@ public:
 
     // DocumentVisibilityObserver implementation
     void didChangeVisibilityState(PageVisibilityState) override;
+    void willDetachDocument() override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint, SnapshotReason, const FloatSize&) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
-    FloatSize elementSize() const override;
+    FloatSize elementSize(const FloatSize&) const override;
     bool isCanvasElement() const override { return true; }
     bool isOpaque() const override;
 
@@ -166,7 +173,7 @@ public:
 
     // ImageBitmapSource implementation
     IntSize bitmapSourceSize() const override;
-    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, ExceptionState&) override;
+    ScriptPromise createImageBitmap(ScriptState*, EventTarget&, int sx, int sy, int sw, int sh, const ImageBitmapOptions&, ExceptionState&) override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -176,6 +183,11 @@ public:
     void updateExternallyAllocatedMemory() const;
 
     void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
+
+    void notifyListenersCanvasChanged();
+
+    bool isSupportedInteractiveCanvasFallback(const Element&);
+    std::pair<Element*, String> getControlAndIdIfHitRegionExists(const LayoutPoint&);
 
 protected:
     void didMoveToNewDocument(Document& oldDocument) override;
@@ -189,7 +201,6 @@ private:
 
     void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
-    void didRecalcStyle(StyleRecalcChange) override;
     bool areAuthorShadowsAllowed() const override { return false; }
 
     void reset();
@@ -203,16 +214,15 @@ private:
 
     bool paintsIntoCanvasBuffer() const;
 
-    void notifyListenersCanvasChanged();
+    ImageData* toImageData(SourceDrawingBuffer, SnapshotReason) const;
 
-    ImageData* toImageData(SourceDrawingBuffer) const;
     String toDataURLInternal(const String& mimeType, const double& quality, SourceDrawingBuffer) const;
 
-    PersistentHeapHashSetWillBeHeapHashSet<WeakMember<CanvasDrawListener>> m_listeners;
+    HeapHashSet<WeakMember<CanvasDrawListener>> m_listeners;
 
     IntSize m_size;
 
-    OwnPtrWillBeMember<CanvasRenderingContext> m_context;
+    Member<CanvasRenderingContext> m_context;
 
     bool m_ignoreReset;
     FloatRect m_dirtyRect;

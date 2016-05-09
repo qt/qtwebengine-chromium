@@ -56,9 +56,9 @@ public:
         SVG_LENGTHTYPE_PC = LengthTypePC
     };
 
-    static PassRefPtrWillBeRawPtr<SVGLengthTearOff> create(PassRefPtrWillBeRawPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+    static SVGLengthTearOff* create(SVGLength* target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
-        return adoptRefWillBeNoop(new SVGLengthTearOff(target, contextElement, propertyIsAnimVal, attributeName));
+        return new SVGLengthTearOff(target, contextElement, propertyIsAnimVal, attributeName);
     }
 
     SVGLengthType unitType();
@@ -72,10 +72,10 @@ public:
     void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits, ExceptionState&);
     void convertToSpecifiedUnits(unsigned short unitType, ExceptionState&);
 
-    bool hasExposedLengthUnit() { return target()->typeWithCalcResolved() <= CSSPrimitiveValue::UnitType::UserUnits; }
+    bool hasExposedLengthUnit();
 
 private:
-    SVGLengthTearOff(PassRefPtrWillBeRawPtr<SVGLength>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
+    SVGLengthTearOff(SVGLength*, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
 } // namespace blink

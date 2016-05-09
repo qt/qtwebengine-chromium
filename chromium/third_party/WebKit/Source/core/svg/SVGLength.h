@@ -37,15 +37,15 @@ class SVGLength final : public SVGPropertyBase {
 public:
     typedef SVGLengthTearOff TearOffType;
 
-    static PassRefPtrWillBeRawPtr<SVGLength> create(SVGLengthMode mode = SVGLengthMode::Other)
+    static SVGLength* create(SVGLengthMode mode = SVGLengthMode::Other)
     {
-        return adoptRefWillBeNoop(new SVGLength(mode));
+        return new SVGLength(mode);
     }
 
     DECLARE_VIRTUAL_TRACE();
 
-    PassRefPtrWillBeRawPtr<SVGLength> clone() const;
-    PassRefPtrWillBeRawPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
+    SVGLength* clone() const;
+    SVGPropertyBase* cloneForAnimation(const String&) const override;
 
     CSSPrimitiveValue::UnitType typeWithCalcResolved() const { return m_value->typeWithCalcResolved(); }
     void setUnitType(CSSPrimitiveValue::UnitType);
@@ -81,16 +81,7 @@ public:
     void convertToSpecifiedUnits(CSSPrimitiveValue::UnitType, const SVGLengthContext&);
 
     // Helper functions
-    static inline bool isRelativeUnit(CSSPrimitiveValue::UnitType unitType)
-    {
-        return unitType == CSSPrimitiveValue::UnitType::Percentage
-            || unitType == CSSPrimitiveValue::UnitType::Ems
-            || unitType == CSSPrimitiveValue::UnitType::Exs
-            || unitType == CSSPrimitiveValue::UnitType::Rems
-            || unitType == CSSPrimitiveValue::UnitType::Chs
-            || (unitType >= CSSPrimitiveValue::UnitType::ViewportWidth && unitType <= CSSPrimitiveValue::UnitType::ViewportMax);
-    }
-    inline bool isRelative() const { return isRelativeUnit(m_value->typeWithCalcResolved()); }
+    inline bool isRelative() const { return CSSPrimitiveValue::isRelativeUnit(m_value->typeWithCalcResolved()); }
 
     bool isZero() const
     {
@@ -100,9 +91,9 @@ public:
     static SVGLengthMode lengthModeForAnimatedLengthAttribute(const QualifiedName&);
     static bool negativeValuesForbiddenForAnimatedLengthAttribute(const QualifiedName&);
 
-    void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
-    void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
-    float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
+    void add(SVGPropertyBase*, SVGElement*) override;
+    void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, SVGPropertyBase* from, SVGPropertyBase* to, SVGPropertyBase* toAtEndOfDurationValue, SVGElement* contextElement) override;
+    float calculateDistance(SVGPropertyBase* to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedLength; }
 
@@ -110,7 +101,7 @@ private:
     SVGLength(SVGLengthMode);
     SVGLength(const SVGLength&);
 
-    RefPtrWillBeMember<CSSPrimitiveValue> m_value;
+    Member<CSSPrimitiveValue> m_value;
     unsigned m_unitMode : 2;
 };
 

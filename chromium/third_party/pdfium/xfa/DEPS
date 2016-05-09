@@ -1,4 +1,0 @@
-include_rules = [
-  '+core/include',
-  '+third_party/bigint'
-]

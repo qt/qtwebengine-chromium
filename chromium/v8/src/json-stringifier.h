@@ -245,7 +245,7 @@ MaybeHandle<Object> BasicJsonStringifier::ApplyToJsonFunction(
                     LookupIterator::PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   Handle<Object> fun;
   ASSIGN_RETURN_ON_EXCEPTION(isolate_, fun, Object::GetProperty(&it), Object);
-  if (!fun->IsJSFunction()) return object;
+  if (!fun->IsCallable()) return object;
 
   // Call toJSON function.
   if (key->IsSmi()) key = factory()->NumberToString(key);
@@ -501,8 +501,7 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSArraySlow(
     if (i > 0) builder_.AppendCharacter(',');
     Handle<Object> element;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-        isolate_, element,
-        Object::GetElement(isolate_, object, i),
+        isolate_, element, JSReceiver::GetElement(isolate_, object, i),
         EXCEPTION);
     if (element->IsUndefined()) {
       builder_.AppendCString("null");
@@ -567,8 +566,7 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
     Handle<FixedArray> contents;
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate_, contents,
-        JSReceiver::GetKeys(object, JSReceiver::OWN_ONLY, ENUMERABLE_STRINGS),
-        EXCEPTION);
+        JSReceiver::GetKeys(object, OWN_ONLY, ENUMERABLE_STRINGS), EXCEPTION);
 
     for (int i = 0; i < contents->length(); i++) {
       Object* key = contents->get(i);
@@ -581,8 +579,8 @@ BasicJsonStringifier::Result BasicJsonStringifier::SerializeJSObject(
         DCHECK(key->IsNumber());
         key_handle = factory()->NumberToString(Handle<Object>(key, isolate_));
         if (key->IsSmi()) {
-          maybe_property = Object::GetElement(
-              isolate_, object, Smi::cast(key)->value());
+          maybe_property =
+              JSReceiver::GetElement(isolate_, object, Smi::cast(key)->value());
         } else {
           maybe_property = Object::GetPropertyOrElement(object, key_handle);
         }

@@ -17,6 +17,7 @@
 #include "base/threading/thread.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/media_log.h"
+#include "media/base/media_tracks.h"
 #include "media/base/mock_demuxer_host.h"
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
@@ -91,28 +92,44 @@ class FFmpegDemuxerTest : public testing::Test {
     Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb = base::Bind(
         &FFmpegDemuxerTest::OnEncryptedMediaInitData, base::Unretained(this));
 
+    Demuxer::MediaTracksUpdatedCB tracks_updated_cb = base::Bind(
+        &FFmpegDemuxerTest::OnMediaTracksUpdated, base::Unretained(this));
+
     demuxer_.reset(new FFmpegDemuxer(
         message_loop_.task_runner(), data_source_.get(),
-        encrypted_media_init_data_cb, new MediaLog()));
+        encrypted_media_init_data_cb, tracks_updated_cb, new MediaLog()));
   }
 
   MOCK_METHOD1(CheckPoint, void(int v));
 
-  void InitializeDemuxerWithTimelineOffset(bool enable_text,
-                                           base::Time timeline_offset) {
-    EXPECT_CALL(host_, SetDuration(_));
+  void InitializeDemuxerInternal(bool enable_text,
+                                 media::PipelineStatus expected_pipeline_status,
+                                 base::Time timeline_offset) {
+    if (expected_pipeline_status == PIPELINE_OK)
+      EXPECT_CALL(host_, SetDuration(_));
     WaitableMessageLoopEvent event;
     demuxer_->Initialize(&host_, event.GetPipelineStatusCB(), enable_text);
     demuxer_->timeline_offset_ = timeline_offset;
-    event.RunAndWaitForStatus(PIPELINE_OK);
-  }
-
-  void InitializeDemuxerText(bool enable_text) {
-    InitializeDemuxerWithTimelineOffset(enable_text, base::Time());
+    event.RunAndWaitForStatus(expected_pipeline_status);
   }
 
   void InitializeDemuxer() {
-    InitializeDemuxerText(false);
+    InitializeDemuxerInternal(/*enable_text=*/false, PIPELINE_OK, base::Time());
+  }
+
+  void InitializeDemuxerWithText() {
+    InitializeDemuxerInternal(/*enable_text=*/true, PIPELINE_OK, base::Time());
+  }
+
+  void InitializeDemuxerWithTimelineOffset(base::Time timeline_offset) {
+    InitializeDemuxerInternal(/*enable_text=*/false, PIPELINE_OK,
+                              timeline_offset);
+  }
+
+  void InitializeDemuxerAndExpectPipelineStatus(
+      media::PipelineStatus expected_pipeline_status) {
+    InitializeDemuxerInternal(/*enable_text=*/false, expected_pipeline_status,
+                              base::Time());
   }
 
   MOCK_METHOD2(OnReadDoneCalled, void(int, int64_t));
@@ -191,6 +208,11 @@ class FFmpegDemuxerTest : public testing::Test {
                void(EmeInitDataType init_data_type,
                     const std::vector<uint8_t>& init_data));
 
+  void OnMediaTracksUpdated(scoped_ptr<MediaTracks> tracks) {
+    CHECK(tracks.get());
+    media_tracks_ = std::move(tracks);
+  }
+
   // Accessor to demuxer internals.
   void set_duration_known(bool duration_known) {
     demuxer_->duration_known_ = duration_known;
@@ -206,6 +228,7 @@ class FFmpegDemuxerTest : public testing::Test {
   scoped_ptr<FileDataSource> data_source_;
   scoped_ptr<FFmpegDemuxer> demuxer_;
   StrictMock<MockDemuxerHost> host_;
+  scoped_ptr<MediaTracks> media_tracks_;
   base::MessageLoop message_loop_;
 
   AVFormatContext* format_context() {
@@ -357,7 +380,7 @@ TEST_F(FFmpegDemuxerTest, Initialize_MultitrackText) {
   DemuxerStream* text_stream = NULL;
   EXPECT_CALL(host_, AddTextStream(_, _))
       .WillOnce(SaveArg<0>(&text_stream));
-  InitializeDemuxerText(true);
+  InitializeDemuxerWithText();
   ASSERT_TRUE(text_stream);
   EXPECT_EQ(DemuxerStream::TEXT, text_stream->type());
 
@@ -430,7 +453,7 @@ TEST_F(FFmpegDemuxerTest, Read_Text) {
   DemuxerStream* text_stream = NULL;
   EXPECT_CALL(host_, AddTextStream(_, _))
       .WillOnce(SaveArg<0>(&text_stream));
-  InitializeDemuxerText(true);
+  InitializeDemuxerWithText();
   ASSERT_TRUE(text_stream);
   EXPECT_EQ(DemuxerStream::TEXT, text_stream->type());
 
@@ -453,7 +476,7 @@ TEST_F(FFmpegDemuxerTest, Read_VideoPositiveStartTime) {
   // Test the start time is the first timestamp of the video and audio stream.
   CreateDemuxer("nonzero-start-time.webm");
   InitializeDemuxerWithTimelineOffset(
-      false, base::Time::FromJsTime(kTimelineOffsetMs));
+      base::Time::FromJsTime(kTimelineOffsetMs));
 
   // Attempt a read from the video stream and run the message loop until done.
   DemuxerStream* video = demuxer_->GetStream(DemuxerStream::VIDEO);
@@ -689,7 +712,7 @@ TEST_F(FFmpegDemuxerTest, Read_EndOfStreamText) {
   DemuxerStream* text_stream = NULL;
   EXPECT_CALL(host_, AddTextStream(_, _))
       .WillOnce(SaveArg<0>(&text_stream));
-  InitializeDemuxerText(true);
+  InitializeDemuxerWithText();
   ASSERT_TRUE(text_stream);
   EXPECT_EQ(DemuxerStream::TEXT, text_stream->type());
 
@@ -787,7 +810,7 @@ TEST_F(FFmpegDemuxerTest, SeekText) {
   DemuxerStream* text_stream = NULL;
   EXPECT_CALL(host_, AddTextStream(_, _))
       .WillOnce(SaveArg<0>(&text_stream));
-  InitializeDemuxerText(true);
+  InitializeDemuxerWithText();
   ASSERT_TRUE(text_stream);
   EXPECT_EQ(DemuxerStream::TEXT, text_stream->type());
 
@@ -1115,11 +1138,9 @@ TEST_F(FFmpegDemuxerTest, NaturalSizeWithPASP) {
   EXPECT_EQ(gfx::Size(639, 360), video_config.natural_size());
 }
 
-#endif
-
-#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
 TEST_F(FFmpegDemuxerTest, HEVC_in_MP4_container) {
   CreateDemuxer("bear-hevc-frag.mp4");
+#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
   InitializeDemuxer();
 
   DemuxerStream* video = demuxer_->GetStream(DemuxerStream::VIDEO);
@@ -1130,12 +1151,14 @@ TEST_F(FFmpegDemuxerTest, HEVC_in_MP4_container) {
 
   video->Read(NewReadCB(FROM_HERE, 1042, 200200, false));
   message_loop_.Run();
-}
+#else
+  InitializeDemuxerAndExpectPipelineStatus(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
 #endif
+}
 
-#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
 TEST_F(FFmpegDemuxerTest, Read_AC3_Audio) {
   CreateDemuxer("bear-ac3-only-frag.mp4");
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
   InitializeDemuxer();
 
   // Attempt a read from the audio stream and run the message loop until done.
@@ -1147,10 +1170,14 @@ TEST_F(FFmpegDemuxerTest, Read_AC3_Audio) {
 
   audio->Read(NewReadCB(FROM_HERE, 836, 34830, true));
   message_loop_.Run();
+#else
+  InitializeDemuxerAndExpectPipelineStatus(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
+#endif
 }
 
 TEST_F(FFmpegDemuxerTest, Read_EAC3_Audio) {
   CreateDemuxer("bear-eac3-only-frag.mp4");
+#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
   InitializeDemuxer();
 
   // Attempt a read from the audio stream and run the message loop until done.
@@ -1162,7 +1189,53 @@ TEST_F(FFmpegDemuxerTest, Read_EAC3_Audio) {
 
   audio->Read(NewReadCB(FROM_HERE, 872, 34830, true));
   message_loop_.Run();
+#else
+  InitializeDemuxerAndExpectPipelineStatus(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
+#endif
 }
-#endif  // ENABLE_AC3_EAC3_AUDIO_DEMUXING
+
+TEST_F(FFmpegDemuxerTest, Read_Mp4_Media_Track_Info) {
+  CreateDemuxer("bear.mp4");
+  InitializeDemuxer();
+
+  EXPECT_EQ(media_tracks_->tracks().size(), 2u);
+
+  const MediaTrack& audio_track = *(media_tracks_->tracks()[0]);
+  EXPECT_EQ(audio_track.type(), MediaTrack::Audio);
+  EXPECT_EQ(audio_track.id(), "1");
+  EXPECT_EQ(audio_track.kind(), "main");
+  EXPECT_EQ(audio_track.label(), "GPAC ISO Audio Handler");
+  EXPECT_EQ(audio_track.language(), "und");
+
+  const MediaTrack& video_track = *(media_tracks_->tracks()[1]);
+  EXPECT_EQ(video_track.type(), MediaTrack::Video);
+  EXPECT_EQ(video_track.id(), "2");
+  EXPECT_EQ(video_track.kind(), "main");
+  EXPECT_EQ(video_track.label(), "GPAC ISO Video Handler");
+  EXPECT_EQ(video_track.language(), "und");
+}
+
+#endif  // defined(USE_PROPRIETARY_CODECS)
+
+TEST_F(FFmpegDemuxerTest, Read_Webm_Media_Track_Info) {
+  CreateDemuxer("bear.webm");
+  InitializeDemuxer();
+
+  EXPECT_EQ(media_tracks_->tracks().size(), 2u);
+
+  const MediaTrack& video_track = *(media_tracks_->tracks()[0]);
+  EXPECT_EQ(video_track.type(), MediaTrack::Video);
+  EXPECT_EQ(video_track.id(), "1");
+  EXPECT_EQ(video_track.kind(), "main");
+  EXPECT_EQ(video_track.label(), "");
+  EXPECT_EQ(video_track.language(), "");
+
+  const MediaTrack& audio_track = *(media_tracks_->tracks()[1]);
+  EXPECT_EQ(audio_track.type(), MediaTrack::Audio);
+  EXPECT_EQ(audio_track.id(), "2");
+  EXPECT_EQ(audio_track.kind(), "main");
+  EXPECT_EQ(audio_track.label(), "");
+  EXPECT_EQ(audio_track.language(), "");
+}
 
 }  // namespace media

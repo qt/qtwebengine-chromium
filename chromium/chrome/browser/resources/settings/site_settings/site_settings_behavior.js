@@ -13,60 +13,50 @@ var SiteSettingsBehaviorImpl = {
      * The ID of the category this element is displaying data for.
      * See site_settings/constants.js for possible values.
      */
-    category: {
-      type: Number,
-    },
+    category: Number,
+
+    /**
+     * The browser proxy used to retrieve and change information about site
+     * settings categories and the sites within.
+     * @type {settings.SiteSettingsPrefsBrowserProxyImpl}
+     */
+    browserProxy: Object,
   },
 
-  /**
-   * Returns whether the category default is set to enabled or not.
-   * @param {number} category The category to check.
-   * @return {boolean} True if the category default is set to enabled.
-   * @protected
-   */
-  isCategoryAllowed: function(category) {
-    var pref = this.getPref(this.computeCategoryPrefName(category));
-
-    // FullScreen is Allow vs. Ask.
-    if (category == settings.ContentSettingsTypes.FULLSCREEN)
-      return pref.value != settings.PermissionValues.ASK;
-
-    return pref.value != settings.PermissionValues.BLOCK;
+  created: function() {
+    this.browserProxy =
+        settings.SiteSettingsPrefsBrowserProxyImpl.getInstance();
   },
 
   /**
    * Re-sets the category permission for a given origin.
-   * @param {string} origin The origin to change the permission for.
+   * @param {string} primaryPattern The primary pattern to reset the permission
+   *     for.
+   * @param {string} secondaryPattern The secondary pattern to reset the
+   *     permission for.
    * @param {number} category The category permission to change.
    * @protected
    */
-  resetCategoryPermissionForOrigin: function(origin, category) {
-    var pref = JSON.parse(JSON.stringify(this.getPref(
-        this.computeCategoryExceptionsPrefName(category))));
-    delete pref.value[origin + ',' + origin];
-    delete pref.value[origin + ',*'];
-    this.setPrefValue(
-        this.computeCategoryExceptionsPrefName(category), pref.value);
+  resetCategoryPermissionForOrigin: function(
+        primaryPattern, secondaryPattern, category) {
+    this.browserProxy.resetCategoryPermissionForOrigin(
+        primaryPattern, secondaryPattern, category);
   },
 
   /**
    * Sets the category permission for a given origin.
-   * @param {string} origin The origin to change the permission for.
+   * @param {string} primaryPattern The primary pattern to change the permission
+   *     for.
+   * @param {string} secondaryPattern The secondary pattern to change the
+   *     permission for.
    * @param {number} value What value to set the permission to.
    * @param {number} category The category permission to change.
    * @protected
    */
-  setCategoryPermissionForOrigin: function(origin, value, category) {
-    var pref = JSON.parse(JSON.stringify(this.getPref(
-        this.computeCategoryExceptionsPrefName(category))));
-    var key1 = origin + ',' + origin;
-    var key2 = origin + ',*';
-    if (pref.value[key1] != undefined)
-      pref.value[key1].setting = value;
-    if (pref.value[key2] != undefined)
-      pref.value[key2].setting = value;
-    this.setPrefValue(
-        this.computeCategoryExceptionsPrefName(category), pref.value);
+  setCategoryPermissionForOrigin: function(
+        primaryPattern, secondaryPattern, value, category) {
+    this.browserProxy.setCategoryPermissionForOrigin(
+        primaryPattern, secondaryPattern, category, value);
   },
 
   /**
@@ -127,7 +117,7 @@ var SiteSettingsBehaviorImpl = {
       case settings.ContentSettingsTypes.POPUPS:
         return 'icons:open-in-new';
       default:
-        assertNotReached();
+        assertNotReached('Invalid category: ' + category);
         return '';
     }
   },
@@ -159,7 +149,7 @@ var SiteSettingsBehaviorImpl = {
       case settings.ContentSettingsTypes.POPUPS:
         return loadTimeData.getString('siteSettingsPopups');
       default:
-        assertNotReached();
+        assertNotReached('Invalid category: ' + category);
         return '';
     }
   },
@@ -294,24 +284,7 @@ var SiteSettingsBehaviorImpl = {
         return '';
     }
   },
-
-  /**
-   * A utility function to compute the category given the description.
-   * @param {string} description The category description to look up.
-   * @return {number} category The category id to return.
-   * @protected
-   */
-  computeCategoryFromDesc: function(description) {
-    for (var type in settings.ContentSettingsTypes) {
-      if (description == this.computeTitleForContentCategory(
-          settings.ContentSettingsTypes[type])) {
-        return settings.ContentSettingsTypes[type];
-      }
-    }
-    assertNotReached();
-    return 0;
-  },
 };
 
 /** @polymerBehavior */
-var SiteSettingsBehavior = [PrefsBehavior, SiteSettingsBehaviorImpl];
+var SiteSettingsBehavior = [SiteSettingsBehaviorImpl];

@@ -637,6 +637,7 @@ typedef void(GL_BINDING_CALL* glPointParameteriProc)(GLenum pname, GLint param);
 typedef void(GL_BINDING_CALL* glPolygonOffsetProc)(GLfloat factor,
                                                    GLfloat units);
 typedef void(GL_BINDING_CALL* glPopGroupMarkerEXTProc)(void);
+typedef void(GL_BINDING_CALL* glPrimitiveRestartIndexProc)(GLuint index);
 typedef void(GL_BINDING_CALL* glProgramBinaryProc)(GLuint program,
                                                    GLenum binaryFormat,
                                                    const GLvoid* binary,
@@ -1075,6 +1076,7 @@ struct ExtensionsGL {
   bool b_GL_EXT_shader_image_load_store;
   bool b_GL_EXT_texture_storage;
   bool b_GL_EXT_timer_query;
+  bool b_GL_EXT_unpack_subimage;
   bool b_GL_IMG_multisampled_render_to_texture;
   bool b_GL_INTEL_framebuffer_CMAA;
   bool b_GL_KHR_blend_equation_advanced;
@@ -1305,6 +1307,7 @@ struct ProcsGL {
   glPointParameteriProc glPointParameteriFn;
   glPolygonOffsetProc glPolygonOffsetFn;
   glPopGroupMarkerEXTProc glPopGroupMarkerEXTFn;
+  glPrimitiveRestartIndexProc glPrimitiveRestartIndexFn;
   glProgramBinaryProc glProgramBinaryFn;
   glProgramParameteriProc glProgramParameteriFn;
   glProgramPathFragmentInputGenNVProc glProgramPathFragmentInputGenNVFn;
@@ -1963,6 +1966,7 @@ class GL_EXPORT GLApi {
   virtual void glPointParameteriFn(GLenum pname, GLint param) = 0;
   virtual void glPolygonOffsetFn(GLfloat factor, GLfloat units) = 0;
   virtual void glPopGroupMarkerEXTFn(void) = 0;
+  virtual void glPrimitiveRestartIndexFn(GLuint index) = 0;
   virtual void glProgramBinaryFn(GLuint program,
                                  GLenum binaryFormat,
                                  const GLvoid* binary,
@@ -2600,6 +2604,8 @@ class GL_EXPORT GLApi {
 #define glPointParameteri ::gfx::g_current_gl_context->glPointParameteriFn
 #define glPolygonOffset ::gfx::g_current_gl_context->glPolygonOffsetFn
 #define glPopGroupMarkerEXT ::gfx::g_current_gl_context->glPopGroupMarkerEXTFn
+#define glPrimitiveRestartIndex \
+  ::gfx::g_current_gl_context->glPrimitiveRestartIndexFn
 #define glProgramBinary ::gfx::g_current_gl_context->glProgramBinaryFn
 #define glProgramParameteri ::gfx::g_current_gl_context->glProgramParameteriFn
 #define glProgramPathFragmentInputGenNV \

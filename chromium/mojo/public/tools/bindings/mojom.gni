@@ -37,19 +37,20 @@ mojom_generator_sources = [
 #   deps (optional)
 #       Note: this can contain only other mojom targets.
 #
+#       DEPRECATED: This is synonymous with public_deps because all mojom
+#       dependencies must be public by design. Please use public_deps.
+#
 #   public_deps (optional)
 #       Note: this can contain only other mojom targets.
 #
 #   import_dirs (optional)
 #       List of import directories that will get added when processing sources.
 #
-#   with_environment (optional)
-#       Set to |false| to omit an implicit bindings dependency on the Chromium
-#       Mojo environment implementation. Defaults to |true| and in general
-#       should only be overridden by mojom targets within the Mojo EDK.
-#
 #   typemaps (optional)
 #       A list of typemap files to apply during bindings generation.
+#
+#   typemap_deps (optional)
+#       A list of public dependencies needed to support active typemaps.
 #
 #   variant (optional)
 #       A variant name to apply to generated bindings. Variant influences
@@ -58,6 +59,9 @@ mojom_generator_sources = [
 #   testonly (optional)
 #
 #   visibility (optional)
+#
+#   for_blink (optional, C++ only)
+#       Use WTF types as generated type for mojo string/array/map.
 template("mojom") {
   assert(
       defined(invoker.sources) || defined(invoker.deps) ||
@@ -66,27 +70,33 @@ template("mojom") {
 
   cpp_sources_suffix = "cpp_sources"
   cpp_sources_target_name = "${target_name}_${cpp_sources_suffix}"
+  cpp_only = false
   if (defined(invoker.sources)) {
     if (defined(invoker.variant)) {
       variant = invoker.variant
+      cpp_only = true
       generator_cpp_outputs = [
         "{{source_gen_dir}}/{{source_name_part}}.mojom-${variant}.cc",
         "{{source_gen_dir}}/{{source_name_part}}.mojom-${variant}.h",
         "{{source_gen_dir}}/{{source_name_part}}.mojom-${variant}-internal.h",
       ]
-      generator_js_outputs = []
-      generator_java_outputs = []
     } else {
       generator_cpp_outputs = [
         "{{source_gen_dir}}/{{source_name_part}}.mojom.cc",
         "{{source_gen_dir}}/{{source_name_part}}.mojom.h",
         "{{source_gen_dir}}/{{source_name_part}}.mojom-internal.h",
       ]
-      generator_js_outputs =
-          [ "{{source_gen_dir}}/{{source_name_part}}.mojom.js" ]
-      generator_java_outputs =
-          [ "{{source_gen_dir}}/{{source_name_part}}.mojom.srcjar" ]
     }
+  }
+
+  if (cpp_only) {
+    generator_js_outputs = []
+    generator_java_outputs = []
+  } else {
+    generator_js_outputs =
+        [ "{{source_gen_dir}}/{{source_name_part}}.mojom.js" ]
+    generator_java_outputs =
+        [ "{{source_gen_dir}}/{{source_name_part}}.mojom.srcjar" ]
   }
 
   if (defined(invoker.sources)) {
@@ -123,10 +133,8 @@ template("mojom") {
         }
       }
 
-      if (defined(invoker.variant)) {
+      if (cpp_only) {
         args += [
-          "--variant",
-          invoker.variant,
           "-g",
           "c++",
         ]
@@ -137,6 +145,13 @@ template("mojom") {
         ]
       }
 
+      if (defined(invoker.variant)) {
+        args += [
+          "--variant",
+          invoker.variant,
+        ]
+      }
+
       if (defined(invoker.typemaps)) {
         foreach(typemap, invoker.typemaps) {
           args += [
@@ -144,6 +159,11 @@ template("mojom") {
             rebase_path(typemap, root_build_dir),
           ]
         }
+        inputs += invoker.typemaps
+      }
+
+      if (defined(invoker.for_blink) && invoker.for_blink) {
+        args += [ "--for_blink" ]
       }
     }
   }
@@ -165,16 +185,19 @@ template("mojom") {
     if (defined(invoker.sources)) {
       public_deps += [ ":${cpp_sources_target_name}" ]
     }
+    if (defined(invoker.deps)) {
+      public_deps += invoker.deps
+    }
     if (defined(invoker.public_deps)) {
       public_deps += invoker.public_deps
+    }
+    if (defined(invoker.typemap_deps)) {
+      public_deps += invoker.typemap_deps
     }
 
     deps = []
     if (defined(invoker.sources)) {
       public_deps += [ ":$generator_target_name" ]
-    }
-    if (defined(invoker.deps)) {
-      deps += invoker.deps
     }
   }
 
@@ -186,17 +209,22 @@ template("mojom") {
     all_deps += invoker.public_deps
   }
 
-  group("${target_name}__is_mojom") {
+  if (defined(invoker.variant)) {
+    variant_suffix = "of_variant_${invoker.variant}"
+  } else {
+    variant_suffix = "of_no_variant"
+  }
+  group("${target_name}__is_mojom_${variant_suffix}") {
   }
 
   # Explicitly ensure that all dependencies (invoker.deps and
-  # invoker.public_deps) are mojom targets themselves.
-  group("${target_name}__check_deps_are_all_mojom") {
+  # invoker.public_deps) are mojom targets of the same variant themselves.
+  group("${target_name}__check_deps_are_all_mojom_${variant_suffix}") {
     deps = []
     foreach(d, all_deps) {
       name = get_label_info(d, "label_no_toolchain")
       toolchain = get_label_info(d, "toolchain")
-      deps += [ "${name}__is_mojom(${toolchain})" ]
+      deps += [ "${name}__is_mojom_${variant_suffix}(${toolchain})" ]
     }
   }
 
@@ -214,9 +242,14 @@ template("mojom") {
       sources = process_file_template(invoker.sources, generator_cpp_outputs)
       deps = [
         ":$generator_target_name",
-        "//base",
         "//mojo/public/interfaces/bindings:bindings__generator",
       ]
+      public_deps = [
+        "//base",
+      ]
+      if (defined(invoker.typemap_deps)) {
+        public_deps += invoker.typemap_deps
+      }
       foreach(d, all_deps) {
         # Resolve the name, so that a target //mojo/something becomes
         # //mojo/something:something and we can append cpp_sources_suffix to
@@ -224,13 +257,13 @@ template("mojom") {
         full_name = get_label_info(d, "label_no_toolchain")
         deps += [ "${full_name}_${cpp_sources_suffix}" ]
       }
-      if (!defined(invoker.with_environment) || invoker.with_environment) {
-        deps += [ "//mojo/environment:chromium" ]
+      if (defined(invoker.for_blink) && invoker.for_blink) {
+        public_deps += [ "//mojo/public/cpp/bindings:wtf_support" ]
       }
     }
   }
 
-  if (is_android && !defined(invoker.variant)) {
+  if (is_android && !cpp_only) {
     import("//build/config/android/rules.gni")
 
     java_srcjar_target_name = target_name + "_java_sources"

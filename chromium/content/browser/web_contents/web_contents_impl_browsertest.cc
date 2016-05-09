@@ -11,6 +11,8 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
+#include "content/common/site_isolation_policy.h"
+#include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_details.h"
@@ -18,6 +20,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/url_constants.h"
@@ -27,6 +30,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -108,8 +112,13 @@ class NavigateOnCommitObserver : public WebContentsObserver {
       const LoadCommittedDetails& load_details) override {
     if (!done_) {
       done_ = true;
-      shell_->Stop();
       shell_->LoadURL(url_);
+
+      // There should be a pending entry.
+      CHECK(shell_->web_contents()->GetController().GetPendingEntry());
+
+      // Now that there is a pending entry, stop the load.
+      shell_->Stop();
     }
   }
 
@@ -189,16 +198,8 @@ class LoadingStateChangedDelegate : public WebContentsDelegate {
   int loadingStateToDifferentDocumentCount_;
 };
 
-// See: http://crbug.com/298193
-#if defined(OS_WIN) || defined(OS_LINUX)
-#define MAYBE_DidStopLoadingDetails DISABLED_DidStopLoadingDetails
-#else
-#define MAYBE_DidStopLoadingDetails DidStopLoadingDetails
-#endif
-
 // Test that DidStopLoading includes the correct URL in the details.
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       MAYBE_DidStopLoadingDetails) {
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, DidStopLoadingDetails) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   LoadStopNotificationObserver load_observer(
@@ -212,20 +213,15 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             load_observer.controller_);
 }
 
-// See: http://crbug.com/298193
-#if defined(OS_WIN) || defined(OS_LINUX)
-#define MAYBE_DidStopLoadingDetailsWithPending \
-  DISABLED_DidStopLoadingDetailsWithPending
-#else
-#define MAYBE_DidStopLoadingDetailsWithPending DidStopLoadingDetailsWithPending
-#endif
-
 // Test that DidStopLoading includes the correct URL in the details when a
 // pending entry is present.
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       MAYBE_DidStopLoadingDetailsWithPending) {
+                       DidStopLoadingDetailsWithPending) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url("data:text/html,<div>test</div>");
+  // TODO(clamy): Add a cross-process navigation case as well once
+  // crbug.com/581024 is fixed.
+  GURL url1 = embedded_test_server()->GetURL("/title1.html");
+  GURL url2 = embedded_test_server()->GetURL("/title2.html");
 
   // Listen for the first load to stop.
   LoadStopNotificationObserver load_observer(
@@ -233,12 +229,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   // Start a new pending navigation as soon as the first load commits.
   // We will hear a DidStopLoading from the first load as the new load
   // is started.
-  NavigateOnCommitObserver commit_observer(
-      shell(), embedded_test_server()->GetURL("/title2.html"));
-  NavigateToURL(shell(), url);
+  NavigateOnCommitObserver commit_observer(shell(), url2);
+  NavigateToURL(shell(), url1);
   load_observer.Wait();
 
-  EXPECT_EQ(url, load_observer.url_);
+  EXPECT_EQ(url1, load_observer.url_);
   EXPECT_EQ(0, load_observer.session_index_);
   EXPECT_EQ(&shell()->web_contents()->GetController(),
             load_observer.controller_);
@@ -606,19 +601,21 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
 
   // Simulate a navigation that has not completed.
+  const GURL kURL2 = embedded_test_server()->GetURL("/title2.html");
+  NavigationStallDelegate stall_delegate(kURL2);
+  ResourceDispatcherHost::Get()->SetDelegate(&stall_delegate);
   scoped_ptr<LoadProgressDelegateAndObserver> delegate(
       new LoadProgressDelegateAndObserver(shell()));
-  RenderFrameHost* main_frame = shell()->web_contents()->GetMainFrame();
-  FrameHostMsg_DidStartLoading start_msg(main_frame->GetRoutingID(), true);
-  static_cast<RenderFrameHostImpl*>(main_frame)->OnMessageReceived(start_msg);
+  shell()->LoadURL(kURL2);
   EXPECT_TRUE(delegate->did_start_loading);
   EXPECT_FALSE(delegate->did_stop_loading);
 
   // Also simulate a DidChangeLoadProgress, but not a DidStopLoading.
+  RenderFrameHostImpl* main_frame = static_cast<RenderFrameHostImpl*>(
+      shell()->web_contents()->GetMainFrame());
   FrameHostMsg_DidChangeLoadProgress progress_msg(main_frame->GetRoutingID(),
                                                   1.0);
-  static_cast<RenderFrameHostImpl*>(main_frame)->OnMessageReceived(
-      progress_msg);
+  main_frame->OnMessageReceived(progress_msg);
   EXPECT_TRUE(delegate->did_start_loading);
   EXPECT_FALSE(delegate->did_stop_loading);
 
@@ -631,6 +628,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
   // We should have gotten to DidStopLoading.
   EXPECT_TRUE(delegate->did_stop_loading);
+
+  ResourceDispatcherHost::Get()->SetDelegate(nullptr);
 }
 
 struct FirstVisuallyNonEmptyPaintObserver : public WebContentsObserver {
@@ -816,6 +815,199 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, NewNamedWindow) {
               static_cast<WebContentsImpl*>(new_shell->web_contents())
                   ->GetFrameTree()->root()->frame_name());
   }
+}
+
+// TODO(clamy): Make the test work on Windows and on Mac. On Mac and Windows,
+// there seem to be an issue with the ShellJavascriptDialogManager.
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_NoResetOnBeforeUnloadCanceledOnCommit \
+  DISABLED_NoResetOnBeforeUnloadCanceledOnCommit
+#else
+#define MAYBE_NoResetOnBeforeUnloadCanceledOnCommit \
+  NoResetOnBeforeUnloadCanceledOnCommit
+#endif
+// Test that if a BeforeUnload dialog is destroyed due to the commit of a
+// cross-site navigation, it will not reset the loading state.
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       MAYBE_NoResetOnBeforeUnloadCanceledOnCommit) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL kStartURL(
+      embedded_test_server()->GetURL("/hang_before_unload.html"));
+  const GURL kCrossSiteURL(
+      embedded_test_server()->GetURL("bar.com", "/title1.html"));
+
+  // Navigate to a first web page with a BeforeUnload event listener.
+  EXPECT_TRUE(NavigateToURL(shell(), kStartURL));
+
+  // Start a cross-site navigation that will not commit for the moment.
+  TestNavigationManager cross_site_delayer(shell()->web_contents(),
+                                           kCrossSiteURL);
+  shell()->LoadURL(kCrossSiteURL);
+  cross_site_delayer.WaitForWillStartRequest();
+
+  // Click on a link in the page. This will show the BeforeUnload dialog.
+  // Ensure the dialog is not dismissed, which will cause it to still be
+  // present when the cross-site navigation later commits.
+  // Note: the javascript function executed will not do the link click but
+  // schedule it for afterwards. Since the BeforeUnload event is synchronous,
+  // clicking on the link right away would cause the ExecuteScript to never
+  // return.
+  SetShouldProceedOnBeforeUnload(shell(), false);
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(), "clickLinkSoon()"));
+  WaitForAppModalDialog(shell());
+
+  // Have the cross-site navigation commit. The main RenderFrameHost should
+  // still be loading after that.
+  cross_site_delayer.ResumeNavigation();
+  cross_site_delayer.WaitForNavigationFinished();
+  EXPECT_TRUE(shell()->web_contents()->IsLoading());
+}
+
+namespace {
+
+class TestJavaScriptDialogManager : public JavaScriptDialogManager,
+                                    public WebContentsDelegate {
+ public:
+  TestJavaScriptDialogManager() : message_loop_runner_(new MessageLoopRunner) {}
+  ~TestJavaScriptDialogManager() override {}
+
+  void Wait() {
+    message_loop_runner_->Run();
+    message_loop_runner_ = new MessageLoopRunner;
+  }
+
+  std::string last_message() { return last_message_; }
+
+  // WebContentsDelegate
+
+  JavaScriptDialogManager* GetJavaScriptDialogManager(
+      WebContents* source) override {
+    return this;
+  }
+
+  // JavaScriptDialogManager
+
+  void RunJavaScriptDialog(WebContents* web_contents,
+                           const GURL& origin_url,
+                           JavaScriptMessageType javascript_message_type,
+                           const base::string16& message_text,
+                           const base::string16& default_prompt_text,
+                           const DialogClosedCallback& callback,
+                           bool* did_suppress_message) override {
+    last_message_ = base::UTF16ToUTF8(message_text);
+    *did_suppress_message = true;
+
+    message_loop_runner_->Quit();
+  };
+
+  void RunBeforeUnloadDialog(WebContents* web_contents,
+                             bool is_reload,
+                             const DialogClosedCallback& callback) override {}
+
+  bool HandleJavaScriptDialog(WebContents* web_contents,
+                              bool accept,
+                              const base::string16* prompt_override) override {
+    return true;
+  }
+
+  void CancelActiveAndPendingDialogs(WebContents* web_contents) override {}
+
+  void ResetDialogState(WebContents* web_contents) override {}
+
+ private:
+  std::string last_message_;
+
+  // The MessageLoopRunner used to spin the message loop.
+  scoped_refptr<MessageLoopRunner> message_loop_runner_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestJavaScriptDialogManager);
+};
+
+}  // namespace
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       JavaScriptDialogsInMainAndSubframes) {
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestJavaScriptDialogManager dialog_manager;
+  wc->SetDelegate(&dialog_manager);
+
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  NavigateToURL(shell(),
+                embedded_test_server()->GetURL("a.com", "/title1.html"));
+  EXPECT_TRUE(WaitForLoadStop(wc));
+
+  FrameTreeNode* root = wc->GetFrameTree()->root();
+  ASSERT_EQ(0U, root->child_count());
+
+  std::string script =
+      "var iframe = document.createElement('iframe');"
+      "document.body.appendChild(iframe);";
+  EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* frame = root->child_at(0);
+  ASSERT_NE(nullptr, frame);
+
+  url::Replacements<char> clear_port;
+  clear_port.ClearPort();
+
+  // A dialog from the main frame.
+  std::string alert_location = "alert(document.location)";
+  EXPECT_TRUE(
+      content::ExecuteScript(root->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ(GURL("http://a.com/title1.html"),
+            GURL(dialog_manager.last_message()).ReplaceComponents(clear_port));
+
+  // A dialog from the subframe.
+  EXPECT_TRUE(
+      content::ExecuteScript(frame->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ("about:blank", dialog_manager.last_message());
+
+  // Navigate the subframe cross-site.
+  NavigateFrameToURL(frame,
+                     embedded_test_server()->GetURL("b.com", "/title2.html"));
+  EXPECT_TRUE(WaitForLoadStop(wc));
+
+  // A dialog from the subframe.
+  EXPECT_TRUE(
+      content::ExecuteScript(frame->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ(GURL("http://b.com/title2.html"),
+            GURL(dialog_manager.last_message()).ReplaceComponents(clear_port));
+
+  // A dialog from the main frame.
+  EXPECT_TRUE(
+      content::ExecuteScript(root->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ(GURL("http://a.com/title1.html"),
+            GURL(dialog_manager.last_message()).ReplaceComponents(clear_port));
+
+  // Navigate the top frame cross-site; ensure that dialogs work.
+  NavigateToURL(shell(),
+                embedded_test_server()->GetURL("c.com", "/title3.html"));
+  EXPECT_TRUE(WaitForLoadStop(wc));
+  EXPECT_TRUE(
+      content::ExecuteScript(root->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ(GURL("http://c.com/title3.html"),
+            GURL(dialog_manager.last_message()).ReplaceComponents(clear_port));
+
+  // Navigate back; ensure that dialogs work.
+  wc->GetController().GoBack();
+  EXPECT_TRUE(WaitForLoadStop(wc));
+  EXPECT_TRUE(
+      content::ExecuteScript(root->current_frame_host(), alert_location));
+  dialog_manager.Wait();
+  EXPECT_EQ(GURL("http://a.com/title1.html"),
+            GURL(dialog_manager.last_message()).ReplaceComponents(clear_port));
+
+  wc->SetDelegate(nullptr);
+  wc->SetJavaScriptDialogManagerForTesting(nullptr);
 }
 
 }  // namespace content

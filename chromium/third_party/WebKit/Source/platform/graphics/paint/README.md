@@ -147,6 +147,13 @@ See [Display item caching](../../../core/paint/README.md#paint-result-caching).
 Holds an `SkPicture` which contains the Skia commands required to draw some atom
 of content.
 
+#### [ForeignLayerDisplayItem](ForeignLayerDisplayItem.h)
+
+Draws an atom of content, but using a `cc::Layer` produced by some agent outside
+of the normal Blink paint system (for example, a plugin). Since they always map
+to a `cc::Layer`, they are always the only display item in their paint chunk,
+and are ineligible for squashing with other layers.
+
 ### Paired begin/end display items
 
 *** aside
@@ -154,7 +161,7 @@ TODO(jbroman): Describe how these work, once we've worked out what happens to
 them in SPv2.
 ***
 
-## Display item list
+## Paint controller
 
 Callers use `GraphicsContext` (via its drawing methods, and its
 `paintController()` accessor) and scoped recorder classes, which emit items into
@@ -175,3 +182,16 @@ At this point, the paint artifact is ready to be drawn or composited.
 *** aside
 TODO(jbroman): Explain invalidation.
 ***
+
+## Paint artifact compositor
+
+The [`PaintArtifactCompositor`](PaintArtifactCompositor.h) is responsible for
+consuming the `PaintArtifact` produced by the `PaintController`, and converting
+it into a form suitable for the compositor to consume.
+
+At present, `PaintArtifactCompositor` creates a cc layer tree, with one layer
+for each paint chunk. In the future, it is expected that we will use heuristics
+to combine paint chunks into a smaller number of layers.
+
+The owner of the `PaintArtifactCompositor` (e.g. `WebView`) can then attach its
+root layer to the overall layer hierarchy to be displayed to the user.

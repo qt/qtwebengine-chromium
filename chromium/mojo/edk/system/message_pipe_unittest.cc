@@ -6,6 +6,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "mojo/edk/system/test_utils.h"
+#include "mojo/edk/test/mojo_test_base.h"
 #include "mojo/public/c/system/core.h"
 #include "mojo/public/c/system/types.h"
 
@@ -18,7 +19,7 @@ const MojoHandleSignals kAllSignals = MOJO_HANDLE_SIGNAL_READABLE |
                                       MOJO_HANDLE_SIGNAL_PEER_CLOSED;
 static const char kHelloWorld[] = "hello world";
 
-class MessagePipeTest : public testing::Test {
+class MessagePipeTest : public test::MojoTestBase {
  public:
   MessagePipeTest() {
     CHECK_EQ(MOJO_RESULT_OK, MojoCreateMessagePipe(nullptr, &pipe0_, &pipe1_));
@@ -50,8 +51,10 @@ class MessagePipeTest : public testing::Test {
   MojoHandle pipe0_, pipe1_;
 
  private:
-  MOJO_DISALLOW_COPY_AND_ASSIGN(MessagePipeTest);
+  DISALLOW_COPY_AND_ASSIGN(MessagePipeTest);
 };
+
+using FuseMessagePipeTest = test::MojoTestBase;
 
 TEST_F(MessagePipeTest, WriteData) {
   ASSERT_EQ(MOJO_RESULT_OK,
@@ -404,6 +407,242 @@ TEST_F(MessagePipeTest, BasicWaiting) {
                      MOJO_DEADLINE_INDEFINITE, &hss));
   ASSERT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfied_signals);
   ASSERT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfiable_signals);
+}
+
+#if !defined(OS_IOS)
+
+const size_t kPingPongHandlesPerIteration = 50;
+const size_t kPingPongIterations = 500;
+
+DEFINE_TEST_CLIENT_TEST_WITH_PIPE(HandlePingPong, MessagePipeTest, h) {
+  // Waits for a handle to become readable and writes it back to the sender.
+  for (size_t i = 0; i < kPingPongIterations; i++) {
+    MojoHandle handles[kPingPongHandlesPerIteration];
+    ReadMessageWithHandles(h, handles, kPingPongHandlesPerIteration);
+    WriteMessageWithHandles(h, "", handles, kPingPongHandlesPerIteration);
+  }
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(h, MOJO_HANDLE_SIGNAL_READABLE,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+  char msg[4];
+  uint32_t num_bytes = 4;
+  EXPECT_EQ(MOJO_RESULT_OK, ReadMessage(h, msg, &num_bytes));
+}
+
+// This test is flaky: http://crbug.com/585784
+TEST_F(MessagePipeTest, DISABLED_DataPipeConsumerHandlePingPong) {
+  MojoHandle p, c[kPingPongHandlesPerIteration];
+  for (size_t i = 0; i < kPingPongHandlesPerIteration; ++i) {
+    EXPECT_EQ(MOJO_RESULT_OK, MojoCreateDataPipe(nullptr, &p, &c[i]));
+    MojoClose(p);
+  }
+
+  RUN_CHILD_ON_PIPE(HandlePingPong, h)
+    for (size_t i = 0; i < kPingPongIterations; i++) {
+      WriteMessageWithHandles(h, "", c, kPingPongHandlesPerIteration);
+      ReadMessageWithHandles(h, c, kPingPongHandlesPerIteration);
+    }
+    WriteMessage(h, "quit", 4);
+  END_CHILD()
+  for (size_t i = 0; i < kPingPongHandlesPerIteration; ++i)
+    MojoClose(c[i]);
+}
+
+// This test is flaky: http://crbug.com/585784
+TEST_F(MessagePipeTest, DISABLED_DataPipeProducerHandlePingPong) {
+  MojoHandle p[kPingPongHandlesPerIteration], c;
+  for (size_t i = 0; i < kPingPongHandlesPerIteration; ++i) {
+    EXPECT_EQ(MOJO_RESULT_OK, MojoCreateDataPipe(nullptr, &p[i], &c));
+    MojoClose(c);
+  }
+
+  RUN_CHILD_ON_PIPE(HandlePingPong, h)
+    for (size_t i = 0; i < kPingPongIterations; i++) {
+      WriteMessageWithHandles(h, "", p, kPingPongHandlesPerIteration);
+      ReadMessageWithHandles(h, p, kPingPongHandlesPerIteration);
+    }
+    WriteMessage(h, "quit", 4);
+  END_CHILD()
+  for (size_t i = 0; i < kPingPongHandlesPerIteration; ++i)
+    MojoClose(p[i]);
+}
+
+#if defined(OS_ANDROID)
+// Android multi-process tests are not executing the new process. This is flaky.
+#define MAYBE_SharedBufferHandlePingPong DISABLED_SharedBufferHandlePingPong
+#else
+#define MAYBE_SharedBufferHandlePingPong SharedBufferHandlePingPong
+#endif
+TEST_F(MessagePipeTest, MAYBE_SharedBufferHandlePingPong) {
+  MojoHandle buffers[kPingPongHandlesPerIteration];
+  for (size_t i = 0; i <kPingPongHandlesPerIteration; ++i)
+    EXPECT_EQ(MOJO_RESULT_OK, MojoCreateSharedBuffer(nullptr, 1, &buffers[i]));
+
+  RUN_CHILD_ON_PIPE(HandlePingPong, h)
+    for (size_t i = 0; i < kPingPongIterations; i++) {
+      WriteMessageWithHandles(h, "", buffers, kPingPongHandlesPerIteration);
+      ReadMessageWithHandles(h, buffers, kPingPongHandlesPerIteration);
+    }
+    WriteMessage(h, "quit", 4);
+  END_CHILD()
+  for (size_t i = 0; i < kPingPongHandlesPerIteration; ++i)
+    MojoClose(buffers[i]);
+}
+
+#endif  // !defined(OS_IOS)
+
+TEST_F(FuseMessagePipeTest, Basic) {
+  // Test that we can fuse pipes and they still work.
+
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoFuseMessagePipes(b, c));
+
+  // Handles b and c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  const std::string kTestMessage1 = "Hello, world!";
+  const std::string kTestMessage2 = "Goodbye, world!";
+
+  WriteMessage(a, kTestMessage1);
+  EXPECT_EQ(kTestMessage1, ReadMessage(d));
+
+  WriteMessage(d, kTestMessage2);
+  EXPECT_EQ(kTestMessage2, ReadMessage(a));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(d));
+}
+
+TEST_F(FuseMessagePipeTest, FuseAfterPeerWrite) {
+  // Test that messages written before fusion are eventually delivered.
+
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  const std::string kTestMessage1 = "Hello, world!";
+  const std::string kTestMessage2 = "Goodbye, world!";
+  WriteMessage(a, kTestMessage1);
+  WriteMessage(d, kTestMessage2);
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoFuseMessagePipes(b, c));
+
+  // Handles b and c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  EXPECT_EQ(kTestMessage1, ReadMessage(d));
+  EXPECT_EQ(kTestMessage2, ReadMessage(a));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(d));
+}
+
+TEST_F(FuseMessagePipeTest, NoFuseAfterWrite) {
+  // Test that a pipe endpoint which has been written to cannot be fused.
+
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  WriteMessage(b, "shouldn't have done that!");
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, MojoFuseMessagePipes(b, c));
+
+  // Handles b and c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(d));
+}
+
+TEST_F(FuseMessagePipeTest, NoFuseSelf) {
+  // Test that a pipe's own endpoints can't be fused together.
+
+  MojoHandle a, b;
+  CreateMessagePipe(&a, &b);
+
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, MojoFuseMessagePipes(a, b));
+
+  // Handles a and b should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+}
+
+TEST_F(FuseMessagePipeTest, FuseInvalidArguments) {
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(b));
+
+  // Can't fuse an invalid handle.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoFuseMessagePipes(b, c));
+
+  // Handle c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  // Can't fuse a non-message pipe handle.
+  MojoHandle e, f;
+  CreateDataPipe(&e, &f, 16);
+
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoFuseMessagePipes(e, d));
+
+  // Handles d and e should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(d));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(e));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(f));
+}
+
+TEST_F(FuseMessagePipeTest, FuseAfterPeerClosure) {
+  // Test that peer closure prior to fusion can still be detected after fusion.
+
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoFuseMessagePipes(b, c));
+
+  // Handles b and c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(d, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(d));
+}
+
+TEST_F(FuseMessagePipeTest, FuseAfterPeerWriteAndClosure) {
+  // Test that peer write and closure prior to fusion still results in the
+  // both message arrival and awareness of peer closure.
+
+  MojoHandle a, b, c, d;
+  CreateMessagePipe(&a, &b);
+  CreateMessagePipe(&c, &d);
+
+  const std::string kTestMessage = "ayyy lmao";
+  WriteMessage(a, kTestMessage);
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoFuseMessagePipes(b, c));
+
+  // Handles b and c should be closed.
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(b));
+  EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(c));
+
+  EXPECT_EQ(kTestMessage, ReadMessage(d));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoWait(d, MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                                     MOJO_DEADLINE_INDEFINITE, nullptr));
+
+  EXPECT_EQ(MOJO_RESULT_OK, MojoClose(d));
 }
 
 }  // namespace

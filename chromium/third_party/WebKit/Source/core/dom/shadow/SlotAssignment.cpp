@@ -7,6 +7,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLSlotElement.h"
@@ -24,27 +25,29 @@ static void detachNotAssignedNode(Node& node)
         node.lazyReattachIfAttached();
 }
 
-void SlotAssignment::resolveAssignment(const ShadowRoot& shadowRoot)
+inline static bool isDefaultSlotName(const AtomicString& name)
+{
+    return name.isNull() || name.isEmpty();
+}
+
+void SlotAssignment::resolveAssignment(ShadowRoot& shadowRoot)
 {
     m_assignment.clear();
 
-    using Name2Slot = WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<HTMLSlotElement>>;
+    using Name2Slot = HeapHashMap<AtomicString, Member<HTMLSlotElement>>;
     Name2Slot name2slot;
     HTMLSlotElement* defaultSlot = nullptr;
-    WillBeHeapVector<RefPtrWillBeMember<HTMLSlotElement>> slots;
 
-    // TODO(hayato): Cache slots elements so that we do not have to travese the shadow tree. See ShadowRoot::descendantInsertionPoints()
-    for (HTMLSlotElement& slot : Traversal<HTMLSlotElement>::descendantsOf(shadowRoot)) {
-        slot.clearDistribution();
+    const HeapVector<Member<HTMLSlotElement>>& slots = shadowRoot.descendantSlots();
 
-        slots.append(&slot);
-
-        AtomicString name = slot.fastGetAttribute(HTMLNames::nameAttr);
-        if (name.isNull() || name.isEmpty()) {
+    for (Member<HTMLSlotElement> slot : slots) {
+        slot->willUpdateDistribution();
+        AtomicString name = slot->fastGetAttribute(HTMLNames::nameAttr);
+        if (isDefaultSlotName(name)) {
             if (!defaultSlot)
-                defaultSlot = &slot;
+                defaultSlot = slot.get();
         } else {
-            name2slot.add(name, &slot);
+            name2slot.add(name, slot.get());
         }
     }
 
@@ -56,7 +59,7 @@ void SlotAssignment::resolveAssignment(const ShadowRoot& shadowRoot)
                 continue;
             }
             AtomicString slotName = toElement(child).fastGetAttribute(HTMLNames::slotAttr);
-            if (slotName.isNull() || slotName.isEmpty()) {
+            if (isDefaultSlotName(slotName)) {
                 if (defaultSlot)
                     assign(child, *defaultSlot);
                 else
@@ -68,7 +71,7 @@ void SlotAssignment::resolveAssignment(const ShadowRoot& shadowRoot)
                 else
                     detachNotAssignedNode(child);
             }
-        } else if (defaultSlot) {
+        } else if (defaultSlot && child.isTextNode()) {
             assign(child, *defaultSlot);
         } else {
             detachNotAssignedNode(child);
@@ -78,23 +81,26 @@ void SlotAssignment::resolveAssignment(const ShadowRoot& shadowRoot)
     // Update each slot's distribution in reverse tree order so that a child slot is visited before its parent slot.
     for (auto slot = slots.rbegin(); slot != slots.rend(); ++slot)
         (*slot)->updateDistributedNodesWithFallback();
+    for (const auto& slot : slots)
+        slot->didUpdateDistribution();
 }
 
 void SlotAssignment::assign(Node& hostChild, HTMLSlotElement& slot)
 {
+    DCHECK(hostChild.isSlotAssignable());
     m_assignment.add(&hostChild, &slot);
     slot.appendAssignedNode(hostChild);
     if (isHTMLSlotElement(hostChild))
         slot.appendDistributedNodesFrom(toHTMLSlotElement(hostChild));
     else
         slot.appendDistributedNode(hostChild);
+    if (slot.isChildOfV1ShadowHost())
+        slot.parentElementShadow()->setNeedsDistributionRecalc();
 }
 
 DEFINE_TRACE(SlotAssignment)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_assignment);
-#endif
 }
 
 } // namespace blink

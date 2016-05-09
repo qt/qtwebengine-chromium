@@ -106,7 +106,7 @@ class SampleRecord {
   void Collect(v8::Isolate* isolate,
                base::TimeTicks timestamp,
                const v8::RegisterState& state);
-  scoped_refptr<ConvertableToTraceFormat> ToTraceFormat() const;
+  scoped_ptr<ConvertableToTraceFormat> ToTraceFormat() const;
 
  private:
   base::TimeTicks timestamp_;
@@ -128,8 +128,9 @@ void SampleRecord::Collect(v8::Isolate* isolate,
   vm_state_ = sample_info.vm_state;
 }
 
-scoped_refptr<ConvertableToTraceFormat> SampleRecord::ToTraceFormat() const {
-  scoped_refptr<TracedValue> data(new TracedValue());
+scoped_ptr<ConvertableToTraceFormat> SampleRecord::ToTraceFormat() const {
+  scoped_ptr<base::trace_event::TracedValue> data(
+      new base::trace_event::TracedValue());
   const char* vm_state = nullptr;
   switch (vm_state_) {
     case v8::StateTag::JS:
@@ -159,7 +160,7 @@ scoped_refptr<ConvertableToTraceFormat> SampleRecord::ToTraceFormat() const {
     data->AppendString(PtrToString(frames_[i]));
   }
   data->EndArray();
-  return data;
+  return std::move(data);
 }
 
 }  // namespace
@@ -196,7 +197,7 @@ class Sampler {
 
   static void InstallJitCodeEventHandler(Isolate* isolate, void* data);
   static void HandleJitCodeEvent(const v8::JitCodeEvent* event);
-  static scoped_refptr<ConvertableToTraceFormat> JitCodeEventToTraceFormat(
+  static scoped_ptr<ConvertableToTraceFormat> JitCodeEventToTraceFormat(
       const v8::JitCodeEvent* event);
 
   void InjectPendingEvents();
@@ -332,23 +333,23 @@ void Sampler::HandleJitCodeEvent(const v8::JitCodeEvent* event) {
     return;
   switch (event->type) {
     case v8::JitCodeEvent::CODE_ADDED:
-      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
-                           "JitCodeAdded", TRACE_EVENT_SCOPE_THREAD, "data",
-                           JitCodeEventToTraceFormat(event));
+      TRACE_EVENT_METADATA1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
+                            "JitCodeAdded", "data",
+                            JitCodeEventToTraceFormat(event));
       base::subtle::NoBarrier_AtomicIncrement(
           &sampler->code_added_events_count_, 1);
       break;
 
     case v8::JitCodeEvent::CODE_MOVED:
-      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
-                           "JitCodeMoved", TRACE_EVENT_SCOPE_THREAD, "data",
-                           JitCodeEventToTraceFormat(event));
+      TRACE_EVENT_METADATA1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
+                            "JitCodeMoved", "data",
+                            JitCodeEventToTraceFormat(event));
       break;
 
     case v8::JitCodeEvent::CODE_REMOVED:
-      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
-                           "JitCodeRemoved", TRACE_EVENT_SCOPE_THREAD, "data",
-                           JitCodeEventToTraceFormat(event));
+      TRACE_EVENT_METADATA1(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profile"),
+                            "JitCodeRemoved", "data",
+                            JitCodeEventToTraceFormat(event));
       break;
 
     case v8::JitCodeEvent::CODE_ADD_LINE_POS_INFO:
@@ -359,33 +360,36 @@ void Sampler::HandleJitCodeEvent(const v8::JitCodeEvent* event) {
 }
 
 // static
-scoped_refptr<ConvertableToTraceFormat> Sampler::JitCodeEventToTraceFormat(
+scoped_ptr<ConvertableToTraceFormat> Sampler::JitCodeEventToTraceFormat(
     const v8::JitCodeEvent* event) {
   switch (event->type) {
     case v8::JitCodeEvent::CODE_ADDED: {
-      scoped_refptr<TracedValue> data(new TracedValue());
+      scoped_ptr<base::trace_event::TracedValue> data(
+          new base::trace_event::TracedValue());
       data->SetString("code_start", PtrToString(event->code_start));
       data->SetInteger("code_len", static_cast<unsigned>(event->code_len));
       data->SetString("name", std::string(event->name.str, event->name.len));
       if (!event->script.IsEmpty()) {
         data->SetInteger("script_id", event->script->GetId());
       }
-      return data;
+      return std::move(data);
     }
 
     case v8::JitCodeEvent::CODE_MOVED: {
-      scoped_refptr<TracedValue> data(new TracedValue());
+      scoped_ptr<base::trace_event::TracedValue> data(
+          new base::trace_event::TracedValue());
       data->SetString("code_start", PtrToString(event->code_start));
       data->SetInteger("code_len", static_cast<unsigned>(event->code_len));
       data->SetString("new_code_start", PtrToString(event->new_code_start));
-      return data;
+      return std::move(data);
     }
 
     case v8::JitCodeEvent::CODE_REMOVED: {
-      scoped_refptr<TracedValue> data(new TracedValue());
+      scoped_ptr<base::trace_event::TracedValue> data(
+          new base::trace_event::TracedValue());
       data->SetString("code_start", PtrToString(event->code_start));
       data->SetInteger("code_len", static_cast<unsigned>(event->code_len));
-      return data;
+      return std::move(data);
     }
 
     case v8::JitCodeEvent::CODE_ADD_LINE_POS_INFO:

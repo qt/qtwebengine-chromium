@@ -28,15 +28,14 @@ typedef Vector<CueInterval> CueList;
 
 // This class manages the timeline and rendering updates of cues associated
 // with TextTracks. Owned by a HTMLMediaElement.
-class CueTimeline final : public NoBaseWillBeGarbageCollectedFinalized<CueTimeline> {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(CueTimeline);
+class CueTimeline final : public GarbageCollectedFinalized<CueTimeline> {
 public:
     CueTimeline(HTMLMediaElement&);
 
     void addCues(TextTrack*, const TextTrackCueList*);
-    void addCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue>);
+    void addCue(TextTrack*, RawPtr<TextTrackCue>);
     void removeCues(TextTrack*, const TextTrackCueList*);
-    void removeCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue>);
+    void removeCue(TextTrack*, RawPtr<TextTrackCue>);
 
     void hideCues(TextTrack*, const TextTrackCueList*);
 
@@ -53,10 +52,10 @@ public:
 private:
     HTMLMediaElement& mediaElement() const { return *m_mediaElement; }
 
-    void addCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue>);
-    void removeCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue>);
+    void addCueInternal(RawPtr<TextTrackCue>);
+    void removeCueInternal(RawPtr<TextTrackCue>);
 
-    RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
+    Member<HTMLMediaElement> m_mediaElement;
 
     CueIntervalTree m_cueTree;
 
@@ -81,14 +80,14 @@ public:
     }
 
 private:
-    RawPtrWillBeMember<CueTimeline> m_cueTimeline;
+    Member<CueTimeline> m_cueTimeline;
 };
 
 #ifndef NDEBUG
 // Template specializations required by PodIntervalTree in debug mode.
 template <>
 struct ValueToString<double> {
-    static String string(const double value)
+    static String toString(const double value)
     {
         return String::number(value);
     }
@@ -96,7 +95,7 @@ struct ValueToString<double> {
 
 template <>
 struct ValueToString<TextTrackCue*> {
-    static String string(TextTrackCue* const& cue)
+    static String toString(TextTrackCue* const& cue)
     {
         return cue->toString();
     }

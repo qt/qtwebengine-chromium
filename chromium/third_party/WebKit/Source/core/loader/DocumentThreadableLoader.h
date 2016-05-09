@@ -35,14 +35,15 @@
 #include "core/CoreExport.h"
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceOwner.h"
-#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceError.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -53,12 +54,14 @@ class ResourceRequest;
 class SecurityOrigin;
 class ThreadableLoaderClient;
 
-class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, private ResourceOwner<RawResource>  {
+class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, private RawResourceClient {
     USING_FAST_MALLOC(DocumentThreadableLoader);
     public:
         static void loadResourceSynchronously(Document&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
-        static PassRefPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
+        static PassOwnPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         ~DocumentThreadableLoader() override;
+
+        void start(const ResourceRequest&) override;
 
         void overrideTimeout(unsigned long timeout) override;
 
@@ -72,7 +75,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
             LoadAsynchronously
         };
 
-        DocumentThreadableLoader(Document&, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
+        DocumentThreadableLoader(Document&, ThreadableLoaderClient*, BlockingBehavior, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
 
         void clear();
 
@@ -91,6 +94,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
         void setSerializedCachedMetadata(Resource*, const char*, size_t) override;
         void dataReceived(Resource*, const char* data, size_t dataLength) override;
         void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) override;
+        void redirectBlocked() override;
         void dataDownloaded(Resource*, int) override;
         void didReceiveResourceTiming(Resource*, const ResourceTimingInfo&) override;
 
@@ -140,17 +144,39 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
 
         void loadRequest(const ResourceRequest&, ResourceLoaderOptions);
         bool isAllowedRedirect(const KURL&) const;
-        bool isAllowedByContentSecurityPolicy(const KURL&, ContentSecurityPolicy::RedirectStatus) const;
         // Returns DoNotAllowStoredCredentials
         // if m_forceDoNotAllowStoredCredentials is set. Otherwise, just
         // returns allowCredentials value of m_resourceLoaderOptions.
         StoredCredentials effectiveAllowCredentials() const;
 
-        SecurityOrigin* securityOrigin() const;
+        // TODO(oilpan): DocumentThreadableLoader used to be a ResourceOwner,
+        // but ResourceOwner was moved onto the oilpan heap before
+        // DocumentThreadableLoader was ready. When DocumentThreadableLoader
+        // moves onto the oilpan heap, make it a ResourceOwner again and remove
+        // this re-implementation of ResourceOwner.
+        RawResource* resource() const { return m_resource.get(); }
+        void clearResource() { setResource(nullptr); }
+        void setResource(RawResource* newResource)
+        {
+            if (newResource == m_resource)
+                return;
+
+            if (RawResource* oldResource = m_resource.release())
+                oldResource->removeClient(this);
+
+            if (newResource) {
+                m_resource = newResource;
+                m_resource->addClient(this);
+            }
+        }
+        Persistent<RawResource> m_resource;
+        // End of ResourceOwner re-implementation, see above.
+
+        SecurityOrigin* getSecurityOrigin() const;
         Document& document() const;
 
         ThreadableLoaderClient* m_client;
-        RawPtrWillBeWeakPersistent<Document> m_document;
+        WeakPersistent<Document> m_document;
 
         const ThreadableLoaderOptions m_options;
         // Some items may be overridden by m_forceDoNotAllowStoredCredentials
@@ -163,7 +189,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
 
         // True while the initial URL and all the URLs of the redirects
         // this object has followed, if any, are same-origin to
-        // securityOrigin().
+        // getSecurityOrigin().
         bool m_sameOriginRequest;
         // Set to true if the current request is cross-origin and not simple.
         bool m_crossOriginNonSimpleRequest;
@@ -175,7 +201,7 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
         const bool m_async;
 
         // Holds the original request context (used for sanity checks).
-        const WebURLRequest::RequestContext m_requestContext;
+        WebURLRequest::RequestContext m_requestContext;
 
         // Holds the original request for fallback in case the Service Worker
         // does not respond.
@@ -197,7 +223,9 @@ class CORE_EXPORT DocumentThreadableLoader final : public ThreadableLoader, priv
         // because same-origin redirects are not counted here.
         int m_corsRedirectLimit;
 
-        const WebURLRequest::FetchRedirectMode m_redirectMode;
+        WebURLRequest::FetchRedirectMode m_redirectMode;
+
+        WeakPtrFactory<DocumentThreadableLoader> m_weakFactory;
     };
 
 } // namespace blink

@@ -83,7 +83,8 @@ bool WebInputElement::isCheckbox() const
 
 int WebInputElement::maxLength() const
 {
-    return constUnwrap<HTMLInputElement>()->maxLength();
+    int maxLen = constUnwrap<HTMLInputElement>()->maxLength();
+    return maxLen == -1 ? HTMLInputElement::maximumLength : maxLen;
 }
 
 void WebInputElement::setActivatedSubmit(bool activated)
@@ -143,20 +144,20 @@ void WebInputElement::setShouldRevealPassword(bool value)
     unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
 }
 
-WebInputElement::WebInputElement(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
+WebInputElement::WebInputElement(HTMLInputElement* elem)
     : WebFormControlElement(elem)
 {
 }
 
 DEFINE_WEB_NODE_TYPE_CASTS(WebInputElement, isHTMLInputElement(constUnwrap<Node>()));
 
-WebInputElement& WebInputElement::operator=(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
+WebInputElement& WebInputElement::operator=(HTMLInputElement* elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebInputElement::operator PassRefPtrWillBeRawPtr<HTMLInputElement>() const
+WebInputElement::operator HTMLInputElement*() const
 {
     return toHTMLInputElement(m_private.get());
 }

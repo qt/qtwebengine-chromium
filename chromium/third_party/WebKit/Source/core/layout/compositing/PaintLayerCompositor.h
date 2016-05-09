@@ -36,10 +36,10 @@ namespace blink {
 class PaintLayer;
 class DocumentLifecycle;
 class GraphicsLayer;
-class GraphicsLayerFactory;
 class IntPoint;
 class Page;
 class LayoutPart;
+class Scrollbar;
 class ScrollingCoordinator;
 
 enum CompositingUpdateType {
@@ -127,7 +127,7 @@ public:
         RootLayerAttachedViaEnclosingFrame
     };
 
-    RootLayerAttachment rootLayerAttachment() const { return m_rootLayerAttachment; }
+    RootLayerAttachment getRootLayerAttachment() const { return m_rootLayerAttachment; }
     void updateRootLayerAttachment();
     void updateRootLayerPosition();
 
@@ -179,7 +179,10 @@ private:
     void assertNoUnresolvedDirtyBits();
 #endif
 
+    void updateIfNeededRecursiveInternal();
+
     // GraphicsLayerClient implementation
+    bool needsRepaint(const GraphicsLayer&) const { return true; }
     IntRect computeInterestRect(const GraphicsLayer*, const IntRect&) const override;
     void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& interestRect) const override;
 
@@ -201,7 +204,6 @@ private:
 
     Page* page() const;
 
-    GraphicsLayerFactory* graphicsLayerFactory() const;
     ScrollingCoordinator* scrollingCoordinator() const;
 
     void enableCompositingModeIfNeeded();
@@ -211,6 +213,10 @@ private:
     bool requiresScrollCornerLayer() const;
 
     void applyOverlayFullscreenVideoAdjustmentIfNeeded();
+
+    // Checks the given graphics layer against the compositor's horizontal and vertical scrollbar
+    // graphics layers, returning the associated Scrollbar instance if any, else nullptr.
+    Scrollbar* graphicsLayerToScrollbar(const GraphicsLayer*) const;
 
     LayoutView& m_layoutView;
     OwnPtr<GraphicsLayer> m_rootContentLayer;

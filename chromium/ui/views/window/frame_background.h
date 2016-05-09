@@ -7,11 +7,11 @@
 
 #include "base/macros.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/views/views_export.h"
 
 namespace gfx {
 class Canvas;
-class ImageSkia;
 }
 
 namespace views {
@@ -29,14 +29,14 @@ class VIEWS_EXPORT FrameBackground {
   // Sets the color to draw under the frame images.
   void set_frame_color(SkColor color) { frame_color_ = color; }
 
-  // Sets the theme image for the top of the window.  May be NULL.
+  // Sets the theme image for the top of the window.  May be null (empty).
   // Memory is owned by the caller.
-  void set_theme_image(const gfx::ImageSkia* image) { theme_image_ = image; }
+  void set_theme_image(const gfx::ImageSkia& image) { theme_image_ = image; }
 
   // Sets an image that overlays the top window image.  Usually used to add
-  // edge highlighting to provide the illusion of depth.  May be NULL.
+  // edge highlighting to provide the illusion of depth.  May be null (empty).
   // Memory is owned by the caller.
-  void set_theme_overlay_image(gfx::ImageSkia* image) {
+  void set_theme_overlay_image(const gfx::ImageSkia& image) {
     theme_overlay_image_ = image;
   }
 
@@ -64,19 +64,19 @@ class VIEWS_EXPORT FrameBackground {
   // Paints the border for a standard, non-maximized window.  Also paints the
   // background of the title bar area, since the top frame border and the
   // title bar background are a contiguous component.
-  void PaintRestored(gfx::Canvas* canvas, View* view) const;
+  void PaintRestored(gfx::Canvas* canvas, const View* view) const;
 
   // Paints the border for a maximized window, which does not include the
   // window edges.
-  void PaintMaximized(gfx::Canvas* canvas, View* view) const;
+  void PaintMaximized(gfx::Canvas* canvas, const View* view) const;
 
  private:
   // Fills the frame area with the frame color.
-  void PaintFrameColor(gfx::Canvas* canvas, View* view) const;
+  void PaintFrameColor(gfx::Canvas* canvas, const View* view) const;
 
   SkColor frame_color_;
-  const gfx::ImageSkia* theme_image_;
-  gfx::ImageSkia* theme_overlay_image_;
+  gfx::ImageSkia theme_image_;
+  gfx::ImageSkia theme_overlay_image_;
   int top_area_height_;
 
   // Images for the sides of the frame.

@@ -32,6 +32,7 @@ class WebContentsObserverProxy : public WebContentsObserver {
  private:
   void RenderViewReady() override;
   void RenderProcessGone(base::TerminationStatus termination_status) override;
+  void DidFinishNavigation(NavigationHandle* navigation_handle) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
   void DidFailProvisionalLoad(RenderFrameHost* render_frame_host,
@@ -72,7 +73,8 @@ class WebContentsObserverProxy : public WebContentsObserver {
       const GURL& url,
       NavigationController::ReloadType reload_type) override;
   void MediaSessionStateChanged(bool is_controllable,
-                                bool is_suspended) override;
+                                bool is_suspended,
+                                const MediaMetadata& metadata) override;
   void SetToBaseURLForDataURLIfNeeded(std::string* url);
 
   void DidFailLoadInternal(bool is_provisional_load,

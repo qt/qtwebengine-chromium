@@ -16,12 +16,11 @@ namespace chrome {
 namespace {
 
 void ShowPrintErrorDialogTask() {
-  Browser* browser = chrome::FindLastActiveWithHostDesktopType(
-      chrome::GetActiveDesktop());
-  ShowMessageBox(browser ? browser->window()->GetNativeWindow() : NULL,
-                 l10n_util::GetStringUTF16(IDS_PRINT_SPOOL_FAILED_TITLE_TEXT),
-                 l10n_util::GetStringUTF16(IDS_PRINT_SPOOL_FAILED_ERROR_TEXT),
-                 MESSAGE_BOX_TYPE_WARNING);
+  Browser* browser = chrome::FindLastActive();
+  ShowWarningMessageBox(
+      browser ? browser->window()->GetNativeWindow() : NULL,
+      l10n_util::GetStringUTF16(IDS_PRINT_SPOOL_FAILED_TITLE_TEXT),
+      l10n_util::GetStringUTF16(IDS_PRINT_SPOOL_FAILED_ERROR_TEXT));
 }
 
 }  // namespace

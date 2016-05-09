@@ -84,17 +84,20 @@ private:
     size_t m_rowBytes;
 };
 
-static bool updateYUVComponentSizes(ImageDecoder* decoder, SkISize componentSizes[3], ImageDecoder::SizeType sizeType)
+static bool updateYUVComponentSizes(ImageDecoder* decoder, SkISize componentSizes[3], size_t componentWidthBytes[3])
 {
     if (!decoder->canDecodeToYUV())
         return false;
 
-    IntSize size = decoder->decodedYUVSize(0, sizeType);
+    IntSize size = decoder->decodedYUVSize(0);
     componentSizes[0].set(size.width(), size.height());
-    size = decoder->decodedYUVSize(1, sizeType);
+    componentWidthBytes[0] = decoder->decodedYUVWidthBytes(0);
+    size = decoder->decodedYUVSize(1);
     componentSizes[1].set(size.width(), size.height());
-    size = decoder->decodedYUVSize(2, sizeType);
+    componentWidthBytes[1] = decoder->decodedYUVWidthBytes(1);
+    size = decoder->decodedYUVSize(2);
     componentSizes[2].set(size.width(), size.height());
+    componentWidthBytes[2] = decoder->decodedYUVWidthBytes(2);
     return true;
 }
 
@@ -103,6 +106,7 @@ ImageFrameGenerator::ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<Sha
     , m_data(adoptRef(new ThreadSafeDataTransport()))
     , m_isMultiFrame(isMultiFrame)
     , m_decodeFailed(false)
+    , m_yuvDecodingFailed(false)
     , m_frameCount(0)
     , m_encodedData(nullptr)
 {
@@ -206,7 +210,7 @@ bool ImageFrameGenerator::decodeAndScale(size_t index, const SkImageInfo& info, 
     return true;
 }
 
-bool ImageFrameGenerator::decodeToYUV(size_t index, SkISize componentSizes[3], void* planes[3], size_t rowBytes[3])
+bool ImageFrameGenerator::decodeToYUV(size_t index, const SkISize componentSizes[3], void* planes[3], const size_t rowBytes[3])
 {
     // Prevent concurrent decode or scale operations on the same image data.
     MutexLocker lock(m_decodeMutex);
@@ -237,8 +241,7 @@ bool ImageFrameGenerator::decodeToYUV(size_t index, SkISize componentSizes[3], v
     OwnPtr<ImagePlanes> imagePlanes = adoptPtr(new ImagePlanes(planes, rowBytes));
     decoder->setImagePlanes(imagePlanes.release());
 
-    bool sizeUpdated = updateYUVComponentSizes(decoder.get(), componentSizes, ImageDecoder::ActualSize);
-    RELEASE_ASSERT(sizeUpdated);
+    ASSERT(decoder->canDecodeToYUV());
 
     if (decoder->decodeToYUV()) {
         setHasAlpha(0, false); // YUV is always opaque
@@ -246,7 +249,7 @@ bool ImageFrameGenerator::decodeToYUV(size_t index, SkISize componentSizes[3], v
     }
 
     ASSERT(decoder->failed());
-    m_decodeFailed = true;
+    m_yuvDecodingFailed = true;
     return false;
 }
 
@@ -263,9 +266,6 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(size_t index, const SkISize& sca
 
     if (!decoder)
         return SkBitmap();
-    if (index >= m_frameComplete.size())
-        m_frameComplete.resize(index + 1);
-    m_frameComplete[index] = complete;
 
     // If we are not resuming decoding that means the decoder is freshly
     // created and we have ownership. If we are resuming decoding then
@@ -283,29 +283,27 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(size_t index, const SkISize& sca
         return SkBitmap();
     }
 
-    // If the image generated is complete then there is no need to keep
-    // the decoder. For multi-frame images, if all frames in the image are
-    // decoded, we remove the decoder.
-    bool removeDecoder;
-
-    if (m_isMultiFrame) {
-        size_t decodedFrameCount = 0;
-        for (Vector<bool>::iterator it = m_frameComplete.begin(); it != m_frameComplete.end(); ++it) {
-            if (*it)
-                decodedFrameCount++;
-        }
-        removeDecoder = m_frameCount && (decodedFrameCount == m_frameCount);
-    } else {
-        removeDecoder = complete;
+    bool removeDecoder = false;
+    if (complete) {
+        // Free as much memory as possible.  For single-frame images, we can
+        // just delete the decoder entirely.  For multi-frame images, we keep
+        // the decoder around in order to preserve decoded information such as
+        // the required previous frame indexes, but if we've reached the last
+        // frame we can at least delete all the cached frames.  (If we were to
+        // do this before reaching the last frame, any subsequent requested
+        // frames which relied on the current frame would trigger extra
+        // re-decoding of all frames in the dependency chain.)
+        if (!m_isMultiFrame)
+            removeDecoder = true;
+        else if (index == m_frameCount - 1)
+            decoder->clearCacheExceptFrame(kNotFound);
     }
 
     if (resumeDecoding) {
-        if (removeDecoder) {
+        if (removeDecoder)
             ImageDecodingStore::instance().removeDecoder(this, decoder);
-            m_frameComplete.clear();
-        } else {
+        else
             ImageDecodingStore::instance().unlockDecoder(this, decoder);
-        }
     } else if (!removeDecoder) {
         ImageDecodingStore::instance().insertDecoder(this, decoderContainer.release());
     }
@@ -368,13 +366,13 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
     (*decoder)->clearCacheExceptFrame(index);
     (*decoder)->setMemoryAllocator(0);
 
-    if (!frame || frame->status() == ImageFrame::FrameEmpty)
+    if (!frame || frame->getStatus() == ImageFrame::FrameEmpty)
         return false;
 
     // A cache object is considered complete if we can decode a complete frame.
     // Or we have received all data. The image might not be fully decoded in
     // the latter case.
-    const bool isDecodeComplete = frame->status() == ImageFrame::FrameComplete || allDataReceived;
+    const bool isDecodeComplete = frame->getStatus() == ImageFrame::FrameComplete || allDataReceived;
 
     SkBitmap fullSizeBitmap = frame->getSkBitmap();
     if (!fullSizeBitmap.isNull()) {
@@ -394,9 +392,12 @@ bool ImageFrameGenerator::hasAlpha(size_t index)
     return true;
 }
 
-bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
+bool ImageFrameGenerator::getYUVComponentSizes(SkYUVSizeInfo* sizeInfo)
 {
     TRACE_EVENT2("blink", "ImageFrameGenerator::getYUVComponentSizes", "width", m_fullSize.width(), "height", m_fullSize.height());
+
+    if (m_yuvDecodingFailed)
+        return false;
 
     SharedBuffer* data = 0;
     bool allDataReceived = false;
@@ -415,8 +416,7 @@ bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
     OwnPtr<ImagePlanes> dummyImagePlanes = adoptPtr(new ImagePlanes);
     decoder->setImagePlanes(dummyImagePlanes.release());
 
-    ASSERT(componentSizes);
-    return updateYUVComponentSizes(decoder.get(), componentSizes, ImageDecoder::SizeForMemoryAllocation);
+    return updateYUVComponentSizes(decoder.get(), sizeInfo->fSizes, sizeInfo->fWidthBytes);
 }
 
 } // namespace blink

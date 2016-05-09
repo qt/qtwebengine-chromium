@@ -37,19 +37,19 @@ public:
         RebalanceAllWhitespaces
     };
 
-    static PassRefPtrWillBeRawPtr<InsertTextCommand> create(Document& document, const String& text, bool selectInsertedText = false,
+    static RawPtr<InsertTextCommand> create(Document& document, const String& text, bool selectInsertedText = false,
         RebalanceType rebalanceType = RebalanceLeadingAndTrailingWhitespaces)
     {
-        return adoptRefWillBeNoop(new InsertTextCommand(document, text, selectInsertedText, rebalanceType));
+        return new InsertTextCommand(document, text, selectInsertedText, rebalanceType);
     }
 
 private:
     InsertTextCommand(Document&, const String& text, bool selectInsertedText, RebalanceType);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
 
-    Position positionInsideTextNode(const Position&);
-    Position insertTab(const Position&);
+    Position positionInsideTextNode(const Position&, EditingState*);
+    Position insertTab(const Position&, EditingState*);
 
     bool performTrivialReplace(const String&, bool selectInsertedText);
     bool performOverwrite(const String&, bool selectInsertedText);

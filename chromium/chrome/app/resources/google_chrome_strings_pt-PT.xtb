@@ -3,7 +3,6 @@
 <translationbundle lang="pt-PT">
 <translation id="1001534784610492198">O arquivo do programa de instalação está corrompido ou é inválido. Transfira de novo o Google Chrome.</translation>
 <translation id="1013290471399003443">O Chrome confirmou que <ph name="ISSUER" /> emitiu o certificado deste Website. O servidor forneceu informações de Transparência do certificado válidas.</translation>
-<translation id="1016765312371154165">O Chrome não foi corretamente encerrado.</translation>
 <translation id="103396972844768118">Informações importantes acerca dos seus dados do Chrome</translation>
 <translation id="1035334672863811645">inicie sessão no Chrome</translation>
 <translation id="1061441684050139317">O Chrome necessita de acesso ao microfone para o partilhar com este site.</translation>
@@ -11,7 +10,6 @@
 <translation id="1073391069195728457">Chrome – Notificações</translation>
 <translation id="1104959162601287462">Acerca do SO &amp;Chrome</translation>
 <translation id="110877069173485804">Este é o seu Chrome</translation>
-<translation id="1225016890511909183">O Chrome armazenará as suas informações em segurança para que não necessite de as introduzir novamente, mas continuará a ser necessário confirmar o código de segurança do seu cartão para futuros pagamentos.</translation>
 <translation id="123620459398936149">O SO Chrome não conseguiu sincronizar os dados. Atualize a sua frase de acesso de sincronização.</translation>
 <translation id="127345590676626841">O Chrome é atualizado automaticamente para que tenha sempre a versão mais recente. Quando a transferência estiver concluída, o Chrome irá reiniciar e o processo estará terminado.</translation>
 <translation id="1302523850133262269">Aguarde até que o Chrome instale as atualizações do sistema mais recentes.</translation>
@@ -34,6 +32,7 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Obter ajuda para utilizar o SO Chrome</translation>
 <translation id="1818142563254268765">Não foi possível atualizar automaticamente o Chrome para a versão mais recente, pelo que está a perder novas funcionalidades e correções de segurança fantásticas. Tem de atualizar o Chrome.</translation>
+<translation id="1864458292167284385">O Iniciador de Aplicações do Chrome será descontinuado.</translation>
 <translation id="1877026089748256423">O Chrome está desatualizado</translation>
 <translation id="2077129598763517140">Utilizar aceleração de hardware sempre que estiver disponível</translation>
 <translation id="2084710999043359739">Adicionar ao Chrome</translation>
@@ -51,7 +50,6 @@ Se, mesmo assim, iniciar sessão, as informações do Chrome, como marcadores, h
 <translation id="2397416548179033562">Mostrar menu do Chrome</translation>
 <translation id="2429317896000329049">O Google Chrome não conseguiu sincronizar os dados porque a Sincronização não está disponível para o seu domínio.</translation>
 <translation id="2485422356828889247">Desinstalar</translation>
-<translation id="2576431527583832481">O Chrome ficou ainda melhor! Está disponível uma nova versão.</translation>
 <translation id="2580411288591421699">Não é possível instalar a mesma versão do Google Chrome atualmente em execução. Feche o Google Chrome e tente novamente.</translation>
 <translation id="2582790009689336987">Em breve, este computador deixará de receber atualizações do Google Chrome, uma vez que este sistema Linux já não será suportado.</translation>
 <translation id="2588322182880276190">Logótipo do Chrome</translation>
@@ -90,6 +88,7 @@ Se, mesmo assim, iniciar sessão, as informações do Chrome, como marcadores, h
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3881912906674381083">O Chrome confirmou que <ph name="ISSUER" /> emitiu o certificado deste Website. O servidor forneceu informações de Transparência do certificado, mas o Chrome não reconheceu os registos de Transparência do certificado.</translation>
 <translation id="3889417619312448367">Desinstalar o Google Chrome</translation>
+<translation id="396182988103551265">Utilize o atalho <ph name="APPS_ICON_IMAGE" /> na barra de marcadores do Chrome para continuar a aceder às aplicações.</translation>
 <translation id="4042449298237264661">Este computador deixará de receber atualizações do Google Chrome, uma vez que o Windows XP e o Windows Vista já não são suportados.</translation>
 <translation id="4050175100176540509">Estão disponíveis na versão mais recente melhorias de segurança importantes e novas funcionalidades.</translation>
 <translation id="4053720452172726777">Personalizar e controlar o Google Chrome</translation>
@@ -104,14 +103,12 @@ Se, mesmo assim, iniciar sessão, as informações do Chrome, como marcadores, h
 <translation id="4407807842708586359">SO do Google Chrome</translation>
 <translation id="4458285410772214805">Termine sessão e volte a iniciar sessão para que esta alteração tenha efeito.</translation>
 <translation id="4480040274068703980">O SO Chrome não conseguiu sincronizar os dados devido a um erro no início de sessão.</translation>
-<translation id="4513711165509885787">Os seus detalhes de faturação foram guardados no Chrome.</translation>
 <translation id="4561051373932531560">O Google Chrome permite-lhe clicar num número de telefone na Web e fazer a chamada com o Skype!</translation>
 <translation id="4567424176335768812">Tem sessão iniciada como <ph name="USER_EMAIL_ADDRESS" />. Agora, pode aceder aos seus marcadores, ao histórico e a outras definições em todos os dispositivos com sessão iniciada.</translation>
 <translation id="4631713731678262610">Ocultar no menu do Chrome</translation>
 <translation id="4633000520311261472">Para tornar o Chrome mais seguro, desativámos algumas extensões que não estão listadas na <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> e é possível que tenham sido adicionadas sem o seu conhecimento.</translation>
 <translation id="4700157086864140907">O Google Chrome pode disponibilizar uma verificação ortográfica mais inteligente, enviando o que escreve no navegador para os servidores da Google, o que lhe permite utilizar a mesma tecnologia de verificação ortográfica da pesquisa do Google.</translation>
 <translation id="4728575227883772061">Houve uma falha na instalação devido a um erro não especificado. Se o Google Chrome estiver atualmente em execução, feche-o e tente de novo.</translation>
-<translation id="473775607612524610">Actualizar</translation>
 <translation id="4743926867934016338">Aceitar e pesquisar</translation>
 <translation id="4751441238232965030">Em breve, este computador deixará de receber atualizações do Google Chrome de 32 bits. Atualize para o Google Chrome de 64 bits.</translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
@@ -215,6 +212,7 @@ Se, mesmo assim, iniciar sessão, as informações do Chrome, como marcadores, h
 <translation id="8032142183999901390">Depois de remover a sua conta do Chrome, poderá ter de recarregar os separadores abertos para que a alteração tenha efeito.</translation>
 <translation id="8037887340639533879">Não foi encontrada qualquer instalação do Google Chrome para atualização.</translation>
 <translation id="8129812357326543296">Acerca do &amp;Google Chrome</translation>
+<translation id="8183957050892517584">O Chrome armazena os seus detalhes pessoais em segurança para que não tenha de os introduzir novamente.</translation>
 <translation id="8205111949707227942">Opcional: Ajude a melhorar o Chrome OS ao enviar automaticamente estatísticas de utilização e relatórios de falhas para a Google.</translation>
 <translation id="8227755444512189073">O Google Chrome precisa de executar uma aplicação externa para processar links <ph name="SCHEME" />. O link solicitado é <ph name="PROTOLINK" />.</translation>
 <translation id="8255190535488645436">O Google Chrome está a utilizar a câmara e o microfone.</translation>

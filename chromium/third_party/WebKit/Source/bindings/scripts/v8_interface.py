@@ -46,7 +46,7 @@ import v8_methods
 import v8_types
 from v8_types import cpp_ptr_type, cpp_template_type
 import v8_utilities
-from v8_utilities import (api_experiment_enabled_function, cpp_name_or_partial, capitalize, cpp_name, gc_type,
+from v8_utilities import (cpp_name_or_partial, capitalize, cpp_name, gc_type,
                           has_extended_attribute_value, runtime_enabled_function_name,
                           extended_attribute_value_as_list, is_legacy_interface_type_checking)
 
@@ -63,10 +63,7 @@ INTERFACE_CPP_INCLUDES = frozenset([
     'bindings/core/v8/ExceptionState.h',
     'bindings/core/v8/V8DOMConfiguration.h',
     'bindings/core/v8/V8ObjectConstructor.h',
-    'core/dom/ContextFeatures.h',
     'core/dom/Document.h',
-    'platform/RuntimeEnabledFeatures.h',
-    'platform/TraceEvent.h',
     'wtf/GetPtr.h',
     'wtf/RefPtr.h',
 ])
@@ -111,8 +108,8 @@ def interface_context(interface):
             'bindings/core/v8/V8Float64Array.h',
             'bindings/core/v8/V8DataView.h'))
 
-    # [ActiveDOMObject]
-    is_active_dom_object = 'ActiveDOMObject' in extended_attributes
+    # [ActiveScriptWrappable]
+    active_scriptwrappable = 'ActiveScriptWrappable' in extended_attributes
 
     # [CheckSecurity]
     is_check_security = 'CheckSecurity' in extended_attributes
@@ -162,12 +159,7 @@ def interface_context(interface):
     cpp_class_name_or_partial = cpp_name_or_partial(interface)
     v8_class_name_or_partial = v8_utilities.v8_class_name_or_partial(interface)
 
-    if 'APIExperimentEnabled' in extended_attributes:
-        includes.add('core/experiments/ExperimentalFeatures.h')
-        includes.add('core/inspector/ConsoleMessage.h')
-
     context = {
-        'api_experiment_name': v8_utilities.api_experiment_name(interface),
         'cpp_class': cpp_class_name,
         'cpp_class_or_partial': cpp_class_name_or_partial,
         'event_target_inheritance': 'InheritFromEventTarget' if is_event_target else 'NotInheritFromEventTarget',
@@ -181,7 +173,6 @@ def interface_context(interface):
         'has_visit_dom_wrapper': has_visit_dom_wrapper,
         'header_includes': header_includes,
         'interface_name': interface.name,
-        'is_active_dom_object': is_active_dom_object,
         'is_array_buffer_or_view': is_array_buffer_or_view,
         'is_check_security': is_check_security,
         'is_event_target': is_event_target,
@@ -190,16 +181,14 @@ def interface_context(interface):
         'is_node': inherits_interface(interface.name, 'Node'),
         'is_partial': interface.is_partial,
         'is_typed_array_type': is_typed_array_type,
-        'lifetime': 'Dependent'
-            if (has_visit_dom_wrapper or
-                is_active_dom_object or
-                is_dependent_lifetime)
-            else 'Independent',
+        'lifetime': 'Dependent' if (has_visit_dom_wrapper or is_dependent_lifetime) else 'Independent',
         'measure_as': v8_utilities.measure_as(interface, None),  # [MeasureAs]
+        'origin_trial_enabled_function': v8_utilities.origin_trial_enabled_function_name(interface, None),
         'parent_interface': parent_interface,
         'pass_cpp_type': cpp_template_type(
             cpp_ptr_type('PassRefPtr', 'RawPtr', this_gc_type),
             cpp_name(interface)),
+        'active_scriptwrappable': active_scriptwrappable,
         'runtime_enabled_function': runtime_enabled_function_name(interface),  # [RuntimeEnabled]
         'set_wrapper_reference_from': set_wrapper_reference_from,
         'set_wrapper_reference_to': set_wrapper_reference_to,
@@ -265,7 +254,7 @@ def interface_context(interface):
     constant_configuration_constants = []
 
     for constant in constants:
-        if constant['measure_as'] or constant['deprecate_as'] or constant['api_experiment_name']:
+        if constant['measure_as'] or constant['deprecate_as'] or constant['origin_trial_enabled_function']:
             special_getter_constants.append(constant)
             continue
         runtime_enabled_function = constant['runtime_enabled_function']
@@ -310,8 +299,13 @@ def interface_context(interface):
             attribute['is_data_type_property'] and
             attribute['should_be_exposed_to_script']
             for attribute in attributes),
-        'has_constructor_attributes': any(attribute['constructor_type'] for attribute in attributes),
-        'has_replaceable_attributes': any(attribute['is_replaceable'] for attribute in attributes),
+        'has_constructor_attributes': any(
+            attribute['constructor_type']
+            for attribute in attributes),
+        'has_replaceable_attributes': any(
+            attribute['is_replaceable'] and
+            not attribute['is_data_type_property']
+            for attribute in attributes),
     })
 
     # Methods
@@ -607,27 +601,20 @@ def interface_context(interface):
     return context
 
 
-# [DeprecateAs], [Reflect], [RuntimeEnabled]
+# [DeprecateAs], [OriginTrialEnabled], [Reflect], [RuntimeEnabled]
 def constant_context(constant, interface):
     extended_attributes = constant.extended_attributes
 
-    if 'APIExperimentEnabled' in extended_attributes:
-        includes.add('core/experiments/ExperimentalFeatures.h')
-        includes.add('core/inspector/ConsoleMessage.h')
-
     return {
-        'api_experiment_enabled': v8_utilities.api_experiment_enabled_function(constant),  # [APIExperimentEnabled]
-        'api_experiment_enabled_per_interface': v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
-        'api_experiment_name': extended_attributes.get('APIExperimentEnabled'),  # [APIExperimentEnabled]
         'cpp_class': extended_attributes.get('PartialInterfaceImplementedAs'),
         'deprecate_as': v8_utilities.deprecate_as(constant),  # [DeprecateAs]
         'idl_type': constant.idl_type.name,
-        'is_api_experiment_enabled': v8_utilities.api_experiment_enabled_function(constant) or v8_utilities.api_experiment_enabled_function(interface),  # [APIExperimentEnabled]
         'measure_as': v8_utilities.measure_as(constant, interface),  # [MeasureAs]
         'name': constant.name,
+        'origin_trial_enabled_function': v8_utilities.origin_trial_enabled_function_name(constant, interface),  # [OriginTrialEnabled]
         # FIXME: use 'reflected_name' as correct 'name'
         'reflected_name': extended_attributes.get('Reflect', constant.name),
-        'runtime_enabled_function': runtime_enabled_function_name(constant),
+        'runtime_enabled_function': runtime_enabled_function_name(constant),  # [RuntimeEnabled]
         'value': constant.value,
     }
 

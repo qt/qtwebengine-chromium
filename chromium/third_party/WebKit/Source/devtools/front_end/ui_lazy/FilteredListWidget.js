@@ -62,7 +62,7 @@ WebInspector.FilteredListWidget.filterRegex = function(query)
         if (toEscape.indexOf(c) !== -1)
             c = "\\" + c;
         if (i)
-            regexString += "[^" + c + "]*";
+            regexString += "[^\\0" + c + "]*";
         regexString += c;
     }
     return new RegExp(regexString, "i");
@@ -220,7 +220,7 @@ WebInspector.FilteredListWidget.prototype = {
 
                 // Find its index in the scores array (earlier elements have bigger scores).
                 if (score > minBestScore || bestScores.length < bestItemsToCollect) {
-                    var index = insertionIndexForObjectInListSortedByFunction(score, bestScores, compareIntegers, true);
+                    var index =  bestScores.upperBound(score, compareIntegers);
                     bestScores.splice(index, 0, score);
                     bestItems.splice(index, 0, i);
                     if (bestScores.length > bestItemsToCollect) {
@@ -296,13 +296,13 @@ WebInspector.FilteredListWidget.prototype = {
         switch (event.keyCode) {
         case WebInspector.KeyboardShortcut.Keys.Down.code:
             if (++newSelectedIndex >= this._filteredItems.length)
-                newSelectedIndex = this._filteredItems.length - 1;
+                newSelectedIndex = 0;
             this._updateSelection(newSelectedIndex, true);
             event.consume(true);
             break;
         case WebInspector.KeyboardShortcut.Keys.Up.code:
             if (--newSelectedIndex < 0)
-                newSelectedIndex = 0;
+                newSelectedIndex = this._filteredItems.length - 1;
             this._updateSelection(newSelectedIndex, false);
             event.consume(true);
             break;
@@ -502,13 +502,21 @@ WebInspector.FilteredListWidget.Delegate.prototype = {
 
         var text = element.textContent;
         var ranges = rangesForMatch(text, query);
-        if (!ranges)
+        if (!ranges || !this.caseSensitive())
             ranges = rangesForMatch(text.toUpperCase(), query.toUpperCase());
         if (ranges) {
             WebInspector.highlightRangesWithStyleClass(element, ranges, "highlight");
             return true;
         }
         return false;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    caseSensitive: function()
+    {
+        return true;
     },
 
     /**

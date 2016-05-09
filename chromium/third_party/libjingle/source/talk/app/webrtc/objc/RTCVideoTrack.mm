@@ -31,10 +31,10 @@
 
 #import "RTCVideoTrack+Internal.h"
 
+#import "RTCMediaSource+Internal.h"
 #import "RTCMediaStreamTrack+Internal.h"
 #import "RTCPeerConnectionFactory+Internal.h"
 #import "RTCVideoRendererAdapter.h"
-#import "RTCMediaSource+Internal.h"
 #import "RTCVideoSource+Internal.h"
 
 @implementation RTCVideoTrack {
@@ -63,7 +63,7 @@
     (rtc::scoped_refptr<webrtc::MediaStreamTrackInterface>)mediaTrack {
   if (self = [super initWithMediaTrack:mediaTrack]) {
     [self configure];
-    rtc::scoped_refptr<webrtc::VideoSourceInterface> source =
+    rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> source =
         self.nativeVideoTrack->GetSource();
     if (source) {
       _source = [[RTCVideoSource alloc] initWithMediaSource:source.get()];
@@ -78,7 +78,7 @@
 
 - (void)dealloc {
   for (RTCVideoRendererAdapter *adapter in _adapters) {
-    self.nativeVideoTrack->RemoveRenderer(adapter.nativeVideoRenderer);
+    self.nativeVideoTrack->RemoveSink(adapter.nativeVideoRenderer);
   }
 }
 
@@ -91,7 +91,8 @@
   RTCVideoRendererAdapter* adapter =
       [[RTCVideoRendererAdapter alloc] initWithVideoRenderer:renderer];
   [_adapters addObject:adapter];
-  self.nativeVideoTrack->AddRenderer(adapter.nativeVideoRenderer);
+  self.nativeVideoTrack->AddOrUpdateSink(adapter.nativeVideoRenderer,
+                                         rtc::VideoSinkWants());
 }
 
 - (void)removeRenderer:(id<RTCVideoRenderer>)renderer {
@@ -107,7 +108,7 @@
   if (indexToRemove == NSNotFound) {
     return;
   }
-  self.nativeVideoTrack->RemoveRenderer(adapter.nativeVideoRenderer);
+  self.nativeVideoTrack->RemoveSink(adapter.nativeVideoRenderer);
   [_adapters removeObjectAtIndex:indexToRemove];
 }
 

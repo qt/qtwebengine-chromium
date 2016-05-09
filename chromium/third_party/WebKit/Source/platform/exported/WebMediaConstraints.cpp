@@ -32,30 +32,55 @@
 
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
+#include "wtf/text/StringBuilder.h"
+#include "wtf/text/WTFString.h"
 #include <math.h>
 
 namespace blink {
 
+namespace {
+
+template <typename T>
+void maybeEmitNamedValue(StringBuilder& builder, bool emit, const char* name, T value)
+{
+    if (!emit)
+        return;
+    if (builder.length() > 1)
+        builder.appendLiteral(", ");
+    builder.append(name);
+    builder.appendLiteral(": ");
+    builder.appendNumber(value);
+}
+
+void maybeEmitNamedBoolean(StringBuilder& builder, bool emit, const char* name, bool value)
+{
+    if (!emit)
+        return;
+    if (builder.length() > 1)
+        builder.appendLiteral(", ");
+    builder.append(name);
+    builder.appendLiteral(": ");
+    if (value)
+        builder.appendLiteral("true");
+    else
+        builder.appendLiteral("false");
+}
+
+} // namespace
+
 class WebMediaConstraintsPrivate final : public RefCounted<WebMediaConstraintsPrivate> {
 public:
     static PassRefPtr<WebMediaConstraintsPrivate> create();
-    static PassRefPtr<WebMediaConstraintsPrivate> create(const WebVector<WebMediaConstraint>& optional, const WebVector<WebMediaConstraint>& mandatory, const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced);
     static PassRefPtr<WebMediaConstraintsPrivate> create(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced);
 
     bool isEmpty() const;
-    void getOptionalConstraints(WebVector<WebMediaConstraint>&);
-    void getMandatoryConstraints(WebVector<WebMediaConstraint>&);
-    bool getMandatoryConstraintValue(const WebString& name, WebString& value);
-    bool getOptionalConstraintValue(const WebString& name, WebString& value);
     const WebMediaTrackConstraintSet& basic() const;
     const WebVector<WebMediaTrackConstraintSet>& advanced() const;
+    const String toString() const;
 
 private:
-    WebMediaConstraintsPrivate(const WebVector<WebMediaConstraint>& optional, const WebVector<WebMediaConstraint>& mandatory, const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced);
     WebMediaConstraintsPrivate(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced);
 
-    WebVector<WebMediaConstraint> m_optional;
-    WebVector<WebMediaConstraint> m_mandatory;
     WebMediaTrackConstraintSet m_basic;
     WebVector<WebMediaTrackConstraintSet> m_advanced;
 };
@@ -67,15 +92,13 @@ PassRefPtr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::create()
     return adoptRef(new WebMediaConstraintsPrivate(basic, advanced));
 }
 
-PassRefPtr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::create(const WebVector<WebMediaConstraint>& optional, const WebVector<WebMediaConstraint>& mandatory, const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
+PassRefPtr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::create(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
 {
-    return adoptRef(new WebMediaConstraintsPrivate(optional, mandatory, basic, advanced));
+    return adoptRef(new WebMediaConstraintsPrivate(basic, advanced));
 }
 
-WebMediaConstraintsPrivate::WebMediaConstraintsPrivate(const WebVector<WebMediaConstraint>& optional, const WebVector<WebMediaConstraint>& mandatory, const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
-    : m_optional(optional)
-    , m_mandatory(mandatory)
-    , m_basic(basic)
+WebMediaConstraintsPrivate::WebMediaConstraintsPrivate(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
+    : m_basic(basic)
     , m_advanced(advanced)
 {
 }
@@ -84,53 +107,7 @@ bool WebMediaConstraintsPrivate::isEmpty() const
 {
     // TODO(hta): When generating advanced constraints, make sure no empty
     // elements can be added to the m_advanced vector.
-    return m_basic.isEmpty() && m_advanced.isEmpty()
-        && m_optional.isEmpty() && m_mandatory.isEmpty();
-}
-
-PassRefPtr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::create(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
-{
-    return adoptRef(new WebMediaConstraintsPrivate(basic, advanced));
-}
-
-WebMediaConstraintsPrivate::WebMediaConstraintsPrivate(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
-    : m_optional()
-    , m_mandatory()
-    , m_basic(basic)
-    , m_advanced(advanced)
-{
-}
-
-void WebMediaConstraintsPrivate::getOptionalConstraints(WebVector<WebMediaConstraint>& constraints)
-{
-    constraints = m_optional;
-}
-
-void WebMediaConstraintsPrivate::getMandatoryConstraints(WebVector<WebMediaConstraint>& constraints)
-{
-    constraints = m_mandatory;
-}
-
-bool WebMediaConstraintsPrivate::getMandatoryConstraintValue(const WebString& name, WebString& value)
-{
-    for (size_t i = 0; i < m_mandatory.size(); ++i) {
-        if (m_mandatory[i].m_name == name) {
-            value = m_mandatory[i].m_value;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool WebMediaConstraintsPrivate::getOptionalConstraintValue(const WebString& name, WebString& value)
-{
-    for (size_t i = 0; i < m_optional.size(); ++i) {
-        if (m_optional[i].m_name == name) {
-            value = m_optional[i].m_value;
-            return true;
-        }
-    }
-    return false;
+    return m_basic.isEmpty() && m_advanced.isEmpty();
 }
 
 const WebMediaTrackConstraintSet& WebMediaConstraintsPrivate::basic() const
@@ -143,9 +120,55 @@ const WebVector<WebMediaTrackConstraintSet>& WebMediaConstraintsPrivate::advance
     return m_advanced;
 }
 
+const String WebMediaConstraintsPrivate::toString() const
+{
+    StringBuilder builder;
+    if (!isEmpty()) {
+        builder.append('{');
+        builder.append(basic().toString());
+        if (!advanced().isEmpty()) {
+            if (builder.length() > 1)
+                builder.appendLiteral(", ");
+            builder.appendLiteral("advanced: [");
+            bool first = true;
+            for (const auto& constraintSet : advanced()) {
+                if (!first)
+                    builder.appendLiteral(", ");
+                builder.append('{');
+                builder.append(constraintSet.toString());
+                builder.append('}');
+                first = false;
+            }
+            builder.append(']');
+        }
+        builder.append('}');
+    }
+    return builder.toString();
+}
+
 // *Constraints
 
-double DoubleConstraint::kConstraintEpsilon = 0.00001;
+BaseConstraint::BaseConstraint(const char* name)
+    : m_name(name)
+{
+}
+
+BaseConstraint::~BaseConstraint()
+{
+}
+
+LongConstraint::LongConstraint(const char* name)
+    : BaseConstraint(name)
+    , m_min()
+    , m_max()
+    , m_exact()
+    , m_ideal()
+    , m_hasMin(false)
+    , m_hasMax(false)
+    , m_hasExact(false)
+    , m_hasIdeal(false)
+{
+}
 
 bool LongConstraint::matches(long value) const
 {
@@ -164,6 +187,38 @@ bool LongConstraint::matches(long value) const
 bool LongConstraint::isEmpty() const
 {
     return !m_hasMin && !m_hasMax && !m_hasExact && !m_hasIdeal;
+}
+
+bool LongConstraint::hasMandatory() const
+{
+    return m_hasMin || m_hasMax || m_hasExact;
+}
+
+WebString LongConstraint::toString() const
+{
+    StringBuilder builder;
+    builder.append('{');
+    maybeEmitNamedValue(builder, m_hasMin, "min", m_min);
+    maybeEmitNamedValue(builder, m_hasMax, "max", m_max);
+    maybeEmitNamedValue(builder, m_hasExact, "exact", m_exact);
+    maybeEmitNamedValue(builder, m_hasIdeal, "ideal", m_ideal);
+    builder.append('}');
+    return builder.toString();
+}
+
+const double DoubleConstraint::kConstraintEpsilon = 0.00001;
+
+DoubleConstraint::DoubleConstraint(const char* name)
+    : BaseConstraint(name)
+    , m_min()
+    , m_max()
+    , m_exact()
+    , m_ideal()
+    , m_hasMin(false)
+    , m_hasMax(false)
+    , m_hasExact(false)
+    , m_hasIdeal(false)
+{
 }
 
 bool DoubleConstraint::matches(double value) const
@@ -185,6 +240,30 @@ bool DoubleConstraint::isEmpty() const
     return !m_hasMin && !m_hasMax && !m_hasExact && !m_hasIdeal;
 }
 
+bool DoubleConstraint::hasMandatory() const
+{
+    return m_hasMin || m_hasMax || m_hasExact;
+}
+
+WebString DoubleConstraint::toString() const
+{
+    StringBuilder builder;
+    builder.append('{');
+    maybeEmitNamedValue(builder, m_hasMin, "min", m_min);
+    maybeEmitNamedValue(builder, m_hasMax, "max", m_max);
+    maybeEmitNamedValue(builder, m_hasExact, "exact", m_exact);
+    maybeEmitNamedValue(builder, m_hasIdeal, "ideal", m_ideal);
+    builder.append('}');
+    return builder.toString();
+}
+
+StringConstraint::StringConstraint(const char* name)
+    : BaseConstraint(name)
+    , m_exact()
+    , m_ideal()
+{
+}
+
 bool StringConstraint::matches(WebString value) const
 {
     if (m_exact.isEmpty()) {
@@ -203,6 +282,65 @@ bool StringConstraint::isEmpty() const
     return m_exact.isEmpty() && m_ideal.isEmpty();
 }
 
+bool StringConstraint::hasMandatory() const
+{
+    return !m_exact.isEmpty();
+}
+
+const WebVector<WebString>& StringConstraint::exact() const
+{
+    return m_exact;
+}
+
+const WebVector<WebString>& StringConstraint::ideal() const
+{
+    return m_ideal;
+}
+
+WebString StringConstraint::toString() const
+{
+    StringBuilder builder;
+    builder.append('{');
+    if (!m_ideal.isEmpty()) {
+        builder.appendLiteral("ideal: [");
+        bool first = true;
+        for (const auto& iter : m_ideal) {
+            if (!first)
+                builder.appendLiteral(", ");
+            builder.append('"');
+            builder.append(iter);
+            builder.append('"');
+            first = false;
+        }
+        builder.append(']');
+    }
+    if (!m_exact.isEmpty()) {
+        if (builder.length() > 1)
+            builder.appendLiteral(", ");
+        builder.appendLiteral("exact: [");
+        bool first = true;
+        for (const auto& iter : m_exact) {
+            if (!first)
+                builder.appendLiteral(", ");
+            builder.append('"');
+            builder.append(iter);
+            builder.append('"');
+        }
+        builder.append(']');
+    }
+    builder.append('}');
+    return builder.toString();
+}
+
+BooleanConstraint::BooleanConstraint(const char* name)
+    : BaseConstraint(name)
+    , m_ideal(false)
+    , m_exact(false)
+    , m_hasIdeal(false)
+    , m_hasExact(false)
+{
+}
+
 bool BooleanConstraint::matches(bool value) const
 {
     if (m_hasExact && static_cast<bool>(m_exact) != value) {
@@ -216,24 +354,148 @@ bool BooleanConstraint::isEmpty() const
     return !m_hasIdeal && !m_hasExact;
 }
 
+bool BooleanConstraint::hasMandatory() const
+{
+    return m_hasExact;
+}
+
+WebString BooleanConstraint::toString() const
+{
+    StringBuilder builder;
+    builder.append('{');
+    maybeEmitNamedBoolean(builder, m_hasExact, "exact", exact());
+    maybeEmitNamedBoolean(builder, m_hasIdeal, "ideal", ideal());
+    builder.append('}');
+    return builder.toString();
+}
+
+WebMediaTrackConstraintSet::WebMediaTrackConstraintSet()
+    : width("width")
+    , height("height")
+    , aspectRatio("aspectRatio")
+    , frameRate("frameRate")
+    , facingMode("facingMode")
+    , volume("volume")
+    , sampleRate("sampleRate")
+    , sampleSize("sampleSize")
+    , echoCancellation("echoCancellation")
+    , latency("latency")
+    , channelCount("channelCount")
+    , deviceId("deviceId")
+    , groupId("groupId")
+    , mediaStreamSource("mediaStreamSource")
+    , renderToAssociatedSink("chromeRenderToAssociatedSink")
+    , hotwordEnabled("hotwordEnabled")
+    , googEchoCancellation("googEchoCancellation")
+    , googExperimentalEchoCancellation("googExperimentalEchoCancellation")
+    , googAutoGainControl("googAutoGainControl")
+    , googExperimentalAutoGainControl("googExperimentalAutoGainControl")
+    , googNoiseSuppression("googNoiseSuppression")
+    , googHighpassFilter("googHighpassFilter")
+    , googTypingNoiseDetection("googTypingNoiseDetection")
+    , googExperimentalNoiseSuppression("googExperimentalNoiseSuppression")
+    , googBeamforming("googBeamforming")
+    , googArrayGeometry("googArrayGeometry")
+    , googAudioMirroring("googAudioMirroring")
+    , googDAEchoCancellation("googDAEchoCancellation")
+    , googNoiseReduction("googNoiseReduction")
+    , offerToReceiveAudio("offerToReceiveAudio")
+    , offerToReceiveVideo("offerToReceiveVideo")
+    , voiceActivityDetection("voiceActivityDetection")
+    , iceRestart("iceRestart")
+    , googUseRtpMux("googUseRtpMux")
+    , enableDtlsSrtp("enableDtlsSrtp")
+    , enableRtpDataChannels("enableRtpDataChannels")
+    , enableDscp("enableDscp")
+    , enableIPv6("enableIPv6")
+    , googEnableVideoSuspendBelowMinBitrate("googEnableVideoSuspendBelowMinBitrate")
+    , googNumUnsignalledRecvStreams("googNumUnsignalledRecvStreams")
+    , googCombinedAudioVideoBwe("googCombinedAudioVideoBwe")
+    , googScreencastMinBitrate("googScreencastMinBitrate")
+    , googCpuOveruseDetection("googCpuOveruseDetection")
+    , googCpuUnderuseThreshold("googCpuUnderuseThreshold")
+    , googCpuOveruseThreshold("googCpuOveruseThreshold")
+    , googCpuUnderuseEncodeRsdThreshold("googCpuUnderuseEncodeRsdThreshold")
+    , googCpuOveruseEncodeRsdThreshold("googCpuOveruseEncodeRsdThreshold")
+    , googCpuOveruseEncodeUsage("googCpuOveruseEncodeUsage")
+    , googHighStartBitrate("googHighStartBitrate")
+    , googPayloadPadding("googPayloadPadding")
+    , googLatencyMs("latencyMs")
+    , googPowerLineFrequency("googPowerLineFrequency")
+{
+}
+
+std::vector<const BaseConstraint*> WebMediaTrackConstraintSet::allConstraints() const
+{
+    const BaseConstraint* temp[] = {
+        &width, &height, &aspectRatio, &frameRate, &facingMode, &volume,
+        &sampleRate, &sampleSize, &echoCancellation, &latency, &channelCount,
+        &deviceId, &groupId, &mediaStreamSource, &renderToAssociatedSink,
+        &hotwordEnabled, &googEchoCancellation,
+        &googExperimentalEchoCancellation, &googAutoGainControl,
+        &googExperimentalAutoGainControl, &googNoiseSuppression,
+        &googHighpassFilter, &googTypingNoiseDetection,
+        &googExperimentalNoiseSuppression, &googBeamforming,
+        &googArrayGeometry, &googAudioMirroring, &googDAEchoCancellation,
+        &googNoiseReduction, &offerToReceiveAudio,
+        &offerToReceiveVideo, &voiceActivityDetection, &iceRestart,
+        &googUseRtpMux, &enableDtlsSrtp, &enableRtpDataChannels,
+        &enableDscp, &enableIPv6, &googEnableVideoSuspendBelowMinBitrate,
+        &googNumUnsignalledRecvStreams, &googCombinedAudioVideoBwe,
+        &googScreencastMinBitrate, &googCpuOveruseDetection,
+        &googCpuUnderuseThreshold, &googCpuOveruseThreshold,
+        &googCpuUnderuseEncodeRsdThreshold, &googCpuOveruseEncodeRsdThreshold,
+        &googCpuOveruseEncodeUsage, &googHighStartBitrate, &googPayloadPadding,
+        &googLatencyMs, &googPowerLineFrequency
+    };
+    const int elementCount = sizeof(temp) / sizeof(temp[0]);
+    return std::vector<const BaseConstraint*>(&temp[0], &temp[elementCount]);
+}
+
 bool WebMediaTrackConstraintSet::isEmpty() const
 {
-    return width.isEmpty() && height.isEmpty() && aspectRatio.isEmpty()
-        && frameRate.isEmpty() && facingMode.isEmpty() && volume.isEmpty()
-        && sampleRate.isEmpty() && sampleSize.isEmpty()
-        && echoCancellation.isEmpty() && latency.isEmpty()
-        && channelCount.isEmpty() && deviceId.isEmpty() && groupId.isEmpty()
-        && mediaStreamSource.isEmpty() && renderToAssociatedSink.isEmpty()
-        && hotwordEnabled.isEmpty() && googEchoCancellation.isEmpty()
-        && googExperimentalEchoCancellation.isEmpty()
-        && googAutoGainControl.isEmpty()
-        && googExperimentalAutoGainControl.isEmpty()
-        && googNoiseSuppression.isEmpty()
-        && googHighpassFilter.isEmpty()
-        && googTypingNoiseDetection.isEmpty()
-        && googExperimentalNoiseSuppression.isEmpty()
-        && googBeamforming.isEmpty() && googArrayGeometry.isEmpty()
-        && googAudioMirroring.isEmpty();
+    for (const auto& constraint : allConstraints()) {
+        if (!constraint->isEmpty())
+            return false;
+    }
+    return true;
+}
+
+bool WebMediaTrackConstraintSet::hasMandatoryOutsideSet(const std::vector<std::string>& goodNames, std::string& foundName) const
+{
+    for (const auto& constraint : allConstraints()) {
+        if (constraint->hasMandatory()) {
+            if (std::find(goodNames.begin(), goodNames.end(), constraint->name())
+                == goodNames.end()) {
+                foundName = constraint->name();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool WebMediaTrackConstraintSet::hasMandatory() const
+{
+    std::string dummyString;
+    return hasMandatoryOutsideSet(std::vector<std::string>(), dummyString);
+}
+
+WebString WebMediaTrackConstraintSet::toString() const
+{
+    StringBuilder builder;
+    bool first = true;
+    for (const auto& constraint : allConstraints()) {
+        if (!constraint->isEmpty()) {
+            if (!first)
+                builder.appendLiteral(", ");
+            builder.append(constraint->name());
+            builder.appendLiteral(": ");
+            builder.append(constraint->toString());
+            first = false;
+        }
+    }
+    return builder.toString();
 }
 
 // WebMediaConstraints
@@ -253,40 +515,10 @@ bool WebMediaConstraints::isEmpty() const
     return m_private.isNull() || m_private->isEmpty();
 }
 
-void WebMediaConstraints::getMandatoryConstraints(WebVector<WebMediaConstraint>& constraints) const
-{
-    ASSERT(!isNull());
-    m_private->getMandatoryConstraints(constraints);
-}
-
-void WebMediaConstraints::getOptionalConstraints(WebVector<WebMediaConstraint>& constraints) const
-{
-    ASSERT(!isNull());
-    m_private->getOptionalConstraints(constraints);
-}
-
-bool WebMediaConstraints::getMandatoryConstraintValue(const WebString& name, WebString& value) const
-{
-    ASSERT(!isNull());
-    return m_private->getMandatoryConstraintValue(name, value);
-}
-
-bool WebMediaConstraints::getOptionalConstraintValue(const WebString& name, WebString& value) const
-{
-    ASSERT(!isNull());
-    return m_private->getOptionalConstraintValue(name, value);
-}
-
 void WebMediaConstraints::initialize()
 {
     ASSERT(isNull());
     m_private = WebMediaConstraintsPrivate::create();
-}
-
-void WebMediaConstraints::initialize(const WebVector<WebMediaConstraint>& optional, const WebVector<WebMediaConstraint>& mandatory, const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
-{
-    ASSERT(isNull());
-    m_private = WebMediaConstraintsPrivate::create(optional, mandatory, basic, advanced);
 }
 
 void WebMediaConstraints::initialize(const WebMediaTrackConstraintSet& basic, const WebVector<WebMediaTrackConstraintSet>& advanced)
@@ -305,6 +537,13 @@ const WebVector<WebMediaTrackConstraintSet>& WebMediaConstraints::advanced() con
 {
     ASSERT(!isNull());
     return m_private->advanced();
+}
+
+const WebString WebMediaConstraints::toString() const
+{
+    if (isNull())
+        return WebString("");
+    return m_private->toString();
 }
 
 } // namespace blink

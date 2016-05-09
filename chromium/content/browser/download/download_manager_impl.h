@@ -7,13 +7,12 @@
 
 #include <stdint.h>
 
-#include <map>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -42,7 +41,7 @@ class DownloadRequestHandleInterface;
 class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
                                            private DownloadItemImplDelegate {
  public:
-  typedef base::Callback<void(DownloadItemImpl*)> DownloadItemImplCreated;
+  using DownloadItemImplCreated = base::Callback<void(DownloadItemImpl*)>;
 
   // Caller guarantees that |net_log| will remain valid
   // for the lifetime of DownloadManagerImpl (until Shutdown() is called).
@@ -74,17 +73,16 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
       scoped_ptr<ByteStreamReader> stream,
       const DownloadUrlParameters::OnStartedCallback& on_started) override;
 
-  int RemoveDownloadsByOriginAndTime(const url::Origin& origin,
-                                     base::Time remove_begin,
-                                     base::Time remove_end) override;
-  int RemoveDownloadsBetween(base::Time remove_begin,
-                             base::Time remove_end) override;
-  int RemoveDownloads(base::Time remove_begin) override;
+  int RemoveDownloadsByURLAndTime(
+      const base::Callback<bool(const GURL&)>& url_filter,
+      base::Time remove_begin,
+      base::Time remove_end) override;
   int RemoveAllDownloads() override;
   void DownloadUrl(scoped_ptr<DownloadUrlParameters> params) override;
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
   content::DownloadItem* CreateDownloadItem(
+      const std::string& guid,
       uint32_t id,
       const base::FilePath& current_path,
       const base::FilePath& target_path,
@@ -98,6 +96,7 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
       const std::string& last_modified,
       int64_t received_bytes,
       int64_t total_bytes,
+      const std::string& hash,
       content::DownloadItem::DownloadState state,
       DownloadDangerType danger_type,
       DownloadInterruptReason interrupt_reason,
@@ -107,6 +106,7 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   BrowserContext* GetBrowserContext() const override;
   void CheckForHistoryFilesRemoval() override;
   DownloadItem* GetDownload(uint32_t id) override;
+  DownloadItem* GetDownloadByGuid(const std::string& guid) override;
 
   // For testing; specifically, accessed from TestFileErrorInjector.
   void SetDownloadItemFactoryForTesting(
@@ -118,10 +118,11 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   void RemoveUrlDownloader(UrlDownloader* downloader);
 
  private:
-  typedef std::set<DownloadItem*> DownloadSet;
-  typedef base::hash_map<uint32_t, DownloadItemImpl*> DownloadMap;
-  typedef std::vector<DownloadItemImpl*> DownloadItemImplVector;
-  typedef base::Callback<bool(const DownloadItemImpl*)> DownloadRemover;
+  using DownloadSet = std::set<DownloadItem*>;
+  using DownloadMap = std::unordered_map<uint32_t, DownloadItemImpl*>;
+  using DownloadGuidMap = std::unordered_map<std::string, DownloadItemImpl*>;
+  using DownloadItemImplVector = std::vector<DownloadItemImpl*>;
+  using DownloadRemover = base::Callback<bool(const DownloadItemImpl*)>;
 
   // For testing.
   friend class DownloadManagerTest;
@@ -189,7 +190,15 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   // DownloadManager.  This includes downloads started by the user in
   // this session, downloads initialized from the history system, and
   // "save page as" downloads.
+  // TODO(asanka): Remove this container in favor of downloads_by_guid_ as a
+  // part of http://crbug.com/593020.
   DownloadMap downloads_;
+
+  // Same as the above, but maps from GUID to download item. Note that the
+  // container is case sensitive. Hence the key needs to be normalized to
+  // upper-case when inserting new elements here. Fortunately for us,
+  // DownloadItemImpl already normalizes the string GUID.
+  DownloadGuidMap downloads_by_guid_;
 
   int history_size_;
 

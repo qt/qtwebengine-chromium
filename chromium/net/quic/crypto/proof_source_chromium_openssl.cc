@@ -42,14 +42,16 @@ bool ProofSourceChromium::Initialize(const base::FilePath& cert_path,
     return false;
   }
 
+  vector<string> certs;
   for (const scoped_refptr<X509Certificate>& cert : certs_in_file) {
     std::string der_encoded_cert;
     if (!X509Certificate::GetDEREncoded(cert->os_cert_handle(),
                                         &der_encoded_cert)) {
       return false;
     }
-    certificates_.push_back(der_encoded_cert);
+    certs.push_back(der_encoded_cert);
   }
+  chain_ = new ProofSource::Chain(certs);
 
   std::string key_data;
   if (!base::ReadFileToString(key_path, &key_data)) {
@@ -77,11 +79,13 @@ bool ProofSourceChromium::Initialize(const base::FilePath& cert_path,
   return true;
 }
 
-bool ProofSourceChromium::GetProof(const IPAddressNumber& server_ip,
+bool ProofSourceChromium::GetProof(const IPAddress& server_ip,
                                    const string& hostname,
                                    const string& server_config,
+                                   QuicVersion quic_version,
+                                   base::StringPiece chlo_hash,
                                    bool ecdsa_ok,
-                                   const vector<string>** out_certs,
+                                   scoped_refptr<ProofSource::Chain>* out_chain,
                                    string* out_signature,
                                    string* out_leaf_cert_sct) {
   DCHECK(private_key_.get()) << " this: " << this;
@@ -89,18 +93,41 @@ bool ProofSourceChromium::GetProof(const IPAddressNumber& server_ip,
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
   crypto::ScopedEVP_MD_CTX sign_context(EVP_MD_CTX_create());
   EVP_PKEY_CTX* pkey_ctx;
-  if (!EVP_DigestSignInit(sign_context.get(), &pkey_ctx, EVP_sha256(), nullptr,
-                          private_key_->key()) ||
-      !EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) ||
-      !EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, -1) ||
-      !EVP_DigestSignUpdate(
-          sign_context.get(),
-          reinterpret_cast<const uint8_t*>(kProofSignatureLabel),
-          sizeof(kProofSignatureLabel)) ||
-      !EVP_DigestSignUpdate(
-          sign_context.get(),
-          reinterpret_cast<const uint8_t*>(server_config.data()),
-          server_config.size())) {
+
+  if (quic_version > QUIC_VERSION_30) {
+    uint32_t len = chlo_hash.length();
+    if (!EVP_DigestSignInit(sign_context.get(), &pkey_ctx, EVP_sha256(),
+                            nullptr, private_key_->key()) ||
+        !EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) ||
+        !EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, -1) ||
+        !EVP_DigestSignUpdate(
+            sign_context.get(),
+            reinterpret_cast<const uint8_t*>(kProofSignatureLabel),
+            sizeof(kProofSignatureLabel)) ||
+        !EVP_DigestSignUpdate(sign_context.get(),
+                              reinterpret_cast<const uint8_t*>(&len),
+                              sizeof(len)) ||
+        !EVP_DigestSignUpdate(
+            sign_context.get(),
+            reinterpret_cast<const uint8_t*>(chlo_hash.data()), len) ||
+        !EVP_DigestSignUpdate(
+            sign_context.get(),
+            reinterpret_cast<const uint8_t*>(server_config.data()),
+            server_config.size())) {
+      return false;
+    }
+  } else if (!EVP_DigestSignInit(sign_context.get(), &pkey_ctx, EVP_sha256(),
+                                 nullptr, private_key_->key()) ||
+             !EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) ||
+             !EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, -1) ||
+             !EVP_DigestSignUpdate(
+                 sign_context.get(),
+                 reinterpret_cast<const uint8_t*>(kProofSignatureLabelOld),
+                 sizeof(kProofSignatureLabelOld)) ||
+             !EVP_DigestSignUpdate(
+                 sign_context.get(),
+                 reinterpret_cast<const uint8_t*>(server_config.data()),
+                 server_config.size())) {
     return false;
   }
 
@@ -117,7 +144,7 @@ bool ProofSourceChromium::GetProof(const IPAddressNumber& server_ip,
   signature.resize(len);
   out_signature->assign(reinterpret_cast<const char*>(signature.data()),
                         signature.size());
-  *out_certs = &certificates_;
+  *out_chain = chain_;
   VLOG(1) << "signature: "
           << base::HexEncode(out_signature->data(), out_signature->size());
   *out_leaf_cert_sct = signed_certificate_timestamp_;

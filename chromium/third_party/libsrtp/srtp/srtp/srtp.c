@@ -950,7 +950,7 @@ srtp_protect_aead (srtp_ctx_t *ctx, srtp_stream_ctx_t *stream,
          srtp_hdr_xtnd_t *xtn_hdr = (srtp_hdr_xtnd_t*)enc_start;
          enc_start += (ntohs(xtn_hdr->length) + 1);
      }
-     if (!((uint8_t*)enc_start < (uint8_t*)hdr + *pkt_octet_len))
+     if (!((uint8_t*)enc_start <= (uint8_t*)hdr + *pkt_octet_len))
          return err_status_parse_err;
      enc_octet_len = (unsigned int)(*pkt_octet_len -
                                     ((uint8_t*)enc_start - (uint8_t*)hdr));
@@ -1077,7 +1077,7 @@ srtp_unprotect_aead (srtp_ctx_t *ctx, srtp_stream_ctx_t *stream, int delta,
         srtp_hdr_xtnd_t *xtn_hdr = (srtp_hdr_xtnd_t*)enc_start;
         enc_start += (ntohs(xtn_hdr->length) + 1);
     }
-    if (!((uint8_t*)enc_start < (uint8_t*)hdr + (*pkt_octet_len - tag_len)))
+    if (!((uint8_t*)enc_start <= (uint8_t*)hdr + (*pkt_octet_len - tag_len)))
         return err_status_parse_err;
     /*
      * We pass the tag down to the cipher when doing GCM mode 
@@ -1308,7 +1308,7 @@ srtp_unprotect_aead (srtp_ctx_t *ctx, srtp_stream_ctx_t *stream, int delta,
        srtp_hdr_xtnd_t *xtn_hdr = (srtp_hdr_xtnd_t *)enc_start;
        enc_start += (ntohs(xtn_hdr->length) + 1);
      }
-     if (!((uint8_t*)enc_start < (uint8_t*)hdr + *pkt_octet_len))
+     if (!((uint8_t*)enc_start <= (uint8_t*)hdr + *pkt_octet_len))
        return err_status_parse_err;
      enc_octet_len = (unsigned int)(*pkt_octet_len -
                                     ((uint8_t*)enc_start - (uint8_t*)hdr));
@@ -1595,7 +1595,7 @@ srtp_unprotect(srtp_ctx_t *ctx, void *srtp_hdr, int *pkt_octet_len) {
       srtp_hdr_xtnd_t *xtn_hdr = (srtp_hdr_xtnd_t *)enc_start;
       enc_start += (ntohs(xtn_hdr->length) + 1);
     }  
-    if (!((uint8_t*)enc_start < (uint8_t*)hdr + (*pkt_octet_len - tag_len)))
+    if (!((uint8_t*)enc_start <= (uint8_t*)hdr + (*pkt_octet_len - tag_len)))
       return err_status_parse_err;
     enc_octet_len = (uint32_t)(*pkt_octet_len - tag_len -
                                ((uint8_t*)enc_start - (uint8_t*)hdr));
@@ -2378,9 +2378,9 @@ srtp_protect_rtcp_aead (srtp_t ctx, srtp_stream_ctx_t *stream,
 	}
     }
     /* 
-     * put the idx# into network byte order and process it as AAD
+     * Process the sequence# as AAD
      */
-    tseq = htonl(*trailer);
+    tseq = *trailer;
     status = cipher_set_aad(stream->rtcp_cipher, (uint8_t*)&tseq, 
                             sizeof(srtcp_trailer_t));
     if (status) {
@@ -2529,9 +2529,9 @@ srtp_unprotect_rtcp_aead (srtp_t ctx, srtp_stream_ctx_t *stream,
     }
 
     /* 
-     * put the idx# into network byte order, and process it as AAD 
+     * Process the sequence# as AAD
      */
-    tseq = htonl(*trailer);
+    tseq = *trailer;
     status = cipher_set_aad(stream->rtcp_cipher, (uint8_t*)&tseq, 
                             sizeof(srtcp_trailer_t));
     if (status) {

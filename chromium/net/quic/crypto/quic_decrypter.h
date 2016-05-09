@@ -50,9 +50,10 @@ class NET_EXPORT_PRIVATE QuicDecrypter {
   // to form the nonce.
   // TODO(wtc): add a way for DecryptPacket to report decryption failure due
   // to non-authentic inputs, as opposed to other reasons for failure.
-  virtual bool DecryptPacket(QuicPacketNumber packet_number,
-                             const base::StringPiece& associated_data,
-                             const base::StringPiece& ciphertext,
+  virtual bool DecryptPacket(QuicPathId path_id,
+                             QuicPacketNumber packet_number,
+                             base::StringPiece associated_data,
+                             base::StringPiece ciphertext,
                              char* output,
                              size_t* output_length,
                              size_t max_output_length) = 0;

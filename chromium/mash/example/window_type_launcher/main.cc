@@ -8,23 +8,21 @@
 #include "base/command_line.h"
 #include "base/debug/stack_trace.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/launch.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "mash/example/window_type_launcher/window_type_launcher.h"
-#include "mojo/message_pump/message_pump_mojo.h"
-#include "mojo/runner/child/runner_connection.h"
-#include "mojo/runner/init.h"
-#include "mojo/shell/public/cpp/application_impl.h"
-#include "mojo/shell/public/interfaces/application.mojom.h"
-#include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
-#include "third_party/mojo/src/mojo/edk/embedder/process_delegate.h"
+#include "mojo/edk/embedder/embedder.h"
+#include "mojo/edk/embedder/process_delegate.h"
+#include "mojo/shell/public/cpp/shell_connection.h"
+#include "mojo/shell/public/interfaces/shell_client.mojom.h"
+#include "mojo/shell/runner/common/client_util.h"
+#include "mojo/shell/runner/init.h"
 
 namespace {
 
-class ProcessDelegate : public mojo::embedder::ProcessDelegate {
+class ProcessDelegate : public mojo::edk::ProcessDelegate {
  public:
   ProcessDelegate() {}
   ~ProcessDelegate() override {}
@@ -41,8 +39,8 @@ int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   base::CommandLine::Init(argc, argv);
 
-  mojo::runner::InitializeLogging();
-  mojo::runner::WaitForDebuggerIfNecessary();
+  mojo::shell::InitializeLogging();
+  mojo::shell::WaitForDebuggerIfNecessary();
 
 #if !defined(OFFICIAL_BUILD)
   base::debug::EnableInProcessStackDumping();
@@ -52,29 +50,23 @@ int main(int argc, char** argv) {
 #endif
 
   {
-    mojo::embedder::PreInitializeChildProcess();
-    mojo::embedder::Init();
+    mojo::edk::Init();
 
     ProcessDelegate process_delegate;
     base::Thread io_thread("io_thread");
     base::Thread::Options io_thread_options(base::MessageLoop::TYPE_IO, 0);
     CHECK(io_thread.StartWithOptions(io_thread_options));
 
-    mojo::embedder::InitIPCSupport(mojo::embedder::ProcessType::NONE,
-                                   &process_delegate,
-                                   io_thread.task_runner().get(),
-                                   mojo::embedder::ScopedPlatformHandle());
+    mojo::edk::InitIPCSupport(&process_delegate, io_thread.task_runner().get());
+    mojo::edk::SetParentPipeHandleFromCommandLine();
 
-    mojo::InterfaceRequest<mojo::Application> application_request;
-    scoped_ptr<mojo::runner::RunnerConnection> connection(
-        mojo::runner::RunnerConnection::ConnectToRunner(
-            &application_request, mojo::ScopedMessagePipeHandle()));
-    base::MessageLoop loop(mojo::common::MessagePumpMojo::Create());
+    base::MessageLoop loop;
     WindowTypeLauncher delegate;
-    mojo::ApplicationImpl impl(&delegate, std::move(application_request));
+    mojo::ShellConnection impl(
+        &delegate, mojo::shell::GetShellClientRequestFromCommandLine());
     loop.Run();
 
-    mojo::embedder::ShutdownIPCSupport();
+    mojo::edk::ShutdownIPCSupport();
   }
 
   return 0;

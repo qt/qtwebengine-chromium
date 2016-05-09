@@ -30,7 +30,7 @@ bool supportsTouchAction(const LayoutObject& object)
 
 const Node* parentNodeAcrossFrames(const Node* curNode)
 {
-    Node* parentNode = ComposedTreeTraversal::parent(*curNode);
+    Node* parentNode = FlatTreeTraversal::parent(*curNode);
     if (parentNode)
         return parentNode;
 
@@ -56,7 +56,7 @@ TouchAction computeEffectiveTouchAction(const Node& node)
     for (const Node* curNode = &node; curNode; curNode = parentNodeAcrossFrames(curNode)) {
         if (LayoutObject* layoutObject = curNode->layoutObject()) {
             if (supportsTouchAction(*layoutObject)) {
-                TouchAction action = layoutObject->style()->touchAction();
+                TouchAction action = layoutObject->style()->getTouchAction();
                 action |= handledTouchActions;
                 effectiveTouchAction &= action;
                 if (effectiveTouchAction == TouchActionNone)

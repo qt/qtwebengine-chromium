@@ -32,19 +32,24 @@
 #define WTF_h
 
 #include "wtf/Compiler.h"
-#include "wtf/CurrentTime.h"
 #include "wtf/WTFExport.h"
 
 namespace WTF {
 
-typedef void(*HistogramEnumerationFunction)(const char* name, int sample, int boundaryValue);
-typedef void(*AdjustAmountOfExternalAllocatedMemoryFunction)(int size);
+typedef void MainThreadFunction(void*);
 
 // This function must be called exactly once from the main thread before using anything else in WTF.
-WTF_EXPORT void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction, HistogramEnumerationFunction, AdjustAmountOfExternalAllocatedMemoryFunction);
+WTF_EXPORT void initialize(void (*)(MainThreadFunction, void*));
 WTF_EXPORT void shutdown();
 WTF_EXPORT bool isShutdown();
+WTF_EXPORT bool isMainThread();
+
+namespace internal {
+void callOnMainThread(MainThreadFunction*, void* context);
+} // namespace internal
 
 } // namespace WTF
+
+using WTF::isMainThread;
 
 #endif // WTF_h

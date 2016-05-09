@@ -11,13 +11,16 @@
 #include <map>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
 #include "device/usb/usb_descriptors.h"
-#include "net/base/io_buffer.h"
+
+namespace net {
+class IOBuffer;
+}
 
 namespace device {
 
@@ -37,9 +40,18 @@ enum UsbTransferStatus {
 // UsbDeviceHandle class provides basic I/O related functionalities.
 class UsbDeviceHandle : public base::RefCountedThreadSafe<UsbDeviceHandle> {
  public:
+  struct IsochronousPacket {
+    uint32_t length;
+    uint32_t transferred_length;
+    UsbTransferStatus status;
+  };
+
   using ResultCallback = base::Callback<void(bool)>;
   using TransferCallback = base::Callback<
       void(UsbTransferStatus, scoped_refptr<net::IOBuffer>, size_t)>;
+  using IsochronousTransferCallback =
+      base::Callback<void(scoped_refptr<net::IOBuffer>,
+                          const std::vector<IsochronousPacket>& packets)>;
 
   enum TransferRequestType { STANDARD, CLASS, VENDOR, RESERVED };
   enum TransferRecipient { DEVICE, INTERFACE, ENDPOINT, OTHER };
@@ -58,7 +70,8 @@ class UsbDeviceHandle : public base::RefCountedThreadSafe<UsbDeviceHandle> {
                                 const ResultCallback& callback) = 0;
   virtual void ClaimInterface(int interface_number,
                               const ResultCallback& callback) = 0;
-  virtual bool ReleaseInterface(int interface_number) = 0;
+  virtual void ReleaseInterface(int interface_number,
+                                const ResultCallback& callback) = 0;
   virtual void SetInterfaceAlternateSetting(int interface_number,
                                             int alternate_setting,
                                             const ResultCallback& callback) = 0;
@@ -78,26 +91,30 @@ class UsbDeviceHandle : public base::RefCountedThreadSafe<UsbDeviceHandle> {
                                unsigned int timeout,
                                const TransferCallback& callback) = 0;
 
-  virtual void IsochronousTransfer(UsbEndpointDirection direction,
-                                   uint8_t endpoint,
-                                   scoped_refptr<net::IOBuffer> buffer,
-                                   size_t length,
-                                   unsigned int packets,
-                                   unsigned int packet_length,
-                                   unsigned int timeout,
-                                   const TransferCallback& callback) = 0;
+  virtual void IsochronousTransferIn(
+      uint8_t endpoint_number,
+      const std::vector<uint32_t>& packet_lengths,
+      unsigned int timeout,
+      const IsochronousTransferCallback& callback) = 0;
+
+  virtual void IsochronousTransferOut(
+      uint8_t endpoint_number,
+      scoped_refptr<net::IOBuffer> buffer,
+      const std::vector<uint32_t>& packet_lengths,
+      unsigned int timeout,
+      const IsochronousTransferCallback& callback) = 0;
 
   virtual void GenericTransfer(UsbEndpointDirection direction,
-                               uint8_t endpoint,
+                               uint8_t endpoint_number,
                                scoped_refptr<net::IOBuffer> buffer,
                                size_t length,
                                unsigned int timeout,
                                const TransferCallback& callback) = 0;
 
-  // Gets the interface containing |endpoint_address|. Returns false if no
+  // Gets the interface containing |endpoint_address|. Returns nullptr if no
   // claimed interface contains that endpoint.
-  virtual bool FindInterfaceByEndpoint(uint8_t endpoint_address,
-                                       uint8_t* interface_number) = 0;
+  virtual const UsbInterfaceDescriptor* FindInterfaceByEndpoint(
+      uint8_t endpoint_address) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<UsbDeviceHandle>;
@@ -106,6 +123,7 @@ class UsbDeviceHandle : public base::RefCountedThreadSafe<UsbDeviceHandle> {
 
   virtual ~UsbDeviceHandle();
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(UsbDeviceHandle);
 };
 

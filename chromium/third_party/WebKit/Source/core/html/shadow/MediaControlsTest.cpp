@@ -77,7 +77,7 @@ protected:
 
 private:
     OwnPtr<DummyPageHolder> m_pageHolder;
-    RawPtrWillBePersistent<MediaControls> m_mediaControls;
+    Persistent<MediaControls> m_mediaControls;
 };
 
 TEST_F(MediaControlsTest, HideAndShow)
@@ -123,12 +123,12 @@ TEST_F(MediaControlsTest, HideAndReset)
 TEST_F(MediaControlsTest, ResetDoesNotTriggerInitialLayout)
 {
     Document& document = this->document();
-    int oldResolverCount = document.styleEngine().resolverAccessCount();
+    int oldElementCount = document.styleEngine().styleForElementCount();
     // Also assert that there are no layouts yet.
-    ASSERT_EQ(0, oldResolverCount);
+    ASSERT_EQ(0, oldElementCount);
     mediaControls().reset();
-    int newResolverCount = document.styleEngine().resolverAccessCount();
-    ASSERT_EQ(oldResolverCount, newResolverCount);
+    int newElementCount = document.styleEngine().styleForElementCount();
+    ASSERT_EQ(oldElementCount, newElementCount);
 }
 
 TEST_F(MediaControlsTest, CastButtonRequiresRoute)

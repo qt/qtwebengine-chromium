@@ -17,6 +17,7 @@ namespace gfx {
 // A collection of parameters describing how text should be rendered on Linux.
 struct GFX_EXPORT FontRenderParams {
   FontRenderParams();
+  FontRenderParams(const FontRenderParams& other);
   ~FontRenderParams();
 
   // Level of hinting to be applied.
@@ -73,6 +74,7 @@ struct GFX_EXPORT FontRenderParams {
 // A query used to determine the appropriate FontRenderParams.
 struct GFX_EXPORT FontRenderParamsQuery {
   FontRenderParamsQuery();
+  FontRenderParamsQuery(const FontRenderParamsQuery& other);
   ~FontRenderParamsQuery();
 
   bool is_empty() const {
@@ -106,9 +108,9 @@ GFX_EXPORT FontRenderParams GetFontRenderParams(
 GFX_EXPORT void ClearFontRenderParamsCacheForTest();
 #endif
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
 // Gets the device scale factor to query the FontRenderParams.
-float GetFontRenderParamsDeviceScaleFactor();
+GFX_EXPORT float GetFontRenderParamsDeviceScaleFactor();
 
 // Sets the device scale factor for FontRenderParams to decide
 // if it should enable subpixel positioning.

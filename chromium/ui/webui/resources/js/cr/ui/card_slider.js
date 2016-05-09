@@ -328,7 +328,7 @@ cr.define('cr.ui', function() {
     },
 
     /**
-     * Handles the ends of -webkit-transitions on -webkit-transform (animated
+     * Handles the ends of -webkit-transitions on transform (animated
      * card switches).
      * @param {Event} e The webkitTransitionEnd event.
      * @private
@@ -381,11 +381,10 @@ cr.define('cr.ui', function() {
 
     /**
      * Append a card to the end of the list.
-     * @param {!Node} card A card to add at the end of the card slider.
+     * @param {!Element} card A card to add at the end of the card slider.
      */
     appendCard: function(card) {
-      assert(card instanceof Node, '|card| isn\'t a Node');
-      this.cards_.push(card);
+      this.cards_.push(assertInstanceof(card, Element));
       this.fireAddedEvent_(card, this.cards_.length - 1);
     },
 
@@ -419,11 +418,11 @@ cr.define('cr.ui', function() {
      * Removes a card by index from the card slider. If the card to be removed
      * is the current card or in front of the current card, the current card
      * will be updated (to current card - 1).
-     * @param {!Node} card A card to be removed.
+     * @param {!Element} card A card to be removed.
      */
     removeCard: function(card) {
-      assert(card instanceof Node, '|card| isn\'t a Node');
-      this.removeCardAtIndex(this.cards_.indexOf(card));
+      this.removeCardAtIndex(
+          this.cards_.indexOf(assertInstanceof(card, Element)));
     },
 
     /**
@@ -460,7 +459,7 @@ cr.define('cr.ui', function() {
     },
 
     /**
-     * This re-syncs the -webkit-transform that's used to position the frame in
+     * This re-syncs the transform that's used to position the frame in
      * the likely event it needs to be updated by a card being inserted or
      * removed in the flow.
      */
@@ -534,7 +533,7 @@ cr.define('cr.ui', function() {
 
     /**
      * Selects a card from the stack. Passes through to selectCard.
-     * @param {Node} newCard The card that should be selected.
+     * @param {!Element} newCard The card that should be selected.
      * @param {boolean=} opt_animate Whether to animate.
      */
     selectCardByValue: function(newCard, opt_animate) {
@@ -567,7 +566,7 @@ cr.define('cr.ui', function() {
       // enough to change cards.
       var transition = '';
       if (opt_animate) {
-        transition = '-webkit-transform ' + CardSlider.TRANSITION_TIME_ +
+        transition = 'transform ' + CardSlider.TRANSITION_TIME_ +
                      'ms ease-in-out';
       }
       this.container_.style.WebkitTransition = transition;
@@ -582,12 +581,12 @@ cr.define('cr.ui', function() {
      * @private
      */
     translateTo_: function(x) {
-      // We use a webkitTransform to slide because this is GPU accelerated on
+      // We use a transform to slide because this is GPU accelerated on
       // Chrome and iOS.  Once Chrome does GPU acceleration on the position
       // fixed-layout elements we could simply set the element's position to
       // fixed and modify 'left' instead.
       this.deltaX_ = x - this.currentLeft_;
-      this.container_.style.WebkitTransform = 'translate3d(' + x + 'px, 0, 0)';
+      this.container_.style.transform = 'translate3d(' + x + 'px, 0, 0)';
     },
 
     /* Touch ******************************************************************/

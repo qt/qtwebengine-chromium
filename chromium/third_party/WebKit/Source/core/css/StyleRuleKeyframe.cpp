@@ -10,7 +10,7 @@
 
 namespace blink {
 
-StyleRuleKeyframe::StyleRuleKeyframe(PassOwnPtr<Vector<double>> keys, PassRefPtrWillBeRawPtr<StylePropertySet> properties)
+StyleRuleKeyframe::StyleRuleKeyframe(PassOwnPtr<Vector<double>> keys, StylePropertySet* properties)
 : StyleRuleBase(Keyframe)
 , m_properties(properties)
 , m_keys(*keys)
@@ -24,7 +24,7 @@ String StyleRuleKeyframe::keyText() const
     StringBuilder keyText;
     for (unsigned i = 0; i < m_keys.size(); ++i) {
         if (i)
-            keyText.append(',');
+            keyText.appendLiteral(", ");
         keyText.appendNumber(m_keys.at(i) * 100);
         keyText.append('%');
     }

@@ -61,7 +61,7 @@ const uint8_t nBitTo8BitlookupTable[] = {
     225, 227, 229, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249, 251, 253, 255,
 };
 
-}
+} // namespace
 
 namespace blink {
 
@@ -115,7 +115,7 @@ bool BMPImageReader::decodeBMP(bool onlySize)
 
     // Initialize the framebuffer if needed.
     ASSERT(m_buffer);  // Parent should set this before asking us to decode!
-    if (m_buffer->status() == ImageFrame::FrameEmpty) {
+    if (m_buffer->getStatus() == ImageFrame::FrameEmpty) {
         if (!m_buffer->setSize(m_parent->size().width(), m_parent->size().height()))
             return m_parent->setFailed(); // Unable to allocate.
         m_buffer->setStatus(ImageFrame::FramePartial);

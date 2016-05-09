@@ -43,9 +43,9 @@ static String urlForLoggingTrack(const KURL& url)
 {
     static const unsigned maximumURLLengthForLogging = 128;
 
-    if (url.string().length() < maximumURLLengthForLogging)
-        return url.string();
-    return url.string().substring(0, maximumURLLengthForLogging) + "...";
+    if (url.getString().length() < maximumURLLengthForLogging)
+        return url.getString();
+    return url.getString().substring(0, maximumURLLengthForLogging) + "...";
 }
 #endif
 
@@ -307,9 +307,9 @@ void HTMLTrackElement::setReadyState(ReadyState state)
         return parent->textTrackReadyStateChanged(m_track.get());
 }
 
-HTMLTrackElement::ReadyState HTMLTrackElement::readyState()
+HTMLTrackElement::ReadyState HTMLTrackElement::getReadyState()
 {
-    return static_cast<ReadyState>(ensureTrack()->readinessState());
+    return static_cast<ReadyState>(ensureTrack()->getReadinessState());
 }
 
 const AtomicString& HTMLTrackElement::mediaElementCrossOriginAttribute() const
@@ -335,4 +335,4 @@ DEFINE_TRACE(HTMLTrackElement)
     HTMLElement::trace(visitor);
 }
 
-}
+} // namespace blink

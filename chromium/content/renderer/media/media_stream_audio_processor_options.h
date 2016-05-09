@@ -12,13 +12,13 @@
 #include "content/common/content_export.h"
 #include "content/public/common/media_stream_request.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
+#include "third_party/webrtc/api/mediastreaminterface.h"
+#include "third_party/webrtc/media/base/mediachannel.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 
 namespace webrtc {
 
 class EchoCancellation;
-class MediaConstraintsInterface;
 class TypingDetection;
 
 }
@@ -28,7 +28,6 @@ namespace content {
 class RTCMediaConstraints;
 
 using webrtc::AudioProcessing;
-using webrtc::MediaConstraintsInterface;
 
 // A helper class to parse audio constraints from a blink::WebMediaConstraints
 // object.
@@ -48,11 +47,13 @@ class CONTENT_EXPORT MediaAudioConstraints {
   static const char kGoogTypingNoiseDetection[];
   static const char kGoogAudioMirroring[];
 
-  // Merge |constraints| with |kDefaultAudioConstraints|. For any key which
-  // exists in both, the value from |constraints| is maintained, including its
-  // mandatory/optional status. New values from |kDefaultAudioConstraints| will
-  // be added with optional status.
-  static void ApplyFixedAudioConstraints(RTCMediaConstraints* constraints);
+  // Merge |options| with |kDefaultAudioConstraints|. For any key which
+  // exists in both, the value from |options| is maintained.
+  // New values from |kDefaultAudioConstraints| will
+  // be added.
+  // TODO(hta): Switch to an interface without "cricket::" when webrtc has one.
+
+  static void ApplyFixedAudioConstraints(cricket::AudioOptions* options);
 
   // |effects| is the bitmasks telling whether certain platform
   // hardware audio effects are enabled, like hardware echo cancellation. If
@@ -62,17 +63,16 @@ class CONTENT_EXPORT MediaAudioConstraints {
                         int effects);
   virtual ~MediaAudioConstraints();
 
-  // Gets the property of the constraint named by |key| in |constraints_|.
-  // Returns the constraint's value if the key is found; otherwise returns the
-  // default value of the constraint.
-  // Note, for constraint of |kEchoCancellation| or |kGoogEchoCancellation|,
-  // clients should use GetEchoCancellationProperty().
-  bool GetProperty(const std::string& key) const;
-
-  // Gets the property of the constraint named by |key| in |constraints_| as a
-  // string. Returns the constraint's string value if the key is found;
-  // otherwise returns an empty string.
-  std::string GetPropertyAsString(const std::string& key) const;
+  bool GetGoogAudioMirroring() const;
+  bool GetGoogAutoGainControl() const;
+  bool GetGoogExperimentalEchoCancellation() const;
+  bool GetGoogTypingNoiseDetection() const;
+  bool GetGoogNoiseSuppression() const;
+  bool GetGoogExperimentalNoiseSuppression() const;
+  bool GetGoogBeamforming() const;
+  bool GetGoogHighpassFilter() const;
+  bool GetGoogExperimentalAutoGainControl() const;
+  std::string GetGoogArrayGeometry() const;
 
   // Gets the property of echo cancellation defined in |constraints_|. The
   // returned value depends on a combination of |effects_|, |kEchoCancellation|
@@ -83,12 +83,14 @@ class CONTENT_EXPORT MediaAudioConstraints {
   // Otherwise return false.
   bool IsValid() const;
 
+  // Exposed for testing.
+  bool default_audio_processing_constraint_value() const {
+    return default_audio_processing_constraint_value_;
+  }
+
  private:
   // Gets the default value of constraint named by |key| in |constraints|.
-  bool GetDefaultValueForConstraint(
-      const blink::WebMediaConstraints& constraints,
-      const std::string& key) const;
-
+  bool GetDefaultValueForConstraint(const std::string& key) const;
   const blink::WebMediaConstraints constraints_;
   const int effects_;
   bool default_audio_processing_constraint_value_;

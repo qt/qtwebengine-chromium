@@ -510,8 +510,7 @@ const ImageSkia* Image::ToImageSkia() const {
         NOTREACHED();
     }
     CHECK(scoped_rep);
-    rep = scoped_rep.get();
-    AddRepresentation(std::move(scoped_rep));
+    rep = AddRepresentation(std::move(scoped_rep));
   }
   return rep->AsImageRepSkia()->image();
 }
@@ -541,8 +540,7 @@ UIImage* Image::ToUIImage() const {
         NOTREACHED();
     }
     CHECK(scoped_rep);
-    rep = scoped_rep.get();
-    AddRepresentation(std::move(scoped_rep));
+    rep = AddRepresentation(std::move(scoped_rep));
   }
   return rep->AsImageRepCocoaTouch()->image();
 }
@@ -575,8 +573,7 @@ NSImage* Image::ToNSImage() const {
         NOTREACHED();
     }
     CHECK(scoped_rep);
-    rep = scoped_rep.get();
-    AddRepresentation(std::move(scoped_rep));
+    rep = AddRepresentation(std::move(scoped_rep));
   }
   return rep->AsImageRepCocoa()->image();
 }
@@ -749,10 +746,18 @@ internal::ImageRep* Image::GetRepresentation(
   return it->second.get();
 }
 
-void Image::AddRepresentation(scoped_ptr<internal::ImageRep> rep) const {
+internal::ImageRep* Image::AddRepresentation(
+    scoped_ptr<internal::ImageRep> rep) const {
   CHECK(storage_.get());
   RepresentationType type = rep->type();
-  storage_->representations().insert(std::make_pair(type, std::move(rep)));
+  auto result =
+      storage_->representations().insert(std::make_pair(type, std::move(rep)));
+
+  // insert should not fail (implies that there was already a representation of
+  // that type in the map).
+  CHECK(result.second) << "type was already in map.";
+
+  return result.first->second.get();
 }
 
 }  // namespace gfx

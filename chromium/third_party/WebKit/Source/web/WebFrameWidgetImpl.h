@@ -52,16 +52,16 @@ class LocalFrame;
 class Page;
 class PaintLayerCompositor;
 class UserGestureToken;
-class WebCompositorAnimationTimeline;
+class CompositorAnimationTimeline;
 class WebLayer;
 class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
 class WebFrameWidgetImpl;
 
-using WebFrameWidgetsSet = WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<WebFrameWidgetImpl>>;
+using WebFrameWidgetsSet = PersistentHeapHashSet<WeakMember<WebFrameWidgetImpl>>;
 
-class WebFrameWidgetImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebFrameWidgetImpl>
+class WebFrameWidgetImpl final : public GarbageCollectedFinalized<WebFrameWidgetImpl>
     , public WebFrameWidget
     , public PageWidgetEventHandler {
 public:
@@ -71,10 +71,8 @@ public:
     // WebWidget functions:
     void close() override;
     WebSize size() override;
-    void willStartLiveResize() override;
     void resize(const WebSize&) override;
     void resizeVisualViewport(const WebSize&) override;
-    void willEndLiveResize() override;
     void didEnterFullScreen() override;
     void didExitFullScreen() override;
     void beginFrame(double lastFrameTimeMonotonic) override;
@@ -115,6 +113,13 @@ public:
     void willCloseLayerTreeView() override;
     void didChangeWindowResizerRect() override;
 
+    // WebFrameWidget implementation.
+    void setVisibilityState(WebPageVisibilityState, bool) override;
+    bool isTransparent() const override;
+    void setIsTransparent(bool) override;
+    void setBaseBackgroundColor(WebColor) override;
+    void scheduleAnimation() override;
+
     WebWidgetClient* client() const { return m_client; }
 
     Frame* focusedCoreFrame() const;
@@ -122,14 +127,10 @@ public:
     // Returns the currently focused Element or null if no element has focus.
     Element* focusedElement() const;
 
-    void scheduleAnimation() override;
-
     PaintLayerCompositor* compositor() const;
     void setRootGraphicsLayer(GraphicsLayer*);
-    void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
-    void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
-
-    void setVisibilityState(WebPageVisibilityState, bool) override;
+    void attachCompositorAnimationTimeline(CompositorAnimationTimeline*);
+    void detachCompositorAnimationTimeline(CompositorAnimationTimeline*);
 
     // Exposed for the purpose of overriding device metrics.
     void sendResizeEventAndRepaint();
@@ -152,6 +153,8 @@ public:
         int keyCode,
         ScrollDirection*,
         ScrollGranularity*);
+
+    Color baseBackgroundColor() const { return m_baseBackgroundColor; }
 
     DECLARE_TRACE();
 
@@ -182,8 +185,6 @@ private:
     void updateLayerTreeBackgroundColor();
     void updateLayerTreeDeviceScaleFactor();
 
-    bool isTransparent() const;
-
     // PageWidgetEventHandler functions
     void handleMouseLeave(LocalFrame&, const WebMouseEvent&) override;
     void handleMouseDown(LocalFrame&, const WebMouseEvent&) override;
@@ -199,12 +200,12 @@ private:
 
     // WebFrameWidget is associated with a subtree of the frame tree, corresponding to a maximal
     // connected tree of LocalFrames. This member points to the root of that subtree.
-    RawPtrWillBeMember<WebLocalFrameImpl> m_localRoot;
+    Member<WebLocalFrameImpl> m_localRoot;
 
     WebSize m_size;
 
     // If set, the (plugin) node which has mouse capture.
-    RefPtrWillBeMember<Node> m_mouseCaptureNode;
+    Member<Node> m_mouseCaptureNode;
     RefPtr<UserGestureToken> m_mouseCaptureGestureToken;
 
     WebLayerTreeView* m_layerTreeView;
@@ -217,7 +218,12 @@ private:
 
     bool m_ignoreInputEvents;
 
+    // Whether the WebFrameWidget is rendering transparently.
+    bool m_isTransparent;
+
     static const WebInputEvent* m_currentInputEvent;
+
+    WebColor m_baseBackgroundColor;
 
 #if ENABLE(OILPAN)
     SelfKeepAlive<WebFrameWidgetImpl> m_selfKeepAlive;

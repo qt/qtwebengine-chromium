@@ -50,6 +50,13 @@ class DisplayCGL : public DisplayGL
 
     std::string getVendorString() const override;
 
+    egl::Error waitClient() const override;
+    egl::Error waitNative(EGLint engine,
+                          egl::Surface *drawSurface,
+                          egl::Surface *readSurface) const override;
+
+    egl::Error getDriverVersion(std::string *version) const override;
+
   private:
     const FunctionsGL *getFunctionsGL() const override;
 

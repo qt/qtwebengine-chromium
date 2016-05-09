@@ -157,7 +157,7 @@ public:
 
     bool hasSelfPaintingLayer() const;
     PaintLayer* layer() const { return m_layer.get(); }
-    PaintLayerScrollableArea* scrollableArea() const;
+    PaintLayerScrollableArea* getScrollableArea() const;
 
     virtual void updateFromStyle();
 
@@ -234,7 +234,7 @@ public:
     LayoutUnit borderAndPaddingLogicalWidth() const { return borderStart() + borderEnd() + paddingStart() + paddingEnd(); }
     LayoutUnit borderAndPaddingLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() + paddingLeft() : borderTop() + paddingTop(); }
 
-    LayoutUnit borderLogicalLeft() const { return style()->isHorizontalWritingMode() ? borderLeft() : borderTop(); }
+    LayoutUnit borderLogicalLeft() const { return LayoutUnit(style()->isHorizontalWritingMode() ? borderLeft() : borderTop()); }
 
     LayoutUnit paddingLogicalWidth() const { return paddingStart() + paddingEnd(); }
     LayoutUnit paddingLogicalHeight() const { return paddingBefore() + paddingAfter(); }
@@ -268,7 +268,6 @@ public:
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const = 0;
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const = 0;
 
-    void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
     const LayoutObject* pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&) const override;
 
     void setSelectionState(SelectionState) override;
@@ -282,7 +281,7 @@ public:
     // The query rect is given in local coordinate system.
     virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect&) const { return false; }
 
-    void invalidateTreeIfNeeded(PaintInvalidationState&) override;
+    void invalidateTreeIfNeeded(const PaintInvalidationState&) override;
 
     // Indicate that the contents of this layoutObject need to be repainted. Only has an effect if compositing is being used,
     void setBackingNeedsPaintInvalidationInRect(const LayoutRect&, PaintInvalidationReason) const; // r is in the coordinate space of this layout object
@@ -353,9 +352,6 @@ public:
         moveChildrenTo(toBoxModelObject, startChild, endChild, 0, fullRemoveInsert);
     }
     virtual void moveChildrenTo(LayoutBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false);
-
-    enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
-    LayoutSize calculateImageIntrinsicDimensions(StyleImage*, const LayoutSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
 private:
     void createLayer(PaintLayerType);

@@ -20,12 +20,12 @@
 #include "url/gurl.h"
 
 using base::StringPiece;
+using base::StringPieceHash;
 using std::make_pair;
 using std::pair;
 using std::string;
 
 namespace net {
-namespace tools {
 namespace {
 
 const char kV4Host[] = ":authority";
@@ -41,7 +41,7 @@ void PopulateSpdyHeaderBlock(const BalsaHeaders& headers,
                              SpdyHeaderBlock* block,
                              bool allow_empty_values) {
   using HeaderValuesMap =
-      linked_hash_map<StringPiece, std::vector<StringPiece>>;
+      linked_hash_map<StringPiece, std::vector<StringPiece>, StringPieceHash>;
   std::deque<string> names;
   HeaderValuesMap header_values_map;
   // First, gather references to all values for each name.
@@ -227,16 +227,16 @@ SpdyHeaderBlock SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
   if (url.empty() || url[0] == '/') {
     path = url;
   } else {
-    GURL request_uri(url);
+    std::unique_ptr<GURL> request_uri(new GURL(url));
     if (request_headers.request_method() == "CONNECT") {
       path = url;
     } else {
-      path = request_uri.path();
-      if (!request_uri.query().empty()) {
-        path = path + "?" + request_uri.query();
+      path = request_uri->path();
+      if (!request_uri->query().empty()) {
+        path = path + "?" + request_uri->query();
       }
-      host_and_port = request_uri.host();
-      scheme = request_uri.scheme();
+      host_and_port = request_uri->host();
+      scheme = request_uri->scheme();
     }
   }
 
@@ -279,5 +279,4 @@ void SpdyBalsaUtils::SpdyHeadersToRequestHeaders(const SpdyHeaderBlock& block,
   SpdyHeadersToBalsaHeaders(block, headers, SpdyHeaderValidatorType::REQUEST);
 }
 
-}  // namespace tools
 }  // namespace net

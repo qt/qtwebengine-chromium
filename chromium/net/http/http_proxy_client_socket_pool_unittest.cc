@@ -11,6 +11,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/proxy_delegate.h"
 #include "net/base/test_completion_callback.h"
+#include "net/base/test_proxy_delegate.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/http/http_response_headers.h"
@@ -61,97 +62,6 @@ typedef ::testing::TestWithParam<HttpProxyType> TestWithHttpParam;
 const char kHttpProxyHost[] = "httpproxy.example.com";
 const char kHttpsProxyHost[] = "httpsproxy.example.com";
 
-class TestProxyDelegate : public ProxyDelegate {
- public:
-  TestProxyDelegate()
-      : on_before_tunnel_request_called_(false),
-        on_tunnel_request_completed_called_(false),
-        on_tunnel_headers_received_called_(false) {
-  }
-
-  ~TestProxyDelegate() override {}
-
-  bool on_before_tunnel_request_called() const {
-    return on_before_tunnel_request_called_;
-  }
-
-  bool on_tunnel_request_completed_called() const {
-    return on_tunnel_request_completed_called_;
-  }
-
-  bool on_tunnel_headers_received_called() const {
-    return on_tunnel_headers_received_called_;
-  }
-
-  void VerifyOnTunnelRequestCompleted(const std::string& endpoint,
-                                      const std::string& proxy_server) const {
-    EXPECT_TRUE(on_tunnel_request_completed_called_);
-    EXPECT_TRUE(HostPortPair::FromString(endpoint).Equals(
-        on_tunnel_request_completed_endpoint_));
-    EXPECT_TRUE(HostPortPair::FromString(proxy_server).Equals(
-        on_tunnel_request_completed_proxy_server_));
-  }
-
-  void VerifyOnTunnelHeadersReceived(const std::string& origin,
-                                     const std::string& proxy_server,
-                                     const std::string& status_line) const {
-    EXPECT_TRUE(on_tunnel_headers_received_called_);
-    EXPECT_TRUE(HostPortPair::FromString(origin).Equals(
-                    on_tunnel_headers_received_origin_));
-    EXPECT_TRUE(HostPortPair::FromString(proxy_server).Equals(
-                    on_tunnel_headers_received_proxy_server_));
-    EXPECT_EQ(status_line, on_tunnel_headers_received_status_line_);
-  }
-
-  // ProxyDelegate:
-  void OnResolveProxy(const GURL& url,
-                      int load_flags,
-                      const ProxyService& proxy_service,
-                      ProxyInfo* result) override {}
-
-  void OnTunnelConnectCompleted(const HostPortPair& endpoint,
-                                const HostPortPair& proxy_server,
-                                int net_error) override {
-    on_tunnel_request_completed_called_ = true;
-    on_tunnel_request_completed_endpoint_ = endpoint;
-    on_tunnel_request_completed_proxy_server_ = proxy_server;
-  }
-
-  void OnFallback(const ProxyServer& bad_proxy, int net_error) override {}
-
-  void OnBeforeSendHeaders(URLRequest* request,
-                           const ProxyInfo& proxy_info,
-                           HttpRequestHeaders* headers) override {}
-
-  void OnBeforeTunnelRequest(const HostPortPair& proxy_server,
-                             HttpRequestHeaders* extra_headers) override {
-    on_before_tunnel_request_called_ = true;
-    if (extra_headers) {
-      extra_headers->SetHeader("Foo", proxy_server.ToString());
-    }
-  }
-
-  void OnTunnelHeadersReceived(
-      const HostPortPair& origin,
-      const HostPortPair& proxy_server,
-      const HttpResponseHeaders& response_headers) override {
-    on_tunnel_headers_received_called_ = true;
-    on_tunnel_headers_received_origin_ = origin;
-    on_tunnel_headers_received_proxy_server_ = proxy_server;
-    on_tunnel_headers_received_status_line_ = response_headers.GetStatusLine();
-  }
-
- private:
-  bool on_before_tunnel_request_called_;
-  bool on_tunnel_request_completed_called_;
-  bool on_tunnel_headers_received_called_;
-  HostPortPair on_tunnel_request_completed_endpoint_;
-  HostPortPair on_tunnel_request_completed_proxy_server_;
-  HostPortPair on_tunnel_headers_received_origin_;
-  HostPortPair on_tunnel_headers_received_proxy_server_;
-  std::string on_tunnel_headers_received_status_line_;
-};
-
 }  // namespace
 
 class HttpProxyClientSocketPoolTest
@@ -176,20 +86,18 @@ class HttpProxyClientSocketPoolTest
                          NULL,
                          session_deps_.ssl_config_service.get(),
                          BoundNetLog().net_log()),
-        session_(CreateNetworkSession()),
         spdy_util_(GetParam().protocol, GetParam().priority_to_dependency),
         pool_(kMaxSockets,
               kMaxSocketsPerGroup,
               &transport_socket_pool_,
               &ssl_socket_pool_,
               NULL) {
-    SpdySession::SetPriorityDependencyDefaultForTesting(
-        GetParam().priority_to_dependency);
+    session_deps_.enable_priority_dependencies =
+        GetParam().priority_to_dependency;
+    session_ = CreateNetworkSession();
   }
 
-  virtual ~HttpProxyClientSocketPoolTest() {
-    SpdySession::SetPriorityDependencyDefaultForTesting(false);
-  }
+  virtual ~HttpProxyClientSocketPoolTest() {}
 
   void AddAuthToCache() {
     const base::string16 kFoo(base::ASCIIToUTF16("foo"));
@@ -211,7 +119,6 @@ class HttpProxyClientSocketPoolTest
     return new TransportSocketParams(
         HostPortPair(kHttpProxyHost, 80),
         false,
-        false,
         OnHostResolutionCallback(),
         TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT);
   }
@@ -222,7 +129,6 @@ class HttpProxyClientSocketPoolTest
     return new SSLSocketParams(
         new TransportSocketParams(
             HostPortPair(kHttpsProxyHost, 443),
-            false,
             false,
             OnHostResolutionCallback(),
             TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT),
@@ -311,7 +217,7 @@ class HttpProxyClientSocketPoolTest
   scoped_ptr<CertVerifier> cert_verifier_;
   SSLClientSocketPool ssl_socket_pool_;
 
-  const scoped_ptr<HttpNetworkSession> session_;
+  scoped_ptr<HttpNetworkSession> session_;
 
  protected:
   SpdyTestUtil spdy_util_;
@@ -347,6 +253,7 @@ TEST_P(HttpProxyClientSocketPoolTest, NoTunnel) {
 
   scoped_ptr<TestProxyDelegate> proxy_delegate(new TestProxyDelegate());
   int rv = handle_.Init("a", CreateNoTunnelParams(proxy_delegate.get()), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         CompletionCallback(), &pool_, BoundNetLog());
   EXPECT_EQ(OK, rv);
   EXPECT_TRUE(handle_.is_initialized());
@@ -361,9 +268,9 @@ TEST_P(HttpProxyClientSocketPoolTest, NoTunnel) {
 // (non-SSL) socket request on Init.
 TEST_P(HttpProxyClientSocketPoolTest, SetSocketRequestPriorityOnInit) {
   Initialize(NULL, 0, NULL, 0, NULL, 0, NULL, 0);
-  EXPECT_EQ(OK,
-            handle_.Init("a", CreateNoTunnelParams(NULL), HIGHEST,
-                         CompletionCallback(), &pool_, BoundNetLog()));
+  EXPECT_EQ(OK, handle_.Init("a", CreateNoTunnelParams(NULL), HIGHEST,
+                             ClientSocketPool::RespectLimits::ENABLED,
+                             CompletionCallback(), &pool_, BoundNetLog()));
   EXPECT_EQ(HIGHEST, GetLastTransportRequestPriority());
 }
 
@@ -381,9 +288,9 @@ TEST_P(HttpProxyClientSocketPoolTest, NeedAuth) {
     MockRead(ASYNC, 3, "Content-Length: 10\r\n\r\n"),
     MockRead(ASYNC, 4, "0123456789"),
   };
-  scoped_ptr<SpdyFrame> req(spdy_util_.ConstructSpdyConnect(
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyConnect(
       NULL, 0, 1, LOW, HostPortPair("www.google.com", 443)));
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req, 0, ASYNC),
@@ -394,7 +301,8 @@ TEST_P(HttpProxyClientSocketPoolTest, NeedAuth) {
   resp_block["proxy-authenticate"] = "Basic realm=\"MyRealm1\"";
   spdy_util_.MaybeAddVersionHeader(&resp_block);
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyReply(1, resp_block));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyReply(1, resp_block));
   MockRead spdy_reads[] = {
     CreateMockRead(*resp, 1, ASYNC),
     MockRead(ASYNC, 0, 3)
@@ -405,6 +313,7 @@ TEST_P(HttpProxyClientSocketPoolTest, NeedAuth) {
              arraysize(spdy_writes));
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -454,6 +363,7 @@ TEST_P(HttpProxyClientSocketPoolTest, HaveAuth) {
 
   scoped_ptr<TestProxyDelegate> proxy_delegate(new TestProxyDelegate());
   int rv = handle_.Init("a", CreateTunnelParams(proxy_delegate.get()), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(OK, rv);
   EXPECT_TRUE(handle_.is_initialized());
@@ -487,13 +397,14 @@ TEST_P(HttpProxyClientSocketPoolTest, AsyncHaveAuth) {
     MockRead(ASYNC, 1, "HTTP/1.1 200 Connection Established\r\n\r\n"),
   };
 
-  scoped_ptr<SpdyFrame> req(
+  scoped_ptr<SpdySerializedFrame> req(
       spdy_util_.ConstructSpdyConnect(kAuthHeaders, kAuthHeadersSize, 1, LOW,
                                       HostPortPair("www.google.com", 443)));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req, 0, ASYNC)
   };
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   MockRead spdy_reads[] = {
       CreateMockRead(*resp, 1, ASYNC),
       // Connection stays open.
@@ -507,6 +418,7 @@ TEST_P(HttpProxyClientSocketPoolTest, AsyncHaveAuth) {
 
   scoped_ptr<TestProxyDelegate> proxy_delegate(new TestProxyDelegate());
   int rv = handle_.Init("a", CreateTunnelParams(proxy_delegate.get()), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -528,13 +440,14 @@ TEST_P(HttpProxyClientSocketPoolTest,
   if (GetParam().proxy_type != SPDY)
     return;
 
-  scoped_ptr<SpdyFrame> req(
+  scoped_ptr<SpdySerializedFrame> req(
       spdy_util_.ConstructSpdyConnect(kAuthHeaders, kAuthHeadersSize, 1, MEDIUM,
                                       HostPortPair("www.google.com", 443)));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req, 0, ASYNC)
   };
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   MockRead spdy_reads[] = {
     CreateMockRead(*resp, 1, ASYNC),
     MockRead(ASYNC, 0, 2)
@@ -547,6 +460,7 @@ TEST_P(HttpProxyClientSocketPoolTest,
 
   EXPECT_EQ(ERR_IO_PENDING,
             handle_.Init("a", CreateTunnelParams(NULL), MEDIUM,
+                         ClientSocketPool::RespectLimits::ENABLED,
                          callback_.callback(), &pool_, BoundNetLog()));
   EXPECT_EQ(MEDIUM, GetLastTransportRequestPriority());
 
@@ -561,6 +475,7 @@ TEST_P(HttpProxyClientSocketPoolTest, TCPError) {
   socket_factory()->AddSocketDataProvider(data_.get());
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -586,6 +501,7 @@ TEST_P(HttpProxyClientSocketPoolTest, SSLError) {
   socket_factory()->AddSSLSocketDataProvider(ssl_data_.get());
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -611,6 +527,7 @@ TEST_P(HttpProxyClientSocketPoolTest, SslClientAuth) {
   socket_factory()->AddSSLSocketDataProvider(ssl_data_.get());
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -634,7 +551,7 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelUnexpectedClose) {
     MockRead(ASYNC, 1, "HTTP/1.1 200 Conn"),
     MockRead(ASYNC, ERR_CONNECTION_CLOSED, 2),
   };
-  scoped_ptr<SpdyFrame> req(
+  scoped_ptr<SpdySerializedFrame> req(
       spdy_util_.ConstructSpdyConnect(kAuthHeaders, kAuthHeadersSize, 1, LOW,
                                       HostPortPair("www.google.com", 443)));
   MockWrite spdy_writes[] = {
@@ -650,6 +567,7 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelUnexpectedClose) {
   AddAuthToCache();
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -688,6 +606,7 @@ TEST_P(HttpProxyClientSocketPoolTest, Tunnel1xxResponse) {
              NULL, 0, NULL, 0);
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -707,16 +626,17 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupError) {
   MockRead reads[] = {
     MockRead(ASYNC, 1, "HTTP/1.1 304 Not Modified\r\n\r\n"),
   };
-  scoped_ptr<SpdyFrame> req(
+  scoped_ptr<SpdySerializedFrame> req(
       spdy_util_.ConstructSpdyConnect(kAuthHeaders, kAuthHeadersSize, 1, LOW,
                                       HostPortPair("www.google.com", 443)));
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
   MockWrite spdy_writes[] = {
     CreateMockWrite(*req, 0, ASYNC),
     CreateMockWrite(*rst, 2, ASYNC),
   };
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdySynReplyError(1));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdySynReplyError(1));
   MockRead spdy_reads[] = {
     CreateMockRead(*resp, 1, ASYNC),
     MockRead(ASYNC, 0, 3),
@@ -728,6 +648,7 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupError) {
   AddAuthToCache();
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());
@@ -757,10 +678,10 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupRedirect) {
   MockRead reads[] = {
     MockRead(ASYNC, 1, responseText.c_str()),
   };
-  scoped_ptr<SpdyFrame> req(
+  scoped_ptr<SpdySerializedFrame> req(
       spdy_util_.ConstructSpdyConnect(kAuthHeaders, kAuthHeadersSize, 1, LOW,
                                       HostPortPair("www.google.com", 443)));
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
 
   MockWrite spdy_writes[] = {
@@ -773,11 +694,8 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupRedirect) {
     "set-cookie", "foo=bar",
   };
   const int responseHeadersSize = arraysize(responseHeaders) / 2;
-  scoped_ptr<SpdyFrame> resp(
-      spdy_util_.ConstructSpdySynReplyError(
-          "302 Found",
-          responseHeaders, responseHeadersSize,
-          1));
+  scoped_ptr<SpdySerializedFrame> resp(spdy_util_.ConstructSpdySynReplyError(
+      "302 Found", responseHeaders, responseHeadersSize, 1));
   MockRead spdy_reads[] = {
     CreateMockRead(*resp, 1, ASYNC),
     MockRead(ASYNC, 0, 2),
@@ -789,6 +707,7 @@ TEST_P(HttpProxyClientSocketPoolTest, TunnelSetupRedirect) {
   AddAuthToCache();
 
   int rv = handle_.Init("a", CreateTunnelParams(NULL), LOW,
+                        ClientSocketPool::RespectLimits::ENABLED,
                         callback_.callback(), &pool_, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_FALSE(handle_.is_initialized());

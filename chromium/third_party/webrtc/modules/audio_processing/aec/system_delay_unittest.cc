@@ -9,13 +9,11 @@
  */
 
 #include "testing/gtest/include/gtest/gtest.h"
-extern "C" {
 #include "webrtc/modules/audio_processing/aec/aec_core.h"
-}
 #include "webrtc/modules/audio_processing/aec/echo_cancellation_internal.h"
 #include "webrtc/modules/audio_processing/aec/echo_cancellation.h"
 #include "webrtc/typedefs.h"
-
+namespace webrtc {
 namespace {
 
 class SystemDelayTest : public ::testing::Test {
@@ -599,3 +597,4 @@ TEST_F(SystemDelayTest, CorrectImpactWhenTogglingDeviceBufferValues) {
 }
 
 }  // namespace
+}  // namespace webrtc

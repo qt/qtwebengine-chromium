@@ -122,10 +122,10 @@ std::string GetVertexShaderSource() {
       uniform vec2 u_vertex_dest_add;\n\
       uniform vec2 u_vertex_source_mult;\n\
       uniform vec2 u_vertex_source_add;\n\
-      ATTRIBUTE vec4 a_position;\n\
+      ATTRIBUTE vec2 a_position;\n\
       VARYING TexCoordPrecision vec2 v_uv;\n\
       void main(void) {\n\
-        gl_Position = a_position;\n\
+        gl_Position = vec4(0, 0, 0, 1);\n\
         gl_Position.xy = a_position.xy * u_vertex_dest_mult + \
                          u_vertex_dest_add;\n\
         v_uv = a_position.xy * u_vertex_source_mult + u_vertex_source_add;\n\
@@ -327,6 +327,7 @@ CopyTextureCHROMIUMResourceManager::CopyTextureCHROMIUMResourceManager()
     : initialized_(false),
       vertex_shader_(0u),
       fragment_shaders_(NUM_FRAGMENT_SHADERS, 0u),
+      vertex_array_object_id_(0u),
       buffer_id_(0u),
       framebuffer_(0u) {}
 
@@ -337,13 +338,20 @@ CopyTextureCHROMIUMResourceManager::~CopyTextureCHROMIUMResourceManager() {
 }
 
 void CopyTextureCHROMIUMResourceManager::Initialize(
-    const gles2::GLES2Decoder* decoder) {
+    const gles2::GLES2Decoder* decoder,
+    const gles2::FeatureInfo::FeatureFlags& feature_flags) {
   static_assert(
       kVertexPositionAttrib == 0u,
       "kVertexPositionAttrib must be 0");
   DCHECK(!buffer_id_);
+  DCHECK(!vertex_array_object_id_);
   DCHECK(!framebuffer_);
   DCHECK(programs_.empty());
+
+  if (feature_flags.native_vertex_array_object) {
+    glGenVertexArraysOES(1, &vertex_array_object_id_);
+    glBindVertexArrayOES(vertex_array_object_id_);
+  }
 
   // Initialize all of the GPU resources required to perform the copy.
   glGenBuffersARB(1, &buffer_id_);
@@ -357,6 +365,12 @@ void CopyTextureCHROMIUMResourceManager::Initialize(
 
   glGenFramebuffersEXT(1, &framebuffer_);
 
+  if (vertex_array_object_id_) {
+    glEnableVertexAttribArray(kVertexPositionAttrib);
+    glVertexAttribPointer(kVertexPositionAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
+  }
+
+  decoder->RestoreAllAttributes();
   decoder->RestoreBufferBindings();
 
   initialized_ = true;
@@ -365,6 +379,11 @@ void CopyTextureCHROMIUMResourceManager::Initialize(
 void CopyTextureCHROMIUMResourceManager::Destroy() {
   if (!initialized_)
     return;
+
+  if (vertex_array_object_id_) {
+    glDeleteVertexArraysOES(1, &vertex_array_object_id_);
+    vertex_array_object_id_ = 0;
+  }
 
   glDeleteFramebuffersEXT(1, &framebuffer_);
   framebuffer_ = 0;
@@ -468,10 +487,39 @@ void CopyTextureCHROMIUMResourceManager::DoCopySubTexture(
     return;
   }
 
+  DoCopySubTextureWithTransform(
+      decoder, source_target, source_id, source_internal_format, dest_target,
+      dest_id, dest_internal_format, xoffset, yoffset, x, y, width, height,
+      dest_width, dest_height, source_width, source_height, flip_y,
+      premultiply_alpha, unpremultiply_alpha, kIdentityMatrix);
+}
+
+void CopyTextureCHROMIUMResourceManager::DoCopySubTextureWithTransform(
+    const gles2::GLES2Decoder* decoder,
+    GLenum source_target,
+    GLuint source_id,
+    GLenum source_internal_format,
+    GLenum dest_target,
+    GLuint dest_id,
+    GLenum dest_internal_format,
+    GLint xoffset,
+    GLint yoffset,
+    GLint x,
+    GLint y,
+    GLsizei width,
+    GLsizei height,
+    GLsizei dest_width,
+    GLsizei dest_height,
+    GLsizei source_width,
+    GLsizei source_height,
+    bool flip_y,
+    bool premultiply_alpha,
+    bool unpremultiply_alpha,
+    const GLfloat transform_matrix[16]) {
   DoCopyTextureInternal(decoder, source_target, source_id, dest_target, dest_id,
       xoffset, yoffset, x, y, width, height, dest_width, dest_height,
       source_width, source_height, flip_y, premultiply_alpha,
-      unpremultiply_alpha, kIdentityMatrix);
+      unpremultiply_alpha, transform_matrix);
 }
 
 void CopyTextureCHROMIUMResourceManager::DoCopyTextureWithTransform(
@@ -531,6 +579,18 @@ void CopyTextureCHROMIUMResourceManager::DoCopyTextureInternal(
   if (!initialized_) {
     DLOG(ERROR) << "CopyTextureCHROMIUM: Uninitialized manager.";
     return;
+  }
+
+  if (vertex_array_object_id_) {
+    glBindVertexArrayOES(vertex_array_object_id_);
+  } else {
+    if (gfx::GetGLImplementation() !=
+        gfx::kGLImplementationDesktopGLCoreProfile) {
+      decoder->ClearAllAttributes();
+    }
+    glEnableVertexAttribArray(kVertexPositionAttrib);
+    glBindBuffer(GL_ARRAY_BUFFER, buffer_id_);
+    glVertexAttribPointer(kVertexPositionAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
   }
 
   FragmentShaderId fragment_shader_id = GetFragmentShaderId(
@@ -662,15 +722,6 @@ void CopyTextureCHROMIUMResourceManager::DoCopyTextureInternal(
       return;
     }
 #endif
-
-    if (gfx::GetGLImplementation() !=
-        gfx::kGLImplementationDesktopGLCoreProfile) {
-      decoder->ClearAllAttributes();
-      glEnableVertexAttribArray(kVertexPositionAttrib);
-    }
-
-    glBindBuffer(GL_ARRAY_BUFFER, buffer_id_);
-    glVertexAttribPointer(kVertexPositionAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
     glUniform1i(info->sampler_handle, 0);
 

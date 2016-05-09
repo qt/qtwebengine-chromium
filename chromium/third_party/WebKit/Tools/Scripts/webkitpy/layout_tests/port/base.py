@@ -92,40 +92,28 @@ class Port(object):
     PORT_HAS_AUDIO_CODECS_BUILT_IN = False
 
     ALL_SYSTEMS = (
-        ('snowleopard', 'x86'),
-        ('lion', 'x86'),
 
         # FIXME: We treat Retina (High-DPI) devices as if they are running
         # a different operating system version. This isn't accurate, but will work until
         # we need to test and support baselines across multiple O/S versions.
         ('retina', 'x86'),
 
-        ('mountainlion', 'x86'),
-        ('mavericks', 'x86'),
+        ('mac10.9', 'x86'),
         ('mac10.10', 'x86'),
-        ('xp', 'x86'),
+        ('mac10.11', 'x86'),
         ('win7', 'x86'),
         ('win10', 'x86'),
-        # FIXME: We handle 32bit Linux similarly to Mac retina above treating it
-        # as a different system for now.
-        ('linux32', 'x86'),
         ('precise', 'x86_64'),
         ('trusty', 'x86_64'),
         # FIXME: Technically this should be 'arm', but adding a third architecture type breaks TestConfigurationConverter.
         # If we need this to be 'arm' in the future, then we first have to fix TestConfigurationConverter.
         ('icecreamsandwich', 'x86'),
-        )
-
-    ALL_BASELINE_VARIANTS = [
-        'mac-mac10.10', 'mac-mavericks', 'mac-retina', 'mac-mountainlion', 'mac-lion', 'mac-snowleopard',
-        'win-win10', 'win-win7', 'win-xp'
-        'linux-trusty', 'linux-precise', 'linux-x86',
-    ]
+    )
 
     CONFIGURATION_SPECIFIER_MACROS = {
-        'mac': ['snowleopard', 'lion', 'mountainlion', 'retina', 'mavericks', 'mac10.10'],
-        'win': ['xp', 'win7', 'win10'],
-        'linux': ['linux32', 'precise', 'trusty'],
+        'mac': ['retina', 'mac10.9', 'mac10.10', 'mac10.11'],
+        'win': ['win7', 'win10'],
+        'linux': ['precise', 'trusty'],
         'android': ['icecreamsandwich'],
     }
 
@@ -144,13 +132,13 @@ class Port(object):
         return cls.FALLBACK_PATHS[cls.SUPPORTED_VERSIONS[-1]]
 
     @classmethod
-    def _static_build_path(cls, filesystem, build_directory, chromium_base, configuration, comps):
+    def _static_build_path(cls, filesystem, build_directory, chromium_base, target, comps):
         if build_directory:
-            return filesystem.join(build_directory, configuration, *comps)
+            return filesystem.join(build_directory, target, *comps)
 
         hits = []
         for directory in cls.DEFAULT_BUILD_DIRECTORIES:
-            base_dir = filesystem.join(chromium_base, directory, configuration)
+            base_dir = filesystem.join(chromium_base, directory, target)
             path = filesystem.join(base_dir, *comps)
             if filesystem.exists(path):
                 hits.append((filesystem.mtime(path), path))
@@ -221,10 +209,15 @@ class Port(object):
 
         if not hasattr(options, 'configuration') or not options.configuration:
             self.set_option_default('configuration', self.default_configuration())
+        if not hasattr(options, 'target') or not options.target:
+            self.set_option_default('target', self._options.configuration)
         self._test_configuration = None
         self._reftest_list = {}
         self._results_directory = None
         self._virtual_test_suites = None
+
+    def __str__(self):
+        return "Port{name=%s, version=%s, architecture=%s, test_configuration=%s}" % (self._name, self._version, self._architecture, self._test_configuration)
 
     def buildbot_archives_baselines(self):
         return True
@@ -733,7 +726,8 @@ class Port(object):
             if len(split_line) < 3:
                 continue
             expectation_type, test_file, ref_file = split_line
-            parsed_list.setdefault(filesystem.join(test_dirpath, test_file), []).append((expectation_type, filesystem.join(test_dirpath, ref_file)))
+            parsed_list.setdefault(filesystem.join(test_dirpath, test_file), []).append(
+                (expectation_type, filesystem.join(test_dirpath, ref_file)))
         return parsed_list
 
     def reference_files(self, test_name):
@@ -743,8 +737,8 @@ class Port(object):
         if not reftest_list:
             reftest_list = []
             for expectation, prefix in (('==', ''), ('!=', '-mismatch')):
-                for extention in Port._supported_file_extensions:
-                    path = self.expected_filename(test_name, prefix + extention)
+                for extension in Port._supported_file_extensions:
+                    path = self.expected_filename(test_name, prefix + extension)
                     if self._filesystem.exists(path):
                         reftest_list.append((expectation, path))
             return reftest_list
@@ -765,7 +759,8 @@ class Port(object):
     def _real_tests(self, paths):
         # When collecting test cases, skip these directories
         skipped_directories = set(['.svn', '_svn', 'platform', 'resources', 'support', 'script-tests', 'reference', 'reftest'])
-        files = find_files.find(self._filesystem, self.layout_tests_dir(), paths, skipped_directories, Port.is_test_file, self.test_key)
+        files = find_files.find(self._filesystem, self.layout_tests_dir(), paths,
+                                skipped_directories, Port.is_test_file, self.test_key)
         return [self.relative_test_filename(f) for f in files]
 
     # When collecting test cases, we include any file with these extensions.
@@ -921,18 +916,7 @@ class Port(object):
 
     def skipped_layout_tests(self, test_list):
         """Returns tests skipped outside of the TestExpectations files."""
-        tests = set(self._skipped_tests_for_unsupported_features(test_list))
-
-        # We explicitly skip any tests in LayoutTests/w3c if need be to avoid running any tests
-        # left over from the old DEPS-pulled repos.
-        # We also will warn at the end of the test run if these directories still exist.
-        #
-        # TODO(dpranke): Remove this check after 1/1/2015 and let people deal with the warnings.
-        # Remove the check in controllers/manager.py as well.
-        if self._filesystem.isdir(self._filesystem.join(self.layout_tests_dir(), 'w3c')):
-            tests.add('w3c')
-
-        return tests
+        return set(self._skipped_tests_for_unsupported_features(test_list))
 
     def _tests_from_skipped_file_contents(self, skipped_file_contents):
         tests_to_skip = []
@@ -984,7 +968,7 @@ class Port(object):
 
     def version(self):
         """Returns a string indicating the version of a given platform, e.g.
-        'leopard' or 'xp'.
+        'leopard' or 'win7'.
 
         This is used to help identify the exact port when parsing test
         expectations, determining search paths, and logging information."""
@@ -1147,7 +1131,7 @@ class Port(object):
             _log.debug("Starting layout helper %s" % helper_path)
             # Note: Not thread safe: http://bugs.python.org/issue2320
             self._helper = self._executive.popen([helper_path],
-                stdin=self._executive.PIPE, stdout=self._executive.PIPE, stderr=None)
+                                                 stdin=self._executive.PIPE, stdout=self._executive.PIPE, stderr=None)
             is_ready = self._helper.stdout.readline()
             if not is_ready.startswith('ready'):
                 _log.error("layout_test_helper failed to be ready")
@@ -1260,20 +1244,12 @@ class Port(object):
         """Ports may provide a way to abbreviate configuration specifiers to conveniently
         refer to them as one term or alias specific values to more generic ones. For example:
 
-        (xp, vista, win7) -> win # Abbreviate all Windows versions into one namesake.
+        (vista, win7) -> win # Abbreviate all Windows versions into one namesake.
         (precise, trusty) -> linux  # Change specific name of Linux distro to a more generic term.
 
         Returns a dictionary, each key representing a macro term ('win', for example),
-        and value being a list of valid configuration specifiers (such as ['xp', 'vista', 'win7'])."""
+        and value being a list of valid configuration specifiers (such as ['vista', 'win7'])."""
         return self.CONFIGURATION_SPECIFIER_MACROS
-
-    def all_baseline_variants(self):
-        """Returns a list of platform names sufficient to cover all the baselines.
-
-        The list should be sorted so that a later platform  will reuse
-        an earlier platform's baselines if they are the same (e.g.,
-        'mac10.10' should precede 'mac10.9')."""
-        return self.ALL_BASELINE_VARIANTS
 
     def _generate_all_test_configurations(self):
         """Returns a sequence of the TestConfigurations the port supports."""
@@ -1290,7 +1266,6 @@ class Port(object):
 
     def _port_specific_expectations_files(self):
         paths = []
-        paths.append(self.path_from_chromium_base('skia', 'skia_test_expectations.txt'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'NeverFixTests'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'StaleTestExpectations'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'SlowTests'))
@@ -1394,7 +1369,7 @@ class Port(object):
         # with conflicting encodings.  Thus we do not decode the output.
         command = self._wdiff_command(actual_filename, expected_filename)
         wdiff = self._executive.run_command(command, decode_output=False,
-            error_handler=self._handle_wdiff_error)
+                                            error_handler=self._handle_wdiff_error)
         return self._format_wdiff_output_as_html(wdiff)
 
     _wdiff_error_html = "Failed to run wdiff, see error log."
@@ -1498,9 +1473,9 @@ class Port(object):
 
         return 'apache2-httpd-' + self._apache_version() + '.conf'
 
-    def _path_to_driver(self, configuration=None):
+    def _path_to_driver(self, target=None):
         """Returns the full path to the test driver."""
-        return self._build_path(self.driver_name())
+        return self._build_path(target, self.driver_name())
 
     def _path_to_webcore_library(self):
         """Returns the full path to a built copy of WebCore."""
@@ -1553,7 +1528,8 @@ class Port(object):
             # Running the symbolizer script can take a lot of memory, so we need to
             # serialize access to it across all the concurrently running drivers.
 
-            llvm_symbolizer_path = self.path_from_chromium_base('third_party', 'llvm-build', 'Release+Asserts', 'bin', 'llvm-symbolizer')
+            llvm_symbolizer_path = self.path_from_chromium_base(
+                'third_party', 'llvm-build', 'Release+Asserts', 'bin', 'llvm-symbolizer')
             if self._filesystem.exists(llvm_symbolizer_path):
                 env = os.environ.copy()
                 env['LLVM_SYMBOLIZER_PATH'] = llvm_symbolizer_path
@@ -1562,7 +1538,8 @@ class Port(object):
             sanitizer_filter_path = self.path_from_chromium_base('tools', 'valgrind', 'asan', 'asan_symbolize.py')
             sanitizer_strip_path_prefix = 'Release/../../'
             if self._filesystem.exists(sanitizer_filter_path):
-                stderr = self._executive.run_command(['flock', sys.executable, sanitizer_filter_path, sanitizer_strip_path_prefix], input=stderr, decode_output=False, env=env)
+                stderr = self._executive.run_command(
+                    ['flock', sys.executable, sanitizer_filter_path, sanitizer_strip_path_prefix], input=stderr, decode_output=False, env=env)
 
         name_str = name or '<unknown process name>'
         pid_str = str(pid or '<unknown>')
@@ -1580,8 +1557,8 @@ class Port(object):
             stderr_lines = [u'<empty>']
 
         return (stderr, 'crash log for %s (pid %s):\n%s\n%s\n' % (name_str, pid_str,
-            '\n'.join(('STDOUT: ' + l) for l in stdout_lines),
-            '\n'.join(('STDERR: ' + l) for l in stderr_lines)))
+                                                                  '\n'.join(('STDOUT: ' + l) for l in stdout_lines),
+                                                                  '\n'.join(('STDERR: ' + l) for l in stderr_lines)))
 
     def look_for_new_crash_logs(self, crashed_processes, start_time):
         pass
@@ -1741,36 +1718,42 @@ class Port(object):
         return path
 
     def _build_path(self, *comps):
-        return self._build_path_with_configuration(None, *comps)
+        return self._build_path_with_target(self._options.target, *comps)
 
-    def _build_path_with_configuration(self, configuration, *comps):
+    def _build_path_with_target(self, target, *comps):
         # Note that we don't do the option caching that the
         # base class does, because finding the right directory is relatively
         # fast.
-        configuration = configuration or self.get_option('configuration')
+        target = target or self.get_option('target')
         return self._static_build_path(self._filesystem, self.get_option('build_directory'),
-            self.path_from_chromium_base(), configuration, comps)
+                                       self.path_from_chromium_base(), target, comps)
 
-    def _check_driver_build_up_to_date(self, configuration):
-        if configuration in ('Debug', 'Release'):
-            try:
-                debug_path = self._path_to_driver('Debug')
-                release_path = self._path_to_driver('Release')
+    def _check_driver_build_up_to_date(self, target):
+        # We should probably get rid of this check altogether as it has
+        # outlived its usefulness in a GN-based world, but for the moment
+        # we will just check things if they are using the standard
+        # Debug or Release target directories.
+        if target not in ('Debug', 'Release'):
+            return True
 
-                debug_mtime = self._filesystem.mtime(debug_path)
-                release_mtime = self._filesystem.mtime(release_path)
+        try:
+            debug_path = self._path_to_driver('Debug')
+            release_path = self._path_to_driver('Release')
 
-                if (debug_mtime > release_mtime and configuration == 'Release' or
-                    release_mtime > debug_mtime and configuration == 'Debug'):
-                    most_recent_binary = 'Release' if configuration == 'Debug' else 'Debug'
-                    _log.warning('You are running the %s binary. However the %s binary appears to be more recent. '
-                                 'Please pass --%s.', configuration, most_recent_binary, most_recent_binary.lower())
-                    _log.warning('')
-            # This will fail if we don't have both a debug and release binary.
-            # That's fine because, in this case, we must already be running the
-            # most up-to-date one.
-            except OSError:
-                pass
+            debug_mtime = self._filesystem.mtime(debug_path)
+            release_mtime = self._filesystem.mtime(release_path)
+
+            if (debug_mtime > release_mtime and target == 'Release' or
+                    release_mtime > debug_mtime and target == 'Debug'):
+                most_recent_binary = 'Release' if target == 'Debug' else 'Debug'
+                _log.warning('You are running the %s binary. However the %s binary appears to be more recent. '
+                             'Please pass --%s.', target, most_recent_binary, most_recent_binary.lower())
+                _log.warning('')
+        # This will fail if we don't have both a debug and release binary.
+        # That's fine because, in this case, we must already be running the
+        # most up-to-date one.
+        except OSError:
+            pass
         return True
 
     def _chromium_baseline_path(self, platform):
@@ -1780,6 +1763,7 @@ class Port(object):
 
 
 class VirtualTestSuite(object):
+
     def __init__(self, prefix=None, base=None, args=None, references_use_default_args=False):
         assert base
         assert args
@@ -1795,6 +1779,7 @@ class VirtualTestSuite(object):
 
 
 class PhysicalTestSuite(object):
+
     def __init__(self, base, args, reference_args=None):
         self.name = base
         self.base = base

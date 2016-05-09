@@ -2,8 +2,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+:root {
+  --dialog-padding-end: 26px;
+  --dialog-padding-start: 16px;
+  --navigation-icon-button-size: 36px;
+  --non-navigation-icon-size: 16px;
+}
+
 .button {
-  color: rgb(33, 150, 243);
+  color: var(--paper-blue-700);
   cursor: pointer;
   text-align: center;
 }

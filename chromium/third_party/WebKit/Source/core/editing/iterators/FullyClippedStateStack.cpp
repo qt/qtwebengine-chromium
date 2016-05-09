@@ -74,7 +74,7 @@ template<typename Strategy>
 void FullyClippedStateStackAlgorithm<Strategy>::setUpFullyClippedStack(Node* node)
 {
     // Put the nodes in a vector so we can iterate in reverse order.
-    WillBeHeapVector<RawPtrWillBeMember<ContainerNode>, 100> ancestry;
+    HeapVector<Member<ContainerNode>, 100> ancestry;
     for (ContainerNode* parent = parentCrossingShadowBoundaries<Strategy>(*node); parent; parent = parentCrossingShadowBoundaries<Strategy>(*parent))
         ancestry.append(parent);
 
@@ -88,6 +88,6 @@ void FullyClippedStateStackAlgorithm<Strategy>::setUpFullyClippedStack(Node* nod
 }
 
 template class CORE_TEMPLATE_EXPORT FullyClippedStateStackAlgorithm<EditingStrategy>;
-template class CORE_TEMPLATE_EXPORT FullyClippedStateStackAlgorithm<EditingInComposedTreeStrategy>;
+template class CORE_TEMPLATE_EXPORT FullyClippedStateStackAlgorithm<EditingInFlatTreeStrategy>;
 
 } // namespace blink

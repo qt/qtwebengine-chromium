@@ -66,7 +66,7 @@ private:
 // Note that these functions do not traverse into child shadow trees of any
 // shadow hosts they encounter. If you need to traverse the shadow DOM, you can
 // manually traverse the shadow trees using a second Traversal, or use
-// ComposedTreeTraversal.
+// FlatTreeTraversal.
 //
 // ElementTraversal is a specialized version of Traversal<Element>.
 template <class ElementType>
@@ -101,6 +101,7 @@ public:
     static ElementType* lastWithin(const Node& current) { return lastWithinTemplate(current); }
     template <class MatchFunc>
     static ElementType* lastWithin(const ContainerNode&, MatchFunc);
+    static ElementType* lastWithinOrSelf(ElementType&);
 
     // Pre-order traversal skipping non-element nodes.
     static ElementType* next(const ContainerNode& current) { return nextTemplate(current); }
@@ -314,6 +315,14 @@ inline ElementType* Traversal<ElementType>::lastWithin(const ContainerNode& curr
     while (element && !isMatch(*element))
         element = Traversal<ElementType>::previous(*element, &current, isMatch);
     return element;
+}
+
+template <class ElementType>
+inline ElementType* Traversal<ElementType>::lastWithinOrSelf(ElementType& current)
+{
+    if (ElementType* lastDescendant = lastWithin(current))
+        return lastDescendant;
+    return &current;
 }
 
 template <class ElementType>

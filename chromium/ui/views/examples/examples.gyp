@@ -161,8 +161,6 @@
       'target_name': 'views_examples_with_content_exe',
       'type': 'executable',
       'dependencies': [
-        '../../../base/base.gyp:base',
-        '../../../content/content.gyp:content',
         '../../views_content_client/views_content_client.gyp:views_content_client',
         'views_examples_with_content_lib',
       ],
@@ -171,6 +169,12 @@
         'examples_with_content_main_exe.cc',
       ],
       'conditions': [
+        ['component=="shared_library"', {
+          'dependencies': [
+            '../../../base/base.gyp:base',
+            '../../../content/content.gyp:content',
+          ],
+        }],
         ['OS=="win"', {
           'link_settings': {
             'libraries': [
@@ -191,11 +195,6 @@
           'dependencies': [
             '../../../sandbox/sandbox.gyp:sandbox',
             '../../../content/content.gyp:sandbox_helper_win',
-          ],
-        }],
-        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
-          'dependencies': [
-            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],

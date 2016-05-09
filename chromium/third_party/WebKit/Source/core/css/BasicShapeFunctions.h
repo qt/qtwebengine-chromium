@@ -43,9 +43,9 @@ class FloatPoint;
 class StyleResolverState;
 class ComputedStyle;
 
-PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const ComputedStyle&, const BasicShape*);
+CSSValue* valueForBasicShape(const ComputedStyle&, const BasicShape*);
 PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState&, const CSSValue&);
 FloatPoint floatPointForCenterCoordinate(const BasicShapeCenterCoordinate&, const BasicShapeCenterCoordinate&, FloatSize);
 
-}
+} // namespace blink
 #endif

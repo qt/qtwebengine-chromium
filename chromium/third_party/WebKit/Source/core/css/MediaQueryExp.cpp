@@ -173,7 +173,9 @@ bool MediaQueryExp::isViewportDependent() const
         || m_mediaFeature == minAspectRatioMediaFeature
         || m_mediaFeature == devicePixelRatioMediaFeature
         || m_mediaFeature == resolutionMediaFeature
-        || m_mediaFeature == maxAspectRatioMediaFeature;
+        || m_mediaFeature == maxAspectRatioMediaFeature
+        || m_mediaFeature == maxDevicePixelRatioMediaFeature
+        || m_mediaFeature == minDevicePixelRatioMediaFeature;
 }
 
 bool MediaQueryExp::isDeviceDependent() const
@@ -201,7 +203,7 @@ MediaQueryExp::MediaQueryExp(const String& mediaFeature, const MediaQueryExpValu
 {
 }
 
-PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String& mediaFeature, const Vector<CSSParserToken, 4>& tokenList)
+MediaQueryExp* MediaQueryExp::createIfValid(const String& mediaFeature, const Vector<CSSParserToken, 4>& tokenList)
 {
     ASSERT(!mediaFeature.isNull());
 
@@ -265,7 +267,7 @@ PassOwnPtrWillBeRawPtr<MediaQueryExp> MediaQueryExp::createIfValid(const String&
         return nullptr;
     }
 
-    return adoptPtrWillBeNoop(new MediaQueryExp(lowerMediaFeature, expValue));
+    return new MediaQueryExp(lowerMediaFeature, expValue);
 }
 
 MediaQueryExp::~MediaQueryExp()
@@ -315,4 +317,4 @@ String MediaQueryExpValue::cssText() const
     return output.toString();
 }
 
-} // namespace
+} // namespace blink

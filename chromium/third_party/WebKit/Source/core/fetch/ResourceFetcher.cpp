@@ -30,21 +30,24 @@
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchContext.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourceLoaderSet.h"
 #include "core/fetch/UniqueIdentifier.h"
+#include "platform/Histogram.h"
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/TracedValue.h"
 #include "platform/mhtml/ArchiveResource.h"
-#include "platform/mhtml/ArchiveResourceCollection.h"
+#include "platform/mhtml/MHTMLArchive.h"
 #include "platform/network/ResourceTimingInfo.h"
 #include "platform/weborigin/KnownPorts.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/text/CString.h"
@@ -66,11 +69,37 @@ enum SriResourceIntegrityMismatchEvent {
     SriResourceIntegrityMismatchEventCount
 };
 
-}
+#define DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, name)                                                                                                                      \
+    case Resource::name: {                                                                                                                                                  \
+        DEFINE_THREAD_SAFE_STATIC_LOCAL(EnumerationHistogram, resourceHistogram, new EnumerationHistogram("Blink.MemoryCache.RevalidationPolicy." prefix #name, Load + 1)); \
+        resourceHistogram.count(policy);                                                                                                                                    \
+        break;                                                                                                                                                              \
+    }
+
+#define DEFINE_RESOURCE_HISTOGRAM(prefix)                        \
+    switch (factory.type()) {                                    \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, CSSStyleSheet)  \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Font)           \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Image)          \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, ImportResource) \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, LinkPrefetch)   \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, LinkPreload)    \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, MainResource)   \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Manifest)       \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Media)          \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Raw)            \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, Script)         \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, SVGDocument)    \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, TextTrack)      \
+        DEFINE_SINGLE_RESOURCE_HISTOGRAM(prefix, XSLStyleSheet)  \
+    }
+
+} // namespace
 
 static void RecordSriResourceIntegrityMismatchEvent(SriResourceIntegrityMismatchEvent event)
 {
-    Platform::current()->histogramEnumeration("sri.resource_integrity_mismatch_event", event, SriResourceIntegrityMismatchEventCount);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(EnumerationHistogram, integrityHistogram, new EnumerationHistogram("sri.resource_integrity_mismatch_event", SriResourceIntegrityMismatchEventCount));
+    integrityHistogram.count(event);
 }
 
 static ResourceLoadPriority typeToPriority(Resource::Type type)
@@ -88,7 +117,7 @@ static ResourceLoadPriority typeToPriority(Resource::Type type)
     case Resource::ImportResource:
     case Resource::Manifest:
         return ResourceLoadPriorityMedium;
-    case Resource::LinkSubresource:
+    case Resource::LinkPreload:
     case Resource::TextTrack:
     case Resource::Media:
     case Resource::SVGDocument:
@@ -151,7 +180,7 @@ static WebURLRequest::RequestContext requestContextFromType(bool isMainFrame, Re
         return WebURLRequest::RequestContextImport;
     case Resource::LinkPrefetch:
         return WebURLRequest::RequestContextPrefetch;
-    case Resource::LinkSubresource:
+    case Resource::LinkPreload:
         return WebURLRequest::RequestContextSubresource;
     case Resource::TextTrack:
         return WebURLRequest::RequestContextTrack;
@@ -166,8 +195,9 @@ static WebURLRequest::RequestContext requestContextFromType(bool isMainFrame, Re
     return WebURLRequest::RequestContextSubresource;
 }
 
-ResourceFetcher::ResourceFetcher(FetchContext* context)
-    : m_context(context)
+ResourceFetcher::ResourceFetcher(FetchContext* newContext)
+    : m_context(newContext)
+    , m_archive(context().isMainFrame() ? nullptr : context().archive())
     , m_resourceTimingReportTimer(this, &ResourceFetcher::resourceTimingReportTimerFired)
     , m_autoLoadImages(true)
     , m_imagesEnabled(true)
@@ -181,7 +211,7 @@ ResourceFetcher::ResourceFetcher(FetchContext* context)
 ResourceFetcher::~ResourceFetcher()
 {
 #if !ENABLE(OILPAN)
-    clearPreloads();
+    clearPreloads(ClearAllPreloads);
 #endif
 }
 
@@ -196,7 +226,7 @@ WebTaskRunner* ResourceFetcher::loadingTaskRunner()
 Resource* ResourceFetcher::cachedResource(const KURL& resourceURL) const
 {
     KURL url = MemoryCache::removeFragmentIdentifierIfNeeded(resourceURL);
-    const WeakPtrWillBeWeakMember<Resource>& resource = m_documentResources.get(url);
+    const WeakMember<Resource>& resource = m_documentResources.get(url);
     return resource.get();
 }
 
@@ -204,11 +234,11 @@ bool ResourceFetcher::canAccessResource(Resource* resource, SecurityOrigin* sour
 {
     // Redirects can change the response URL different from one of request.
     bool forPreload = resource->isUnusedPreload();
-    if (!context().canRequest(resource->type(), resource->resourceRequest(), url, resource->options(), forPreload, FetchRequest::UseDefaultOriginRestrictionForType))
+    if (!context().canRequest(resource->getType(), resource->resourceRequest(), url, resource->options(), forPreload, FetchRequest::UseDefaultOriginRestrictionForType))
         return false;
 
     if (!sourceOrigin)
-        sourceOrigin = context().securityOrigin();
+        sourceOrigin = context().getSecurityOrigin();
 
     if (sourceOrigin->canRequestNoSuborigin(url))
         return true;
@@ -217,7 +247,7 @@ bool ResourceFetcher::canAccessResource(Resource* resource, SecurityOrigin* sour
     if (!resource->passesAccessControlCheck(sourceOrigin, errorDescription)) {
         resource->setCORSFailed();
         if (!forPreload && (logErrorsDecision == ShouldLogAccessControlErrors)) {
-            String resourceType = Resource::resourceTypeToString(resource->type(), resource->options().initiatorInfo);
+            String resourceType = Resource::resourceTypeToString(resource->getType(), resource->options().initiatorInfo);
             context().addConsoleMessage(resourceType + " from origin '" + SecurityOrigin::create(url)->toString() + "' has been blocked from loading by Cross-Origin Resource Sharing policy: " + errorDescription);
         }
         return false;
@@ -234,11 +264,9 @@ bool ResourceFetcher::resourceNeedsLoad(Resource* resource, const FetchRequest& 
 {
     if (FetchRequest::DeferredByClient == request.defer())
         return false;
-    if (policy != Use)
-        return true;
-    if (resource->stillNeedsLoad())
-        return true;
-    return request.options().synchronousPolicy == RequestSynchronously && resource->isLoading();
+    if (resource->isImage() && shouldDeferImageLoad(resource->url()))
+        return false;
+    return policy != Use || resource->stillNeedsLoad();
 }
 
 // Limit the number of URLs in m_validatedURLs to avoid memory bloat.
@@ -247,15 +275,15 @@ static const int kMaxValidatedURLsSize = 10000;
 
 void ResourceFetcher::requestLoadStarted(Resource* resource, const FetchRequest& request, ResourceLoadStartType type, bool isStaticData)
 {
-    if (type == ResourceLoadingFromCache && resource->status() == Resource::Cached && !m_validatedURLs.contains(resource->url()))
-        context().dispatchDidLoadResourceFromMemoryCache(resource);
+    if (type == ResourceLoadingFromCache && resource->getStatus() == Resource::Cached && !m_validatedURLs.contains(resource->url()))
+        context().dispatchDidLoadResourceFromMemoryCache(resource, request.resourceRequest().frameType(), request.resourceRequest().requestContext());
 
     if (isStaticData)
         return;
 
     if (type == ResourceLoadingFromCache && !resource->stillNeedsLoad() && !m_validatedURLs.contains(request.resourceRequest().url())) {
         // Resources loaded from memory cache should be reported the first time they're used.
-        OwnPtr<ResourceTimingInfo> info = ResourceTimingInfo::create(request.options().initiatorInfo.name, monotonicallyIncreasingTime(), resource->type() == Resource::MainResource);
+        OwnPtr<ResourceTimingInfo> info = ResourceTimingInfo::create(request.options().initiatorInfo.name, monotonicallyIncreasingTime(), resource->getType() == Resource::MainResource);
         populateResourceTiming(info.get(), resource, true);
         m_scheduledResourceTimingReports.append(info.release());
         if (!m_resourceTimingReportTimer.isActive())
@@ -268,23 +296,23 @@ void ResourceFetcher::requestLoadStarted(Resource* resource, const FetchRequest&
     m_validatedURLs.add(request.resourceRequest().url());
 }
 
-static PassRefPtr<TraceEvent::ConvertableToTraceFormat> urlForTraceEvent(const KURL& url)
+static PassOwnPtr<TracedValue> urlForTraceEvent(const KURL& url)
 {
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("url", url.string());
+    OwnPtr<TracedValue> value = TracedValue::create();
+    value->setString("url", url.getString());
     return value.release();
 }
 
-ResourcePtr<Resource> ResourceFetcher::preCacheData(const FetchRequest& request, const ResourceFactory& factory, const SubstituteData& substituteData)
+Resource* ResourceFetcher::resourceForStaticData(const FetchRequest& request, const ResourceFactory& factory, const SubstituteData& substituteData)
 {
     const KURL& url = request.resourceRequest().url();
-    ASSERT(url.protocolIsData() || substituteData.isValid());
+    ASSERT(url.protocolIsData() || substituteData.isValid() || m_archive);
 
     // TODO(japhet): We only send main resource data: urls through WebURLLoader for the benefit of
     // a service worker test (RenderViewImplTest.ServiceWorkerNetworkProviderSetup), which is at a
     // layer where it isn't easy to mock out a network load. It uses data: urls to emulate the
     // behavior it wants to test, which would otherwise be reserved for network loads.
-    if ((factory.type() == Resource::MainResource && !substituteData.isValid()) || factory.type() == Resource::Raw)
+    if (!m_archive && !substituteData.isValid() && (factory.type() == Resource::MainResource || factory.type() == Resource::Raw))
         return nullptr;
 
     const String cacheIdentifier = getCacheIdentifier();
@@ -302,18 +330,26 @@ ResourcePtr<Resource> ResourceFetcher::preCacheData(const FetchRequest& request,
         mimetype = substituteData.mimeType();
         charset = substituteData.textEncoding();
         data = substituteData.content();
-    } else {
+    } else if (url.protocolIsData()) {
         data = PassRefPtr<SharedBuffer>(Platform::current()->parseDataURL(url, mimetype, charset));
         if (!data)
             return nullptr;
+    } else {
+        ArchiveResource* archiveResource = m_archive->subresourceForURL(request.url());
+        // Fall back to the network if the archive doesn't contain the resource.
+        if (!archiveResource)
+            return nullptr;
+        mimetype = archiveResource->mimeType();
+        charset = archiveResource->textEncoding();
+        data = archiveResource->data();
     }
+
     ResourceResponse response(url, mimetype, data->size(), charset, String());
     response.setHTTPStatusCode(200);
     response.setHTTPStatusText("OK");
 
-    ResourcePtr<Resource> resource = factory.create(request.resourceRequest(), request.charset());
+    Resource* resource = factory.create(request.resourceRequest(), request.options(), request.charset());
     resource->setNeedsSynchronousCacheHit(substituteData.forceSynchronousLoad());
-    resource->setOptions(request.options());
     // FIXME: We should provide a body stream here.
     resource->responseReceived(response, nullptr);
     resource->setDataBufferingPolicy(BufferData);
@@ -322,14 +358,17 @@ ResourcePtr<Resource> ResourceFetcher::preCacheData(const FetchRequest& request,
     resource->setIdentifier(createUniqueIdentifier());
     resource->setCacheIdentifier(cacheIdentifier);
     resource->finish();
-    memoryCache()->add(resource.get());
+
+    if (!substituteData.isValid())
+        memoryCache()->add(resource);
+
     return resource;
 }
 
 void ResourceFetcher::moveCachedNonBlockingResourceToBlocking(Resource* resource, const FetchRequest& request)
 {
     // TODO(yoav): Test that non-blocking resources (video/audio/track) continue to not-block even after being preloaded and discovered.
-    if (resource && resource->loader() && resource->isLoadEventBlockingResourceType() && resource->avoidBlockingOnLoad() && !request.forPreload()) {
+    if (resource && resource->loader() && resource->isLoadEventBlockingResourceType() && resource->isLinkPreload() && !request.forPreload()) {
         if (m_nonBlockingLoaders)
             m_nonBlockingLoaders->remove(resource->loader());
         if (!m_loaders)
@@ -338,7 +377,27 @@ void ResourceFetcher::moveCachedNonBlockingResourceToBlocking(Resource* resource
     }
 }
 
-ResourcePtr<Resource> ResourceFetcher::requestResource(FetchRequest& request, const ResourceFactory& factory, const SubstituteData& substituteData)
+void ResourceFetcher::updateMemoryCacheStats(Resource* resource, RevalidationPolicy policy, const FetchRequest& request,  const ResourceFactory& factory, bool isStaticData) const
+{
+    if (isStaticData)
+        return;
+
+    if (request.forPreload()) {
+        DEFINE_RESOURCE_HISTOGRAM("Preload.");
+    } else {
+        DEFINE_RESOURCE_HISTOGRAM("");
+    }
+
+    // Aims to count Resource only referenced from MemoryCache (i.e. what
+    // would be dead if MemoryCache holds weak references to Resource).
+    // Currently we check references to Resource from ResourceClient and
+    // |m_preloads| only, because they are major sources of references.
+    if (resource && !resource->hasClientsOrObservers() && (!m_preloads || !m_preloads->contains(resource))) {
+        DEFINE_RESOURCE_HISTOGRAM("Dead.");
+    }
+}
+
+Resource* ResourceFetcher::requestResource(FetchRequest& request, const ResourceFactory& factory, const SubstituteData& substituteData)
 {
     ASSERT(request.options().synchronousPolicy == RequestAsynchronously || factory.type() == Resource::Raw || factory.type() == Resource::XSLStyleSheet);
 
@@ -347,17 +406,15 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(FetchRequest& request, co
     context().addCSPHeaderIfNecessary(factory.type(), request);
 
     KURL url = request.resourceRequest().url();
+    KURL urlWithoutFragment = MemoryCache::removeFragmentIdentifierIfNeeded(url);
     TRACE_EVENT1("blink", "ResourceFetcher::requestResource", "url", urlForTraceEvent(url));
 
-    WTF_LOG(ResourceLoading, "ResourceFetcher::requestResource '%s', charset '%s', priority=%d, forPreload=%u, type=%s", url.elidedString().latin1().data(), request.charset().latin1().data(), request.priority(), request.forPreload(), ResourceTypeName(factory.type()));
-
-    // If only the fragment identifiers differ, it is the same resource.
-    url = MemoryCache::removeFragmentIdentifierIfNeeded(url);
+    WTF_LOG(ResourceLoading, "ResourceFetcher::requestResource '%s', charset '%s', priority=%d, forPreload=%u, type=%s", url.elidedString().latin1().data(), request.charset().latin1().data(), request.priority(), request.forPreload(), Resource::resourceTypeName(factory.type()));
 
     if (!url.isValid())
         return nullptr;
 
-    if (!context().canRequest(factory.type(), request.resourceRequest(), url, request.options(), request.forPreload(), request.originRestriction()))
+    if (!context().canRequest(factory.type(), request.resourceRequest(), urlWithoutFragment, request.options(), request.forPreload(), request.getOriginRestriction()))
         return nullptr;
 
     if (!request.forPreload()) {
@@ -375,40 +432,44 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(FetchRequest& request, co
         }
     }
 
-    bool isStaticData = request.resourceRequest().url().protocolIsData() || substituteData.isValid();
-    ResourcePtr<Resource> resource;
+    bool isStaticData = request.resourceRequest().url().protocolIsData() || substituteData.isValid() || m_archive;
+    Resource* resource(nullptr);
     if (isStaticData)
-        resource = preCacheData(request, factory, substituteData);
+        resource = resourceForStaticData(request, factory, substituteData);
     if (!resource)
         resource = memoryCache()->resourceForURL(url, getCacheIdentifier());
 
     // See if we can use an existing resource from the cache. If so, we need to move it to be load blocking.
-    moveCachedNonBlockingResourceToBlocking(resource.get(), request);
+    moveCachedNonBlockingResourceToBlocking(resource, request);
 
-    const RevalidationPolicy policy = determineRevalidationPolicy(factory.type(), request, resource.get(), isStaticData);
+    const RevalidationPolicy policy = determineRevalidationPolicy(factory.type(), request, resource, isStaticData);
+
+    updateMemoryCacheStats(resource, policy, request, factory, isStaticData);
+
+    initializeResourceRequest(request.mutableResourceRequest(), factory.type(), request.defer());
     switch (policy) {
     case Reload:
-        memoryCache()->remove(resource.get());
+        memoryCache()->remove(resource);
         // Fall through
     case Load:
         resource = createResourceForLoading(request, request.charset(), factory);
         break;
     case Revalidate:
-        initializeRevalidation(request, resource.get());
+        initializeRevalidation(request, resource);
         break;
     case Use:
-        memoryCache()->updateForAccess(resource.get());
+        memoryCache()->updateForAccess(resource);
         break;
     }
 
     if (!resource)
         return nullptr;
-    if (resource->type() != factory.type()) {
+    if (resource->getType() != factory.type()) {
         ASSERT(request.forPreload());
         return nullptr;
     }
 
-    if (!resource->hasClients())
+    if (!resource->hasClientsOrObservers())
         m_deadStatsRecorder.update(policy);
 
     if (policy != Use)
@@ -425,44 +486,22 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(FetchRequest& request, co
             resource->didChangePriority(priority, 0);
     }
 
-    if (resourceNeedsLoad(resource.get(), request, policy)) {
-        if (!context().shouldLoadNewResource(factory.type())) {
-            if (memoryCache()->contains(resource.get()))
-                memoryCache()->remove(resource.get());
-            return nullptr;
-        }
+    // If only the fragment identifiers differ, it is the same resource.
+    ASSERT(equalIgnoringFragmentIdentifier(resource->url(), url));
+    requestLoadStarted(resource, request, policy == Use ? ResourceLoadingFromCache : ResourceLoadingFromNetwork, isStaticData);
+    m_documentResources.set(urlWithoutFragment, resource->asWeakPtr());
 
-        if (!scheduleArchiveLoad(resource.get(), request.resourceRequest()))
-            resource->load(this, request.options());
+    if (!resourceNeedsLoad(resource, request, policy))
+        return resource;
 
-        // For asynchronous loads that immediately fail, it's sufficient to return a
-        // null Resource, as it indicates that something prevented the load from starting.
-        // If there's a network error, that failure will happen asynchronously. However, if
-        // a sync load receives a network error, it will have already happened by this point.
-        // In that case, the requester should have access to the relevant ResourceError, so
-        // we need to return a non-null Resource.
-        if (resource->errorOccurred()) {
-            if (memoryCache()->contains(resource.get()))
-                memoryCache()->remove(resource.get());
-            return request.options().synchronousPolicy == RequestSynchronously ? resource : nullptr;
-        }
+    if (!context().shouldLoadNewResource(factory.type())) {
+        if (memoryCache()->contains(resource))
+            memoryCache()->remove(resource);
+        return nullptr;
     }
 
-    // FIXME: Temporarily leave main resource caching disabled for chromium,
-    // see https://bugs.webkit.org/show_bug.cgi?id=107962. Before caching main
-    // resources, we should be sure to understand the implications for memory
-    // use.
-    // Remove main resource from cache to prevent reuse.
-    if (factory.type() == Resource::MainResource) {
-        ASSERT(policy != Use || isStaticData);
-        ASSERT(policy != Revalidate);
-        memoryCache()->remove(resource.get());
-    }
-
-    requestLoadStarted(resource.get(), request, policy == Use ? ResourceLoadingFromCache : ResourceLoadingFromNetwork, isStaticData);
-
-    ASSERT(resource->url() == url.string());
-    m_documentResources.set(resource->url(), resource->asWeakPtr());
+    resource->load(this);
+    ASSERT(!resource->errorOccurred() || request.options().synchronousPolicy == RequestSynchronously);
     return resource;
 }
 
@@ -486,13 +525,13 @@ void ResourceFetcher::determineRequestContext(ResourceRequest& request, Resource
     determineRequestContext(request, type, context().isMainFrame());
 }
 
-void ResourceFetcher::initializeResourceRequest(ResourceRequest& request, Resource::Type type)
+void ResourceFetcher::initializeResourceRequest(ResourceRequest& request, Resource::Type type, FetchRequest::DeferOption defer)
 {
-    if (request.cachePolicy() == UseProtocolCachePolicy)
-        request.setCachePolicy(context().resourceRequestCachePolicy(request, type));
+    if (request.getCachePolicy() == WebCachePolicy::UseProtocolCachePolicy)
+        request.setCachePolicy(context().resourceRequestCachePolicy(request, type, defer));
     if (request.requestContext() == WebURLRequest::RequestContextUnspecified)
         determineRequestContext(request, type);
-    if (type == Resource::LinkPrefetch || type == Resource::LinkSubresource)
+    if (type == Resource::LinkPrefetch)
         request.setHTTPHeaderField(HTTPNames::Purpose, "prefetch");
 
     context().addAdditionalRequestHeaders(request, (type == Resource::MainResource) ? FetchMainResource : FetchSubresource);
@@ -509,13 +548,13 @@ void ResourceFetcher::initializeRevalidation(const FetchRequest& request, Resour
 
     ResourceRequest revalidatingRequest(resource->resourceRequest());
     revalidatingRequest.clearHTTPReferrer();
-    initializeResourceRequest(revalidatingRequest, resource->type());
+    initializeResourceRequest(revalidatingRequest, resource->getType(), request.defer());
 
     const AtomicString& lastModified = resource->response().httpHeaderField(HTTPNames::Last_Modified);
     const AtomicString& eTag = resource->response().httpHeaderField(HTTPNames::ETag);
     if (!lastModified.isEmpty() || !eTag.isEmpty()) {
-        ASSERT(context().cachePolicy() != CachePolicyReload);
-        if (context().cachePolicy() == CachePolicyRevalidate)
+        ASSERT(context().getCachePolicy() != CachePolicyReload);
+        if (context().getCachePolicy() == CachePolicyRevalidate)
             revalidatingRequest.setHTTPHeaderField(HTTPNames::Cache_Control, "max-age=0");
     }
     if (!lastModified.isEmpty())
@@ -531,19 +570,20 @@ void ResourceFetcher::initializeRevalidation(const FetchRequest& request, Resour
     resource->setRevalidatingRequest(revalidatingRequest);
 }
 
-ResourcePtr<Resource> ResourceFetcher::createResourceForLoading(FetchRequest& request, const String& charset, const ResourceFactory& factory)
+Resource* ResourceFetcher::createResourceForLoading(FetchRequest& request, const String& charset, const ResourceFactory& factory)
 {
     const String cacheIdentifier = getCacheIdentifier();
     ASSERT(!memoryCache()->resourceForURL(request.resourceRequest().url(), cacheIdentifier));
 
     WTF_LOG(ResourceLoading, "Loading Resource for '%s'.", request.resourceRequest().url().elidedString().latin1().data());
 
-    initializeResourceRequest(request.mutableResourceRequest(), factory.type());
-    ResourcePtr<Resource> resource = factory.create(request.resourceRequest(), charset);
-    resource->setAvoidBlockingOnLoad(request.avoidBlockingOnLoad());
+    Resource* resource = factory.create(request.resourceRequest(), request.options(), charset);
+    resource->setLinkPreload(request.isLinkPreload());
     resource->setCacheIdentifier(cacheIdentifier);
 
-    memoryCache()->add(resource.get());
+    // Don't add main resource to cache to prevent reuse.
+    if (factory.type() != Resource::MainResource)
+        memoryCache()->add(resource);
     return resource;
 }
 
@@ -552,7 +592,7 @@ void ResourceFetcher::storeResourceTimingInitiatorInformation(Resource* resource
     if (resource->options().initiatorInfo.name == FetchInitiatorTypeNames::internal)
         return;
 
-    OwnPtr<ResourceTimingInfo> info = ResourceTimingInfo::create(resource->options().initiatorInfo.name, monotonicallyIncreasingTime(), resource->type() == Resource::MainResource);
+    OwnPtr<ResourceTimingInfo> info = ResourceTimingInfo::create(resource->options().initiatorInfo.name, monotonicallyIncreasingTime(), resource->getType() == Resource::MainResource);
 
     if (resource->isCacheValidator()) {
         const AtomicString& timingAllowOrigin = resource->response().httpHeaderField(HTTPNames::Timing_Allow_Origin);
@@ -560,7 +600,7 @@ void ResourceFetcher::storeResourceTimingInitiatorInformation(Resource* resource
             info->setOriginalTimingAllowOrigin(timingAllowOrigin);
     }
 
-    if (resource->type() != Resource::MainResource || context().updateTimingInfoForIFrameNavigation(info.get()))
+    if (resource->getType() != Resource::MainResource || context().updateTimingInfoForIFrameNavigation(info.get()))
         m_resourceTimingInfoMap.add(resource, info.release());
 }
 
@@ -603,7 +643,7 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
         return Use;
 
     // If the same URL has been loaded as a different type, we need to reload.
-    if (existingResource->type() != type) {
+    if (existingResource->getType() != type) {
         // FIXME: If existingResource is a Preload and the new type is LinkPrefetch
         // We really should discard the new prefetch since the preload has more
         // specific type information! crbug.com/379893
@@ -612,9 +652,22 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
         return Reload;
     }
 
-    // Do not load from cache if images are not enabled. The load for this image will be blocked
-    // in ImageResource::load.
+    // Do not load from cache if images are not enabled.
+    // There are two general cases:
+    // 1. Images are disabled. Don't ever load images, even if the image is
+    //    cached or it is a data: url. In this case, we "Reload" the image,
+    //    then defer it with resourceNeedsLoad() so that it never actually
+    //    goes to the network.
+    // 2. Images are enabled, but not loaded automatically. In this case, we
+    //    will Use cached resources or data: urls, but will similarly fall back
+    //    to a deferred network load if we don't have the data available
+    //    without a network request. We check allowImage() here, which is
+    //    affected by m_imagesEnabled but not m_autoLoadImages, in order to
+    //    allow for this differing behavior.
+    // TODO(japhet): Can we get rid of one of these settings?
     if (FetchRequest::DeferredByClient == fetchRequest.defer())
+        return Reload;
+    if (existingResource->isImage() && !context().allowImage(m_imagesEnabled, existingResource->url()))
         return Reload;
 
     // Never use cache entries for downloadToFile / useStreamOnResponse
@@ -635,11 +688,15 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
     if (request.isConditional())
         return Reload;
 
+    // Don't try to reuse an in-progress async request for a new sync request.
+    if (fetchRequest.options().synchronousPolicy == RequestSynchronously && existingResource->isLoading())
+        return Reload;
+
     // Don't reload resources while pasting.
     if (m_allowStaleResources)
         return Use;
 
-    if (request.cachePolicy() == ResourceRequestCachePolicy::ReloadBypassingCache)
+    if (request.getCachePolicy() == WebCachePolicy::BypassingCache)
         return Reload;
 
     if (!fetchRequest.options().canReuseRequest(existingResource->options()))
@@ -650,7 +707,7 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
         return Use;
 
     // CachePolicyHistoryBuffer uses the cache no matter what.
-    CachePolicy cachePolicy = context().cachePolicy();
+    CachePolicy cachePolicy = context().getCachePolicy();
     if (cachePolicy == CachePolicyHistoryBuffer)
         return Use;
 
@@ -762,14 +819,9 @@ void ResourceFetcher::setImagesEnabled(bool enable)
     reloadImagesIfNotDeferred();
 }
 
-bool ResourceFetcher::clientDefersImage(const KURL& url) const
-{
-    return !context().allowImage(m_imagesEnabled, url);
-}
-
 bool ResourceFetcher::shouldDeferImageLoad(const KURL& url) const
 {
-    return clientDefersImage(url) || !m_autoLoadImages;
+    return !context().allowImage(m_imagesEnabled, url) || !m_autoLoadImages;
 }
 
 void ResourceFetcher::reloadImagesIfNotDeferred()
@@ -779,16 +831,9 @@ void ResourceFetcher::reloadImagesIfNotDeferred()
     // the resource probably won't be necesssary.
     for (const auto& documentResource : m_documentResources) {
         Resource* resource = documentResource.value.get();
-        if (resource && resource->type() == Resource::Image && resource->stillNeedsLoad() && !clientDefersImage(resource->url()))
-            const_cast<Resource*>(resource)->load(this, defaultResourceOptions());
+        if (resource && resource->getType() == Resource::Image && resource->stillNeedsLoad() && !shouldDeferImageLoad(resource->url()))
+            const_cast<Resource*>(resource)->load(this);
     }
-}
-
-void ResourceFetcher::redirectReceived(Resource* resource, const ResourceResponse& redirectResponse)
-{
-    ResourceTimingInfoMap::iterator it = m_resourceTimingInfoMap.find(resource);
-    if (it != m_resourceTimingInfoMap.end())
-        it->value->addRedirect(redirectResponse);
 }
 
 void ResourceFetcher::didLoadResource(Resource* resource)
@@ -809,7 +854,7 @@ void ResourceFetcher::preloadStarted(Resource* resource)
     resource->increasePreloadCount();
 
     if (!m_preloads)
-        m_preloads = adoptPtrWillBeNoop(new WillBeHeapListHashSet<RawPtrWillBeMember<Resource>>);
+        m_preloads = new HeapListHashSet<Member<Resource>>;
     m_preloads->add(resource);
 
 #if PRELOAD_DEBUG
@@ -829,7 +874,7 @@ bool ResourceFetcher::isPreloaded(const KURL& url) const
     return false;
 }
 
-void ResourceFetcher::clearPreloads()
+void ResourceFetcher::clearPreloads(ClearPreloadsPolicy policy)
 {
 #if PRELOAD_DEBUG
     printPreloadStats();
@@ -839,45 +884,26 @@ void ResourceFetcher::clearPreloads()
 
     for (auto resource : *m_preloads) {
         resource->decreasePreloadCount();
-        bool deleted = resource->deleteIfPossible();
-        if (!deleted && resource->preloadResult() == Resource::PreloadNotReferenced)
+        if (resource->getPreloadResult() == Resource::PreloadNotReferenced && (policy == ClearAllPreloads || !resource->isLinkPreload()))
             memoryCache()->remove(resource.get());
     }
     m_preloads.clear();
 }
 
-void ResourceFetcher::addAllArchiveResources(MHTMLArchive* archive)
+ArchiveResource* ResourceFetcher::createArchive(Resource* resource)
 {
-    ASSERT(archive);
-    if (!m_archiveResourceCollection)
-        m_archiveResourceCollection = ArchiveResourceCollection::create();
-    m_archiveResourceCollection->addAllResources(archive);
-}
-
-bool ResourceFetcher::scheduleArchiveLoad(Resource* resource, const ResourceRequest& request)
-{
-    if (!m_archiveResourceCollection)
-        return false;
-
-    ArchiveResource* archiveResource = m_archiveResourceCollection->archiveResourceForURL(request.url());
-    if (!archiveResource) {
-        resource->error(Resource::LoadError);
-        return false;
-    }
-
-    resource->setLoading(true);
-    resource->responseReceived(archiveResource->response(), nullptr);
-    SharedBuffer* data = archiveResource->data();
-    if (data)
-        resource->appendData(data->data(), data->size());
-    resource->finish();
-    return true;
+    // Only the top-frame can load MHTML.
+    if (!context().isMainFrame())
+        return nullptr;
+    m_archive = MHTMLArchive::create(resource->url(), resource->resourceBuffer());
+    return m_archive ? m_archive->mainResource() : nullptr;
 }
 
 void ResourceFetcher::didFinishLoading(Resource* resource, double finishTime, int64_t encodedDataLength)
 {
     TRACE_EVENT_ASYNC_END0("blink.net", "Resource", resource);
-    willTerminateResourceLoader(resource->loader());
+    // The ResourceLoader might be in |m_nonBlockingLoaders| for multipart responses.
+    ASSERT(!(m_loaders && m_loaders->contains(resource->loader())));
 
     if (resource && resource->response().isHTTP() && resource->response().httpStatusCode() < 400) {
         ResourceTimingInfoMap::iterator it = m_resourceTimingInfoMap.find(resource);
@@ -896,14 +922,9 @@ void ResourceFetcher::didFinishLoading(Resource* resource, double finishTime, in
 void ResourceFetcher::didFailLoading(const Resource* resource, const ResourceError& error)
 {
     TRACE_EVENT_ASYNC_END0("blink.net", "Resource", resource);
-    willTerminateResourceLoader(resource->loader());
+    removeResourceLoader(resource->loader());
     bool isInternalRequest = resource->options().initiatorInfo.name == FetchInitiatorTypeNames::internal;
     context().dispatchDidFail(resource->identifier(), error, isInternalRequest);
-}
-
-void ResourceFetcher::willSendRequest(unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
-{
-    context().dispatchWillSendRequest(identifier, request, redirectResponse, initiatorInfo);
 }
 
 void ResourceFetcher::didReceiveResponse(const Resource* resource, const ResourceResponse& response)
@@ -913,14 +934,14 @@ void ResourceFetcher::didReceiveResponse(const Resource* resource, const Resourc
     // https://w3c.github.io/webappsec-csp/#should-block-response
     if (response.wasFetchedViaServiceWorker()) {
         const KURL& originalURL = response.originalURLViaServiceWorker();
-        if (!originalURL.isEmpty() && !context().allowResponse(resource->type(), resource->resourceRequest(), originalURL, resource->options())) {
+        if (!originalURL.isEmpty() && !context().allowResponse(resource->getType(), resource->resourceRequest(), originalURL, resource->options())) {
             resource->loader()->cancel();
             bool isInternalRequest = resource->options().initiatorInfo.name == FetchInitiatorTypeNames::internal;
-            context().dispatchDidFail(resource->identifier(), ResourceError(errorDomainBlinkInternal, 0, originalURL.string(), "Unsafe attempt to load URL " + originalURL.elidedString() + " fetched by a ServiceWorker."), isInternalRequest);
+            context().dispatchDidFail(resource->identifier(), ResourceError(errorDomainBlinkInternal, 0, originalURL.getString(), "Unsafe attempt to load URL " + originalURL.elidedString() + " fetched by a ServiceWorker."), isInternalRequest);
             return;
         }
     }
-    context().dispatchDidReceiveResponse(resource->identifier(), response, resource->loader());
+    context().dispatchDidReceiveResponse(resource->identifier(), response, resource->resourceRequest().frameType(), resource->resourceRequest().requestContext(), resource->loader());
 }
 
 void ResourceFetcher::didReceiveData(const Resource* resource, const char* data, int dataLength, int encodedDataLength)
@@ -938,16 +959,15 @@ void ResourceFetcher::acceptDataFromThreadedReceiver(unsigned long identifier, c
     context().dispatchDidReceiveData(identifier, data, dataLength, encodedDataLength);
 }
 
-void ResourceFetcher::subresourceLoaderFinishedLoadingOnePart(ResourceLoader* loader)
+void ResourceFetcher::moveResourceLoaderToNonBlocking(ResourceLoader* loader)
 {
     if (!m_nonBlockingLoaders)
         m_nonBlockingLoaders = ResourceLoaderSet::create();
     m_nonBlockingLoaders->add(loader);
     m_loaders->remove(loader);
-    didLoadResource(loader->cachedResource());
 }
 
-void ResourceFetcher::didInitializeResourceLoader(ResourceLoader* loader)
+void ResourceFetcher::willStartLoadingResource(Resource* resource, ResourceLoader* loader, ResourceRequest& request)
 {
     if (loader->cachedResource()->shouldBlockLoadEvent()) {
         if (!m_loaders)
@@ -958,9 +978,14 @@ void ResourceFetcher::didInitializeResourceLoader(ResourceLoader* loader)
             m_nonBlockingLoaders = ResourceLoaderSet::create();
         m_nonBlockingLoaders->add(loader);
     }
+
+    context().willStartLoadingResource(resource, request);
+    storeResourceTimingInitiatorInformation(resource);
+
+    context().dispatchWillSendRequest(resource->identifier(), request, ResourceResponse(), resource->options().initiatorInfo);
 }
 
-void ResourceFetcher::willTerminateResourceLoader(ResourceLoader* loader)
+void ResourceFetcher::removeResourceLoader(ResourceLoader* loader)
 {
     if (m_loaders && m_loaders->contains(loader))
         m_loaders->remove(loader);
@@ -968,13 +993,6 @@ void ResourceFetcher::willTerminateResourceLoader(ResourceLoader* loader)
         m_nonBlockingLoaders->remove(loader);
     else
         ASSERT_NOT_REACHED();
-}
-
-void ResourceFetcher::willStartLoadingResource(Resource* resource, ResourceRequest& request)
-{
-    context().willStartLoadingResource(request);
-    storeResourceTimingInitiatorInformation(resource);
-    TRACE_EVENT_ASYNC_BEGIN2("blink.net", "Resource", resource, "url", resource->url().string().ascii(), "priority", resource->resourceRequest().priority());
 }
 
 void ResourceFetcher::stopFetching()
@@ -1003,47 +1021,49 @@ bool ResourceFetcher::defersLoading() const
     return context().defersLoading();
 }
 
-bool ResourceFetcher::isLoadedBy(ResourceFetcher* possibleOwner) const
+static bool isManualRedirectFetchRequest(const ResourceRequest& request)
 {
-    return this == possibleOwner;
+    return request.fetchRedirectMode() == WebURLRequest::FetchRedirectModeManual && request.requestContext() == WebURLRequest::RequestContextFetch;
 }
 
-bool ResourceFetcher::canAccessRedirect(Resource* resource, ResourceRequest& newRequest, const ResourceResponse& redirectResponse, ResourceLoaderOptions& options)
+bool ResourceFetcher::willFollowRedirect(Resource* resource, ResourceRequest& newRequest, const ResourceResponse& redirectResponse)
 {
-    if (!context().canRequest(resource->type(), newRequest, newRequest.url(), options, resource->isUnusedPreload(), FetchRequest::UseDefaultOriginRestrictionForType))
-        return false;
-    if (options.corsEnabled == IsCORSEnabled) {
-        SecurityOrigin* sourceOrigin = options.securityOrigin.get();
-        if (!sourceOrigin)
-            sourceOrigin = context().securityOrigin();
-
-        String errorMessage;
-        StoredCredentials withCredentials = resource->lastResourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
-        if (!CrossOriginAccessControl::handleRedirect(sourceOrigin, newRequest, redirectResponse, withCredentials, options, errorMessage)) {
-            resource->setCORSFailed();
-            context().addConsoleMessage(errorMessage);
+    if (!isManualRedirectFetchRequest(resource->resourceRequest())) {
+        if (!context().canRequest(resource->getType(), newRequest, newRequest.url(), resource->options(), resource->isUnusedPreload(), FetchRequest::UseDefaultOriginRestrictionForType))
             return false;
+        if (resource->options().corsEnabled == IsCORSEnabled) {
+            SecurityOrigin* sourceOrigin = resource->options().securityOrigin.get();
+            if (!sourceOrigin)
+                sourceOrigin = context().getSecurityOrigin();
+
+            String errorMessage;
+            StoredCredentials withCredentials = resource->lastResourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+            if (!CrossOriginAccessControl::handleRedirect(sourceOrigin, newRequest, redirectResponse, withCredentials, resource->mutableOptions(), errorMessage)) {
+                resource->setCORSFailed();
+                context().addConsoleMessage(errorMessage);
+                return false;
+            }
         }
+        if (resource->getType() == Resource::Image && shouldDeferImageLoad(newRequest.url()))
+            return false;
     }
-    if (resource->type() == Resource::Image && shouldDeferImageLoad(newRequest.url()))
-        return false;
+
+    ResourceTimingInfoMap::iterator it = m_resourceTimingInfoMap.find(resource);
+    if (it != m_resourceTimingInfoMap.end())
+        it->value->addRedirect(redirectResponse);
+    context().dispatchWillSendRequest(resource->identifier(), newRequest, redirectResponse, resource->options().initiatorInfo);
     return true;
 }
 
 void ResourceFetcher::updateAllImageResourcePriorities()
 {
-    if (!m_loaders)
-        return;
-
     TRACE_EVENT0("blink", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
-    for (const auto& loader : m_loaders->hashSet()) {
-        ASSERT(loader);
-        Resource* resource = loader->cachedResource();
-        ASSERT(resource);
-        if (!resource->isImage())
+    for (const auto& documentResource : m_documentResources) {
+        Resource* resource = documentResource.value.get();
+        if (!resource || !resource->isImage() || !resource->isLoading())
             continue;
 
-        ResourcePriority resourcePriority = resource->priorityFromClients();
+        ResourcePriority resourcePriority = resource->priorityFromObservers();
         ResourceLoadPriority resourceLoadPriority = loadPriority(Resource::Image, FetchRequest(resource->resourceRequest(), FetchInitiatorInfo()), resourcePriority.visibility);
         if (resourceLoadPriority == resource->resourceRequest().priority())
             continue;
@@ -1051,6 +1071,17 @@ void ResourceFetcher::updateAllImageResourcePriorities()
         resource->didChangePriority(resourceLoadPriority, resourcePriority.intraPriorityValue);
         TRACE_EVENT_ASYNC_STEP_INTO1("blink.net", "Resource", resource, "ChangePriority", "priority", resourceLoadPriority);
         context().dispatchDidChangeResourcePriority(resource->identifier(), resourceLoadPriority, resourcePriority.intraPriorityValue);
+    }
+}
+
+void ResourceFetcher::reloadLoFiImages()
+{
+    for (const auto& documentResource : m_documentResources) {
+        Resource* resource = documentResource.value.get();
+        if (resource && resource->isImage()) {
+            ImageResource* imageResource = toImageResource(resource);
+            imageResource->reloadIfLoFi(this);
+        }
     }
 }
 
@@ -1067,24 +1098,24 @@ void ResourceFetcher::printPreloadStats()
     unsigned images = 0;
     unsigned imageMisses = 0;
     for (auto resource : *m_preloads) {
-        if (resource->preloadResult() == Resource::PreloadNotReferenced)
+        if (resource->getPreloadResult() == Resource::PreloadNotReferenced)
             printf("!! UNREFERENCED PRELOAD %s\n", resource->url().string().latin1().data());
-        else if (resource->preloadResult() == Resource::PreloadReferencedWhileComplete)
+        else if (resource->getPreloadResult() == Resource::PreloadReferencedWhileComplete)
             printf("HIT COMPLETE PRELOAD %s\n", resource->url().string().latin1().data());
-        else if (resource->preloadResult() == Resource::PreloadReferencedWhileLoading)
+        else if (resource->getPreloadResult() == Resource::PreloadReferencedWhileLoading)
             printf("HIT LOADING PRELOAD %s\n", resource->url().string().latin1().data());
 
-        if (resource->type() == Resource::Script) {
+        if (resource->getType() == Resource::Script) {
             scripts++;
-            if (resource->preloadResult() < Resource::PreloadReferencedWhileLoading)
+            if (resource->getPreloadResult() < Resource::PreloadReferencedWhileLoading)
                 scriptMisses++;
-        } else if (resource->type() == Resource::CSSStyleSheet) {
+        } else if (resource->getType() == Resource::CSSStyleSheet) {
             stylesheets++;
-            if (resource->preloadResult() < Resource::PreloadReferencedWhileLoading)
+            if (resource->getPreloadResult() < Resource::PreloadReferencedWhileLoading)
                 stylesheetMisses++;
         } else {
             images++;
-            if (resource->preloadResult() < Resource::PreloadReferencedWhileLoading)
+            if (resource->getPreloadResult() < Resource::PreloadReferencedWhileLoading)
                 imageMisses++;
         }
 
@@ -1126,12 +1157,12 @@ ResourceFetcher::DeadResourceStatsRecorder::DeadResourceStatsRecorder()
 
 ResourceFetcher::DeadResourceStatsRecorder::~DeadResourceStatsRecorder()
 {
-    Platform::current()->histogramCustomCounts(
-        "WebCore.ResourceFetcher.HitCount", m_useCount, 0, 1000, 50);
-    Platform::current()->histogramCustomCounts(
-        "WebCore.ResourceFetcher.RevalidateCount", m_revalidateCount, 0, 1000, 50);
-    Platform::current()->histogramCustomCounts(
-        "WebCore.ResourceFetcher.LoadCount", m_loadCount, 0, 1000, 50);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, hitCountHistogram, new CustomCountHistogram("WebCore.ResourceFetcher.HitCount", 0, 1000, 50));
+    hitCountHistogram.count(m_useCount);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, revalidateCountHistogram, new CustomCountHistogram("WebCore.ResourceFetcher.RevalidateCount", 0, 1000, 50));
+    revalidateCountHistogram.count(m_revalidateCount);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(CustomCountHistogram, loadCountHistogram, new CustomCountHistogram("WebCore.ResourceFetcher.LoadCount", 0, 1000, 50));
+    loadCountHistogram.count(m_loadCount);
 }
 
 void ResourceFetcher::DeadResourceStatsRecorder::update(RevalidationPolicy policy)
@@ -1153,14 +1184,12 @@ void ResourceFetcher::DeadResourceStatsRecorder::update(RevalidationPolicy polic
 DEFINE_TRACE(ResourceFetcher)
 {
     visitor->trace(m_context);
-    visitor->trace(m_archiveResourceCollection);
+    visitor->trace(m_archive);
     visitor->trace(m_loaders);
     visitor->trace(m_nonBlockingLoaders);
-#if ENABLE(OILPAN)
     visitor->trace(m_documentResources);
     visitor->trace(m_preloads);
     visitor->trace(m_resourceTimingInfoMap);
-#endif
 }
 
-}
+} // namespace blink

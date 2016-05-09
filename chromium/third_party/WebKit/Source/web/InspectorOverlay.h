@@ -29,15 +29,15 @@
 #ifndef InspectorOverlay_h
 #define InspectorOverlay_h
 
-#include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorOverlayHost.h"
-#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorProfilerAgent.h"
+#include "platform/Timer.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
+#include "platform/inspector_protocol/TypeBuilder.h"
 #include "public/web/WebInputEvent.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -53,25 +53,26 @@ class GraphicsContext;
 class GraphicsLayer;
 class InspectorCSSAgent;
 class InspectorDebuggerAgent;
-class JSONValue;
 class LayoutEditor;
 class Node;
 class Page;
 class PageOverlay;
 class WebViewImpl;
 
+namespace protocol {
+class Value;
+}
+
 class InspectorOverlay final
-    : public NoBaseWillBeGarbageCollectedFinalized<InspectorOverlay>
+    : public GarbageCollectedFinalized<InspectorOverlay>
     , public InspectorDOMAgent::Client
-    , public InspectorPageAgent::Client
     , public InspectorProfilerAgent::Client
     , public InspectorOverlayHost::Listener {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorOverlay);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorOverlay);
+    USING_GARBAGE_COLLECTED_MIXIN(InspectorOverlay);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorOverlay> create(WebViewImpl* webViewImpl)
+    static InspectorOverlay* create(WebViewImpl* webViewImpl)
     {
-        return adoptPtrWillBeNoop(new InspectorOverlay(webViewImpl));
+        return new InspectorOverlay(webViewImpl);
     }
 
     ~InspectorOverlay() override;
@@ -81,6 +82,9 @@ public:
 
     void clear();
     bool handleInputEvent(const WebInputEvent&);
+    void pageLayoutInvalidated(bool resized);
+    void setShowViewportSizeOnResize(bool);
+    void setPausedInDebuggerMessage(const String&);
 
     // Does not yet include paint.
     void updateAllLifecyclePhases();
@@ -107,10 +111,6 @@ private:
     void profilingStarted() override;
     void profilingStopped() override;
 
-    // InspectorPageAgent::Client implementation.
-    void pageLayoutInvalidated() override;
-    void setPausedInDebuggerMessage(const String*) override;
-
     // InspectorDOMAgent::Client implementation.
     void hideHighlight() override;
     void highlightNode(Node*, const InspectorHighlightConfig&, bool omitTooltip) override;
@@ -123,12 +123,14 @@ private:
     void drawNodeHighlight();
     void drawQuadHighlight();
     void drawPausedInDebuggerMessage();
+    void drawViewSize();
 
     Page* overlayPage();
     LocalFrame* overlayMainFrame();
     void reset(const IntSize& viewportSize, const IntPoint& documentScrollOffset);
     void evaluateInOverlay(const String& method, const String& argument);
-    void evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument);
+    void evaluateInOverlay(const String& method, PassOwnPtr<protocol::Value> argument);
+    void onTimer(Timer<InspectorOverlay>*);
     void rebuildOverlayPage();
     void invalidate();
     void scheduleUpdate();
@@ -143,24 +145,27 @@ private:
 
     WebViewImpl* m_webViewImpl;
     String m_pausedInDebuggerMessage;
-    RefPtrWillBeMember<Node> m_highlightNode;
-    RefPtrWillBeMember<Node> m_eventTargetNode;
+    Member<Node> m_highlightNode;
+    Member<Node> m_eventTargetNode;
     InspectorHighlightConfig m_nodeHighlightConfig;
     OwnPtr<FloatQuad> m_highlightQuad;
-    OwnPtrWillBeMember<Page> m_overlayPage;
-    OwnPtrWillBeMember<InspectorOverlayChromeClient> m_overlayChromeClient;
-    RefPtrWillBeMember<InspectorOverlayHost> m_overlayHost;
+    Member<Page> m_overlayPage;
+    Member<InspectorOverlayChromeClient> m_overlayChromeClient;
+    Member<InspectorOverlayHost> m_overlayHost;
     InspectorHighlightConfig m_quadHighlightConfig;
+    bool m_drawViewSize;
+    bool m_resizeTimerActive;
     bool m_omitTooltip;
+    Timer<InspectorOverlay> m_timer;
     int m_suspendCount;
     bool m_inLayout;
     bool m_needsUpdate;
-    RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
-    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
-    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
-    OwnPtrWillBeMember<LayoutEditor> m_layoutEditor;
+    Member<InspectorDebuggerAgent> m_debuggerAgent;
+    Member<InspectorDOMAgent> m_domAgent;
+    Member<InspectorCSSAgent> m_cssAgent;
+    Member<LayoutEditor> m_layoutEditor;
     OwnPtr<PageOverlay> m_pageOverlay;
-    RefPtrWillBeMember<Node> m_hoveredNodeForInspectMode;
+    Member<Node> m_hoveredNodeForInspectMode;
     InspectorDOMAgent::SearchMode m_inspectMode;
     OwnPtr<InspectorHighlightConfig> m_inspectModeHighlightConfig;
 };

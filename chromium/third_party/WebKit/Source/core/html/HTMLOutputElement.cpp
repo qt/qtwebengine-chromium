@@ -39,7 +39,7 @@ inline HTMLOutputElement::HTMLOutputElement(Document& document, HTMLFormElement*
     : HTMLFormControlElement(HTMLNames::outputTag, document, form)
     , m_isDefaultValueMode(true)
     , m_defaultValue("")
-    , m_tokens(DOMSettableTokenList::create(this))
+    , m_tokens(DOMTokenList::create(this))
 {
 }
 
@@ -50,15 +50,20 @@ HTMLOutputElement::~HTMLOutputElement()
 #endif
 }
 
-PassRefPtrWillBeRawPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
+RawPtr<HTMLOutputElement> HTMLOutputElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRefWillBeNoop(new HTMLOutputElement(document, form));
+    return new HTMLOutputElement(document, form);
 }
 
 const AtomicString& HTMLOutputElement::formControlType() const
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, output, ("output", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, output, ("output"));
     return output;
+}
+
+bool HTMLOutputElement::isDisabledFormControl() const
+{
+    return false;
 }
 
 bool HTMLOutputElement::supportsFocus() const
@@ -74,7 +79,7 @@ void HTMLOutputElement::parseAttribute(const QualifiedName& name, const AtomicSt
         HTMLFormControlElement::parseAttribute(name, oldValue, value);
 }
 
-DOMSettableTokenList* HTMLOutputElement::htmlFor() const
+DOMTokenList* HTMLOutputElement::htmlFor() const
 {
     return m_tokens.get();
 }
@@ -143,7 +148,7 @@ DEFINE_TRACE(HTMLOutputElement)
 {
     visitor->trace(m_tokens);
     HTMLFormControlElement::trace(visitor);
-    DOMSettableTokenListObserver::trace(visitor);
+    DOMTokenListObserver::trace(visitor);
 }
 
-} // namespace
+} // namespace blink

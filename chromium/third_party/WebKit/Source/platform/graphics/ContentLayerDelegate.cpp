@@ -57,8 +57,8 @@ static void paintArtifactToWebDisplayItemList(WebDisplayItemList* list, const Pa
         // separate layers and send those to the compositor, instead of sending
         // one big flat SkPicture.
         SkRect skBounds = SkRect::MakeXYWH(bounds.x(), bounds.y(), bounds.width(), bounds.height());
-        RefPtr<SkPicture> picture = paintArtifactToSkPicture(artifact, skBounds);
-        list->appendDrawingItem(WebRect(bounds.x(), bounds.y(), bounds.width(), bounds.height()), picture.get());
+        list->appendDrawingItem(WebRect(bounds.x(), bounds.y(), bounds.width(), bounds.height()),
+            paintArtifactToSkPicture(artifact, skBounds));
         return;
     }
     artifact.appendToWebDisplayItemList(list);
@@ -75,7 +75,7 @@ void ContentLayerDelegate::paintContents(
 {
     TRACE_EVENT0("blink,benchmark", "ContentLayerDelegate::paintContents");
 
-    PaintController& paintController = m_graphicsLayer->paintController();
+    PaintController& paintController = m_graphicsLayer->getPaintController();
     paintController.setDisplayItemConstructionIsDisabled(
         paintingControl == WebContentLayerClient::DisplayListConstructionDisabled);
     paintController.setSubsequenceCachingIsDisabled(
@@ -84,6 +84,7 @@ void ContentLayerDelegate::paintContents(
     // We also disable caching when Painting or Construction are disabled. In both cases we would like
     // to compare assuming the full cost of recording, not the cost of re-using cached content.
     if (paintingControl != WebContentLayerClient::PaintDefaultBehavior
+        && paintingControl != WebContentLayerClient::PaintDefaultBehaviorForTest
         && paintingControl != WebContentLayerClient::SubsequenceCachingDisabled)
         paintController.invalidateAll();
 
@@ -92,8 +93,12 @@ void ContentLayerDelegate::paintContents(
         || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
         disabledMode = GraphicsContext::FullyDisabled;
 
+    // Anything other than PaintDefaultBehavior is for testing. In non-testing scenarios,
+    // it is an error to call GraphicsLayer::paint. Actual painting occurs in FrameView::synchronizedPaint;
+    // this method merely copies the painted output to the WebDisplayItemList.
     if (paintingControl != PaintDefaultBehavior)
         m_graphicsLayer->paint(nullptr, disabledMode);
+
     paintArtifactToWebDisplayItemList(webDisplayItemList, paintController.paintArtifact(), paintableRegion());
 
     paintController.setDisplayItemConstructionIsDisabled(false);
@@ -102,7 +107,7 @@ void ContentLayerDelegate::paintContents(
 
 size_t ContentLayerDelegate::approximateUnsharedMemoryUsage() const
 {
-    return m_graphicsLayer->paintController().approximateUnsharedMemoryUsage();
+    return m_graphicsLayer->getPaintController().approximateUnsharedMemoryUsage();
 }
 
 } // namespace blink

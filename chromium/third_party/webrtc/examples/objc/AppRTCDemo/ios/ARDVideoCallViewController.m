@@ -10,8 +10,11 @@
 
 #import "ARDVideoCallViewController.h"
 
-#import "RTCAVFoundationVideoSource.h"
-#import "RTCLogging.h"
+#import "webrtc/base/objc/RTCDispatcher.h"
+#import "webrtc/modules/audio_device/ios/objc/RTCAudioSession.h"
+
+#import "webrtc/api/objc/RTCAVFoundationVideoSource.h"
+#import "webrtc/base/objc/RTCLogging.h"
 
 #import "ARDAppClient.h"
 #import "ARDVideoCallView.h"
@@ -27,6 +30,7 @@
   ARDAppClient *_client;
   RTCVideoTrack *_remoteVideoTrack;
   RTCVideoTrack *_localVideoTrack;
+  AVAudioSessionPortOverride _portOverride;
 }
 
 @synthesize videoCallView = _videoCallView;
@@ -47,7 +51,7 @@
   _videoCallView = [[ARDVideoCallView alloc] initWithFrame:CGRectZero];
   _videoCallView.delegate = self;
   _videoCallView.statusLabel.text =
-      [self statusTextForState:RTCICEConnectionNew];
+      [self statusTextForState:RTCIceConnectionStateNew];
   self.view = _videoCallView;
 }
 
@@ -70,8 +74,8 @@
 }
 
 - (void)appClient:(ARDAppClient *)client
-    didChangeConnectionState:(RTCICEConnectionState)state {
-  RTCLog(@"ICE state changed: %d", state);
+    didChangeConnectionState:(RTCIceConnectionState)state {
+  RTCLog(@"ICE state changed: %ld", (long)state);
   __weak ARDVideoCallViewController *weakSelf = self;
   dispatch_async(dispatch_get_main_queue(), ^{
     ARDVideoCallViewController *strongSelf = weakSelf;
@@ -115,6 +119,26 @@
   // TODO(tkchin): Rate limit this so you can't tap continously on it.
   // Probably through an animation.
   [self switchCamera];
+}
+
+- (void)videoCallViewDidChangeRoute:(ARDVideoCallView *)view {
+  AVAudioSessionPortOverride override = AVAudioSessionPortOverrideNone;
+  if (_portOverride == AVAudioSessionPortOverrideNone) {
+    override = AVAudioSessionPortOverrideSpeaker;
+  }
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeAudioSession
+                               block:^{
+    RTCAudioSession *session = [RTCAudioSession sharedInstance];
+    [session lockForConfiguration];
+    NSError *error = nil;
+    if ([session overrideOutputAudioPort:override error:&error]) {
+      _portOverride = override;
+    } else {
+      RTCLogError(@"Error overriding output port: %@",
+                  error.localizedDescription);
+    }
+    [session unlockForConfiguration];
+  }];
 }
 
 - (void)videoCallViewDidEnableStats:(ARDVideoCallView *)view {
@@ -164,22 +188,20 @@
   if ([source isKindOfClass:[RTCAVFoundationVideoSource class]]) {
     RTCAVFoundationVideoSource* avSource = (RTCAVFoundationVideoSource*)source;
     avSource.useBackCamera = !avSource.useBackCamera;
-    _videoCallView.localVideoView.transform = avSource.useBackCamera ?
-        CGAffineTransformIdentity : CGAffineTransformMakeScale(-1, 1);
   }
 }
 
-- (NSString *)statusTextForState:(RTCICEConnectionState)state {
+- (NSString *)statusTextForState:(RTCIceConnectionState)state {
   switch (state) {
-    case RTCICEConnectionNew:
-    case RTCICEConnectionChecking:
+    case RTCIceConnectionStateNew:
+    case RTCIceConnectionStateChecking:
       return @"Connecting...";
-    case RTCICEConnectionConnected:
-    case RTCICEConnectionCompleted:
-    case RTCICEConnectionFailed:
-    case RTCICEConnectionDisconnected:
-    case RTCICEConnectionClosed:
-    case RTCICEConnectionMax:
+    case RTCIceConnectionStateConnected:
+    case RTCIceConnectionStateCompleted:
+    case RTCIceConnectionStateFailed:
+    case RTCIceConnectionStateDisconnected:
+    case RTCIceConnectionStateClosed:
+    case RTCIceConnectionStateCount:
       return nil;
   }
 }

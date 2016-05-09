@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <memory>
+
 #ifdef WIN32
 #include <Windows.h>
 #endif
@@ -48,14 +50,6 @@ TwoWayCommunication::~TwoWayCommunication() {
   delete _channel_B2A;
   delete _channelRef_A2B;
   delete _channelRef_B2A;
-#ifdef WEBRTC_DTMF_DETECTION
-  if (_dtmfDetectorA != NULL) {
-    delete _dtmfDetectorA;
-  }
-  if (_dtmfDetectorB != NULL) {
-    delete _dtmfDetectorB;
-  }
-#endif
   _inFileA.Close();
   _inFileB.Close();
   _outFileA.Close();
@@ -66,7 +60,7 @@ TwoWayCommunication::~TwoWayCommunication() {
 
 void TwoWayCommunication::ChooseCodec(uint8_t* codecID_A,
                                       uint8_t* codecID_B) {
-  rtc::scoped_ptr<AudioCodingModule> tmpACM(AudioCodingModule::Create(0));
+  std::unique_ptr<AudioCodingModule> tmpACM(AudioCodingModule::Create(0));
   uint8_t noCodec = tmpACM->NumberOfCodecs();
   CodecInst codecInst;
   printf("List of Supported Codecs\n");

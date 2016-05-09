@@ -160,14 +160,21 @@ public:
         return getIntValue();
     }
 
+    float pixels() const
+    {
+        ASSERT(type() == Fixed);
+        return getFloatValue();
+    }
+
     float percent() const
     {
         ASSERT(type() == Percent);
         return getFloatValue();
     }
-    PixelsAndPercent pixelsAndPercent() const;
 
-    CalculationValue& calculationValue() const;
+    PixelsAndPercent getPixelsAndPercent() const;
+
+    CalculationValue& getCalculationValue() const;
 
     LengthType type() const { return static_cast<LengthType>(m_type); }
     bool quirk() const { return m_quirk; }
@@ -322,8 +329,6 @@ private:
     unsigned char m_type;
     bool m_isFloat;
 };
-
-PLATFORM_EXPORT Vector<Length> parseHTMLAreaElementCoords(const String&);
 
 } // namespace blink
 

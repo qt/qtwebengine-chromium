@@ -9,6 +9,9 @@ namespace cc {
 RenderingStats::TimeDeltaList::TimeDeltaList() {
 }
 
+RenderingStats::TimeDeltaList::TimeDeltaList(const TimeDeltaList& other) =
+    default;
+
 RenderingStats::TimeDeltaList::~TimeDeltaList() {
 }
 
@@ -42,13 +45,15 @@ RenderingStats::RenderingStats()
       checkerboarded_no_recording_content_area(0),
       checkerboarded_needs_raster_content_area(0) {}
 
+RenderingStats::RenderingStats(const RenderingStats& other) = default;
+
 RenderingStats::~RenderingStats() {
 }
 
-scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+scoped_ptr<base::trace_event::ConvertableToTraceFormat>
 RenderingStats::AsTraceableData() const {
-  scoped_refptr<base::trace_event::TracedValue> record_data =
-      new base::trace_event::TracedValue();
+  scoped_ptr<base::trace_event::TracedValue> record_data(
+      new base::trace_event::TracedValue());
   record_data->SetInteger("frame_count", frame_count);
   record_data->SetInteger("visible_content_area", visible_content_area);
   record_data->SetInteger("approximated_visible_content_area",
@@ -75,7 +80,7 @@ RenderingStats::AsTraceableData() const {
 
   commit_to_activate_duration_estimate.AddToTracedValue(
       "commit_to_activate_duration_estimate_ms", record_data.get());
-  return record_data;
+  return std::move(record_data);
 }
 
 void RenderingStats::Add(const RenderingStats& other) {

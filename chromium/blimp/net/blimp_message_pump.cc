@@ -5,6 +5,7 @@
 #include "blimp/net/blimp_message_pump.h"
 
 #include "base/macros.h"
+#include "blimp/common/logging.h"
 #include "blimp/common/proto/blimp_message.pb.h"
 #include "blimp/net/blimp_message_processor.h"
 #include "blimp/net/common.h"
@@ -16,13 +17,7 @@
 namespace blimp {
 
 BlimpMessagePump::BlimpMessagePump(PacketReader* reader)
-    : reader_(reader),
-      buffer_(new net::GrowableIOBuffer),
-      process_msg_callback_(
-          base::Bind(&BlimpMessagePump::OnProcessMessageComplete,
-                     base::Unretained(this))),
-      read_callback_(base::Bind(&BlimpMessagePump::OnReadPacketComplete,
-                                base::Unretained(this))) {
+    : reader_(reader), buffer_(new net::GrowableIOBuffer), weak_factory_(this) {
   DCHECK(reader_);
   buffer_->SetCapacity(kMaxPacketPayloadSizeBytes);
 }
@@ -49,25 +44,29 @@ void BlimpMessagePump::ReadNextPacket() {
   DCHECK(!read_inflight_);
   read_inflight_ = true;
   buffer_->set_offset(0);
-  reader_->ReadPacket(buffer_.get(), read_callback_.callback());
+  reader_->ReadPacket(buffer_.get(),
+                      base::Bind(&BlimpMessagePump::OnReadPacketComplete,
+                                 weak_factory_.GetWeakPtr()));
 }
 
 void BlimpMessagePump::OnReadPacketComplete(int result) {
   DVLOG(2) << "OnReadPacketComplete, result=" << result;
   DCHECK(read_inflight_);
   read_inflight_ = false;
-  if (result == net::OK) {
-    scoped_ptr<BlimpMessage> message(new BlimpMessage);
-    if (message->ParseFromArray(buffer_->StartOfBuffer(), buffer_->offset())) {
-      DVLOG(2) << "OnReadPacketComplete, result=" << *message;
-      processor_->ProcessMessage(std::move(message),
-                                 process_msg_callback_.callback());
+  if (result >= 0) {
+    std::unique_ptr<BlimpMessage> message(new BlimpMessage);
+    if (message->ParseFromArray(buffer_->data(), result)) {
+      VLOG(1) << "Received " << *message;
+      processor_->ProcessMessage(
+          std::move(message),
+          base::Bind(&BlimpMessagePump::OnProcessMessageComplete,
+                     weak_factory_.GetWeakPtr()));
     } else {
       result = net::ERR_FAILED;
     }
   }
 
-  if (result != net::OK) {
+  if (result < 0) {
     error_observer_->OnConnectionError(result);
   }
 }
@@ -75,7 +74,7 @@ void BlimpMessagePump::OnReadPacketComplete(int result) {
 void BlimpMessagePump::OnProcessMessageComplete(int result) {
   DVLOG(2) << "OnProcessMessageComplete, result=" << result;
 
-  if (result != net::OK) {
+  if (result < 0) {
     error_observer_->OnConnectionError(result);
     return;
   }

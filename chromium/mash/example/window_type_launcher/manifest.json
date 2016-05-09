@@ -1,0 +1,5 @@
+{
+  "name": "exe:window_type_launcher_exe",
+  "display_name": "Window Type Launcher",
+  "capabilities": { "*": ["*"] }
+}

@@ -21,8 +21,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
-struct EmbeddedWorkerMsg_StartWorker_Params;
 class GURL;
+struct EmbeddedWorkerMsg_StartWorker_Params;
+struct ServiceWorkerMsg_ExtendableMessageEvent_Params;
 
 namespace content {
 
@@ -32,8 +33,9 @@ class MessagePortMessageFilter;
 class MockRenderProcessHost;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
-struct ServiceWorkerFetchRequest;
 class TestBrowserContext;
+struct PushEventPayload;
+struct ServiceWorkerFetchRequest;
 
 // In-Process EmbeddedWorker test helper.
 //
@@ -77,11 +79,20 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   ServiceWorkerContextWrapper* context_wrapper() { return wrapper_.get(); }
   void ShutdownContext();
 
-  int mock_render_process_id() const { return mock_render_process_id_;}
-  // Mock render process. Only set if the one-parameter constructor was used.
+  int GetNextThreadId() { return next_thread_id_++; }
+
+  int mock_render_process_id() const { return mock_render_process_id_; }
   MockRenderProcessHost* mock_render_process_host() {
     return render_process_host_.get();
   }
+
+  std::map<int, int64_t> embedded_worker_id_service_worker_version_id_map() {
+    return embedded_worker_id_service_worker_version_id_map_;
+  }
+
+  // Only used for tests that force creating a new render process. There is no
+  // corresponding MockRenderProcessHost.
+  int new_render_process_id() const { return mock_render_process_id_ + 1; }
 
   TestBrowserContext* browser_context() { return browser_context_.get(); }
 
@@ -95,7 +106,9 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   virtual void OnStartWorker(int embedded_worker_id,
                              int64_t service_worker_version_id,
                              const GURL& scope,
-                             const GURL& script_url);
+                             const GURL& script_url,
+                             bool pause_after_download);
+  virtual void OnResumeAfterDownload(int embedded_worker_id);
   virtual void OnStopWorker(int embedded_worker_id);
   virtual bool OnMessageToWorker(int thread_id,
                                  int embedded_worker_id,
@@ -110,13 +123,14 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   // worker. By default they just return success via
   // SimulateSendReplyToBrowser.
   virtual void OnActivateEvent(int embedded_worker_id, int request_id);
+  virtual void OnExtendableMessageEvent(int embedded_worker_id, int request_id);
   virtual void OnInstallEvent(int embedded_worker_id, int request_id);
   virtual void OnFetchEvent(int embedded_worker_id,
                             int request_id,
                             const ServiceWorkerFetchRequest& request);
   virtual void OnPushEvent(int embedded_worker_id,
                            int request_id,
-                           const std::string& data);
+                           const PushEventPayload& payload);
 
   // These functions simulate sending an EmbeddedHostMsg message to the
   // browser.
@@ -124,7 +138,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void SimulateWorkerScriptCached(int embedded_worker_id);
   void SimulateWorkerScriptLoaded(int embedded_worker_id);
   void SimulateWorkerThreadStarted(int thread_id, int embedded_worker_id);
-  void SimulateWorkerScriptEvaluated(int embedded_worker_id);
+  void SimulateWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void SimulateWorkerStarted(int embedded_worker_id);
   void SimulateWorkerStopped(int embedded_worker_id);
   void SimulateSend(IPC::Message* message);
@@ -135,18 +149,23 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   class MockEmbeddedWorkerSetup;
 
   void OnStartWorkerStub(const EmbeddedWorkerMsg_StartWorker_Params& params);
+  void OnResumeAfterDownloadStub(int embedded_worker_id);
   void OnStopWorkerStub(int embedded_worker_id);
   void OnMessageToWorkerStub(int thread_id,
                              int embedded_worker_id,
                              const IPC::Message& message);
   void OnActivateEventStub(int request_id);
+  void OnExtendableMessageEventStub(
+      int request_id,
+      const ServiceWorkerMsg_ExtendableMessageEvent_Params& params);
   void OnInstallEventStub(int request_id);
   void OnFetchEventStub(int request_id,
                         const ServiceWorkerFetchRequest& request);
-  void OnPushEventStub(int request_id, const std::string& data);
-  void OnSetupMojoStub(int thread_id,
-                       mojo::InterfaceRequest<mojo::ServiceProvider> services,
-                       mojo::ServiceProviderPtr exposed_services);
+  void OnPushEventStub(int request_id, const PushEventPayload& payload);
+  void OnSetupMojoStub(
+      int thread_id,
+      mojo::shell::mojom::InterfaceProviderRequest services,
+      mojo::shell::mojom::InterfaceProviderPtr exposed_services);
 
   MessagePortMessageFilter* NewMessagePortMessageFilter();
 

@@ -264,7 +264,7 @@ WebInspector.AnimationModel.Animation.prototype = {
      */
     name: function()
     {
-        return this.source().name();
+        return this._payload.name;
     },
 
     /**
@@ -392,7 +392,7 @@ WebInspector.AnimationModel.Animation.prototype = {
         else
             return;
 
-        var cssModel = WebInspector.CSSStyleModel.fromTarget(node.target());
+        var cssModel = WebInspector.CSSModel.fromTarget(node.target());
         if (!cssModel)
             return;
         cssModel.setEffectivePropertyValueForNode(node.id, animationPrefix + "duration", duration + "ms");
@@ -511,14 +511,6 @@ WebInspector.AnimationModel.AnimationEffect.prototype = {
     fill: function()
     {
         return this._payload.fill;
-    },
-
-    /**
-     * @return {string}
-     */
-    name: function()
-    {
-        return this._payload.name;
     },
 
     /**
@@ -779,7 +771,12 @@ WebInspector.AnimationModel.AnimationGroup.prototype = {
             return !error ? currentTime : 0;
         }
 
-        return this.target().animationAgent().getCurrentTime(this._animations[0].id(), callback).catchException(0);
+        var longestAnim = null;
+        for (var anim of this._animations) {
+            if (!longestAnim || anim.endTime() > longestAnim.endTime())
+                longestAnim = anim;
+        }
+        return this.target().animationAgent().getCurrentTime(longestAnim.id(), callback).catchException(0);
     },
 
     /**
@@ -891,7 +888,7 @@ WebInspector.AnimationModel.ScreenshotCapture = function(target, model)
     this._model.addEventListener(WebInspector.AnimationModel.Events.ModelReset, this._stopScreencast, this);
 }
 
-/** @typedef {{ time: number, screenshots: !Array.<string>}} */
+/** @typedef {{ endTime: number, screenshots: !Array.<string>}} */
 WebInspector.AnimationModel.ScreenshotCapture.Request;
 
 WebInspector.AnimationModel.ScreenshotCapture.prototype = {

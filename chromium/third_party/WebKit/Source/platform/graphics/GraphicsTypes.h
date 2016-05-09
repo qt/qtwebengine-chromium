@@ -84,6 +84,35 @@ enum AccelerationHint {
     PreferNoAcceleration,
 };
 
+enum SnapshotReason {
+    SnapshotReasonUnknown,
+    SnapshotReasonGetImageData,
+    SnapshotReasonCopyToWebGLTexture,
+    SnapshotReasonPaint,
+    SnapshotReasonToDataURL,
+    SnapshotReasonToBlob,
+    SnapshotReasonCanvasListenerCapture,
+    SnapshotReasonDrawImage,
+    SnapshotReasonCreatePattern,
+};
+
+// Note: enum used directly for histogram, values must not change
+enum DisableDeferralReason {
+    DisableDeferralReasonUnknown = 0, // Should not appear in production histograms
+    DisableDeferralReasonExpensiveOverdrawHeuristic = 1,
+    DisableDeferralReasonUsingTextureBackedPattern = 2,
+    DisableDeferralReasonDrawImageOfVideo = 3,
+    DisableDeferralReasonDrawImageOfAnimated2dCanvas = 4,
+    DisableDeferralReasonSubPixelTextAntiAliasingSupport = 5,
+    DisableDeferralReasonCount,
+};
+
+enum FlushReason {
+    FlushReasonUnknown,
+    FlushReasonInitialClear,
+    FlushReasonDrawImageOfWebGL,
+};
+
 enum ImageInitializationMode {
     InitializeImagePixels,
     DoNotInitializeImagePixels,
@@ -142,6 +171,13 @@ enum ColorFilter {
 enum WindRule {
     RULE_NONZERO = SkPath::kWinding_FillType,
     RULE_EVENODD = SkPath::kEvenOdd_FillType
+};
+
+enum ReflectionDirection {
+    // Vertically flipped (to appear above or below).
+    VerticalReflection,
+    // Horizontally flipped (to appear to the left or right).
+    HorizontalReflection,
 };
 
 PLATFORM_EXPORT String compositeOperatorName(CompositeOperator, WebBlendMode);

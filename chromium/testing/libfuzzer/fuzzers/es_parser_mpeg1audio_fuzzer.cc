@@ -1,6 +1,11 @@
-// Copyright (c) 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include <memory>
 
 #include "base/bind.h"
 #include "media/formats/mp2t/es_parser_mpeg1audio.h"
@@ -10,7 +15,7 @@ class NullMediaLog : public media::MediaLog {
   NullMediaLog() {}
 
   void DoAddEventLogString(const std::string& event) {}
-  void AddEvent(scoped_ptr<media::MediaLogEvent> event) override {}
+  void AddEvent(std::unique_ptr<media::MediaLogEvent> event) override {}
 
  protected:
   virtual ~NullMediaLog() {}
@@ -23,7 +28,7 @@ static void NewAudioConfig(const media::AudioDecoderConfig& config) {}
 static void EmitBuffer(scoped_refptr<media::StreamParserBuffer> buffer) {}
 
 // Entry point for LibFuzzer.
-extern "C" int LLVMFuzzerTestOneInput(const unsigned char* data, size_t size) {
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   scoped_refptr<NullMediaLog> media_log(new NullMediaLog());
   media::mp2t::EsParserMpeg1Audio es_parser(base::Bind(&NewAudioConfig),
                                             base::Bind(&EmitBuffer), media_log);

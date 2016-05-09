@@ -35,14 +35,15 @@
 #include "platform/WebThreadSupportingGC.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
+#include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include <v8.h>
 
 namespace blink {
 
-class WebWaitableEvent;
+class InspectorTaskRunner;
+class WaitableEvent;
 class WorkerGlobalScope;
 class WorkerInspectorController;
 class WorkerMicrotaskRunner;
@@ -55,7 +56,7 @@ enum WorkerThreadStartMode {
 };
 
 // TODO(sadrul): Rename to WorkerScript.
-class CORE_EXPORT WorkerThread : public RefCounted<WorkerThread> {
+class CORE_EXPORT WorkerThread {
 public:
     virtual ~WorkerThread();
 
@@ -77,7 +78,7 @@ public:
     // Can be used to wait for this worker thread to shut down.
     // (This is signaled on the main thread, so it's assumed to be waited on
     // the worker context thread)
-    WebWaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
+    WaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
 
     // Called in shutdown sequence. Internally calls terminate() (or
     // terminateInternal) and wait (by *blocking* the calling thread) until the
@@ -95,20 +96,12 @@ public:
     WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
 
     void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
-    void appendDebuggerTask(PassOwnPtr<WebTaskRunner::Task>);
+    void appendDebuggerTask(PassOwnPtr<CrossThreadClosure>);
 
-    enum WaitMode { WaitForTask, DontWaitForTask };
-    enum TaskQueueResult {
-        Terminated, // Queue was destroyed while waiting for a task.
-        Timeout, // Timeout was specified and it expired.
-        TaskReceived, // A task was successfully received and returned.
-    };
-    TaskQueueResult runDebuggerTask(WaitMode = WaitForTask);
-
-    // These methods should be called if the holder of the thread is
-    // going to call runDebuggerTask in a loop.
-    void willRunDebuggerTasks();
-    void didRunDebuggerTasks();
+    // Runs only debugger tasks while paused in debugger, called on worker thread.
+    void startRunningDebuggerTasksOnPause();
+    void stopRunningDebuggerTasksOnPause();
+    bool isRunningDebuggerTasksOnPause() const { return m_pausedInDebugger; }
 
     // Can be called only on the worker thread, WorkerGlobalScope is not thread safe.
     WorkerGlobalScope* workerGlobalScope();
@@ -121,14 +114,11 @@ public:
 
     PlatformThreadId platformThreadId();
 
-    void interruptAndDispatchInspectorCommands();
-    void setWorkerInspectorController(WorkerInspectorController*);
-
 protected:
     WorkerThread(PassRefPtr<WorkerLoaderProxy>, WorkerReportingProxy&);
 
     // Factory method for creating a new worker context for the thread.
-    virtual PassRefPtrWillBeRawPtr<WorkerGlobalScope> createWorkerGlobalScope(PassOwnPtr<WorkerThreadStartupData>) = 0;
+    virtual WorkerGlobalScope* createWorkerGlobalScope(PassOwnPtr<WorkerThreadStartupData>) = 0;
 
     virtual void postInitialize() { }
 
@@ -139,11 +129,14 @@ protected:
     virtual v8::Isolate* initializeIsolate();
     virtual void willDestroyIsolate();
     virtual void destroyIsolate();
+
+    // Can be called either on main or worker thread.
     virtual void terminateV8Execution();
 
 private:
-    class DebuggerTaskQueue;
     friend class WorkerMicrotaskRunner;
+
+    PassOwnPtr<CrossThreadClosure> createWorkerThreadTask(PassOwnPtr<ExecutionContextTask>, bool isInstrumented);
 
     // Called on the main thread.
     void terminateInternal();
@@ -151,34 +144,36 @@ private:
     // Called on the worker thread.
     void initialize(PassOwnPtr<WorkerThreadStartupData>);
     void shutdown();
+    void performTask(PassOwnPtr<ExecutionContextTask>, bool isInstrumented);
     void performShutdownTask();
-    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>, long long delayMs);
+    void runDebuggerTask(PassOwnPtr<CrossThreadClosure>);
+    void runDebuggerTaskDontWait();
 
     bool m_started;
     bool m_terminated;
     bool m_shutdown;
-    OwnPtr<DebuggerTaskQueue> m_debuggerTaskQueue;
+    bool m_pausedInDebugger;
+    bool m_runningDebuggerTask;
+    bool m_shouldTerminateV8Execution;
+    OwnPtr<InspectorTaskRunner> m_inspectorTaskRunner;
     OwnPtr<WebThread::TaskObserver> m_microtaskRunner;
 
     RefPtr<WorkerLoaderProxy> m_workerLoaderProxy;
     WorkerReportingProxy& m_workerReportingProxy;
-    RawPtr<WebScheduler> m_webScheduler; // Not owned.
+    WebScheduler* m_webScheduler; // Not owned.
 
-    RefPtrWillBePersistent<WorkerInspectorController> m_workerInspectorController;
-    Mutex m_workerInspectorControllerMutex;
-
-    // This lock protects |m_workerGlobalScope|, |m_terminated|, |m_shutdown|, |m_isolate| and |m_microtaskRunner|.
+    // This lock protects |m_workerGlobalScope|, |m_terminated|, |m_shutdown|, |m_isolate|, |m_runningDebuggerTask|, |m_shouldTerminateV8Execution| and |m_microtaskRunner|.
     Mutex m_threadStateMutex;
 
-    RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
+    Persistent<WorkerGlobalScope> m_workerGlobalScope;
 
     v8::Isolate* m_isolate;
 
     // Used to signal thread shutdown.
-    OwnPtr<WebWaitableEvent> m_shutdownEvent;
+    OwnPtr<WaitableEvent> m_shutdownEvent;
 
     // Used to signal thread termination.
-    OwnPtr<WebWaitableEvent> m_terminationEvent;
+    OwnPtr<WaitableEvent> m_terminationEvent;
 };
 
 } // namespace blink

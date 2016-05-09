@@ -25,12 +25,14 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 
 #include "core/HTMLNames.h"
-#include <limits>
+#include "platform/ParsingUtilities.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/TextEncoding.h"
+
+#include <limits>
 
 namespace blink {
 
@@ -48,7 +50,7 @@ static String stripLeadingAndTrailingHTMLSpaces(String string, const CharType* c
     }
 
     if (numLeadingSpaces == length)
-        return string.isNull() ? string : emptyAtom.string();
+        return string.isNull() ? string : emptyAtom.getString();
 
     for (; numTrailingSpaces < length; ++numTrailingSpaces) {
         if (isNotHTMLSpace<CharType>(characters[length - numTrailingSpaces - 1]))
@@ -68,7 +70,7 @@ String stripLeadingAndTrailingHTMLSpaces(const String& string)
     unsigned length = string.length();
 
     if (!length)
-        return string.isNull() ? string : emptyAtom.string();
+        return string.isNull() ? string : emptyAtom.getString();
 
     if (string.is8Bit())
         return stripLeadingAndTrailingHTMLSpaces<LChar>(string, string.characters8(), length);
@@ -113,18 +115,8 @@ Decimal parseToDecimalForNumberType(const String& string, const Decimal& fallbac
     return value.isZero() ? Decimal(0) : value;
 }
 
-double parseToDoubleForNumberType(const String& string, double fallbackValue)
+static double checkDoubleValue(double value, bool valid, double fallbackValue)
 {
-    // http://www.whatwg.org/specs/web-apps/current-work/#floating-point-numbers
-    // String::toDouble() accepts leading + and whitespace characters, which are not valid here.
-    UChar firstCharacter = string[0];
-    if (firstCharacter != '-' && firstCharacter != '.' && !isASCIIDigit(firstCharacter))
-        return fallbackValue;
-    if (string.endsWith('.'))
-        return fallbackValue;
-
-    bool valid = false;
-    double value = string.toDouble(&valid);
     if (!valid)
         return fallbackValue;
 
@@ -138,6 +130,21 @@ double parseToDoubleForNumberType(const String& string, double fallbackValue)
 
     // The following expression converts -0 to +0.
     return value ? value : 0;
+}
+
+double parseToDoubleForNumberType(const String& string, double fallbackValue)
+{
+    // http://www.whatwg.org/specs/web-apps/current-work/#floating-point-numbers
+    // String::toDouble() accepts leading + and whitespace characters, which are not valid here.
+    UChar firstCharacter = string[0];
+    if (firstCharacter != '-' && firstCharacter != '.' && !isASCIIDigit(firstCharacter))
+        return fallbackValue;
+    if (string.endsWith('.'))
+        return fallbackValue;
+
+    bool valid = false;
+    double value = string.toDouble(&valid);
+    return checkDoubleValue(value, valid, fallbackValue);
 }
 
 template <typename CharacterType>
@@ -207,32 +214,47 @@ bool parseHTMLInteger(const String& input, int& value)
 template <typename CharacterType>
 static bool parseHTMLNonNegativeIntegerInternal(const CharacterType* position, const CharacterType* end, unsigned& value)
 {
-    // Step 3
+    // This function is an implementation of the following algorithm:
+    // https://html.spec.whatwg.org/multipage/infrastructure.html#rules-for-parsing-non-negative-integers
+    // However, in order to support integers >= 2^31, we fold [1] into this.
+    // 'Step N' in the following comments refers to [1].
+    //
+    // [1] https://html.spec.whatwg.org/multipage/infrastructure.html#rules-for-parsing-integers
+
+    // Step 3: Let sign have the value "positive".
+    int sign = 1;
+
+    // Step 4: Skip whitespace.
     while (position < end) {
         if (!isHTMLSpace<CharacterType>(*position))
             break;
         ++position;
     }
 
-    // Step 4
+    // Step 5: If position is past the end of input, return an error.
     if (position == end)
         return false;
     ASSERT(position < end);
 
-    // Step 5
-    if (*position == '+')
+    // Step 6: If the character indicated by position (the first character) is a
+    // U+002D HYPHEN-MINUS character (-), ...
+    if (*position == '-') {
+        sign = -1;
         ++position;
+    } else if (*position == '+') {
+        ++position;
+    }
 
-    // Step 6
     if (position == end)
         return false;
     ASSERT(position < end);
 
-    // Step 7
+    // Step 7: If the character indicated by position is not an ASCII digit,
+    // then return an error.
     if (!isASCIIDigit(*position))
         return false;
 
-    // Step 8
+    // Step 8: Collect a sequence of characters ...
     StringBuilder digits;
     while (position < end) {
         if (!isASCIIDigit(*position))
@@ -240,21 +262,23 @@ static bool parseHTMLNonNegativeIntegerInternal(const CharacterType* position, c
         digits.append(*position++);
     }
 
-    // Step 9
     bool ok;
+    unsigned digitsValue;
     if (digits.is8Bit())
-        value = charactersToUIntStrict(digits.characters8(), digits.length(), &ok);
+        digitsValue = charactersToUIntStrict(digits.characters8(), digits.length(), &ok);
     else
-        value = charactersToUIntStrict(digits.characters16(), digits.length(), &ok);
-    return ok;
+        digitsValue = charactersToUIntStrict(digits.characters16(), digits.length(), &ok);
+    if (!ok)
+        return false;
+    if (sign < 0 && digitsValue != 0)
+        return false;
+    value = digitsValue;
+    return true;
 }
 
-
-// http://www.whatwg.org/specs/web-apps/current-work/#rules-for-parsing-non-negative-integers
+// https://html.spec.whatwg.org/multipage/infrastructure.html#rules-for-parsing-non-negative-integers
 bool parseHTMLNonNegativeInteger(const String& input, unsigned& value)
 {
-    // Step 1
-    // Step 2
     unsigned length = input.length();
     if (length && input.is8Bit()) {
         const LChar* start = input.characters8();
@@ -263,6 +287,49 @@ bool parseHTMLNonNegativeInteger(const String& input, unsigned& value)
 
     const UChar* start = input.characters16();
     return parseHTMLNonNegativeIntegerInternal(start, start + length, value);
+}
+
+template<typename CharacterType>
+static bool isSpaceOrDelimiter(CharacterType c)
+{
+    return isHTMLSpace(c) || c == ',' || c == ';';
+}
+
+template<typename CharacterType>
+static bool isNotSpaceDelimiterOrNumberStart(CharacterType c)
+{
+    return !(isSpaceOrDelimiter(c) || isASCIIDigit(c) || c == '.' || c == '-');
+}
+
+template<typename CharacterType>
+static Vector<double> parseHTMLListOfFloatingPointNumbersInternal(
+    const CharacterType* position, const CharacterType* end)
+{
+    Vector<double> numbers;
+    skipWhile<CharacterType, isSpaceOrDelimiter>(position, end);
+
+    while (position < end) {
+        skipWhile<CharacterType, isNotSpaceDelimiterOrNumberStart>(position, end);
+
+        const CharacterType* unparsedNumberStart = position;
+        skipUntil<CharacterType, isSpaceOrDelimiter>(position, end);
+
+        size_t parsedLength = 0;
+        double number = charactersToDouble(unparsedNumberStart, position - unparsedNumberStart, parsedLength);
+        numbers.append(checkDoubleValue(number, parsedLength != 0, 0));
+
+        skipWhile<CharacterType, isSpaceOrDelimiter>(position, end);
+    }
+    return numbers;
+}
+
+// https://html.spec.whatwg.org/multipage/infrastructure.html#rules-for-parsing-a-list-of-floating-point-numbers
+Vector<double> parseHTMLListOfFloatingPointNumbers(const String& input)
+{
+    unsigned length = input.length();
+    if (!length || input.is8Bit())
+        return parseHTMLListOfFloatingPointNumbersInternal(input.characters8(), input.characters8() + length);
+    return parseHTMLListOfFloatingPointNumbersInternal(input.characters16(), input.characters16() + length);
 }
 
 static const char charsetString[] = "charset";
@@ -416,4 +483,4 @@ String attemptStaticStringCreation(const UChar* characters, size_t size, Charact
     return string;
 }
 
-}
+} // namespace blink

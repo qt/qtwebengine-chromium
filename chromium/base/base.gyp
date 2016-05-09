@@ -21,8 +21,11 @@
         'optimize': 'max',
       },
       'dependencies': [
+        'allocator/allocator.gyp:allocator',
+        'allocator/allocator.gyp:allocator_features#target',
         'base_debugging_flags#target',
         'base_static',
+        'base_build_date#target',
         '../testing/gtest.gyp:gtest_prod',
         '../third_party/modp_b64/modp_b64.gyp:modp_b64',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
@@ -137,6 +140,14 @@
             }],
           ],
         }],
+        ['use_sysroot==0 and (OS == "android" or OS == "linux")', {
+          'link_settings': {
+            'libraries': [
+              # Needed for <atomic> when building with newer C++ library.
+              '-latomic',
+            ],
+          },
+        }],
         ['OS == "win"', {
           # Specify delayload for base.dll.
           'msvs_settings': {
@@ -150,6 +161,8 @@
                 'cfgmgr32.lib',
                 'powrprof.lib',
                 'setupapi.lib',
+                'userenv.lib',
+                'winmm.lib',
               ],
             },
           },
@@ -166,18 +179,12 @@
                   'cfgmgr32.lib',
                   'powrprof.lib',
                   'setupapi.lib',
+                  'userenv.lib',
+                  'winmm.lib',
                 ],
               },
             },
           },
-          'copies': [
-            {
-              'destination': '<(PRODUCT_DIR)/',
-              'files': [
-                '../build/win/dbghelp_xp/dbghelp.dll',
-              ],
-            },
-          ],
           'dependencies': [
            'trace_event/etw_manifest/etw_manifest.gyp:etw_manifest',
           ],
@@ -192,6 +199,7 @@
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
               '$(SDKROOT)/System/Library/Frameworks/IOKit.framework',
               '$(SDKROOT)/System/Library/Frameworks/Security.framework',
+              '$(SDKROOT)/usr/lib/libbsm.dylib',
             ],
           },
         }],
@@ -223,6 +231,9 @@
             'sync_socket.h',
             'sync_socket_posix.cc',
           ]
+        }],
+        ['use_experimental_allocator_shim==1', {
+          'dependencies': [ 'allocator/allocator.gyp:unified_allocator_shim']
         }],
       ],
       'sources': [
@@ -308,82 +319,6 @@
       'sources': [
         'message_loop/message_loop_test.cc',
         'message_loop/message_loop_test.h',
-      ],
-    },
-    {
-      'target_name': 'base_prefs',
-      'type': '<(component)',
-      'variables': {
-        'enable_wexit_time_destructors': 1,
-        'optimize': 'max',
-      },
-      'dependencies': [
-        'base',
-      ],
-      'export_dependent_settings': [
-        'base',
-      ],
-      'defines': [
-        'BASE_PREFS_IMPLEMENTATION',
-      ],
-      'sources': [
-        'prefs/base_prefs_export.h',
-        'prefs/default_pref_store.cc',
-        'prefs/default_pref_store.h',
-        'prefs/json_pref_store.cc',
-        'prefs/json_pref_store.h',
-        'prefs/overlay_user_pref_store.cc',
-        'prefs/overlay_user_pref_store.h',
-        'prefs/persistent_pref_store.h',
-        'prefs/pref_change_registrar.cc',
-        'prefs/pref_change_registrar.h',
-        'prefs/pref_filter.h',
-        'prefs/pref_member.cc',
-        'prefs/pref_member.h',
-        'prefs/pref_notifier.h',
-        'prefs/pref_notifier_impl.cc',
-        'prefs/pref_notifier_impl.h',
-        'prefs/pref_observer.h',
-        'prefs/pref_registry.cc',
-        'prefs/pref_registry.h',
-        'prefs/pref_registry_simple.cc',
-        'prefs/pref_registry_simple.h',
-        'prefs/pref_service.cc',
-        'prefs/pref_service.h',
-        'prefs/pref_service_factory.cc',
-        'prefs/pref_service_factory.h',
-        'prefs/pref_store.cc',
-        'prefs/pref_store.h',
-        'prefs/pref_value_map.cc',
-        'prefs/pref_value_map.h',
-        'prefs/pref_value_store.cc',
-        'prefs/pref_value_store.h',
-        'prefs/scoped_user_pref_update.cc',
-        'prefs/scoped_user_pref_update.h',
-        'prefs/value_map_pref_store.cc',
-        'prefs/value_map_pref_store.h',
-        'prefs/writeable_pref_store.h',
-      ],
-      'includes': [
-        '../build/android/increase_size_for_speed.gypi',
-      ],
-    },
-    {
-      'target_name': 'base_prefs_test_support',
-      'type': 'static_library',
-      'dependencies': [
-        'base',
-        'base_prefs',
-        '../testing/gmock.gyp:gmock',
-      ],
-      'sources': [
-        'prefs/mock_pref_change_callback.cc',
-        'prefs/pref_store_observer_mock.cc',
-        'prefs/pref_store_observer_mock.h',
-        'prefs/testing_pref_service.cc',
-        'prefs/testing_pref_service.h',
-        'prefs/testing_pref_store.cc',
-        'prefs/testing_pref_store.h',
       ],
     },
     {
@@ -515,6 +450,7 @@
         'mac/foundation_util_unittest.mm',
         'mac/libdispatch_task_runner_unittest.cc',
         'mac/mac_util_unittest.mm',
+        'mac/mach_port_broker_unittest.cc',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
         'mac/scoped_objc_class_swizzler_unittest.mm',
@@ -530,11 +466,10 @@
         'memory/ptr_util_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
-        'memory/scoped_ptr_unittest.cc',
-        'memory/scoped_ptr_unittest.nc',
         'memory/scoped_vector_unittest.cc',
-        'memory/shared_memory_unittest.cc',
         'memory/shared_memory_mac_unittest.cc',
+        'memory/shared_memory_unittest.cc',
+        'memory/shared_memory_win_unittest.cc',
         'memory/singleton_unittest.cc',
         'memory/weak_ptr_unittest.cc',
         'memory/weak_ptr_unittest.nc',
@@ -551,6 +486,9 @@
         'metrics/histogram_snapshot_manager_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/metrics_hashes_unittest.cc',
+        'metrics/persistent_histogram_allocator_unittest.cc',
+        'metrics/persistent_memory_allocator_unittest.cc',
+        'metrics/persistent_sample_map_unittest.cc',
         'metrics/sample_map_unittest.cc',
         'metrics/sample_vector_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
@@ -564,17 +502,6 @@
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
-        'prefs/default_pref_store_unittest.cc',
-        'prefs/json_pref_store_unittest.cc',
-        'prefs/mock_pref_change_callback.h',
-        'prefs/overlay_user_pref_store_unittest.cc',
-        'prefs/pref_change_registrar_unittest.cc',
-        'prefs/pref_member_unittest.cc',
-        'prefs/pref_notifier_impl_unittest.cc',
-        'prefs/pref_service_unittest.cc',
-        'prefs/pref_value_map_unittest.cc',
-        'prefs/pref_value_store_unittest.cc',
-        'prefs/scoped_user_pref_update_unittest.cc',
         'process/memory_unittest.cc',
         'process/memory_unittest_mac.h',
         'process/memory_unittest_mac.mm',
@@ -618,6 +545,13 @@
         'system_monitor/system_monitor_unittest.cc',
         'task/cancelable_task_tracker_unittest.cc',
         'task_runner_util_unittest.cc',
+        'task_scheduler/priority_queue_unittest.cc',
+        'task_scheduler/scheduler_lock_unittest.cc',
+        'task_scheduler/scheduler_worker_thread_unittest.cc',
+        'task_scheduler/sequence_sort_key_unittest.cc',
+        'task_scheduler/sequence_unittest.cc',
+        'task_scheduler/task_tracker_unittest.cc',
+        'task_scheduler/test_utils.h',
         'template_util_unittest.cc',
         'test/histogram_tester_unittest.cc',
         'test/test_pending_task_unittest.cc',
@@ -677,8 +611,6 @@
         'base',
         'base_i18n',
         'base_message_loop_tests',
-        'base_prefs',
-        'base_prefs_test_support',
         'base_static',
         'run_all_unittests',
         'test_support_base',
@@ -762,14 +694,7 @@
           'dependencies': [
             'malloc_wrapper',
           ],
-          'conditions': [
-            ['use_allocator!="none"', {
-              'dependencies': [
-                'allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ]},
-        ],
+        }],
         [ 'OS == "win" and target_arch == "x64"', {
           'sources': [
             'profiler/win32_stack_frame_unwinder_unittest.cc',
@@ -779,6 +704,9 @@
           ],
         }],
         ['OS == "win"', {
+          'dependencies': [
+            'scoped_handle_test_dll'
+          ],
           'sources!': [
             'file_descriptor_shuffle_unittest.cc',
             'files/dir_reader_posix_unittest.cc',
@@ -790,16 +718,6 @@
             4267,
           ],
           'conditions': [
-            # This is needed so base_unittests uses the allocator shim, as
-            # SecurityTest.MemoryAllocationRestriction* tests are dependent
-            # on tcmalloc.
-            # TODO(wfh): crbug.com/246278 Move tcmalloc specific tests into
-            # their own test suite.
-            ['win_use_allocator_shim==1', {
-              'dependencies': [
-                'allocator/allocator.gyp:allocator',
-              ],
-            }],
             ['icu_use_data_file_flag==0', {
               # This is needed to trigger the dll copy step on windows.
               # TODO(mark): This should not be necessary.
@@ -812,6 +730,9 @@
           'dependencies': [
             'third_party/libevent/libevent.gyp:libevent'
           ],
+        }],
+        ['use_experimental_allocator_shim==1', {
+          'sources': [ 'allocator/allocator_shim_unittest.cc']
         }],
       ],  # conditions
       'target_conditions': [
@@ -1097,6 +1018,35 @@
         ],
       },
     },
+    {
+      'type': 'none',
+      'target_name': 'base_build_date',
+      'hard_dependency': 1,
+      'actions': [{
+        'action_name': 'generate_build_date_headers',
+        'inputs': [
+          '<(DEPTH)/build/write_build_date_header.py',
+          '<(DEPTH)/build/util/LASTCHANGE'
+        ],
+        'outputs': [ '<(SHARED_INTERMEDIATE_DIR)/base/generated_build_date.h' ],
+        'action': [
+          'python', '<(DEPTH)/build/write_build_date_header.py',
+          '<(SHARED_INTERMEDIATE_DIR)/base/generated_build_date.h',
+          '<(build_type)'
+        ]
+      }],
+      'conditions': [
+        [ 'buildtype == "Official"', {
+          'variables': {
+            'build_type': 'official'
+          }
+        }, {
+          'variables': {
+            'build_type': 'default'
+          }
+        }],
+      ]
+    },
   ],
   'conditions': [
     ['OS=="ios" and "<(GENERATOR)"=="ninja"', {
@@ -1152,6 +1102,7 @@
             'base_target': 1,
           },
           'dependencies': [
+            'base_build_date',
             'base_debugging_flags#target',
             'base_static_win64',
             '../third_party/modp_b64/modp_b64.gyp:modp_b64_win64',
@@ -1193,6 +1144,8 @@
                 'cfgmgr32.lib',
                 'powrprof.lib',
                 'setupapi.lib',
+                'userenv.lib',
+                'winmm.lib',
               ],
             },
           },
@@ -1209,6 +1162,8 @@
                   'cfgmgr32.lib',
                   'powrprof.lib',
                   'setupapi.lib',
+                  'userenv.lib',
+                  'winmm.lib',
                 ],
               },
             },
@@ -1481,14 +1436,14 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
-          # GN: //base:base_multidex_gen
-          'target_name': 'base_multidex_gen',
+          # GN: //base:base_build_config_gen
+          'target_name': 'base_build_config_gen',
           'type': 'none',
           'sources': [
-            'android/java/templates/ChromiumMultiDex.template',
+            'android/java/templates/BuildConfig.template',
           ],
           'variables': {
-            'package_name': 'org/chromium/base/multidex',
+            'package_name': 'org/chromium/base',
             'template_deps': [],
           },
           'includes': ['../build/android/java_cpp_template.gypi'],
@@ -1509,7 +1464,7 @@
           'variables': {
             'java_in_dir': 'android/java',
             'jar_excluded_classes': [
-              '*/ChromiumMultiDex.class',
+              '*/BuildConfig.class',
               '*/NativeLibraries.class',
             ],
           },
@@ -1518,14 +1473,14 @@
             'base_java_library_load_from_apk_status_codes',
             'base_java_library_process_type',
             'base_java_memory_pressure_level',
-            'base_multidex_gen',
+            'base_build_config_gen',
             'base_native_libraries_gen',
             '../third_party/android_tools/android_tools.gyp:android_support_multidex_javalib',
             '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
           ],
           'all_dependent_settings': {
             'variables': {
-              'generate_multidex_config': 1,
+              'generate_build_config': 1,
             },
           },
           'includes': [ '../build/java.gypi' ],
@@ -1589,7 +1544,7 @@
           'target_name': 'base_junit_test_support',
           'type': 'none',
           'dependencies': [
-            'base_multidex_gen',
+            'base_build_config_gen',
             '../testing/android/junit/junit_test.gyp:junit_test_support',
             '../third_party/android_tools/android_tools.gyp:android_support_multidex_javalib',
           ],
@@ -1611,13 +1566,21 @@
             '../testing/android/junit/junit_test.gyp:junit_test_support',
           ],
           'variables': {
-             'main_class': 'org.chromium.testing.local.JunitTestMain',
-             'src_paths': [
-               '../base/android/junit/',
-               '../base/test/android/junit/src/org/chromium/base/test/util/DisableIfTest.java',
-             ],
-           },
-          'includes': [ '../build/host_jar.gypi' ],
+            'main_class': 'org.chromium.testing.local.JunitTestMain',
+            'src_paths': [
+              '../base/android/junit/',
+              '../base/test/android/junit/src/org/chromium/base/test/util/DisableIfTest.java',
+              '../base/test/android/junit/src/org/chromium/base/test/util/MinAndroidSdkLevelSkipCheckTest.java',
+              '../base/test/android/junit/src/org/chromium/base/test/util/RestrictionSkipCheckTest.java',
+              '../base/test/android/junit/src/org/chromium/base/test/util/SkipCheckTest.java',
+            ],
+            'test_type': 'junit',
+            'wrapper_script_name': 'helper/<(_target_name)',
+          },
+          'includes': [
+            '../build/android/test_runner.gypi',
+            '../build/host_jar.gypi',
+          ],
         },
         {
           # GN: //base:base_javatests
@@ -1728,6 +1691,16 @@
               ],
             },
           },
+        },
+        {
+          'target_name': 'scoped_handle_test_dll',
+          'type': 'loadable_module',
+          'dependencies': [
+            'base',
+          ],
+          'sources': [
+            'win/scoped_handle_test_dll.cc',
+          ],
         },
       ],
     }],

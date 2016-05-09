@@ -53,11 +53,12 @@
 #include "core/frame/UseCounter.h"
 #include "core/layout/LayoutObject.h"
 #include "core/paint/PaintLayer.h"
+#include "platform/Histogram.h"
 #include "platform/animation/TimingFunction.h"
 #include "public/platform/Platform.h"
-#include "wtf/BitArray.h"
 #include "wtf/HashSet.h"
 #include <algorithm>
+#include <bitset>
 
 namespace blink {
 
@@ -73,7 +74,7 @@ static StringKeyframeEffectModel* createKeyframeEffectModel(StyleResolver* resol
     ASSERT(keyframesRule);
 
     StringKeyframeVector keyframes;
-    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleKeyframe>>& styleKeyframes = keyframesRule->keyframes();
+    const HeapVector<Member<StyleRuleKeyframe>>& styleKeyframes = keyframesRule->keyframes();
 
     // Construct and populate the style for each keyframe
     PropertySet specifiedPropertiesForUseCounter;
@@ -116,9 +117,10 @@ static StringKeyframeEffectModel* createKeyframeEffectModel(StyleResolver* resol
         }
     }
 
+    DEFINE_STATIC_LOCAL(SparseHistogram, propertyHistogram, ("WebCore.Animation.CSSProperties"));
     for (CSSPropertyID property : specifiedPropertiesForUseCounter) {
         ASSERT(property != CSSPropertyInvalid);
-        Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(property));
+        propertyHistogram.sample(UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(property));
     }
 
     // Merge duplicate keyframes.
@@ -301,7 +303,7 @@ void CSSAnimations::calculateAnimationUpdate(CSSAnimationUpdate& update, const E
             RefPtr<TimingFunction> keyframeTimingFunction = timing.timingFunction;
             timing.timingFunction = Timing::defaults().timingFunction;
 
-            RefPtrWillBeRawPtr<StyleRuleKeyframes> keyframesRule = resolver->findKeyframesRule(elementForScoping, name);
+            StyleRuleKeyframes* keyframesRule = resolver->findKeyframesRule(elementForScoping, name);
             if (!keyframesRule)
                 continue; // Cancel the animation if there's no style rule for it.
 
@@ -400,8 +402,8 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         const InertEffect* inertAnimation = entry.effect.get();
         AnimationEventDelegate* eventDelegate = new AnimationEventDelegate(element, entry.name);
         KeyframeEffect* effect = KeyframeEffect::create(element, inertAnimation->model(), inertAnimation->specifiedTiming(), KeyframeEffect::DefaultPriority, eventDelegate);
-        effect->setName(entry.name);
         Animation* animation = element->document().timeline().play(effect);
+        animation->setId(entry.name);
         if (inertAnimation->paused())
             animation->pause();
         animation->update(TimingUpdateOnDemand);
@@ -447,6 +449,8 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         RunningTransition runningTransition;
         runningTransition.from = newTransition.from;
         runningTransition.to = newTransition.to;
+        runningTransition.reversingAdjustedStartValue = newTransition.reversingAdjustedStartValue;
+        runningTransition.reversingShorteningFactor = newTransition.reversingShorteningFactor;
 
         CSSPropertyID id = newTransition.id;
         const InertEffect* inertAnimation = newTransition.effect.get();
@@ -481,8 +485,8 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         }
 
         KeyframeEffect* transition = KeyframeEffect::create(element, model, inertAnimation->specifiedTiming(), KeyframeEffect::TransitionPriority, eventDelegate);
-        transition->setName(getPropertyName(newTransition.id));
         Animation* animation = element->document().timeline().play(transition);
+        animation->setId(getPropertyName(newTransition.id));
         // Set the current time as the start time for retargeted transitions
         if (retargetedCompositorTransitions.contains(id))
             animation->setStartTime(element->document().timeline().currentTime());
@@ -490,7 +494,9 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
         runningTransition.animation = animation;
         m_transitions.set(id, runningTransition);
         ASSERT(id != CSSPropertyInvalid);
-        Platform::current()->histogramSparse("WebCore.Animation.CSSProperties", UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(id));
+
+        DEFINE_STATIC_LOCAL(SparseHistogram, propertyHistogram, ("WebCore.Animation.CSSProperties"));
+        propertyHistogram.sample(UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(id));
     }
     clearPendingUpdate();
 }
@@ -498,15 +504,20 @@ void CSSAnimations::maybeApplyPendingUpdate(Element* element)
 void CSSAnimations::calculateTransitionUpdateForProperty(CSSPropertyID id, const CSSTransitionData& transitionData, size_t transitionIndex, const ComputedStyle& oldStyle, const ComputedStyle& style, const TransitionMap* activeTransitions, CSSAnimationUpdate& update, const Element* element)
 {
     RefPtr<AnimatableValue> to = nullptr;
+    const RunningTransition* interruptedTransition = nullptr;
     if (activeTransitions) {
         TransitionMap::const_iterator activeTransitionIter = activeTransitions->find(id);
         if (activeTransitionIter != activeTransitions->end()) {
+            const RunningTransition* runningTransition = &activeTransitionIter->value;
             to = CSSAnimatableValueFactory::create(id, style);
-            const AnimatableValue* activeTo = activeTransitionIter->value.to;
+            const AnimatableValue* activeTo = runningTransition->to;
             if (to->equals(activeTo))
                 return;
             update.cancelTransition(id);
             ASSERT(!element->elementAnimations() || !element->elementAnimations()->isAnimationStyleChange());
+
+            if (to->equals(runningTransition->reversingAdjustedStartValue.get()))
+                interruptedTransition = runningTransition;
         }
     }
 
@@ -524,6 +535,23 @@ void CSSAnimations::calculateTransitionUpdateForProperty(CSSPropertyID id, const
     Timing timing = transitionData.convertToTiming(transitionIndex);
     if (timing.startDelay + timing.iterationDuration <= 0)
         return;
+
+    AnimatableValue* reversingAdjustedStartValue = from.get();
+    double reversingShorteningFactor = 1;
+    if (interruptedTransition) {
+        const double interruptedTimeFraction = interruptedTransition->animation->effect()->timeFraction();
+        if (!std::isnan(interruptedTimeFraction)) {
+            // const_cast because we need to take a ref later when passing to startTransition.
+            reversingAdjustedStartValue = const_cast<AnimatableValue*>(interruptedTransition->to);
+            reversingShorteningFactor = clampTo(
+                (interruptedTimeFraction * interruptedTransition->reversingShorteningFactor) +
+                (1 - interruptedTransition->reversingShorteningFactor), 0.0, 1.0);
+            timing.iterationDuration *= reversingShorteningFactor;
+            if (timing.startDelay < 0) {
+                timing.startDelay *= reversingShorteningFactor;
+            }
+        }
+    }
 
     AnimatableValueKeyframeVector keyframes;
     double startKeyframeOffset = 0;
@@ -552,7 +580,9 @@ void CSSAnimations::calculateTransitionUpdateForProperty(CSSPropertyID id, const
     keyframes.append(endKeyframe);
 
     AnimatableValueKeyframeEffectModel* model = AnimatableValueKeyframeEffectModel::create(keyframes);
-    update.startTransition(id, from.get(), to.get(), *InertEffect::create(model, timing, false, 0));
+    update.startTransition(
+        id, from.get(), to.get(), reversingAdjustedStartValue, reversingShorteningFactor,
+        *InertEffect::create(model, timing, false, 0));
     ASSERT(!element->elementAnimations() || !element->elementAnimations()->isAnimationStyleChange());
 }
 
@@ -576,7 +606,7 @@ void CSSAnimations::calculateTransitionUpdate(CSSAnimationUpdate& update, const 
     const bool animationStyleRecalc = elementAnimations && elementAnimations->isAnimationStyleChange();
 #endif
 
-    BitArray<numCSSProperties> listedProperties;
+    std::bitset<numCSSProperties> listedProperties;
     bool anyTransitionHadTransitionAll = false;
     const LayoutObject* layoutObject = animatingElement->layoutObject();
     if (!animationStyleRecalc && style.display() != NONE && layoutObject && layoutObject->style() && transitionData) {
@@ -618,7 +648,7 @@ void CSSAnimations::calculateTransitionUpdate(CSSAnimationUpdate& update, const 
     if (activeTransitions) {
         for (const auto& entry : *activeTransitions) {
             CSSPropertyID id = entry.key;
-            if (!anyTransitionHadTransitionAll && !animationStyleRecalc && !listedProperties.get(id - firstCSSProperty)) {
+            if (!anyTransitionHadTransitionAll && !animationStyleRecalc && !listedProperties.test(id - firstCSSProperty)) {
                 // TODO: Figure out why this fails on Chrome OS login page. crbug.com/365507
                 // ASSERT(animation.playStateInternal() == Animation::Finished || !(elementAnimations && elementAnimations->isAnimationStyleChange()));
                 update.cancelTransition(id);
@@ -714,7 +744,7 @@ EventTarget* CSSAnimations::AnimationEventDelegate::eventTarget() const
 void CSSAnimations::AnimationEventDelegate::maybeDispatch(Document::ListenerType listenerType, const AtomicString& eventName, double elapsedTime)
 {
     if (m_animationTarget->document().hasListenerType(listenerType)) {
-        RefPtrWillBeRawPtr<AnimationEvent> event = AnimationEvent::create(eventName, m_name, elapsedTime);
+        AnimationEvent* event = AnimationEvent::create(eventName, m_name, elapsedTime);
         event->setTarget(eventTarget());
         document().enqueueAnimationFrameEvent(event);
     }
@@ -727,7 +757,7 @@ bool CSSAnimations::AnimationEventDelegate::requiresIterationEvents(const Animat
 
 void CSSAnimations::AnimationEventDelegate::onEventCondition(const AnimationEffect& animationNode)
 {
-    const AnimationEffect::Phase currentPhase = animationNode.phase();
+    const AnimationEffect::Phase currentPhase = animationNode.getPhase();
     const double currentIteration = animationNode.currentIteration();
 
     if (m_previousPhase != currentPhase
@@ -768,14 +798,14 @@ EventTarget* CSSAnimations::TransitionEventDelegate::eventTarget() const
 
 void CSSAnimations::TransitionEventDelegate::onEventCondition(const AnimationEffect& animationNode)
 {
-    const AnimationEffect::Phase currentPhase = animationNode.phase();
+    const AnimationEffect::Phase currentPhase = animationNode.getPhase();
     if (currentPhase == AnimationEffect::PhaseAfter && currentPhase != m_previousPhase && document().hasListenerType(Document::TRANSITIONEND_LISTENER)) {
         String propertyName = getPropertyNameString(m_property);
         const Timing& timing = animationNode.specifiedTiming();
         double elapsedTime = timing.iterationDuration;
         const AtomicString& eventType = EventTypeNames::transitionend;
-        String pseudoElement = PseudoElement::pseudoElementNameForEvents(pseudoId());
-        RefPtrWillBeRawPtr<TransitionEvent> event = TransitionEvent::create(eventType, propertyName, elapsedTime, pseudoElement);
+        String pseudoElement = PseudoElement::pseudoElementNameForEvents(getPseudoId());
+        TransitionEvent* event = TransitionEvent::create(eventType, propertyName, elapsedTime, pseudoElement);
         event->setTarget(eventTarget());
         document().enqueueAnimationFrameEvent(event);
     }

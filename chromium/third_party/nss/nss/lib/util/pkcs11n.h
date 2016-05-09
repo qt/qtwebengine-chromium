@@ -291,8 +291,8 @@ typedef struct CK_NSS_MAC_CONSTANT_TIME_PARAMS {
 } CK_NSS_MAC_CONSTANT_TIME_PARAMS;
 
 typedef struct CK_NSS_AEAD_PARAMS {
-    CK_BYTE_PTR  pIv;  /* This is the nonce. */
-    CK_ULONG     ulIvLen;
+    CK_BYTE_PTR  pNonce;
+    CK_ULONG     ulNonceLen;
     CK_BYTE_PTR  pAAD;
     CK_ULONG     ulAADLen;
     CK_ULONG     ulTagLen;

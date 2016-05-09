@@ -20,6 +20,7 @@
 #include "ui/display/util/x11/edid_parser_x11.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/native_widget_types.h"
@@ -38,9 +39,12 @@ const int64_t kConfigureDelayMs = 500;
 
 double GetDeviceScaleFactor() {
   float device_scale_factor = 1.0f;
-  if (views::LinuxUI::instance())
+  if (views::LinuxUI::instance()) {
     device_scale_factor =
       views::LinuxUI::instance()->GetDeviceScaleFactor();
+  } else if (gfx::Display::HasForceDeviceScaleFactor()) {
+    device_scale_factor = gfx::Display::GetForcedDeviceScaleFactor();
+  }
   return device_scale_factor;
 }
 
@@ -104,9 +108,9 @@ DesktopScreenX11::DesktopScreenX11()
                    RROutputChangeNotifyMask |
                    RRCrtcChangeNotifyMask);
 
-    displays_ = BuildDisplaysFromXRandRInfo();
+    SetDisplaysInternal(BuildDisplaysFromXRandRInfo());
   } else {
-    displays_ = GetFallbackDisplayList();
+    SetDisplaysInternal(GetFallbackDisplayList());
   }
 }
 
@@ -255,7 +259,7 @@ uint32_t DesktopScreenX11::DispatchEvent(const ui::PlatformEvent& event) {
 // static
 void DesktopScreenX11::UpdateDeviceScaleFactorForTest() {
   DesktopScreenX11* screen =
-      static_cast<DesktopScreenX11*>(gfx::Screen::GetNativeScreen());
+      static_cast<DesktopScreenX11*>(gfx::Screen::GetScreen());
   screen->ConfigureTimerFired();
 }
 
@@ -310,7 +314,8 @@ std::vector<gfx::Display> DesktopScreenX11::BuildDisplaysFromXRandRInfo() {
           crtc(XRRGetCrtcInfo(xdisplay_, resources.get(), output_info->crtc));
 
       int64_t display_id = -1;
-      if (!ui::GetDisplayId(output_id, static_cast<uint8_t>(i), &display_id)) {
+      if (!ui::EDIDParserX11(output_id).GetDisplayId(static_cast<uint8_t>(i),
+                                                     &display_id)) {
         // It isn't ideal, but if we can't parse the EDID data, fallback on the
         // display number.
         display_id = i;
@@ -362,9 +367,15 @@ std::vector<gfx::Display> DesktopScreenX11::BuildDisplaysFromXRandRInfo() {
 
 void DesktopScreenX11::ConfigureTimerFired() {
   std::vector<gfx::Display> old_displays = displays_;
-  displays_ = BuildDisplaysFromXRandRInfo();
-
+  SetDisplaysInternal(BuildDisplaysFromXRandRInfo());
   change_notifier_.NotifyDisplaysChanged(old_displays, displays_);
+}
+
+void DesktopScreenX11::SetDisplaysInternal(
+    const std::vector<gfx::Display>& displays) {
+  displays_ = displays;
+  gfx::SetFontRenderParamsDeviceScaleFactor(
+      GetPrimaryDisplay().device_scale_factor());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

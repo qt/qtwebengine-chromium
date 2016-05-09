@@ -485,10 +485,11 @@ std::string FtpNetworkTransaction::GetRequestPathForFtpCommand(
   }
   // Make sure that if the path is expected to be a file, it won't end
   // with a trailing slash.
-  if (!is_directory && path.length() > 1 && path[path.length() - 1] == '/')
+  if (!is_directory && path.length() > 1 && path.back() == '/')
     path.erase(path.length() - 1);
-  UnescapeRule::Type unescape_rules = UnescapeRule::SPACES |
-                                      UnescapeRule::URL_SPECIAL_CHARS;
+  UnescapeRule::Type unescape_rules =
+      UnescapeRule::SPACES |
+      UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS;
   // This may unescape to non-ASCII characters, but we allow that. See the
   // comment for IsValidFTPCommandString.
   path = UnescapeURLComponent(path, unescape_rules);
@@ -886,7 +887,7 @@ int FtpNetworkTransaction::ProcessResponsePWD(const FtpCtrlResponse& response) {
       }
       if (system_type_ == SYSTEM_TYPE_VMS)
         line = FtpUtil::VMSPathToUnix(line);
-      if (line.length() && line[line.length() - 1] == '/')
+      if (!line.empty() && line.back() == '/')
         line.erase(line.length() - 1);
       current_remote_directory_ = line;
       next_state_ = STATE_CTRL_WRITE_TYPE;

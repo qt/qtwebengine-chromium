@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "8.46",
+  "version": "8.61",
   "entries": [
     {
       "id": 1,
@@ -190,7 +190,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 12,
       "description": "Limit max cube map texure size to 1024 on Macs with Intel GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -746,23 +750,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x10de",
       "features": [
         "init_vertex_attributes"
-      ]
-    },
-    {
-      "id": 66,
-      "description": "Force glFinish() after compositing on older OS X on Intel GPU",
-      "cr_bugs": [123409],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<=",
-          "value": "10.7"
-        }
-      },
-      "vendor_id": "0x8086",
-      "multi_gpu_category": "active",
-      "features": [
-        "force_gl_finish_after_compositing"
       ]
     },
     {
@@ -1439,14 +1426,12 @@ LONG_STRING_CONST(
         "op": "<",
         "value": "346"
       },
-      "features": [
-        "disable_gl_path_rendering"
-      ]
+      "disabled_extensions": ["GL_NV_path_rendering"]
     },
     {
       "id": 124,
-      "description": "Certain Adreno 4xx drivers often crash in glProgramBinary.",
-      "cr_bugs": [486117],
+      "description": "Certain Adreno 4xx and 5xx drivers often crash in glProgramBinary.",
+      "cr_bugs": [486117, 598060],
       "os": {
         "type": "android"
       },
@@ -1454,7 +1439,7 @@ LONG_STRING_CONST(
         "op": ">=",
         "value": "103.0"
       },
-      "gl_renderer": "Adreno \\(TM\\) 4.*",
+      "gl_renderer": "Adreno \\(TM\\) [45].*",
       "features": [
         "disable_program_cache"
       ]
@@ -1555,7 +1540,7 @@ LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "multi_gpu_category": "active",
       "features": [
-        "disable_msaa_on_non_webgl_contexts"
+        "msaa_is_slow"
       ]
     },
     {
@@ -1582,9 +1567,7 @@ LONG_STRING_CONST(
         }
       },
       "gl_vendor": "Qualcomm.*",
-      "features": [
-        "disable_ext_srgb"
-      ]
+      "disabled_extensions": ["GL_EXT_sRGB"]
     },
     {
       "id": 135,
@@ -1635,9 +1618,7 @@ LONG_STRING_CONST(
         "op": "<",
         "value": "346"
       },
-      "features": [
-        "disable_gl_path_rendering"
-      ]
+      "disabled_extensions": ["GL_NV_path_rendering"]
     },
     {
       "id": 139,
@@ -1670,9 +1651,7 @@ LONG_STRING_CONST(
       },
       "gl_vendor": "Qualcomm",
       "gl_renderer": "Adreno \\(TM\\) 4.*", // Originally on 418.
-      "features": [
-        "disable_ext_srgb"
-      ]
+      "disabled_extensions": ["GL_EXT_sRGB"]
     },
     {
       "id": 141,
@@ -1713,6 +1692,17 @@ LONG_STRING_CONST(
       ]
     },
     {
+      "id": 144,
+      "cr_bugs": [563714],
+      "description": "Pack parameters work incorrectly with pack buffer bound",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "pack_parameters_workaround_with_pack_buffer"
+      ]
+    },
+    {
       "id": 145,
       "cr_bugs": [585250],
       "description": "EGLImage ref counting across EGLContext/threads is broken",
@@ -1729,6 +1719,26 @@ LONG_STRING_CONST(
         "broken_egl_image_ref_counting"
       ]
     },
+)  // LONG_STRING_CONST macro
+// Avoid C2026 (string too big) error on VisualStudio.
+LONG_STRING_CONST(
+    {
+      "id": 146,
+      "description": "Crashes in D3D11 on specific AMD drivers",
+      "cr_bugs": [517040],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "between",
+        "value": "15.200",
+        "value2": "15.201"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
+    },
     {
       "id": 147,
       "description": "Limit max texure size to 4096 on all of Android",
@@ -1737,6 +1747,170 @@ LONG_STRING_CONST(
       },
       "features": [
         "max_texture_size_limit_4096"
+      ]
+    },
+    {
+      "id": 148,
+      "description": "Mali-4xx GPU on JB doesn't support DetachGLContext",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
+      },
+      "gl_renderer": ".*Mali-4.*",
+      "features": [
+        "surface_texture_cant_detach"
+      ]
+    },
+    {
+      "id": 149,
+      "description": "Direct composition flashes black initially on Win <10",
+      "cr_bugs": [588588],
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0"
+        }
+      },
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
+      "id": 150,
+      "cr_bugs": [563714],
+      "description": "Alignment works incorrectly with unpack buffer bound",
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x10de",
+      "gl_vendor": "NVIDIA.*",
+      "features": [
+        "unpack_alignment_workaround_with_unpack_buffer"
+      ]
+    },
+    {
+      "id": 151,
+      "cr_bugs": [563714],
+      "description": "Alignment works incorrectly with unpack buffer bound",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "unpack_alignment_workaround_with_unpack_buffer"
+      ]
+    },
+    {
+      "id": 152,
+      "cr_bugs": [581777],
+      "description": "copyTexImage2D fails when reading from IOSurface on multiple GPU types.",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "use_intermediary_for_copy_texture_image"
+      ]
+    },
+    {
+      "id": 153,
+      "cr_bugs": [594016],
+      "description": "Vivante GC1000 with EXT_multisampled_render_to_texture fails glReadPixels",
+      "os": {
+        "type": "linux"
+      },
+      "gl_vendor": "Vivante Corporation",
+      "gl_renderer": "Vivante GC1000",
+      "features": [
+        "disable_multisampled_render_to_texture"
+      ]
+    },
+    {
+      "id": 154,
+      "cr_bugs": [581777],
+      "description": "glReadPixels does not work on IOSurface backed textures",
+      "os": {
+        "type": "macosx"
+      },
+      "exceptions": [
+        {
+          "os": {
+            "type": "macosx",
+            "version": {
+              "op": ">=",
+              "value": "10.9"
+            }
+          }
+        }
+      ],
+      "features": [
+        "iosurface_readback_workaround"
+      ]
+    },
+    {
+      "id": 155,
+      "cr_bugs": [597794],
+      "description": "Seamless cubemap does not work for Mac Intel",
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_texture_cube_map_seamless"
+      ]
+    },
+    {
+      "id": 156,
+      "cr_bugs": [598474],
+      "description": "glEGLImageTargetTexture2DOES crashes",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "between",
+          "value": "4.4",
+          "value2": "4.4.4"
+        }
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 544MP",
+      "features": [
+        "avda_dont_copy_pictures"
+      ]
+    },
+    {
+      "id": 157,
+      "description": "Testing fences was broken on Mali ES2 drivers for specific phone models",
+      "cr_bugs": [589814],
+      "os": {
+        "type": "android"
+      },
+      "machine_model_name": ["SM-G361H", "SM-G531H"],
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.0"
+      },
+      "disabled_extensions": [
+        "EGL_KHR_fence_sync"
+      ]
+    },
+    {
+      "id": 158,
+      "description": "IOSurface use becomes pathologically slow over time on 10.10.",
+      "cr_bugs": [580616],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "=",
+          "value": "10.10"
+        }
+      },
+      "features": [
+        "disable_overlay_ca_layers"
       ]
     }
   ]

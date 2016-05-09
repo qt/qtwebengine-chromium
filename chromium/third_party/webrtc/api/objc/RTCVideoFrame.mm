@@ -16,53 +16,88 @@
 
 @implementation RTCVideoFrame {
   rtc::scoped_ptr<cricket::VideoFrame> _videoFrame;
+  rtc::scoped_refptr<webrtc::VideoFrameBuffer> _i420Buffer;
 }
 
 - (size_t)width {
-  return _videoFrame->GetWidth();
+  return _videoFrame->width();
 }
 
 - (size_t)height {
-  return _videoFrame->GetHeight();
+  return _videoFrame->height();
 }
 
+// TODO(nisse): chromaWidth and chromaHeight are used only in
+// RTCOpenGLVideoRenderer.mm. Update, and then delete these
+// properties.
 - (size_t)chromaWidth {
-  return _videoFrame->GetChromaWidth();
+  return (self.width + 1) / 2;
 }
 
 - (size_t)chromaHeight {
-  return _videoFrame->GetChromaHeight();
-}
-
-- (size_t)chromaSize {
-  return _videoFrame->GetChromaSize();
+  return (self.height + 1) / 2;
 }
 
 - (const uint8_t *)yPlane {
-  const cricket::VideoFrame *const_frame = _videoFrame.get();
-  return const_frame->GetYPlane();
+  if (!self.i420Buffer) {
+    return nullptr;
+  }
+  return self.i420Buffer->data(webrtc::kYPlane);
 }
 
 - (const uint8_t *)uPlane {
-  const cricket::VideoFrame *const_frame = _videoFrame.get();
-  return const_frame->GetUPlane();
+  if (!self.i420Buffer) {
+    return nullptr;
+  }
+  return self.i420Buffer->data(webrtc::kUPlane);
 }
 
 - (const uint8_t *)vPlane {
-  const cricket::VideoFrame *const_frame = _videoFrame.get();
-  return const_frame->GetVPlane();
+  if (!self.i420Buffer) {
+    return nullptr;
+  }
+  return self.i420Buffer->data(webrtc::kVPlane);
 }
 
 - (int32_t)yPitch {
-  return _videoFrame->GetYPitch();
+  if (!self.i420Buffer) {
+    return 0;
+  }
+  return self.i420Buffer->stride(webrtc::kYPlane);
 }
 
 - (int32_t)uPitch {
-  return _videoFrame->GetUPitch();
+  if (!self.i420Buffer) {
+    return 0;
+  }
+  return self.i420Buffer->stride(webrtc::kUPlane);
 }
 
 - (int32_t)vPitch {
-  return _videoFrame->GetVPitch();
+  if (!self.i420Buffer) {
+    return 0;
+  }
+  return self.i420Buffer->stride(webrtc::kVPlane);
+}
+
+- (int64_t)timeStamp {
+  return _videoFrame->GetTimeStamp();
+}
+
+- (CVPixelBufferRef)nativeHandle {
+  return static_cast<CVPixelBufferRef>(_videoFrame->GetNativeHandle());
+}
+
+- (void)convertBufferIfNeeded {
+  if (!_i420Buffer) {
+    if (_videoFrame->GetNativeHandle()) {
+      // Convert to I420.
+      _i420Buffer = _videoFrame->GetVideoFrameBuffer()->NativeToI420Buffer();
+    } else {
+      // Should already be I420.
+      _i420Buffer = _videoFrame->GetVideoFrameBuffer();
+    }
+  }
 }
 
 #pragma mark - Private
@@ -74,6 +109,11 @@
     _videoFrame.reset(nativeFrame->Copy());
   }
   return self;
+}
+
+- (rtc::scoped_refptr<webrtc::VideoFrameBuffer>)i420Buffer {
+  [self convertBufferIfNeeded];
+  return _i420Buffer;
 }
 
 @end

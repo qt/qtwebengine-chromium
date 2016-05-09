@@ -6,7 +6,6 @@
 #define UI_EVENTS_EVENT_H_
 
 #include <stdint.h>
-
 #include "base/compiler_specific.h"
 #include "base/event_types.h"
 #include "base/gtest_prod_util.h"
@@ -27,9 +26,23 @@ namespace gfx {
 class Transform;
 }
 
+namespace IPC {
+template <class P> struct ParamTraits;
+}
+
 namespace ui {
 class EventTarget;
+class KeyEvent;
+class MouseEvent;
+class MouseWheelEvent;
+class PointerEvent;
+class ScrollEvent;
+class TouchEvent;
 enum class DomCode;
+class Event;
+class MouseWheelEvent;
+
+using ScopedEvent = scoped_ptr<Event>;
 
 class EVENTS_EXPORT Event {
  public:
@@ -116,6 +129,17 @@ class EVENTS_EXPORT Event {
            type_ == ET_TOUCH_CANCELLED;
   }
 
+  bool IsPointerEvent() const {
+    return type_ == ET_POINTER_DOWN || type_ == ET_POINTER_MOVED ||
+           type_ == ET_POINTER_UP || type_ == ET_POINTER_CANCELLED ||
+           type_ == ET_POINTER_ENTERED || type_ == ET_POINTER_EXITED;
+  }
+
+  // Convenience methods to check pointer type of |this|. Returns false if
+  // |this| is not a PointerEvent.
+  bool IsMousePointerEvent() const;
+  bool IsTouchPointerEvent() const;
+
   bool IsGestureEvent() const {
     switch (type_) {
       case ET_GESTURE_SCROLL_BEGIN:
@@ -192,13 +216,44 @@ class EVENTS_EXPORT Event {
 
   bool IsLocatedEvent() const {
     return IsMouseEvent() || IsScrollEvent() || IsTouchEvent() ||
-           IsGestureEvent();
+           IsGestureEvent() || IsPointerEvent();
   }
 
   // Convenience methods to cast |this| to a GestureEvent. IsGestureEvent()
   // must be true as a precondition to calling these methods.
   GestureEvent* AsGestureEvent();
   const GestureEvent* AsGestureEvent() const;
+
+  // Convenience methods to cast |this| to a KeyEvent. IsKeyEvent()
+  // must be true as a precondition to calling these methods.
+  KeyEvent* AsKeyEvent();
+  const KeyEvent* AsKeyEvent() const;
+
+  // Convenience methods to cast |this| to a MouseEvent. IsMouseEvent()
+  // must be true as a precondition to calling these methods.
+  MouseEvent* AsMouseEvent();
+  const MouseEvent* AsMouseEvent() const;
+
+  // Convenience methods to cast |this| to a MouseWheelEvent.
+  // IsMouseWheelEvent() must be true as a precondition to calling these
+  // methods.
+  MouseWheelEvent* AsMouseWheelEvent();
+  const MouseWheelEvent* AsMouseWheelEvent() const;
+
+  // Convenience methods to cast |this| to a PointerEvent. IsPointerEvent()
+  // must be true as a precondition to calling these methods.
+  PointerEvent* AsPointerEvent();
+  const PointerEvent* AsPointerEvent() const;
+
+  // Convenience methods to cast |this| to a ScrollEvent. IsScrollEvent()
+  // must be true as a precondition to calling these methods.
+  ScrollEvent* AsScrollEvent();
+  const ScrollEvent* AsScrollEvent() const;
+
+  // Convenience methods to cast |this| to a TouchEvent. IsTouchEvent()
+  // must be true as a precondition to calling these methods.
+  TouchEvent* AsTouchEvent();
+  const TouchEvent* AsTouchEvent() const;
 
   // Returns true if the event has a valid |native_event_|.
   bool HasNativeEvent() const;
@@ -234,6 +289,9 @@ class EVENTS_EXPORT Event {
  private:
   friend class EventTestApi;
 
+  // For (de)serialization.
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+
   EventType type_;
   std::string name_;
   base::TimeDelta time_stamp_;
@@ -255,6 +313,13 @@ class EVENTS_EXPORT CancelModeEvent : public Event {
  public:
   CancelModeEvent();
   ~CancelModeEvent() override;
+
+ private:
+  // For (de)serialization.
+  CancelModeEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : Event(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::CancelModeEvent>;
 };
 
 class EVENTS_EXPORT LocatedEvent : public Event {
@@ -298,6 +363,13 @@ class EVENTS_EXPORT LocatedEvent : public Event {
 
  protected:
   friend class LocatedEventTestApi;
+
+  // For (de)serialization.
+  LocatedEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : Event(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::LocatedEvent>;
+
   explicit LocatedEvent(const base::NativeEvent& native_event);
 
   // Create a new LocatedEvent which is identical to the provided model.
@@ -327,56 +399,58 @@ class EVENTS_EXPORT LocatedEvent : public Event {
 
 // Structure for handling common fields between touch and mouse to support
 // PointerEvents API.
-class EVENTS_EXPORT PointerDetails {
+struct EVENTS_EXPORT PointerDetails {
  public:
   PointerDetails() {}
   explicit PointerDetails(EventPointerType pointer_type)
-      : pointer_type_(pointer_type) {}
+      : pointer_type(pointer_type),
+        force(std::numeric_limits<float>::quiet_NaN()) {}
   PointerDetails(EventPointerType pointer_type,
                  float radius_x,
                  float radius_y,
                  float force,
                  float tilt_x,
                  float tilt_y)
-      : pointer_type_(pointer_type),
-        radius_x_(radius_x),
-        radius_y_(radius_y),
-        force_(force),
-        tilt_x_(tilt_x),
-        tilt_y_(tilt_y) {}
+      : pointer_type(pointer_type),
+        // If we aren't provided with a radius on one axis, use the
+        // information from the other axis.
+        radius_x(radius_x > 0 ? radius_x : radius_y),
+        radius_y(radius_y > 0 ? radius_y : radius_x),
+        force(force),
+        tilt_x(tilt_x),
+        tilt_y(tilt_y) {}
 
-  EventPointerType pointer_type() const { return pointer_type_; };
+  bool operator==(const PointerDetails& other) const {
+    return pointer_type == other.pointer_type &&
+           radius_x == other.radius_x &&
+           radius_y == other.radius_y &&
+           (force == other.force ||
+            (std::isnan(force) && std::isnan(other.force))) &&
+           tilt_x == other.tilt_x &&
+           tilt_y == other.tilt_y;
+  }
 
-  // If we aren't provided with a radius on one axis, use the
-  // information from the other axis.
-  float radius_x() const { return radius_x_ > 0 ? radius_x_ : radius_y_; }
-  float radius_y() const { return radius_y_ > 0 ? radius_y_ : radius_x_; }
-  float force() const { return force_; }
-  float tilt_x() const { return tilt_x_; }
-  float tilt_y() const { return tilt_y_; }
-
- private:
-  // For the mutators of the members on this class.
-  friend class TouchEvent;
-  friend class MouseEvent;
+  // For serialization.
+  friend struct IPC::ParamTraits<ui::PointerDetails>;
 
   // The type of pointer device.
-  EventPointerType pointer_type_ = EventPointerType::POINTER_TYPE_UNKNOWN;
+  EventPointerType pointer_type = EventPointerType::POINTER_TYPE_UNKNOWN;
 
   // Radius of the X (major) axis of the touch ellipse. 0.0 if unknown.
-  float radius_x_ = 0.0;
+  float radius_x = 0.0;
 
   // Radius of the Y (minor) axis of the touch ellipse. 0.0 if unknown.
-  float radius_y_ = 0.0;
+  float radius_y = 0.0;
 
-  // Force (pressure) of the touch. Normalized to be [0, 1]. Default to be 0.0.
-  float force_ = 0.0;
+  // Force (pressure) of the touch. Normalized to be [0, 1] except NaN means
+  // pressure is not supported by the input device.
+  float force = 0.0;
 
-  // Angle of tilt of the X (major) axis. 0.0 if unknown.
-  float tilt_x_ = 0.0;
-
-  // Angle of tilt of the Y (minor) axis. 0.0 if unknown.
-  float tilt_y_ = 0.0;
+  // Tilt of a pen/stylus from surface normal as plane angle in degrees, values
+  // lie in [-90,90]. A positive tilt_x is to the right and a positive tilt_y
+  // is towards the user. 0.0 if unknown.
+  float tilt_x = 0.0;
+  float tilt_y = 0.0;
 };
 
 class EVENTS_EXPORT MouseEvent : public LocatedEvent {
@@ -478,6 +552,13 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
     pointer_details_ = details;
   }
 
+ protected:
+  // For (de)serialization.
+  MouseEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : LocatedEvent(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::MouseEvent>;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(EventTest, DoubleClickRequiresRelease);
   FRIEND_TEST_ALL_PREFIXES(EventTest, SingleClickRightLeft);
@@ -538,6 +619,12 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
   const gfx::Vector2d& offset() const { return offset_; }
 
  private:
+  // For (de)serialization.
+  MouseWheelEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : MouseEvent(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::MouseWheelEvent>;
+
   gfx::Vector2d offset_;
 };
 
@@ -587,11 +674,6 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
   void set_may_cause_scrolling(bool causes) { may_cause_scrolling_ = causes; }
   bool may_cause_scrolling() const { return may_cause_scrolling_; }
 
-  // TODO(robert.bradford): ozone_platform_egltest.cc could use
-  // UpdateForRootTransform() instead: crbug.com/519337
-  void set_radius_x(const float r) { pointer_details_.radius_x_ = r; }
-  void set_radius_y(const float r) { pointer_details_.radius_y_ = r; }
-
   void set_should_remove_native_touch_id_mapping(
       bool should_remove_native_touch_id_mapping) {
     should_remove_native_touch_id_mapping_ =
@@ -610,17 +692,27 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
 
   // Event details common to MouseEvent and TouchEvent.
   const PointerDetails& pointer_details() const { return pointer_details_; }
+  void set_pointer_details(const PointerDetails& pointer_details) {
+    pointer_details_ = pointer_details;
+  }
 
  private:
+  // For (de)serialization.
+  TouchEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : LocatedEvent(type, time_stamp, flags),
+        should_remove_native_touch_id_mapping_(false) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::TouchEvent>;
+
   // Adjusts rotation_angle_ to within the acceptable range.
   void FixRotationAngle();
 
   // The identity (typically finger) of the touch starting at 0 and incrementing
   // for each separable additional touch that the hardware can detect.
-  const int touch_id_;
+  int touch_id_;
 
   // A unique identifier for the touch event.
-  const uint32_t unique_event_id_;
+  uint32_t unique_event_id_;
 
   // Clockwise angle (in degrees) of the major axis from the X axis. Must be
   // less than 180 and non-negative.
@@ -639,6 +731,42 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
 
   // Structure for holding pointer details for implementing PointerEvents API.
   PointerDetails pointer_details_;
+};
+
+class EVENTS_EXPORT PointerEvent : public LocatedEvent {
+ public:
+  static const int32_t kMousePointerId;
+
+  // Returns true if a PointerEvent can be constructed from the given mouse or
+  // touch event. For example, PointerEvent does not support ET_MOUSEWHEEL or
+  // ET_MOUSE_CAPTURE_CHANGED.
+  static bool CanConvertFrom(const Event& event);
+
+  PointerEvent(const PointerEvent& pointer_event);
+  explicit PointerEvent(const MouseEvent& mouse_event);
+  explicit PointerEvent(const TouchEvent& touch_event);
+
+  PointerEvent(EventType type,
+               EventPointerType pointer_type,
+               const gfx::Point& location,
+               const gfx::Point& root_location,
+               int flags,
+               int pointer_id,
+               base::TimeDelta time_stamp);
+
+  int32_t pointer_id() const { return pointer_id_; }
+  const PointerDetails& pointer_details() const { return details_; }
+
+ protected:
+  // For (de)serialization.
+  PointerEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : LocatedEvent(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::PointerEvent>;
+
+ private:
+  int32_t pointer_id_;
+  PointerDetails details_;
 };
 
 // An interface that individual platforms can use to store additional data on
@@ -806,6 +934,11 @@ class EVENTS_EXPORT KeyEvent : public Event {
   void set_is_char(bool is_char) { is_char_ = is_char; }
 
  private:
+  // For (de)serialization.
+  KeyEvent(EventType type, base::TimeDelta time_stamp, int flags);
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::KeyEvent>;
+
   // Determine key_ on a keystroke event from code_ and flags().
   void ApplyLayout() const;
 
@@ -884,6 +1017,12 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
   int finger_count() const { return finger_count_; }
 
  private:
+  // For (de)serialization.
+  ScrollEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : MouseEvent(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::ScrollEvent>;
+
   // Potential accelerated offsets.
   float x_offset_;
   float y_offset_;
@@ -916,6 +1055,12 @@ class EVENTS_EXPORT GestureEvent : public LocatedEvent {
   const GestureEventDetails& details() const { return details_; }
 
  private:
+  // For (de)serialization.
+  GestureEvent(EventType type, base::TimeDelta time_stamp, int flags)
+      : LocatedEvent(type, time_stamp, flags) {}
+  friend struct IPC::ParamTraits<ui::ScopedEvent>;
+  friend struct IPC::ParamTraits<ui::GestureEvent>;
+
   GestureEventDetails details_;
 };
 

@@ -37,7 +37,6 @@ BinaryOpICState::BinaryOpICState(Isolate* isolate, ExtraICState extra_ic_state)
       isolate_(isolate) {
   op_ =
       static_cast<Token::Value>(FIRST_TOKEN + OpField::decode(extra_ic_state));
-  strong_ = StrengthField::decode(extra_ic_state);
   left_kind_ = LeftKindField::decode(extra_ic_state);
   right_kind_ = fixed_right_arg_.IsJust()
                     ? (Smi::IsValid(fixed_right_arg_.FromJust()) ? SMI : INT32)
@@ -51,7 +50,7 @@ BinaryOpICState::BinaryOpICState(Isolate* isolate, ExtraICState extra_ic_state)
 ExtraICState BinaryOpICState::GetExtraICState() const {
   ExtraICState extra_ic_state =
       OpField::encode(op_ - FIRST_TOKEN) | LeftKindField::encode(left_kind_) |
-      ResultKindField::encode(result_kind_) | StrengthField::encode(strong_) |
+      ResultKindField::encode(result_kind_) |
       HasFixedRightArgField::encode(fixed_right_arg_.IsJust());
   if (fixed_right_arg_.IsJust()) {
     extra_ic_state = FixedRightArgValueField::update(
@@ -72,7 +71,7 @@ void BinaryOpICState::GenerateAheadOfTime(
 // Generated list of commonly used stubs
 #define GENERATE(op, left_kind, right_kind, result_kind) \
   do {                                                   \
-    BinaryOpICState state(isolate, op, Strength::WEAK);  \
+    BinaryOpICState state(isolate, op);                  \
     state.left_kind_ = left_kind;                        \
     state.fixed_right_arg_ = Nothing<int>();             \
     state.right_kind_ = right_kind;                      \
@@ -174,7 +173,7 @@ void BinaryOpICState::GenerateAheadOfTime(
 #undef GENERATE
 #define GENERATE(op, left_kind, fixed_right_arg_value, result_kind) \
   do {                                                              \
-    BinaryOpICState state(isolate, op, Strength::WEAK);             \
+    BinaryOpICState state(isolate, op);                             \
     state.left_kind_ = left_kind;                                   \
     state.fixed_right_arg_ = Just(fixed_right_arg_value);           \
     state.right_kind_ = SMI;                                        \
@@ -208,7 +207,6 @@ Type* BinaryOpICState::GetResultType() const {
 std::ostream& operator<<(std::ostream& os, const BinaryOpICState& s) {
   os << "(" << Token::Name(s.op_);
   if (s.CouldCreateAllocationMementos()) os << "_CreateAllocationMementos";
-  if (is_strong(s.strength())) os << "_Strong";
   os << ":" << BinaryOpICState::KindToString(s.left_kind_) << "*";
   if (s.fixed_right_arg_.IsJust()) {
     os << s.fixed_right_arg_.FromJust();
@@ -371,25 +369,25 @@ const char* CompareICState::GetStateName(State state) {
 Type* CompareICState::StateToType(Zone* zone, State state, Handle<Map> map) {
   switch (state) {
     case UNINITIALIZED:
-      return Type::None(zone);
+      return Type::None();
     case BOOLEAN:
-      return Type::Boolean(zone);
+      return Type::Boolean();
     case SMI:
-      return Type::SignedSmall(zone);
+      return Type::SignedSmall();
     case NUMBER:
-      return Type::Number(zone);
+      return Type::Number();
     case STRING:
-      return Type::String(zone);
+      return Type::String();
     case INTERNALIZED_STRING:
-      return Type::InternalizedString(zone);
+      return Type::InternalizedString();
     case UNIQUE_NAME:
-      return Type::UniqueName(zone);
+      return Type::UniqueName();
     case RECEIVER:
-      return Type::Receiver(zone);
+      return Type::Receiver();
     case KNOWN_RECEIVER:
-      return map.is_null() ? Type::Receiver(zone) : Type::Class(map, zone);
+      return map.is_null() ? Type::Receiver() : Type::Class(map, zone);
     case GENERIC:
-      return Type::Any(zone);
+      return Type::Any();
   }
   UNREACHABLE();
   return NULL;
@@ -406,7 +404,9 @@ CompareICState::State CompareICState::NewInputState(State old_state,
       if (value->IsInternalizedString()) return INTERNALIZED_STRING;
       if (value->IsString()) return STRING;
       if (value->IsSymbol()) return UNIQUE_NAME;
-      if (value->IsJSReceiver()) return RECEIVER;
+      if (value->IsJSReceiver() && !value->IsUndetectable()) {
+        return RECEIVER;
+      }
       break;
     case BOOLEAN:
       if (value->IsBoolean()) return BOOLEAN;
@@ -430,7 +430,9 @@ CompareICState::State CompareICState::NewInputState(State old_state,
       if (value->IsUniqueName()) return UNIQUE_NAME;
       break;
     case RECEIVER:
-      if (value->IsJSReceiver()) return RECEIVER;
+      if (value->IsJSReceiver() && !value->IsUndetectable()) {
+        return RECEIVER;
+      }
       break;
     case GENERIC:
       break;
@@ -466,6 +468,9 @@ CompareICState::State CompareICState::TargetState(
       }
       if (x->IsString() && y->IsString()) return STRING;
       if (x->IsJSReceiver() && y->IsJSReceiver()) {
+        if (x->IsUndetectable() || y->IsUndetectable()) {
+          return GENERIC;
+        }
         if (Handle<JSReceiver>::cast(x)->map() ==
             Handle<JSReceiver>::cast(y)->map()) {
           return KNOWN_RECEIVER;

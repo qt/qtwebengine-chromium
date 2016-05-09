@@ -30,15 +30,16 @@
 
 #include "core/html/parser/HTMLParserThread.h"
 
-#include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
+#include "platform/WaitableEvent.h"
+#include "platform/heap/SafePoint.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebTraceLocation.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-static HTMLParserThread* s_sharedThread = 0;
+static HTMLParserThread* s_sharedThread = nullptr;
 
 HTMLParserThread::HTMLParserThread()
 {
@@ -62,18 +63,23 @@ void HTMLParserThread::setupHTMLParserThread()
 
 void HTMLParserThread::shutdown()
 {
+    ASSERT(isMainThread());
     ASSERT(s_sharedThread);
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
-    if (Platform::current()->currentThread() && s_sharedThread->isRunning()) {
-        s_sharedThread->postTask(threadSafeBind(&HTMLParserThread::cleanupHTMLParserThread, AllowCrossThreadAccess(s_sharedThread)));
+    if (Platform::current()->currentThread() && s_sharedThread->m_thread) {
+        WaitableEvent waitableEvent;
+        s_sharedThread->postTask(threadSafeBind(&HTMLParserThread::cleanupHTMLParserThread, AllowCrossThreadAccess(s_sharedThread), AllowCrossThreadAccess(&waitableEvent)));
+        SafePointScope scope(BlinkGC::HeapPointersOnStack);
+        waitableEvent.wait();
     }
     delete s_sharedThread;
-    s_sharedThread = 0;
+    s_sharedThread = nullptr;
 }
 
-void HTMLParserThread::cleanupHTMLParserThread()
+void HTMLParserThread::cleanupHTMLParserThread(WaitableEvent* waitableEvent)
 {
     m_thread->shutdown();
+    waitableEvent->signal();
 }
 
 HTMLParserThread* HTMLParserThread::shared()
@@ -81,23 +87,15 @@ HTMLParserThread* HTMLParserThread::shared()
     return s_sharedThread;
 }
 
-WebThread& HTMLParserThread::platformThread()
+void HTMLParserThread::postTask(PassOwnPtr<CrossThreadClosure> closure)
 {
-    if (!isRunning()) {
+    ASSERT(isMainThread());
+    if (!m_thread) {
         m_thread = WebThreadSupportingGC::create("HTMLParserThread");
         postTask(threadSafeBind(&HTMLParserThread::setupHTMLParserThread, AllowCrossThreadAccess(this)));
     }
-    return m_thread->platformThread();
-}
 
-bool HTMLParserThread::isRunning()
-{
-    return !!m_thread;
-}
-
-void HTMLParserThread::postTask(PassOwnPtr<Closure> closure)
-{
-    platformThread().taskRunner()->postTask(BLINK_FROM_HERE, new Task(closure));
+    m_thread->postTask(BLINK_FROM_HERE, closure);
 }
 
 } // namespace blink

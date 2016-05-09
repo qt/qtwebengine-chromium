@@ -25,30 +25,37 @@ ButtonInkDropDelegate::ButtonInkDropDelegate(InkDropHost* ink_drop_host,
 ButtonInkDropDelegate::~ButtonInkDropDelegate() {
 }
 
-void ButtonInkDropDelegate::SetInkDropSize(int large_size,
-                                           int large_corner_radius,
-                                           int small_size,
-                                           int small_corner_radius) {
-  ink_drop_animation_controller_->SetInkDropSize(
-      gfx::Size(large_size, large_size), large_corner_radius,
-      gfx::Size(small_size, small_size), small_corner_radius);
-}
-
-void ButtonInkDropDelegate::OnLayout() {
-  ink_drop_animation_controller_->SetInkDropCenter(
-      ink_drop_host_->CalculateInkDropCenter());
-}
-
 void ButtonInkDropDelegate::OnAction(InkDropState state) {
   ink_drop_animation_controller_->AnimateToState(state);
+}
+
+void ButtonInkDropDelegate::SnapToActivated() {
+  ink_drop_animation_controller_->SnapToActivated();
+}
+
+void ButtonInkDropDelegate::SetHovered(bool is_hovered) {
+  ink_drop_animation_controller_->SetHovered(is_hovered);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ui::EventHandler:
 
+void ButtonInkDropDelegate::OnMouseEvent(ui::MouseEvent* event) {
+  switch (event->type()) {
+    case ui::ET_MOUSE_ENTERED:
+      SetHovered(true);
+      break;
+    case ui::ET_MOUSE_EXITED:
+      SetHovered(false);
+      break;
+    default:
+      return;
+  }
+}
+
 void ButtonInkDropDelegate::OnGestureEvent(ui::GestureEvent* event) {
   InkDropState current_ink_drop_state =
-      ink_drop_animation_controller_->GetInkDropState();
+      ink_drop_animation_controller_->GetTargetInkDropState();
 
   InkDropState ink_drop_state = InkDropState::HIDDEN;
   switch (event->type()) {
@@ -59,10 +66,10 @@ void ButtonInkDropDelegate::OnGestureEvent(ui::GestureEvent* event) {
       event->SetHandled();
       break;
     case ui::ET_GESTURE_LONG_PRESS:
-      ink_drop_state = InkDropState::SLOW_ACTION_PENDING;
+      ink_drop_state = InkDropState::ALTERNATE_ACTION_PENDING;
       break;
     case ui::ET_GESTURE_LONG_TAP:
-      ink_drop_state = InkDropState::SLOW_ACTION;
+      ink_drop_state = InkDropState::ALTERNATE_ACTION_TRIGGERED;
       break;
     case ui::ET_GESTURE_END:
       if (current_ink_drop_state == InkDropState::ACTIVATED)
@@ -75,9 +82,11 @@ void ButtonInkDropDelegate::OnGestureEvent(ui::GestureEvent* event) {
       return;
   }
 
+  last_ink_drop_location_ = event->location();
+
   if (ink_drop_state == InkDropState::HIDDEN &&
-      (current_ink_drop_state == InkDropState::QUICK_ACTION ||
-       current_ink_drop_state == InkDropState::SLOW_ACTION ||
+      (current_ink_drop_state == InkDropState::ACTION_TRIGGERED ||
+       current_ink_drop_state == InkDropState::ALTERNATE_ACTION_TRIGGERED ||
        current_ink_drop_state == InkDropState::DEACTIVATED)) {
     // These InkDropStates automatically transition to the HIDDEN state so we
     // don't make an explicit call. Explicitly animating to HIDDEN in this case

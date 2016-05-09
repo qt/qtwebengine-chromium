@@ -12,6 +12,12 @@
 
 namespace cc {
 
+scoped_ptr<ThreadedChannel> ThreadedChannel::Create(
+    ProxyMain* proxy_main,
+    TaskRunnerProvider* task_runner_provider) {
+  return make_scoped_ptr(new ThreadedChannel(proxy_main, task_runner_provider));
+}
+
 ThreadedChannel::ThreadedChannel(ProxyMain* proxy_main,
                                  TaskRunnerProvider* task_runner_provider)
     : task_runner_provider_(task_runner_provider),
@@ -26,13 +32,6 @@ ThreadedChannel::~ThreadedChannel() {
   TRACE_EVENT0("cc", "ThreadChannel::~ThreadChannel");
   DCHECK(IsMainThread());
   DCHECK(!IsInitialized());
-}
-
-void ThreadedChannel::SetThrottleFrameProductionOnImpl(bool throttle) {
-  DCHECK(IsMainThread());
-  ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&ProxyImpl::SetThrottleFrameProductionOnImpl,
-                            proxy_impl_weak_ptr_, throttle));
 }
 
 void ThreadedChannel::UpdateTopControlsStateOnImpl(TopControlsState constraints,
@@ -272,10 +271,6 @@ void ThreadedChannel::BeginMainFrame(
                  base::Passed(&begin_main_frame_state)));
 }
 
-ProxyImpl* ThreadedChannel::GetProxyImplForTesting() const {
-  return impl().proxy_impl.get();
-}
-
 scoped_ptr<ProxyImpl> ThreadedChannel::CreateProxyImpl(
     ChannelImpl* channel_impl,
     LayerTreeHost* layer_tree_host,
@@ -361,11 +356,5 @@ ThreadedChannel::CompositorThreadOnly::CompositorThreadOnly(
     : proxy_main_weak_ptr(proxy_main_weak_ptr) {}
 
 ThreadedChannel::CompositorThreadOnly::~CompositorThreadOnly() {}
-
-scoped_ptr<ThreadedChannel> ThreadedChannel::Create(
-    ProxyMain* proxy_main,
-    TaskRunnerProvider* task_runner_provider) {
-  return make_scoped_ptr(new ThreadedChannel(proxy_main, task_runner_provider));
-}
 
 }  // namespace cc

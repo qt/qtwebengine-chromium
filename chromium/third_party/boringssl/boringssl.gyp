@@ -17,6 +17,7 @@
       'defines': [
         'BORINGSSL_IMPLEMENTATION',
         'BORINGSSL_NO_STATIC_INITIALIZER',
+        'OPENSSL_SMALL',
       ],
       'dependencies': [ 'boringssl_asm' ],
       # TODO(davidben): Fix size_t truncations in BoringSSL.
@@ -33,9 +34,6 @@
         'src/include',
       ],
       'direct_dependent_settings': {
-        'defines': [
-          'OPENSSL_SMALL',
-        ],
         'include_dirs': [
           'src/include',
         ],
@@ -110,7 +108,7 @@
                 '../yasm/yasm_compile.gypi',
               ],
             }],
-            ['OS != "mac" and OS != "ios" and OS != "linux" and OS != "win" and OS != "android"', {
+            ['OS != "mac" and OS != "linux" and OS != "win" and OS != "android"', {
               'direct_dependent_settings': {
                 'defines': [ 'OPENSSL_NO_ASM' ],
               },
@@ -136,7 +134,7 @@
                 '../yasm/yasm_compile.gypi',
               ],
             }],
-            ['OS != "mac" and OS != "ios" and OS != "linux" and OS != "win" and OS != "android"', {
+            ['OS != "mac" and OS != "linux" and OS != "win" and OS != "android"', {
               'direct_dependent_settings': {
                 'defines': [ 'OPENSSL_NO_ASM' ],
               },

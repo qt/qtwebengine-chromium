@@ -36,6 +36,7 @@ _log = logging.getLogger(__name__)
 
 
 class MockProcess(object):
+
     def __init__(self, stdout='MOCK STDOUT\n', stderr=''):
         self.pid = 42
         self.stdout = StringIO.StringIO(stdout)
@@ -53,6 +54,8 @@ class MockProcess(object):
         return self.returncode
 
 # FIXME: This should be unified with MockExecutive2
+
+
 class MockExecutive(object):
     PIPE = "MOCK PIPE"
     STDOUT = "MOCK STDOUT"
@@ -165,6 +168,9 @@ class MockExecutive(object):
 
     def map(self, thunk, arglist, processes=None):
         return map(thunk, arglist)
+
+    def process_dump(self):
+        return []
 
 
 class MockExecutive2(MockExecutive):

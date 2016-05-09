@@ -630,7 +630,7 @@ WebInspector.FunctionScopeMainTreeElement.prototype = {
                     property.parentObject = null;
                     this.appendChild(new WebInspector.ObjectPropertyTreeElement(property));
                 } else {
-                    var scopeRef = new WebInspector.ScopeRef(i, undefined, this._remoteObject.objectId);
+                    var scopeRef = new WebInspector.ScopeRef(i, undefined);
                     var remoteObject = runtimeModel.createScopeRemoteObject(scope.object, scopeRef);
                     var scopeTreeElement = new WebInspector.ScopeTreeElement(title, remoteObject);
                     this.appendChild(scopeTreeElement);
@@ -1055,13 +1055,14 @@ WebInspector.ObjectPropertiesSection.createNameElement = function(name)
  */
 WebInspector.ObjectPropertiesSection.valueTextForFunctionDescription = function(description)
 {
-    var matches = /function\s([^)]*)/.exec(description);
+    var text = description.replace(/^function [gs]et /, "function ");
+    var matches = /function\s([^)]*)/.exec(text);
     if (!matches) {
         // process shorthand methods
-        matches = /[^(]*(\([^)]*)/.exec(description);
+        matches = /[^(]*(\([^)]*)/.exec(text);
     }
     var match = matches ? matches[1] : null;
-    return match ? match.replace(/\n/g, " ") + ")" : (description || "");
+    return match ? match.replace(/\n/g, " ") + ")" : (text || "");
 }
 
 /**
@@ -1282,7 +1283,7 @@ WebInspector.ObjectPropertiesSectionExpandController.prototype = {
      */
     _elementAttached: function(event)
     {
-        var element = /** @type {!WebInspector.ObjectPropertyTreeElement|!WebInspector.ObjectPropertiesSection.RootElement} */ (event.data);
+        var element = /** @type {!TreeElement} */ (event.data);
         if (element.isExpandable() && this._expandedProperties.has(this._propertyPath(element)))
             element.expand();
     },
@@ -1292,7 +1293,7 @@ WebInspector.ObjectPropertiesSectionExpandController.prototype = {
      */
     _elementExpanded: function(event)
     {
-        var element = /** @type {!WebInspector.ObjectPropertyTreeElement|!WebInspector.ObjectPropertiesSection.RootElement} */ (event.data);
+        var element = /** @type {!TreeElement} */ (event.data);
         this._expandedProperties.add(this._propertyPath(element));
     },
 
@@ -1301,12 +1302,12 @@ WebInspector.ObjectPropertiesSectionExpandController.prototype = {
      */
     _elementCollapsed: function(event)
     {
-        var element = /** @type {!WebInspector.ObjectPropertyTreeElement|!WebInspector.ObjectPropertiesSection.RootElement} */ (event.data);
+        var element = /** @type {!TreeElement} */ (event.data);
         this._expandedProperties.delete(this._propertyPath(element));
     },
 
     /**
-     * @param {!WebInspector.ObjectPropertyTreeElement|!WebInspector.ObjectPropertiesSection.RootElement} treeElement
+     * @param {!TreeElement} treeElement
      * @return {string}
      */
     _propertyPath: function(treeElement)
@@ -1321,7 +1322,13 @@ WebInspector.ObjectPropertiesSectionExpandController.prototype = {
         var result;
 
         while (current !== rootElement) {
-            result = current.property.name + (result ? "." + result : "");
+            var currentName = "";
+            if (current.property)
+                currentName = current.property.name;
+            else
+                currentName = typeof current.title === "string" ? current.title : current.title.textContent;
+
+            result = currentName + (result ? "." + result : "");
             current = current.parent;
         }
         var treeOutlineId = treeElement.treeOutline[WebInspector.ObjectPropertiesSectionExpandController._treeOutlineId];

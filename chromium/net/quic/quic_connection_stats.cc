@@ -24,7 +24,7 @@ QuicConnectionStats::QuicConnectionStats()
       packets_lost(0),
       slowstart_packets_sent(0),
       slowstart_packets_lost(0),
-      packets_revived(0),
+      slowstart_bytes_lost(0),
       packets_dropped(0),
       crypto_retransmit_count(0),
       loss_timeout_count(0),
@@ -40,6 +40,9 @@ QuicConnectionStats::QuicConnectionStats()
       max_time_reordering_us(0),
       tcp_loss_events(0),
       connection_creation_time(QuicTime::Zero()) {}
+
+QuicConnectionStats::QuicConnectionStats(const QuicConnectionStats& other) =
+    default;
 
 QuicConnectionStats::~QuicConnectionStats() {}
 

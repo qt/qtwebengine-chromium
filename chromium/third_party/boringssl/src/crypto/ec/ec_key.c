@@ -85,7 +85,7 @@ static CRYPTO_EX_DATA_CLASS g_ex_data_class = CRYPTO_EX_DATA_CLASS_INIT;
 EC_KEY *EC_KEY_new(void) { return EC_KEY_new_method(NULL); }
 
 EC_KEY *EC_KEY_new_method(const ENGINE *engine) {
-  EC_KEY *ret = (EC_KEY *)OPENSSL_malloc(sizeof(EC_KEY));
+  EC_KEY *ret = OPENSSL_malloc(sizeof(EC_KEY));
   if (ret == NULL) {
     OPENSSL_PUT_ERROR(EC, ERR_R_MALLOC_FAILURE);
     return NULL;
@@ -100,7 +100,6 @@ EC_KEY *EC_KEY_new_method(const ENGINE *engine) {
     METHOD_ref(ret->ecdsa_meth);
   }
 
-  ret->version = 1;
   ret->conv_form = POINT_CONVERSION_UNCOMPRESSED;
   ret->references = 1;
 
@@ -209,8 +208,6 @@ EC_KEY *EC_KEY_copy(EC_KEY *dest, const EC_KEY *src) {
   /* copy the rest */
   dest->enc_flag = src->enc_flag;
   dest->conv_form = src->conv_form;
-  dest->version = src->version;
-  dest->flags = src->flags;
 
   return dest;
 }
@@ -368,15 +365,24 @@ int EC_KEY_set_public_key_affine_coordinates(EC_KEY *key, BIGNUM *x,
     return 0;
   }
   ctx = BN_CTX_new();
+
+  if (ctx == NULL) {
+    return 0;
+  }
+
+  BN_CTX_start(ctx);
   point = EC_POINT_new(key->group);
 
-  if (ctx == NULL ||
-      point == NULL) {
+  if (point == NULL) {
     goto err;
   }
 
   tx = BN_CTX_get(ctx);
   ty = BN_CTX_get(ctx);
+  if (tx == NULL ||
+      ty == NULL) {
+    goto err;
+  }
 
   if (!EC_POINT_set_affine_coordinates_GFp(key->group, point, x, y, ctx) ||
       !EC_POINT_get_affine_coordinates_GFp(key->group, point, tx, ty, ctx)) {
@@ -401,6 +407,7 @@ int EC_KEY_set_public_key_affine_coordinates(EC_KEY *key, BIGNUM *x,
   ok = 1;
 
 err:
+  BN_CTX_end(ctx);
   BN_CTX_free(ctx);
   EC_POINT_free(point);
   return ok;

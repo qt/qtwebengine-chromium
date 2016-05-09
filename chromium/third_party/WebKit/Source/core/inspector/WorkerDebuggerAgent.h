@@ -36,24 +36,18 @@
 namespace blink {
 
 class WorkerGlobalScope;
-class WorkerThreadDebugger;
 
 class WorkerDebuggerAgent final : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(WorkerDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
+    static RawPtr<WorkerDebuggerAgent> create(V8DebuggerAgent*, WorkerGlobalScope*);
     ~WorkerDebuggerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    WorkerDebuggerAgent(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
+    WorkerDebuggerAgent(V8DebuggerAgent*, WorkerGlobalScope*);
 
-    // V8DebuggerAgent::Client implemntation.
-    void muteConsole() override;
-    void unmuteConsole() override;
-
-    RawPtrWillBeMember<WorkerGlobalScope> m_inspectedWorkerGlobalScope;
+    Member<WorkerGlobalScope> m_inspectedWorkerGlobalScope;
 };
 
 } // namespace blink

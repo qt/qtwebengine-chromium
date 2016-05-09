@@ -239,6 +239,9 @@ TEST(FilenameUtilTest, FileURLConversion) {
     {L"\\\\foo\\bar.txt", "file:/foo/bar.txt"},
     {L"\\\\foo\\bar.txt", "file://foo\\bar.txt"},
     {L"C:\\foo\\bar.txt", "file:\\\\\\c:/foo/bar.txt"},
+    // %2f ('/') and %5c ('\\') are left alone by both GURL and
+    // FileURLToFilePath.
+    {L"C:\\foo%2f..%5cbar", "file:///C:\\foo%2f..%5cbar"},
 #elif defined(OS_POSIX)
     {L"/c:/foo/bar.txt", "file:/c:/foo/bar.txt"},
     {L"/c:/foo/bar.txt", "file:///c:/foo/bar.txt"},
@@ -253,6 +256,9 @@ TEST(FilenameUtilTest, FileURLConversion) {
     {L"/foo/bar.txt", "file:////foo////bar.txt"},
     {L"/c:/foo/bar.txt", "file:\\\\\\c:/foo/bar.txt"},
     {L"/c:/foo/bar.txt", "file:c:/foo/bar.txt"},
+    // %2f ('/') and %5c ('\\') are left alone by both GURL and
+    // FileURLToFilePath.
+    {L"/foo%2f..%5cbar", "file:///foo%2f..%5cbar"},
 //  We get these wrong because GURL turns back slashes into forward
 //  slashes.
 //  {L"/foo%5Cbar.txt", "file://foo\\bar.txt"},
@@ -822,6 +828,9 @@ TEST(FilenameUtilTest, GenerateFileName) {
     {// A normal avi should get .avi and not .avi.avi
      __LINE__, "https://blah.google.com/misc/2.avi", "", "", "",
      "video/x-msvideo", L"download", L"2.avi"},
+    {// Shouldn't unescape slashes.
+     __LINE__, "http://www.example.com/foo%2f..%2fbar.jpg", "", "", "",
+     "text/plain", L"download", L"foo%2f..%2fbar.jpg"},
     {// Extension generation
      __LINE__, "http://www.example.com/my-cat", "filename=my-cat", "", "",
      "image/jpeg", L"download", L"my-cat"},

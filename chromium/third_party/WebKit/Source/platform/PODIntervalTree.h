@@ -240,9 +240,8 @@ private:
             localMaxValue = node->data().high();
         if (!(localMaxValue == node->data().maxHigh())) {
 #ifndef NDEBUG
-            String localMaxValueString = ValueToString<T>::string(localMaxValue);
-            WTF_LOG_ERROR("PODIntervalTree verification failed at node 0x%p: localMaxValue=%s and data=%s",
-                node, localMaxValueString.utf8().data(), node->data().toString().utf8().data());
+            String localMaxValueString = ValueToString<T>::toString(localMaxValue);
+            DLOG(ERROR) << "PODIntervalTree verification failed at node " << node << ": localMaxValue=" << localMaxValueString << " and data=" << node->data().toString();
 #endif
             return false;
         }
@@ -256,7 +255,7 @@ private:
 // Support for printing PODIntervals at the PODRedBlackTree level.
 template<class T, class UserData>
 struct ValueToString<PODInterval<T, UserData>> {
-    static String string(const PODInterval<T, UserData>& interval)
+    static String toString(const PODInterval<T, UserData>& interval)
     {
         return interval.toString();
     }

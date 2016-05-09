@@ -66,12 +66,6 @@ const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
 // URLs. This provides an override to get the old insecure behavior.
 const char kAllowRunningInsecureContent[]   = "allow-running-insecure-content";
 
-// Specifies the probability threshold for alternative services: an advertised
-// alternative service will only be honored if the advertised probability is
-// greater than or equal to this threshold.
-const char kAlternativeServiceProbabilityThreshold[] =
-    "alternative-service-probability-threshold";
-
 // Prevents Chrome from requiring authorization to run certain widely installed
 // but less commonly used plugins.
 const char kAlwaysAuthorizePlugins[]        = "always-authorize-plugins";
@@ -105,6 +99,12 @@ const char kAuthExtensionPath[]             = "auth-ext-path";
 
 // Whitelist for Negotiate Auth servers
 const char kAuthServerWhitelist[]           = "auth-server-whitelist";
+
+// This flag makes Chrome auto-open DevTools window for each tab. It is
+// intended to be used by developers and automation to not require user
+// interaction for opening DevTools.
+const char kAutoOpenDevToolsForTabs[] =
+    "auto-open-devtools-for-tabs";
 
 // This flag makes Chrome auto-select the provided choice when an extension asks
 // permission to start desktop capture. Should only be used for tests. For
@@ -271,8 +271,8 @@ const char kDisableExtensionsHttpThrottling[] =
 // Disable field trial tests configured in fieldtrial_testing_config.json.
 const char kDisableFieldTrialTestingConfig[] = "disable-field-trial-config";
 
-// Disables the Material Design version of chrome://downloads.
-const char kDisableMaterialDesignDownloads[] = "disable-md-downloads";
+// Disable HTTP/2 and SPDY/3.1 protocols.
+const char kDisableHttp2[]                   = "disable-http2";
 
 // Disable the behavior that the second click on a launcher item (the click when
 // the item is already active) minimizes the item.
@@ -294,11 +294,6 @@ const char kDisableOfflineAutoReloadVisibleOnly[] =
 
 // Disable out-of-process V8 proxy resolver.
 const char kDisableOutOfProcessPac[] = "disable-out-of-process-pac";
-
-// Disable the setting to prompt the user for their OS account password before
-// revealing plaintext passwords in the password manager.
-const char kDisablePasswordManagerReauthentication[] =
-    "disable-password-manager-reauthentication";
 
 // Disables the Permissions Blacklist, which blocks access to permissions
 // for blacklisted sites.
@@ -335,6 +330,9 @@ const char kDisableSiteEngagementService[] = "disable-site-engagement-service";
 // Disables Web Notification custom layouts.
 const char kDisableWebNotificationCustomLayouts[] =
     "disable-web-notification-custom-layouts";
+
+// Disables WebUSB's CORS-like checks for origin->device communication.
+const char kDisableWebUsbSecurity[] = "disable-webusb-security";
 
 // Some tests seem to require the application to close when the last
 // browser window is closed. Thus, we need a switch to force this behavior
@@ -417,14 +415,14 @@ const char kEnableExtensionActivityLogTesting[] =
 // crbug.com/142458 .
 const char kEnableFastUnload[] = "enable-fast-unload";
 
-// Enables the Material Design version of chrome://downloads.
-const char kEnableMaterialDesignDownloads[] = "enable-md-downloads";
+#if defined(GOOGLE_CHROME_BUILD)
+// Shows a Google icon next to context menu items powered by Google services.
+const char kEnableGoogleBrandedContextMenu[] =
+    "enable-google-branded-context-menu";
+#endif  // defined(GOOGLE_CHROME_BUILD)
 
 // Enables the Material Design version of chrome://extensions.
 const char kEnableMaterialDesignExtensions[] = "enable-md-extensions";
-
-// Enables the Material Design version of chrome://history.
-const char kEnableMaterialDesignHistory[] = "enable-md-history";
 
 // Enables the Material Design policy page at chrome://md-policy.
 const char kEnableMaterialDesignPolicyPage[]  = "enable-md-policy-page";
@@ -512,12 +510,6 @@ const char kEnableSessionCrashedBubble[] = "enable-session-crashed-bubble";
 const char kEnableSettingsWindow[]           = "enable-settings-window";
 const char kDisableSettingsWindow[]          = "disable-settings-window";
 
-// A new user experience for transitioning into fullscreen and mouse pointer
-// lock states.
-const char kEnableSimplifiedFullscreenUI[]  = "enable-simplified-fullscreen-ui";
-const char kDisableSimplifiedFullscreenUI[] =
-    "disable-simplified-fullscreen-ui";
-
 // Enable the Site Engagement App Banner which triggers app install banners
 // using the site engagement service rather than a navigation-based heuristic.
 // Implicitly enables the site engagement service.
@@ -588,11 +580,11 @@ const char kFastStart[]            = "fast-start";
 const char kForceAppMode[]                  = "force-app-mode";
 
 // This option can be used to force parameters of field trials when testing
-// changes locally. The argument is a list of key/value pairs prefixed by
-// Trial/Group pair. The following shows setting parameters to 2 experiments
-// where in the first, it forces "id" to be "foo" for the "Enabled" group of
-// the "EnhancedBookmarks" trial:
-// "EnhancedBookmarks.Enabled:id/foo,Experiment2.Group1:key1/value1"
+// changes locally. The argument is a param list of (key, value) pairs prefixed
+// by an associated (trial, group) pair. You specify the param list for multiple
+// (trial, group) pairs with a comma separator.
+// Example:
+//   "Trial1.Group1:k1/v1/k2/v2,Trial2.Group2:k3/v3/k4/v4"
 // Trial names, groups names, parameter names, and value should all be URL
 // escaped for all non-alphanumeric characters.
 const char kForceFieldTrialParams[] = "force-fieldtrial-params";
@@ -661,13 +653,6 @@ const char kInstantProcess[]                = "instant-process";
 
 // The URL for the interests API.
 const char kInterestsURL[]                  = "interests-url";
-
-// Disable latest shipping ECMAScript 6 features.
-const char kDisableJavaScriptHarmonyShipping[] =
-    "disable-javascript-harmony-shipping";
-
-// Enables experimental Harmony (ECMAScript 6) features.
-const char kJavaScriptHarmony[]             = "javascript-harmony";
 
 // Dumps IPC messages sent from renderer processes to the browser process to
 // the given directory. Used primarily to gather samples for IPC fuzzing.
@@ -780,7 +765,7 @@ const char kNumPacThreads[]                 = "num-pac-threads";
 // Launches URL in new browser window.
 const char kOpenInNewWindow[]               = "new-window";
 
-// Force use of QUIC for requests to the specified origin.
+// Specifies a comma separated list of host/port pairs to force use of QUIC.
 const char kOriginToForceQuicOn[]           = "origin-to-force-quic-on";
 
 // The time that a new chrome process which is delegating to an already running
@@ -878,7 +863,8 @@ const char kProxyBypassList[]               = "proxy-bypass-list";
 const char kProxyPacUrl[]                   = "proxy-pac-url";
 
 // Uses a specified proxy server, overrides system settings. This switch only
-// affects HTTP and HTTPS requests.
+// affects HTTP and HTTPS requests. ARC-apps use only HTTP proxy server with the
+// highest priority.
 const char kProxyServer[]                   = "proxy-server";
 
 // Specifies a comma separated list of QUIC connection options to send to
@@ -995,14 +981,6 @@ const char kSpeculativeResourcePrefetchingEnabled[] = "enabled";
 const char kEnableAndroidSpellChecker[] = "enable-android-spellchecker";
 #endif
 
-// Disables the multilingual spellchecker.
-const char kDisableMultilingualSpellChecker[] =
-    "disable-multilingual-spellchecker";
-
-// Enables the multilingual spellchecker.
-const char kEnableMultilingualSpellChecker[] =
-    "enable-multilingual-spellchecker";
-
 // Enables participation in the field trial for user feedback to spelling
 // service.
 const char kEnableSpellingFeedbackFieldTrial[] =
@@ -1046,10 +1024,6 @@ const char kSystemLogUploadFrequency[] = "system-log-upload-frequency";
 // Passes the name of the current running automated test to Chrome.
 const char kTestName[]                      = "test-name";
 
-// Disables same-origin check on HTTP resources pushed via a SPDY proxy.
-// The value is the host:port of the trusted proxy.
-const char kTrustedSpdyProxy[]              = "trusted-spdy-proxy";
-
 // Experimental. Shows a dialog asking the user to try chrome. This flag is to
 // be used only by the upgrade process.
 const char kTryChromeAgain[]                = "try-chrome-again";
@@ -1065,10 +1039,6 @@ const char kUnlimitedStorage[]              = "unlimited-storage";
 // --user-data-dir=/test/only/profile/dir
 const char kUnsafelyTreatInsecureOriginAsSecure[] =
     "unsafely-treat-insecure-origin-as-secure";
-
-// Uses Spdy for the transport protocol instead of HTTP. This is a temporary
-// testing flag.
-const char kUseSpdy[]                       = "use-spdy";
 
 // A string used to override the default user agent with a custom one.
 const char kUserAgent[]                     = "user-agent";
@@ -1152,14 +1122,6 @@ const char kHelpShort[]                     = "h";
 const char kPasswordStore[]                 = "password-store";
 #endif
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-// Triggers migration of user data directory to another directory
-// specified as a parameter. The migration is done under singleton lock,
-// and sanity checks are made to avoid corrupting the profile.
-// The browser exits after migration is complete.
-const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
-#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
-
 #if defined(OS_MACOSX)
 // Prevents Chrome from quitting when Chrome Apps are open.
 const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
@@ -1231,24 +1193,12 @@ const char kRelauncherProcessDMGDevice[]    = "dmg-device";
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN)
-// A process type (switches::kProcessType) that indicates chrome.exe is being
-// launched as crashpad_handler. This is only used on Windows. We bundle the
-// handler into chrome.exe on Windows because there is high probability of a
-// "new" .exe being blocked or interfered with by application firewalls, AV
-// software, etc. On other platforms, crashpad_handler is a standalone
-// executable.
-const char kCrashpadHandler[]               = "crashpad-handler";
-
 // Fallback to XPS. By default connector uses CDD.
 const char kEnableCloudPrintXps[]           = "enable-cloud-print-xps";
 
 // Force-enables the profile shortcut manager. This is needed for tests since
 // they use a custom-user-data-dir which disables this.
 const char kEnableProfileShortcutManager[]  = "enable-profile-shortcut-manager";
-
-// For the DelegateExecute verb handler to launch Chrome in metro mode on
-// Windows 8 and higher.  Used when relaunching metro Chrome.
-const char kForceImmersive[]                = "force-immersive";
 
 // Whether or not the browser should warn if the profile is on a network share.
 // This flag is only relevant for Windows currently.
@@ -1262,18 +1212,11 @@ const char kPrefetchArgumentWatcher[] = "/prefetch:6";
 // /prefetch:7 is used by crashpad, which can't depend on constants defined
 // here. See crashpad_win.cc for more details.
 
-// For the DelegateExecute verb handler to launch Chrome in desktop mode on
-// Windows 8 and higher.  Used when relaunching metro Chrome.
-const char kForceDesktop[]                  = "force-desktop";
-
 // Makes Windows happy by allowing it to show "Enable access to this program"
 // checkbox in Add/Remove Programs->Set Program Access and Defaults. This only
 // shows an error box because the only way to hide Chrome is by uninstalling
 // it.
 const char kHideIcons[]                     = "hide-icons";
-
-// Relaunches metro Chrome on Windows 8 and higher using a given shortcut.
-const char kRelaunchShortcut[]              = "relaunch-shortcut";
 
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
@@ -1285,10 +1228,6 @@ const char kUninstall[]                     = "uninstall";
 // (which is assumed to be registered as default browser) and synchronously
 // connect to it.
 const char kViewerLaunchViaAppId[]          = "viewer-launch-via-appid";
-
-// Waits for the given handle to be signaled before relaunching metro Chrome on
-// Windows 8 and higher.
-const char kWaitForMutex[]                  = "wait-for-mutex";
 
 // Causes the process to run as a watcher process.
 const char kWatcherProcess[]                = "watcher";
@@ -1343,7 +1282,21 @@ const char kForceShowUpdateMenuBadge[] = "force-show-update-menu-badge";
 
 // Sets the market URL for Chrome for use in testing.
 const char kMarketUrlForTesting[] = "market-url-for-testing";
-#endif // defined(OS_ANDROID)
+
+// Specifies a particular tab management experiment to enable.
+const char kTabManagementExperimentTypeDisabled[] =
+    "tab-management-experiment-type-disabled";
+const char kTabManagementExperimentTypeAnise[] =
+    "tab-management-experiment-type-anise";
+const char kTabManagementExperimentTypeBasil[] =
+    "tab-management-experiment-type-basil";
+const char kTabManagementExperimentTypeChive[] =
+    "tab-management-experiment-type-chive";
+const char kTabManagementExperimentTypeDill[] =
+    "tab-management-experiment-type-dill";
+const char kTabManagementExperimentTypeElderberry[] =
+    "tab-management-experiment-type-elderberry";
+#endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN) || defined(OS_LINUX)
 extern const char kEnableInputImeAPI[] = "enable-input-ime-api";
@@ -1359,11 +1312,6 @@ bool AboutInSettingsEnabled() {
 bool MdExtensionsEnabled() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kEnableMaterialDesignExtensions);
-}
-
-bool MdHistoryEnabled() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kEnableMaterialDesignHistory);
 }
 
 bool MdPolicyPageEnabled() {

@@ -15,6 +15,9 @@
             "params": {
                 "limit": "3"
             }
+        },
+        {
+            "group_name": "Enabled"
         }
     ],
     "CaptivePortalInterstitial": [
@@ -35,14 +38,6 @@
             "group_name": "Enabled"
         }
     ],
-    "DataReductionProxyConfigService": [
-        {
-            "group_name": "Enabled",
-            "params": {
-                "minimum_refresh_interval_on_success_msec": "21600000"
-            }
-        }
-    ],
     "EnableGoogleCachedCopyTextExperiment": [
         {
             "group_name": "Button"
@@ -53,7 +48,22 @@
             "group_name": "Enabled"
         }
     ],
+    "LocalNTPSuggestionsService": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "MaterialDesignDownloads": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "OfferUploadCreditCards": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "PageRevisitInstrumentation": [
         {
             "group_name": "Enabled"
         }
@@ -65,10 +75,15 @@
     ],
     "QUIC": [
         {
-            "group_name": "Enabled",
-            "params": {
-                "alternate_protocol_probability_threshold": "0.01"
-            }
+            "group_name": "Enabled"
+        }
+    ],
+    "RenderingPipelineThrottling": [
+        {
+            "enable_features": [
+                "RenderingPipelineThrottling"
+            ],
+            "group_name": "Enabled"
         }
     ],
     "ReportCertificateErrors": [
@@ -100,12 +115,24 @@
             "group_name": "DontShowAndDontSend"
         }
     ],
+    "SSLCommonNameMismatchHandling": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "SafeBrowsingUnverifiedDownloads": [
         {
-            "group_name": "DisableByParameterExe",
+            "group_name": "DisableByParameterMostSbTypes2",
             "params": {
-                "blacklist": ".exe"
+                "blacklist": ".exe-,.zip-",
+                "block_sb_types": "true",
+                "whitelist": ".rar,.svg,.url,.xml,.zip"
             }
+        }
+    ],
+    "SchedulerExpensiveTaskBlocking": [
+        {
+            "group_name": "Enabled"
         }
     ],
     "SdchPersistence": [
@@ -113,9 +140,9 @@
             "group_name": "Enabled"
         }
     ],
-    "SpdyEnableDependencies": [
+    "SimpleCacheTrial": [
         {
-            "group_name": "Enable"
+            "group_name": "ExperimentYes"
         }
     ],
     "StrictSecureCookies": [
@@ -136,6 +163,23 @@
             "group_name": "Enabled"
         }
     ],
+    "TokenBinding": [
+        {
+            "enable_features": [
+                "token-binding"
+            ],
+            "group_name": "TokenBinding"
+        }
+    ],
+    "V8SerializeOptions": [
+        {
+            "enable_features": [
+                "V8_Serialize_Eager",
+                "V8_Serialize_Age_Code"
+            ],
+            "group_name": "SerializeEagerAndAgeCode"
+        }
+    ],
     "VarationsServiceControl": [
         {
             "group_name": "Interval_30min",
@@ -149,6 +193,14 @@
             "group_name": "Enabled"
         }
     ],
+    "WebRTC-H264WithOpenH264FFmpeg": [
+        {
+            "enable_features": [
+                "WebRTC-H264WithOpenH264FFmpeg"
+            ],
+            "group_name": "Enabled"
+        }
+    ],
     "WebRTC-LocalIPPermissionCheck": [
         {
             "group_name": "Enabled"
@@ -156,6 +208,14 @@
     ],
     "WebRTC-PeerConnectionDTLS1.2": [
         {
+            "group_name": "Enabled"
+        }
+    ],
+    "use-new-media-cache": [
+        {
+            "enable_features": [
+                "use-new-media-cache"
+            ],
             "group_name": "Enabled"
         }
     ]

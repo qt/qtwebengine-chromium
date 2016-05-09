@@ -123,7 +123,6 @@ class UpdateChromiumCheckout(Step):
     cwd = self._options.chromium
     self.GitCheckout("master", cwd=cwd)
     self.DeleteBranch("work-branch", cwd=cwd)
-    self.Command("gclient", "sync --nohooks", cwd=cwd)
     self.GitPull(cwd=cwd)
 
     # Update v8 remotes.
@@ -156,6 +155,7 @@ class UploadCL(Step):
     if not self._options.dry_run:
       self.GitUpload(author=self._options.author,
                      force=True,
+                     bypass_hooks=True,
                      cq=self._options.use_commit_queue,
                      cwd=cwd)
       print "CL uploaded."

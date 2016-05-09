@@ -91,7 +91,7 @@ public:
             , m_namespace(namespaceURI)
 
         {
-            ASSERT(!namespaceURI.isEmpty() || namespaceURI.isNull());
+            DCHECK(!namespaceURI.isEmpty() || namespaceURI.isNull());
         }
     };
 
@@ -184,6 +184,6 @@ template<> struct HashTraits<blink::QualifiedName> : SimpleClassHashTraits<blink
     static const bool emptyValueIsZero = false;
     static blink::QualifiedName emptyValue() { return blink::QualifiedName::null(); }
 };
-}
+} // namespace WTF
 
 #endif

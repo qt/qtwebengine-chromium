@@ -18,6 +18,7 @@
 #include "content/common/cache_storage/cache_storage_types.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "net/disk_cache/disk_cache.h"
+#include "storage/common/quota/quota_status_code.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -38,9 +39,9 @@ class CacheStorageScheduler;
 class TestCacheStorageCache;
 
 // Represents a ServiceWorker Cache as seen in
-// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/
-// The asynchronous methods are executed serially. Callbacks to the
-// public functions will be called so long as the cache object lives.
+// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/ The
+// asynchronous methods are executed serially (except for Size). Callbacks to
+// the public functions will be called so long as the cache object lives.
 class CONTENT_EXPORT CacheStorageCache
     : public base::RefCounted<CacheStorageCache> {
  public:
@@ -57,26 +58,31 @@ class CONTENT_EXPORT CacheStorageCache
   using Requests = std::vector<ServiceWorkerFetchRequest>;
   using RequestsCallback =
       base::Callback<void(CacheStorageError, scoped_ptr<Requests>)>;
+  using SizeCallback = base::Callback<void(int64_t)>;
 
   static scoped_refptr<CacheStorageCache> CreateMemoryCache(
       const GURL& origin,
-      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
-      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
+      const std::string& cache_name,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context);
   static scoped_refptr<CacheStorageCache> CreatePersistentCache(
       const GURL& origin,
+      const std::string& cache_name,
       const base::FilePath& path,
-      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
-      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context);
 
   // Returns ERROR_TYPE_NOT_FOUND if not found.
   void Match(scoped_ptr<ServiceWorkerFetchRequest> request,
              const ResponseCallback& callback);
 
-  // Returns CACHE_STORAGE_OK and all responses in this cache. If there are no
-  // responses, returns CACHE_STORAGE_OK and an empty vector.
-  void MatchAll(const ResponsesCallback& callback);
+  // Returns CACHE_STORAGE_OK and matched responses in this cache. If there are
+  // no responses, returns CACHE_STORAGE_OK and an empty vector.
+  void MatchAll(scoped_ptr<ServiceWorkerFetchRequest> request,
+                const CacheStorageCacheQueryParams& match_params,
+                const ResponsesCallback& callback);
 
   // Runs given batch operations. This corresponds to the Batch Cache Operations
   // algorithm in the spec.
@@ -106,9 +112,16 @@ class CONTENT_EXPORT CacheStorageCache
   // will exit early. Close should only be called once per CacheStorageCache.
   void Close(const base::Closure& callback);
 
-  // The size of the cache contents in memory. Returns 0 if the cache backend is
-  // not a memory cache backend.
-  int64_t MemoryBackedSize() const;
+  // The size of the cache's contents. This runs in parallel with other Cache
+  // operations. This is because QuotaManager is a dependency of the Put
+  // operation and QuotaManager calls Size. If the cache isn't yet initialized,
+  // runs immediately after initialization, before any pending operations in the
+  // scheduler are run.
+  void Size(const SizeCallback& callback);
+
+  // Gets the cache's size, closes the backend, and then runs |callback| with
+  // the cache's size.
+  void GetSizeThenClose(const SizeCallback& callback);
 
   base::FilePath path() const { return path_; }
 
@@ -141,9 +154,10 @@ class CONTENT_EXPORT CacheStorageCache
 
   CacheStorageCache(
       const GURL& origin,
+      const std::string& cache_name,
       const base::FilePath& path,
-      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
-      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context);
 
   // Async operations in progress will cancel and not run their callbacks.
@@ -171,9 +185,9 @@ class CONTENT_EXPORT CacheStorageCache
                             scoped_ptr<CacheMetadata> headers);
 
   // MatchAll callbacks
-  void MatchAllImpl(const ResponsesCallback& callback);
+  void MatchAllImpl(scoped_ptr<MatchAllContext> context);
   void MatchAllDidOpenAllEntries(
-      const ResponsesCallback& callback,
+      scoped_ptr<MatchAllContext> context,
       scoped_ptr<OpenAllEntriesContext> entries_context,
       CacheStorageError error);
   void MatchAllProcessNextEntry(scoped_ptr<MatchAllContext> context,
@@ -190,6 +204,10 @@ class CONTENT_EXPORT CacheStorageCache
   void PutImpl(scoped_ptr<PutContext> put_context);
   void PutDidDelete(scoped_ptr<PutContext> put_context,
                     CacheStorageError delete_error);
+  void PutDidGetUsageAndQuota(scoped_ptr<PutContext> put_context,
+                              storage::QuotaStatusCode status_code,
+                              int64_t usage,
+                              int64_t quota);
   void PutDidCreateEntry(scoped_ptr<disk_cache::Entry*> entry_ptr,
                          scoped_ptr<PutContext> put_context,
                          int rv);
@@ -201,18 +219,28 @@ class CONTENT_EXPORT CacheStorageCache
                               disk_cache::ScopedEntryPtr entry,
                               bool success);
 
+  // Asynchronously calculates the current cache size, notifies the quota
+  // manager of any change from the last report, and sets cache_size_ to the new
+  // size. Runs |callback| once complete.
+  void UpdateCacheSize();
+  void UpdateCacheSizeGotSize(int current_cache_size);
+
   // Returns ERROR_NOT_FOUND if not found. Otherwise deletes and returns OK.
   void Delete(const CacheStorageBatchOperation& operation,
               const ErrorCallback& callback);
   void DeleteImpl(scoped_ptr<ServiceWorkerFetchRequest> request,
+                  const CacheStorageCacheQueryParams& match_params,
                   const ErrorCallback& callback);
-  void DeleteDidOpenEntry(
-      const GURL& origin,
+  void DeleteDidOpenAllEntries(
       scoped_ptr<ServiceWorkerFetchRequest> request,
-      const CacheStorageCache::ErrorCallback& callback,
-      scoped_ptr<disk_cache::Entry*> entryptr,
-      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
-      int rv);
+      const ErrorCallback& callback,
+      scoped_ptr<OpenAllEntriesContext> entries_context,
+      CacheStorageError error);
+  void DeleteDidOpenEntry(const GURL& origin,
+                          scoped_ptr<ServiceWorkerFetchRequest> request,
+                          const CacheStorageCache::ErrorCallback& callback,
+                          scoped_ptr<disk_cache::Entry*> entryptr,
+                          int rv);
 
   // Keys callbacks.
   void KeysImpl(const RequestsCallback& callback);
@@ -227,6 +255,11 @@ class CONTENT_EXPORT CacheStorageCache
 
   void CloseImpl(const base::Closure& callback);
 
+  void SizeImpl(const SizeCallback& callback);
+
+  void GetSizeThenCloseDidGetSize(const SizeCallback& callback,
+                                  int64_t cache_size);
+
   // Loads the backend and calls the callback with the result (true for
   // success). The callback will always be called. Virtual for tests.
   virtual void CreateBackend(const ErrorCallback& callback);
@@ -235,7 +268,8 @@ class CONTENT_EXPORT CacheStorageCache
                               int rv);
 
   void InitBackend();
-  void InitDone(CacheStorageError error);
+  void InitDidCreateBackend(CacheStorageError cache_create_error);
+  void InitGotCacheSize(CacheStorageError cache_create_error, int cache_size);
 
   void PendingClosure(const base::Closure& callback);
   void PendingErrorCallback(const ErrorCallback& callback,
@@ -252,6 +286,7 @@ class CONTENT_EXPORT CacheStorageCache
   void PendingRequestsCallback(const RequestsCallback& callback,
                                CacheStorageError error,
                                scoped_ptr<Requests> requests);
+  void PendingSizeCallback(const SizeCallback& callback, int64_t size);
 
   void PopulateResponseMetadata(const CacheMetadata& metadata,
                                 ServiceWorkerResponse* response);
@@ -263,13 +298,16 @@ class CONTENT_EXPORT CacheStorageCache
   scoped_ptr<disk_cache::Backend> backend_;
 
   GURL origin_;
+  const std::string cache_name_;
   base::FilePath path_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
   base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
-  BackendState backend_state_;
+  BackendState backend_state_ = BACKEND_UNINITIALIZED;
   scoped_ptr<CacheStorageScheduler> scheduler_;
-  bool initializing_;
+  std::vector<SizeCallback> pending_size_callbacks_;
+  bool initializing_ = false;
+  int64_t cache_size_ = 0;
 
   // Owns the elements of the list
   BlobToDiskCacheIDMap active_blob_to_disk_cache_writers_;

@@ -31,6 +31,8 @@
 #include "SkFontMgr.h"
 #include "SkStream.h"
 #include "SkTypeface.h"
+#include "platform/Language.h"
+#include "platform/fonts/AcceptLanguagesResolver.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
@@ -58,6 +60,64 @@ static PassRefPtr<SkTypeface> typefaceForFontconfigInterfaceIdAndTtcIndex(int fo
 
 namespace blink {
 
+#if OS(ANDROID) || OS(LINUX)
+// Android special locale for retrieving the color emoji font
+// based on the proposed changes in UTR #51 for introducing
+// an Emoji script code:
+// http://www.unicode.org/reports/tr51/proposed.html#Emoji_Script
+static const char* kAndroidColorEmojiLocale = "und-Zsye";
+
+// SkFontMgr requires script-based locale names, like "zh-Hant" and "zh-Hans",
+// instead of "zh-CN" and "zh-TW".
+static CString toSkFontMgrLocale(const String& locale)
+{
+    if (!locale.startsWith("zh", TextCaseInsensitive))
+        return locale.ascii();
+
+    switch (localeToScriptCodeForFontSelection(locale)) {
+    case USCRIPT_SIMPLIFIED_HAN:
+        return "zh-Hans";
+    case USCRIPT_TRADITIONAL_HAN:
+        return "zh-Hant";
+    default:
+        return locale.ascii();
+    }
+}
+
+// This function is called on android or when we are emulating android fonts on linux and the
+// embedder has overriden the default fontManager with WebFontRendering::setSkiaFontMgr.
+// static
+AtomicString FontCache::getFamilyNameForCharacter(SkFontMgr* fm, UChar32 c, const FontDescription& fontDescription, FontFallbackPriority fallbackPriority)
+{
+    ASSERT(fm);
+
+    const size_t kMaxLocales = 4;
+    const char* bcp47Locales[kMaxLocales];
+    size_t localeCount = 0;
+
+    if (fallbackPriority == FontFallbackPriority::EmojiEmoji) {
+        bcp47Locales[localeCount++] = kAndroidColorEmojiLocale;
+    }
+    if (const char* hanLocale = AcceptLanguagesResolver::preferredHanSkFontMgrLocale())
+        bcp47Locales[localeCount++] = hanLocale;
+    CString defaultLocale = toSkFontMgrLocale(defaultLanguage());
+    bcp47Locales[localeCount++] = defaultLocale.data();
+    CString fontLocale;
+    if (!fontDescription.locale().isEmpty()) {
+        fontLocale = toSkFontMgrLocale(fontDescription.locale());
+        bcp47Locales[localeCount++] = fontLocale.data();
+    }
+    ASSERT_WITH_SECURITY_IMPLICATION(localeCount < kMaxLocales);
+    RefPtr<SkTypeface> typeface = adoptRef(fm->matchFamilyStyleCharacter(0, SkFontStyle(), bcp47Locales, localeCount, c));
+    if (!typeface)
+        return emptyAtom;
+
+    SkString skiaFamilyName;
+    typeface->getFamilyName(&skiaFamilyName);
+    return skiaFamilyName.c_str();
+}
+#endif
+
 void FontCache::platformInit()
 {
 }
@@ -81,56 +141,6 @@ PassRefPtr<SimpleFontData> FontCache::fallbackOnStandardFontStyle(
     return nullptr;
 }
 
-#if !OS(WIN) && !OS(ANDROID)
-PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 c, const SimpleFontData*)
-{
-    // First try the specified font with standard style & weight.
-    if (fontDescription.style() == FontStyleItalic
-        || fontDescription.weight() >= FontWeight600) {
-        RefPtr<SimpleFontData> fontData = fallbackOnStandardFontStyle(
-            fontDescription, c);
-        if (fontData)
-            return fontData;
-    }
-
-    FontCache::PlatformFallbackFont fallbackFont;
-    FontCache::getFontForCharacter(c, fontDescription.locale().ascii().data(), &fallbackFont);
-    if (fallbackFont.name.isEmpty())
-        return nullptr;
-
-    FontFaceCreationParams creationParams;
-    creationParams = FontFaceCreationParams(fallbackFont.filename, fallbackFont.fontconfigInterfaceId, fallbackFont.ttcIndex);
-
-    // Changes weight and/or italic of given FontDescription depends on
-    // the result of fontconfig so that keeping the correct font mapping
-    // of the given character. See http://crbug.com/32109 for details.
-    bool shouldSetSyntheticBold = false;
-    bool shouldSetSyntheticItalic = false;
-    FontDescription description(fontDescription);
-    if (fallbackFont.isBold && description.weight() < FontWeightBold)
-        description.setWeight(FontWeightBold);
-    if (!fallbackFont.isBold && description.weight() >= FontWeightBold) {
-        shouldSetSyntheticBold = true;
-        description.setWeight(FontWeightNormal);
-    }
-    if (fallbackFont.isItalic && description.style() == FontStyleNormal)
-        description.setStyle(FontStyleItalic);
-    if (!fallbackFont.isItalic && (description.style() == FontStyleItalic || description.style() == FontStyleOblique)) {
-        shouldSetSyntheticItalic = true;
-        description.setStyle(FontStyleNormal);
-    }
-
-    FontPlatformData* substitutePlatformData = getFontPlatformData(description, creationParams);
-    if (!substitutePlatformData)
-        return nullptr;
-    FontPlatformData platformData = FontPlatformData(*substitutePlatformData);
-    platformData.setSyntheticBold(shouldSetSyntheticBold);
-    platformData.setSyntheticItalic(shouldSetSyntheticItalic);
-    return fontDataFromFontPlatformData(&platformData, DoNotRetain);
-}
-
-#endif // !OS(WIN) && !OS(ANDROID)
-
 PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescription& description, ShouldRetain shouldRetain)
 {
     const FontFaceCreationParams fallbackCreationParams(getFallbackFontFamily(description));
@@ -138,21 +148,21 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
 
     // We should at least have Sans or Arial which is the last resort fallback of SkFontHost ports.
     if (!fontPlatformData) {
-        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, sansCreationParams, (AtomicString("Sans", AtomicString::ConstructFromLiteral)));
+        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, sansCreationParams, (AtomicString("Sans")));
         fontPlatformData = getFontPlatformData(description, sansCreationParams);
     }
     if (!fontPlatformData) {
-        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, arialCreationParams, (AtomicString("Arial", AtomicString::ConstructFromLiteral)));
+        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, arialCreationParams, (AtomicString("Arial")));
         fontPlatformData = getFontPlatformData(description, arialCreationParams);
     }
 #if OS(WIN)
     // Try some more Windows-specific fallbacks.
     if (!fontPlatformData) {
-        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, msuigothicCreationParams, (AtomicString("MS UI Gothic", AtomicString::ConstructFromLiteral)));
+        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, msuigothicCreationParams, (AtomicString("MS UI Gothic")));
         fontPlatformData = getFontPlatformData(description, msuigothicCreationParams);
     }
     if (!fontPlatformData) {
-        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, mssansserifCreationParams, (AtomicString("Microsoft Sans Serif", AtomicString::ConstructFromLiteral)));
+        DEFINE_STATIC_LOCAL(const FontFaceCreationParams, mssansserifCreationParams, (AtomicString("Microsoft Sans Serif")));
         fontPlatformData = getFontPlatformData(description, mssansserifCreationParams);
     }
 #endif
@@ -161,7 +171,7 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     return fontDataFromFontPlatformData(fontPlatformData, shouldRetain);
 }
 
-#if OS(WIN)
+#if OS(WIN) || OS(LINUX)
 static inline SkFontStyle fontStyle(const FontDescription& fontDescription)
 {
     int width = static_cast<int>(fontDescription.stretch());
@@ -194,7 +204,7 @@ PassRefPtr<SkTypeface> FontCache::createTypeface(const FontDescription& fontDesc
     // If we're creating a fallback font (e.g. "-webkit-monospace"), convert the name into
     // the fallback name (like "monospace") that fontconfig understands.
     if (!family.length() || family.startsWith("-webkit-")) {
-        name = getFallbackFontFamily(fontDescription).string().utf8();
+        name = getFallbackFontFamily(fontDescription).getString().utf8();
     } else {
         // convert the name to utf8
         name = family.utf8();
@@ -220,6 +230,14 @@ PassRefPtr<SkTypeface> FontCache::createTypeface(const FontDescription& fontDesc
             : m_fontManager->legacyCreateTypeface(name.data(), style)
             );
     }
+#endif
+
+#if OS(LINUX)
+    // On linux if the fontManager has been overridden then we should be calling the embedder
+    // provided font Manager rather than calling SkTypeface::CreateFromName which may redirect the
+    // call to the default font Manager.
+    if (m_fontManager)
+        return adoptRef(m_fontManager->matchFamilyStyle(name.data(), fontStyle(fontDescription)));
 #endif
 
     // FIXME: Use m_fontManager, SkFontStyle and matchFamilyStyle instead of

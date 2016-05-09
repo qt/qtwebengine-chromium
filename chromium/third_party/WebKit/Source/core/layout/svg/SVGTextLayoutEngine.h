@@ -25,7 +25,6 @@
 #include "core/layout/svg/SVGTextFragment.h"
 #include "core/layout/svg/SVGTextLayoutAttributes.h"
 #include "core/layout/svg/SVGTextMetrics.h"
-#include "platform/graphics/Path.h"
 #include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
@@ -34,6 +33,7 @@ namespace blink {
 class ComputedStyle;
 class InlineFlowBox;
 class LayoutObject;
+class PathPositionMapper;
 class SVGInlineFlowBox;
 class SVGInlineTextBox;
 
@@ -50,6 +50,7 @@ class SVGTextLayoutEngine {
     WTF_MAKE_NONCOPYABLE(SVGTextLayoutEngine);
 public:
     SVGTextLayoutEngine(Vector<SVGTextLayoutAttributes*>&);
+    ~SVGTextLayoutEngine();
 
     Vector<SVGTextLayoutAttributes*>& layoutAttributes() { return m_layoutAttributes; }
 
@@ -61,6 +62,7 @@ private:
     void updateCurrentTextPosition(float x, float y, float glyphAdvance);
     void updateRelativePositionAdjustmentsIfNeeded(float dx, float dy);
 
+    void computeCurrentFragmentMetrics(SVGInlineTextBox*);
     void recordTextFragment(SVGInlineTextBox*);
 
     void beginTextPathLayout(SVGInlineFlowBox*);
@@ -92,8 +94,7 @@ private:
     bool m_textLengthSpacingInEffect;
 
     // Text on path layout
-    Path::PositionCalculator* m_textPathCalculator;
-    float m_textPathLength;
+    OwnPtr<PathPositionMapper> m_textPath;
     float m_textPathStartOffset;
     float m_textPathCurrentOffset;
     float m_textPathSpacing;

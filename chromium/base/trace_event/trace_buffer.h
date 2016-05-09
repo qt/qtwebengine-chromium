@@ -39,8 +39,6 @@ class BASE_EXPORT TraceBufferChunk {
     return &chunk_[index];
   }
 
-  scoped_ptr<TraceBufferChunk> Clone() const;
-
   void EstimateTraceMemoryOverhead(TraceEventMemoryOverhead* overhead);
 
   // These values must be kept consistent with the numbers of bits of
@@ -51,7 +49,7 @@ class BASE_EXPORT TraceBufferChunk {
 
  private:
   size_t next_free_;
-  scoped_ptr<TraceEventMemoryOverhead> cached_overhead_estimate_;
+  std::unique_ptr<TraceEventMemoryOverhead> cached_overhead_estimate_;
   TraceEvent chunk_[kTraceBufferChunkSize];
   uint32_t seq_;
 };
@@ -61,9 +59,9 @@ class BASE_EXPORT TraceBuffer {
  public:
   virtual ~TraceBuffer() {}
 
-  virtual scoped_ptr<TraceBufferChunk> GetChunk(size_t* index) = 0;
+  virtual std::unique_ptr<TraceBufferChunk> GetChunk(size_t* index) = 0;
   virtual void ReturnChunk(size_t index,
-                           scoped_ptr<TraceBufferChunk> chunk) = 0;
+                           std::unique_ptr<TraceBufferChunk> chunk) = 0;
 
   virtual bool IsFull() const = 0;
   virtual size_t Size() const = 0;
@@ -73,7 +71,6 @@ class BASE_EXPORT TraceBuffer {
   // For iteration. Each TraceBuffer can only be iterated once.
   virtual const TraceBufferChunk* NextChunk() = 0;
 
-  virtual scoped_ptr<TraceBuffer> CloneForIteration() const = 0;
 
   // Computes an estimate of the size of the buffer, including all the retained
   // objects.

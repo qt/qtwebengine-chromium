@@ -37,12 +37,17 @@ namespace testing {
 
 void runPendingTasks();
 
+// Wait for delayed task to complete or timers to fire for |delayMs| milliseconds.
+void runDelayedTasks(double delayMs);
+
 String blinkRootDir();
 
 PassRefPtr<SharedBuffer> readFromFile(const String& path);
 
 void enterRunLoop();
 void exitRunLoop();
+
+void yieldCurrentThread();
 
 } // namespace testing
 } // namespace blink

@@ -20,6 +20,7 @@
 #include "compiler/translator/ScalarizeVecAndMatConstructorArgs.h"
 #include "compiler/translator/UnfoldShortCircuitAST.h"
 #include "compiler/translator/ValidateLimitations.h"
+#include "compiler/translator/ValidateMaxParameters.h"
 #include "compiler/translator/ValidateOutputs.h"
 #include "compiler/translator/VariablePacker.h"
 #include "compiler/translator/depgraph/DependencyGraph.h"
@@ -141,6 +142,7 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       maxUniformVectors(0),
       maxExpressionComplexity(0),
       maxCallStackDepth(0),
+      maxFunctionParameters(0),
       fragmentPrecisionHigh(false),
       clampingStrategy(SH_CLAMP_WITH_CLAMP_INTRINSIC),
       builtInFunctionEmulator(),
@@ -169,7 +171,8 @@ bool TCompiler::Init(const ShBuiltInResources& resources)
         resources.MaxVertexUniformVectors :
         resources.MaxFragmentUniformVectors;
     maxExpressionComplexity = resources.MaxExpressionComplexity;
-    maxCallStackDepth = resources.MaxCallStackDepth;
+    maxCallStackDepth       = resources.MaxCallStackDepth;
+    maxFunctionParameters   = resources.MaxFunctionParameters;
 
     SetGlobalPoolAllocator(&allocator);
 
@@ -322,7 +325,10 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && (compileOptions & SH_CLAMP_INDIRECT_ARRAY_BOUNDS))
             arrayBoundsClamper.MarkIndirectArrayBoundsForClamping(root);
 
-        if (success && shaderType == GL_VERTEX_SHADER && (compileOptions & SH_INIT_GL_POSITION))
+        // gl_Position is always written in compatibility output mode
+        if (success && shaderType == GL_VERTEX_SHADER &&
+            ((compileOptions & SH_INIT_GL_POSITION) ||
+             (outputType == SH_GLSL_COMPATIBILITY_OUTPUT)))
             initializeGLPosition(root);
 
         // This pass might emit short circuits so keep it before the short circuit unfolding
@@ -483,6 +489,7 @@ void TCompiler::setResourceString()
               << ":FragmentPrecisionHigh:" << compileResources.FragmentPrecisionHigh
               << ":MaxExpressionComplexity:" << compileResources.MaxExpressionComplexity
               << ":MaxCallStackDepth:" << compileResources.MaxCallStackDepth
+              << ":MaxFunctionParameters:" << compileResources.MaxFunctionParameters
               << ":EXT_blend_func_extended:" << compileResources.EXT_blend_func_extended
               << ":EXT_frag_depth:" << compileResources.EXT_frag_depth
               << ":EXT_shader_texture_lod:" << compileResources.EXT_shader_texture_lod
@@ -741,6 +748,12 @@ bool TCompiler::limitExpressionComplexity(TIntermNode* root)
     if (traverser.getMaxDepth() > maxExpressionComplexity)
     {
         infoSink.info << "Expression too complex.";
+        return false;
+    }
+
+    if (!ValidateMaxParameters::validate(root, maxFunctionParameters))
+    {
+        infoSink.info << "Function has too many parameters.";
         return false;
     }
 

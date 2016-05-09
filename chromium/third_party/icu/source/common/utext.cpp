@@ -2028,6 +2028,9 @@ utext_openReplaceable(UText *ut, Replaceable *rep, UErrorCode *status)
         return NULL;
     }
     ut = utext_setup(ut, sizeof(ReplExtra), status);
+    if(U_FAILURE(*status)) {
+        return ut;
+    }
 
     ut->providerProperties = I32_FLAG(UTEXT_PROVIDER_WRITABLE);
     if(rep->hasMetaData()) {
@@ -2739,6 +2742,9 @@ charIterTextClone(UText *dest, const UText *src, UBool deep, UErrorCode * status
         CharacterIterator *srcCI =(CharacterIterator *)src->context;
         srcCI = srcCI->clone();
         dest = utext_openCharacterIterator(dest, srcCI, status);
+        if (U_FAILURE(*status)) {
+            return dest;
+        }
         // cast off const on getNativeIndex.
         //   For CharacterIterator based UTexts, this is safe, the operation is const.
         int64_t  ix = utext_getNativeIndex((UText *)src);

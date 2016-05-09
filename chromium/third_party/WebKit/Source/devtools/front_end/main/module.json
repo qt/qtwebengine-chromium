@@ -2,12 +2,6 @@
     "extensions": [
         {
             "type": "@WebInspector.AppProvider",
-            "condition": "can_dock",
-            "className": "WebInspector.AdvancedAppProvider",
-            "order": 0
-        },
-        {
-            "type": "@WebInspector.AppProvider",
             "className": "WebInspector.SimpleAppProvider",
             "order": 10
         },
@@ -18,8 +12,10 @@
         },
         {
             "type": "@WebInspector.ActionDelegate",
+            "category": "Navigation",
             "actionId": "main.reload",
             "className": "WebInspector.Main.ReloadActionDelegate",
+            "title": "Reload page",
             "bindings": [
                 {
                     "platform": "windows,linux",
@@ -33,8 +29,10 @@
         },
         {
             "type": "@WebInspector.ActionDelegate",
+            "category": "Navigation",
             "actionId": "main.hard-reload",
             "className": "WebInspector.Main.ReloadActionDelegate",
+            "title": "Hard reload page",
             "bindings": [
                 {
                     "platform": "windows,linux",
@@ -48,9 +46,11 @@
         },
         {
             "type": "@WebInspector.ActionDelegate",
+            "category": "Drawer",
             "actionId": "main.toggle-drawer",
             "className": "WebInspector.InspectorView.DrawerToggleActionDelegate",
             "order": 100,
+            "title": "Toggle drawer",
             "bindings": [
                 {
                     "shortcut": "Esc"
@@ -69,6 +69,8 @@
         },
         {
             "type": "@WebInspector.ActionDelegate",
+            "category": "DevTools",
+            "title": "Restore last dock position",
             "actionId": "main.toggle-dock",
             "className": "WebInspector.DockController.ToggleDockActionDelegate",
             "bindings": [
@@ -213,11 +215,16 @@
         },
         {
             "type": "setting",
-            "category": "",
+            "category": "Network",
             "title": "Disable cache (while DevTools is open)",
             "settingName": "cacheDisabled",
             "settingType": "boolean",
-            "defaultValue": false
+            "order": 0,
+            "defaultValue": false,
+            "options": [
+                { "value": true, "title": "Disable cache (while DevTools is open)" },
+                { "value": false, "title": "Enable cache" }
+            ]
         },
         {
             "type": "setting",
@@ -225,7 +232,21 @@
             "title": "Disable JavaScript",
             "settingName": "javaScriptDisabled",
             "settingType": "boolean",
+            "order": 1,
             "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "DevTools",
+            "title": "Auto-open DevTools for popups",
+            "settingName": "autoAttachToCreatedPages",
+            "settingType": "boolean",
+            "order": 2,
+            "defaultValue": false,
+            "options": [
+                { "value": true, "title": "Auto-open DevTools for popups" },
+                { "value": false, "title": "Do not auto-open DevTools for popups" }
+            ]
         },
         {
             "type": "setting",
@@ -235,8 +256,8 @@
             "settingType": "enum",
             "defaultValue": "default",
             "options": [
-                ["Default", "default"],
-                ["Dark", "dark"]
+                { "title": "Switch to default theme", "text": "Default", "value": "default" },
+                { "title": "Switch to dark theme", "text": "Dark", "value": "dark" }
             ]
         },
         {
@@ -247,9 +268,9 @@
             "settingType": "enum",
             "defaultValue": "auto",
             "options": [
-                ["horizontal", "bottom"],
-                ["vertical", "right"],
-                ["auto", "auto"]
+                { "title": "Use horizontal panel layout", "text": "horizontal", "value": "bottom" },
+                { "title": "Use vertical panel layout", "text": "vertical", "value": "right" },
+                { "title": "Use automatic panel layout", "text": "auto", "value": "auto" }
             ]
         },
         {
@@ -258,14 +279,6 @@
             "title": "Enable Ctrl + 1-9 shortcut to switch panels",
             "title-mac": "Enable Cmd + 1-9 shortcut to switch panels",
             "settingName": "shortcutPanelSwitch",
-            "settingType": "boolean",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "category": "Appearance",
-            "title": "Don't show emulation warnings",
-            "settingName": "disableOverridesWarning",
             "settingType": "boolean",
             "defaultValue": false
         },
@@ -291,6 +304,12 @@
             "className": "WebInspector.HandlerRegistry.OpenAnchorLocationSettingUI"
         },
         {
+            "type": "@WebInspector.SettingUI",
+            "category": "Elements",
+            "order": 3,
+            "className": "WebInspector.ShowMetricsRulersSettingUI"
+        },
+        {
             "type": "context-menu-item",
             "location": "mainMenu/navigate",
             "title": "More tools",
@@ -310,27 +329,32 @@
             "persistence": "closeable",
             "order": 50,
             "className": "WebInspector.RenderingOptionsView"
+        },
+        {
+            "type": "setting",
+            "category": "DevTools",
+            "settingName": "currentDockState",
+            "settingType": "enum",
+            "defaultValue": "right",
+            "options": [
+                { "value": "right", "title": "Dock to right" },
+                { "value": "bottom", "title": "Dock to bottom" },
+                { "value": "undocked", "title": "Undock into separate window" }
+            ]
         }
     ],
     "dependencies": [
         "extensions",
         "host",
         "platform",
-        "sdk",
-        "emulation"
+        "sdk"
     ],
     "scripts": [
-        "AdvancedApp.js",
-        "FrontendWebSocketAPI.js",
         "RenderingOptions.js",
         "SimpleApp.js",
-        "Tests.js",
         "OverlayController.js",
         "Connections.js",
         "Main.js"
-    ],
-    "skip_compilation": [
-        "Tests.js"
     ],
     "resources": [
         "errorWarningCounter.css",

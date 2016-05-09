@@ -38,7 +38,7 @@ class SVGImage;
 
 class SVGImageChromeClient final : public EmptyChromeClient {
 public:
-    static PassOwnPtrWillBeRawPtr<SVGImageChromeClient> create(SVGImage*);
+    static SVGImageChromeClient* create(SVGImage*);
 
     bool isSVGImageChromeClient() const override;
 
@@ -59,6 +59,6 @@ private:
 
 DEFINE_TYPE_CASTS(SVGImageChromeClient, ChromeClient, client, client->isSVGImageChromeClient(), client.isSVGImageChromeClient());
 
-}
+} // namespace blink
 
 #endif // SVGImageChromeClient_h

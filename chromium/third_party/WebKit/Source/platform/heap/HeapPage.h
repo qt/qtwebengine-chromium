@@ -37,8 +37,8 @@
 #include "platform/heap/ThreadState.h"
 #include "platform/heap/Visitor.h"
 #include "wtf/AddressSanitizer.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
-#include "wtf/Atomics.h"
 #include "wtf/ContainerAnnotations.h"
 #include "wtf/Forward.h"
 #include "wtf/PageAllocator.h"
@@ -124,11 +124,11 @@ const uint8_t reuseForbiddenZapValue = 0x2c;
 
 class CallbackStack;
 class FreePagePool;
-class NormalPageHeap;
+class NormalPageArena;
 class OrphanedPagePool;
 class PageMemory;
 class PageMemoryRegion;
-class WebProcessMemoryDump;
+class WebMemoryAllocatorDump;
 
 // HeapObjectHeader is 4 byte (32 bit) that has the following layout:
 //
@@ -165,6 +165,7 @@ const size_t nonLargeObjectPageSizeMax = 1 << 17;
 static_assert(nonLargeObjectPageSizeMax >= blinkPageSize, "max size supported by HeapObjectHeader must at least be blinkPageSize");
 
 class PLATFORM_EXPORT HeapObjectHeader {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     // If gcInfoIndex is 0, this header is interpreted as a free list header.
     NO_SANITIZE_ADDRESS
@@ -265,7 +266,7 @@ public:
 #endif
     }
 
-    Address address() { return reinterpret_cast<Address>(this); }
+    Address getAddress() { return reinterpret_cast<Address>(this); }
 
     NO_SANITIZE_ADDRESS
     void unlink(FreeListEntry** prevNext)
@@ -348,8 +349,9 @@ inline bool isPageHeaderAddress(Address address)
 // Note: An object whose size is between |largeObjectSizeThreshold| and
 // |blinkPageSize| can go to either of NormalPage or LargeObjectPage.
 class BasePage {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
-    BasePage(PageMemory*, BaseHeap*);
+    BasePage(PageMemory*, BaseArena*);
     virtual ~BasePage() { }
 
     void link(BasePage** previousNext)
@@ -376,7 +378,7 @@ public:
     virtual void invalidateObjectStartBitmap() = 0;
 
 #if defined(ADDRESS_SANITIZER)
-    virtual void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) = 0;
+    virtual void poisonUnmarkedObjects() = 0;
 #endif
     // Check if the given address points to an object in this
     // heap page. If so, find the start of that object and mark it
@@ -389,17 +391,24 @@ public:
     virtual void checkAndMarkPointer(Visitor*, Address) = 0;
     virtual void markOrphaned();
 
-    virtual void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) = 0;
+    class HeapSnapshotInfo {
+        STACK_ALLOCATED();
+    public:
+        size_t freeCount = 0;
+        size_t freeSize = 0;
+    };
+
+    virtual void takeSnapshot(WebMemoryAllocatorDump*, ThreadState::GCSnapshotInfo&, HeapSnapshotInfo&) = 0;
 #if ENABLE(ASSERT)
     virtual bool contains(Address) = 0;
 #endif
     virtual size_t size() = 0;
     virtual bool isLargeObjectPage() { return false; }
 
-    Address address() { return reinterpret_cast<Address>(this); }
+    Address getAddress() { return reinterpret_cast<Address>(this); }
     PageMemory* storage() const { return m_storage; }
-    BaseHeap* heap() const { return m_heap; }
-    bool orphaned() { return !m_heap; }
+    BaseArena* arena() const { return m_arena; }
+    bool orphaned() { return !m_arena; }
     bool terminating() { return m_terminating; }
     void setTerminating() { m_terminating = true; }
 
@@ -420,7 +429,7 @@ public:
 
 private:
     PageMemory* m_storage;
-    BaseHeap* m_heap;
+    BaseArena* m_arena;
     BasePage* m_next;
     // Whether the page is part of a terminating thread or not.
     bool m_terminating;
@@ -431,16 +440,16 @@ private:
     // Set to false at the start of a sweep, true  upon completion
     // of lazy sweeping.
     bool m_swept;
-    friend class BaseHeap;
+    friend class BaseArena;
 };
 
 class NormalPage final : public BasePage {
 public:
-    NormalPage(PageMemory*, BaseHeap*);
+    NormalPage(PageMemory*, BaseArena*);
 
     Address payload()
     {
-        return address() + pageHeaderSize();
+        return getAddress() + pageHeaderSize();
     }
     size_t payloadSize()
     {
@@ -460,12 +469,12 @@ public:
     void makeConsistentForMutator() override;
     void invalidateObjectStartBitmap() override { m_objectStartBitMapComputed = false; }
 #if defined(ADDRESS_SANITIZER)
-    void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) override;
+    void poisonUnmarkedObjects() override;
 #endif
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
-    void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
+    void takeSnapshot(WebMemoryAllocatorDump*, ThreadState::GCSnapshotInfo&, HeapSnapshotInfo&) override;
 #if ENABLE(ASSERT)
     // Returns true for the whole blinkPageSize page that the page is on, even
     // for the header, and the unmapped guard page at the start. That ensures
@@ -482,7 +491,7 @@ public:
     }
 
 
-    NormalPageHeap* heapForNormalPage();
+    NormalPageArena* arenaForNormalPage();
 
 private:
     HeapObjectHeader* findHeaderFromAddress(Address);
@@ -499,7 +508,7 @@ private:
 // object.
 class LargeObjectPage final : public BasePage {
 public:
-    LargeObjectPage(PageMemory*, BaseHeap*, size_t);
+    LargeObjectPage(PageMemory*, BaseArena*, size_t);
 
     Address payload() { return heapObjectHeader()->payload(); }
     size_t payloadSize() { return m_payloadSize; }
@@ -517,12 +526,12 @@ public:
     void makeConsistentForMutator() override;
     void invalidateObjectStartBitmap() override { }
 #if defined(ADDRESS_SANITIZER)
-    void poisonObjects(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning) override;
+    void poisonUnmarkedObjects() override;
 #endif
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
-    void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
+    void takeSnapshot(WebMemoryAllocatorDump*, ThreadState::GCSnapshotInfo&, HeapSnapshotInfo&) override;
 #if ENABLE(ASSERT)
     // Returns true for any address that is on one of the pages that this
     // large object uses. That ensures that we can use a negative result to
@@ -544,7 +553,7 @@ public:
 
     HeapObjectHeader* heapObjectHeader()
     {
-        Address headerAddress = address() + pageHeaderSize();
+        Address headerAddress = getAddress() + pageHeaderSize();
         return reinterpret_cast<HeapObjectHeader*>(headerAddress);
     }
 
@@ -574,10 +583,10 @@ private:
 // The HeapDoesNotContainCache is a negative cache, so it must be flushed when
 // memory is added to the heap.
 class HeapDoesNotContainCache {
+    USING_FAST_MALLOC(HeapDoesNotContainCache);
 public:
     HeapDoesNotContainCache()
-        : m_entries(adoptArrayPtr(new Address[HeapDoesNotContainCache::numberOfEntries]))
-        , m_hasEntries(false)
+        : m_hasEntries(false)
     {
         // Start by flushing the cache in a non-empty state to initialize all the cache entries.
         for (int i = 0; i < numberOfEntries; ++i)
@@ -606,11 +615,12 @@ private:
 
     static size_t hash(Address);
 
-    WTF::OwnPtr<Address[]> m_entries;
+    Address m_entries[numberOfEntries];
     bool m_hasEntries;
 };
 
 class FreeList {
+    DISALLOW_NEW();
 public:
     FreeList();
 
@@ -635,20 +645,22 @@ private:
     // All FreeListEntries in the nth list have size >= 2^n.
     FreeListEntry* m_freeLists[blinkPageSizeLog2];
 
-    friend class NormalPageHeap;
+    friend class NormalPageArena;
 };
 
-// Each thread has a number of thread heaps (e.g., Generic heaps,
-// typed heaps for Node, heaps for collection backings etc)
-// and BaseHeap represents each thread heap.
+// Each thread has a number of thread arenas (e.g., Generic arenas,
+// typed arenas for Node, arenas for collection backings etc)
+// and BaseArena represents each thread arena.
 //
-// BaseHeap is a parent class of NormalPageHeap and LargeObjectHeap.
-// NormalPageHeap represents a heap that contains NormalPages
-// and LargeObjectHeap represents a heap that contains LargeObjectPages.
-class PLATFORM_EXPORT BaseHeap {
+// BaseArena is a parent class of NormalPageArena and LargeObjectArena.
+// NormalPageArena represents a part of a heap that contains NormalPages
+// and LargeObjectArena represents a part of a heap that contains
+// LargeObjectPages.
+class PLATFORM_EXPORT BaseArena {
+    USING_FAST_MALLOC(BaseArena);
 public:
-    BaseHeap(ThreadState*, int);
-    virtual ~BaseHeap();
+    BaseArena(ThreadState*, int);
+    virtual ~BaseArena();
     void cleanupPages();
 
     void takeSnapshot(const String& dumpBaseName, ThreadState::GCSnapshotInfo&);
@@ -666,7 +678,7 @@ public:
     void prepareHeapForTermination();
     void prepareForSweep();
 #if defined(ADDRESS_SANITIZER)
-    void poisonHeap(BlinkGC::ObjectsToPoison, BlinkGC::Poisoning);
+    void poisonArena();
 #endif
     Address lazySweep(size_t, size_t gcInfoIndex);
     void sweepUnsweptPage();
@@ -675,8 +687,8 @@ public:
     bool lazySweepWithDeadline(double deadlineSeconds);
     void completeSweep();
 
-    ThreadState* threadState() { return m_threadState; }
-    int heapIndex() const { return m_index; }
+    ThreadState* getThreadState() { return m_threadState; }
+    int arenaIndex() const { return m_index; }
 
 protected:
     BasePage* m_firstPage;
@@ -692,9 +704,9 @@ private:
     int m_index;
 };
 
-class PLATFORM_EXPORT NormalPageHeap final : public BaseHeap {
+class PLATFORM_EXPORT NormalPageArena final : public BaseArena {
 public:
-    NormalPageHeap(ThreadState*, int);
+    NormalPageArena(ThreadState*, int);
     void addToFreeList(Address address, size_t size)
     {
         ASSERT(findPageFromAddress(address));
@@ -747,9 +759,9 @@ private:
     size_t m_promptlyFreedSize;
 };
 
-class LargeObjectHeap final : public BaseHeap {
+class LargeObjectArena final : public BaseArena {
 public:
-    LargeObjectHeap(ThreadState*, int);
+    LargeObjectArena(ThreadState*, int);
     Address allocateLargeObjectPage(size_t, size_t gcInfoIndex);
     void freeLargeObjectPage(LargeObjectPage*);
 #if ENABLE(ASSERT)
@@ -763,7 +775,7 @@ private:
 // Mask an address down to the enclosing oilpan heap base page.  All oilpan heap
 // pages are aligned at blinkPageBase plus the size of a guard size.
 // FIXME: Remove PLATFORM_EXPORT once we get a proper public interface to our
-// typed heaps.  This is only exported to enable tests in HeapTest.cpp.
+// typed arenas.  This is only exported to enable tests in HeapTest.cpp.
 PLATFORM_EXPORT inline BasePage* pageFromObject(const void* object)
 {
     Address address = reinterpret_cast<Address>(const_cast<void*>(object));
@@ -860,7 +872,7 @@ void HeapObjectHeader::markDead()
     m_encoded |= headerDeadBitMask;
 }
 
-inline Address NormalPageHeap::allocateObject(size_t allocationSize, size_t gcInfoIndex)
+inline Address NormalPageArena::allocateObject(size_t allocationSize, size_t gcInfoIndex)
 {
     if (LIKELY(allocationSize <= m_remainingAllocationSize)) {
         Address headerAddress = m_currentAllocationPoint;

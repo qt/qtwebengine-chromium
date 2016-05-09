@@ -10,9 +10,9 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/base.gyp:base_prefs',
         '../sync/sync.gyp:sync',
         'pref_registry',
+        'prefs/prefs.gyp:prefs',
       ],
       'include_dirs': [
         '..',
@@ -32,7 +32,10 @@
       ],
       'conditions': [
         ['configuration_policy==1', {
+          # This define is only used for compiling the .cc files in this target.
+          'defines': [ "SYNCABLE_PREFS_USE_POLICY" ],
           'dependencies': [
+            'cloud_policy_code_generate',
             'policy_component_browser',
             'policy_component_common',
           ],

@@ -22,13 +22,13 @@ const char kDisableMediaSuspend[] = "disable-media-suspend";
 const char kDisableMediaThreadForMediaPlayback[] =
     "disable-media-thread-for-media-playback";
 
+// Use WebMediaPlayerAndroid instead of WebMediaPlayerImpl. This is a temporary
+// switch for holding back the new unified media pipeline.
+const char kDisableUnifiedMediaPipeline[] = "disable-unified-media-pipeline";
+
 // Sets the MediaSource player that uses the separate media thread
 const char kEnableMediaThreadForMediaPlayback[] =
     "enable-media-thread-for-media-playback";
-
-// Use WebMediaPlayerImpl instead of WebMediaPlayerAndroid. This is a temporary
-// switch for experimenting with unifying the Android playback pipeline.
-const char kEnableUnifiedMediaPipeline[] = "enable-unified-media-pipeline";
 #endif
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
@@ -43,22 +43,6 @@ const char kAlsaOutputDevice[] = "alsa-output-device";
 const char kUseGpuMemoryBuffersForCapture[] =
     "use-gpu-memory-buffers-for-capture";
 
-#if defined(OS_MACOSX)
-// AVFoundation is available in versions 10.7 and onwards, and is to be used
-// http://crbug.com/288562 for both audio and video device monitoring and for
-// video capture. Being a dynamically loaded NSBundle and library, it hits the
-// Chrome startup time (http://crbug.com/311325 and http://crbug.com/311437);
-// for experimentation purposes, in particular library load time issue, the
-// usage of this library can be enabled by using this flag.
-const char kEnableAVFoundation[] = "enable-avfoundation";
-
-// QTKit is the media capture API predecessor to AVFoundation, available up and
-// until Mac OS X 10.9 (despite being deprecated in this last one). This flag
-// is used for troubleshooting and testing, and forces QTKit in builds and
-// configurations where AVFoundation would be used otherwise.
-const char kForceQTKit[] = "force-qtkit";
-#endif
-
 #if defined(OS_WIN)
 // Use exclusive mode audio streaming for Windows Vista and higher.
 // Leads to lower latencies for audio streams which uses the
@@ -66,12 +50,6 @@ const char kForceQTKit[] = "force-qtkit";
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/dd370844.aspx
 // for details.
 const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
-
-// Used to troubleshoot problems with different video capture implementations
-// on Windows.  By default we use the Media Foundation API on Windows 7 and up,
-// but specifying this switch will force use of DirectShow always.
-// See bug: http://crbug.com/268412
-const char kForceDirectShowVideoCapture[] = "force-directshow";
 
 // Force the use of MediaFoundation for video capture. This is only supported in
 // Windows 7 and above. Used, like |kForceDirectShowVideoCapture|, to
@@ -95,6 +73,13 @@ const char kWaveOutBuffers[] = "waveout-buffers";
 #if defined(USE_CRAS)
 // Use CRAS, the ChromeOS audio server.
 const char kUseCras[] = "use-cras";
+#endif
+
+#if !defined(OS_ANDROID)
+// Use a media session for each tabs in a way that two tabs can't play on top of
+// each other. This is different from the Media Session API as it is enabling a
+// default behaviour for the browser.
+const char kEnableDefaultMediaSession[] = "enable-default-media-session";
 #endif
 
 // Use fake device for Media Stream to replace actual camera and microphone.
@@ -129,7 +114,12 @@ const char kVideoUnderflowThresholdMs[] = "video-underflow-threshold-ms";
 const char kDisableRTCSmoothnessAlgorithm[] =
     "disable-rtc-smoothness-algorithm";
 
-// Use shared block-based buffering for media.
-const char kUseNewMediaCache[] = "use-new-media-cache";
-
 }  // namespace switches
+
+namespace media {
+
+// Use shared block-based buffering for media.
+const base::Feature kUseNewMediaCache{"use-new-media-cache",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+}  // namespace media

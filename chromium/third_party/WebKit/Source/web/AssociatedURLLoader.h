@@ -31,6 +31,7 @@
 #ifndef AssociatedURLLoader_h
 #define AssociatedURLLoader_h
 
+#include "platform/heap/Handle.h"
 #include "public/platform/WebURLLoader.h"
 #include "public/web/WebURLLoaderOptions.h"
 #include "wtf/Noncopyable.h"
@@ -46,7 +47,7 @@ class WebLocalFrameImpl;
 class AssociatedURLLoader final : public WebURLLoader {
     WTF_MAKE_NONCOPYABLE(AssociatedURLLoader);
 public:
-    AssociatedURLLoader(PassRefPtrWillBeRawPtr<WebLocalFrameImpl>, const WebURLLoaderOptions&);
+    AssociatedURLLoader(WebLocalFrameImpl*, const WebURLLoaderOptions&);
     ~AssociatedURLLoader();
 
     // WebURLLoader methods:
@@ -56,15 +57,26 @@ public:
     void setDefersLoading(bool) override;
     void setLoadingTaskRunner(blink::WebTaskRunner*) override;
 
+    // Called by |m_observer| to handle destruction of the Document associated
+    // with the frame given to the constructor.
+    void documentDestroyed();
+    void disposeObserver();
+
 private:
-
     class ClientAdapter;
+    class Observer;
 
-    RefPtrWillBePersistent<WebLocalFrameImpl> m_frameImpl;
-    WebURLLoaderOptions m_options;
     WebURLLoaderClient* m_client;
+    WebURLLoaderOptions m_options;
+
+    // An adapter which converts the DocumentThreadableLoaderClient method
+    // calls into the WebURLLoaderClient method calls.
     OwnPtr<ClientAdapter> m_clientAdapter;
-    RefPtr<DocumentThreadableLoader> m_loader;
+    OwnPtr<DocumentThreadableLoader> m_loader;
+
+    // A ContextLifecycleObserver for cancelling |m_loader| when the Document
+    // is detached.
+    Persistent<Observer> m_observer;
 };
 
 } // namespace blink

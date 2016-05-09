@@ -31,12 +31,12 @@ class SVGTransformDistance {
     STACK_ALLOCATED();
 public:
     SVGTransformDistance();
-    SVGTransformDistance(PassRefPtrWillBeRawPtr<SVGTransform> fromTransform, PassRefPtrWillBeRawPtr<SVGTransform> toTransform);
+    SVGTransformDistance(SVGTransform* fromTransform, SVGTransform* toTransform);
 
     SVGTransformDistance scaledDistance(float scaleFactor) const;
-    PassRefPtrWillBeRawPtr<SVGTransform> addToSVGTransform(PassRefPtrWillBeRawPtr<SVGTransform>) const;
+    SVGTransform* addToSVGTransform(SVGTransform*) const;
 
-    static PassRefPtrWillBeRawPtr<SVGTransform> addSVGTransforms(PassRefPtrWillBeRawPtr<SVGTransform>, PassRefPtrWillBeRawPtr<SVGTransform>, unsigned repeatCount = 1);
+    static SVGTransform* addSVGTransforms(SVGTransform*, SVGTransform*, unsigned repeatCount = 1);
 
     float distance() const;
 
@@ -49,6 +49,6 @@ private:
     float m_cy;
     AffineTransform m_transform; // for storing scale, translation or matrix transforms
 };
-}
+} // namespace blink
 
 #endif // SVGTransformDistance_h

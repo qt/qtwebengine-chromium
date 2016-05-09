@@ -1,0 +1,5 @@
+{
+  "name": "mojo:quick_launch",
+  "display_name": "Quick Launch",
+  "capabilities": { "*": ["*"] }
+}

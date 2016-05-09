@@ -19,7 +19,7 @@
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
 #include "ui/ozone/public/input_controller.h"
-#include "ui/ozone/public/ozone_platform.h"  // nogncheck
+#include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/system_input_injector.h"
 
 using chromecast::CastEglPlatform;
@@ -74,9 +74,6 @@ class OzonePlatformCast : public OzonePlatform {
   scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return make_scoped_ptr(new NativeDisplayDelegateOzone());
   }
-  base::ScopedFD OpenClientNativePixmapDevice() const override {
-    return base::ScopedFD();
-  }
 
   void InitializeUI() override {
     overlay_manager_.reset(new OverlayManagerCast());
@@ -85,8 +82,15 @@ class OzonePlatformCast : public OzonePlatform {
     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
 
     // Enable dummy software rendering support if GPU process disabled
+    // or if we're an audio-only build.
     // Note: switch is kDisableGpu from content/public/common/content_switches.h
-    if (base::CommandLine::ForCurrentProcess()->HasSwitch("disable-gpu"))
+    bool enable_dummy_software_rendering = true;
+#if !defined(DISABLE_DISPLAY)
+    enable_dummy_software_rendering =
+        base::CommandLine::ForCurrentProcess()->HasSwitch("disable-gpu");
+#endif
+
+    if (enable_dummy_software_rendering)
       surface_factory_.reset(new SurfaceFactoryCast());
   }
   void InitializeGPU() override {

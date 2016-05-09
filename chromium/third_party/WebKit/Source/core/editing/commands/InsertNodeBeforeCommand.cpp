@@ -29,7 +29,7 @@
 
 namespace blink {
 
-InsertNodeBeforeCommand::InsertNodeBeforeCommand(PassRefPtrWillBeRawPtr<Node> insertChild, PassRefPtrWillBeRawPtr<Node> refChild,
+InsertNodeBeforeCommand::InsertNodeBeforeCommand(RawPtr<Node> insertChild, RawPtr<Node> refChild,
     ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     : SimpleEditCommand(refChild->document())
     , m_insertChild(insertChild)
@@ -44,7 +44,7 @@ InsertNodeBeforeCommand::InsertNodeBeforeCommand(PassRefPtrWillBeRawPtr<Node> in
     ASSERT(m_refChild->parentNode()->hasEditableStyle() || !m_refChild->parentNode()->inActiveDocument());
 }
 
-void InsertNodeBeforeCommand::doApply()
+void InsertNodeBeforeCommand::doApply(EditingState*)
 {
     ContainerNode* parent = m_refChild->parentNode();
     if (!parent || (m_shouldAssumeContentIsAlwaysEditable == DoNotAssumeContentIsAlwaysEditable && !parent->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
@@ -69,4 +69,4 @@ DEFINE_TRACE(InsertNodeBeforeCommand)
     SimpleEditCommand::trace(visitor);
 }
 
-}
+} // namespace blink

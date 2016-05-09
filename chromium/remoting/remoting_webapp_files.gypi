@@ -24,7 +24,6 @@
     # These provide type information for jscompile.
     'remoting_webapp_js_proto_files': [
       'webapp/js_proto/chrome_proto.js',
-      'webapp/js_proto/chrome_cast_proto.js',
       'webapp/js_proto/dom_proto.js',
       'webapp/js_proto/remoting_proto.js',
     ],
@@ -80,9 +79,6 @@
     ],
     # The unit test cases for the webapp
     'remoting_webapp_unittests_js_files': [
-      # TODO(jrw): Move spy_promise to base.
-      'webapp/unittests/spy_promise.js',
-      'webapp/unittests/spy_promise_unittest.js',
       'webapp/base/js/base_unittest.js',
       'webapp/base/js/base_event_hook_unittest.js',
       'webapp/base/js/base_inherits_unittest.js',
@@ -116,6 +112,7 @@
       'webapp/crd/js/combined_host_list_api_unittest.js',
       'webapp/crd/js/gcd_client_unittest.js',
       'webapp/crd/js/gcd_client_with_mock_xhr_unittest.js',
+      "webapp/crd/js/gnubby_auth_handler_unittest.js",
       'webapp/crd/js/host_controller_unittest.js',
       'webapp/crd/js/host_daemon_facade_unittest.js',
       'webapp/crd/js/host_table_entry_unittest.js',
@@ -138,7 +135,6 @@
     ],
     # Prototypes for objects that are not mocked.
     'remoting_webapp_unittests_js_proto_files': [
-      'webapp/js_proto/chrome_cast_proto.js',
       'webapp/js_proto/chrome_proto.js',
       'webapp/js_proto/dom_proto.js',
       'webapp/js_proto/remoting_proto.js',
@@ -256,16 +252,11 @@
       'webapp/crd/js/third_party_host_permissions.js',
       'webapp/crd/js/third_party_token_fetcher.js',
     ],
-    # Cast extension handler JavaScript files.
-    'remoting_webapp_js_cast_extension_files': [
-      'webapp/crd/js/cast_extension_handler.js',
-    ],
     # Client JavaScript files.
     'remoting_webapp_js_client_files': [
       'webapp/crd/js/apps_v2_migration.js',
       'webapp/crd/js/event_handlers.js',
       'webapp/crd/js/gcd_client.js',
-      'webapp/crd/js/video_frame_recorder.js',
     ],
     # Gnubby authentication JavaScript files.
     'remoting_webapp_js_gnubby_auth_files': [
@@ -355,7 +346,6 @@
       '<@(remoting_webapp_js_auth_client2host_files)',
       '<@(remoting_webapp_js_client_files)',
       '<@(remoting_webapp_js_gnubby_auth_files)',
-      '<@(remoting_webapp_js_cast_extension_files)',
       '<@(remoting_webapp_js_host_control_files)',
       '<@(remoting_webapp_js_host_display_files)',
     ],

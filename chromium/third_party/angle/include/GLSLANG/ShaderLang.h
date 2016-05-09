@@ -48,7 +48,7 @@ typedef unsigned int GLenum;
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 141
+#define ANGLE_SH_VERSION 145
 
 typedef enum {
   SH_GLES2_SPEC = 0x8B40,
@@ -80,28 +80,35 @@ typedef enum {
   SH_CSS_SHADERS_SPEC = 0x8B42
 } ShShaderSpec;
 
-typedef enum {
-  // ESSL output only supported in some configurations.
-  SH_ESSL_OUTPUT               = 0x8B45,
+typedef enum
+{
+    // ESSL output only supported in some configurations.
+    SH_ESSL_OUTPUT = 0x8B45,
 
-  // GLSL output only supported in some configurations.
-  SH_GLSL_COMPATIBILITY_OUTPUT = 0x8B46,
-  //Note: GL introduced core profiles in 1.5.
-  SH_GLSL_130_OUTPUT           = 0x8B47,
-  SH_GLSL_140_OUTPUT           = 0x8B80,
-  SH_GLSL_150_CORE_OUTPUT      = 0x8B81,
-  SH_GLSL_330_CORE_OUTPUT      = 0x8B82,
-  SH_GLSL_400_CORE_OUTPUT      = 0x8B83,
-  SH_GLSL_410_CORE_OUTPUT      = 0x8B84,
-  SH_GLSL_420_CORE_OUTPUT      = 0x8B85,
-  SH_GLSL_430_CORE_OUTPUT      = 0x8B86,
-  SH_GLSL_440_CORE_OUTPUT      = 0x8B87,
-  SH_GLSL_450_CORE_OUTPUT      = 0x8B88,
+    // GLSL output only supported in some configurations.
+    SH_GLSL_COMPATIBILITY_OUTPUT = 0x8B46,
+    // Note: GL introduced core profiles in 1.5.
+    SH_GLSL_130_OUTPUT      = 0x8B47,
+    SH_GLSL_140_OUTPUT      = 0x8B80,
+    SH_GLSL_150_CORE_OUTPUT = 0x8B81,
+    SH_GLSL_330_CORE_OUTPUT = 0x8B82,
+    SH_GLSL_400_CORE_OUTPUT = 0x8B83,
+    SH_GLSL_410_CORE_OUTPUT = 0x8B84,
+    SH_GLSL_420_CORE_OUTPUT = 0x8B85,
+    SH_GLSL_430_CORE_OUTPUT = 0x8B86,
+    SH_GLSL_440_CORE_OUTPUT = 0x8B87,
+    SH_GLSL_450_CORE_OUTPUT = 0x8B88,
 
-  // HLSL output only supported in some configurations.
-  SH_HLSL_OUTPUT   = 0x8B48,
-  SH_HLSL9_OUTPUT  = 0x8B48,
-  SH_HLSL11_OUTPUT = 0x8B49
+    // HLSL output only supported in some configurations.
+    // Deprecated:
+    SH_HLSL_OUTPUT   = 0x8B48,
+    SH_HLSL9_OUTPUT  = 0x8B48,
+    SH_HLSL11_OUTPUT = 0x8B49,
+
+    // Prefer using these to specify HLSL output type:
+    SH_HLSL_3_0_OUTPUT       = 0x8B48,  // D3D 9
+    SH_HLSL_4_1_OUTPUT       = 0x8B49,  // D3D 11
+    SH_HLSL_4_0_FL9_3_OUTPUT = 0x8B4A   // D3D 11 feature level 9_3
 } ShShaderOutput;
 
 // Compile options.
@@ -292,11 +299,15 @@ typedef struct
     // Default is SH_CLAMP_WITH_CLAMP_INTRINSIC.
     ShArrayIndexClampingStrategy ArrayIndexClampingStrategy;
 
-    // The maximum complexity an expression can be.
+    // The maximum complexity an expression can be when SH_LIMIT_EXPRESSION_COMPLEXITY is turned on.
     int MaxExpressionComplexity;
 
     // The maximum depth a call stack can be.
     int MaxCallStackDepth;
+
+    // The maximum number of parameters a function can have when SH_LIMIT_EXPRESSION_COMPLEXITY is
+    // turned on.
+    int MaxFunctionParameters;
 } ShBuiltInResources;
 
 //
@@ -332,8 +343,8 @@ COMPILER_EXPORT const std::string &ShGetBuiltInResourcesString(const ShHandle ha
 // type: Specifies the type of shader - GL_FRAGMENT_SHADER or GL_VERTEX_SHADER.
 // spec: Specifies the language spec the compiler must conform to -
 //       SH_GLES2_SPEC or SH_WEBGL_SPEC.
-// output: Specifies the output code type - SH_ESSL_OUTPUT, SH_GLSL_OUTPUT,
-//         SH_HLSL9_OUTPUT or SH_HLSL11_OUTPUT. Note: Each output type may only
+// output: Specifies the output code type - for example SH_ESSL_OUTPUT, SH_GLSL_OUTPUT,
+//         SH_HLSL_3_0_OUTPUT or SH_HLSL_4_1_OUTPUT. Note: Each output type may only
 //         be supported in some configurations.
 // resources: Specifies the built-in resources.
 COMPILER_EXPORT ShHandle ShConstructCompiler(
@@ -443,16 +454,10 @@ COMPILER_EXPORT bool ShGetInterfaceBlockRegister(const ShHandle handle,
                                                  const std::string &interfaceBlockName,
                                                  unsigned int *indexOut);
 
-// Gives the compiler-assigned register for uniforms in the default
-// interface block.
-// The method writes the value to the output variable "indexOut".
-// Returns true if it found a valid default uniform, false otherwise.
-// Parameters:
-// handle: Specifies the compiler
-// interfaceBlockName: Specifies the uniform
-// indexOut: output variable that stores the assigned register
-COMPILER_EXPORT bool ShGetUniformRegister(const ShHandle handle,
-                                          const std::string &uniformName,
-                                          unsigned int *indexOut);
+// Gives a map from uniform names to compiler-assigned registers in the default
+// interface block. Note that the map contains also registers of samplers that
+// have been extracted from structs.
+COMPILER_EXPORT const std::map<std::string, unsigned int> *ShGetUniformRegisterMap(
+    const ShHandle handle);
 
 #endif // GLSLANG_SHADERLANG_H_

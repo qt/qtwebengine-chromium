@@ -10,8 +10,6 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/debug/alias.h"
-#include "base/debug/dump_without_crashing.h"
 #include "base/debug/stack_trace.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
@@ -23,7 +21,6 @@
 #include "base/synchronization/lock.h"
 #include "base/values.h"
 #include "net/base/auth.h"
-#include "net/base/chunked_upload_data_stream.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
@@ -193,22 +190,6 @@ URLRequest::~URLRequest() {
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_REQUEST_ALIVE, net_error);
 }
 
-void URLRequest::EnableChunkedUpload() {
-  DCHECK(!upload_data_stream_ || upload_data_stream_->is_chunked());
-  if (!upload_data_stream_) {
-    upload_chunked_data_stream_ = new ChunkedUploadDataStream(0);
-    upload_data_stream_.reset(upload_chunked_data_stream_);
-  }
-}
-
-void URLRequest::AppendChunkToUpload(const char* bytes,
-                                     int bytes_len,
-                                     bool is_last_chunk) {
-  DCHECK(upload_data_stream_);
-  DCHECK(upload_data_stream_->is_chunked());
-  upload_chunked_data_stream_->AppendData(bytes, bytes_len, is_last_chunk);
-}
-
 void URLRequest::set_upload(scoped_ptr<UploadDataStream> upload) {
   upload_data_stream_ = std::move(upload);
 }
@@ -372,7 +353,8 @@ UploadProgress URLRequest::GetUploadProgress() const {
   return job_->GetUploadProgress();
 }
 
-void URLRequest::GetResponseHeaderByName(const string& name, string* value) {
+void URLRequest::GetResponseHeaderByName(const string& name,
+                                         string* value) const {
   DCHECK(value);
   if (response_info_.headers.get()) {
     response_info_.headers->GetNormalizedHeader(name, value);
@@ -526,7 +508,6 @@ void URLRequest::Start() {
   load_timing_info_.request_start_time = response_info_.request_time;
   load_timing_info_.request_start = base::TimeTicks::Now();
 
-  // Only notify the delegate for the initial request.
   if (network_delegate_) {
     // TODO(mmenke): Remove ScopedTracker below once crbug.com/456327 is fixed.
     tracked_objects::ScopedTracker tracking_profile25(
@@ -663,10 +644,13 @@ void URLRequest::StartJob(URLRequestJob* job) {
     }
   }
 
-  // Don't allow errors to be sent from within Start().
-  // TODO(brettw) this may cause NotifyDone to be sent synchronously,
-  // we probably don't want this: they should be sent asynchronously so
-  // the caller does not get reentered.
+  // Start() always completes asynchronously.
+  //
+  // Status is generally set by URLRequestJob itself, but Start() calls
+  // directly into the URLRequestJob subclass, so URLRequestJob can't set it
+  // here.
+  // TODO(mmenke):  Make the URLRequest manage its own status.
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->Start();
 }
 
@@ -702,24 +686,6 @@ void URLRequest::CancelWithSSLError(int error, const SSLInfo& ssl_info) {
 
 void URLRequest::DoCancel(int error, const SSLInfo& ssl_info) {
   DCHECK(error < 0);
-  // ~500,000 ERR_ABORTED < 100ms in Canary channel a day. Sample .01% to get
-  // ~50 reports a day.
-  // TODO(csharrison) Remove this code when crbug.com/557430 is resolved.
-  int64_t request_time =
-      (base::TimeTicks::Now() - creation_time_).InMilliseconds();
-  if (!has_notified_completion_ && error == ERR_ABORTED &&
-      request_time <= 100 && load_flags_ & LOAD_MAIN_FRAME &&
-      base::RandDouble() < .00001) {
-    static int dump_times = 0;
-    if (dump_times < 5) {
-      char url_copy[256] = {0};
-      strncpy(url_copy, url().spec().c_str(), sizeof(url_copy));
-      base::debug::Alias(&url_copy);
-      base::debug::Alias(&request_time);
-      base::debug::DumpWithoutCrashing();
-      dump_times++;
-    }
-  }
   // If cancelled while calling a delegate, clear delegate info.
   if (calling_delegate_) {
     LogUnblocked();
@@ -860,9 +826,10 @@ void URLRequest::NotifyResponseStarted() {
 }
 
 void URLRequest::FollowDeferredRedirect() {
-  CHECK(job_.get());
-  CHECK(status_.is_success());
+  DCHECK(job_.get());
+  DCHECK(status_.is_success());
 
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->FollowDeferredRedirect();
 }
 
@@ -870,6 +837,7 @@ void URLRequest::SetAuth(const AuthCredentials& credentials) {
   DCHECK(job_.get());
   DCHECK(job_->NeedsAuth());
 
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->SetAuth(credentials);
 }
 
@@ -877,6 +845,7 @@ void URLRequest::CancelAuth() {
   DCHECK(job_.get());
   DCHECK(job_->NeedsAuth());
 
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->CancelAuth();
 }
 
@@ -884,12 +853,14 @@ void URLRequest::ContinueWithCertificate(X509Certificate* client_cert,
                                          SSLPrivateKey* client_private_key) {
   DCHECK(job_.get());
 
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->ContinueWithCertificate(client_cert, client_private_key);
 }
 
 void URLRequest::ContinueDespiteLastError() {
   DCHECK(job_.get());
 
+  status_ = URLRequestStatus::FromError(ERR_IO_PENDING);
   job_->ContinueDespiteLastError();
 }
 
@@ -1001,6 +972,7 @@ int URLRequest::Redirect(const RedirectInfo& redirect_info) {
 
   referrer_ = redirect_info.new_referrer;
   first_party_for_cookies_ = redirect_info.new_first_party_for_cookies;
+  token_binding_referrer_ = redirect_info.referred_token_binding_host;
 
   url_chain_.push_back(redirect_info.new_url);
   --redirect_limit_;
@@ -1116,11 +1088,13 @@ void URLRequest::NotifyAuthRequiredComplete(
 
 void URLRequest::NotifyCertificateRequested(
     SSLCertRequestInfo* cert_request_info) {
+  status_ = URLRequestStatus();
   delegate_->OnCertificateRequested(this, cert_request_info);
 }
 
 void URLRequest::NotifySSLCertificateError(const SSLInfo& ssl_info,
                                            bool fatal) {
+  status_ = URLRequestStatus();
   delegate_->OnSSLCertificateError(this, ssl_info, fatal);
 }
 

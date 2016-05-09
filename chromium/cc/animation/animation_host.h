@@ -5,9 +5,8 @@
 #ifndef CC_ANIMATION_ANIMATION_HOST_H_
 #define CC_ANIMATION_ANIMATION_HOST_H_
 
-#include <vector>
+#include <unordered_map>
 
-#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -33,8 +32,6 @@ class LayerAnimationController;
 class LayerTreeHost;
 
 enum class ThreadInstance { MAIN, IMPL };
-
-typedef std::vector<scoped_refptr<AnimationTimeline>> AnimationTimelineList;
 
 // An AnimationHost contains all the state required to play animations.
 // Specifically, it owns all the AnimationTimelines objects.
@@ -110,12 +107,12 @@ class CC_EXPORT AnimationHost {
   bool HasPotentiallyRunningTransformAnimation(int layer_id,
                                                LayerTreeType tree_type) const;
 
-  bool HasAnyAnimationTargetingProperty(
-      int layer_id,
-      Animation::TargetProperty property) const;
+  bool HasAnyAnimationTargetingProperty(int layer_id,
+                                        TargetProperty::Type property) const;
 
   bool FilterIsAnimatingOnImplOnly(int layer_id) const;
   bool OpacityIsAnimatingOnImplOnly(int layer_id) const;
+  bool ScrollOffsetIsAnimatingOnImplOnly(int layer_id) const;
   bool TransformIsAnimatingOnImplOnly(int layer_id) const;
 
   bool HasFilterAnimationThatInflatesBounds(int layer_id) const;
@@ -141,7 +138,7 @@ class CC_EXPORT AnimationHost {
                            float* start_scale) const;
 
   bool HasAnyAnimation(int layer_id) const;
-  bool HasActiveAnimation(int layer_id) const;
+  bool HasActiveAnimationForTesting(int layer_id) const;
 
   void ImplOnlyScrollAnimationCreate(int layer_id,
                                      const gfx::ScrollOffset& target_offset,
@@ -152,7 +149,7 @@ class CC_EXPORT AnimationHost {
       const gfx::ScrollOffset& max_scroll_offset,
       base::TimeTicks frame_monotonic_time);
 
-  void ScrollAnimationAbort();
+  void ScrollAnimationAbort(bool needs_completion);
 
  private:
   explicit AnimationHost(ThreadInstance thread_instance);
@@ -161,17 +158,20 @@ class CC_EXPORT AnimationHost {
   void RemoveTimelinesFromImplThread(AnimationHost* host_impl) const;
   void PushPropertiesToImplThread(AnimationHost* host_impl);
 
-  void EraseTimelines(AnimationTimelineList::iterator begin,
-                      AnimationTimelineList::iterator end);
+  void EraseTimeline(scoped_refptr<AnimationTimeline> timeline);
 
   // TODO(loyso): For now AnimationPlayers share LayerAnimationController object
   // if they are attached to the same element(layer). Note that Element can
   // contain many Layers.
-  typedef base::ScopedPtrHashMap<int, scoped_ptr<ElementAnimations>>
-      LayerToElementAnimationsMap;
+  using LayerToElementAnimationsMap =
+      std::unordered_map<int, scoped_ptr<ElementAnimations>>;
   LayerToElementAnimationsMap layer_to_element_animations_map_;
 
-  AnimationTimelineList timelines_;
+  // A list of all timelines which this host owns.
+  using IdToTimelineMap =
+      std::unordered_map<int, scoped_refptr<AnimationTimeline>>;
+  IdToTimelineMap id_to_timeline_map_;
+
   scoped_ptr<AnimationRegistrar> animation_registrar_;
   MutatorHostClient* mutator_host_client_;
 

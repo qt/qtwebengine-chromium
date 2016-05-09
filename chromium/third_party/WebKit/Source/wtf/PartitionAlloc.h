@@ -259,8 +259,8 @@ struct PartitionBucket {
     PartitionPage* emptyPagesHead;
     PartitionPage* decommittedPagesHead;
     uint32_t slotSize;
-    uint16_t numSystemPagesPerSlotSpan;
-    uint16_t numFullPages;
+    unsigned numSystemPagesPerSlotSpan : 8;
+    unsigned numFullPages : 24;
 };
 
 // An "extent" is a span of consecutive superpages. We link to the partition's
@@ -689,7 +689,7 @@ ALWAYS_INLINE void partitionFreeWithPage(void* ptr, PartitionPage* page)
     ASSERT(page->numAllocatedSlots);
     PartitionFreelistEntry* freelistHead = page->freelistHead;
     ASSERT(!freelistHead || partitionPointerIsValid(freelistHead));
-    RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(ptr != freelistHead); // Catches an immediate double free.
+    SECURITY_CHECK(ptr != freelistHead); // Catches an immediate double free.
     ASSERT_WITH_SECURITY_IMPLICATION(!freelistHead || ptr != partitionFreelistMask(freelistHead->next)); // Look for double free one level deeper in debug.
     PartitionFreelistEntry* entry = static_cast<PartitionFreelistEntry*>(ptr);
     entry->next = partitionFreelistMask(freelistHead);

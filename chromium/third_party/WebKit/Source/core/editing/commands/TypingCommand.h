@@ -26,11 +26,11 @@
 #ifndef TypingCommand_h
 #define TypingCommand_h
 
-#include "core/editing/commands/TextInsertionBaseCommand.h"
+#include "core/editing/commands/CompositeEditCommand.h"
 
 namespace blink {
 
-class TypingCommand final : public TextInsertionBaseCommand {
+class TypingCommand final : public CompositeEditCommand {
 public:
     enum ETypingCommand {
         DeleteSelection,
@@ -58,34 +58,34 @@ public:
     typedef unsigned Options;
 
     static void deleteSelection(Document&, Options = 0);
-    static void deleteKeyPressed(Document&, Options = 0, TextGranularity = CharacterGranularity);
-    static void forwardDeleteKeyPressed(Document&, Options = 0, TextGranularity = CharacterGranularity);
+    static void deleteKeyPressed(Document&, Options, TextGranularity = CharacterGranularity);
+    static void forwardDeleteKeyPressed(Document&, EditingState*, Options = 0, TextGranularity = CharacterGranularity);
     static void insertText(Document&, const String&, Options, TextCompositionType = TextCompositionNone);
     static void insertText(Document&, const String&, const VisibleSelection&, Options, TextCompositionType = TextCompositionNone);
-    static void insertLineBreak(Document&, Options);
-    static void insertParagraphSeparator(Document&, Options);
-    static void insertParagraphSeparatorInQuotedContent(Document&);
+    static bool insertLineBreak(Document&);
+    static bool insertParagraphSeparator(Document&);
+    static bool insertParagraphSeparatorInQuotedContent(Document&);
     static void closeTyping(LocalFrame*);
 
-    void insertText(const String &text, bool selectInsertedText);
-    void insertTextRunWithoutNewlines(const String &text, bool selectInsertedText);
-    void insertLineBreak();
-    void insertParagraphSeparatorInQuotedContent();
-    void insertParagraphSeparator();
-    void deleteKeyPressed(TextGranularity, bool killRing);
-    void forwardDeleteKeyPressed(TextGranularity, bool killRing);
-    void deleteSelection(bool smartDelete);
+    void insertText(const String &text, bool selectInsertedText, EditingState*);
+    void insertTextRunWithoutNewlines(const String &text, bool selectInsertedText, EditingState*);
+    void insertLineBreak(EditingState*);
+    void insertParagraphSeparatorInQuotedContent(EditingState*);
+    void insertParagraphSeparator(EditingState*);
+    void deleteKeyPressed(TextGranularity, bool killRing, EditingState*);
+    void forwardDeleteKeyPressed(TextGranularity, bool killRing, EditingState*);
+    void deleteSelection(bool smartDelete, EditingState*);
     void setCompositionType(TextCompositionType type) { m_compositionType = type; }
 
 private:
-    static PassRefPtrWillBeRawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text = "", Options options = 0, TextGranularity granularity = CharacterGranularity)
+    static RawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text = "", Options options = 0, TextGranularity granularity = CharacterGranularity)
     {
-        return adoptRefWillBeNoop(new TypingCommand(document, command, text, options, granularity, TextCompositionNone));
+        return new TypingCommand(document, command, text, options, granularity, TextCompositionNone);
     }
 
-    static PassRefPtrWillBeRawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text, Options options, TextCompositionType compositionType)
+    static RawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text, Options options, TextCompositionType compositionType)
     {
-        return adoptRefWillBeNoop(new TypingCommand(document, command, text, options, CharacterGranularity, compositionType));
+        return new TypingCommand(document, command, text, options, CharacterGranularity, compositionType);
     }
 
     TypingCommand(Document&, ETypingCommand, const String& text, Options, TextGranularity, TextCompositionType);
@@ -94,9 +94,9 @@ private:
     bool isOpenForMoreTyping() const { return m_openForMoreTyping; }
     void closeTyping() { m_openForMoreTyping = false; }
 
-    static PassRefPtrWillBeRawPtr<TypingCommand> lastTypingCommandIfStillOpenForTyping(LocalFrame*);
+    static RawPtr<TypingCommand> lastTypingCommandIfStillOpenForTyping(LocalFrame*);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
     EditAction editingAction() const override;
     bool isTypingCommand() const override;
     bool preservesTypingStyle() const override { return m_preservesTypingStyle; }
@@ -109,7 +109,7 @@ private:
     void updatePreservesTypingStyle(ETypingCommand);
     void markMisspellingsAfterTyping(ETypingCommand);
     void typingAddedToOpenCommand(ETypingCommand);
-    bool makeEditableRootEmpty();
+    bool makeEditableRootEmpty(EditingState*);
 
     void updateCommandTypeOfOpenCommand(ETypingCommand typingCommand) { m_commandType = typingCommand; }
     ETypingCommand commandTypeOfOpenCommand() const { return m_commandType; }

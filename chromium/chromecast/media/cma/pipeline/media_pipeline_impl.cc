@@ -14,7 +14,7 @@
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "base/time/time.h"
+#include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/media/cdm/browser_cdm_cast.h"
 #include "chromecast/media/cma/base/buffering_controller.h"
 #include "chromecast/media/cma/base/buffering_state.h"
@@ -51,18 +51,42 @@ const base::TimeDelta kTimeUpdateInterval(
 // kTimeUpdateInterval * kStatisticsUpdatePeriod.
 const int kStatisticsUpdatePeriod = 4;
 
+void LogEstimatedBitrate(int decoded_bytes,
+                         base::TimeDelta elapsed_time,
+                         const char* tag,
+                         const char* metric) {
+  int estimated_bitrate_in_kbps =
+      8 * decoded_bytes / elapsed_time.InMilliseconds();
+
+  if (estimated_bitrate_in_kbps <= 0)
+    return;
+
+  CMALOG(kLogControl) << "Estimated " << tag << " bitrate is "
+                      << estimated_bitrate_in_kbps << " kbps";
+  metrics::CastMetricsHelper* metrics_helper =
+      metrics::CastMetricsHelper::GetInstance();
+  metrics_helper->RecordApplicationEventWithValue(metric,
+                                                  estimated_bitrate_in_kbps);
+}
+
 }  // namespace
+
+struct MediaPipelineImpl::FlushTask {
+  bool audio_flushed;
+  bool video_flushed;
+  base::Closure done_cb;
+};
 
 MediaPipelineImpl::MediaPipelineImpl()
     : cdm_(nullptr),
+      backend_state_(BACKEND_STATE_UNINITIALIZED),
+      playback_rate_(1.0f),
       audio_decoder_(nullptr),
       video_decoder_(nullptr),
-      backend_initialized_(false),
-      paused_(false),
-      target_playback_rate_(1.0f),
-      backend_started_(false),
       pending_time_update_task_(false),
       statistics_rolling_counter_(0),
+      audio_bytes_for_bitrate_estimation_(0),
+      video_bytes_for_bitrate_estimation_(0),
       weak_factory_(this) {
   CMALOG(kLogControl) << __FUNCTION__;
   weak_this_ = weak_factory_.GetWeakPtr();
@@ -74,6 +98,11 @@ MediaPipelineImpl::~MediaPipelineImpl() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   weak_factory_.InvalidateWeakPtrs();
+
+  if (backend_state_ != BACKEND_STATE_UNINITIALIZED &&
+      backend_state_ != BACKEND_STATE_INITIALIZED)
+    metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+        "Cast.Platform.Ended");
 
   // Since av pipeline still need to access device components in their
   // destructor, it's important to delete them first.
@@ -87,7 +116,7 @@ MediaPipelineImpl::~MediaPipelineImpl() {
 
 void MediaPipelineImpl::Initialize(
     LoadType load_type,
-    scoped_ptr<MediaPipelineBackend> media_pipeline_backend) {
+    std::unique_ptr<MediaPipelineBackend> media_pipeline_backend) {
   CMALOG(kLogControl) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
   audio_decoder_.reset();
@@ -113,10 +142,7 @@ void MediaPipelineImpl::Initialize(
 void MediaPipelineImpl::SetClient(const MediaPipelineClient& client) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!client.error_cb.is_null());
-  DCHECK(!client.time_update_cb.is_null());
   DCHECK(!client.buffering_state_cb.is_null());
-  DCHECK(!client.pipeline_backend_created_cb.is_null());
-  DCHECK(!client.pipeline_backend_destroyed_cb.is_null());
   client_ = client;
 }
 
@@ -138,61 +164,55 @@ void MediaPipelineImpl::SetCdm(BrowserCdmCast* cdm) {
     video_pipeline_->SetCdm(cdm);
 }
 
-void MediaPipelineImpl::InitializeAudio(
+::media::PipelineStatus MediaPipelineImpl::InitializeAudio(
     const ::media::AudioDecoderConfig& config,
     const AvPipelineClient& client,
-    scoped_ptr<CodedFrameProvider> frame_provider,
-    const ::media::PipelineStatusCB& status_cb) {
+    std::unique_ptr<CodedFrameProvider> frame_provider) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!audio_decoder_);
 
   MediaPipelineBackend::AudioDecoder* backend_audio_decoder =
       media_pipeline_backend_->CreateAudioDecoder();
   if (!backend_audio_decoder) {
-    status_cb.Run(::media::PIPELINE_ERROR_ABORT);
-    return;
+    return ::media::PIPELINE_ERROR_ABORT;
   }
   audio_decoder_.reset(new AudioDecoderSoftwareWrapper(backend_audio_decoder));
   audio_pipeline_.reset(new AudioPipelineImpl(audio_decoder_.get(), client));
   if (cdm_)
     audio_pipeline_->SetCdm(cdm_);
-  audio_pipeline_->Initialize(config, std::move(frame_provider), status_cb);
+  return audio_pipeline_->Initialize(config, std::move(frame_provider));
 }
 
-void MediaPipelineImpl::InitializeVideo(
+::media::PipelineStatus MediaPipelineImpl::InitializeVideo(
     const std::vector<::media::VideoDecoderConfig>& configs,
     const VideoPipelineClient& client,
-    scoped_ptr<CodedFrameProvider> frame_provider,
-    const ::media::PipelineStatusCB& status_cb) {
+    std::unique_ptr<CodedFrameProvider> frame_provider) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!video_decoder_);
 
   video_decoder_ = media_pipeline_backend_->CreateVideoDecoder();
   if (!video_decoder_) {
-    status_cb.Run(::media::PIPELINE_ERROR_ABORT);
-    return;
+    return ::media::PIPELINE_ERROR_ABORT;
   }
   video_pipeline_.reset(new VideoPipelineImpl(video_decoder_, client));
   if (cdm_)
     video_pipeline_->SetCdm(cdm_);
-  video_pipeline_->Initialize(configs, std::move(frame_provider), status_cb);
+  return video_pipeline_->Initialize(configs, std::move(frame_provider));
 }
 
 void MediaPipelineImpl::StartPlayingFrom(base::TimeDelta time) {
   CMALOG(kLogControl) << __FUNCTION__ << " t0=" << time.InMilliseconds();
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(audio_pipeline_ || video_pipeline_);
-  DCHECK(!pending_flush_callbacks_);
-  // When starting, we always enter the "playing" state (not paused).
-  paused_ = false;
+  DCHECK(!pending_flush_task_);
 
-  // Lazy initialise
-  if (!backend_initialized_) {
-    backend_initialized_ = media_pipeline_backend_->Initialize();
-    if (!backend_initialized_) {
+  // Lazy initialize.
+  if (backend_state_ == BACKEND_STATE_UNINITIALIZED) {
+    if (!media_pipeline_backend_->Initialize()) {
       OnError(::media::PIPELINE_ERROR_ABORT);
       return;
     }
+    backend_state_ = BACKEND_STATE_INITIALIZED;
   }
 
   // Start the backend.
@@ -200,9 +220,12 @@ void MediaPipelineImpl::StartPlayingFrom(base::TimeDelta time) {
     OnError(::media::PIPELINE_ERROR_ABORT);
     return;
   }
+  backend_state_ = BACKEND_STATE_PLAYING;
+  ResetBitrateState();
+  metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+      "Cast.Platform.Playing");
 
   // Enable time updates.
-  backend_started_ = true;
   statistics_rolling_counter_ = 0;
   if (!pending_time_update_task_) {
     pending_time_update_task_ = true;
@@ -231,62 +254,58 @@ void MediaPipelineImpl::StartPlayingFrom(base::TimeDelta time) {
   }
 }
 
-void MediaPipelineImpl::Flush(const ::media::PipelineStatusCB& status_cb) {
+void MediaPipelineImpl::Flush(const base::Closure& flush_cb) {
   CMALOG(kLogControl) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK((backend_state_ == BACKEND_STATE_PLAYING) ||
+         (backend_state_ == BACKEND_STATE_PAUSED));
   DCHECK(audio_pipeline_ || video_pipeline_);
-  DCHECK(!pending_flush_callbacks_);
-
-  backend_started_ = false;
+  DCHECK(!pending_flush_task_);
 
   buffering_controller_->Reset();
 
-  // Flush audio/video pipeline in three phases:
-  // 1. Stop pushing data to backend. This guarentees media pipeline doesn't
-  // push buffers to backend after stopping backend. (b/23751784)
-  if (audio_pipeline_ && !audio_pipeline_->StartFlush()) {
-    status_cb.Run(::media::PIPELINE_ERROR_ABORT);
-    return;
-  }
-  if (video_pipeline_ && !video_pipeline_->StartFlush()) {
-    status_cb.Run(::media::PIPELINE_ERROR_ABORT);
-    return;
-  }
+  // 1. Stop both the audio and video pipeline so that they stop feeding
+  // buffers to the backend while the pipeline is being flushed.
+  if (audio_pipeline_)
+    audio_pipeline_->Stop();
+  if (video_pipeline_)
+    video_pipeline_->Stop();
 
   // 2. Stop the backend, so that the backend won't push their pending buffer,
   // which may be invalidated later, to hardware. (b/25342604)
-  if (!media_pipeline_backend_->Stop()) {
-    status_cb.Run(::media::PIPELINE_ERROR_ABORT);
-    return;
-  }
+  CHECK(media_pipeline_backend_->Stop());
+  backend_state_ = BACKEND_STATE_INITIALIZED;
+  metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+      "Cast.Platform.Ended");
 
   // 3. Flush both the audio and video pipeline. This will flush the frame
   // provider and invalidate all the unreleased buffers.
-  ::media::SerialRunner::Queue bound_fns;
+  pending_flush_task_.reset(new FlushTask);
+  pending_flush_task_->audio_flushed = !audio_pipeline_;
+  pending_flush_task_->video_flushed = !video_pipeline_;
+  pending_flush_task_->done_cb = flush_cb;
   if (audio_pipeline_) {
-    bound_fns.Push(base::Bind(&AudioPipelineImpl::Flush,
-                              base::Unretained(audio_pipeline_.get())));
+    audio_pipeline_->Flush(
+        base::Bind(&MediaPipelineImpl::OnFlushDone, weak_this_, true));
   }
   if (video_pipeline_) {
-    bound_fns.Push(base::Bind(&VideoPipelineImpl::Flush,
-                              base::Unretained(video_pipeline_.get())));
+    video_pipeline_->Flush(
+        base::Bind(&MediaPipelineImpl::OnFlushDone, weak_this_, false));
   }
-  ::media::PipelineStatusCB transition_cb =
-      base::Bind(&MediaPipelineImpl::OnFlushDone, weak_this_, status_cb);
-  pending_flush_callbacks_ =
-      ::media::SerialRunner::Run(bound_fns, transition_cb);
 }
 
 void MediaPipelineImpl::Stop() {
   CMALOG(kLogControl) << __FUNCTION__;
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(audio_pipeline_ || video_pipeline_);
+  if (backend_state_ != BACKEND_STATE_UNINITIALIZED)
+    metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+        "Cast.Platform.Ended");
 
   // Cancel pending flush callbacks since we are about to stop/shutdown
   // audio/video pipelines. This will ensure A/V Flush won't happen in
   // stopped state.
-  pending_flush_callbacks_.reset();
-  backend_started_ = false;
+  pending_flush_task_.reset();
 
   // Stop both the audio and video pipeline.
   if (audio_pipeline_)
@@ -299,26 +318,33 @@ void MediaPipelineImpl::Stop() {
   video_pipeline_ = nullptr;
   audio_decoder_.reset();
   media_pipeline_backend_.reset();
+  backend_state_ = BACKEND_STATE_UNINITIALIZED;
 }
 
 void MediaPipelineImpl::SetPlaybackRate(double rate) {
   CMALOG(kLogControl) << __FUNCTION__ << " rate=" << rate;
   DCHECK(thread_checker_.CalledOnValidThread());
-  target_playback_rate_ = rate;
-  if (!backend_started_)
-    return;
+  DCHECK((backend_state_ == BACKEND_STATE_PLAYING) ||
+         (backend_state_ == BACKEND_STATE_PAUSED));
+
+  playback_rate_ = rate;
   if (buffering_controller_ && buffering_controller_->IsBuffering())
     return;
 
   if (rate != 0.0f) {
     media_pipeline_backend_->SetPlaybackRate(rate);
-    if (paused_) {
-      paused_ = false;
+    if (backend_state_ == BACKEND_STATE_PAUSED) {
       media_pipeline_backend_->Resume();
+      backend_state_ = BACKEND_STATE_PLAYING;
+      ResetBitrateState();
+      metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+          "Cast.Platform.Playing");
     }
-  } else if (!paused_) {
-    paused_ = true;
+  } else if (backend_state_ == BACKEND_STATE_PLAYING) {
     media_pipeline_backend_->Pause();
+    backend_state_ = BACKEND_STATE_PAUSED;
+    metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+        "Cast.Platform.Pause");
   }
 }
 
@@ -329,48 +355,78 @@ void MediaPipelineImpl::SetVolume(float volume) {
     audio_pipeline_->SetVolume(volume);
 }
 
-void MediaPipelineImpl::OnFlushDone(const ::media::PipelineStatusCB& status_cb,
-                                    ::media::PipelineStatus status) {
-  // Clear pending buffers.
-  if (audio_pipeline_)
-    audio_pipeline_->BackendStopped();
-  if (video_pipeline_)
-    video_pipeline_->BackendStopped();
+base::TimeDelta MediaPipelineImpl::GetMediaTime() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return last_media_time_;
+}
 
-  pending_flush_callbacks_.reset();
-  status_cb.Run(status);
+bool MediaPipelineImpl::HasAudio() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return audio_pipeline_ != nullptr;
+}
+
+bool MediaPipelineImpl::HasVideo() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return video_pipeline_ != nullptr;
+}
+
+void MediaPipelineImpl::OnFlushDone(bool is_audio_stream) {
+  CMALOG(kLogControl) << __FUNCTION__ << " is_audio_stream=" << is_audio_stream;
+  if (!pending_flush_task_)
+    return;
+
+  if (is_audio_stream) {
+    DCHECK(!pending_flush_task_->audio_flushed);
+    pending_flush_task_->audio_flushed = true;
+  } else {
+    DCHECK(!pending_flush_task_->video_flushed);
+    pending_flush_task_->video_flushed = true;
+  }
+
+  if (pending_flush_task_->audio_flushed &&
+      pending_flush_task_->video_flushed) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  pending_flush_task_->done_cb);
+    pending_flush_task_.reset();
+  }
 }
 
 void MediaPipelineImpl::OnBufferingNotification(bool is_buffering) {
   CMALOG(kLogControl) << __FUNCTION__ << " is_buffering=" << is_buffering;
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK((backend_state_ == BACKEND_STATE_PLAYING) ||
+         (backend_state_ == BACKEND_STATE_PAUSED));
   DCHECK(buffering_controller_);
+  DCHECK_EQ(is_buffering, buffering_controller_->IsBuffering());
 
   if (!client_.buffering_state_cb.is_null()) {
-    ::media::BufferingState buffering_state =
-        is_buffering ? ::media::BUFFERING_HAVE_NOTHING
-                     : ::media::BUFFERING_HAVE_ENOUGH;
-    client_.buffering_state_cb.Run(buffering_state);
+    if (is_buffering) {
+      // TODO(alokp): WebMediaPlayerImpl currently only handles HAVE_ENOUGH.
+      // See WebMediaPlayerImpl::OnPipelineBufferingStateChanged,
+      // http://crbug.com/144683.
+      LOG(WARNING) << "Ignoring buffering notification.";
+    } else {
+      client_.buffering_state_cb.Run(::media::BUFFERING_HAVE_ENOUGH);
+    }
   }
 
-  if (!is_buffering) {
-    DCHECK(!buffering_controller_->IsBuffering());
+  if (is_buffering && (backend_state_ == BACKEND_STATE_PLAYING)) {
+    media_pipeline_backend_->Pause();
+    backend_state_ = BACKEND_STATE_PAUSED;
+    metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+        "Cast.Platform.Pause");
+  } else if (!is_buffering && (backend_state_ == BACKEND_STATE_PAUSED)) {
     // Once we finish buffering, we need to honour the desired playback rate
     // (rather than just resuming). This way, if playback was paused while
     // buffering, it will remain paused rather than incorrectly resuming.
-    SetPlaybackRate(target_playback_rate_);
-    return;
-  }
-  // Do not consume data in a rebuffering phase.
-  if (!paused_) {
-    paused_ = true;
-    media_pipeline_backend_->Pause();
+    SetPlaybackRate(playback_rate_);
   }
 }
 
 void MediaPipelineImpl::UpdateMediaTime() {
   pending_time_update_task_ = false;
-  if (!backend_started_)
+  if ((backend_state_ != BACKEND_STATE_PLAYING) &&
+      (backend_state_ != BACKEND_STATE_PAUSED))
     return;
 
   if (statistics_rolling_counter_ == 0) {
@@ -378,7 +434,31 @@ void MediaPipelineImpl::UpdateMediaTime() {
       audio_pipeline_->UpdateStatistics();
     if (video_pipeline_)
       video_pipeline_->UpdateStatistics();
+
+    if (backend_state_ == BACKEND_STATE_PLAYING) {
+      base::TimeTicks current_time = base::TimeTicks::Now();
+      if (audio_pipeline_)
+        audio_bytes_for_bitrate_estimation_ +=
+            audio_pipeline_->bytes_decoded_since_last_update();
+      if (video_pipeline_)
+        video_bytes_for_bitrate_estimation_ +=
+            video_pipeline_->bytes_decoded_since_last_update();
+      elapsed_time_delta_ += current_time - last_sample_time_;
+      if (elapsed_time_delta_.InMilliseconds() > 5000) {
+        if (audio_pipeline_)
+          LogEstimatedBitrate(audio_bytes_for_bitrate_estimation_,
+                              elapsed_time_delta_, "audio",
+                              "Cast.Platform.AudioBitrate");
+        if (video_pipeline_)
+          LogEstimatedBitrate(video_bytes_for_bitrate_estimation_,
+                              elapsed_time_delta_, "video",
+                              "Cast.Platform.VideoBitrate");
+        ResetBitrateState();
+      }
+      last_sample_time_ = current_time;
+    }
   }
+
   statistics_rolling_counter_ =
       (statistics_rolling_counter_ + 1) % kStatisticsUpdatePeriod;
 
@@ -423,8 +503,19 @@ void MediaPipelineImpl::UpdateMediaTime() {
 void MediaPipelineImpl::OnError(::media::PipelineStatus error) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_NE(error, ::media::PIPELINE_OK) << "PIPELINE_OK is not an error!";
+
+  metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
+      "Cast.Platform.Error");
+
   if (!client_.error_cb.is_null())
     client_.error_cb.Run(error);
+}
+
+void MediaPipelineImpl::ResetBitrateState() {
+  elapsed_time_delta_ = base::TimeDelta::FromSeconds(0);
+  audio_bytes_for_bitrate_estimation_ = 0;
+  video_bytes_for_bitrate_estimation_ = 0;
+  last_sample_time_ = base::TimeTicks::Now();
 }
 
 }  // namespace media

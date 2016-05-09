@@ -205,31 +205,8 @@ void GL_APIENTRY BindTexture(GLenum target, GLuint texture)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Texture *textureObject = context->getTexture(texture);
-
-        if (textureObject && textureObject->getTarget() != target && texture != 0)
+        if (!ValidateBindTexture(context, target, texture))
         {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        switch (target)
-        {
-          case GL_TEXTURE_2D:
-          case GL_TEXTURE_CUBE_MAP:
-            break;
-
-          case GL_TEXTURE_3D:
-          case GL_TEXTURE_2D_ARRAY:
-            if (context->getClientVersion() < 3)
-            {
-                context->recordError(Error(GL_INVALID_ENUM));
-                return;
-            }
-            break;
-
-          default:
-            context->recordError(Error(GL_INVALID_ENUM));
             return;
         }
 
@@ -593,27 +570,12 @@ void GL_APIENTRY Clear(GLbitfield mask)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Framebuffer *framebufferObject = context->getState().getDrawFramebuffer();
-        ASSERT(framebufferObject);
-
-        if (framebufferObject->checkStatus(context->getData()) != GL_FRAMEBUFFER_COMPLETE)
+        if (!context->skipValidation() && !ValidateClear(context, mask))
         {
-            context->recordError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
             return;
         }
 
-        if ((mask & ~(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        Error error = framebufferObject->clear(context, mask);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->clear(mask);
     }
 }
 
@@ -689,37 +651,15 @@ void GL_APIENTRY CompressedTexImage2D(GLenum target, GLint level, GLenum interna
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2TexImageParameters(context, target, level, internalformat, true, false,
-                                           0, 0, width, height, border, GL_NONE, GL_NONE, data))
+        if (!context->skipValidation() &&
+            !ValidateCompressedTexImage2D(context, target, level, internalformat, width, height,
+                                          border, imageSize, data))
         {
             return;
         }
 
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3TexImageParameters(context, target, level, internalformat, true, false,
-                                           0, 0, 0, width, height, 1, border, GL_NONE, GL_NONE, data))
-        {
-            return;
-        }
-
-        const InternalFormat &formatInfo = GetInternalFormatInfo(internalformat);
-        if (imageSize < 0 || static_cast<GLuint>(imageSize) != formatInfo.computeBlockSize(GL_UNSIGNED_BYTE, width, height))
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        Extents size(width, height, 1);
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error =
-            texture->setCompressedImage(context, target, level, internalformat, size, imageSize,
-                                        reinterpret_cast<const uint8_t *>(data));
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->compressedTexImage2D(target, level, internalformat, width, height, border,
+                                      imageSize, data);
     }
 }
 
@@ -734,37 +674,15 @@ void GL_APIENTRY CompressedTexSubImage2D(GLenum target, GLint level, GLint xoffs
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2TexImageParameters(context, target, level, GL_NONE, true, true,
-                                           xoffset, yoffset, width, height, 0, GL_NONE, GL_NONE, data))
+        if (!context->skipValidation() &&
+            !ValidateCompressedTexSubImage2D(context, target, level, xoffset, yoffset, width,
+                                             height, format, imageSize, data))
         {
             return;
         }
 
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3TexImageParameters(context, target, level, GL_NONE, true, true,
-                                           xoffset, yoffset, 0, width, height, 1, 0, GL_NONE, GL_NONE, data))
-        {
-            return;
-        }
-
-        const InternalFormat &formatInfo = GetInternalFormatInfo(format);
-        if (imageSize < 0 || static_cast<GLuint>(imageSize) != formatInfo.computeBlockSize(GL_UNSIGNED_BYTE, width, height))
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        Box area(xoffset, yoffset, 0, width, height, 1);
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error =
-            texture->setCompressedSubImage(context, target, level, area, format, imageSize,
-                                           reinterpret_cast<const uint8_t *>(data));
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->compressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format,
+                                         imageSize, data);
     }
 }
 
@@ -777,30 +695,13 @@ void GL_APIENTRY CopyTexImage2D(GLenum target, GLint level, GLenum internalforma
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2CopyTexImageParameters(context, target, level, internalformat, false,
-                                               0, 0, x, y, width, height, border))
+        if (!context->skipValidation() &&
+            !ValidateCopyTexImage2D(context, target, level, internalformat, x, y, width, height,
+                                    border))
         {
             return;
         }
-
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3CopyTexImageParameters(context, target, level, internalformat, false,
-                                               0, 0, 0, x, y, width, height, border))
-        {
-            return;
-        }
-
-        Rectangle sourceArea(x, y, width, height);
-
-        const Framebuffer *framebuffer = context->getState().getReadFramebuffer();
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error = texture->copyImage(target, level, sourceArea, internalformat, framebuffer);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->copyTexImage2D(target, level, internalformat, x, y, width, height, border);
     }
 }
 
@@ -813,31 +714,14 @@ void GL_APIENTRY CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GL
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2CopyTexImageParameters(context, target, level, GL_NONE, true,
-                                               xoffset, yoffset, x, y, width, height, 0))
+        if (!context->skipValidation() &&
+            !ValidateCopyTexSubImage2D(context, target, level, xoffset, yoffset, x, y, width,
+                                       height))
         {
             return;
         }
 
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3CopyTexImageParameters(context, target, level, GL_NONE, true,
-                                               xoffset, yoffset, 0, x, y, width, height, 0))
-        {
-            return;
-        }
-
-        Offset destOffset(xoffset, yoffset, 0);
-        Rectangle sourceArea(x, y, width, height);
-
-        const Framebuffer *framebuffer = context->getState().getReadFramebuffer();
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error = texture->copySubImage(target, level, destOffset, sourceArea, framebuffer);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->copyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
     }
 }
 
@@ -906,9 +790,8 @@ void GL_APIENTRY DeleteBuffers(GLsizei n, const GLuint* buffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateDeleteBuffers(context, n, buffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -926,9 +809,8 @@ void GL_APIENTRY DeleteFramebuffers(GLsizei n, const GLuint* framebuffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateDeleteFramebuffers(context, n, framebuffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -979,9 +861,8 @@ void GL_APIENTRY DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateDeleteRenderbuffers(context, n, renderbuffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1029,9 +910,8 @@ void GL_APIENTRY DeleteTextures(GLsizei n, const GLuint* textures)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateDeleteTextures(context, n, textures))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1287,29 +1167,14 @@ void GL_APIENTRY FramebufferRenderbuffer(GLenum target, GLenum attachment, GLenu
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidFramebufferTarget(target) || (renderbuffertarget != GL_RENDERBUFFER && renderbuffer != 0))
-        {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-
-        if (!ValidateFramebufferRenderbufferParameters(context, target, attachment, renderbuffertarget, renderbuffer))
+        if (!context->skipValidation() &&
+            !ValidateFramebufferRenderbuffer(context, target, attachment, renderbuffertarget,
+                                             renderbuffer))
         {
             return;
         }
 
-        Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-        ASSERT(framebuffer);
-
-        if (renderbuffer != 0)
-        {
-            Renderbuffer *renderbufferObject = context->getRenderbuffer(renderbuffer);
-            framebuffer->setAttachment(GL_RENDERBUFFER, attachment, gl::ImageIndex::MakeInvalid(), renderbufferObject);
-        }
-        else
-        {
-            framebuffer->resetAttachment(attachment);
-        }
+        context->framebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
     }
 }
 
@@ -1321,36 +1186,13 @@ void GL_APIENTRY FramebufferTexture2D(GLenum target, GLenum attachment, GLenum t
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateFramebufferTexture2D(context, target, attachment, textarget, texture, level))
+        if (!context->skipValidation() &&
+            !ValidateFramebufferTexture2D(context, target, attachment, textarget, texture, level))
         {
             return;
         }
 
-        Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-        ASSERT(framebuffer);
-
-        if (texture != 0)
-        {
-            Texture *textureObj = context->getTexture(texture);
-
-            ImageIndex index = ImageIndex::MakeInvalid();
-
-            if (textarget == GL_TEXTURE_2D)
-            {
-                index = ImageIndex::Make2D(level);
-            }
-            else
-            {
-                ASSERT(IsCubeMapTextureTarget(textarget));
-                index = ImageIndex::MakeCube(textarget, level);
-            }
-
-            framebuffer->setAttachment(GL_TEXTURE, attachment, index, textureObj);
-        }
-        else
-        {
-            framebuffer->resetAttachment(attachment);
-        }
+        context->framebufferTexture2D(target, attachment, textarget, texture, level);
     }
 }
 
@@ -1381,9 +1223,8 @@ void GL_APIENTRY GenBuffers(GLsizei n, GLuint* buffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateGenBuffers(context, n, buffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1479,9 +1320,8 @@ void GL_APIENTRY GenFramebuffers(GLsizei n, GLuint* framebuffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateGenFramebuffers(context, n, framebuffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1499,9 +1339,8 @@ void GL_APIENTRY GenRenderbuffers(GLsizei n, GLuint* renderbuffers)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateGenRenderbuffers(context, n, renderbuffers))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1519,9 +1358,8 @@ void GL_APIENTRY GenTextures(GLsizei n, GLuint* textures)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (n < 0)
+        if (!context->skipValidation() && !ValidateGenTextures(context, n, textures))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
@@ -1888,7 +1726,7 @@ void GL_APIENTRY GetFramebufferAttachmentParameteriv(GLenum target, GLenum attac
                     break;
 
                   case GL_DEPTH_STENCIL_ATTACHMENT:
-                    if (framebuffer->hasValidDepthStencil())
+                    if (!framebuffer->hasValidDepthStencil())
                     {
                         context->recordError(Error(GL_INVALID_OPERATION));
                         return;
@@ -2564,7 +2402,26 @@ void GL_APIENTRY GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params)
             }
             *params = texture->getSamplerState().maxLod;
             break;
-
+          case GL_TEXTURE_COMPARE_MODE:
+            if (context->getClientVersion() < 3)
+            {
+                context->recordError(
+                    Error(GL_INVALID_ENUM,
+                          "GL_TEXTURE_COMPARE_MODE not available in ES versions < 3.0"));
+                return;
+            }
+            *params = static_cast<GLfloat>(texture->getCompareMode());
+            break;
+          case GL_TEXTURE_COMPARE_FUNC:
+            if (context->getClientVersion() < 3)
+            {
+                context->recordError(
+                    Error(GL_INVALID_ENUM,
+                          "GL_TEXTURE_COMPARE_FUNC not available in ES versions < 3.0"));
+                return;
+            }
+            *params = static_cast<GLfloat>(texture->getCompareFunc());
+            break;
           default:
             context->recordError(Error(GL_INVALID_ENUM));
             return;
@@ -2692,7 +2549,7 @@ void GL_APIENTRY GetTexParameteriv(GLenum target, GLenum pname, GLint* params)
                 context->recordError(Error(GL_INVALID_ENUM));
                 return;
             }
-            *params = (GLint)texture->getMinLod();
+            *params = iround<GLint>(texture->getMinLod());
             break;
           case GL_TEXTURE_MAX_LOD:
             if (context->getClientVersion() < 3)
@@ -2700,9 +2557,28 @@ void GL_APIENTRY GetTexParameteriv(GLenum target, GLenum pname, GLint* params)
                 context->recordError(Error(GL_INVALID_ENUM));
                 return;
             }
-            *params = (GLint)texture->getMaxLod();
+            *params = iround<GLint>(texture->getMaxLod());
             break;
-
+          case GL_TEXTURE_COMPARE_MODE:
+            if (context->getClientVersion() < 3)
+            {
+                context->recordError(
+                    Error(GL_INVALID_ENUM,
+                          "GL_TEXTURE_COMPARE_MODE not available in ES versions < 3.0"));
+                return;
+            }
+            *params = texture->getCompareMode();
+            break;
+          case GL_TEXTURE_COMPARE_FUNC:
+            if (context->getClientVersion() < 3)
+            {
+                context->recordError(
+                    Error(GL_INVALID_ENUM,
+                          "GL_TEXTURE_COMPARE_FUNC not available in ES versions < 3.0"));
+                return;
+            }
+            *params = texture->getCompareFunc();
+            break;
           default:
             context->recordError(Error(GL_INVALID_ENUM));
             return;
@@ -3058,6 +2934,11 @@ void GL_APIENTRY LinkProgram(GLuint program)
     Context *context = GetValidGlobalContext();
     if (context)
     {
+        if (!context->skipValidation() && !ValidateLinkProgram(context, program))
+        {
+            return;
+        }
+
         Program *programObject = GetValidProgram(context, program);
         if (!programObject)
         {
@@ -3213,28 +3094,13 @@ void GL_APIENTRY ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (width < 0 || height < 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        if (!ValidateReadPixelsParameters(context, x, y, width, height,
-                                              format, type, NULL, pixels))
+        if (!context->skipValidation() &&
+            !ValidateReadPixels(context, x, y, width, height, format, type, pixels))
         {
             return;
         }
 
-        Framebuffer *framebufferObject = context->getState().getReadFramebuffer();
-        ASSERT(framebufferObject);
-
-        Rectangle area(x, y, width, height);
-        Error error = framebufferObject->readPixels(context, area, format, type, pixels);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->readPixels(x, y, width, height, format, type, pixels);
     }
 }
 
@@ -3540,29 +3406,15 @@ void GL_APIENTRY TexImage2D(GLenum target, GLint level, GLint internalformat, GL
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2TexImageParameters(context, target, level, internalformat, false, false,
-                                           0, 0, width, height, border, format, type, pixels))
+        if (!context->skipValidation() &&
+            !ValidateTexImage2D(context, target, level, internalformat, width, height, border,
+                                format, type, pixels))
         {
             return;
         }
 
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3TexImageParameters(context, target, level, internalformat, false, false,
-                                           0, 0, 0, width, height, 1, border, format, type, pixels))
-        {
-            return;
-        }
-
-        Extents size(width, height, 1);
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error = texture->setImage(context, target, level, internalformat, size, format, type,
-                                        reinterpret_cast<const uint8_t *>(pixels));
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->texImage2D(target, level, internalformat, width, height, border, format, type,
+                            pixels);
     }
 }
 
@@ -3691,35 +3543,15 @@ void GL_APIENTRY TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint 
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (context->getClientVersion() < 3 &&
-            !ValidateES2TexImageParameters(context, target, level, GL_NONE, false, true,
-                                           xoffset, yoffset, width, height, 0, format, type, pixels))
+        if (!context->skipValidation() &&
+            !ValidateTexSubImage2D(context, target, level, xoffset, yoffset, width, height, format,
+                                   type, pixels))
         {
             return;
         }
 
-        if (context->getClientVersion() >= 3 &&
-            !ValidateES3TexImageParameters(context, target, level, GL_NONE, false, true,
-                                           xoffset, yoffset, 0, width, height, 1, 0, format, type, pixels))
-        {
-            return;
-        }
-
-        // Zero sized uploads are valid but no-ops
-        if (width == 0 || height == 0)
-        {
-            return;
-        }
-
-        Box area(xoffset, yoffset, 0, width, height, 1);
-        Texture *texture = context->getTargetTexture(IsCubeMapTextureTarget(target) ? GL_TEXTURE_CUBE_MAP : target);
-        Error error = texture->setSubImage(context, target, level, area, format, type,
-                                           reinterpret_cast<const uint8_t *>(pixels));
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->texSubImage2D(target, level, xoffset, yoffset, width, height, format, type,
+                               pixels);
     }
 }
 
@@ -3972,25 +3804,8 @@ void GL_APIENTRY UseProgram(GLuint program)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        Program *programObject = context->getProgram(program);
-
-        if (!programObject && program != 0)
+        if (!context->skipValidation() && !ValidateUseProgram(context, program))
         {
-            if (context->getShader(program))
-            {
-                context->recordError(Error(GL_INVALID_OPERATION));
-                return;
-            }
-            else
-            {
-                context->recordError(Error(GL_INVALID_VALUE));
-                return;
-            }
-        }
-
-        if (program != 0 && !programObject->isLinked())
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
             return;
         }
 

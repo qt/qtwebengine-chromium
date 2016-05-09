@@ -88,11 +88,14 @@ bool StreamInterfaceChannel::OnPacketReceived(const char* data, size_t size) {
   return ret;
 }
 
+void StreamInterfaceChannel::Close() {
+  packets_.Clear();
+  state_ = rtc::SS_CLOSED;
+}
+
 DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
-    Transport* transport,
     TransportChannelImpl* channel)
     : TransportChannelImpl(channel->transport_name(), channel->component()),
-      transport_(transport),
       worker_thread_(rtc::Thread::Current()),
       channel_(channel),
       downward_(NULL),
@@ -110,10 +113,14 @@ DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
       this, &DtlsTransportChannelWrapper::OnGatheringState);
   channel_->SignalCandidateGathered.connect(
       this, &DtlsTransportChannelWrapper::OnCandidateGathered);
+  channel_->SignalCandidatesRemoved.connect(
+      this, &DtlsTransportChannelWrapper::OnCandidatesRemoved);
   channel_->SignalRoleConflict.connect(this,
       &DtlsTransportChannelWrapper::OnRoleConflict);
   channel_->SignalRouteChange.connect(this,
       &DtlsTransportChannelWrapper::OnRouteChange);
+  channel_->SignalSelectedCandidatePairChanged.connect(
+      this, &DtlsTransportChannelWrapper::OnSelectedCandidatePairChanged);
   channel_->SignalConnectionRemoved.connect(this,
       &DtlsTransportChannelWrapper::OnConnectionRemoved);
   channel_->SignalReceivingState.connect(this,
@@ -229,7 +236,7 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   remote_fingerprint_value_ = std::move(remote_fingerprint_value);
   remote_fingerprint_algorithm_ = digest_alg;
 
-  bool reconnect = dtls_;
+  bool reconnect = (dtls_ != nullptr);
 
   if (!SetupDtls()) {
     set_dtls_state(DTLS_TRANSPORT_FAILED);
@@ -243,13 +250,13 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   return true;
 }
 
-bool DtlsTransportChannelWrapper::GetRemoteSSLCertificate(
-    rtc::SSLCertificate** cert) const {
+rtc::scoped_ptr<rtc::SSLCertificate>
+DtlsTransportChannelWrapper::GetRemoteSSLCertificate() const {
   if (!dtls_) {
-    return false;
+    return nullptr;
   }
 
-  return dtls_->GetPeerCertificate(cert);
+  return dtls_->GetPeerCertificate();
 }
 
 bool DtlsTransportChannelWrapper::SetupDtls() {
@@ -610,6 +617,13 @@ void DtlsTransportChannelWrapper::OnCandidateGathered(
   SignalCandidateGathered(this, c);
 }
 
+void DtlsTransportChannelWrapper::OnCandidatesRemoved(
+    TransportChannelImpl* channel,
+    const Candidates& candidates) {
+  ASSERT(channel == channel_);
+  SignalCandidatesRemoved(this, candidates);
+}
+
 void DtlsTransportChannelWrapper::OnRoleConflict(
     TransportChannelImpl* channel) {
   ASSERT(channel == channel_);
@@ -620,6 +634,15 @@ void DtlsTransportChannelWrapper::OnRouteChange(
     TransportChannel* channel, const Candidate& candidate) {
   ASSERT(channel == channel_);
   SignalRouteChange(this, candidate);
+}
+
+void DtlsTransportChannelWrapper::OnSelectedCandidatePairChanged(
+    TransportChannel* channel,
+    CandidatePairInterface* selected_candidate_pair,
+    int last_sent_packet_id) {
+  ASSERT(channel == channel_);
+  SignalSelectedCandidatePairChanged(this, selected_candidate_pair,
+                                     last_sent_packet_id);
 }
 
 void DtlsTransportChannelWrapper::OnConnectionRemoved(

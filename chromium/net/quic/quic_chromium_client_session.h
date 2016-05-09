@@ -14,19 +14,20 @@
 
 #include <string>
 
-#include "base/containers/hash_tables.h"
+#include "base/containers/mru_cache.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
+#include "net/base/net_error_details.h"
 #include "net/base/socket_performance_watcher.h"
 #include "net/cert/ct_verify_result.h"
 #include "net/proxy/proxy_server.h"
 #include "net/quic/quic_chromium_client_stream.h"
+#include "net/quic/quic_chromium_packet_reader.h"
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection_logger.h"
 #include "net/quic/quic_crypto_client_stream.h"
-#include "net/quic/quic_packet_reader.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
@@ -42,13 +43,16 @@ class QuicStreamFactory;
 class SSLInfo;
 class TransportSecurityState;
 
+using TokenBindingSignatureMap =
+    base::MRUCache<std::string, std::vector<uint8_t>>;
+
 namespace test {
 class QuicChromiumClientSessionPeer;
 }  // namespace test
 
 class NET_EXPORT_PRIVATE QuicChromiumClientSession
     : public QuicClientSessionBase,
-      public QuicPacketReader::Visitor {
+      public QuicChromiumPacketReader::Visitor {
  public:
   // Reasons to disable QUIC, that is under certain pathological
   // connection errors.  Note: these values must be kept in sync with
@@ -67,7 +71,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
    public:
     virtual ~Observer() {}
     virtual void OnCryptoHandshakeConfirmed() = 0;
-    virtual void OnSessionClosed(int error) = 0;
+    virtual void OnSessionClosed(int error, bool port_migration_detected) = 0;
   };
 
   // A helper class used to manage a request to create a stream.
@@ -126,6 +130,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       QuicCryptoClientConfig* crypto_config,
       const char* const connection_description,
       base::TimeTicks dns_resolution_end_time,
+      QuicClientPushPromiseIndex* push_promise_index,
       base::TaskRunner* task_runner,
       scoped_ptr<SocketPerformanceWatcher> socket_performance_watcher,
       NetLog* net_log);
@@ -173,17 +178,25 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       const ProofVerifyDetails& verify_details) override;
 
   // QuicConnectionVisitorInterface methods:
-  void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
+  void OnConnectionClosed(QuicErrorCode error,
+                          const std::string& error_details,
+                          ConnectionCloseSource source) override;
   void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
+  void OnPathDegrading() override;
 
-  // QuicPacketReader::Visitor methods:
+  // QuicChromiumPacketReader::Visitor methods:
   void OnReadError(int result, const DatagramClientSocket* socket) override;
-  bool OnPacket(const QuicEncryptedPacket& packet,
+  bool OnPacket(const QuicReceivedPacket& packet,
                 IPEndPoint local_address,
                 IPEndPoint peer_address) override;
 
   // Gets the SSL connection information.
   bool GetSSLInfo(SSLInfo* ssl_info) const;
+
+  // Signs the exported keying material used for Token Binding using key |*key|
+  // and puts the signature in |*out|. Returns a net error code.
+  Error GetTokenBindingSignature(crypto::ECPrivateKey* key,
+                                 std::vector<uint8_t>* out);
 
   // Performs a crypto handshake with the server.
   int CryptoConnect(bool require_confirmation,
@@ -232,17 +245,35 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   // Returns false if number of migrations exceeds kMaxReadersPerQuicSession.
   // Takes ownership of |socket|, |reader|, and |writer|.
   bool MigrateToSocket(scoped_ptr<DatagramClientSocket> socket,
-                       scoped_ptr<QuicPacketReader> reader,
+                       scoped_ptr<QuicChromiumPacketReader> reader,
                        scoped_ptr<QuicPacketWriter> writer);
+
+  // Populates network error details for this session.
+  void PopulateNetErrorDetails(NetErrorDetails* details);
 
   // Returns current default socket. This is the socket over which all
   // QUIC packets are sent. This default socket can change, so do not store the
   // returned socket.
   const DatagramClientSocket* GetDefaultSocket() const;
 
+  bool IsAuthorized(const std::string& hostname) override;
+
+  // Returns true if session has one ore more streams marked as non-migratable.
+  bool HasNonMigratableStreams() const;
+
+  void HandlePromised(QuicStreamId associated_id,
+                      QuicStreamId promised_id,
+                      const SpdyHeaderBlock& headers) override;
+
+  void DeletePromised(QuicClientPromisedInfo* promised) override;
+
  protected:
   // QuicSession methods:
-  QuicSpdyStream* CreateIncomingDynamicStream(QuicStreamId id) override;
+  bool ShouldCreateIncomingDynamicStream(QuicStreamId id) override;
+  bool ShouldCreateOutgoingDynamicStream() override;
+
+  QuicChromiumClientStream* CreateIncomingDynamicStream(
+      QuicStreamId id) override;
 
  private:
   friend class test::QuicChromiumClientSessionPeer;
@@ -251,6 +282,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   typedef std::list<StreamRequest*> StreamRequestQueue;
 
   QuicChromiumClientStream* CreateOutgoingReliableStreamImpl();
+  QuicChromiumClientStream* CreateIncomingReliableStreamImpl(QuicStreamId id);
   // A completion callback invoked when a read completes.
   void OnReadComplete(int result);
 
@@ -301,14 +333,20 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   size_t num_total_streams_;
   base::TaskRunner* task_runner_;
   BoundNetLog net_log_;
-  std::vector<scoped_ptr<QuicPacketReader>> packet_readers_;
+  std::vector<scoped_ptr<QuicChromiumPacketReader>> packet_readers_;
   base::TimeTicks dns_resolution_end_time_;
   base::TimeTicks handshake_start_;  // Time the handshake was started.
   scoped_ptr<QuicConnectionLogger> logger_;
   // True when the session is going away, and streams may no longer be created
   // on this session. Existing stream will continue to be processed.
   bool going_away_;
+  // True when the session receives a go away from server due to port migration.
+  bool port_migration_detected_;
   QuicDisabledReason disabled_reason_;
+  TokenBindingSignatureMap token_binding_signatures_;
+  // UMA histogram counters for streams pushed to this session.
+  int streams_pushed_count_;
+  int streams_pushed_and_claimed_count_;
   base::WeakPtrFactory<QuicChromiumClientSession> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicChromiumClientSession);

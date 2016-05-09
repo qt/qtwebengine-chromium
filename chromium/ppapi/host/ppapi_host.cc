@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 
+#include <utility>
+
 #include "base/logging.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/host_factory.h"
@@ -124,11 +126,11 @@ void PpapiHost::SendUnsolicitedReplyWithHandles(
   Send(new PpapiPluginMsg_ResourceReply(params, msg));
 }
 
-scoped_ptr<ResourceHost> PpapiHost::CreateResourceHost(
+std::unique_ptr<ResourceHost> PpapiHost::CreateResourceHost(
     PP_Resource resource,
     PP_Instance instance,
     const IPC::Message& nested_msg) {
-  scoped_ptr<ResourceHost> resource_host;
+  std::unique_ptr<ResourceHost> resource_host;
   DCHECK(!host_factory_filters_.empty());  // Caller forgot to add a factory.
   for (size_t i = 0; i < host_factory_filters_.size(); i++) {
     resource_host = host_factory_filters_[i]->CreateResourceHost(
@@ -139,7 +141,8 @@ scoped_ptr<ResourceHost> PpapiHost::CreateResourceHost(
   return resource_host;
 }
 
-int PpapiHost::AddPendingResourceHost(scoped_ptr<ResourceHost> resource_host) {
+int PpapiHost::AddPendingResourceHost(
+    std::unique_ptr<ResourceHost> resource_host) {
   // The resource ID should not be assigned.
   if (!resource_host.get() || resource_host->pp_resource() != 0) {
     NOTREACHED();
@@ -152,18 +155,17 @@ int PpapiHost::AddPendingResourceHost(scoped_ptr<ResourceHost> resource_host) {
   }
 
   int pending_id = next_pending_resource_host_id_++;
-  pending_resource_hosts_[pending_id] =
-      linked_ptr<ResourceHost>(resource_host.release());
+  pending_resource_hosts_[pending_id] = std::move(resource_host);
   return pending_id;
 }
 
-void PpapiHost::AddHostFactoryFilter(scoped_ptr<HostFactory> filter) {
-  host_factory_filters_.push_back(filter.release());
+void PpapiHost::AddHostFactoryFilter(std::unique_ptr<HostFactory> filter) {
+  host_factory_filters_.push_back(std::move(filter));
 }
 
 void PpapiHost::AddInstanceMessageFilter(
-    scoped_ptr<InstanceMessageFilter> filter) {
-  instance_message_filters_.push_back(filter.release());
+    std::unique_ptr<InstanceMessageFilter> filter) {
+  instance_message_filters_.push_back(std::move(filter));
 }
 
 void PpapiHost::OnHostMsgResourceCall(
@@ -234,7 +236,7 @@ void PpapiHost::OnHostMsgResourceCreated(
   }
 
   // Run through all filters until one grabs this message.
-  scoped_ptr<ResourceHost> resource_host =
+  std::unique_ptr<ResourceHost> resource_host =
       CreateResourceHost(params.pp_resource(), instance, nested_msg);
 
   if (!resource_host.get()) {
@@ -245,8 +247,7 @@ void PpapiHost::OnHostMsgResourceCreated(
   // Resource should have been assigned a nonzero PP_Resource.
   DCHECK(resource_host->pp_resource());
 
-  resources_[params.pp_resource()] =
-      linked_ptr<ResourceHost>(resource_host.release());
+  resources_[params.pp_resource()] = std::move(resource_host);
 }
 
 void PpapiHost::OnHostMsgAttachToPendingHost(PP_Resource pp_resource,
@@ -259,7 +260,7 @@ void PpapiHost::OnHostMsgAttachToPendingHost(PP_Resource pp_resource,
     return;
   }
   found->second->SetPPResourceForPendingHost(pp_resource);
-  resources_[pp_resource] = found->second;
+  resources_[pp_resource] = std::move(found->second);
   pending_resource_hosts_.erase(found);
 }
 
@@ -274,7 +275,8 @@ void PpapiHost::OnHostMsgResourceDestroyed(PP_Resource resource) {
   // element will be there or not. Therefore, we delay destruction of the
   // HostResource until after we've made sure the map no longer contains
   // |resource|.
-  linked_ptr<ResourceHost> delete_at_end_of_scope(found->second);
+  std::unique_ptr<ResourceHost> delete_at_end_of_scope(
+      std::move(found->second));
   resources_.erase(found);
 }
 

@@ -16,6 +16,8 @@
 #include "cc/blink/web_compositor_support_impl.h"
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
+#include "content/renderer/origin_trials/web_trial_token_validator_impl.h"
+#include "content/renderer/top_level_blame_context.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "device/vibration/vibration_manager.mojom.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -31,13 +33,14 @@ class SyncMessageFilter;
 }
 
 namespace blink {
-class WebBatteryStatus;
 class WebCanvasCaptureHandler;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
+class WebMediaPlayer;
 class WebMediaRecorderHandler;
 class WebMediaStream;
+class WebSecurityOrigin;
 class WebServiceWorkerCacheStorage;
 }
 
@@ -47,14 +50,16 @@ class WebThreadImplForRendererScheduler;
 }
 
 namespace content {
-class BatteryStatusDispatcher;
+class BlinkServiceRegistryImpl;
 class DeviceLightEventPump;
 class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
+class LocalStorageCachedAreas;
 class PlatformEventObserverBase;
 class QuotaMessageFilter;
 class RendererClipboardDelegate;
 class RenderView;
+class ServiceRegistry;
 class ThreadSafeSender;
 class WebClipboardImpl;
 class WebDatabaseObserverImpl;
@@ -62,8 +67,8 @@ class WebFileSystemImpl;
 
 class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
  public:
-  explicit RendererBlinkPlatformImpl(
-      scheduler::RendererScheduler* renderer_scheduler);
+  RendererBlinkPlatformImpl(scheduler::RendererScheduler* renderer_scheduler,
+                            base::WeakPtr<ServiceRegistry> service_registry);
   ~RendererBlinkPlatformImpl() override;
 
   // Shutdown must be called just prior to shutting down blink.
@@ -104,9 +109,12 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebString& vfs_file_name) override;
   long long databaseGetFileSize(const blink::WebString& vfs_file_name) override;
   long long databaseGetSpaceAvailableForOrigin(
-      const blink::WebString& origin_identifier) override;
+      const blink::WebSecurityOrigin& origin) override;
   bool databaseSetFileSize(const blink::WebString& vfs_file_name,
                            long long size) override;
+  blink::WebString databaseCreateOriginIdentifier(
+      const blink::WebSecurityOrigin& origin) override;
+
   blink::WebString signedPublicKeyAndChallengeString(
       unsigned key_size_index,
       const blink::WebString& challenge,
@@ -119,8 +127,11 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   blink::WebScrollbarBehavior* scrollbarBehavior() override;
   blink::WebIDBFactory* idbFactory() override;
   blink::WebServiceWorkerCacheStorage* cacheStorage(
-      const blink::WebString& origin_identifier) override;
+      const blink::WebSecurityOrigin& security_origin) override;
   blink::WebFileSystem* fileSystem() override;
+  blink::WebString fileSystemCreateOriginIdentifier(
+      const blink::WebSecurityOrigin& origin) override;
+
   bool canAccelerate2dCanvas() override;
   bool isThreadedCompositingEnabled() override;
   bool isThreadedAnimationEnabled() override;
@@ -135,7 +146,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       unsigned channels,
       double sample_rate,
       blink::WebAudioDevice::RenderCallback* callback,
-      const blink::WebString& input_device_id) override;
+      const blink::WebString& input_device_id,
+      const blink::WebSecurityOrigin& security_origin) override;
 
   bool loadAudioResource(blink::WebAudioBus* destination_bus,
                          const char* audio_file_data,
@@ -156,21 +168,19 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebSize& size,
       double frame_rate,
       blink::WebMediaStreamTrack* track) override;
-  blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes) override;
-  blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes,
-      blink::WebGraphicsContext3D* share_context) override;
-  blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes,
-      blink::WebGraphicsContext3D* share_context,
-      blink::WebGraphicsContext3D::WebGraphicsInfo* gl_info) override;
+  void createHTMLVideoElementCapturer(
+      blink::WebMediaStream* web_media_stream,
+      blink::WebMediaPlayer* web_media_player) override;
+  blink::WebGraphicsContext3DProvider* createOffscreenGraphicsContext3DProvider(
+      const blink::Platform::ContextAttributes& attributes,
+      const blink::WebURL& top_document_web_url,
+      blink::WebGraphicsContext3DProvider* share_provider,
+      blink::Platform::GraphicsInfo* gl_info) override;
   blink::WebGraphicsContext3DProvider*
   createSharedOffscreenGraphicsContext3DProvider() override;
   blink::WebCompositorSupport* compositorSupport() override;
-  blink::WebString convertIDNToUnicode(
-      const blink::WebString& host,
-      const blink::WebString& languages) override;
+  blink::WebString convertIDNToUnicode(const blink::WebString& host) override;
+  blink::ServiceRegistry* serviceRegistry() override;
   void startListening(blink::WebPlatformEventType,
                       blink::WebPlatformEventListener*) override;
   void stopListening(blink::WebPlatformEventType) override;
@@ -180,11 +190,12 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   void vibrate(unsigned int milliseconds) override;
   void cancelVibration() override;
   blink::WebThread* currentThread() override;
+  blink::BlameContext* topLevelBlameContext() override;
   void recordRappor(const char* metric,
                     const blink::WebString& sample) override;
   void recordRapporURL(const char* metric, const blink::WebURL& url) override;
-  double currentTimeSeconds() override;
-  double monotonicallyIncreasingTimeSeconds() override;
+
+  blink::WebTrialTokenValidator* trialTokenValidator() override;
 
   // Set the PlatformEventObserverBase in |platform_event_observers_| associated
   // with |type| to |observer|. If there was already an observer associated to
@@ -212,10 +223,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   // is invoked.
   static void SetMockDeviceOrientationDataForTesting(
       const blink::WebDeviceOrientationData& data);
-
-  // Notifies blink::WebBatteryStatusListener that battery status has changed.
-  void MockBatteryStatusChangedForTesting(
-      const blink::WebBatteryStatus& status);
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -283,14 +290,19 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
 
   scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
 
-  scoped_ptr<BatteryStatusDispatcher> battery_status_dispatcher_;
-
   // Handle to the Vibration mojo service.
   device::VibrationManagerPtr vibration_manager_;
 
   IDMap<PlatformEventObserverBase, IDMapOwnPointer> platform_event_observers_;
 
   scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
+  TopLevelBlameContext top_level_blame_context_;
+
+  WebTrialTokenValidatorImpl trial_token_validator_;
+
+  scoped_ptr<LocalStorageCachedAreas> local_storage_cached_areas_;
+
+  scoped_ptr<BlinkServiceRegistryImpl> blink_service_registry_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererBlinkPlatformImpl);
 };

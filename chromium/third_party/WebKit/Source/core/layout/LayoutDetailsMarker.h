@@ -31,7 +31,7 @@ public:
 
     enum Orientation { Up, Down, Left, Right };
 
-    Orientation orientation() const;
+    Orientation getOrientation() const;
 
     const char* name() const override { return "LayoutDetailsMarker"; }
 
@@ -44,6 +44,6 @@ private:
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutDetailsMarker, isDetailsMarker());
 
-}
+} // namespace blink
 
 #endif // LayoutDetailsMarker_h

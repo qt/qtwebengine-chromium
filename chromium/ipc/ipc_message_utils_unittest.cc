@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -88,6 +89,48 @@ TEST(IPCMessageUtilsTest, StackVector) {
   EXPECT_TRUE(IPC::ReadParam(&msg, &iter, &output));
   for (size_t i = 0; i < 2 * stack_capacity; i++)
     EXPECT_EQ(stack_vector[i], output[i]);
+}
+
+// Tests that PickleSizer and Pickle agree on the size of a complex base::Value.
+TEST(IPCMessageUtilsTest, ValueSize) {
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue);
+  value->SetWithoutPathExpansion("foo", new base::FundamentalValue(42));
+  value->SetWithoutPathExpansion("bar", new base::FundamentalValue(3.14));
+  value->SetWithoutPathExpansion("baz", new base::StringValue("hello"));
+  value->SetWithoutPathExpansion("qux", base::Value::CreateNullValue());
+
+  scoped_ptr<base::DictionaryValue> nested_dict(new base::DictionaryValue);
+  nested_dict->SetWithoutPathExpansion("foobar", new base::FundamentalValue(5));
+  value->SetWithoutPathExpansion("nested", std::move(nested_dict));
+
+  scoped_ptr<base::ListValue> list_value(new base::ListValue);
+  list_value->Append(new base::StringValue("im a string"));
+  list_value->Append(new base::StringValue("im another string"));
+  value->SetWithoutPathExpansion("awesome-list", std::move(list_value));
+
+  base::Pickle pickle;
+  IPC::WriteParam(&pickle, *value);
+
+  base::PickleSizer sizer;
+  IPC::GetParamSize(&sizer, *value);
+
+  EXPECT_EQ(sizer.payload_size(), pickle.payload_size());
+}
+
+TEST(IPCMessageUtilsTest, JsonValueSize) {
+  const char kJson[] = "[ { \"foo\": \"bar\", \"baz\": 1234.0 } ]";
+  std::unique_ptr<base::Value> json_value = base::JSONReader::Read(kJson);
+  EXPECT_NE(nullptr, json_value);
+  base::ListValue value;
+  value.Append(std::move(json_value));
+
+  base::Pickle pickle;
+  IPC::WriteParam(&pickle, value);
+
+  base::PickleSizer sizer;
+  IPC::GetParamSize(&sizer, value);
+
+  EXPECT_EQ(sizer.payload_size(), pickle.payload_size());
 }
 
 }  // namespace

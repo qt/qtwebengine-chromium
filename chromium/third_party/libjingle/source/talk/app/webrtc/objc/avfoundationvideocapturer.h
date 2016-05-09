@@ -28,17 +28,21 @@
 #ifndef TALK_APP_WEBRTC_OBJC_AVFOUNDATION_VIDEO_CAPTURER_H_
 #define TALK_APP_WEBRTC_OBJC_AVFOUNDATION_VIDEO_CAPTURER_H_
 
-#include "talk/media/base/videocapturer.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/media/base/videocapturer.h"
 #include "webrtc/video_frame.h"
 
 #import <AVFoundation/AVFoundation.h>
 
 @class RTCAVFoundationVideoCapturerInternal;
 
+namespace rtc {
+class Thread;
+} // namespace rtc
+
 namespace webrtc {
 
-class AVFoundationVideoCapturer : public cricket::VideoCapturer {
+class AVFoundationVideoCapturer : public cricket::VideoCapturer,
+                                  public rtc::MessageHandler {
  public:
   AVFoundationVideoCapturer();
   ~AVFoundationVideoCapturer();
@@ -54,8 +58,13 @@ class AVFoundationVideoCapturer : public cricket::VideoCapturer {
     return true;
   }
 
-  // Returns the active capture session.
+  // Returns the active capture session. Calls to the capture session should
+  // occur on the RTCDispatcherTypeCaptureSession queue in RTCDispatcher.
   AVCaptureSession* GetCaptureSession();
+
+  // Returns whether the rear-facing camera can be used.
+  // e.g. It can't be used because it doesn't exist.
+  bool CanUseBackCamera() const;
 
   // Switches the camera being used (either front or back).
   void SetUseBackCamera(bool useBackCamera);
@@ -65,9 +74,11 @@ class AVFoundationVideoCapturer : public cricket::VideoCapturer {
   // frame for capture.
   void CaptureSampleBuffer(CMSampleBufferRef sampleBuffer);
 
+  // Handles messages from posts.
+  void OnMessage(rtc::Message *msg) override;
+
  private:
-  // Used to signal frame capture on the thread that capturer was started on.
-  void SignalFrameCapturedOnStartThread(const cricket::CapturedFrame* frame);
+  void OnFrameMessage(CVImageBufferRef image_buffer, int64_t capture_time);
 
   RTCAVFoundationVideoCapturerInternal* _capturer;
   rtc::Thread* _startThread;  // Set in Start(), unset in Stop().

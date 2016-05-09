@@ -26,6 +26,7 @@
 #include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/FirstLetterPseudoElement.h"
 #include "core/dom/LayoutTreeBuilder.h"
 #include "core/dom/LayoutTreeBuilderTraversal.h"
 #include "core/dom/NodeComputedStyle.h"
@@ -34,6 +35,8 @@
 #include "core/events/ScopedEventQueue.h"
 #include "core/layout/LayoutText.h"
 #include "core/layout/LayoutTextCombine.h"
+#include "core/layout/LayoutTextFragment.h"
+#include "core/layout/api/LayoutTextItem.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/svg/SVGForeignObjectElement.h"
 #include "wtf/text/CString.h"
@@ -41,34 +44,34 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<Text> Text::create(Document& document, const String& data)
+RawPtr<Text> Text::create(Document& document, const String& data)
 {
-    return adoptRefWillBeNoop(new Text(document, data, CreateText));
+    return new Text(document, data, CreateText);
 }
 
-PassRefPtrWillBeRawPtr<Text> Text::createEditingText(Document& document, const String& data)
+RawPtr<Text> Text::createEditingText(Document& document, const String& data)
 {
-    return adoptRefWillBeNoop(new Text(document, data, CreateEditingText));
+    return new Text(document, data, CreateEditingText);
 }
 
-PassRefPtrWillBeRawPtr<Node> Text::mergeNextSiblingNodesIfPossible()
+RawPtr<Node> Text::mergeNextSiblingNodesIfPossible()
 {
-    RefPtrWillBeRawPtr<Node> protect(this);
+    RawPtr<Node> protect(this);
 
     // Remove empty text nodes.
     if (!length()) {
         // Care must be taken to get the next node before removing the current node.
-        RefPtrWillBeRawPtr<Node> nextNode(NodeTraversal::nextPostOrder(*this));
+        RawPtr<Node> nextNode(NodeTraversal::nextPostOrder(*this));
         remove(IGNORE_EXCEPTION);
         return nextNode.release();
     }
 
     // Merge text nodes.
     while (Node* nextSibling = this->nextSibling()) {
-        if (nextSibling->nodeType() != TEXT_NODE)
+        if (nextSibling->getNodeType() != TEXT_NODE)
             break;
 
-        RefPtrWillBeRawPtr<Text> nextText = toText(nextSibling);
+        RawPtr<Text> nextText = toText(nextSibling);
 
         // Remove empty text nodes.
         if (!nextText->length()) {
@@ -101,7 +104,7 @@ PassRefPtrWillBeRawPtr<Node> Text::mergeNextSiblingNodesIfPossible()
     return NodeTraversal::nextPostOrder(*this);
 }
 
-PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState)
+RawPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState)
 {
     // IndexSizeError: Raised if the specified offset is negative or greater than
     // the number of 16-bit units in data.
@@ -112,7 +115,7 @@ PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& ex
 
     EventQueueScope scope;
     String oldStr = data();
-    RefPtrWillBeRawPtr<Text> newText = cloneWithData(oldStr.substring(offset));
+    RawPtr<Text> newText = cloneWithData(oldStr.substring(offset));
     setDataWithoutUpdate(oldStr.substring(0, offset));
 
     didModifyData(oldStr, CharacterData::UpdateFromNonParser);
@@ -134,7 +137,7 @@ PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& ex
 static const Text* earliestLogicallyAdjacentTextNode(const Text* t)
 {
     for (const Node* n = t->previousSibling(); n; n = n->previousSibling()) {
-        Node::NodeType type = n->nodeType();
+        Node::NodeType type = n->getNodeType();
         if (type == Node::TEXT_NODE || type == Node::CDATA_SECTION_NODE) {
             t = toText(n);
             continue;
@@ -148,7 +151,7 @@ static const Text* earliestLogicallyAdjacentTextNode(const Text* t)
 static const Text* latestLogicallyAdjacentTextNode(const Text* t)
 {
     for (const Node* n = t->nextSibling(); n; n = n->nextSibling()) {
-        Node::NodeType type = n->nodeType();
+        Node::NodeType type = n->getNodeType();
         if (type == Node::TEXT_NODE || type == Node::CDATA_SECTION_NODE) {
             t = toText(n);
             continue;
@@ -181,31 +184,31 @@ String Text::wholeText() const
             continue;
         result.append(toText(n)->data());
     }
-    ASSERT(result.length() == resultLength);
+    DCHECK_EQ(result.length(), resultLength);
 
     return result.toString();
 }
 
-PassRefPtrWillBeRawPtr<Text> Text::replaceWholeText(const String& newText)
+RawPtr<Text> Text::replaceWholeText(const String& newText)
 {
     // Remove all adjacent text nodes, and replace the contents of this one.
 
     // Protect startText and endText against mutation event handlers removing the last ref
-    RefPtrWillBeRawPtr<Text> startText = const_cast<Text*>(earliestLogicallyAdjacentTextNode(this));
-    RefPtrWillBeRawPtr<Text> endText = const_cast<Text*>(latestLogicallyAdjacentTextNode(this));
+    RawPtr<Text> startText = const_cast<Text*>(earliestLogicallyAdjacentTextNode(this));
+    RawPtr<Text> endText = const_cast<Text*>(latestLogicallyAdjacentTextNode(this));
 
-    RefPtrWillBeRawPtr<Text> protectedThis(this); // Mutation event handlers could cause our last ref to go away
-    RefPtrWillBeRawPtr<ContainerNode> parent = parentNode(); // Protect against mutation handlers moving this node during traversal
-    for (RefPtrWillBeRawPtr<Node> n = startText; n && n != this && n->isTextNode() && n->parentNode() == parent;) {
-        RefPtrWillBeRawPtr<Node> nodeToRemove(n.release());
+    RawPtr<Text> protectedThis(this); // Mutation event handlers could cause our last ref to go away
+    RawPtr<ContainerNode> parent = parentNode(); // Protect against mutation handlers moving this node during traversal
+    for (RawPtr<Node> n = startText; n && n != this && n->isTextNode() && n->parentNode() == parent;) {
+        RawPtr<Node> nodeToRemove(n.release());
         n = nodeToRemove->nextSibling();
         parent->removeChild(nodeToRemove.get(), IGNORE_EXCEPTION);
     }
 
     if (this != endText) {
         Node* onePastEndText = endText->nextSibling();
-        for (RefPtrWillBeRawPtr<Node> n = nextSibling(); n && n != onePastEndText && n->isTextNode() && n->parentNode() == parent;) {
-            RefPtrWillBeRawPtr<Node> nodeToRemove(n.release());
+        for (RawPtr<Node> n = nextSibling(); n && n != onePastEndText && n->isTextNode() && n->parentNode() == parent;) {
+            RawPtr<Node> nodeToRemove(n.release());
             n = nodeToRemove->nextSibling();
             parent->removeChild(nodeToRemove.get(), IGNORE_EXCEPTION);
         }
@@ -226,17 +229,17 @@ String Text::nodeName() const
     return "#text";
 }
 
-Node::NodeType Text::nodeType() const
+Node::NodeType Text::getNodeType() const
 {
     return TEXT_NODE;
 }
 
-PassRefPtrWillBeRawPtr<Node> Text::cloneNode(bool /*deep*/)
+RawPtr<Node> Text::cloneNode(bool /*deep*/)
 {
     return cloneWithData(data());
 }
 
-static inline bool canHaveWhitespaceChildren(const LayoutObject& parent, Text* text)
+static inline bool canHaveWhitespaceChildren(const LayoutObject& parent)
 {
     // <button> should allow whitespace even though LayoutFlexibleBox doesn't.
     if (parent.isLayoutButton())
@@ -254,7 +257,7 @@ static inline bool canHaveWhitespaceChildren(const LayoutObject& parent, Text* t
     return true;
 }
 
-bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObject& parent)
+bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObject& parent) const
 {
     if (!parent.canHaveChildren())
         return false;
@@ -271,7 +274,7 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
     if (!containsOnlyWhitespace())
         return true;
 
-    if (!canHaveWhitespaceChildren(parent, this))
+    if (!canHaveWhitespaceChildren(parent))
         return false;
 
     // pre-wrap in SVG never makes layoutObject.
@@ -323,7 +326,7 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
 static bool isSVGText(Text* text)
 {
     Node* parentOrShadowHostNode = text->parentOrShadowHostNode();
-    ASSERT(parentOrShadowHostNode);
+    DCHECK(parentOrShadowHostNode);
     return parentOrShadowHostNode->isSVGElement() && !isSVGForeignObjectElement(*parentOrShadowHostNode);
 }
 
@@ -368,7 +371,7 @@ void Text::reattachIfNeeded(const AttachContext& context)
     AttachContext reattachContext(context);
     reattachContext.performingReattach = true;
 
-    if (styleChangeType() < NeedsReattachStyleChange)
+    if (getStyleChangeType() < NeedsReattachStyleChange)
         detach(reattachContext);
     if (layoutObjectIsNeeded)
         LayoutTreeBuilderForText(*this, layoutParent->layoutObject()).createLayoutObject();
@@ -377,11 +380,11 @@ void Text::reattachIfNeeded(const AttachContext& context)
 
 void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
 {
-    if (LayoutText* layoutObject = this->layoutObject()) {
+    if (LayoutTextItem layoutItem = LayoutTextItem(this->layoutObject())) {
         if (change != NoChange || needsStyleRecalc())
-            layoutObject->setStyle(document().ensureStyleResolver().styleForText(this));
+            layoutItem.setStyle(document().ensureStyleResolver().styleForText(this));
         if (needsStyleRecalc())
-            layoutObject->setText(dataImpl());
+            layoutItem.setText(dataImpl());
         clearNeedsStyleRecalc();
     } else if (needsStyleRecalc() || needsWhitespaceLayoutObject()) {
         reattach();
@@ -394,9 +397,26 @@ void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
 // need to create one if the parent style now has white-space: pre.
 bool Text::needsWhitespaceLayoutObject()
 {
-    ASSERT(!layoutObject());
+    DCHECK(!layoutObject());
     if (const ComputedStyle* style = parentComputedStyle())
         return style->preserveNewline();
+    return false;
+}
+
+// Passing both |textNode| and its layout object because repeated calls to
+// |Node::layoutObject()| are discouraged.
+static bool shouldUpdateLayoutByReattaching(const Text& textNode, LayoutText* textLayoutObject)
+{
+    DCHECK_EQ(textNode.layoutObject(), textLayoutObject);
+    if (!textLayoutObject)
+        return true;
+    if (!textNode.textLayoutObjectIsNeeded(*textLayoutObject->style(), *textLayoutObject->parent()))
+        return true;
+    if (textLayoutObject->isTextFragment()) {
+        FirstLetterPseudoElement* pseudo = toLayoutTextFragment(textLayoutObject)->firstLetterPseudoElement();
+        if (pseudo && !FirstLetterPseudoElement::firstLetterTextLayoutObject(*pseudo))
+            return true;
+    }
     return false;
 }
 
@@ -405,17 +425,17 @@ void Text::updateTextLayoutObject(unsigned offsetOfReplacedData, unsigned length
     if (!inActiveDocument())
         return;
     LayoutText* textLayoutObject = layoutObject();
-    if (!textLayoutObject || !textLayoutObjectIsNeeded(*textLayoutObject->style(), *textLayoutObject->parent())) {
+    if (shouldUpdateLayoutByReattaching(*this, textLayoutObject)) {
         lazyReattachIfAttached();
         // FIXME: Editing should be updated so this is not neccesary.
         if (recalcStyleBehavior == DeprecatedRecalcStyleImmediatlelyForEditing)
-            document().updateLayoutTreeIfNeeded();
+            document().updateLayoutTree();
         return;
     }
     textLayoutObject->setTextWithOffset(dataImpl(), offsetOfReplacedData, lengthOfReplacedData);
 }
 
-PassRefPtrWillBeRawPtr<Text> Text::cloneWithData(const String& data)
+RawPtr<Text> Text::cloneWithData(const String& data)
 {
     return create(document(), data);
 }

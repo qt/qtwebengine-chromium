@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
+#include "gpu/command_buffer/common/command_buffer_id.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "ppapi/shared_impl/ppb_graphics_3d_shared.h"
@@ -17,24 +18,20 @@
 
 namespace gpu {
 struct Capabilities;
+class CommandBufferProxyImpl;
+class GpuChannelHost;
 }
 
 namespace content {
-class CommandBufferProxyImpl;
-class GpuChannelHost;
 
 class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
  public:
-  static PP_Resource Create(PP_Instance instance,
-                            PP_Resource share_context,
-                            const int32_t* attrib_list);
-  static PP_Resource CreateRaw(
-      PP_Instance instance,
-      PP_Resource share_context,
-      const int32_t* attrib_list,
-      gpu::Capabilities* capabilities,
-      base::SharedMemoryHandle* shared_state_handle,
-      uint64_t* command_buffer_id);
+  static PP_Resource CreateRaw(PP_Instance instance,
+                               PP_Resource share_context,
+                               const int32_t* attrib_list,
+                               gpu::Capabilities* capabilities,
+                               base::SharedMemoryHandle* shared_state_handle,
+                               gpu::CommandBufferId* command_buffer_id);
 
   // PPB_Graphics3D_API trusted implementation.
   PP_Bool SetGetBuffer(int32_t transfer_buffer_id) override;
@@ -46,9 +43,6 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
                                                 int32_t end) override;
   gpu::CommandBuffer::State WaitForGetOffsetInRange(int32_t start,
                                                     int32_t end) override;
-  uint32_t InsertSyncPoint() override;
-  uint32_t InsertFutureSyncPoint() override;
-  void RetireSyncPoint(uint32_t) override;
   void EnsureWorkVisible() override;
 
   // Binds/unbinds the graphics of this context with the associated instance.
@@ -67,9 +61,9 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
     *sync_token = sync_token_;
   }
 
-  CommandBufferProxyImpl* GetCommandBufferProxy();
+  gpu::CommandBufferProxyImpl* GetCommandBufferProxy();
 
-  GpuChannelHost* channel() { return channel_.get(); }
+  gpu::GpuChannelHost* channel() { return channel_.get(); }
 
  protected:
   ~PPB_Graphics3D_Impl() override;
@@ -81,12 +75,11 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
  private:
   explicit PPB_Graphics3D_Impl(PP_Instance instance);
 
-  bool Init(PPB_Graphics3D_API* share_context, const int32_t* attrib_list);
   bool InitRaw(PPB_Graphics3D_API* share_context,
                const int32_t* attrib_list,
                gpu::Capabilities* capabilities,
                base::SharedMemoryHandle* shared_state_handle,
-               uint64_t* command_buffer_id);
+               gpu::CommandBufferId* command_buffer_id);
 
   // Notifications received from the GPU process.
   void OnSwapBuffers();
@@ -103,8 +96,8 @@ class PPB_Graphics3D_Impl : public ppapi::PPB_Graphics3D_Shared {
   gpu::Mailbox mailbox_;
   gpu::SyncToken sync_token_;
   bool has_alpha_;
-  scoped_refptr<GpuChannelHost> channel_;
-  scoped_ptr<CommandBufferProxyImpl> command_buffer_;
+  scoped_refptr<gpu::GpuChannelHost> channel_;
+  scoped_ptr<gpu::CommandBufferProxyImpl> command_buffer_;
 
   base::WeakPtrFactory<PPB_Graphics3D_Impl> weak_ptr_factory_;
 

@@ -108,17 +108,21 @@ bool LayoutTableCol::canHaveChildren() const
     return isTableColumnGroup();
 }
 
-LayoutRect LayoutTableCol::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutTableCol::localOverflowRectForPaintInvalidation() const
 {
-    // For now, just paint invalidate the whole table.
-    // FIXME: Find a better way to do this, e.g., need to paint invalidate all the cells that we
-    // might have propagated a background color or borders into.
-    // FIXME: check for paintInvalidationContainer each time here?
+    // Entire table gets invalidated, instead of invalidating
+    // every cell in the column.
+    // This is simpler, but suboptimal.
 
-    LayoutTable* parentTable = table();
-    if (!parentTable)
+    LayoutTable* table = this->table();
+    if (!table)
         return LayoutRect();
-    return parentTable->clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
+
+    // The correctness of this method depends on the fact that LayoutTableCol's
+    // location is always zero.
+    ASSERT(this->location() == LayoutPoint());
+
+    return table->localOverflowRectForPaintInvalidation();
 }
 
 void LayoutTableCol::imageChanged(WrappedImagePtr, const IntRect*)
@@ -184,14 +188,14 @@ const BorderValue& LayoutTableCol::borderAdjoiningCellEndBorder(const LayoutTabl
 
 const BorderValue& LayoutTableCol::borderAdjoiningCellBefore(const LayoutTableCell* cell) const
 {
-    ASSERT_UNUSED(cell, table()->colElement(cell->col() + cell->colSpan()).innermostColOrColGroup() == this);
+    ASSERT_UNUSED(cell, table()->colElementAtAbsoluteColumn(cell->absoluteColumnIndex() + cell->colSpan()).innermostColOrColGroup() == this);
     return style()->borderStart();
 }
 
 const BorderValue& LayoutTableCol::borderAdjoiningCellAfter(const LayoutTableCell* cell) const
 {
-    ASSERT_UNUSED(cell, table()->colElement(cell->col() - 1).innermostColOrColGroup() == this);
+    ASSERT_UNUSED(cell, table()->colElementAtAbsoluteColumn(cell->absoluteColumnIndex() - 1).innermostColOrColGroup() == this);
     return style()->borderEnd();
 }
 
-}
+} // namespace blink

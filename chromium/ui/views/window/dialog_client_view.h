@@ -9,7 +9,6 @@
 #include "base/macros.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/focus/focus_manager.h"
 #include "ui/views/window/client_view.h"
 
 namespace views {
@@ -20,18 +19,16 @@ class Widget;
 
 // DialogClientView provides adornments for a dialog's content view, including
 // custom-labeled [OK] and [Cancel] buttons with [Enter] and [Esc] accelerators.
-// The view also displays the delegate's extra view alongside the buttons and
-// the delegate's footnote view below the buttons. The view appears like below.
-// NOTE: The contents view is not inset on the top or side client view edges.
+// The view also displays the delegate's extra view alongside the buttons. The
+// view appears like below. NOTE: The contents view is not inset on the top or
+// side client view edges.
 //   +------------------------------+
 //   |        Contents View         |
 //   +------------------------------+
 //   | [Extra View]   [OK] [Cancel] |
-//   | [      Footnote View       ] |
 //   +------------------------------+
 class VIEWS_EXPORT DialogClientView : public ClientView,
-                                      public ButtonListener,
-                                      public FocusChangeListener {
+                                      public ButtonListener {
  public:
   DialogClientView(Widget* widget, View* contents_view);
   ~DialogClientView() override;
@@ -52,21 +49,20 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   DialogClientView* AsDialogClientView() override;
   const DialogClientView* AsDialogClientView() const override;
 
-  // FocusChangeListener implementation:
-  void OnWillChangeFocus(View* focused_before, View* focused_now) override;
-  void OnDidChangeFocus(View* focused_before, View* focused_now) override;
-
   // View implementation:
   gfx::Size GetPreferredSize() const override;
   void Layout() override;
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
   void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) override;
-  void NativeViewHierarchyChanged() override;
   void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // ButtonListener implementation:
   void ButtonPressed(Button* sender, const ui::Event& event) override;
+
+  void set_button_row_insets(const gfx::Insets& insets) {
+    button_row_insets_ = insets;
+  }
 
  protected:
   // For testing.
@@ -78,16 +74,11 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   // Create and add the extra view, if supplied by the delegate.
   void CreateExtraView();
 
-  // Creates and adds the footnote view, if supplied by the delegate.
-  void CreateFootnoteView();
-
   // View implementation.
   void ChildPreferredSizeChanged(View* child) override;
   void ChildVisibilityChanged(View* child) override;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(DialogClientViewTest, FocusManager);
-
   bool has_dialog_buttons() const { return ok_button_ || cancel_button_; }
 
   // Create a dialog button of the appropriate type.
@@ -102,30 +93,25 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   // Returns the insets for the buttons and extra view.
   gfx::Insets GetButtonRowInsets() const;
 
-  // Closes the widget.
-  void Close();
+  // How much to inset the button row.
+  gfx::Insets button_row_insets_;
+
+  // Sets up the focus chain for the child views. This is required since the
+  // delegate may choose to add/remove views at any time.
+  void SetupFocusChain();
 
   // The dialog buttons.
   LabelButton* ok_button_;
   LabelButton* cancel_button_;
 
-  // The button that is currently default; may be NULL.
-  LabelButton* default_button_;
-
-  // Observe |focus_manager_| to update the default button with focus changes.
-  FocusManager* focus_manager_;
-
   // The extra view shown in the row of buttons; may be NULL.
   View* extra_view_;
 
-  // The footnote view shown below the buttons; may be NULL.
-  View* footnote_view_;
-
   // True if we've notified the delegate the window is closing and the delegate
-  // allosed the close. In some situations it's possible to get two closes (see
+  // allowed the close. In some situations it's possible to get two closes (see
   // http://crbug.com/71940). This is used to avoid notifying the delegate
   // twice, which can have bad consequences.
-  bool notified_delegate_;
+  bool delegate_allowed_close_;
 
   DISALLOW_COPY_AND_ASSIGN(DialogClientView);
 };

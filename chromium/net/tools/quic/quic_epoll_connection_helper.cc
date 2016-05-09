@@ -15,14 +15,14 @@
 #include "net/tools/quic/quic_socket_utils.h"
 
 namespace net {
-namespace tools {
 
 namespace {
 
 class QuicEpollAlarm : public QuicAlarm {
  public:
-  QuicEpollAlarm(EpollServer* epoll_server, QuicAlarm::Delegate* delegate)
-      : QuicAlarm(delegate),
+  QuicEpollAlarm(EpollServer* epoll_server,
+                 QuicArenaScopedPtr<Delegate> delegate)
+      : QuicAlarm(std::move(delegate)),
         epoll_server_(epoll_server),
         epoll_alarm_impl_(this) {}
 
@@ -61,10 +61,12 @@ class QuicEpollAlarm : public QuicAlarm {
 
 }  // namespace
 
-QuicEpollConnectionHelper::QuicEpollConnectionHelper(EpollServer* epoll_server)
+QuicEpollConnectionHelper::QuicEpollConnectionHelper(EpollServer* epoll_server,
+                                                     QuicAllocator type)
     : epoll_server_(epoll_server),
       clock_(epoll_server),
-      random_generator_(QuicRandom::GetInstance()) {}
+      random_generator_(QuicRandom::GetInstance()),
+      allocator_type_(type) {}
 
 QuicEpollConnectionHelper::~QuicEpollConnectionHelper() {}
 
@@ -78,12 +80,28 @@ QuicRandom* QuicEpollConnectionHelper::GetRandomGenerator() {
 
 QuicAlarm* QuicEpollConnectionHelper::CreateAlarm(
     QuicAlarm::Delegate* delegate) {
-  return new QuicEpollAlarm(epoll_server_, delegate);
+  return new QuicEpollAlarm(epoll_server_,
+                            QuicArenaScopedPtr<QuicAlarm::Delegate>(delegate));
+}
+
+QuicArenaScopedPtr<QuicAlarm> QuicEpollConnectionHelper::CreateAlarm(
+    QuicArenaScopedPtr<QuicAlarm::Delegate> delegate,
+    QuicConnectionArena* arena) {
+  if (arena != nullptr) {
+    return arena->New<QuicEpollAlarm>(epoll_server_, std::move(delegate));
+  } else {
+    return QuicArenaScopedPtr<QuicAlarm>(
+        new QuicEpollAlarm(epoll_server_, std::move(delegate)));
+  }
 }
 
 QuicBufferAllocator* QuicEpollConnectionHelper::GetBufferAllocator() {
-  return &buffer_allocator_;
+  if (allocator_type_ == QuicAllocator::BUFFER_POOL) {
+    return &buffer_allocator_;
+  } else {
+    DCHECK(allocator_type_ == QuicAllocator::SIMPLE);
+    return &simple_buffer_allocator_;
+  }
 }
 
-}  // namespace tools
 }  // namespace net

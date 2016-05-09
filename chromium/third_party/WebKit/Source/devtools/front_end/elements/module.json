@@ -31,10 +31,10 @@
             "settingType": "enum",
             "defaultValue": "original",
             "options": [
-                ["As authored", "original"],
-                ["HEX: #DAC0DE", "hex", true],
-                ["RGB: rgb(128, 255, 255)", "rgb", true],
-                ["HSL: hsl(300, 80%, 90%)", "hsl", true]
+                { "title": "Set color format as authored", "text": "As authored", "value": "original" },
+                { "title": "Set color format to HEX", "text": "HEX: #dac0de", "value": "hex", "raw": true },
+                { "title": "Set color format to RGB", "text": "RGB: rgb(128, 255, 255)", "value": "rgb", "raw": true },
+                { "title": "Set color format to HSL", "text": "HSL: hsl(300, 80%, 90%)", "value": "hsl", "raw": true }
             ]
         },
         {
@@ -53,16 +53,11 @@
             "title": "Word wrap",
             "settingName": "domWordWrap",
             "settingType": "boolean",
-            "defaultValue": true
-        },
-        {
-            "type": "setting",
-            "category": "Elements",
-            "order": 3,
-            "title": "Show rulers",
-            "settingName": "showMetricsRulers",
-            "settingType": "boolean",
-            "defaultValue": false
+            "defaultValue": true,
+            "options": [
+                { "value": true, "title": "Enable DOM word wrap" },
+                { "value": false, "title": "Disable DOM word wrap" }
+            ]
         },
         {
             "type": "setting",
@@ -75,14 +70,14 @@
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.ClassesPaneWidget.ButtonProvider",
+            "className": "WebInspector.ElementStatePaneWidget.ButtonProvider",
             "order": 1,
             "location": "styles-sidebarpane-toolbar"
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
-            "className": "WebInspector.ElementStatePaneWidget.ButtonProvider",
-            "order": 1,
+            "className": "WebInspector.ClassesPaneWidget.ButtonProvider",
+            "order": 2,
             "location": "styles-sidebarpane-toolbar"
         },
         {
@@ -184,6 +179,7 @@
         "computedStyleSidebarPane.css",
         "elementsPanel.css",
         "elementsTreeOutline.css",
-        "spectrum.css"
+        "spectrum.css",
+        "platformFontsWidget.css"
     ]
 }

@@ -32,6 +32,17 @@ void SaveStatusAndCall(ServiceWorkerStatusCode* out,
   callback.Run();
 }
 
+scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params>
+CreateStartParams(int version_id, const GURL& scope, const GURL& script_url) {
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      new EmbeddedWorkerMsg_StartWorker_Params);
+  params->service_worker_version_id = version_id;
+  params->scope = scope;
+  params->script_url = script_url;
+  params->pause_after_download = false;
+  return params;
+}
+
 }  // namespace
 
 class EmbeddedWorkerInstanceTest : public testing::Test,
@@ -85,8 +96,10 @@ class EmbeddedWorkerInstanceTest : public testing::Test,
                                       const GURL& url) {
     ServiceWorkerStatusCode status;
     base::RunLoop run_loop;
-    worker->Start(id, pattern, url, base::Bind(&SaveStatusAndCall, &status,
-                                               run_loop.QuitClosure()));
+    scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params =
+        CreateStartParams(id, pattern, url);
+    worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                                run_loop.QuitClosure()));
     run_loop.Run();
     return status;
   }
@@ -118,13 +131,15 @@ class StalledInStartWorkerHelper : public EmbeddedWorkerTestHelper {
   void OnStartWorker(int embedded_worker_id,
                      int64_t service_worker_version_id,
                      const GURL& scope,
-                     const GURL& script_url) override {
+                     const GURL& script_url,
+                     bool pause_after_download) override {
     if (force_stall_in_start_) {
       // Do nothing to simulate a stall in the worker process.
       return;
     }
-    EmbeddedWorkerTestHelper::OnStartWorker(
-        embedded_worker_id, service_worker_version_id, scope, script_url);
+    EmbeddedWorkerTestHelper::OnStartWorker(embedded_worker_id,
+                                            service_worker_version_id, scope,
+                                            script_url, pause_after_download);
   }
 
   void set_force_stall_in_start(bool force_stall_in_start) {
@@ -162,11 +177,10 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
   // Start should succeed.
   ServiceWorkerStatusCode status;
   base::RunLoop run_loop;
-  worker->Start(
-      service_worker_version_id,
-      pattern,
-      url,
-      base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params =
+      CreateStartParams(service_worker_version_id, pattern, url);
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              run_loop.QuitClosure()));
   EXPECT_EQ(EmbeddedWorkerInstance::STARTING, worker->status());
   run_loop.Run();
   EXPECT_EQ(SERVICE_WORKER_OK, status);
@@ -190,6 +204,72 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
       ipc_sink()->GetUniqueMessageMatching(EmbeddedWorkerMsg_StartWorker::ID));
   ASSERT_TRUE(ipc_sink()->GetUniqueMessageMatching(
       EmbeddedWorkerMsg_StopWorker::ID));
+}
+
+// Test that a worker that failed twice will use a new render process
+// on the next attempt.
+TEST_F(EmbeddedWorkerInstanceTest, ForceNewProcess) {
+  scoped_ptr<EmbeddedWorkerInstance> worker =
+      embedded_worker_registry()->CreateWorker();
+  EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
+
+  const int64_t service_worker_version_id = 55L;
+  const GURL pattern("http://example.com/");
+  const GURL url("http://example.com/worker.js");
+
+  // Simulate adding one process to the pattern.
+  helper_->SimulateAddProcessToPattern(pattern,
+                                       helper_->mock_render_process_id());
+
+  // Also simulate adding a "newly created" process to the pattern because
+  // unittests can't actually create a new process itself.
+  // ServiceWorkerProcessManager only chooses this process id in unittests if
+  // can_use_existing_process is false.
+  helper_->SimulateAddProcessToPattern(pattern,
+                                       helper_->new_render_process_id());
+
+  {
+    // Start once normally.
+    ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+    base::RunLoop run_loop;
+    scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+        CreateStartParams(service_worker_version_id, pattern, url));
+    worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                                run_loop.QuitClosure()));
+    run_loop.Run();
+    EXPECT_EQ(SERVICE_WORKER_OK, status);
+    EXPECT_EQ(EmbeddedWorkerInstance::RUNNING, worker->status());
+    // The worker should be using the default render process.
+    EXPECT_EQ(helper_->mock_render_process_id(), worker->process_id());
+
+    EXPECT_EQ(SERVICE_WORKER_OK, worker->Stop());
+    base::RunLoop().RunUntilIdle();
+  }
+
+  // Fail twice.
+  context()->UpdateVersionFailureCount(service_worker_version_id,
+                                       SERVICE_WORKER_ERROR_FAILED);
+  context()->UpdateVersionFailureCount(service_worker_version_id,
+                                       SERVICE_WORKER_ERROR_FAILED);
+
+  {
+    // Start again.
+    ServiceWorkerStatusCode status;
+    base::RunLoop run_loop;
+    scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+        CreateStartParams(service_worker_version_id, pattern, url));
+    worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                                run_loop.QuitClosure()));
+    EXPECT_EQ(EmbeddedWorkerInstance::STARTING, worker->status());
+    run_loop.Run();
+    EXPECT_EQ(SERVICE_WORKER_OK, status);
+
+    EXPECT_EQ(EmbeddedWorkerInstance::RUNNING, worker->status());
+    // The worker should be using the new render process.
+    EXPECT_EQ(helper_->new_render_process_id(), worker->process_id());
+    EXPECT_EQ(SERVICE_WORKER_OK, worker->Stop());
+    base::RunLoop().RunUntilIdle();
+  }
 }
 
 TEST_F(EmbeddedWorkerInstanceTest, StopWhenDevToolsAttached) {
@@ -256,9 +336,10 @@ TEST_F(EmbeddedWorkerInstanceTest, RemoveWorkerInSharedProcess) {
     // Start worker1.
     ServiceWorkerStatusCode status;
     base::RunLoop run_loop;
-    worker1->Start(
-        version_id1, pattern, url,
-        base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+    scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+        CreateStartParams(version_id1, pattern, url));
+    worker1->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                                 run_loop.QuitClosure()));
     run_loop.Run();
     EXPECT_EQ(SERVICE_WORKER_OK, status);
   }
@@ -267,9 +348,10 @@ TEST_F(EmbeddedWorkerInstanceTest, RemoveWorkerInSharedProcess) {
     // Start worker2.
     ServiceWorkerStatusCode status;
     base::RunLoop run_loop;
-    worker2->Start(
-        version_id2, pattern, url,
-        base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+    scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+        CreateStartParams(version_id2, pattern, url));
+    worker2->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                                 run_loop.QuitClosure()));
     run_loop.Run();
     EXPECT_EQ(SERVICE_WORKER_OK, status);
   }
@@ -303,9 +385,10 @@ TEST_F(EmbeddedWorkerInstanceTest, DetachDuringProcessAllocation) {
 
   // Run the start worker sequence and detach during process allocation.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  worker->Start(
-      version_id, scope, url,
-      base::Bind(&SaveStatusAndCall, &status, base::Bind(&base::DoNothing)));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, scope, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              base::Bind(&base::DoNothing)));
   worker->Detach();
   base::RunLoop().RunUntilIdle();
 
@@ -334,9 +417,10 @@ TEST_F(EmbeddedWorkerInstanceTest, DetachAfterSendingStartWorkerMessage) {
 
   // Run the start worker sequence until a start worker message is sent.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  worker->Start(
-      version_id, scope, url,
-      base::Bind(&SaveStatusAndCall, &status, base::Bind(base::DoNothing)));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, scope, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              base::Bind(&base::DoNothing)));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(2u, events_.size());
@@ -371,9 +455,11 @@ TEST_F(EmbeddedWorkerInstanceTest, StopDuringProcessAllocation) {
 
   // Stop the start worker sequence before a process is allocated.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  worker->Start(
-      version_id, scope, url,
-      base::Bind(&SaveStatusAndCall, &status, base::Bind(base::DoNothing)));
+
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, scope, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              base::Bind(&base::DoNothing)));
   worker->Stop();
   base::RunLoop().RunUntilIdle();
 
@@ -393,8 +479,9 @@ TEST_F(EmbeddedWorkerInstanceTest, StopDuringProcessAllocation) {
   // Restart the worker.
   status = SERVICE_WORKER_ERROR_MAX_VALUE;
   scoped_ptr<base::RunLoop> run_loop(new base::RunLoop);
-  worker->Start(version_id, scope, url, base::Bind(&SaveStatusAndCall, &status,
-                                                   run_loop->QuitClosure()));
+  params = CreateStartParams(version_id, scope, url);
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              run_loop->QuitClosure()));
   run_loop->Run();
 
   EXPECT_EQ(SERVICE_WORKER_OK, status);
@@ -405,6 +492,37 @@ TEST_F(EmbeddedWorkerInstanceTest, StopDuringProcessAllocation) {
 
   // Tear down the worker.
   worker->Stop();
+}
+
+TEST_F(EmbeddedWorkerInstanceTest, StopDuringPausedAfterDownload) {
+  const int64_t version_id = 55L;
+  const GURL scope("http://example.com/");
+  const GURL url("http://example.com/worker.js");
+
+  scoped_ptr<EmbeddedWorkerInstance> worker =
+      embedded_worker_registry()->CreateWorker();
+  worker->AddListener(this);
+
+  // Run the start worker sequence until pause after download.
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
+
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, scope, url));
+  params->pause_after_download = true;
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              base::Bind(&base::DoNothing)));
+  base::RunLoop().RunUntilIdle();
+
+  // Make the worker stopping and attempt to send a resume after download
+  // message.
+  worker->Stop();
+  worker->ResumeAfterDownload();
+  base::RunLoop().RunUntilIdle();
+
+  // The resume after download message should not have been sent.
+  EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
+  EXPECT_FALSE(ipc_sink()->GetFirstMessageMatching(
+      EmbeddedWorkerMsg_ResumeAfterDownload::ID));
 }
 
 TEST_F(EmbeddedWorkerInstanceTest, StopAfterSendingStartWorkerMessage) {
@@ -419,9 +537,10 @@ TEST_F(EmbeddedWorkerInstanceTest, StopAfterSendingStartWorkerMessage) {
 
   // Run the start worker sequence until a start worker message is sent.
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_MAX_VALUE;
-  worker->Start(
-      version_id, scope, url,
-      base::Bind(&SaveStatusAndCall, &status, base::Bind(base::DoNothing)));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, scope, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              base::Bind(&base::DoNothing)));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(2u, events_.size());
@@ -450,8 +569,10 @@ TEST_F(EmbeddedWorkerInstanceTest, StopAfterSendingStartWorkerMessage) {
       ->set_force_stall_in_start(false);
   status = SERVICE_WORKER_ERROR_MAX_VALUE;
   scoped_ptr<base::RunLoop> run_loop(new base::RunLoop);
-  worker->Start(version_id, scope, url, base::Bind(&SaveStatusAndCall, &status,
-                                                   run_loop->QuitClosure()));
+
+  params = CreateStartParams(version_id, scope, url);
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              run_loop->QuitClosure()));
   run_loop->Run();
 
   // The worker should be started.
@@ -478,9 +599,10 @@ TEST_F(EmbeddedWorkerInstanceTest, Detach) {
 
   // Start the worker.
   base::RunLoop run_loop;
-  worker->Start(
-      version_id, pattern, url,
-      base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, pattern, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              run_loop.QuitClosure()));
   run_loop.Run();
 
   // Detach.
@@ -512,9 +634,10 @@ TEST_F(EmbeddedWorkerInstanceTest, FailToSendStartIPC) {
 
   // Attempt to start the worker.
   base::RunLoop run_loop;
-  worker->Start(
-      version_id, pattern, url,
-      base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
+      CreateStartParams(version_id, pattern, url));
+  worker->Start(std::move(params), base::Bind(&SaveStatusAndCall, &status,
+                                              run_loop.QuitClosure()));
   run_loop.Run();
 
   // The callback should have run, and we should have got an OnStopped message.

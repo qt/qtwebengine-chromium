@@ -40,33 +40,27 @@
 namespace blink {
 
 class Resource;
-class KURL;
 class ResourceError;
 class ResourceFetcher;
-class ThreadedDataReceiver;
 
 class CORE_EXPORT ResourceLoader final : public GarbageCollectedFinalized<ResourceLoader>, protected WebURLLoaderClient {
 public:
-    static ResourceLoader* create(ResourceFetcher*, Resource*, const ResourceRequest&, const ResourceLoaderOptions&);
+    static ResourceLoader* create(ResourceFetcher*, Resource*);
     ~ResourceLoader() override;
     DECLARE_TRACE();
 
-    void start();
-    void changeToSynchronous();
+    // Promptly release m_loader.
+    EAGERLY_FINALIZE();
+
+    void start(ResourceRequest&);
 
     void cancel();
     void cancel(const ResourceError&);
     void cancelIfNotFinishing();
 
-    Resource* cachedResource() { return m_resource; }
-    const ResourceRequest& originalRequest() const { return m_originalRequest; }
+    Resource* cachedResource() { return m_resource.get(); }
 
     void setDefersLoading(bool);
-    bool defersLoading() const { return m_defersLoading; }
-
-    void attachThreadedDataReceiver(PassRefPtrWillBeRawPtr<ThreadedDataReceiver>);
-
-    void releaseResources();
 
     void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
 
@@ -81,45 +75,24 @@ public:
     void didFail(WebURLLoader*, const WebURLError&) override;
     void didDownloadData(WebURLLoader*, int, int) override;
 
-    const KURL& url() const { return m_request.url(); }
-    bool isLoadedBy(ResourceFetcher*) const;
-
-    bool reachedTerminalState() const { return m_state == Terminated; }
-    const ResourceRequest& request() const { return m_request; }
-
-    bool loadingMultipartContent() const { return m_loadingMultipartContent; }
+    void didFinishLoadingOnePart(double finishTime, int64_t encodedDataLength);
 
 private:
     // Assumes ResourceFetcher and Resource are non-null.
-    ResourceLoader(ResourceFetcher*, Resource*, const ResourceLoaderOptions&);
+    ResourceLoader(ResourceFetcher*, Resource*);
 
-    void init(const ResourceRequest&);
-    void requestSynchronously();
-
-    void didFinishLoadingOnePart(double finishTime, int64_t encodedDataLength);
+    void requestSynchronously(ResourceRequest&);
 
     bool responseNeedsAccessControlCheck() const;
 
     ResourceRequest& applyOptions(ResourceRequest&) const;
 
+    void releaseResources();
+
     OwnPtr<WebURLLoader> m_loader;
     Member<ResourceFetcher> m_fetcher;
 
-    ResourceRequest m_request;
-    ResourceRequest m_originalRequest; // Before redirects.
-
     bool m_notifiedLoadComplete;
-
-    bool m_defersLoading;
-    bool m_loadingMultipartContent;
-    ResourceRequest m_deferredRequest;
-    ResourceLoaderOptions m_options;
-
-    enum ResourceLoaderState {
-        Initialized,
-        Finishing,
-        Terminated
-    };
 
     enum ConnectionState {
         ConnectionStateNew,
@@ -129,16 +102,17 @@ private:
         ConnectionStateFinishedLoading,
         ConnectionStateCanceled,
         ConnectionStateFailed,
+        ConnectionStateReleased
     };
+    bool isFinishing() { return m_state >= ConnectionStateFinishedLoading && m_state <= ConnectionStateFailed; }
 
-    RawPtrWillBeMember<Resource> m_resource;
-    ResourceLoaderState m_state;
+    Member<Resource> m_resource;
 
     // Used for sanity checking to make sure we don't experience illegal state
     // transitions.
-    ConnectionState m_connectionState;
+    ConnectionState m_state;
 };
 
-}
+} // namespace blink
 
 #endif

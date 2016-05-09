@@ -8,6 +8,7 @@
 #include "content/browser/loader/global_routing_id.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/net/url_request_service_worker_data.h"
 #include "content/common/net/url_request_user_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_request_id.h"
@@ -104,6 +105,13 @@ bool ResourceRequestInfo::GetRenderFrameForRequest(
   *render_process_id = user_data->render_process_id();
   *render_frame_id = user_data->render_frame_id();
   return true;
+}
+
+// static
+bool ResourceRequestInfo::OriginatedFromServiceWorker(
+    const net::URLRequest* request) {
+  return !!request->GetUserData(
+      content::URLRequestServiceWorkerData::kUserDataKey);
 }
 
 // ----------------------------------------------------------------------------
@@ -269,13 +277,8 @@ bool ResourceRequestInfoImpl::WasIgnoredByHandler() const {
 bool ResourceRequestInfoImpl::GetAssociatedRenderFrame(
     int* render_process_id,
     int* render_frame_id) const {
-  if (process_type_ == PROCESS_TYPE_PLUGIN) {
-    *render_process_id = origin_pid_;
-    *render_frame_id = render_frame_id_;
-  } else {
-    *render_process_id = child_id_;
-    *render_frame_id = render_frame_id_;
-  }
+  *render_process_id = child_id_;
+  *render_frame_id = render_frame_id_;
   return true;
 }
 

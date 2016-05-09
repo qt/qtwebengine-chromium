@@ -17,13 +17,16 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include "base/atomic_sequence_num.h"
 #include "base/compiler_specific.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/client/buffer_tracker.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gpu_control.h"
@@ -34,7 +37,6 @@
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/common/sync_token.h"
-#include "gpu/command_buffer/common/trace_event.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 
@@ -46,10 +48,42 @@
 namespace gpu {
 namespace gles2 {
 
+namespace {
+
+void CopyRectToBuffer(const void* pixels,
+                      uint32_t height,
+                      uint32_t unpadded_row_size,
+                      uint32_t pixels_padded_row_size,
+                      void* buffer,
+                      uint32_t buffer_padded_row_size) {
+  if (height == 0)
+    return;
+  const int8_t* source = static_cast<const int8_t*>(pixels);
+  int8_t* dest = static_cast<int8_t*>(buffer);
+  if (pixels_padded_row_size != buffer_padded_row_size) {
+    for (uint32_t ii = 0; ii < height; ++ii) {
+      memcpy(dest, source, unpadded_row_size);
+      dest += buffer_padded_row_size;
+      source += pixels_padded_row_size;
+    }
+  } else {
+    uint32_t size = (height - 1) * pixels_padded_row_size + unpadded_row_size;
+    memcpy(dest, source, size);
+  }
+}
+
 // A 32-bit and 64-bit compatible way of converting a pointer to a GLuint.
-static GLuint ToGLuint(const void* ptr) {
+GLuint ToGLuint(const void* ptr) {
   return static_cast<GLuint>(reinterpret_cast<size_t>(ptr));
 }
+
+static base::StaticAtomicSequenceNumber g_flush_id;
+
+uint32_t GenerateNextFlushId() {
+  return static_cast<uint32_t>(g_flush_id.GetNext());
+}
+
+}  // anonymous namespace
 
 #if !defined(_MSC_VER)
 const size_t GLES2Implementation::kMaxSizeOfSimpleResult;
@@ -115,6 +149,7 @@ GLES2Implementation::GLES2Implementation(
       lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
       support_client_side_arrays_(support_client_side_arrays),
       use_count_(0),
+      flush_id_(0),
       max_extra_transfer_buffer_size_(
 #if defined(OS_NACL)
           0),
@@ -131,6 +166,7 @@ GLES2Implementation::GLES2Implementation(
       gpu_control_(gpu_control),
       capabilities_(gpu_control->GetCapabilities()),
       aggressively_free_resources_(false),
+      cached_extension_string_(nullptr),
       weak_ptr_factory_(this) {
   DCHECK(helper);
   DCHECK(transfer_buffer);
@@ -147,8 +183,9 @@ GLES2Implementation::GLES2Implementation(
 
   share_group_ =
       (share_group ? share_group
-                   : new ShareGroup(bind_generates_resource,
-                                    gpu_control_->GetCommandBufferID()));
+                   : new ShareGroup(
+                         bind_generates_resource,
+                         gpu_control_->GetCommandBufferID().GetUnsafeValue()));
   DCHECK(share_group_->bind_generates_resource() == bind_generates_resource);
 
   memset(&reserved_ids_, 0, sizeof(reserved_ids_));
@@ -311,15 +348,6 @@ void GLES2Implementation::FreeEverything() {
 void GLES2Implementation::RunIfContextNotLost(const base::Closure& callback) {
   if (!helper_->IsContextLost())
     callback.Run();
-}
-
-void GLES2Implementation::SignalSyncPoint(uint32_t sync_point,
-                                          const base::Closure& callback) {
-  gpu_control_->SignalSyncPoint(
-      sync_point,
-      base::Bind(&GLES2Implementation::RunIfContextNotLost,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 callback));
 }
 
 void GLES2Implementation::SignalSyncToken(const gpu::SyncToken& sync_token,
@@ -958,10 +986,17 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
       *params = capabilities_.minor_version;
       return true;
     case GL_NUM_EXTENSIONS:
-      *params = capabilities_.num_extensions;
+      UpdateCachedExtensionsIfNeeded();
+      *params = cached_extensions_.size();
       return true;
     case GL_NUM_PROGRAM_BINARY_FORMATS:
       *params = capabilities_.num_program_binary_formats;
+      return true;
+    case GL_PACK_SKIP_PIXELS:
+      *params = pack_skip_pixels_;
+      return true;
+    case GL_PACK_SKIP_ROWS:
+      *params = pack_skip_rows_;
       return true;
     case GL_PIXEL_PACK_BUFFER_BINDING:
       *params = bound_pixel_pack_buffer_;
@@ -977,6 +1012,15 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
       return true;
     case GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT:
       *params = capabilities_.uniform_buffer_offset_alignment;
+      return true;
+    case GL_UNPACK_SKIP_IMAGES:
+      *params = unpack_skip_images_;
+      return true;
+    case GL_UNPACK_SKIP_PIXELS:
+      *params = unpack_skip_pixels_;
+      return true;
+    case GL_UNPACK_SKIP_ROWS:
+      *params = unpack_skip_rows_;
       return true;
 
     // Non-cached ES3 parameters.
@@ -999,8 +1043,6 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
     case GL_DRAW_FRAMEBUFFER_BINDING:
     case GL_FRAGMENT_SHADER_DERIVATIVE_HINT:
     case GL_PACK_ROW_LENGTH:
-    case GL_PACK_SKIP_PIXELS:
-    case GL_PACK_SKIP_ROWS:
     case GL_PRIMITIVE_RESTART_FIXED_INDEX:
     case GL_PROGRAM_BINARY_FORMATS:
     case GL_RASTERIZER_DISCARD:
@@ -1018,9 +1060,6 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
     case GL_UNIFORM_BUFFER_START:
     case GL_UNPACK_IMAGE_HEIGHT:
     case GL_UNPACK_ROW_LENGTH:
-    case GL_UNPACK_SKIP_IMAGES:
-    case GL_UNPACK_SKIP_PIXELS:
-    case GL_UNPACK_SKIP_ROWS:
     case GL_VERTEX_ARRAY_BINDING:
       return false;
     default:
@@ -1248,7 +1287,7 @@ void GLES2Implementation::DrawElements(
       << count << ", "
       << GLES2Util::GetStringIndexType(type) << ", "
       << static_cast<const void*>(indices) << ")");
-  DrawElementsImpl(mode, count, type, indices, "glDrawRangeElements");
+  DrawElementsImpl(mode, count, type, indices, "glDrawElements");
 }
 
 void GLES2Implementation::DrawRangeElements(
@@ -1295,6 +1334,7 @@ void GLES2Implementation::DrawElementsImpl(
 void GLES2Implementation::Flush() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glFlush()");
+  flush_id_ = GenerateNextFlushId();
   // Insert the cmd to call glFlush
   helper_->Flush();
   FlushHelper();
@@ -1303,6 +1343,7 @@ void GLES2Implementation::Flush() {
 void GLES2Implementation::ShallowFlushCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glShallowFlushCHROMIUM()");
+  flush_id_ = GenerateNextFlushId();
   FlushHelper();
 }
 
@@ -1324,12 +1365,14 @@ void GLES2Implementation::OrderingBarrierCHROMIUM() {
 
 void GLES2Implementation::Finish() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
+  flush_id_ = GenerateNextFlushId();
   FinishHelper();
 }
 
 void GLES2Implementation::ShallowFinishCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   TRACE_EVENT0("gpu", "GLES2::ShallowFinishCHROMIUM");
+  flush_id_ = GenerateNextFlushId();
   // Flush our command buffer (tell the service to execute up to the flush cmd
   // and don't return until it completes).
   helper_->CommandBufferHelper::Finish();
@@ -1350,6 +1393,12 @@ void GLES2Implementation::FinishHelper() {
 
   if (aggressively_free_resources_)
     FreeEverything();
+}
+
+GLuint GLES2Implementation::GetLastFlushIdCHROMIUM() {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGetLastFlushIdCHROMIUM()");
+  return flush_id_;
 }
 
 void GLES2Implementation::SwapBuffers() {
@@ -1769,6 +1818,45 @@ void GLES2Implementation::PixelStorei(GLenum pname, GLint param) {
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glPixelStorei("
       << GLES2Util::GetStringPixelStore(pname) << ", "
       << param << ")");
+  // We have to validate before caching these parameters because we use them
+  // to compute image sizes on the client side.
+  switch (pname) {
+    case GL_PACK_ALIGNMENT:
+    case GL_UNPACK_ALIGNMENT:
+      if (param != 1 && param != 2 && param != 4 && param != 8) {
+        SetGLError(GL_INVALID_VALUE, "glPixelStorei", "invalid param");
+        return;
+      }
+      break;
+    case GL_PACK_ROW_LENGTH:
+    case GL_PACK_SKIP_PIXELS:
+    case GL_PACK_SKIP_ROWS:
+    case GL_UNPACK_IMAGE_HEIGHT:
+    case GL_UNPACK_SKIP_IMAGES:
+      if (capabilities_.major_version < 3) {
+        SetGLError(GL_INVALID_ENUM, "glPixelStorei", "invalid pname");
+        return;
+      }
+      if (param < 0) {
+        SetGLError(GL_INVALID_VALUE, "glPixelStorei", "invalid param");
+        return;
+      }
+      break;
+    case GL_UNPACK_ROW_LENGTH:
+    case GL_UNPACK_SKIP_ROWS:
+    case GL_UNPACK_SKIP_PIXELS:
+      // These parameters are always enabled in ES2 by EXT_unpack_subimage.
+      if (param < 0) {
+        SetGLError(GL_INVALID_VALUE, "glPixelStorei", "invalid param");
+        return;
+      }
+      break;
+    default:
+      SetGLError(GL_INVALID_ENUM, "glPixelStorei", "invalid pname");
+      return;
+  }
+  // Do not send SKIP parameters to the service side.
+  // Handle them on the client side.
   switch (pname) {
     case GL_PACK_ALIGNMENT:
       pack_alignment_ = param;
@@ -1778,29 +1866,35 @@ void GLES2Implementation::PixelStorei(GLenum pname, GLint param) {
       break;
     case GL_PACK_SKIP_PIXELS:
       pack_skip_pixels_ = param;
-      break;
+      return;
     case GL_PACK_SKIP_ROWS:
       pack_skip_rows_ = param;
-      break;
+      return;
     case GL_UNPACK_ALIGNMENT:
       unpack_alignment_ = param;
       break;
-    case GL_UNPACK_ROW_LENGTH_EXT:
+    case GL_UNPACK_ROW_LENGTH:
       unpack_row_length_ = param;
+      if (capabilities_.major_version < 3) {
+        // In ES2 with EXT_unpack_subimage, it's handled on the client side
+        // and there is no need to send it to the service side.
+        return;
+      }
       break;
     case GL_UNPACK_IMAGE_HEIGHT:
       unpack_image_height_ = param;
       break;
-    case GL_UNPACK_SKIP_ROWS_EXT:
+    case GL_UNPACK_SKIP_ROWS:
       unpack_skip_rows_ = param;
-      break;
-    case GL_UNPACK_SKIP_PIXELS_EXT:
+      return;
+    case GL_UNPACK_SKIP_PIXELS:
       unpack_skip_pixels_ = param;
-      break;
+      return;
     case GL_UNPACK_SKIP_IMAGES:
       unpack_skip_images_ = param;
-      break;
+      return;
     default:
+      NOTREACHED();
       break;
   }
   helper_->PixelStorei(pname, param);
@@ -2073,24 +2167,30 @@ bool GLES2Implementation::GetBoundPixelTransferBuffer(
   return true;
 }
 
-BufferTracker::Buffer*
-GLES2Implementation::GetBoundPixelUnpackTransferBufferIfValid(
-    GLuint buffer_id,
-    const char* function_name,
-    GLuint offset, GLsizei size) {
+BufferTracker::Buffer* GLES2Implementation::GetBoundPixelTransferBufferIfValid(
+    GLuint buffer_id, const char* function_name, GLuint offset, GLsizei size) {
   DCHECK(buffer_id);
   BufferTracker::Buffer* buffer = buffer_tracker_->GetBuffer(buffer_id);
   if (!buffer) {
     SetGLError(GL_INVALID_OPERATION, function_name, "invalid buffer");
-    return NULL;
+    return nullptr;
   }
   if (buffer->mapped()) {
     SetGLError(GL_INVALID_OPERATION, function_name, "buffer mapped");
-    return NULL;
+    return nullptr;
   }
-  if ((buffer->size() - offset) < static_cast<GLuint>(size)) {
+  base::CheckedNumeric<uint32_t> buffer_offset = buffer->shm_offset();
+  buffer_offset += offset;
+  if (!buffer_offset.IsValid()) {
+    SetGLError(GL_INVALID_VALUE, function_name, "offset to large");
+    return nullptr;
+  }
+  base::CheckedNumeric<uint32_t> required_size = offset;
+  required_size += size;
+  if (!required_size.IsValid() ||
+      buffer->size() < required_size.ValueOrDefault(0)) {
     SetGLError(GL_INVALID_VALUE, function_name, "unpack size to large");
-    return NULL;
+    return nullptr;
   }
   return buffer;
 }
@@ -2114,14 +2214,11 @@ void GLES2Implementation::CompressedTexImage2D(
     SetGLError(GL_INVALID_VALUE, "glCompressedTexImage2D", "border != 0");
     return;
   }
-  if (height == 0 || width == 0) {
-    return;
-  }
   // If there's a pixel unpack buffer bound use it when issuing
   // CompressedTexImage2D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
     GLuint offset = ToGLuint(data);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
         "glCompressedTexImage2D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
@@ -2162,7 +2259,7 @@ void GLES2Implementation::CompressedTexSubImage2D(
   // CompressedTexSubImage2D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
     GLuint offset = ToGLuint(data);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
         "glCompressedTexSubImage2D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
@@ -2202,14 +2299,11 @@ void GLES2Implementation::CompressedTexImage3D(
     SetGLError(GL_INVALID_VALUE, "glCompressedTexImage3D", "border != 0");
     return;
   }
-  if (height == 0 || width == 0 || depth == 0) {
-    return;
-  }
   // If there's a pixel unpack buffer bound use it when issuing
   // CompressedTexImage3D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
     GLuint offset = ToGLuint(data);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
         "glCompressedTexImage3D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
@@ -2251,7 +2345,7 @@ void GLES2Implementation::CompressedTexSubImage3D(
   // CompressedTexSubImage3D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
     GLuint offset = ToGLuint(data);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
         "glCompressedTexSubImage3D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
@@ -2275,33 +2369,18 @@ void GLES2Implementation::CompressedTexSubImage3D(
   CheckGLError();
 }
 
-namespace {
-
-void CopyRectToBuffer(const void* pixels,
-                      uint32_t height,
-                      uint32_t unpadded_row_size,
-                      uint32_t pixels_padded_row_size,
-                      void* buffer,
-                      uint32_t buffer_padded_row_size) {
-  if (height == 0)
-    return;
-  const int8_t* source = static_cast<const int8_t*>(pixels);
-  int8_t* dest = static_cast<int8_t*>(buffer);
-  if (pixels_padded_row_size != buffer_padded_row_size) {
-    // the last row is copied unpadded at the end
-    for (; height > 1; --height) {
-      memcpy(dest, source, buffer_padded_row_size);
-      dest += buffer_padded_row_size;
-      source += pixels_padded_row_size;
-    }
-    memcpy(dest, source, unpadded_row_size);
-  } else {
-    uint32_t size = (height - 1) * pixels_padded_row_size + unpadded_row_size;
-    memcpy(dest, source, size);
+PixelStoreParams GLES2Implementation::GetUnpackParameters(Dimension dimension) {
+  PixelStoreParams params;
+  params.alignment = unpack_alignment_;
+  params.row_length = unpack_row_length_;
+  params.skip_pixels = unpack_skip_pixels_;
+  params.skip_rows = unpack_skip_rows_;
+  if (dimension == k3D) {
+    params.image_height = unpack_image_height_;
+    params.skip_images = unpack_skip_images_;
   }
+  return params;
 }
-
-}  // anonymous namespace
 
 void GLES2Implementation::TexImage2D(
     GLenum target, GLint level, GLint internalformat, GLsizei width,
@@ -2327,19 +2406,47 @@ void GLES2Implementation::TexImage2D(
   uint32_t size;
   uint32_t unpadded_row_size;
   uint32_t padded_row_size;
-  if (!GLES2Util::ComputeImageDataSizes(
-          width, height, 1, format, type, unpack_alignment_, &size,
-          &unpadded_row_size, &padded_row_size)) {
+  uint32_t skip_size;
+  PixelStoreParams params = GetUnpackParameters(k2D);
+  if (!GLES2Util::ComputeImageDataSizesES3(width, height, 1,
+                                           format, type,
+                                           params,
+                                           &size,
+                                           &unpadded_row_size,
+                                           &padded_row_size,
+                                           &skip_size,
+                                           nullptr)) {
     SetGLError(GL_INVALID_VALUE, "glTexImage2D", "image size too large");
+    return;
+  }
+
+  if (bound_pixel_unpack_buffer_) {
+    base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
+    offset += skip_size;
+    if (!offset.IsValid()) {
+      SetGLError(GL_INVALID_VALUE, "glTexImage2D", "skip size too large");
+      return;
+    }
+    helper_->TexImage2D(
+        target, level, internalformat, width, height, format, type,
+        0, offset.ValueOrDefault(0));
+    CheckGLError();
     return;
   }
 
   // If there's a pixel unpack buffer bound use it when issuing TexImage2D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
+    if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
+        unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
+        unpack_skip_images_ > 0) {
+      SetGLError(GL_INVALID_OPERATION, "glTexImage2D",
+                 "No ES3 pack parameters with pixel unpack transfer buffer.");
+      return;
+    }
+    DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_,
-        "glTexImage2D", offset, size);
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
+        bound_pixel_unpack_transfer_buffer_id_, "glTexImage2D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage2D(
           target, level, internalformat, width, height, format, type,
@@ -2351,36 +2458,38 @@ void GLES2Implementation::TexImage2D(
   }
 
   // If there's no data just issue TexImage2D
-  if (!pixels) {
+  if (!pixels || width == 0 || height == 0) {
     helper_->TexImage2D(
-       target, level, internalformat, width, height, format, type,
-       0, 0);
+       target, level, internalformat, width, height, format, type, 0, 0);
     CheckGLError();
     return;
   }
 
-  // compute the advance bytes per row for the src pixels
-  uint32_t src_padded_row_size;
-  if (unpack_row_length_ > 0) {
-    if (!GLES2Util::ComputeImagePaddedRowSize(
-        unpack_row_length_, format, type, unpack_alignment_,
-        &src_padded_row_size)) {
-      SetGLError(
-          GL_INVALID_VALUE, "glTexImage2D", "unpack row length too large");
+  // Compute the advance bytes per row on the service side.
+  // Note |size| is recomputed here if needed.
+  uint32_t service_padded_row_size;
+  if (unpack_row_length_ > 0 && unpack_row_length_ != width) {
+    // All parameters have been applied to the data that are sent to the
+    // service side except UNPACK_ALIGNMENT.
+    PixelStoreParams service_params;
+    service_params.alignment = unpack_alignment_;
+    if (!GLES2Util::ComputeImageDataSizesES3(width, height, 1,
+                                             format, type,
+                                             service_params,
+                                             &size,
+                                             nullptr,
+                                             &service_padded_row_size,
+                                             nullptr,
+                                             nullptr)) {
+      SetGLError(GL_INVALID_VALUE, "glTexImage2D", "image size too large");
       return;
     }
   } else {
-    src_padded_row_size = padded_row_size;
+    service_padded_row_size = padded_row_size;
   }
 
   // advance pixels pointer past the skip rows and skip pixels
-  pixels = reinterpret_cast<const int8_t*>(pixels) +
-           unpack_skip_rows_ * src_padded_row_size;
-  if (unpack_skip_pixels_) {
-    uint32_t group_size = GLES2Util::ComputeImageGroupSize(format, type);
-    pixels = reinterpret_cast<const int8_t*>(pixels) +
-             unpack_skip_pixels_ * group_size;
-  }
+  pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
   // Check if we can send it all at once.
   int32_t shm_id = 0;
@@ -2408,8 +2517,8 @@ void GLES2Implementation::TexImage2D(
 
   if (buffer_pointer) {
     CopyRectToBuffer(
-        pixels, height, unpadded_row_size, src_padded_row_size,
-        buffer_pointer, padded_row_size);
+        pixels, height, unpadded_row_size, padded_row_size,
+        buffer_pointer, service_padded_row_size);
     helper_->TexImage2D(
         target, level, internalformat, width, height, format, type,
         shm_id, shm_offset);
@@ -2423,7 +2532,8 @@ void GLES2Implementation::TexImage2D(
      0, 0);
   TexSubImage2DImpl(
       target, level, 0, 0, width, height, format, type, unpadded_row_size,
-      pixels, src_padded_row_size, GL_TRUE, &transfer_alloc, padded_row_size);
+      pixels, padded_row_size, GL_TRUE, &transfer_alloc,
+      service_padded_row_size);
   CheckGLError();
 }
 
@@ -2448,22 +2558,51 @@ void GLES2Implementation::TexImage3D(
     SetGLError(GL_INVALID_VALUE, "glTexImage3D", "border != 0");
     return;
   }
+
   uint32_t size;
   uint32_t unpadded_row_size;
   uint32_t padded_row_size;
-  if (!GLES2Util::ComputeImageDataSizes(
-          width, height, depth, format, type, unpack_alignment_, &size,
-          &unpadded_row_size, &padded_row_size)) {
+  uint32_t skip_size;
+  PixelStoreParams params = GetUnpackParameters(k3D);
+  if (!GLES2Util::ComputeImageDataSizesES3(width, height, depth,
+                                           format, type,
+                                           params,
+                                           &size,
+                                           &unpadded_row_size,
+                                           &padded_row_size,
+                                           &skip_size,
+                                           nullptr)) {
     SetGLError(GL_INVALID_VALUE, "glTexImage3D", "image size too large");
+    return;
+  }
+
+  if (bound_pixel_unpack_buffer_) {
+    base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
+    offset += skip_size;
+    if (!offset.IsValid()) {
+      SetGLError(GL_INVALID_VALUE, "glTexImage3D", "skip size too large");
+      return;
+    }
+    helper_->TexImage3D(
+        target, level, internalformat, width, height, depth, format, type,
+        0, offset.ValueOrDefault(0));
+    CheckGLError();
     return;
   }
 
   // If there's a pixel unpack buffer bound use it when issuing TexImage3D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
+    if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
+        unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
+        unpack_skip_images_ > 0) {
+      SetGLError(GL_INVALID_OPERATION, "glTexImage3D",
+                 "No ES3 pack parameters with pixel unpack transfer buffer.");
+      return;
+    }
+    DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
-        bound_pixel_unpack_transfer_buffer_id_,
-        "glTexImage3D", offset, size);
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
+        bound_pixel_unpack_transfer_buffer_id_, "glTexImage3D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage3D(
           target, level, internalformat, width, height, depth, format, type,
@@ -2475,7 +2614,7 @@ void GLES2Implementation::TexImage3D(
   }
 
   // If there's no data just issue TexImage3D
-  if (!pixels) {
+  if (!pixels || width == 0 || height == 0 || depth == 0) {
     helper_->TexImage3D(
        target, level, internalformat, width, height, depth, format, type,
        0, 0);
@@ -2483,31 +2622,34 @@ void GLES2Implementation::TexImage3D(
     return;
   }
 
-  // compute the advance bytes per row for the src pixels
-  uint32_t src_padded_row_size;
-  if (unpack_row_length_ > 0) {
-    if (!GLES2Util::ComputeImagePaddedRowSize(
-        unpack_row_length_, format, type, unpack_alignment_,
-        &src_padded_row_size)) {
-      SetGLError(
-          GL_INVALID_VALUE, "glTexImage3D", "unpack row length too large");
+  // Compute the advance bytes per row on the service side.
+  // Note |size| is recomputed here if needed.
+  uint32_t service_padded_row_size;
+  if ((unpack_row_length_ > 0 && unpack_row_length_ != width) ||
+      (unpack_image_height_ > 0 && unpack_image_height_ != height)) {
+    // All parameters have been applied to the data that are sent to the
+    // service side except UNPACK_ALIGNMENT.
+    PixelStoreParams service_params;
+    service_params.alignment = unpack_alignment_;
+    if (!GLES2Util::ComputeImageDataSizesES3(width, height, depth,
+                                             format, type,
+                                             service_params,
+                                             &size,
+                                             nullptr,
+                                             &service_padded_row_size,
+                                             nullptr,
+                                             nullptr)) {
+      SetGLError(GL_INVALID_VALUE, "glTexImage3D", "image size too large");
       return;
     }
   } else {
-    src_padded_row_size = padded_row_size;
+    service_padded_row_size = padded_row_size;
   }
   uint32_t src_height =
       unpack_image_height_ > 0 ? unpack_image_height_ : height;
 
   // advance pixels pointer past the skip images/rows/pixels
-  pixels = reinterpret_cast<const int8_t*>(pixels) +
-           unpack_skip_images_ * src_padded_row_size * src_height +
-           unpack_skip_rows_ * src_padded_row_size;
-  if (unpack_skip_pixels_) {
-    uint32_t group_size = GLES2Util::ComputeImageGroupSize(format, type);
-    pixels = reinterpret_cast<const int8_t*>(pixels) +
-             unpack_skip_pixels_ * group_size;
-  }
+  pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
   // Check if we can send it all at once.
   int32_t shm_id = 0;
@@ -2535,16 +2677,13 @@ void GLES2Implementation::TexImage3D(
 
   if (buffer_pointer) {
     for (GLsizei z = 0; z < depth; ++z) {
-      // Only the last row of the last image is unpadded.
-      uint32_t src_unpadded_row_size =
-          (z == depth - 1) ? unpadded_row_size : src_padded_row_size;
       CopyRectToBuffer(
-          pixels, height, src_unpadded_row_size, src_padded_row_size,
-          buffer_pointer, padded_row_size);
+          pixels, height, unpadded_row_size, padded_row_size,
+          buffer_pointer, service_padded_row_size);
       pixels = reinterpret_cast<const int8_t*>(pixels) +
-               src_padded_row_size * src_height;
-      buffer_pointer =
-          reinterpret_cast<int8_t*>(buffer_pointer) + padded_row_size * height;
+               padded_row_size * src_height;
+      buffer_pointer = reinterpret_cast<int8_t*>(buffer_pointer) +
+                       service_padded_row_size * height;
     }
     helper_->TexImage3D(
         target, level, internalformat, width, height, depth, format, type,
@@ -2559,8 +2698,8 @@ void GLES2Implementation::TexImage3D(
      0, 0);
   TexSubImage3DImpl(
       target, level, 0, 0, 0, width, height, depth, format, type,
-      unpadded_row_size, pixels, src_padded_row_size, GL_TRUE, &transfer_alloc,
-      padded_row_size);
+      unpadded_row_size, pixels, padded_row_size, GL_TRUE, &transfer_alloc,
+      service_padded_row_size);
   CheckGLError();
 }
 
@@ -2577,30 +2716,55 @@ void GLES2Implementation::TexSubImage2D(
       << GLES2Util::GetStringPixelType(type) << ", "
       << static_cast<const void*>(pixels) << ")");
 
-  if (level < 0 || height < 0 || width < 0) {
+  if (level < 0 || height < 0 || width < 0 || xoffset < 0 || yoffset < 0) {
     SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "dimension < 0");
     return;
   }
-  if (height == 0 || width == 0) {
+
+  uint32_t size;
+  uint32_t unpadded_row_size;
+  uint32_t padded_row_size;
+  uint32_t skip_size;
+  PixelStoreParams params = GetUnpackParameters(k2D);
+  if (!GLES2Util::ComputeImageDataSizesES3(width, height, 1,
+                                           format, type,
+                                           params,
+                                           &size,
+                                           &unpadded_row_size,
+                                           &padded_row_size,
+                                           &skip_size,
+                                           nullptr)) {
+    SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "image size to large");
     return;
   }
 
-  uint32_t temp_size;
-  uint32_t unpadded_row_size;
-  uint32_t padded_row_size;
-  if (!GLES2Util::ComputeImageDataSizes(
-        width, height, 1, format, type, unpack_alignment_, &temp_size,
-        &unpadded_row_size, &padded_row_size)) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "size to large");
+  if (bound_pixel_unpack_buffer_) {
+    base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
+    offset += skip_size;
+    if (!offset.IsValid()) {
+      SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "skip size too large");
+      return;
+    }
+    helper_->TexSubImage2D(target, level, xoffset, yoffset, width, height,
+                           format, type, 0, offset.ValueOrDefault(0), false);
+    CheckGLError();
     return;
   }
 
   // If there's a pixel unpack buffer bound use it when issuing TexSubImage2D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
+    if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
+        unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
+        unpack_skip_images_ > 0) {
+      SetGLError(GL_INVALID_OPERATION, "glTexSubImage2D",
+                 "No ES3 pack parameters with pixel unpack transfer buffer.");
+      return;
+    }
+    DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
-        "glTexSubImage2D", offset, temp_size);
+        "glTexSubImage2D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexSubImage2D(
           target, level, xoffset, yoffset, width, height, format, type,
@@ -2611,34 +2775,45 @@ void GLES2Implementation::TexSubImage2D(
     return;
   }
 
-  // compute the advance bytes per row for the src pixels
-  uint32_t src_padded_row_size;
-  if (unpack_row_length_ > 0) {
-    if (!GLES2Util::ComputeImagePaddedRowSize(
-        unpack_row_length_, format, type, unpack_alignment_,
-        &src_padded_row_size)) {
-      SetGLError(
-          GL_INVALID_VALUE, "glTexImage2D", "unpack row length too large");
+  if (width == 0 || height == 0) {
+    // No need to worry about pixel data.
+    helper_->TexSubImage2D(target, level, xoffset, yoffset, width, height,
+                           format, type, 0, 0, false);
+    CheckGLError();
+    return;
+  }
+
+  // Compute the advance bytes per row on the service side.
+  // Note |size| is recomputed here if needed.
+  uint32_t service_padded_row_size;
+  if (unpack_row_length_ > 0 && unpack_row_length_ != width) {
+    // All parameters have been applied to the data that are sent to the
+    // service side except UNPACK_ALIGNMENT.
+    PixelStoreParams service_params;
+    service_params.alignment = unpack_alignment_;
+    if (!GLES2Util::ComputeImageDataSizesES3(width, height, 1,
+                                             format, type,
+                                             service_params,
+                                             &size,
+                                             nullptr,
+                                             &service_padded_row_size,
+                                             nullptr,
+                                             nullptr)) {
+      SetGLError(GL_INVALID_VALUE, "glTexSubImage2D", "image size too large");
       return;
     }
   } else {
-    src_padded_row_size = padded_row_size;
+    service_padded_row_size = padded_row_size;
   }
 
   // advance pixels pointer past the skip rows and skip pixels
-  pixels = reinterpret_cast<const int8_t*>(pixels) +
-           unpack_skip_rows_ * src_padded_row_size;
-  if (unpack_skip_pixels_) {
-    uint32_t group_size = GLES2Util::ComputeImageGroupSize(format, type);
-    pixels = reinterpret_cast<const int8_t*>(pixels) +
-             unpack_skip_pixels_ * group_size;
-  }
+  pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
-  ScopedTransferBufferPtr buffer(temp_size, helper_, transfer_buffer_);
+  ScopedTransferBufferPtr buffer(size, helper_, transfer_buffer_);
   TexSubImage2DImpl(
       target, level, xoffset, yoffset, width, height, format, type,
-      unpadded_row_size, pixels, src_padded_row_size, GL_FALSE, &buffer,
-      padded_row_size);
+      unpadded_row_size, pixels, padded_row_size, GL_FALSE, &buffer,
+      service_padded_row_size);
   CheckGLError();
 }
 
@@ -2656,30 +2831,57 @@ void GLES2Implementation::TexSubImage3D(
       << GLES2Util::GetStringPixelType(type) << ", "
       << static_cast<const void*>(pixels) << ")");
 
-  if (level < 0 || height < 0 || width < 0 || depth < 0) {
+  if (level < 0 || height < 0 || width < 0 || depth < 0 ||
+      xoffset < 0 || yoffset < 0 || zoffset < 0) {
     SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "dimension < 0");
     return;
   }
-  if (height == 0 || width == 0 || depth == 0) {
+
+  uint32_t size;
+  uint32_t unpadded_row_size;
+  uint32_t padded_row_size;
+  uint32_t skip_size;
+  PixelStoreParams params = GetUnpackParameters(k3D);
+  if (!GLES2Util::ComputeImageDataSizesES3(width, height, depth,
+                                           format, type,
+                                           params,
+                                           &size,
+                                           &unpadded_row_size,
+                                           &padded_row_size,
+                                           &skip_size,
+                                           nullptr)) {
+    SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "image size to large");
     return;
   }
 
-  uint32_t temp_size;
-  uint32_t unpadded_row_size;
-  uint32_t padded_row_size;
-  if (!GLES2Util::ComputeImageDataSizes(
-          width, height, depth, format, type, unpack_alignment_, &temp_size,
-          &unpadded_row_size, &padded_row_size)) {
-    SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "size to large");
+  if (bound_pixel_unpack_buffer_) {
+    base::CheckedNumeric<uint32_t> offset = ToGLuint(pixels);
+    offset += skip_size;
+    if (!offset.IsValid()) {
+      SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "skip size too large");
+      return;
+    }
+    helper_->TexSubImage3D(
+        target, level, xoffset, yoffset, zoffset, width, height, depth,
+        format, type, 0, offset.ValueOrDefault(0), false);
+    CheckGLError();
     return;
   }
 
   // If there's a pixel unpack buffer bound use it when issuing TexSubImage2D.
   if (bound_pixel_unpack_transfer_buffer_id_) {
+    if (unpack_row_length_ > 0 || unpack_image_height_ > 0 ||
+        unpack_skip_pixels_ > 0 || unpack_skip_rows_ > 0 ||
+        unpack_skip_images_ > 0) {
+      SetGLError(GL_INVALID_OPERATION, "glTexSubImage2D",
+                 "No ES3 pack parameters with pixel unpack transfer buffer.");
+      return;
+    }
+    DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_unpack_transfer_buffer_id_,
-        "glTexSubImage3D", offset, temp_size);
+        "glTexSubImage3D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexSubImage3D(
           target, level, xoffset, yoffset, zoffset, width, height, depth,
@@ -2690,37 +2892,44 @@ void GLES2Implementation::TexSubImage3D(
     return;
   }
 
-  // compute the advance bytes per row for the src pixels
-  uint32_t src_padded_row_size;
-  if (unpack_row_length_ > 0) {
-    if (!GLES2Util::ComputeImagePaddedRowSize(
-        unpack_row_length_, format, type, unpack_alignment_,
-        &src_padded_row_size)) {
-      SetGLError(
-          GL_INVALID_VALUE, "glTexImage3D", "unpack row length too large");
+  if (width == 0 || height == 0 || depth == 0) {
+    // No need to worry about pixel data.
+    helper_->TexSubImage3D(target, level, xoffset, yoffset, zoffset,
+                           width, height, depth, format, type, 0, 0, false);
+    CheckGLError();
+    return;
+  }
+
+  // Compute the advance bytes per row on the service side
+  // Note |size| is recomputed here if needed.
+  uint32_t service_padded_row_size;
+  if ((unpack_row_length_ > 0 && unpack_row_length_ != width) ||
+      (unpack_image_height_ > 0 && unpack_image_height_ != height)) {
+    PixelStoreParams service_params;
+    service_params.alignment = unpack_alignment_;
+    if (!GLES2Util::ComputeImageDataSizesES3(width, height, depth,
+                                             format, type,
+                                             service_params,
+                                             &size,
+                                             nullptr,
+                                             &service_padded_row_size,
+                                             nullptr,
+                                             nullptr)) {
+      SetGLError(GL_INVALID_VALUE, "glTexSubImage3D", "image size too large");
       return;
     }
   } else {
-    src_padded_row_size = padded_row_size;
+    service_padded_row_size = padded_row_size;
   }
-  uint32_t src_height =
-      unpack_image_height_ > 0 ? unpack_image_height_ : height;
 
   // advance pixels pointer past the skip images/rows/pixels
-  pixels = reinterpret_cast<const int8_t*>(pixels) +
-           unpack_skip_images_ * src_padded_row_size * src_height +
-           unpack_skip_rows_ * src_padded_row_size;
-  if (unpack_skip_pixels_) {
-    uint32_t group_size = GLES2Util::ComputeImageGroupSize(format, type);
-    pixels = reinterpret_cast<const int8_t*>(pixels) +
-             unpack_skip_pixels_ * group_size;
-  }
+  pixels = reinterpret_cast<const int8_t*>(pixels) + skip_size;
 
-  ScopedTransferBufferPtr buffer(temp_size, helper_, transfer_buffer_);
+  ScopedTransferBufferPtr buffer(size, helper_, transfer_buffer_);
   TexSubImage3DImpl(
       target, level, xoffset, yoffset, zoffset, width, height, depth,
-      format, type, unpadded_row_size, pixels, src_padded_row_size, GL_FALSE,
-      &buffer, padded_row_size);
+      format, type, unpadded_row_size, pixels, padded_row_size, GL_FALSE,
+      &buffer, service_padded_row_size);
   CheckGLError();
 }
 
@@ -2758,6 +2967,8 @@ void GLES2Implementation::TexSubImage2DImpl(GLenum target,
   DCHECK_GE(level, 0);
   DCHECK_GT(height, 0);
   DCHECK_GT(width, 0);
+  DCHECK_GE(xoffset, 0);
+  DCHECK_GE(yoffset, 0);
 
   const int8_t* source = reinterpret_cast<const int8_t*>(pixels);
   // Transfer by rows.
@@ -2805,9 +3016,12 @@ void GLES2Implementation::TexSubImage3DImpl(GLenum target,
                                             uint32_t buffer_padded_row_size) {
   DCHECK(buffer);
   DCHECK_GE(level, 0);
-  DCHECK_GT(height, 0);
   DCHECK_GT(width, 0);
+  DCHECK_GT(height, 0);
   DCHECK_GT(depth, 0);
+  DCHECK_GE(xoffset, 0);
+  DCHECK_GE(yoffset, 0);
+  DCHECK_GE(zoffset, 0);
   const int8_t* source = reinterpret_cast<const int8_t*>(pixels);
   GLsizei total_rows = height * depth;
   GLint row_index = 0, depth_index = 0;
@@ -2859,24 +3073,14 @@ void GLES2Implementation::TexSubImage3DImpl(GLenum target,
       uint32_t image_size_dst = buffer_padded_row_size * height;
       uint32_t image_size_src = pixels_padded_row_size * src_height;
       for (GLint ii = 0; ii < num_images; ++ii) {
-        uint32_t my_unpadded_row_size;
-        if (total_rows == num_rows && ii + 1 == num_images)
-          my_unpadded_row_size = unpadded_row_size;
-        else
-          my_unpadded_row_size = pixels_padded_row_size;
         CopyRectToBuffer(
-            source + ii * image_size_src, my_height, my_unpadded_row_size,
+            source + ii * image_size_src, my_height, unpadded_row_size,
             pixels_padded_row_size, buffer_pointer + ii * image_size_dst,
             buffer_padded_row_size);
       }
     } else {
-      uint32_t my_unpadded_row_size;
-      if (total_rows == num_rows)
-        my_unpadded_row_size = unpadded_row_size;
-      else
-        my_unpadded_row_size = pixels_padded_row_size;
       CopyRectToBuffer(
-          source, my_height, my_unpadded_row_size, pixels_padded_row_size,
+          source, my_height, unpadded_row_size, pixels_padded_row_size,
           buffer->address(), buffer_padded_row_size);
     }
     helper_->TexSubImage3D(
@@ -3306,6 +3510,9 @@ void GLES2Implementation::GetShaderPrecisionFormat(
 }
 
 const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
+  if (name == GL_EXTENSIONS && cached_extension_string_) {
+    return reinterpret_cast<const GLubyte*>(cached_extension_string_);
+  }
   const char* result = NULL;
   // Clears the bucket so if the command fails nothing will be in it.
   helper_->SetBucketSize(kResultBucketId, 0);
@@ -3313,40 +3520,33 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
   std::string str;
   if (GetBucketAsString(kResultBucketId, &str)) {
     // Adds extensions implemented on client side only.
-    switch (name) {
-      case GL_EXTENSIONS:
-        str += std::string(str.empty() ? "" : " ") +
-            "GL_EXT_unpack_subimage "
-            "GL_CHROMIUM_map_sub";
-        if (capabilities_.image)
-          str += " GL_CHROMIUM_image GL_CHROMIUM_gpu_memory_buffer_image";
-        if (capabilities_.future_sync_points)
-          str += " GL_CHROMIUM_future_sync_point";
-        break;
-      default:
-        break;
+    if (name == GL_EXTENSIONS) {
+      str += std::string(str.empty() ? "" : " ") +
+             "GL_EXT_unpack_subimage "
+             "GL_CHROMIUM_map_sub";
+      if (capabilities_.image)
+        str += " GL_CHROMIUM_image GL_CHROMIUM_gpu_memory_buffer_image";
+      if (capabilities_.future_sync_points)
+        str += " GL_CHROMIUM_future_sync_point";
     }
 
     // Because of WebGL the extensions can change. We have to cache each unique
     // result since we don't know when the client will stop referring to a
     // previous one it queries.
-    GLStringMap::iterator it = gl_strings_.find(name);
-    if (it == gl_strings_.end()) {
-      std::set<std::string> strings;
-      std::pair<GLStringMap::iterator, bool> insert_result =
-          gl_strings_.insert(std::make_pair(name, strings));
-      DCHECK(insert_result.second);
-      it = insert_result.first;
-    }
-    std::set<std::string>& string_set = it->second;
-    std::set<std::string>::const_iterator sit = string_set.find(str);
-    if (sit != string_set.end()) {
-      result = sit->c_str();
-    } else {
-      std::pair<std::set<std::string>::const_iterator, bool> insert_result =
-          string_set.insert(str);
-      DCHECK(insert_result.second);
-      result = insert_result.first->c_str();
+    // TODO: Here we could save memory by defining RequestExtensions
+    // invalidating the GL_EXTENSIONS string. http://crbug.com/586414
+    const std::string& cache = *gl_strings_.insert(str).first;
+    result = cache.c_str();
+
+    if (name == GL_EXTENSIONS) {
+      cached_extension_string_ = result;
+      std::vector<std::string> extensions =
+          base::SplitString(cache, base::kWhitespaceASCII,
+                            base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+      for (const std::string& extension : extensions) {
+        cached_extensions_.push_back(
+            gl_strings_.insert(extension).first->c_str());
+      }
     }
   }
   return reinterpret_cast<const GLubyte*>(result);
@@ -3361,6 +3561,28 @@ const GLubyte* GLES2Implementation::GetString(GLenum name) {
   GPU_CLIENT_LOG("  returned " << reinterpret_cast<const char*>(result));
   CheckGLError();
   return result;
+}
+
+const GLubyte* GLES2Implementation::GetStringi(GLenum name, GLuint index) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGetStringi("
+                     << GLES2Util::GetStringStringType(name) << "," << index
+                     << ")");
+  TRACE_EVENT0("gpu", "GLES2::GetStringi");
+  UpdateCachedExtensionsIfNeeded();
+  if (name != GL_EXTENSIONS) {
+    SetGLError(GL_INVALID_ENUM, "glGetStringi", "name");
+    return nullptr;
+  }
+  if (index >= cached_extensions_.size()) {
+    SetGLError(GL_INVALID_VALUE, "glGetStringi", "index too large");
+    return nullptr;
+  }
+
+  const char* result = cached_extensions_[index];
+  GPU_CLIENT_LOG("  returned " << result);
+  CheckGLError();
+  return reinterpret_cast<const GLubyte*>(result);
 }
 
 bool GLES2Implementation::GetTransformFeedbackVaryingHelper(
@@ -3530,9 +3752,6 @@ void GLES2Implementation::ReadPixels(
     SetGLError(GL_INVALID_VALUE, "glReadPixels", "dimensions < 0");
     return;
   }
-  if (width == 0 || height == 0) {
-    return;
-  }
 
   // glReadPixel pads the size of each row of pixels by an amount specified by
   // glPixelStorei. So, we have to take that into account both in the fact that
@@ -3542,14 +3761,6 @@ void GLES2Implementation::ReadPixels(
 
   TRACE_EVENT0("gpu", "GLES2::ReadPixels");
   typedef cmds::ReadPixels::Result Result;
-
-  if (bound_pixel_pack_buffer_) {
-    GLuint offset = ToGLuint(pixels);
-    helper_->ReadPixels(
-        xoffset, yoffset, width, height, format, type, 0, offset, 0, 0, false);
-    CheckGLError();
-    return;
-  }
 
   uint32_t size;
   uint32_t unpadded_row_size;
@@ -3571,6 +3782,20 @@ void GLES2Implementation::ReadPixels(
     SetGLError(GL_INVALID_VALUE, "glReadPixels", "size too large.");
     return;
   }
+
+  if (bound_pixel_pack_buffer_) {
+    base::CheckedNumeric<GLuint> offset = ToGLuint(pixels);
+    offset += skip_size;
+    if (!offset.IsValid()) {
+      SetGLError(GL_INVALID_VALUE, "glReadPixels", "skip size too large.");
+      return;
+    }
+    helper_->ReadPixels(xoffset, yoffset, width, height, format, type, 0,
+                        offset.ValueOrDefault(0), 0, 0, false);
+    CheckGLError();
+    return;
+  }
+
   uint32_t service_padded_row_size = 0;
   if (pack_row_length_ > 0 && pack_row_length_ != width) {
     if (!GLES2Util::ComputeImagePaddedRowSize(width,
@@ -3592,11 +3817,11 @@ void GLES2Implementation::ReadPixels(
     }
     DCHECK_EQ(0u, skip_size);
     GLuint offset = ToGLuint(pixels);
-    BufferTracker::Buffer* buffer = GetBoundPixelUnpackTransferBufferIfValid(
+    BufferTracker::Buffer* buffer = GetBoundPixelTransferBufferIfValid(
         bound_pixel_pack_transfer_buffer_id_, "glReadPixels", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->ReadPixels(xoffset, yoffset, width, height, format, type,
-                          buffer->shm_id(), buffer->shm_offset(),
+                          buffer->shm_id(), buffer->shm_offset() + offset,
                           0, 0, true);
       CheckGLError();
     }
@@ -3621,8 +3846,10 @@ void GLES2Implementation::ReadPixels(
   if (xoffset < 0) {
     skip_row_bytes = static_cast<uint32_t>(-xoffset) * group_size;
   }
-  while (remaining_rows) {
-    GLsizei desired_size =
+  do {
+    // Even if height == 0, we still need to trigger the service side handling
+    // in case invalid args are passed in and a GL errro needs to be generated.
+    GLsizei desired_size = remaining_rows == 0 ? 0 :
         service_padded_row_size * (remaining_rows - 1) + unpadded_row_size;
     ScopedTransferBufferPtr buffer(desired_size, helper_, transfer_buffer_);
     if (!buffer.valid()) {
@@ -3648,6 +3875,9 @@ void GLES2Implementation::ReadPixels(
     WaitForCmd();
     // If it was not marked as successful exit.
     if (!result->success) {
+      break;
+    }
+    if (remaining_rows == 0) {
       break;
     }
     const uint8_t* src = static_cast<const uint8_t*>(buffer.address());
@@ -3685,7 +3915,7 @@ void GLES2Implementation::ReadPixels(
     }
     y_index += num_rows;
     remaining_rows -= num_rows;
-  }
+  } while (remaining_rows);
   CheckGLError();
 }
 
@@ -3832,6 +4062,34 @@ void GLES2Implementation::BindBufferBaseHelper(
     GLenum target, GLuint index, GLuint buffer_id) {
   // TODO(zmo): See note #1 above.
   // TODO(zmo): See note #2 above.
+  switch (target) {
+    case GL_TRANSFORM_FEEDBACK_BUFFER:
+      if (index >=
+          static_cast<GLuint>(
+              capabilities_.max_transform_feedback_separate_attribs)) {
+        SetGLError(GL_INVALID_VALUE,
+                   "glBindBufferBase", "index out of range");
+        return;
+      }
+      if (bound_transform_feedback_buffer_ != buffer_id) {
+        bound_transform_feedback_buffer_ = buffer_id;
+      }
+      break;
+    case GL_UNIFORM_BUFFER:
+      if (index >=
+          static_cast<GLuint>(capabilities_.max_uniform_buffer_bindings)) {
+        SetGLError(GL_INVALID_VALUE,
+                   "glBindBufferBase", "index out of range");
+        return;
+      }
+      if (bound_uniform_buffer_ != buffer_id) {
+        bound_uniform_buffer_ = buffer_id;
+      }
+      break;
+    default:
+      SetGLError(GL_INVALID_ENUM, "glBindBufferBase", "invalid target");
+      return;
+  }
   GetIdHandler(id_namespaces::kBuffers)->MarkAsUsedForBind(
       this, target, index, buffer_id, &GLES2Implementation::BindBufferBaseStub);
 }
@@ -4827,16 +5085,9 @@ const GLchar* GLES2Implementation::GetRequestableExtensionsCHROMIUM() {
     // them. Because we don't know when the client will stop referring
     // to a previous one it queries (see GetString) we need to cache
     // the unique results.
-    std::set<std::string>::const_iterator sit =
-        requestable_extensions_set_.find(str);
-    if (sit != requestable_extensions_set_.end()) {
-      result = sit->c_str();
-    } else {
-      std::pair<std::set<std::string>::const_iterator, bool> insert_result =
-          requestable_extensions_set_.insert(str);
-      DCHECK(insert_result.second);
-      result = insert_result.first->c_str();
-    }
+    // TODO: Here we could save memory by defining RequestExtensions
+    // invalidating the GL_EXTENSIONS string. http://crbug.com/586414
+    result = gl_strings_.insert(str).first->c_str();
   }
   GPU_CLIENT_LOG("  returned " << result);
   return reinterpret_cast<const GLchar*>(result);
@@ -4848,6 +5099,7 @@ void GLES2Implementation::RequestExtensionCHROMIUM(const char* extension) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glRequestExtensionCHROMIUM("
                  << extension << ")");
+  InvalidateCachedExtensions();
   SetBucketAsCString(kResultBucketId, extension);
   helper_->RequestExtensionCHROMIUM(kResultBucketId);
   helper_->SetBucketSize(kResultBucketId, 0);
@@ -5231,8 +5483,21 @@ void GLES2Implementation::GetQueryivEXT(
                  << GLES2Util::GetStringQueryParameter(pname) << ", "
                  << static_cast<const void*>(params) << ")");
   if (pname == GL_QUERY_COUNTER_BITS_EXT) {
-    // We convert all queries to CPU time so we support 64 bits.
-    *params = 64;
+    switch (target) {
+      case GL_TIMESTAMP_EXT:
+        // Overall reliable driver support for timestamps is limited, so we
+        // disable the timestamp portion of this extension to encourage use of
+        // the better supported time elapsed queries.
+        *params = 0;
+        break;
+      case GL_TIME_ELAPSED_EXT:
+        // We convert all queries to CPU time so we support 64 bits.
+        *params = 64;
+        break;
+      default:
+        SetGLErrorInvalidEnum("glGetQueryivEXT", target, "target");
+        break;
+    }
     return;
   } else if (pname != GL_CURRENT_QUERY_EXT) {
     SetGLErrorInvalidEnum("glGetQueryivEXT", pname, "pname");
@@ -5549,34 +5814,6 @@ GLboolean GLES2Implementation::UnmapBufferCHROMIUM(GLuint target) {
   return true;
 }
 
-GLuint GLES2Implementation::InsertSyncPointCHROMIUM() {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glInsertSyncPointCHROMIUM");
-  helper_->CommandBufferHelper::Flush();
-  return gpu_control_->InsertSyncPoint();
-}
-
-void GLES2Implementation::WaitSyncPointCHROMIUM(GLuint sync_point) {
-  // This should no longer be called.
-  NOTREACHED();
-}
-
-GLuint GLES2Implementation::InsertFutureSyncPointCHROMIUM() {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glInsertFutureSyncPointCHROMIUM");
-  DCHECK(capabilities_.future_sync_points);
-  return gpu_control_->InsertFutureSyncPoint();
-}
-
-void GLES2Implementation::RetireSyncPointCHROMIUM(GLuint sync_point) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glRetireSyncPointCHROMIUM("
-                     << sync_point << ")");
-  DCHECK(capabilities_.future_sync_points);
-  helper_->CommandBufferHelper::Flush();
-  gpu_control_->RetireSyncPoint(sync_point);
-}
-
 uint64_t GLES2Implementation::ShareGroupTracingGUID() const {
   return share_group_->TracingGUID();
 }
@@ -5689,28 +5926,18 @@ void GLES2Implementation::WaitSyncTokenCHROMIUM(const GLbyte* sync_token) {
         return;
       }
 
-      // TODO(dyen): Temporarily support old sync points, remove once all old
-      // sync points have been removed.
-      const gpu::CommandBufferNamespace namespace_id =
-          sync_token_data.namespace_id();
-      if (namespace_id == gpu::CommandBufferNamespace::OLD_SYNC_POINTS) {
-        const uint32_t sync_point =
-            static_cast<uint32_t>(sync_token_data.release_count());
-        helper_->WaitSyncPointCHROMIUM(sync_point);
-        return;
-      }
-
       helper_->WaitSyncTokenCHROMIUM(
           static_cast<GLint>(sync_token_data.namespace_id()),
-          sync_token_data.command_buffer_id(), sync_token_data.release_count());
+          sync_token_data.command_buffer_id().GetUnsafeValue(),
+          sync_token_data.release_count());
     }
   }
 }
 
 namespace {
 
-bool ValidImageFormat(GLenum internalformat,
-                      const Capabilities& capabilities) {
+bool CreateImageValidInternalFormat(GLenum internalformat,
+                                    const Capabilities& capabilities) {
   switch (internalformat) {
     case GL_ATC_RGB_AMD:
     case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:
@@ -5727,6 +5954,16 @@ bool ValidImageFormat(GLenum internalformat,
     case GL_RGB_YCBCR_422_CHROMIUM:
     case GL_RGB_YCBCR_420V_CHROMIUM:
     case GL_BGRA_EXT:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool CreateGpuMemoryBufferValidInternalFormat(GLenum internalformat) {
+  switch (internalformat) {
+    case GL_RGB:
+    case GL_RGBA:
       return true;
     default:
       return false;
@@ -5753,7 +5990,7 @@ GLuint GLES2Implementation::CreateImageCHROMIUMHelper(ClientBuffer buffer,
     return 0;
   }
 
-  if (!ValidImageFormat(internalformat, capabilities_)) {
+  if (!CreateImageValidInternalFormat(internalformat, capabilities_)) {
     SetGLError(GL_INVALID_VALUE, "glCreateImageCHROMIUM", "invalid format");
     return 0;
   }
@@ -5819,7 +6056,7 @@ GLuint GLES2Implementation::CreateGpuMemoryBufferImageCHROMIUMHelper(
     return 0;
   }
 
-  if (!ValidImageFormat(internalformat, capabilities_)) {
+  if (!CreateGpuMemoryBufferValidInternalFormat(internalformat)) {
     SetGLError(GL_INVALID_VALUE,
                "glCreateGpuMemoryBufferImageCHROMIUM",
                "invalid format");
@@ -6595,6 +6832,18 @@ void GLES2Implementation::ProgramPathFragmentInputGenCHROMIUM(
                                                  buffer.offset());
   }
   CheckGLError();
+}
+
+void GLES2Implementation::UpdateCachedExtensionsIfNeeded() {
+  if (cached_extension_string_) {
+    return;
+  }
+  GetStringHelper(GL_EXTENSIONS);
+}
+
+void GLES2Implementation::InvalidateCachedExtensions() {
+  cached_extension_string_ = nullptr;
+  cached_extensions_.clear();
 }
 
 // Include the auto-generated part of this file. We split this because it means

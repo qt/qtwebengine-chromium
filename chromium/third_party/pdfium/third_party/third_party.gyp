@@ -5,12 +5,12 @@
 {
   'variables': {
     'pdf_enable_xfa%': 0,  # Set to 1 by standalone.gypi in standalone builds.
+    'pdf_use_skia%': 0,
   },
   'target_defaults': {
     'defines': [
       'OPJ_STATIC',
       'PNG_PREFIX',
-      'PNGPREFIX_H',
       'PNG_USE_READ_MACROS',
       '_CRT_SECURE_NO_WARNINGS',
     ],
@@ -80,6 +80,15 @@
         'freetype/src/smooth/smooth.c',
         'freetype/src/truetype/truetype.c',
         'freetype/src/type1/type1.c',
+      ],
+      'conditions': [
+        ['pdf_use_skia==1', {
+          'sources': [
+           'freetype/src/base/ftfntfmt.c',
+           'freetype/src/base/ftfstype.c',
+           'freetype/src/base/fttype1.c',
+          ],
+        }],
       ],
       'variables': {
         'clang_warning_flags': [
@@ -235,10 +244,17 @@
           'cflags': [
             '-Wno-main',
             '-Wno-missing-braces',
+            '-Wno-shift-negative-value',
             '-Wno-unused',
           ],
         }],
       ],
+      'variables': {
+        'clang_warning_flags': [
+          # Avoid warning for undefined behaviour.
+          '-Wno-shift-negative-value',
+        ],
+      }
     },
     {
       'target_name': 'fx_libopenjpeg',
@@ -269,22 +285,29 @@
       'target_name': 'fx_lpng',
       'type': 'static_library',
       'sources': [
-        'lpng_v163/png.h',
-        'lpng_v163/png.c',
-        'lpng_v163/pngerror.c',
-        'lpng_v163/pngget.c',
-        'lpng_v163/pngmem.c',
-        'lpng_v163/pngpread.c',
-        'lpng_v163/pngread.c',
-        'lpng_v163/pngrio.c',
-        'lpng_v163/pngrtran.c',
-        'lpng_v163/pngrutil.c',
-        'lpng_v163/pngset.c',
-        'lpng_v163/pngtrans.c',
-        'lpng_v163/pngwio.c',
-        'lpng_v163/pngwrite.c',
-        'lpng_v163/pngwtran.c',
-        'lpng_v163/pngwutil.c',
+        'libpng16/png.c',
+        'libpng16/png.h',
+        'libpng16/pngconf.h',
+        'libpng16/pngdebug.h',
+        'libpng16/pngerror.c',
+        'libpng16/pngget.c',
+        'libpng16/pnginfo.h',
+        'libpng16/pnglibconf.h',
+        'libpng16/pngmem.c',
+        'libpng16/pngpread.c',
+        'libpng16/pngprefix.h',
+        'libpng16/pngpriv.h',
+        'libpng16/pngread.c',
+        'libpng16/pngrio.c',
+        'libpng16/pngrtran.c',
+        'libpng16/pngrutil.c',
+        'libpng16/pngset.c',
+        'libpng16/pngstruct.h',
+        'libpng16/pngtrans.c',
+        'libpng16/pngwio.c',
+        'libpng16/pngwrite.c',
+        'libpng16/pngwtran.c',
+        'libpng16/pngwutil.c',
       ],
     },
     {
@@ -307,6 +330,27 @@
         'zlib_v128/uncompr.c',
         'zlib_v128/zutil.c',
       ],
+      'conditions': [
+        ['os_posix==1', {
+          'cflags': [
+            # TODO(dsinclair): Remove if fixed upstream. https://crbug.com/507712
+            '-Wno-shift-negative-value',
+          ],
+        }],
+        ['OS == "win"', {
+          'direct_dependent_settings': {
+            'include_dirs': [
+              'zlib_v128',
+            ],
+          }
+        }],
+      ],
+      'variables': {
+        'clang_warning_flags': [
+          # Avoid warning for undefined behaviour. https://crbug.com/507712
+          '-Wno-shift-negative-value',
+        ]
+      },
     },
     {
       'target_name': 'pdfium_base',

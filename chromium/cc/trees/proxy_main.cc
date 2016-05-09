@@ -17,6 +17,7 @@
 #include "cc/output/swap_promise.h"
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/remote_channel_main.h"
 #include "cc/trees/scoped_abort_remaining_swap_promises.h"
 #include "cc/trees/threaded_channel.h"
 
@@ -29,6 +30,17 @@ scoped_ptr<ProxyMain> ProxyMain::CreateThreaded(
       new ProxyMain(layer_tree_host, task_runner_provider));
   proxy_main->SetChannel(
       ThreadedChannel::Create(proxy_main.get(), task_runner_provider));
+  return proxy_main;
+}
+
+scoped_ptr<ProxyMain> ProxyMain::CreateRemote(
+    RemoteProtoChannel* remote_proto_channel,
+    LayerTreeHost* layer_tree_host,
+    TaskRunnerProvider* task_runner_provider) {
+  scoped_ptr<ProxyMain> proxy_main(
+      new ProxyMain(layer_tree_host, task_runner_provider));
+  proxy_main->SetChannel(RemoteChannelMain::Create(
+      remote_proto_channel, proxy_main.get(), task_runner_provider));
   return proxy_main;
 }
 
@@ -277,12 +289,6 @@ void ProxyMain::SetVisible(bool visible) {
   channel_main_->SetVisibleOnImpl(visible);
 }
 
-void ProxyMain::SetThrottleFrameProduction(bool throttle) {
-  TRACE_EVENT1("cc", "ProxyMain::SetThrottleFrameProduction", "throttle",
-               throttle);
-  channel_main_->SetThrottleFrameProductionOnImpl(throttle);
-}
-
 const RendererCapabilities& ProxyMain::GetRendererCapabilities() const {
   DCHECK(IsMainThread());
   DCHECK(!layer_tree_host_->output_surface_lost());
@@ -378,7 +384,7 @@ void ProxyMain::MainThreadHasStoppedFlinging() {
 void ProxyMain::Start(
     scoped_ptr<BeginFrameSource> external_begin_frame_source) {
   DCHECK(IsMainThread());
-  DCHECK(task_runner_provider_->HasImplThread());
+  DCHECK(layer_tree_host_->IsThreaded() || layer_tree_host_->IsRemoteServer());
   DCHECK(channel_main_);
   DCHECK(!layer_tree_host_->settings().use_external_begin_frame_source ||
          external_begin_frame_source);
@@ -441,6 +447,10 @@ void ProxyMain::UpdateTopControlsState(TopControlsState constraints,
                                        bool animate) {
   DCHECK(IsMainThread());
   channel_main_->UpdateTopControlsStateOnImpl(constraints, current, animate);
+}
+
+void ProxyMain::SetOutputIsSecure(bool output_is_secure) {
+  NOTREACHED() << "Only used by SingleProxyMain";
 }
 
 bool ProxyMain::SendCommitRequestToImplThreadIfNeeded(

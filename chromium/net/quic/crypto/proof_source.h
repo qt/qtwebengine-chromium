@@ -8,15 +8,33 @@
 #include <string>
 #include <vector>
 
-#include "net/base/ip_address_number.h"
+#include "base/memory/ref_counted.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_protocol.h"
 
 namespace net {
+
+class IPAddress;
 
 // ProofSource is an interface by which a QUIC server can obtain certificate
 // chains and signatures that prove its identity.
 class NET_EXPORT_PRIVATE ProofSource {
  public:
+  // Chain is a reference-counted wrapper for a std::vector of std::stringified
+  // certificates.
+  struct NET_EXPORT_PRIVATE Chain : public base::RefCounted<Chain> {
+    explicit Chain(const std::vector<std::string>& certs);
+
+    const std::vector<std::string> certs;
+
+   private:
+    friend class base::RefCounted<Chain>;
+
+    virtual ~Chain();
+
+    DISALLOW_COPY_AND_ASSIGN(Chain);
+  };
+
   virtual ~ProofSource() {}
 
   // GetProof finds a certificate chain for |hostname|, sets |out_certs| to
@@ -31,16 +49,21 @@ class NET_EXPORT_PRIVATE ProofSource {
   // If |ecdsa_ok| is true, the signature may use an ECDSA key. Otherwise, the
   // signature must use an RSA key.
   //
-  // |out_certs| is a pointer to a pointer, not a pointer to an array.
+  // |out_chain| is reference counted to avoid the (assumed) expense of copying
+  // out the certificates.
   //
   // The number of certificate chains is expected to be small and fixed thus
   // the ProofSource retains ownership of the contents of |out_certs|. The
   // expectation is that they will be cached forever.
   //
-  // The signature values should be cached because |server_config| will be
-  // somewhat static. However, since they aren't bounded, the ProofSource may
-  // wish to evicit entries from that cache, thus the caller takes ownership of
-  // |*out_signature|.
+  // For version before QUIC_VERSION_30, the signature values should be cached
+  // because |server_config| will be somewhat static. However, since they aren't
+  // bounded, the ProofSource may wish to evicit entries from that cache, thus
+  // the caller takes ownership of |*out_signature|.
+  //
+  // For QUIC_VERSION_30 and later, the signature depends on |chlo_hash|
+  // which means that the signature can not be cached. The caller takes
+  // ownership of |*out_signature|.
   //
   // |hostname| may be empty to signify that a default certificate should be
   // used.
@@ -48,11 +71,13 @@ class NET_EXPORT_PRIVATE ProofSource {
   // |out_leaf_cert_sct| points to the signed timestamp (RFC6962) of the leaf
   // cert.
   // This function may be called concurrently.
-  virtual bool GetProof(const IPAddressNumber& server_ip,
+  virtual bool GetProof(const IPAddress& server_ip,
                         const std::string& hostname,
                         const std::string& server_config,
+                        QuicVersion quic_version,
+                        base::StringPiece chlo_hash,
                         bool ecdsa_ok,
-                        const std::vector<std::string>** out_certs,
+                        scoped_refptr<Chain>* out_chain,
                         std::string* out_signature,
                         std::string* out_leaf_cert_sct) = 0;
 };

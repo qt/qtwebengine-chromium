@@ -18,6 +18,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <utility>
+#include <vector>
 
 #include "v8-version.h"  // NOLINT(build/include)
 #include "v8config.h"    // NOLINT(build/include)
@@ -329,9 +331,7 @@ class Local {
   friend class PersistentValueMapBase;
   template<class F1, class F2> friend class PersistentValueVector;
 
-  template <class S>
-  V8_INLINE Local(S* that)
-      : val_(that) {}
+  explicit V8_INLINE Local(T* that) : val_(that) {}
   V8_INLINE static Local<T> New(Isolate* isolate, T* that);
   T* val_;
 };
@@ -434,7 +434,10 @@ class WeakCallbackInfo {
     return internal_fields_[1];
   }
 
-  bool IsFirstPass() const { return callback_ != nullptr; }
+  V8_DEPRECATED("Not realiable once SetSecondPassCallback() was used.",
+                bool IsFirstPass() const) {
+    return callback_ != nullptr;
+  }
 
   // When first called, the embedder MUST Reset() the Global which triggered the
   // callback. The Global itself is unusable for anything else. No v8 other api
@@ -591,6 +594,13 @@ template <class T> class PersistentBase {
 
   // TODO(dcarney): remove this.
   V8_INLINE void ClearWeak() { ClearWeak<void>(); }
+
+  /**
+   * Allows the embedder to tell the v8 garbage collector that a certain object
+   * is alive. Only allowed when the embedder is asked to trace its heap by
+   * EmbedderHeapTracer.
+   */
+  V8_INLINE void RegisterExternalReference(Isolate* isolate);
 
   /**
    * Marks the reference to this object independent. Garbage collector is free
@@ -787,7 +797,7 @@ template <class T, class M> class Persistent : public PersistentBase<T> {
   template<class F1, class F2> friend class Persistent;
   template<class F> friend class ReturnValue;
 
-  template <class S> V8_INLINE Persistent(S* that) : PersistentBase<T>(that) { }
+  explicit V8_INLINE Persistent(T* that) : PersistentBase<T>(that) {}
   V8_INLINE T* operator*() const { return this->val_; }
   template<class S, class M2>
   V8_INLINE void Copy(const Persistent<S, M2>& that);
@@ -886,7 +896,7 @@ using UniquePersistent = Global<T>;
  */
 class V8_EXPORT HandleScope {
  public:
-  HandleScope(Isolate* isolate);
+  explicit HandleScope(Isolate* isolate);
 
   ~HandleScope();
 
@@ -939,7 +949,7 @@ class V8_EXPORT HandleScope {
  */
 class V8_EXPORT EscapableHandleScope : public HandleScope {
  public:
-  EscapableHandleScope(Isolate* isolate);
+  explicit EscapableHandleScope(Isolate* isolate);
   V8_INLINE ~EscapableHandleScope() {}
 
   /**
@@ -2627,6 +2637,10 @@ enum AccessControl {
   PROHIBITS_OVERWRITING = 1 << 2
 };
 
+/**
+ * Integrity level for objects.
+ */
+enum class IntegrityLevel { kFrozen, kSealed };
 
 /**
  * A JavaScript object (ECMA-262, 4.3.3)
@@ -2817,6 +2831,11 @@ class V8_EXPORT Object : public Value {
    * Returns the name of the function invoked as a constructor for this object.
    */
   Local<String> GetConstructorName();
+
+  /**
+   * Sets the integrity level of the object.
+   */
+  Maybe<bool> SetIntegrityLevel(Local<Context> context, IntegrityLevel level);
 
   /** Gets the number of internal fields for this Object. */
   int InternalFieldCount();
@@ -3147,7 +3166,8 @@ class FunctionCallbackInfo {
  public:
   V8_INLINE int Length() const;
   V8_INLINE Local<Value> operator[](int i) const;
-  V8_INLINE Local<Function> Callee() const;
+  V8_INLINE V8_DEPRECATED("Use Data() to explicitly pass Callee instead",
+                          Local<Function> Callee() const);
   V8_INLINE Local<Object> This() const;
   V8_INLINE Local<Object> Holder() const;
   V8_INLINE bool IsConstructCall() const;
@@ -3191,19 +3211,21 @@ class PropertyCallbackInfo {
   V8_INLINE Local<Object> This() const;
   V8_INLINE Local<Object> Holder() const;
   V8_INLINE ReturnValue<T> GetReturnValue() const;
+  V8_INLINE bool ShouldThrowOnError() const;
   // This shouldn't be public, but the arm compiler needs it.
-  static const int kArgsLength = 6;
+  static const int kArgsLength = 7;
 
  protected:
   friend class MacroAssembler;
   friend class internal::PropertyCallbackArguments;
   friend class internal::CustomArguments<PropertyCallbackInfo>;
-  static const int kHolderIndex = 0;
-  static const int kIsolateIndex = 1;
-  static const int kReturnValueDefaultValueIndex = 2;
-  static const int kReturnValueIndex = 3;
-  static const int kDataIndex = 4;
-  static const int kThisIndex = 5;
+  static const int kShouldThrowOnErrorIndex = 0;
+  static const int kHolderIndex = 1;
+  static const int kIsolateIndex = 2;
+  static const int kReturnValueDefaultValueIndex = 3;
+  static const int kReturnValueIndex = 4;
+  static const int kDataIndex = 5;
+  static const int kThisIndex = 6;
 
   V8_INLINE PropertyCallbackInfo(internal::Object** args) : args_(args) {}
   internal::Object** args_;
@@ -4322,8 +4344,10 @@ enum AccessType {
  * object.
  */
 typedef bool (*AccessCheckCallback)(Local<Context> accessing_context,
-                                    Local<Object> accessed_object);
-
+                                    Local<Object> accessed_object,
+                                    Local<Value> data);
+typedef bool (*DeprecatedAccessCheckCallback)(Local<Context> accessing_context,
+                                              Local<Object> accessed_object);
 
 /**
  * Returns true if cross-context access should be allowed to the named
@@ -4753,6 +4777,10 @@ class V8_EXPORT ObjectTemplate : public Template {
    */
   void SetAccessCheckCallback(AccessCheckCallback callback,
                               Local<Value> data = Local<Value>());
+  V8_DEPRECATED(
+      "Use SetAccessCheckCallback with new AccessCheckCallback signature.",
+      void SetAccessCheckCallback(DeprecatedAccessCheckCallback callback,
+                                  Local<Value> data = Local<Value>()));
 
   V8_DEPRECATED(
       "Use SetAccessCheckCallback instead",
@@ -4876,7 +4904,6 @@ V8_INLINE Local<Primitive> Null(Isolate* isolate);
 V8_INLINE Local<Boolean> True(Isolate* isolate);
 V8_INLINE Local<Boolean> False(Isolate* isolate);
 
-
 /**
  * A set of constraints that specifies the limits of the runtime's memory use.
  * You must set the heap size before initializing the VM - the size cannot be
@@ -4885,6 +4912,9 @@ V8_INLINE Local<Boolean> False(Isolate* isolate);
  * If you are using threads then you should hold the V8::Locker lock while
  * setting the stack limit and you must set a non-default stack limit separately
  * for each thread.
+ *
+ * The arguments for set_max_semi_space_size, set_max_old_space_size,
+ * set_max_executable_size, set_code_range_size specify limits in MB.
  */
 class V8_EXPORT ResourceConstraints {
  public:
@@ -4903,17 +4933,23 @@ class V8_EXPORT ResourceConstraints {
                          uint64_t virtual_memory_limit);
 
   int max_semi_space_size() const { return max_semi_space_size_; }
-  void set_max_semi_space_size(int value) { max_semi_space_size_ = value; }
+  void set_max_semi_space_size(int limit_in_mb) {
+    max_semi_space_size_ = limit_in_mb;
+  }
   int max_old_space_size() const { return max_old_space_size_; }
-  void set_max_old_space_size(int value) { max_old_space_size_ = value; }
+  void set_max_old_space_size(int limit_in_mb) {
+    max_old_space_size_ = limit_in_mb;
+  }
   int max_executable_size() const { return max_executable_size_; }
-  void set_max_executable_size(int value) { max_executable_size_ = value; }
+  void set_max_executable_size(int limit_in_mb) {
+    max_executable_size_ = limit_in_mb;
+  }
   uint32_t* stack_limit() const { return stack_limit_; }
   // Sets an address beyond which the VM's stack may not grow.
   void set_stack_limit(uint32_t* value) { stack_limit_ = value; }
   size_t code_range_size() const { return code_range_size_; }
-  void set_code_range_size(size_t value) {
-    code_range_size_ = value;
+  void set_code_range_size(size_t limit_in_mb) {
+    code_range_size_ = limit_in_mb;
   }
 
  private:
@@ -4999,8 +5035,10 @@ typedef void (*MemoryAllocationCallback)(ObjectSpace space,
                                          AllocationAction action,
                                          int size);
 
-// --- Leave Script Callback ---
-typedef void (*CallCompletedCallback)();
+// --- Enter/Leave Script Callback ---
+typedef void (*BeforeCallEnteredCallback)(Isolate*);
+typedef void (*CallCompletedCallback)(Isolate*);
+typedef void (*DeprecatedCallCompletedCallback)();
 
 // --- Promise Reject Callback ---
 enum PromiseRejectEvent {
@@ -5035,8 +5073,56 @@ class PromiseRejectMessage {
 
 typedef void (*PromiseRejectCallback)(PromiseRejectMessage message);
 
-// --- Microtask Callback ---
+// --- Microtasks Callbacks ---
+typedef void (*MicrotasksCompletedCallback)(Isolate*);
 typedef void (*MicrotaskCallback)(void* data);
+
+
+/**
+ * Policy for running microtasks:
+ *   - explicit: microtasks are invoked with Isolate::RunMicrotasks() method;
+ *   - scoped: microtasks invocation is controlled by MicrotasksScope objects;
+ *   - auto: microtasks are invoked when the script call depth decrements
+ *           to zero.
+ */
+enum class MicrotasksPolicy { kExplicit, kScoped, kAuto };
+
+
+/**
+ * This scope is used to control microtasks when kScopeMicrotasksInvocation
+ * is used on Isolate. In this mode every non-primitive call to V8 should be
+ * done inside some MicrotasksScope.
+ * Microtasks are executed when topmost MicrotasksScope marked as kRunMicrotasks
+ * exits.
+ * kDoNotRunMicrotasks should be used to annotate calls not intended to trigger
+ * microtasks.
+ */
+class V8_EXPORT MicrotasksScope {
+ public:
+  enum Type { kRunMicrotasks, kDoNotRunMicrotasks };
+
+  MicrotasksScope(Isolate* isolate, Type type);
+  ~MicrotasksScope();
+
+  /**
+   * Runs microtasks if no kRunMicrotasks scope is currently active.
+   */
+  static void PerformCheckpoint(Isolate* isolate);
+
+  /**
+   * Returns current depth of nested kRunMicrotasks scopes.
+   */
+  static int GetCurrentDepth(Isolate* isolate);
+
+ private:
+  internal::Isolate* const isolate_;
+  bool run_;
+
+  // Prevent copying.
+  MicrotasksScope(const MicrotasksScope&);
+  MicrotasksScope& operator=(const MicrotasksScope&);
+};
+
 
 // --- Failed Access Check Callback ---
 typedef void (*FailedAccessCheckCallback)(Local<Object> target,
@@ -5069,11 +5155,24 @@ enum GCType {
                kGCTypeIncrementalMarking | kGCTypeProcessWeakCallbacks
 };
 
+/**
+ * GCCallbackFlags is used to notify additional information about the GC
+ * callback.
+ *   - kGCCallbackFlagConstructRetainedObjectInfos: The GC callback is for
+ *     constructing retained object infos.
+ *   - kGCCallbackFlagForced: The GC callback is for a forced GC for testing.
+ *   - kGCCallbackFlagSynchronousPhantomCallbackProcessing: The GC callback
+ *     is called synchronously without getting posted to an idle task.
+ *   - kGCCallbackFlagCollectAllAvailableGarbage: The GC callback is called
+ *     in a phase where V8 is trying to collect all available garbage
+ *     (e.g., handling a low memory notification).
+ */
 enum GCCallbackFlags {
   kNoGCCallbackFlags = 0,
   kGCCallbackFlagConstructRetainedObjectInfos = 1 << 1,
   kGCCallbackFlagForced = 1 << 2,
-  kGCCallbackFlagSynchronousPhantomCallbackProcessing = 1 << 3
+  kGCCallbackFlagSynchronousPhantomCallbackProcessing = 1 << 3,
+  kGCCallbackFlagCollectAllAvailableGarbage = 1 << 4,
 };
 
 typedef void (*GCCallback)(GCType type, GCCallbackFlags flags);
@@ -5096,6 +5195,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_available_size() { return total_available_size_; }
   size_t used_heap_size() { return used_heap_size_; }
   size_t heap_size_limit() { return heap_size_limit_; }
+  size_t malloced_memory() { return malloced_memory_; }
   size_t does_zap_garbage() { return does_zap_garbage_; }
 
  private:
@@ -5105,6 +5205,7 @@ class V8_EXPORT HeapStatistics {
   size_t total_available_size_;
   size_t used_heap_size_;
   size_t heap_size_limit_;
+  size_t malloced_memory_;
   bool does_zap_garbage_;
 
   friend class V8;
@@ -5269,6 +5370,52 @@ class V8_EXPORT PersistentHandleVisitor {  // NOLINT
                                      uint16_t class_id) {}
 };
 
+/**
+ * Memory pressure level for the MemoryPressureNotification.
+ * kNone hints V8 that there is no memory pressure.
+ * kModerate hints V8 to speed up incremental garbage collection at the cost of
+ * of higher latency due to garbage collection pauses.
+ * kCritical hints V8 to free memory as soon as possible. Garbage collection
+ * pauses at this level will be large.
+ */
+enum class MemoryPressureLevel { kNone, kModerate, kCritical };
+
+/**
+ * Interface for tracing through the embedder heap. During the v8 garbage
+ * collection, v8 collects hidden fields of all potential wrappers, and at the
+ * end of its marking phase iterates the collection and asks the embedder to
+ * trace through its heap and call PersistentBase::RegisterExternalReference on
+ * each js object reachable from any of the given wrappers.
+ *
+ * Before the first call to the TraceWrappableFrom function v8 will call
+ * TraceRoots. When the v8 garbage collection is finished, v8 will call
+ * ClearTracingMarks.
+ */
+class EmbedderHeapTracer {
+ public:
+  /**
+   * V8 will call this method at the beginning of the gc cycle.
+   */
+  virtual void TraceRoots(Isolate* isolate) = 0;
+
+  /**
+   * V8 will call this method with internal fields of a potential wrappers.
+   * Embedder is expected to trace its heap (synchronously) and call
+   * PersistentBase::RegisterExternalReference() on all wrappers reachable from
+   * any of the given wrappers.
+   */
+  virtual void TraceWrappableFrom(
+      Isolate* isolate,
+      const std::vector<std::pair<void*, void*> >& internal_fields) = 0;
+  /**
+   * V8 will call this method at the end of the gc cycle. Allocation is *not*
+   * allowed in the ClearTracingMarks.
+   */
+  virtual void ClearTracingMarks(Isolate* isolate) = 0;
+
+ protected:
+  virtual ~EmbedderHeapTracer() = default;
+};
 
 /**
  * Isolate represents an isolated instance of the V8 engine.  V8 isolates have
@@ -5455,6 +5602,21 @@ class V8_EXPORT Isolate {
     kPromiseChain = 17,
     kPromiseAccept = 18,
     kPromiseDefer = 19,
+    kHtmlCommentInExternalScript = 20,
+    kHtmlComment = 21,
+    kSloppyModeBlockScopedFunctionRedefinition = 22,
+    kForInInitializer = 23,
+    kArrayProtectorDirtied = 24,
+    kArraySpeciesModified = 25,
+    kArrayPrototypeConstructorModified = 26,
+    kArrayInstanceProtoModified = 27,
+    kArrayInstanceConstructorModified = 28,
+    kLegacyFunctionDeclaration = 29,
+    kRegExpPrototypeSourceGetter = 30,
+    kRegExpPrototypeOldFlagGetter = 31,
+
+    // If you add new values here, you'll also need to update V8Initializer.cpp
+    // in Chromium.
     kUseCounterFeatureCount  // This enum value must be last.
   };
 
@@ -5493,6 +5655,14 @@ class V8_EXPORT Isolate {
   typedef bool (*AbortOnUncaughtExceptionCallback)(Isolate*);
   void SetAbortOnUncaughtExceptionCallback(
       AbortOnUncaughtExceptionCallback callback);
+
+  /**
+   * Optional notification that the system is running low on memory.
+   * V8 uses these notifications to guide heuristics.
+   * It is allowed to call this function from another thread while
+   * the isolate is executing long running JavaScript code.
+   */
+  void MemoryPressureNotification(MemoryPressureLevel level);
 
   /**
    * Methods below this point require holding a lock (using Locker) in
@@ -5716,6 +5886,11 @@ class V8_EXPORT Isolate {
   void RemoveGCPrologueCallback(GCCallback callback);
 
   /**
+   * Sets the embedder heap tracer for the isolate.
+   */
+  void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
+
+  /**
    * Enables the host application to receive a notification after a
    * garbage collection. Allocations are allowed in the callback function,
    * but the callback is not re-entrant: if the allocation inside it will
@@ -5796,6 +5971,19 @@ class V8_EXPORT Isolate {
   void SetEventLogger(LogEventCallback that);
 
   /**
+   * Adds a callback to notify the host application right before a script
+   * is about to run. If a script re-enters the runtime during executing, the
+   * BeforeCallEnteredCallback is invoked for each re-entrance.
+   * Executing scripts inside the callback will re-trigger the callback.
+   */
+  void AddBeforeCallEnteredCallback(BeforeCallEnteredCallback callback);
+
+  /**
+   * Removes callback that was installed by AddBeforeCallEnteredCallback.
+   */
+  void RemoveBeforeCallEnteredCallback(BeforeCallEnteredCallback callback);
+
+  /**
    * Adds a callback to notify the host application when a script finished
    * running.  If a script re-enters the runtime during executing, the
    * CallCompletedCallback is only invoked when the outer-most script
@@ -5803,12 +5991,18 @@ class V8_EXPORT Isolate {
    * further callbacks.
    */
   void AddCallCompletedCallback(CallCompletedCallback callback);
+  V8_DEPRECATE_SOON(
+      "Use callback with parameter",
+      void AddCallCompletedCallback(DeprecatedCallCompletedCallback callback));
 
   /**
    * Removes callback that was installed by AddCallCompletedCallback.
    */
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
-
+  V8_DEPRECATE_SOON(
+      "Use callback with parameter",
+      void RemoveCallCompletedCallback(
+          DeprecatedCallCompletedCallback callback));
 
   /**
    * Set callback to notify about promise reject with no handler, or
@@ -5832,17 +6026,39 @@ class V8_EXPORT Isolate {
    */
   void EnqueueMicrotask(MicrotaskCallback microtask, void* data = NULL);
 
-   /**
-   * Experimental: Controls whether the Microtask Work Queue is automatically
-   * run when the script call depth decrements to zero.
+  /**
+   * Experimental: Controls how Microtasks are invoked. See MicrotasksPolicy
+   * for details.
    */
-  void SetAutorunMicrotasks(bool autorun);
+  void SetMicrotasksPolicy(MicrotasksPolicy policy);
+  V8_DEPRECATE_SOON("Use SetMicrotasksPolicy",
+                    void SetAutorunMicrotasks(bool autorun));
 
   /**
-   * Experimental: Returns whether the Microtask Work Queue is automatically
-   * run when the script call depth decrements to zero.
+   * Experimental: Returns the policy controlling how Microtasks are invoked.
    */
-  bool WillAutorunMicrotasks() const;
+  MicrotasksPolicy GetMicrotasksPolicy() const;
+  V8_DEPRECATE_SOON("Use GetMicrotasksPolicy",
+                    bool WillAutorunMicrotasks() const);
+
+  /**
+   * Experimental: adds a callback to notify the host application after
+   * microtasks were run. The callback is triggered by explicit RunMicrotasks
+   * call or automatic microtasks execution (see SetAutorunMicrotasks).
+   *
+   * Callback will trigger even if microtasks were attempted to run,
+   * but the microtasks queue was empty and no single microtask was actually
+   * executed.
+   *
+   * Executing scriptsinside the callback will not re-trigger microtasks and
+   * the callback.
+   */
+  void AddMicrotasksCompletedCallback(MicrotasksCompletedCallback callback);
+
+  /**
+   * Removes callback that was installed by AddMicrotasksCompletedCallback.
+   */
+  void RemoveMicrotasksCompletedCallback(MicrotasksCompletedCallback callback);
 
   /**
    * Sets a callback for counting the number of times a feature of V8 is used.
@@ -6139,11 +6355,23 @@ class V8_EXPORT V8 {
   static void SetSnapshotDataBlob(StartupData* startup_blob);
 
   /**
-   * Create a new isolate and context for the purpose of capturing a snapshot
+   * Bootstrap an isolate and a context from scratch to create a startup
+   * snapshot. Include the side-effects of running the optional script.
    * Returns { NULL, 0 } on failure.
-   * The caller owns the data array in the return value.
+   * The caller acquires ownership of the data array in the return value.
    */
-  static StartupData CreateSnapshotDataBlob(const char* custom_source = NULL);
+  static StartupData CreateSnapshotDataBlob(const char* embedded_source = NULL);
+
+  /**
+   * Bootstrap an isolate and a context from the cold startup blob, run the
+   * warm-up script to trigger code compilation. The side effects are then
+   * discarded. The resulting startup snapshot will include compiled code.
+   * Returns { NULL, 0 } on failure.
+   * The caller acquires ownership of the data array in the return value.
+   * The argument startup blob is untouched.
+   */
+  static StartupData WarmUpSnapshotDataBlob(StartupData cold_startup_blob,
+                                            const char* warmup_source);
 
   /**
    * Adds a message listener.
@@ -6419,6 +6647,8 @@ class V8_EXPORT V8 {
   static internal::Object** CopyPersistent(internal::Object** handle);
   static void DisposeGlobal(internal::Object** global_handle);
   typedef WeakCallbackData<Value, void>::Callback WeakCallback;
+  static void RegisterExternallyReferencedObject(internal::Object** object,
+                                                 internal::Isolate* isolate);
   static void MakeWeak(internal::Object** global_handle, void* data,
                        WeakCallback weak_callback);
   static void MakeWeak(internal::Object** global_handle, void* data,
@@ -7093,7 +7323,7 @@ class Internals {
       1 * kApiPointerSize + kApiIntSize;
   static const int kStringResourceOffset = 3 * kApiPointerSize;
 
-  static const int kOddballKindOffset = 4 * kApiPointerSize;
+  static const int kOddballKindOffset = 5 * kApiPointerSize;
   static const int kForeignAddressOffset = kApiPointerSize;
   static const int kJSObjectHeaderSize = 3 * kApiPointerSize;
   static const int kFixedArrayHeaderSize = 2 * kApiPointerSize;
@@ -7112,11 +7342,11 @@ class Internals {
   static const int kIsolateRootsOffset =
       kAmountOfExternalAllocatedMemoryAtLastGlobalGCOffset + kApiInt64Size +
       kApiPointerSize;
-  static const int kUndefinedValueRootIndex = 5;
-  static const int kNullValueRootIndex = 7;
-  static const int kTrueValueRootIndex = 8;
-  static const int kFalseValueRootIndex = 9;
-  static const int kEmptyStringRootIndex = 10;
+  static const int kUndefinedValueRootIndex = 4;
+  static const int kNullValueRootIndex = 6;
+  static const int kTrueValueRootIndex = 7;
+  static const int kFalseValueRootIndex = 8;
+  static const int kEmptyStringRootIndex = 9;
 
   // The external allocation limit should be below 256 MB on all architectures
   // to avoid that resource-constrained embedders run low on memory.
@@ -7132,7 +7362,7 @@ class Internals {
   static const int kNodeIsPartiallyDependentShift = 4;
   static const int kNodeIsActiveShift = 4;
 
-  static const int kJSObjectType = 0xb7;
+  static const int kJSObjectType = 0xb8;
   static const int kFirstNonstringType = 0x80;
   static const int kOddballType = 0x83;
   static const int kForeignType = 0x87;
@@ -7436,6 +7666,13 @@ P* PersistentBase<T>::ClearWeak() {
     V8::ClearWeak(reinterpret_cast<internal::Object**>(this->val_)));
 }
 
+template <class T>
+void PersistentBase<T>::RegisterExternalReference(Isolate* isolate) {
+  if (IsEmpty()) return;
+  V8::RegisterExternallyReferencedObject(
+      reinterpret_cast<internal::Object**>(this->val_),
+      reinterpret_cast<internal::Isolate*>(isolate));
+}
 
 template <class T>
 void PersistentBase<T>::MarkIndependent() {
@@ -8260,6 +8497,12 @@ Local<Object> PropertyCallbackInfo<T>::Holder() const {
 template<typename T>
 ReturnValue<T> PropertyCallbackInfo<T>::GetReturnValue() const {
   return ReturnValue<T>(&args_[kReturnValueIndex]);
+}
+
+template <typename T>
+bool PropertyCallbackInfo<T>::ShouldThrowOnError() const {
+  typedef internal::Internals I;
+  return args_[kShouldThrowOnErrorIndex] != I::IntToSmi(0);
 }
 
 

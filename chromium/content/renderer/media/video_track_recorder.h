@@ -5,6 +5,8 @@
 #ifndef CONTENT_RENDERER_MEDIA_VIDEO_TRACK_RECORDER_H_
 #define CONTENT_RENDERER_MEDIA_VIDEO_TRACK_RECORDER_H_
 
+#include <memory>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_checker.h"
@@ -28,14 +30,15 @@ class CONTENT_EXPORT VideoTrackRecorder
  public:
   using OnEncodedVideoCB =
       base::Callback<void(const scoped_refptr<media::VideoFrame>& video_frame,
-                          scoped_ptr<std::string> encoded_data,
+                          std::unique_ptr<std::string> encoded_data,
                           base::TimeTicks capture_timestamp,
                           bool is_key_frame)>;
 
   // |use_vp9| forces using VP9, otherwise VP8 will be used by default.
   VideoTrackRecorder(bool use_vp9,
                      const blink::WebMediaStreamTrack& track,
-                     const OnEncodedVideoCB& on_encoded_video_cb);
+                     const OnEncodedVideoCB& on_encoded_video_cb,
+                     int32_t bits_per_second);
   ~VideoTrackRecorder() override;
 
   void Pause();

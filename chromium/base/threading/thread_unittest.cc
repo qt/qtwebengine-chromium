@@ -147,8 +147,8 @@ TEST_F(ThreadTest, StartWithOptions_StackSize) {
   // Ensure that the thread can work with only 12 kb and still process a
   // message.
   Thread::Options options;
-#if defined(ADDRESS_SANITIZER) && defined(OS_MACOSX)
-  // ASan bloats the stack variables and overflows the 12 kb stack on OSX.
+#if defined(ADDRESS_SANITIZER)
+  // ASan bloats the stack variables and overflows the 12 kb stack.
   options.stack_size = 24*1024;
 #else
   options.stack_size = 12*1024;
@@ -292,4 +292,12 @@ TEST_F(ThreadTest, CleanUp) {
 TEST_F(ThreadTest, ThreadNotStarted) {
   Thread a("Inert");
   EXPECT_EQ(nullptr, a.task_runner());
+}
+
+TEST_F(ThreadTest, MultipleWaitUntilThreadStarted) {
+  Thread a("MultipleWaitUntilThreadStarted");
+  EXPECT_TRUE(a.Start());
+  // It's OK to call WaitUntilThreadStarted() multiple times.
+  EXPECT_TRUE(a.WaitUntilThreadStarted());
+  EXPECT_TRUE(a.WaitUntilThreadStarted());
 }

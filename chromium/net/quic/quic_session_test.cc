@@ -6,7 +6,6 @@
 
 #include <set>
 
-#include "base/containers/hash_tables.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -31,7 +30,6 @@
 #include "testing/gmock_mutant.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using base::hash_map;
 using std::set;
 using std::string;
 using std::vector;
@@ -89,10 +87,6 @@ class TestStream : public QuicSpdyStream {
 
   void OnDataAvailable() override {}
 
-  void SendBody(const string& data, bool fin) {
-    WriteOrBufferData(data, fin, nullptr);
-  }
-
   MOCK_METHOD0(OnCanWrite, void());
 };
 
@@ -103,11 +97,7 @@ class StreamBlocker {
       : session_(session), stream_id_(stream_id) {}
 
   void MarkConnectionLevelWriteBlocked() {
-    session_->MarkConnectionLevelWriteBlocked(stream_id_, kDefaultPriority);
-  }
-
-  void MarkHighPriorityWriteBlocked() {
-    session_->MarkConnectionLevelWriteBlocked(stream_id_, kHighestPriority);
+    session_->MarkConnectionLevelWriteBlocked(stream_id_);
   }
 
  private:
@@ -135,14 +125,23 @@ class TestSession : public QuicSpdySession {
 
   TestStream* CreateIncomingDynamicStream(QuicStreamId id) override {
     // Enforce the limit on the number of open streams.
-    if (GetNumOpenIncomingStreams() + 1 > get_max_open_streams()) {
-      connection()->SendConnectionCloseWithDetails(QUIC_TOO_MANY_OPEN_STREAMS,
-                                                   "Too many streams!");
+    if (GetNumOpenIncomingStreams() + 1 > max_open_incoming_streams()) {
+      connection()->CloseConnection(
+          QUIC_TOO_MANY_OPEN_STREAMS, "Too many streams!",
+          ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
       return nullptr;
     } else {
-      return new TestStream(id, this);
+      TestStream* stream = new TestStream(id, this);
+      ActivateStream(stream);
+      return stream;
     }
   }
+
+  bool ShouldCreateIncomingDynamicStream(QuicStreamId /*id*/) override {
+    return true;
+  }
+
+  bool ShouldCreateOutgoingDynamicStream() override { return true; }
 
   bool IsClosedStream(QuicStreamId id) {
     return QuicSession::IsClosedStream(id);
@@ -157,15 +156,14 @@ class TestSession : public QuicSpdySession {
       QuicIOVector data,
       QuicStreamOffset offset,
       bool fin,
-      FecProtection fec_protection,
       QuicAckListenerInterface* ack_notifier_delegate) override {
     QuicConsumedData consumed(data.total_length, fin);
     if (!writev_consumes_all_data_) {
-      consumed = QuicSession::WritevData(id, data, offset, fin, fec_protection,
-                                         ack_notifier_delegate);
+      consumed =
+          QuicSession::WritevData(id, data, offset, fin, ack_notifier_delegate);
     }
-    QuicSessionPeer::GetWriteBlockedStreams(this)
-        ->UpdateBytesForStream(id, consumed.bytes_consumed);
+    QuicSessionPeer::GetWriteBlockedStreams(this)->UpdateBytesForStream(
+        id, consumed.bytes_consumed);
     return consumed;
   }
 
@@ -175,8 +173,7 @@ class TestSession : public QuicSpdySession {
 
   QuicConsumedData SendStreamData(QuicStreamId id) {
     struct iovec iov;
-    return WritevData(id, MakeIOVector("not empty", &iov), 0, true,
-                      MAY_FEC_PROTECT, nullptr);
+    return WritevData(id, MakeIOVector("not empty", &iov), 0, true, nullptr);
   }
 
   QuicConsumedData SendLargeFakeData(QuicStreamId id, int bytes) {
@@ -184,8 +181,7 @@ class TestSession : public QuicSpdySession {
     struct iovec iov;
     iov.iov_base = nullptr;  // should not be read.
     iov.iov_len = static_cast<size_t>(bytes);
-    return WritevData(id, QuicIOVector(&iov, 1, bytes), 0, true,
-                      MAY_FEC_PROTECT, nullptr);
+    return WritevData(id, QuicIOVector(&iov, 1, bytes), 0, true, nullptr);
   }
 
   using QuicSession::PostProcessAfterData;
@@ -338,10 +334,10 @@ TEST_P(QuicSessionTestServer, IsClosedStreamPeerCreated) {
 TEST_P(QuicSessionTestServer, MaximumAvailableOpenedStreams) {
   QuicStreamId stream_id = kClientDataStreamId1;
   session_.GetOrCreateDynamicStream(stream_id);
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(_, _)).Times(0);
+  EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   EXPECT_NE(nullptr,
             session_.GetOrCreateDynamicStream(
-                stream_id + 2 * (session_.get_max_open_streams() - 1)));
+                stream_id + 2 * (session_.max_open_incoming_streams() - 1)));
 }
 
 TEST_P(QuicSessionTestServer, TooManyAvailableStreams) {
@@ -349,20 +345,20 @@ TEST_P(QuicSessionTestServer, TooManyAvailableStreams) {
   QuicStreamId stream_id2;
   EXPECT_NE(nullptr, session_.GetOrCreateDynamicStream(stream_id1));
   // A stream ID which is too large to create.
-  stream_id2 = stream_id1 + 2 * session_.get_max_available_streams() + 4;
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_TOO_MANY_AVAILABLE_STREAMS, _));
+  stream_id2 = stream_id1 + 2 * session_.MaxAvailableStreams() + 4;
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_TOO_MANY_AVAILABLE_STREAMS, _, _));
   EXPECT_EQ(nullptr, session_.GetOrCreateDynamicStream(stream_id2));
 }
 
 TEST_P(QuicSessionTestServer, ManyAvailableStreams) {
   // When max_open_streams_ is 200, should be able to create 200 streams
   // out-of-order, that is, creating the one with the largest stream ID first.
-  QuicSessionPeer::SetMaxOpenStreams(&session_, 200);
+  QuicSessionPeer::SetMaxOpenIncomingStreams(&session_, 200);
   QuicStreamId stream_id = kClientDataStreamId1;
   // Create one stream.
   session_.GetOrCreateDynamicStream(stream_id);
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(_, _)).Times(0);
+  EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   // Create the largest stream ID of a threatened total of 200 streams.
   session_.GetOrCreateDynamicStream(stream_id + 2 * (200 - 1));
 }
@@ -373,20 +369,9 @@ TEST_P(QuicSessionTestServer, DebugDFatalIfMarkingClosedStreamWriteBlocked) {
   // Close the stream.
   EXPECT_CALL(*connection_, SendRstStream(closed_stream_id, _, _));
   stream2->Reset(QUIC_BAD_APPLICATION_PAYLOAD);
-  EXPECT_DEBUG_DFATAL(session_.MarkConnectionLevelWriteBlocked(
-                          closed_stream_id, kDefaultPriority),
-                      "Marking unknown stream 2 blocked.");
-}
-
-TEST_P(QuicSessionTestServer,
-       DebugDFatalIfMarkWriteBlockedCalledWithWrongPriority) {
-  const SpdyPriority kDifferentPriority = 0;
-
-  TestStream* stream2 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
-  EXPECT_NE(kDifferentPriority, stream2->Priority());
-  EXPECT_DEBUG_DFATAL(session_.MarkConnectionLevelWriteBlocked(
-                          stream2->id(), kDifferentPriority),
-                      "Priorities do not match.  Got: 0 Expected: 3");
+  EXPECT_DEBUG_DFATAL(
+      session_.MarkConnectionLevelWriteBlocked(closed_stream_id),
+      "Marking unknown stream 2 blocked.");
 }
 
 TEST_P(QuicSessionTestServer, OnCanWrite) {
@@ -394,43 +379,33 @@ TEST_P(QuicSessionTestServer, OnCanWrite) {
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream6 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
 
-  session_.MarkConnectionLevelWriteBlocked(stream2->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream6->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream4->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream2->id());
+  session_.MarkConnectionLevelWriteBlocked(stream6->id());
+  session_.MarkConnectionLevelWriteBlocked(stream4->id());
 
   InSequence s;
   StreamBlocker stream2_blocker(&session_, stream2->id());
 
-  if (FLAGS_quic_batch_writes) {
-    // Reregister, to test the loop limit.
-    EXPECT_CALL(*stream2, OnCanWrite())
-        .WillOnce(Invoke(&stream2_blocker,
-                         &StreamBlocker::MarkConnectionLevelWriteBlocked));
-    // 2 will get called a second time as it didn't finish its block
-    EXPECT_CALL(*stream2, OnCanWrite());
-    EXPECT_CALL(*stream6, OnCanWrite());
-    // 4 will not get called, as we exceeded the loop limit.
-  } else {
-    // Reregister, to test the loop limit.
-    EXPECT_CALL(*stream2, OnCanWrite())
-        .WillOnce(Invoke(&stream2_blocker,
-                         &StreamBlocker::MarkConnectionLevelWriteBlocked));
-    EXPECT_CALL(*stream6, OnCanWrite());
-    EXPECT_CALL(*stream4, OnCanWrite());
-  }
+  // Reregister, to test the loop limit.
+  EXPECT_CALL(*stream2, OnCanWrite())
+      .WillOnce(Invoke(&stream2_blocker,
+                       &StreamBlocker::MarkConnectionLevelWriteBlocked));
+  // 2 will get called a second time as it didn't finish its block
+  EXPECT_CALL(*stream2, OnCanWrite());
+  EXPECT_CALL(*stream6, OnCanWrite());
+  // 4 will not get called, as we exceeded the loop limit.
   session_.OnCanWrite();
   EXPECT_TRUE(session_.WillingAndAbleToWrite());
 }
 
 TEST_P(QuicSessionTestServer, TestBatchedWrites) {
-  ValueRestore<bool> old_flag(&FLAGS_quic_batch_writes, true);
   TestStream* stream2 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream6 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
 
   session_.set_writev_consumes_all_data(true);
-  session_.MarkConnectionLevelWriteBlocked(stream2->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream4->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream2->id());
+  session_.MarkConnectionLevelWriteBlocked(stream4->id());
 
   StreamBlocker stream2_blocker(&session_, stream2->id());
   StreamBlocker stream4_blocker(&session_, stream4->id());
@@ -441,13 +416,15 @@ TEST_P(QuicSessionTestServer, TestBatchedWrites) {
   InSequence s;
   EXPECT_CALL(*stream2, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream2->id(), 6000))),
                       Invoke(&stream2_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
   EXPECT_CALL(*stream2, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream2->id(), 6000))),
                       Invoke(&stream2_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
@@ -457,13 +434,15 @@ TEST_P(QuicSessionTestServer, TestBatchedWrites) {
   // write quota and we move over to stream 4.
   EXPECT_CALL(*stream2, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream2->id(), 6000))),
                       Invoke(&stream2_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream4->id(), 6000))),
                       Invoke(&stream4_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
@@ -475,28 +454,31 @@ TEST_P(QuicSessionTestServer, TestBatchedWrites) {
   stream6->SetPriority(kHighestPriority);
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
-                          stream4->id(), 6000))),
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_), stream4->id(), 6000))),
                       Invoke(&stream4_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked),
                       Invoke(&stream6_blocker,
-                             &StreamBlocker::MarkHighPriorityWriteBlocked)));
+                             &StreamBlocker::MarkConnectionLevelWriteBlocked)));
   EXPECT_CALL(*stream6, OnCanWrite())
       .WillOnce(testing::IgnoreResult(Invoke(CreateFunctor(
-          &session_, &TestSession::SendLargeFakeData, stream4->id(), 6000))));
+          &TestSession::SendLargeFakeData,
+          base::Unretained(&session_), stream4->id(), 6000))));
   session_.OnCanWrite();
 
   // Stream4 alread did 6k worth of writes, so after doing another 12k it should
   // cede and 2 should resume.
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream4->id(), 12000))),
                       Invoke(&stream4_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
   EXPECT_CALL(*stream2, OnCanWrite())
       .WillOnce(DoAll(testing::IgnoreResult(Invoke(CreateFunctor(
-                          &session_, &TestSession::SendLargeFakeData,
+                          &TestSession::SendLargeFakeData,
+                          base::Unretained(&session_),
                           stream2->id(), 6000))),
                       Invoke(&stream2_blocker,
                              &StreamBlocker::MarkConnectionLevelWriteBlocked)));
@@ -516,29 +498,34 @@ TEST_P(QuicSessionTestServer, OnCanWriteBundlesStreams) {
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream6 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
 
-  session_.MarkConnectionLevelWriteBlocked(stream2->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream6->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream4->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream2->id());
+  session_.MarkConnectionLevelWriteBlocked(stream6->id());
+  session_.MarkConnectionLevelWriteBlocked(stream4->id());
 
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillRepeatedly(Return(QuicTime::Delta::Zero()));
   EXPECT_CALL(*send_algorithm, GetCongestionWindow())
       .WillRepeatedly(Return(kMaxPacketSize * 10));
   EXPECT_CALL(*stream2, OnCanWrite())
       .WillOnce(testing::IgnoreResult(Invoke(CreateFunctor(
-          &session_, &TestSession::SendStreamData, stream2->id()))));
+          &TestSession::SendStreamData,
+          base::Unretained(&session_), stream2->id()))));
   EXPECT_CALL(*stream4, OnCanWrite())
       .WillOnce(testing::IgnoreResult(Invoke(CreateFunctor(
-          &session_, &TestSession::SendStreamData, stream4->id()))));
+          &TestSession::SendStreamData,
+          base::Unretained(&session_),
+          stream4->id()))));
   EXPECT_CALL(*stream6, OnCanWrite())
       .WillOnce(testing::IgnoreResult(Invoke(CreateFunctor(
-          &session_, &TestSession::SendStreamData, stream6->id()))));
+          &TestSession::SendStreamData,
+          base::Unretained(&session_),
+          stream6->id()))));
 
   // Expect that we only send one packet, the writes from different streams
   // should be bundled together.
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
-  EXPECT_CALL(*writer, WritePacket(_, _, _, _))
+  EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(*send_algorithm, OnPacketSent(_, _, _, _, _));
   session_.OnCanWrite();
@@ -556,18 +543,18 @@ TEST_P(QuicSessionTestServer, OnCanWriteCongestionControlBlocks) {
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream6 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
 
-  session_.MarkConnectionLevelWriteBlocked(stream2->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream6->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream4->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream2->id());
+  session_.MarkConnectionLevelWriteBlocked(stream6->id());
+  session_.MarkConnectionLevelWriteBlocked(stream4->id());
 
   StreamBlocker stream2_blocker(&session_, stream2->id());
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillOnce(Return(QuicTime::Delta::Zero()));
   EXPECT_CALL(*stream2, OnCanWrite());
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillOnce(Return(QuicTime::Delta::Zero()));
   EXPECT_CALL(*stream6, OnCanWrite());
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillOnce(Return(QuicTime::Delta::Infinite()));
   // stream4->OnCanWrite is not called.
 
@@ -575,14 +562,14 @@ TEST_P(QuicSessionTestServer, OnCanWriteCongestionControlBlocks) {
   EXPECT_TRUE(session_.WillingAndAbleToWrite());
 
   // Still congestion-control blocked.
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillOnce(Return(QuicTime::Delta::Infinite()));
   session_.OnCanWrite();
   EXPECT_TRUE(session_.WillingAndAbleToWrite());
 
   // stream4->OnCanWrite is called once the connection stops being
   // congestion-control blocked.
-  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _, _))
+  EXPECT_CALL(*send_algorithm, TimeUntilSend(_, _))
       .WillOnce(Return(QuicTime::Delta::Zero()));
   EXPECT_CALL(*stream4, OnCanWrite());
   session_.OnCanWrite();
@@ -604,7 +591,7 @@ TEST_P(QuicSessionTestServer, BufferedHandshake) {
   EXPECT_FALSE(session_.HasPendingHandshake());
 
   // Blocking (due to buffering of) the Crypto stream is detected.
-  session_.MarkConnectionLevelWriteBlocked(kCryptoStreamId, kHighestPriority);
+  session_.MarkConnectionLevelWriteBlocked(kCryptoStreamId);
   EXPECT_TRUE(session_.HasPendingHandshake());
 
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
@@ -638,9 +625,9 @@ TEST_P(QuicSessionTestServer, OnCanWriteWithClosedStream) {
   TestStream* stream4 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
   TestStream* stream6 = session_.CreateOutgoingDynamicStream(kDefaultPriority);
 
-  session_.MarkConnectionLevelWriteBlocked(stream2->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream6->id(), kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream4->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream2->id());
+  session_.MarkConnectionLevelWriteBlocked(stream6->id());
+  session_.MarkConnectionLevelWriteBlocked(stream4->id());
   CloseStream(stream6->id());
 
   InSequence s;
@@ -659,13 +646,13 @@ TEST_P(QuicSessionTestServer, OnCanWriteLimitsNumWritesIfFlowControlBlocked) {
 
   // Mark the crypto and headers streams as write blocked, we expect them to be
   // allowed to write later.
-  session_.MarkConnectionLevelWriteBlocked(kCryptoStreamId, kHighestPriority);
-  session_.MarkConnectionLevelWriteBlocked(kHeadersStreamId, kHighestPriority);
+  session_.MarkConnectionLevelWriteBlocked(kCryptoStreamId);
+  session_.MarkConnectionLevelWriteBlocked(kHeadersStreamId);
 
   // Create a data stream, and although it is write blocked we never expect it
   // to be allowed to write as we are connection level flow control blocked.
   TestStream* stream = session_.CreateOutgoingDynamicStream(kDefaultPriority);
-  session_.MarkConnectionLevelWriteBlocked(stream->id(), kDefaultPriority);
+  session_.MarkConnectionLevelWriteBlocked(stream->id());
   EXPECT_CALL(*stream, OnCanWrite()).Times(0);
 
   // The crypto and headers streams should be called even though we are
@@ -683,7 +670,7 @@ TEST_P(QuicSessionTestServer, OnCanWriteLimitsNumWritesIfFlowControlBlocked) {
 TEST_P(QuicSessionTestServer, SendGoAway) {
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
-  EXPECT_CALL(*writer, WritePacket(_, _, _, _))
+  EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
   EXPECT_CALL(*connection_, SendGoAway(_, _, _))
       .WillOnce(Invoke(connection_, &MockConnection::ReallySendGoAway));
@@ -721,32 +708,6 @@ TEST_P(QuicSessionTestServer, RstStreamBeforeHeadersDecompressed) {
   EXPECT_TRUE(connection_->connected());
 }
 
-TEST_P(QuicSessionTestServer, MultipleRstStreamsCauseSingleConnectionClose) {
-  // If multiple invalid reset stream frames arrive in a single packet, this
-  // should trigger a connection close. However there is no need to send
-  // multiple connection close frames.
-
-  // Create valid stream.
-  QuicStreamFrame data1(kClientDataStreamId1, false, 0, StringPiece("HT"));
-  session_.OnStreamFrame(data1);
-  EXPECT_EQ(1u, session_.GetNumOpenIncomingStreams());
-
-  // Process first invalid stream reset, resulting in the connection being
-  // closed.
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_TOO_MANY_AVAILABLE_STREAMS, _));
-
-  const QuicStreamId kLargeInvalidStreamId = 99999999;
-  QuicRstStreamFrame rst1(kLargeInvalidStreamId, QUIC_STREAM_NO_ERROR, 0);
-  session_.OnRstStream(rst1);
-  QuicConnectionPeer::CloseConnection(connection_);
-
-  // Processing of second invalid stream reset should not result in the
-  // connection being closed for a second time.
-  QuicRstStreamFrame rst2(kLargeInvalidStreamId, QUIC_STREAM_NO_ERROR, 0);
-  session_.OnRstStream(rst2);
-}
-
 TEST_P(QuicSessionTestServer, HandshakeUnblocksFlowControlBlockedStream) {
   // Test that if a stream is flow control blocked, then on receipt of the SHLO
   // containing a suitable send window offset, the stream becomes unblocked.
@@ -763,7 +724,7 @@ TEST_P(QuicSessionTestServer, HandshakeUnblocksFlowControlBlockedStream) {
   EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
   EXPECT_CALL(*connection_, SendBlocked(stream2->id()));
   EXPECT_CALL(*connection_, SendBlocked(0));
-  stream2->SendBody(body, false);
+  stream2->WriteOrBufferBody(body, false, nullptr);
   EXPECT_TRUE(stream2->flow_controller()->IsBlocked());
   EXPECT_TRUE(session_.IsConnectionFlowControlBlocked());
   EXPECT_TRUE(session_.IsStreamFlowControlBlocked());
@@ -1013,8 +974,8 @@ TEST_P(QuicSessionTestServer, InvalidStreamFlowControlWindowInHandshake) {
   QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(session_.config(),
                                                             kInvalidWindow);
 
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_FLOW_CONTROL_INVALID_WINDOW, _));
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_FLOW_CONTROL_INVALID_WINDOW, _, _));
   session_.OnConfigNegotiated();
 }
 
@@ -1025,8 +986,8 @@ TEST_P(QuicSessionTestServer, InvalidSessionFlowControlWindowInHandshake) {
   QuicConfigPeer::SetReceivedInitialSessionFlowControlWindow(session_.config(),
                                                              kInvalidWindow);
 
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_FLOW_CONTROL_INVALID_WINDOW, _));
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_FLOW_CONTROL_INVALID_WINDOW, _, _));
   session_.OnConfigNegotiated();
 }
 
@@ -1034,8 +995,8 @@ TEST_P(QuicSessionTestServer, FlowControlWithInvalidFinalOffset) {
   // Test that if we receive a stream RST with a highest byte offset that
   // violates flow control, that we close the connection.
   const uint64_t kLargeOffset = kInitialSessionFlowControlWindowForTest + 1;
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA, _))
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA, _, _))
       .Times(2);
 
   // Check that stream frame + FIN results in connection close.
@@ -1078,7 +1039,7 @@ TEST_P(QuicSessionTestServer, TooManyUnfinishedStreamsCauseServerRejectStream) {
   // with a FIN or RST then we send a connection close or an RST to
   // refuse streams.
   const QuicStreamId kMaxStreams = 5;
-  QuicSessionPeer::SetMaxOpenStreams(&session_, kMaxStreams);
+  QuicSessionPeer::SetMaxOpenIncomingStreams(&session_, kMaxStreams);
   const QuicStreamId kFirstStreamId = kClientDataStreamId1;
   const QuicStreamId kFinalStreamId = kClientDataStreamId1 + 2 * kMaxStreams;
 
@@ -1094,7 +1055,7 @@ TEST_P(QuicSessionTestServer, TooManyUnfinishedStreamsCauseServerRejectStream) {
 
   if (GetParam() <= QUIC_VERSION_27) {
     EXPECT_CALL(*connection_,
-                SendConnectionCloseWithDetails(QUIC_TOO_MANY_OPEN_STREAMS, _));
+                CloseConnection(QUIC_TOO_MANY_OPEN_STREAMS, _, _));
     EXPECT_CALL(*connection_, SendRstStream(kFinalStreamId, _, _)).Times(0);
   } else {
     EXPECT_CALL(*connection_,
@@ -1115,15 +1076,14 @@ TEST_P(QuicSessionTestServer, DrainingStreamsDoNotCountAsOpened) {
   // it) does not count against the open quota (because it is closed from the
   // protocol point of view).
   if (GetParam() <= QUIC_VERSION_27) {
-    EXPECT_CALL(*connection_,
-                SendConnectionCloseWithDetails(QUIC_TOO_MANY_OPEN_STREAMS, _))
+    EXPECT_CALL(*connection_, CloseConnection(QUIC_TOO_MANY_OPEN_STREAMS, _, _))
         .Times(0);
   } else {
     EXPECT_CALL(*connection_, SendRstStream(_, QUIC_REFUSED_STREAM, _))
         .Times(0);
   }
   const QuicStreamId kMaxStreams = 5;
-  QuicSessionPeer::SetMaxOpenStreams(&session_, kMaxStreams);
+  QuicSessionPeer::SetMaxOpenIncomingStreams(&session_, kMaxStreams);
 
   // Create kMaxStreams + 1 data streams, and mark them draining.
   const QuicStreamId kFirstStreamId = kClientDataStreamId1;
@@ -1140,6 +1100,22 @@ TEST_P(QuicSessionTestServer, DrainingStreamsDoNotCountAsOpened) {
   // Called after any new data is received by the session, and triggers the call
   // to close the connection.
   session_.PostProcessAfterData();
+}
+
+TEST_P(QuicSessionTestServer, TestMaxIncomingAndOutgoingStreamsAllowed) {
+  // Tests that on server side, the value of max_open_incoming/outgoing streams
+  // are setup correctly during negotiation.
+  // The value for outgoing stream is limited to negotiated value and for
+  // incoming stream it is set to be larger than that.
+  session_.OnConfigNegotiated();
+  // The max number of open outgoing streams is less than that of incoming
+  // streams, and it should be same as negotiated value.
+  EXPECT_LT(session_.max_open_outgoing_streams(),
+            session_.max_open_incoming_streams());
+  EXPECT_EQ(session_.max_open_outgoing_streams(),
+            kDefaultMaxStreamsPerConnection);
+  EXPECT_GT(session_.max_open_incoming_streams(),
+            kDefaultMaxStreamsPerConnection);
 }
 
 class QuicSessionTestClient : public QuicSessionTestBase {
@@ -1190,8 +1166,21 @@ TEST_P(QuicSessionTestClient, RecordFinAfterReadSideClosed) {
 
   // The stream is not waiting for the arrival of the peer's final offset as it
   // was received with the FIN earlier.
-  EXPECT_EQ(0u, QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(&session_)
-                    .size());
+  EXPECT_EQ(
+      0u,
+      QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(&session_).size());
+}
+
+TEST_P(QuicSessionTestClient, TestMaxIncomingAndOutgoingStreamsAllowed) {
+  // Tests that on client side, the value of max_open_incoming/outgoing streams
+  // are setup correctly during negotiation.
+  // When flag is true, the value for outgoing stream is limited to negotiated
+  // value and for incoming stream it is set to be larger than that.
+  session_.OnConfigNegotiated();
+  EXPECT_LT(session_.max_open_outgoing_streams(),
+            session_.max_open_incoming_streams());
+  EXPECT_EQ(session_.max_open_outgoing_streams(),
+            kDefaultMaxStreamsPerConnection);
 }
 
 }  // namespace

@@ -36,12 +36,6 @@ namespace rtc {
 // Random bits for certificate serial number
 static const int SERIAL_RAND_BITS = 64;
 
-// Certificate validity lifetime
-static const int CERTIFICATE_LIFETIME = 60*60*24*30;  // 30 days, arbitrarily
-// Certificate validity window.
-// This is to compensate for slightly incorrect system clocks.
-static const int CERTIFICATE_WINDOW = -60*60*24;
-
 // Generate a key pair. Caller is responsible for freeing the returned object.
 static EVP_PKEY* MakeKey(const KeyParams& key_params) {
   LOG(LS_INFO) << "Making key pair";
@@ -113,7 +107,7 @@ static X509* MakeCertificate(EVP_PKEY* pkey, const SSLIdentityParams& params) {
       !BN_to_ASN1_INTEGER(serial_number, asn1_serial_number))
     goto error;
 
-  if (!X509_set_version(x509, 0L))  // version 1
+  if (!X509_set_version(x509, 2L))  // version 3
     goto error;
 
   // There are a lot of possible components for the name entries. In
@@ -286,11 +280,11 @@ bool OpenSSLCertificate::GetSignatureDigestAlgorithm(
   return true;
 }
 
-bool OpenSSLCertificate::GetChain(SSLCertChain** chain) const {
+rtc::scoped_ptr<SSLCertChain> OpenSSLCertificate::GetChain() const {
   // Chains are not yet supported when using OpenSSL.
   // OpenSSLStreamAdapter::SSLVerifyCallback currently requires the remote
   // certificate to be self-signed.
-  return false;
+  return nullptr;
 }
 
 bool OpenSSLCertificate::ComputeDigest(const std::string& algorithm,
@@ -413,14 +407,18 @@ OpenSSLIdentity* OpenSSLIdentity::GenerateInternal(
   return NULL;
 }
 
-OpenSSLIdentity* OpenSSLIdentity::Generate(const std::string& common_name,
-                                           const KeyParams& key_params) {
+OpenSSLIdentity* OpenSSLIdentity::GenerateWithExpiration(
+    const std::string& common_name,
+    const KeyParams& key_params,
+    time_t certificate_lifetime) {
   SSLIdentityParams params;
   params.key_params = key_params;
   params.common_name = common_name;
   time_t now = time(NULL);
-  params.not_before = now + CERTIFICATE_WINDOW;
-  params.not_after = now + CERTIFICATE_LIFETIME;
+  params.not_before = now + kCertificateWindowInSeconds;
+  params.not_after = now + certificate_lifetime;
+  if (params.not_before > params.not_after)
+    return nullptr;
   return GenerateInternal(params);
 }
 

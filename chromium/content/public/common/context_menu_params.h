@@ -17,6 +17,7 @@
 #include "content/public/common/menu_item.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/ssl_status.h"
+#include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "ui/base/ui_base_types.h"
@@ -54,6 +55,7 @@ struct CONTENT_EXPORT CustomContextMenuContext {
 //              could be used for more contextual actions.
 struct CONTENT_EXPORT ContextMenuParams {
   ContextMenuParams();
+  ContextMenuParams(const ContextMenuParams& other);
   ~ContextMenuParams();
 
   // This is the type of Context Node that the context menu was invoked on.

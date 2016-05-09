@@ -73,7 +73,11 @@ HistogramSamples::HistogramSamples(uint64_t id)
 HistogramSamples::HistogramSamples(uint64_t id, Metadata* meta)
     : meta_(meta) {
   DCHECK(meta_->id == 0 || meta_->id == id);
-  meta_->id = id;
+
+  // It's possible that |meta| is contained in initialized, read-only memory
+  // so it's essential that no write be done in that case.
+  if (!meta_->id)
+    meta_->id = id;
 }
 
 HistogramSamples::~HistogramSamples() {}
@@ -137,8 +141,7 @@ bool HistogramSamples::Serialize(Pickle* pickle) const {
   HistogramBase::Sample min;
   HistogramBase::Sample max;
   HistogramBase::Count count;
-  for (scoped_ptr<SampleCountIterator> it = Iterator();
-       !it->Done();
+  for (std::unique_ptr<SampleCountIterator> it = Iterator(); !it->Done();
        it->Next()) {
     it->Get(&min, &max, &count);
     if (!pickle->WriteInt(min) ||

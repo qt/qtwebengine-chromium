@@ -34,10 +34,8 @@
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-using blink::WebCanvas;
 using blink::WebPluginContainer;
 using blink::WebPoint;
 using blink::WebRect;
@@ -104,8 +102,6 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(BrowserPlugin, message)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_AdvanceFocus, OnAdvanceFocus)
-    IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginMsg_CompositorFrameSwapped,
-                                OnCompositorFrameSwapped(message))
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_GuestGone, OnGuestGone)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMouseLock, OnSetMouseLock)
@@ -129,7 +125,6 @@ void BrowserPlugin::OnSetChildFrameSurface(
 
   EnableCompositing(true);
   DCHECK(compositing_helper_.get());
-
   compositing_helper_->OnSetSurface(surface_id, frame_size, scale_factor,
                                     sequence);
 }
@@ -179,18 +174,12 @@ void BrowserPlugin::Detach() {
   attached_ = false;
   guest_crashed_ = false;
   EnableCompositing(false);
-  if (compositing_helper_.get()) {
-    compositing_helper_->OnContainerDestroy();
-    compositing_helper_ = nullptr;
-  }
 
   BrowserPluginManager::Get()->Send(
       new BrowserPluginHostMsg_Detach(browser_plugin_instance_id_));
 }
 
 void BrowserPlugin::DidCommitCompositorFrame() {
-  if (compositing_helper_.get())
-    compositing_helper_->DidCommitCompositorFrame();
 }
 
 void BrowserPlugin::OnAdvanceFocus(int browser_plugin_instance_id,
@@ -202,42 +191,11 @@ void BrowserPlugin::OnAdvanceFocus(int browser_plugin_instance_id,
   render_view->GetWebView()->advanceFocus(reverse);
 }
 
-void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
-  if (!attached())
-    return;
-
-  BrowserPluginMsg_CompositorFrameSwapped::Param param;
-  if (!BrowserPluginMsg_CompositorFrameSwapped::Read(&message, &param))
-    return;
-  // Note that there is no need to send ACK for this message.
-  // If the guest has updated pixels then it is no longer crashed.
-  guest_crashed_ = false;
-
-  scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
-  base::get<1>(param).frame.AssignTo(frame.get());
-
-  EnableCompositing(true);
-  compositing_helper_->OnCompositorFrameSwapped(
-      std::move(frame), base::get<1>(param).producing_route_id,
-      base::get<1>(param).output_surface_id,
-      base::get<1>(param).producing_host_id,
-      base::get<1>(param).shared_memory_handle);
-}
-
 void BrowserPlugin::OnGuestGone(int browser_plugin_instance_id) {
   guest_crashed_ = true;
 
-  // Turn off compositing so we can display the sad graphic. Changes to
-  // compositing state will show up at a later time after a layout and commit.
-  EnableCompositing(false);
-
-  // Queue up showing the sad graphic to give content embedders an opportunity
-  // to fire their listeners and potentially overlay the webview with custom
-  // behavior. If the BrowserPlugin is destroyed in the meantime, then the
-  // task will not be executed.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&BrowserPlugin::ShowSadGraphic,
-                            weak_ptr_factory_.GetWeakPtr()));
+  EnableCompositing(true);
+  compositing_helper_->ChildFrameGone();
 }
 
 void BrowserPlugin::OnSetCursor(int browser_plugin_instance_id,
@@ -280,13 +238,6 @@ void BrowserPlugin::OnShouldAcceptTouchEvents(int browser_plugin_instance_id,
   }
 }
 
-void BrowserPlugin::ShowSadGraphic() {
-  // If the BrowserPlugin is scheduled to be deleted, then container_ will be
-  // nullptr so we shouldn't attempt to access it.
-  if (container_)
-    container_->invalidate();
-}
-
 void BrowserPlugin::UpdateInternalInstanceId() {
   // This is a way to notify observers of our attributes that this plugin is
   // available in render tree.
@@ -322,8 +273,8 @@ WebPluginContainer* BrowserPlugin::container() const {
 }
 
 bool BrowserPlugin::initialize(WebPluginContainer* container) {
-  if (!container)
-    return false;
+  DCHECK(container);
+  DCHECK_EQ(this, container->plugin());
 
   container_ = container;
   container_->setWantsWheelEvents(true);
@@ -401,46 +352,24 @@ bool BrowserPlugin::canProcessDrag() const {
   return true;
 }
 
-void BrowserPlugin::paint(WebCanvas* canvas, const WebRect& rect) {
-  if (guest_crashed_) {
-    if (!sad_guest_)  // Lazily initialize bitmap.
-      sad_guest_ = GetContentClient()->renderer()->GetSadWebViewBitmap();
-    // content_shell does not have the sad plugin bitmap, so we'll paint black
-    // instead to make it clear that something went wrong.
-    if (sad_guest_) {
-      PaintSadPlugin(canvas, view_rect_, *sad_guest_);
-      return;
-    }
-  }
-  SkAutoCanvasRestore auto_restore(canvas, true);
-  canvas->translate(view_rect_.x(), view_rect_.y());
-  SkRect image_data_rect = SkRect::MakeXYWH(
-      SkIntToScalar(0),
-      SkIntToScalar(0),
-      SkIntToScalar(view_rect_.width()),
-      SkIntToScalar(view_rect_.height()));
-  canvas->clipRect(image_data_rect);
-  // Paint black or white in case we have nothing in our backing store or we
-  // need to show a gutter.
-  SkPaint paint;
-  paint.setStyle(SkPaint::kFill_Style);
-  paint.setColor(guest_crashed_ ? SK_ColorBLACK : SK_ColorWHITE);
-  canvas->drawRect(image_data_rect, paint);
-}
-
 // static
 bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     const IPC::Message& message) {
   return IPC_MESSAGE_CLASS(message) == BrowserPluginMsgStart;
 }
 
-void BrowserPlugin::updateGeometry(const WebRect& window_rect,
+void BrowserPlugin::updateGeometry(const WebRect& plugin_rect_in_viewport,
                                    const WebRect& clip_rect,
                                    const WebRect& unobscured_rect,
                                    const WebVector<WebRect>& cut_outs_rects,
                                    bool is_visible) {
   gfx::Rect old_view_rect = view_rect_;
-  view_rect_ = window_rect;
+  // Convert the plugin_rect_in_viewport to window coordinates, which is css.
+  WebRect rect_in_css(plugin_rect_in_viewport);
+  blink::WebView* webview = container()->element().document().frame()->view();
+  RenderView::FromWebView(webview)->GetWidget()->convertViewportToWindow(
+      &rect_in_css);
+  view_rect_ = rect_in_css;
 
   if (!ready_) {
     if (delegate_)
@@ -483,10 +412,6 @@ void BrowserPlugin::updateVisibility(bool visible) {
       visible));
 }
 
-bool BrowserPlugin::acceptsInputEvents() {
-  return true;
-}
-
 blink::WebInputEventResult BrowserPlugin::handleInputEvent(
     const blink::WebInputEvent& event,
     blink::WebCursorInfo& cursor_info) {
@@ -521,7 +446,6 @@ blink::WebInputEventResult BrowserPlugin::handleInputEvent(
 
   BrowserPluginManager::Get()->Send(
       new BrowserPluginHostMsg_HandleInputEvent(browser_plugin_instance_id_,
-                                                view_rect_,
                                                 &event));
   GetWebCursorInfo(cursor_, &cursor_info);
 
@@ -646,7 +570,6 @@ bool BrowserPlugin::HandleMouseLockedInputEvent(
     const blink::WebMouseEvent& event) {
   BrowserPluginManager::Get()->Send(
       new BrowserPluginHostMsg_HandleInputEvent(browser_plugin_instance_id_,
-                                                view_rect_,
                                                 &event));
   return true;
 }

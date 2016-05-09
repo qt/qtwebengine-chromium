@@ -1,0 +1,5 @@
+{
+  "name": "mojo:leveldb",
+  "display_name": "LevelDB Service",
+  "capabilities": { "*": ["*"] }
+}

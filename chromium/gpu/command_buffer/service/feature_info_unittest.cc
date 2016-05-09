@@ -81,6 +81,18 @@ class FeatureInfoTest
     info_->InitializeForTesting();
   }
 
+  void SetupInitExpectationsWithGLVersionAndDisallowedFeatures(
+      const char* extensions,
+      const char* renderer,
+      const char* version,
+      const DisallowedFeatures& disallowed_features) {
+    GpuServiceTest::SetUpWithGLVersion(version, extensions);
+    TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
+        gl_.get(), extensions, renderer, version);
+    info_ = new FeatureInfo();
+    info_->InitializeForTesting(disallowed_features);
+  }
+
   void SetupInitExpectationsWithGLVersionAndCommandLine(
       const char* extensions,
       const char* renderer,
@@ -91,19 +103,6 @@ class FeatureInfoTest
         gl_.get(), extensions, renderer, version);
     info_ = new FeatureInfo(command_line);
     info_->InitializeForTesting();
-  }
-
-  void SetupInitExpectationsWithGLVersionAndContextTypeAndCommandLine(
-      const char* extensions,
-      const char* renderer,
-      const char* version,
-      ContextType context_type,
-      const base::CommandLine& command_line) {
-    GpuServiceTest::SetUpWithGLVersion(version, extensions);
-    TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
-        gl_.get(), extensions, renderer, version);
-    info_ = new FeatureInfo(command_line);
-    info_->Initialize(context_type, DisallowedFeatures());
   }
 
   void SetupWithCommandLine(const base::CommandLine& command_line) {
@@ -189,6 +188,7 @@ TEST_P(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->feature_flags().nv_draw_buffers);
   EXPECT_FALSE(info_->feature_flags().ext_discard_framebuffer);
   EXPECT_FALSE(info_->feature_flags().angle_depth_texture);
+  EXPECT_FALSE(info_->feature_flags().ext_read_format_bgra);
 
 #define GPU_OP(type, name) EXPECT_FALSE(info_->workarounds().name);
   GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
@@ -310,9 +310,6 @@ TEST_P(FeatureInfoTest, InitializeNoExtensions) {
   EXPECT_FALSE(info_->validators()->frame_buffer_parameter.IsValid(
       GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT));
   EXPECT_FALSE(info_->feature_flags().chromium_image_ycbcr_422);
-  EXPECT_TRUE(info_->validators()->pixel_store.IsValid(GL_UNPACK_ROW_LENGTH));
-  EXPECT_TRUE(info_->validators()->pixel_store.IsValid(GL_UNPACK_SKIP_ROWS));
-  EXPECT_TRUE(info_->validators()->pixel_store.IsValid(GL_UNPACK_SKIP_PIXELS));
 }
 
 TEST_P(FeatureInfoTest, InitializeWithANGLE) {
@@ -386,6 +383,7 @@ TEST_P(FeatureInfoTest, InitializeEXT_texture_format_BGRA8888GL) {
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_CHROMIUM_renderbuffer_format_BGRA8888"));
   EXPECT_TRUE(info_->feature_flags().ext_render_buffer_format_bgra8888);
+  EXPECT_TRUE(info_->feature_flags().ext_read_format_bgra);
   EXPECT_TRUE(info_->validators()->texture_format.IsValid(
       GL_BGRA_EXT));
   EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
@@ -414,6 +412,7 @@ TEST_P(FeatureInfoTest, InitializeGLES2EXT_read_format_bgra) {
       "GL_EXT_read_format_bgra", "", "OpenGL ES 2.0");
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_EXT_read_format_bgra"));
+  EXPECT_TRUE(info_->feature_flags().ext_read_format_bgra);
   EXPECT_FALSE(info_->validators()->texture_format.IsValid(
       GL_BGRA_EXT));
   EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
@@ -429,6 +428,7 @@ TEST_P(FeatureInfoTest, InitializeEXT_read_format_bgra) {
   SetupInitExpectations("GL_EXT_read_format_bgra");
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_EXT_read_format_bgra"));
+  EXPECT_TRUE(info_->feature_flags().ext_read_format_bgra);
   EXPECT_TRUE(info_->validators()->texture_format.IsValid(
       GL_BGRA_EXT));
   EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
@@ -691,10 +691,33 @@ TEST_P(FeatureInfoTest,
 }
 
 TEST_P(FeatureInfoTest, InitializeARB_texture_float) {
-  SetupInitExpectations("GL_ARB_texture_float");
-  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgba);
-  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgb);
+  DisallowedFeatures disallowed_features;
+  disallowed_features.chromium_color_buffer_float_rgb = true;
+  disallowed_features.chromium_color_buffer_float_rgba = true;
+  SetupInitExpectationsWithGLVersionAndDisallowedFeatures(
+      "GL_ARB_texture_float", "", "3.0", disallowed_features);
   std::string extensions = info_->extensions() + " ";
+  EXPECT_THAT(extensions,
+              Not(HasSubstr("GL_CHROMIUM_color_buffer_float_rgb ")));
+  EXPECT_THAT(extensions,
+              Not(HasSubstr("GL_CHROMIUM_color_buffer_float_rgba")));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
+
+  info_->EnableCHROMIUMColorBufferFloatRGBA();
+  extensions = info_->extensions() + " ";
+  EXPECT_THAT(extensions,
+              Not(HasSubstr("GL_CHROMIUM_color_buffer_float_rgb ")));
+  EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgba"));
+  EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
+
+  info_->EnableCHROMIUMColorBufferFloatRGB();
+  extensions = info_->extensions() + " ";
   EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgb "));
   EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgba"));
   EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
@@ -1163,7 +1186,7 @@ TEST_P(FeatureInfoTest, InitializeEXT_discard_framebuffer) {
 
 TEST_P(FeatureInfoTest, InitializeSamplersWithARBSamplerObjects) {
   SetupInitExpectationsWithGLVersion(
-      "GL_ARB_sampler_objects", "", "OpenGL 3.0");
+      "GL_ARB_sampler_objects", "", "3.0");
   EXPECT_TRUE(info_->feature_flags().enable_samplers);
 }
 
@@ -1207,7 +1230,7 @@ TEST_P(FeatureInfoTest, InitializeWithES3) {
 }
 
 TEST_P(FeatureInfoTest, InitializeWithoutSamplers) {
-  SetupInitExpectationsWithGLVersion("", "", "OpenGL GL 3.0");
+  SetupInitExpectationsWithGLVersion("", "", "3.0");
   EXPECT_FALSE(info_->feature_flags().enable_samplers);
 }
 
@@ -1272,20 +1295,11 @@ TEST_P(FeatureInfoTest, BlendEquationAdvancedDisabled) {
   EXPECT_FALSE(info_->feature_flags().blend_equation_advanced_coherent);
 }
 
-TEST_P(FeatureInfoTest, InitializeCHROMIUM_path_rendering_no_cmdline_switch) {
-  SetupInitExpectationsWithGLVersion(
-      "GL_ARB_compatibility GL_NV_path_rendering GL_EXT_direct_state_access",
-      "", "4.3");
-  EXPECT_FALSE(info_->feature_flags().chromium_path_rendering);
-  EXPECT_THAT(info_->extensions(),
-              Not(HasSubstr("GL_CHROMIUM_path_rendering")));
-}
-
 TEST_P(FeatureInfoTest, InitializeCHROMIUM_path_rendering) {
   base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitch(switches::kEnableGLPathRendering);
   SetupInitExpectationsWithGLVersionAndCommandLine(
-      "GL_ARB_compatibility GL_NV_path_rendering GL_EXT_direct_state_access",
+      "GL_ARB_compatibility GL_NV_path_rendering GL_EXT_direct_state_access "
+      "GL_NV_framebuffer_mixed_samples",
       "", "4.3", command_line);
   EXPECT_TRUE(info_->feature_flags().chromium_path_rendering);
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_CHROMIUM_path_rendering"));
@@ -1293,16 +1307,15 @@ TEST_P(FeatureInfoTest, InitializeCHROMIUM_path_rendering) {
 
 TEST_P(FeatureInfoTest, InitializeCHROMIUM_path_rendering2) {
   base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitch(switches::kEnableGLPathRendering);
   SetupInitExpectationsWithGLVersionAndCommandLine(
-      "GL_NV_path_rendering", "", "OpenGL ES 3.1", command_line);
+      "GL_NV_path_rendering GL_NV_framebuffer_mixed_samples", "",
+      "OpenGL ES 3.1", command_line);
   EXPECT_TRUE(info_->feature_flags().chromium_path_rendering);
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_CHROMIUM_path_rendering"));
 }
 
 TEST_P(FeatureInfoTest, InitializeNoCHROMIUM_path_rendering) {
   base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitch(switches::kEnableGLPathRendering);
   SetupInitExpectationsWithGLVersionAndCommandLine("GL_ARB_compatibility", "",
                                                    "4.3", command_line);
   EXPECT_FALSE(info_->feature_flags().chromium_path_rendering);
@@ -1312,9 +1325,18 @@ TEST_P(FeatureInfoTest, InitializeNoCHROMIUM_path_rendering) {
 
 TEST_P(FeatureInfoTest, InitializeNoCHROMIUM_path_rendering2) {
   base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitch(switches::kEnableGLPathRendering);
   SetupInitExpectationsWithGLVersionAndCommandLine(
       "GL_ARB_compatibility GL_NV_path_rendering", "", "4.3", command_line);
+  EXPECT_FALSE(info_->feature_flags().chromium_path_rendering);
+  EXPECT_THAT(info_->extensions(),
+              Not(HasSubstr("GL_CHROMIUM_path_rendering")));
+}
+
+TEST_P(FeatureInfoTest, InitializeNoCHROMIUM_path_rendering3) {
+  base::CommandLine command_line(0, NULL);
+  // Missing framebuffer mixed samples.
+  SetupInitExpectationsWithGLVersionAndCommandLine(
+      "GL_NV_path_rendering", "", "OpenGL ES 3.1", command_line);
   EXPECT_FALSE(info_->feature_flags().chromium_path_rendering);
   EXPECT_THAT(info_->extensions(),
               Not(HasSubstr("GL_CHROMIUM_path_rendering")));
@@ -1386,30 +1408,6 @@ TEST_P(FeatureInfoTest, InitializeARB_texture_rgNoFloat) {
 TEST_P(FeatureInfoTest, InitializeCHROMIUM_ycbcr_422_imageTrue) {
   SetupInitExpectations("GL_APPLE_ycbcr_422");
   EXPECT_TRUE(info_->feature_flags().chromium_image_ycbcr_422);
-}
-
-TEST_P(FeatureInfoTest, DisableMsaaOnNonWebGLContexts) {
-  base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitchASCII(
-      switches::kGpuDriverBugWorkarounds,
-      base::IntToString(gpu::DISABLE_MSAA_ON_NON_WEBGL_CONTEXTS));
-  SetupInitExpectationsWithGLVersionAndContextTypeAndCommandLine(
-      "GL_EXT_multisampled_render_to_texture GL_EXT_framebuffer_multisample",
-      "", "", CONTEXT_TYPE_OPENGLES2, command_line);
-  EXPECT_FALSE(info_->feature_flags().multisampled_render_to_texture);
-  EXPECT_FALSE(info_->feature_flags().chromium_framebuffer_multisample);
-}
-
-TEST_P(FeatureInfoTest, DontDisableMsaaOnWebGLContexts) {
-  base::CommandLine command_line(0, NULL);
-  command_line.AppendSwitchASCII(
-      switches::kGpuDriverBugWorkarounds,
-      base::IntToString(gpu::DISABLE_MSAA_ON_NON_WEBGL_CONTEXTS));
-  SetupInitExpectationsWithGLVersionAndContextTypeAndCommandLine(
-      "GL_EXT_multisampled_render_to_texture GL_EXT_framebuffer_multisample",
-      "", "", CONTEXT_TYPE_WEBGL1, command_line);
-  EXPECT_TRUE(info_->feature_flags().multisampled_render_to_texture);
-  EXPECT_TRUE(info_->feature_flags().chromium_framebuffer_multisample);
 }
 
 }  // namespace gles2

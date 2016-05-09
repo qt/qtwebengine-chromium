@@ -32,24 +32,24 @@
 #define MHTMLArchive_h
 
 #include "platform/heap/Handle.h"
+#include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 
 namespace blink {
 
 class ArchiveResource;
 class KURL;
-class MHTMLParser;
 class SharedBuffer;
 
 struct SerializedResource;
 
-class PLATFORM_EXPORT MHTMLArchive final : public RefCountedWillBeGarbageCollectedFinalized<MHTMLArchive> {
+class PLATFORM_EXPORT MHTMLArchive final : public GarbageCollectedFinalized<MHTMLArchive> {
 public:
-    static PassRefPtrWillBeRawPtr<MHTMLArchive> create();
-    static PassRefPtrWillBeRawPtr<MHTMLArchive> create(const KURL&, SharedBuffer*);
+    static MHTMLArchive* create(const KURL&, SharedBuffer*);
     ~MHTMLArchive();
 
     // Binary encoding results in smaller MHTML files but they might not work in other browsers.
@@ -90,33 +90,23 @@ public:
         const String& boundary,
         SharedBuffer& outputBuffer);
 
-    typedef WillBeHeapVector<RefPtrWillBeMember<ArchiveResource>> SubArchiveResources;
-    typedef WillBeHeapVector<RefPtrWillBeMember<MHTMLArchive>> SubFrameArchives;
+    typedef HeapHashMap<String, Member<ArchiveResource>> SubArchiveResources;
 
     ArchiveResource* mainResource() { return m_mainResource.get(); }
-    const SubArchiveResources& subresources() const { return m_subresources; }
-    const SubFrameArchives& subframeArchives() const { return m_subframeArchives; }
+    ArchiveResource* subresourceForURL(const KURL&) const;
 
     DECLARE_TRACE();
 
 private:
-    friend class MHTMLParser;
     MHTMLArchive();
 
-    void setMainResource(PassRefPtrWillBeRawPtr<ArchiveResource>);
-    void addSubresource(PassRefPtrWillBeRawPtr<ArchiveResource>);
-    void addSubframeArchive(PassRefPtrWillBeRawPtr<MHTMLArchive>);
+    void setMainResource(ArchiveResource*);
+    void addSubresource(ArchiveResource*);
 
-#if !ENABLE(OILPAN)
-    void clearAllSubframeArchives();
-    void clearAllSubframeArchivesImpl(SubFrameArchives* clearedArchives);
-#endif
-
-    RefPtrWillBeMember<ArchiveResource> m_mainResource;
+    Member<ArchiveResource> m_mainResource;
     SubArchiveResources m_subresources;
-    SubFrameArchives m_subframeArchives;
 };
 
-}
+} // namespace blink
 
 #endif

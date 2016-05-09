@@ -15,16 +15,15 @@ namespace blink {
 class HTMLLinkElement;
 
 class LinkManifest final : public LinkResource {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(LinkManifest);
 public:
 
-    static PassOwnPtrWillBeRawPtr<LinkManifest> create(HTMLLinkElement* owner);
+    static RawPtr<LinkManifest> create(HTMLLinkElement* owner);
 
     ~LinkManifest() override;
 
     // LinkResource
     void process() override;
-    Type type() const override { return Manifest; }
+    LinkResourceType type() const override { return Manifest; }
     bool hasLoaded() const override;
     void ownerRemoved() override;
 
@@ -32,6 +31,6 @@ private:
     explicit LinkManifest(HTMLLinkElement* owner);
 };
 
-}
+} // namespace blink
 
 #endif // LinkManifest_h

@@ -13,10 +13,13 @@
 
 namespace ui {
 
-DrmThreadMessageProxy::DrmThreadMessageProxy(DrmThread* drm_thread)
-    : drm_thread_(drm_thread), weak_ptr_factory_(this) {}
+DrmThreadMessageProxy::DrmThreadMessageProxy() : weak_ptr_factory_(this) {}
 
 DrmThreadMessageProxy::~DrmThreadMessageProxy() {}
+
+void DrmThreadMessageProxy::SetDrmThread(DrmThread* thread) {
+  drm_thread_ = thread;
+}
 
 void DrmThreadMessageProxy::OnFilterAdded(IPC::Sender* sender) {
   sender_ = sender;
@@ -51,10 +54,10 @@ bool DrmThreadMessageProxy::OnMessageReceived(const IPC::Message& message) {
                         OnRemoveGraphicsDevice)
     IPC_MESSAGE_HANDLER(OzoneGpuMsg_GetHDCPState, OnGetHDCPState)
     IPC_MESSAGE_HANDLER(OzoneGpuMsg_SetHDCPState, OnSetHDCPState)
-    IPC_MESSAGE_HANDLER(OzoneGpuMsg_SetGammaRamp, OnSetGammaRamp);
+    IPC_MESSAGE_HANDLER(OzoneGpuMsg_SetColorCorrection, OnSetColorCorrection)
     IPC_MESSAGE_HANDLER(OzoneGpuMsg_CheckOverlayCapabilities,
                         OnCheckOverlayCapabilities)
-    IPC_MESSAGE_UNHANDLED(handled = false);
+    IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
@@ -209,13 +212,16 @@ void DrmThreadMessageProxy::OnSetHDCPState(int64_t display_id,
                  display_id, state, CreateSafeCallback(callback)));
 }
 
-void DrmThreadMessageProxy::OnSetGammaRamp(
+void DrmThreadMessageProxy::OnSetColorCorrection(
     int64_t id,
-    const std::vector<GammaRampRGBEntry>& lut) {
+    const std::vector<GammaRampRGBEntry>& degamma_lut,
+    const std::vector<GammaRampRGBEntry>& gamma_lut,
+    const std::vector<float>& correction_matrix) {
   DCHECK(drm_thread_->IsRunning());
   drm_thread_->task_runner()->PostTask(
-      FROM_HERE, base::Bind(&DrmThread::SetGammaRamp,
-                            base::Unretained(drm_thread_), id, lut));
+      FROM_HERE,
+      base::Bind(&DrmThread::SetColorCorrection, base::Unretained(drm_thread_),
+                 id, degamma_lut, gamma_lut, correction_matrix));
 }
 
 void DrmThreadMessageProxy::OnCheckOverlayCapabilitiesCallback(

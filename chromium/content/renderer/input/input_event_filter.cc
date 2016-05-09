@@ -19,15 +19,15 @@
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "ui/events/blink/synchronous_input_handler_proxy.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
 using blink::WebInputEvent;
 
 #include "ipc/ipc_message_null_macros.h"
 #undef IPC_MESSAGE_DECL
-#define IPC_MESSAGE_DECL(kind, type, name, in, out, ilist, olist) \
-  case name::ID: return #name;
+#define IPC_MESSAGE_DECL(name, ...) \
+  case name::ID:                    \
+    return #name;
 
 const char* GetInputMessageTypeName(const IPC::Message& message) {
   switch (message.type()) {
@@ -58,17 +58,16 @@ void InputEventFilter::SetBoundHandler(const Handler& handler) {
   handler_ = handler;
 }
 
-void InputEventFilter::DidAddInputHandler(
-    int routing_id,
-    ui::SynchronousInputHandlerProxy*
-        synchronous_input_handler_proxy) {
+void InputEventFilter::DidAddInputHandler(int routing_id) {
   base::AutoLock locked(routes_lock_);
   routes_.insert(routing_id);
+  route_queues_[routing_id].reset(new MainThreadEventQueue(routing_id, this));
 }
 
 void InputEventFilter::DidRemoveInputHandler(int routing_id) {
   base::AutoLock locked(routes_lock_);
   routes_.erase(routing_id);
+  route_queues_.erase(routing_id);
 }
 
 void InputEventFilter::DidOverscroll(int routing_id,
@@ -84,6 +83,17 @@ void InputEventFilter::DidOverscroll(int routing_id,
 
 void InputEventFilter::DidStopFlinging(int routing_id) {
   SendMessage(make_scoped_ptr(new InputHostMsg_DidStopFlinging(routing_id)));
+}
+
+void InputEventFilter::NotifyInputEventHandled(
+    int routing_id,
+    blink::WebInputEvent::Type type) {
+  DCHECK(target_task_runner_->BelongsToCurrentThread());
+  RouteQueueMap::iterator iter = route_queues_.find(routing_id);
+  if (iter == route_queues_.end() || !iter->second)
+    return;
+
+  iter->second->EventHandled(type);
 }
 
 void InputEventFilter::OnFilterAdded(IPC::Sender* sender) {
@@ -151,9 +161,12 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
     return;
   const WebInputEvent* event = base::get<0>(params);
   ui::LatencyInfo latency_info = base::get<1>(params);
+  InputEventDispatchType dispatch_type = base::get<2>(params);
   DCHECK(event);
+  DCHECK(dispatch_type == DISPATCH_TYPE_BLOCKING ||
+         dispatch_type == DISPATCH_TYPE_NON_BLOCKING);
 
-  const bool send_ack = WebInputEventTraits::WillReceiveAckFromRenderer(*event);
+  bool send_ack = dispatch_type == DISPATCH_TYPE_BLOCKING;
 
   // Intercept |DidOverscroll| notifications, bundling any triggered overscroll
   // response with the input event ack.
@@ -164,16 +177,13 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
 
   InputEventAckState ack_state = handler_.Run(routing_id, event, &latency_info);
 
-  if (ack_state == INPUT_EVENT_ACK_STATE_NOT_CONSUMED) {
+  if (ack_state == INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING ||
+      ack_state == INPUT_EVENT_ACK_STATE_NOT_CONSUMED) {
     DCHECK(!overscroll_params);
-    TRACE_EVENT_INSTANT0(
-        "input",
-        "InputEventFilter::ForwardToHandler::ForwardToMainListener",
-        TRACE_EVENT_SCOPE_THREAD);
-    IPC::Message new_msg =
-        InputMsg_HandleInputEvent(routing_id, event, latency_info);
-    main_task_runner_->PostTask(FROM_HERE, base::Bind(main_listener_, new_msg));
-    return;
+    RouteQueueMap::iterator iter = route_queues_.find(routing_id);
+    if (iter != route_queues_.end())
+      send_ack &= iter->second->HandleEvent(event, latency_info, dispatch_type,
+                                            ack_state);
   }
 
   if (!send_ack)
@@ -201,6 +211,19 @@ void InputEventFilter::SendMessageOnIOThread(scoped_ptr<IPC::Message> message) {
     return;  // Filter was removed.
 
   sender_->Send(message.release());
+}
+
+void InputEventFilter::SendEventToMainThread(
+    int routing_id,
+    const blink::WebInputEvent* event,
+    const ui::LatencyInfo& latency_info,
+    InputEventDispatchType dispatch_type) {
+  TRACE_EVENT_INSTANT0(
+      "input", "InputEventFilter::ForwardToHandler::SendEventToMainThread",
+      TRACE_EVENT_SCOPE_THREAD);
+  IPC::Message new_msg =
+      InputMsg_HandleInputEvent(routing_id, event, latency_info, dispatch_type);
+  main_task_runner_->PostTask(FROM_HERE, base::Bind(main_listener_, new_msg));
 }
 
 }  // namespace content

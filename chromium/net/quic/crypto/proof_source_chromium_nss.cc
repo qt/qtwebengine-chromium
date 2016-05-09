@@ -19,11 +19,13 @@ bool ProofSourceChromium::Initialize(const base::FilePath& cert_path,
   return false;
 }
 
-bool ProofSourceChromium::GetProof(const IPAddressNumber& server_ip,
+bool ProofSourceChromium::GetProof(const IPAddress& server_ip,
                                    const string& hostname,
                                    const string& server_config,
+                                   QuicVersion quic_version,
+                                   base::StringPiece chlo_hash,
                                    bool ecdsa_ok,
-                                   const vector<string>** out_certs,
+                                   scoped_refptr<ProofSource::Chain>* out_chain,
                                    string* out_signature,
                                    string* out_leaf_cert_sct) {
   return false;

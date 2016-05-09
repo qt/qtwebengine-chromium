@@ -9,10 +9,6 @@
  */
 
 // Handling of certificates and keypairs for SSLStreamAdapter's peer mode.
-#if HAVE_CONFIG_H
-#include "config.h"
-#endif  // HAVE_CONFIG_H
-
 #include "webrtc/base/sslidentity.h"
 
 #include <ctime>
@@ -154,19 +150,38 @@ SSLCertChain::~SSLCertChain() {
 
 #if SSL_USE_OPENSSL
 
+// static
 SSLCertificate* SSLCertificate::FromPEMString(const std::string& pem_string) {
   return OpenSSLCertificate::FromPEMString(pem_string);
 }
 
+// static
+SSLIdentity* SSLIdentity::GenerateWithExpiration(const std::string& common_name,
+                                                 const KeyParams& key_params,
+                                                 time_t certificate_lifetime) {
+  return OpenSSLIdentity::GenerateWithExpiration(common_name, key_params,
+                                                 certificate_lifetime);
+}
+
+// static
 SSLIdentity* SSLIdentity::Generate(const std::string& common_name,
                                    const KeyParams& key_params) {
-  return OpenSSLIdentity::Generate(common_name, key_params);
+  return OpenSSLIdentity::GenerateWithExpiration(
+      common_name, key_params, kDefaultCertificateLifetimeInSeconds);
+}
+
+// static
+SSLIdentity* SSLIdentity::Generate(const std::string& common_name,
+                                   KeyType key_type) {
+  return OpenSSLIdentity::GenerateWithExpiration(
+      common_name, KeyParams(key_type), kDefaultCertificateLifetimeInSeconds);
 }
 
 SSLIdentity* SSLIdentity::GenerateForTest(const SSLIdentityParams& params) {
   return OpenSSLIdentity::GenerateForTest(params);
 }
 
+// static
 SSLIdentity* SSLIdentity::FromPEMStrings(const std::string& private_key,
                                          const std::string& certificate) {
   return OpenSSLIdentity::FromPEMStrings(private_key, certificate);

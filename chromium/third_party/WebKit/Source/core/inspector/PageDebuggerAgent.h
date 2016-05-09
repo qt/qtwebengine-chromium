@@ -34,44 +34,36 @@
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 
-using blink::TypeBuilder::Debugger::ExceptionDetails;
-using blink::TypeBuilder::Debugger::ScriptId;
-using blink::TypeBuilder::Runtime::RemoteObject;
+using blink::protocol::Runtime::ExceptionDetails;
+using blink::protocol::Runtime::ScriptId;
+using blink::protocol::Runtime::RemoteObject;
 
 namespace blink {
 
 class DocumentLoader;
 class InspectedFrames;
-class MainThreadDebugger;
 
 class CORE_EXPORT PageDebuggerAgent final
     : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(PageDebuggerAgent);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(PageDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(MainThreadDebugger*, InspectedFrames*, InjectedScriptManager*);
+    static RawPtr<PageDebuggerAgent> create(V8DebuggerAgent*, InspectedFrames*);
     ~PageDebuggerAgent() override;
     DECLARE_VIRTUAL_TRACE();
 
     void enable(ErrorString*) final;
     void disable(ErrorString*) final;
     void restore() final;
-    void compileScript(ErrorString*, const String& expression, const String& sourceURL, bool persistScript, int executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
-    void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, int executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
 
     void didStartProvisionalLoad(LocalFrame*);
-    void didClearDocumentOfWindowObject(LocalFrame*);
 
 private:
-    PageDebuggerAgent(MainThreadDebugger*, InspectedFrames*, InjectedScriptManager*);
-    void muteConsole() override;
-    void unmuteConsole() override;
+    PageDebuggerAgent(V8DebuggerAgent*, InspectedFrames*);
 
     // V8DebuggerAgent::Client implemntation.
     bool canExecuteScripts() const;
 
-    RawPtrWillBeMember<InspectedFrames> m_inspectedFrames;
-    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
+    Member<InspectedFrames> m_inspectedFrames;
     HashMap<String, String> m_compiledScriptURLs;
 };
 

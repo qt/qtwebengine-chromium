@@ -3,9 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/toolchain/toolchain.gni")
+import("//mojo/public/mojo_constants.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
+  import("//build/config/zip.gni")
 }
 
 # Generate a binary Mojo application in a self-named directory.
@@ -24,19 +26,21 @@ template("mojo_native_application") {
     mojo_deps += invoker.deps
   }
 
+  mojo_data_deps = []
+
   if (defined(invoker.resources)) {
     copy_step_name = "${base_target_name}__copy_resources"
     copy(copy_step_name) {
       sources = invoker.resources
       outputs = [
-        "${root_out_dir}/${base_target_name}/resources/{{source_file_part}}",
+        "${root_out_dir}/${mojo_application_subdir}/${base_target_name}/resources/{{source_file_part}}",
       ]
       if (defined(invoker.testonly)) {
         testonly = invoker.testonly
       }
       deps = mojo_deps
     }
-    mojo_deps += [ ":$copy_step_name" ]
+    mojo_data_deps += [ ":$copy_step_name" ]
   }
 
   output = base_target_name + ".mojo"
@@ -79,16 +83,16 @@ template("mojo_native_application") {
     if (!defined(invoker.avoid_runner_cycle) || !invoker.avoid_runner_cycle) {
       # Give the user an out; as some mojo services are depended on by the
       # runner.
-      data_deps += [ "//mojo/runner:mojo_runner" ]
+      data_deps += [ "//mojo/shell/standalone" ]
     }
     if (defined(invoker.data_deps)) {
       data_deps += invoker.data_deps
     }
+    data_deps += mojo_data_deps
 
     deps = [
       "//mojo/platform_handle:for_shared_library",
       "//mojo/public/c/system:for_shared_library",
-      "//mojo/public/gles2:for_shared_library",
     ]
 
     deps += mojo_deps
@@ -126,10 +130,10 @@ template("mojo_native_application") {
 
   copy(final_target_name) {
     forward_variables_from(invoker,
-                            [
-                              "testonly",
-                              "visibility",
-                            ])
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
     deps = [
       ":${library_target_name}",
     ]
@@ -138,7 +142,7 @@ template("mojo_native_application") {
       "${root_shlib_dir}/${library_name}",
     ]
     outputs = [
-      "${root_out_dir}/${base_target_name}/${output}",
+      "${root_out_dir}/${mojo_application_subdir}/${base_target_name}/${output}",
     ]
   }
 
@@ -183,13 +187,13 @@ if (is_android) {
       base_target_name = invoker.output_name
     }
 
-    mojo_deps = []
+    mojo_data_deps = []
     if (defined(invoker.resources)) {
       copy_step_name = "${base_target_name}__copy_resources"
       copy(copy_step_name) {
         sources = invoker.resources
         outputs = [
-          "${root_out_dir}/${base_target_name}/resources/{{source_file_part}}",
+          "${root_out_dir}/${mojo_application_subdir}/${base_target_name}/resources/{{source_file_part}}",
         ]
         if (defined(invoker.testonly)) {
           testonly = invoker.testonly
@@ -198,46 +202,28 @@ if (is_android) {
           deps = invoker.deps
         }
       }
-      mojo_deps += [ ":$copy_step_name" ]
+      mojo_data_deps += [ ":$copy_step_name" ]
     }
 
     zip_action_name = "${target_name}_zip"
     zip_action_output = "$target_gen_dir/${target_name}.zip"
     prepend_action_name = target_name
-    action(zip_action_name) {
+    zip(zip_action_name) {
       visibility = [ ":$prepend_action_name" ]
-      script = "//build/android/gn/zip.py"
-
       inputs = [
         invoker.input_so,
         invoker.input_dex_jar,
       ]
-
       output = zip_action_output
-      outputs = [
-        output,
-      ]
-
-      rebase_inputs = rebase_path(inputs, root_build_dir)
-      rebase_output = rebase_path(output, root_build_dir)
-      args = [
-        "--inputs=$rebase_inputs",
-        "--output=$rebase_output",
-      ]
-
-      if (defined(invoker.deps)) {
-        deps = invoker.deps
-      }
-      if (defined(invoker.public_deps)) {
-        public_deps = invoker.public_deps
-      }
-      if (defined(invoker.data_deps)) {
-        data_deps = invoker.data_deps
-      }
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "public_deps",
+                               "data_deps",
+                             ])
     }
 
-    _mojo_output =
-        "${root_out_dir}/${base_target_name}/${base_target_name}.mojo"
+    _mojo_output = "${root_out_dir}/${mojo_application_subdir}/${base_target_name}/${base_target_name}.mojo"
 
     action(target_name) {
       script = "//mojo/public/tools/prepend.py"
@@ -259,7 +245,7 @@ if (is_android) {
         "--line=#!mojo mojo:android_handler",
       ]
 
-      deps = mojo_deps
+      data_deps = mojo_data_deps
 
       public_deps = [
         ":$zip_action_name",

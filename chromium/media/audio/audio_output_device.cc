@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <cmath>
 #include <utility>
 
 #include "base/callback_helpers.h"
@@ -136,27 +138,10 @@ bool AudioOutputDevice::SetVolume(double volume) {
   return true;
 }
 
-OutputDevice* AudioOutputDevice::GetOutputDevice() {
-  return this;
-}
-
-void AudioOutputDevice::SwitchOutputDevice(
-    const std::string& device_id,
-    const url::Origin& security_origin,
-    const SwitchOutputDeviceCB& callback) {
-  NOTREACHED();
-}
-
-AudioParameters AudioOutputDevice::GetOutputParameters() {
+OutputDeviceInfo AudioOutputDevice::GetOutputDeviceInfo() {
   CHECK(!task_runner()->BelongsToCurrentThread());
   did_receive_auth_.Wait();
-  return output_params_;
-}
-
-OutputDeviceStatus AudioOutputDevice::GetDeviceStatus() {
-  CHECK(!task_runner()->BelongsToCurrentThread());
-  did_receive_auth_.Wait();
-  return device_status_;
+  return OutputDeviceInfo(device_id_, device_status_, output_params_);
 }
 
 void AudioOutputDevice::RequestDeviceAuthorizationOnIOThread() {
@@ -413,8 +398,8 @@ void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
 
 // Called whenever we receive notifications about pending data.
 void AudioOutputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
-  // Convert the number of pending bytes in the render buffer into milliseconds.
-  uint32_t audio_delay_milliseconds = pending_data / bytes_per_ms_;
+  // Convert the number of pending bytes in the render buffer into frames.
+  double frames_delayed = static_cast<double>(pending_data) / bytes_per_frame_;
 
   callback_num_++;
   TRACE_EVENT1("audio", "AudioOutputDevice::FireRenderCallback",
@@ -433,11 +418,15 @@ void AudioOutputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
   uint32_t frames_skipped = buffer->params.frames_skipped;
   buffer->params.frames_skipped = 0;
 
+  DVLOG(4) << __FUNCTION__ << " pending_data:" << pending_data
+           << " frames_delayed(pre-round):" << frames_delayed
+           << " frames_skipped:" << frames_skipped;
+
   // Update the audio-delay measurement, inform about the number of skipped
   // frames, and ask client to render audio.  Since |output_bus_| is wrapping
   // the shared memory the Render() call is writing directly into the shared
   // memory.
-  render_callback_->Render(output_bus_.get(), audio_delay_milliseconds,
+  render_callback_->Render(output_bus_.get(), std::round(frames_delayed),
                            frames_skipped);
 }
 

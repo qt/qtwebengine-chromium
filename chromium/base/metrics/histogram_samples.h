@@ -8,9 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/atomicops.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram_base.h"
 
 namespace base {
@@ -19,7 +20,10 @@ class Pickle;
 class PickleIterator;
 class SampleCountIterator;
 
-// HistogramSamples is a container storing all samples of a histogram.
+// HistogramSamples is a container storing all samples of a histogram. All
+// elements must be of a fixed width to ensure 32/64-bit interoperability.
+// If this structure changes, bump the version number for kTypeIdHistogram
+// in persistent_histogram_allocator.cc.
 class BASE_EXPORT HistogramSamples {
  public:
   struct Metadata {
@@ -65,7 +69,7 @@ class BASE_EXPORT HistogramSamples {
 
   virtual void Subtract(const HistogramSamples& other);
 
-  virtual scoped_ptr<SampleCountIterator> Iterator() const = 0;
+  virtual std::unique_ptr<SampleCountIterator> Iterator() const = 0;
   virtual bool Serialize(Pickle* pickle) const;
 
   // Accessor fuctions.

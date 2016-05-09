@@ -31,16 +31,16 @@
 #ifndef HTMLOutputElement_h
 #define HTMLOutputElement_h
 
-#include "core/dom/DOMSettableTokenList.h"
+#include "core/dom/DOMTokenList.h"
 #include "core/html/HTMLFormControlElement.h"
 
 namespace blink {
 
-class CORE_EXPORT HTMLOutputElement final : public HTMLFormControlElement, private DOMSettableTokenListObserver {
+class CORE_EXPORT HTMLOutputElement final : public HTMLFormControlElement, private DOMTokenListObserver {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLOutputElement);
+    USING_GARBAGE_COLLECTED_MIXIN(HTMLOutputElement);
 public:
-    static PassRefPtrWillBeRawPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
+    static RawPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
     ~HTMLOutputElement() override;
 
     bool willValidate() const override { return false; }
@@ -50,7 +50,7 @@ public:
     String defaultValue() const;
     void setDefaultValue(const String&);
     void setFor(const AtomicString&);
-    DOMSettableTokenList* htmlFor() const;
+    DOMTokenList* htmlFor() const;
 
     bool canContainRangeEndPoint() const override { return false; }
 
@@ -61,6 +61,7 @@ private:
 
     void parseAttribute(const QualifiedName&, const AtomicString&, const AtomicString&) override;
     const AtomicString& formControlType() const override;
+    bool isDisabledFormControl() const override;
     bool isEnumeratable() const override { return true; }
     bool supportLabels() const override { return true; }
     bool supportsFocus() const override;
@@ -71,7 +72,7 @@ private:
 
     bool m_isDefaultValueMode;
     String m_defaultValue;
-    RefPtrWillBeMember<DOMSettableTokenList> m_tokens;
+    Member<DOMTokenList> m_tokens;
 };
 
 } // namespace blink

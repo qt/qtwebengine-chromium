@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <vector>
 
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "blimp/common/proto/blimp_message.pb.h"
 #include "blimp/common/proto/input.pb.h"
 #include "blimp/net/blimp_message_processor.h"
@@ -18,17 +18,17 @@
 namespace blimp {
 namespace {
 
-void ValidateWebInputEventRoundTripping(const blink::WebInputEvent& event) {
+void ValidateWebGestureEventRoundTripping(const blink::WebGestureEvent& event) {
   InputMessageGenerator generator;
   InputMessageConverter processor;
 
-  scoped_ptr<BlimpMessage> proto = generator.GenerateMessage(event);
+  std::unique_ptr<BlimpMessage> proto = generator.GenerateMessage(event);
   EXPECT_NE(nullptr, proto.get());
   EXPECT_TRUE(proto->has_input());
   EXPECT_EQ(BlimpMessage::INPUT, proto->type());
 
-  scoped_ptr<blink::WebInputEvent> new_event = processor.ProcessMessage(
-      proto->input());
+  std::unique_ptr<blink::WebGestureEvent> new_event =
+      processor.ProcessMessage(proto->input());
   EXPECT_NE(nullptr, new_event.get());
 
   EXPECT_EQ(event.size, new_event->size);
@@ -54,13 +54,13 @@ TEST(InputMessageTest, TestGestureScrollBeginRoundTrip) {
   event.data.scrollBegin.deltaXHint = 2.34f;
   event.data.scrollBegin.deltaYHint = 3.45f;
   event.data.scrollBegin.targetViewport = true;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGestureScrollEndRoundTrip) {
   blink::WebGestureEvent event = BuildBaseTestEvent();
   event.type = blink::WebInputEvent::Type::GestureScrollEnd;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGestureScrollUpdateRoundTrip) {
@@ -73,7 +73,7 @@ TEST(InputMessageTest, TestGestureScrollUpdateRoundTrip) {
   event.data.scrollUpdate.previousUpdateInSequencePrevented = true;
   event.data.scrollUpdate.preventPropagation = true;
   event.data.scrollUpdate.inertial = true;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGestureFlingStartRoundTrip) {
@@ -82,14 +82,14 @@ TEST(InputMessageTest, TestGestureFlingStartRoundTrip) {
   event.data.flingStart.velocityX = 2.34f;
   event.data.flingStart.velocityY = 3.45f;
   event.data.flingStart.targetViewport = true;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGestureFlingCancelRoundTrip) {
   blink::WebGestureEvent event = BuildBaseTestEvent();
   event.type = blink::WebInputEvent::Type::GestureFlingCancel;
   event.data.flingCancel.preventBoosting = true;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGestureTapRoundTrip) {
@@ -98,19 +98,19 @@ TEST(InputMessageTest, TestGestureTapRoundTrip) {
   event.data.tap.tapCount = 3;
   event.data.tap.width = 2.34f;
   event.data.tap.height = 3.45f;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGesturePinchBeginRoundTrip) {
   blink::WebGestureEvent event = BuildBaseTestEvent();
   event.type = blink::WebInputEvent::Type::GesturePinchBegin;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGesturePinchEndRoundTrip) {
   blink::WebGestureEvent event = BuildBaseTestEvent();
   event.type = blink::WebInputEvent::Type::GesturePinchEnd;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestGesturePinchUpdateRoundTrip) {
@@ -118,16 +118,25 @@ TEST(InputMessageTest, TestGesturePinchUpdateRoundTrip) {
   event.type = blink::WebInputEvent::Type::GesturePinchUpdate;
   event.data.pinchUpdate.zoomDisabled = true;
   event.data.pinchUpdate.scale = 2.34f;
-  ValidateWebInputEventRoundTripping(event);
+  ValidateWebGestureEventRoundTripping(event);
 }
 
 TEST(InputMessageTest, TestUnsupportedInputEventSerializationFails) {
-  // We currently do not support WebMouseWheelEvents.  If that changes update
+  // We currently do not support MouseWheel events.  If that changes update
   // this test.
-  blink::WebMouseWheelEvent event;
+  blink::WebGestureEvent event;
   event.type = blink::WebInputEvent::Type::MouseWheel;
   InputMessageGenerator generator;
   EXPECT_EQ(nullptr, generator.GenerateMessage(event).get());
+}
+
+TEST(InputMessageConverterTest, TestTextInputTypeToProtoConversion) {
+  for (size_t i = ui::TextInputType::TEXT_INPUT_TYPE_TEXT;
+       i < ui::TextInputType::TEXT_INPUT_TYPE_MAX; i++) {
+    ui::TextInputType type = static_cast<ui::TextInputType>(i);
+    EXPECT_EQ(type, InputMessageConverter::TextInputTypeFromProto(
+                        InputMessageConverter::TextInputTypeToProto(type)));
+  }
 }
 
 }  // namespace blimp

@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/quic_bug_tracker.h"
 #include "net/quic/quic_utils.h"
 
 using std::min;
@@ -203,8 +204,8 @@ bool QuicFixedUint32::HasSendValue() const {
 }
 
 uint32_t QuicFixedUint32::GetSendValue() const {
-  LOG_IF(DFATAL, !has_send_value_) << "No send value to get for tag:"
-                                   << QuicUtils::TagToString(tag_);
+  QUIC_BUG_IF(!has_send_value_) << "No send value to get for tag:"
+                                << QuicUtils::TagToString(tag_);
   return send_value_;
 }
 
@@ -218,8 +219,8 @@ bool QuicFixedUint32::HasReceivedValue() const {
 }
 
 uint32_t QuicFixedUint32::GetReceivedValue() const {
-  LOG_IF(DFATAL, !has_receive_value_) << "No receive value to get for tag:"
-                                      << QuicUtils::TagToString(tag_);
+  QUIC_BUG_IF(!has_receive_value_) << "No receive value to get for tag:"
+                                   << QuicUtils::TagToString(tag_);
   return receive_value_;
 }
 
@@ -263,6 +264,9 @@ QuicFixedTagVector::QuicFixedTagVector(QuicTag name,
       has_send_values_(false),
       has_receive_values_(false) {}
 
+QuicFixedTagVector::QuicFixedTagVector(const QuicFixedTagVector& other) =
+    default;
+
 QuicFixedTagVector::~QuicFixedTagVector() {}
 
 bool QuicFixedTagVector::HasSendValues() const {
@@ -270,8 +274,8 @@ bool QuicFixedTagVector::HasSendValues() const {
 }
 
 QuicTagVector QuicFixedTagVector::GetSendValues() const {
-  LOG_IF(DFATAL, !has_send_values_) << "No send values to get for tag:"
-                                    << QuicUtils::TagToString(tag_);
+  QUIC_BUG_IF(!has_send_values_) << "No send values to get for tag:"
+                                 << QuicUtils::TagToString(tag_);
   return send_values_;
 }
 
@@ -285,8 +289,8 @@ bool QuicFixedTagVector::HasReceivedValues() const {
 }
 
 QuicTagVector QuicFixedTagVector::GetReceivedValues() const {
-  LOG_IF(DFATAL, !has_receive_values_) << "No receive value to get for tag:"
-                                       << QuicUtils::TagToString(tag_);
+  QUIC_BUG_IF(!has_receive_values_) << "No receive value to get for tag:"
+                                    << QuicUtils::TagToString(tag_);
   return receive_values_;
 }
 
@@ -344,9 +348,12 @@ QuicConfig::QuicConfig()
       initial_stream_flow_control_window_bytes_(kSFCW, PRESENCE_OPTIONAL),
       initial_session_flow_control_window_bytes_(kCFCW, PRESENCE_OPTIONAL),
       socket_receive_buffer_(kSRBF, PRESENCE_OPTIONAL),
-      multipath_enabled_(kMPTH, PRESENCE_OPTIONAL) {
+      multipath_enabled_(kMPTH, PRESENCE_OPTIONAL),
+      connection_migration_disabled_(kNCMR, PRESENCE_OPTIONAL) {
   SetDefaults();
 }
+
+QuicConfig::QuicConfig(const QuicConfig& other) = default;
 
 QuicConfig::~QuicConfig() {}
 
@@ -466,9 +473,9 @@ uint32_t QuicConfig::GetInitialRoundTripTimeUsToSend() const {
 void QuicConfig::SetInitialStreamFlowControlWindowToSend(
     uint32_t window_bytes) {
   if (window_bytes < kMinimumFlowControlSendWindow) {
-    LOG(DFATAL) << "Initial stream flow control receive window ("
-                << window_bytes << ") cannot be set lower than default ("
-                << kMinimumFlowControlSendWindow << ").";
+    QUIC_BUG << "Initial stream flow control receive window (" << window_bytes
+             << ") cannot be set lower than default ("
+             << kMinimumFlowControlSendWindow << ").";
     window_bytes = kMinimumFlowControlSendWindow;
   }
   initial_stream_flow_control_window_bytes_.SetSendValue(window_bytes);
@@ -489,9 +496,9 @@ uint32_t QuicConfig::ReceivedInitialStreamFlowControlWindowBytes() const {
 void QuicConfig::SetInitialSessionFlowControlWindowToSend(
     uint32_t window_bytes) {
   if (window_bytes < kMinimumFlowControlSendWindow) {
-    LOG(DFATAL) << "Initial session flow control receive window ("
-                << window_bytes << ") cannot be set lower than default ("
-                << kMinimumFlowControlSendWindow << ").";
+    QUIC_BUG << "Initial session flow control receive window (" << window_bytes
+             << ") cannot be set lower than default ("
+             << kMinimumFlowControlSendWindow << ").";
     window_bytes = kMinimumFlowControlSendWindow;
   }
   initial_session_flow_control_window_bytes_.SetSendValue(window_bytes);
@@ -530,6 +537,14 @@ bool QuicConfig::MultipathEnabled() const {
   return multipath_enabled_.GetUint32() > 0;
 }
 
+void QuicConfig::SetDisableConnectionMigration() {
+  connection_migration_disabled_.SetSendValue(1);
+}
+
+bool QuicConfig::DisableConnectionMigration() const {
+  return connection_migration_disabled_.HasReceivedValue();
+}
+
 bool QuicConfig::negotiated() const {
   // TODO(ianswett): Add the negotiated parameters once and iterate over all
   // of them in negotiated, ToHandshakeMessage, ProcessClientHello, and
@@ -563,6 +578,7 @@ void QuicConfig::ToHandshakeMessage(CryptoHandshakeMessage* out) const {
   initial_stream_flow_control_window_bytes_.ToHandshakeMessage(out);
   initial_session_flow_control_window_bytes_.ToHandshakeMessage(out);
   socket_receive_buffer_.ToHandshakeMessage(out);
+  connection_migration_disabled_.ToHandshakeMessage(out);
   connection_options_.ToHandshakeMessage(out);
 }
 
@@ -604,6 +620,10 @@ QuicErrorCode QuicConfig::ProcessPeerHello(
   if (error == QUIC_NO_ERROR) {
     error = socket_receive_buffer_.ProcessPeerHello(peer_hello, hello_type,
                                                     error_details);
+  }
+  if (error == QUIC_NO_ERROR) {
+    error = connection_migration_disabled_.ProcessPeerHello(
+        peer_hello, hello_type, error_details);
   }
   if (error == QUIC_NO_ERROR) {
     error = connection_options_.ProcessPeerHello(peer_hello, hello_type,

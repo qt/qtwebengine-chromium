@@ -28,7 +28,7 @@
 
 #include "core/frame/Console.h"
 
-#include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptCallStack.h"
 #include "core/dom/Document.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/FrameConsole.h"
@@ -37,7 +37,6 @@
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptArguments.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "platform/TraceEvent.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
@@ -57,7 +56,7 @@ DEFINE_TRACE(Console)
 {
     ConsoleBase::trace(visitor);
     DOMWindowProperty::trace(visitor);
-    HeapSupplementable<Console>::trace(visitor);
+    Supplementable<Console>::trace(visitor);
 }
 
 ExecutionContext* Console::context()
@@ -67,7 +66,7 @@ ExecutionContext* Console::context()
     return frame()->document();
 }
 
-void Console::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
+void Console::reportMessageToConsole(ConsoleMessage* consoleMessage)
 {
     if (!frame())
         return;

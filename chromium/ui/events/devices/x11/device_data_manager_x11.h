@@ -256,8 +256,6 @@ class EVENTS_DEVICES_EXPORT DeviceDataManagerX11 : public DeviceDataManager {
                               DataType type,
                               double value);
 
-  bool TouchEventNeedsCalibrate(int touch_device_id) const;
-
   // Sets the keys which are still allowed on a disabled keyboard device.
   void SetDisabledKeyboardAllowedKeys(
       scoped_ptr<std::set<KeyboardCode> > excepted_keys);
@@ -342,7 +340,6 @@ class EVENTS_DEVICES_EXPORT DeviceDataManagerX11 : public DeviceDataManager {
   // should be processed.
   std::bitset<kMaxDeviceNum> cmt_devices_;
   std::bitset<kMaxDeviceNum> touchpads_;
-  std::bitset<kMaxDeviceNum> scrollclass_devices_;
 
   // List of the master pointer devices.
   std::vector<int> master_pointers_;

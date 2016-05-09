@@ -34,7 +34,6 @@ void TablePainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 
     if (paintPhase != PaintPhaseSelfOutlineOnly) {
         PaintInfo paintInfoForDescendants = paintInfo.forDescendants();
-        paintInfoForDescendants.updatePaintingRootForChildren(&m_layoutTable);
 
         for (LayoutObject* child = m_layoutTable.firstChild(); child; child = child->nextSibling()) {
             if (child->isBox() && !toLayoutBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
@@ -63,7 +62,7 @@ void TablePainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 
 void TablePainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (!m_layoutTable.hasBoxDecorationBackground() || m_layoutTable.style()->visibility() != VISIBLE || !paintInfo.shouldPaintWithinRoot(&m_layoutTable))
+    if (!m_layoutTable.hasBoxDecorationBackground() || m_layoutTable.style()->visibility() != VISIBLE)
         return;
 
     LayoutRect rect(paintOffset, m_layoutTable.size());
@@ -76,13 +75,13 @@ void TablePainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& pain
     if (m_layoutTable.style()->visibility() != VISIBLE || paintInfo.phase != PaintPhaseMask)
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutTable, paintInfo.phase, paintOffset))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(paintInfo.context, m_layoutTable, paintInfo.phase))
         return;
 
     LayoutRect rect(paintOffset, m_layoutTable.size());
     m_layoutTable.subtractCaptionRect(rect);
 
-    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutTable, paintInfo.phase, rect, paintOffset);
+    LayoutObjectDrawingRecorder recorder(paintInfo.context, m_layoutTable, paintInfo.phase, rect);
     BoxPainter(m_layoutTable).paintMaskImages(paintInfo, rect);
 }
 

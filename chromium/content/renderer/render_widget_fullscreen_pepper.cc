@@ -11,12 +11,12 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
-#include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_thread_impl.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
@@ -43,7 +43,6 @@ using blink::WebTextDirection;
 using blink::WebTextInputType;
 using blink::WebVector;
 using blink::WebWidget;
-using blink::WGC3Dintptr;
 
 namespace content {
 
@@ -315,7 +314,7 @@ void RenderWidgetFullscreenPepper::Destroy() {
   Release();
 }
 
-void RenderWidgetFullscreenPepper::DidChangeCursor(
+void RenderWidgetFullscreenPepper::PepperDidChangeCursor(
     const blink::WebCursorInfo& cursor) {
   didChangeCursor(cursor);
 }
@@ -370,8 +369,7 @@ void RenderWidgetFullscreenPepper::Close() {
   RenderWidget::Close();
 }
 
-void RenderWidgetFullscreenPepper::OnResize(
-    const ViewMsg_Resize_Params& params) {
+void RenderWidgetFullscreenPepper::OnResize(const ResizeParams& params) {
   if (layer_)
     layer_->setBounds(blink::WebSize(params.new_size));
   RenderWidget::OnResize(params);
@@ -385,11 +383,9 @@ GURL RenderWidgetFullscreenPepper::GetURLForGraphicsContext3D() {
   return active_url_;
 }
 
-void RenderWidgetFullscreenPepper::SetDeviceScaleFactor(
-    float device_scale_factor) {
-  RenderWidget::SetDeviceScaleFactor(device_scale_factor);
+void RenderWidgetFullscreenPepper::OnDeviceScaleFactorChanged() {
   if (compositor_)
-    compositor_->setDeviceScaleFactor(device_scale_factor);
+    compositor_->setDeviceScaleFactor(device_scale_factor_);
 }
 
 }  // namespace content

@@ -37,11 +37,11 @@ class DocumentMarkerDetails;
 // It optionally includes a description that could be displayed in the user interface.
 // It also optionally includes a flag specifying whether the match is active, which is ignored
 // for all types other than type TextMatch.
-class CORE_EXPORT DocumentMarker : public NoBaseWillBeGarbageCollected<DocumentMarker> {
+class CORE_EXPORT DocumentMarker : public GarbageCollected<DocumentMarker> {
 public:
     enum MarkerTypeIndex {
         SpellingMarkerIndex = 0,
-        GramarMarkerIndex,
+        GrammarMarkerIndex,
         TextMatchMarkerIndex,
         InvisibleSpellcheckMarkerIndex,
         CompositionMarkerIndex,
@@ -50,7 +50,7 @@ public:
 
     enum MarkerType {
         Spelling = 1 << SpellingMarkerIndex,
-        Grammar = 1 << GramarMarkerIndex,
+        Grammar = 1 << GrammarMarkerIndex,
         TextMatch = 1 << TextMatchMarkerIndex,
         InvisibleSpellcheck = 1 << InvisibleSpellcheckMarkerIndex,
         Composition = 1 << CompositionMarkerIndex,
@@ -139,18 +139,18 @@ private:
     MarkerType m_type;
     unsigned m_startOffset;
     unsigned m_endOffset;
-    RefPtrWillBeMember<DocumentMarkerDetails> m_details;
+    Member<DocumentMarkerDetails> m_details;
     uint32_t m_hash;
 };
 
-using DocumentMarkerVector = WillBeHeapVector<RawPtrWillBeMember<DocumentMarker>>;
+using DocumentMarkerVector = HeapVector<Member<DocumentMarker>>;
 
 inline DocumentMarkerDetails* DocumentMarker::details() const
 {
     return m_details.get();
 }
 
-class DocumentMarkerDetails : public RefCountedWillBeGarbageCollectedFinalized<DocumentMarkerDetails> {
+class DocumentMarkerDetails : public GarbageCollectedFinalized<DocumentMarkerDetails> {
 public:
     DocumentMarkerDetails() { }
     virtual ~DocumentMarkerDetails();

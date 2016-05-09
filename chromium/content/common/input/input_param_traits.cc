@@ -8,6 +8,7 @@
 
 #include "content/common/content_param_traits.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
+#include "content/common/input/synthetic_pointer_action_params.h"
 #include "content/common/input/synthetic_smooth_drag_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/web_input_event_traits.h"
@@ -17,7 +18,7 @@ namespace IPC {
 namespace {
 template <typename GestureType>
 scoped_ptr<content::SyntheticGestureParams> ReadGestureParams(
-    const Message* m,
+    const base::Pickle* m,
     base::PickleIterator* iter) {
   scoped_ptr<GestureType> gesture_params(new GestureType);
   if (!ReadParam(m, iter, gesture_params.get()))
@@ -27,7 +28,7 @@ scoped_ptr<content::SyntheticGestureParams> ReadGestureParams(
 }
 }  // namespace
 
-void ParamTraits<content::ScopedWebInputEvent>::Write(Message* m,
+void ParamTraits<content::ScopedWebInputEvent>::Write(base::Pickle* m,
                                                       const param_type& p) {
   bool valid_web_event = !!p;
   WriteParam(m, valid_web_event);
@@ -35,7 +36,7 @@ void ParamTraits<content::ScopedWebInputEvent>::Write(Message* m,
     WriteParam(m, static_cast<WebInputEventPointer>(p.get()));
 }
 
-bool ParamTraits<content::ScopedWebInputEvent>::Read(const Message* m,
+bool ParamTraits<content::ScopedWebInputEvent>::Read(const base::Pickle* m,
                                                      base::PickleIterator* iter,
                                                      param_type* p) {
   bool valid_web_event = false;
@@ -55,7 +56,7 @@ void ParamTraits<content::ScopedWebInputEvent>::Log(const param_type& p,
   LogParam(static_cast<WebInputEventPointer>(p.get()), l);
 }
 
-void ParamTraits<content::SyntheticGesturePacket>::Write(Message* m,
+void ParamTraits<content::SyntheticGesturePacket>::Write(base::Pickle* m,
                                                          const param_type& p) {
   DCHECK(p.gesture_params());
   WriteParam(m, p.gesture_params()->GetGestureType());
@@ -76,11 +77,15 @@ void ParamTraits<content::SyntheticGesturePacket>::Write(Message* m,
       WriteParam(m, *content::SyntheticTapGestureParams::Cast(
           p.gesture_params()));
       break;
+    case content::SyntheticGestureParams::POINTER_ACTION:
+      WriteParam(
+          m, *content::SyntheticPointerActionParams::Cast(p.gesture_params()));
+      break;
   }
 }
 
 bool ParamTraits<content::SyntheticGesturePacket>::Read(
-    const Message* m,
+    const base::Pickle* m,
     base::PickleIterator* iter,
     param_type* p) {
   content::SyntheticGestureParams::GestureType gesture_type;
@@ -105,6 +110,11 @@ bool ParamTraits<content::SyntheticGesturePacket>::Read(
       gesture_params =
           ReadGestureParams<content::SyntheticTapGestureParams>(m, iter);
       break;
+    case content::SyntheticGestureParams::POINTER_ACTION: {
+      gesture_params =
+          ReadGestureParams<content::SyntheticPointerActionParams>(m, iter);
+      break;
+    }
     default:
       return false;
   }
@@ -137,6 +147,10 @@ void ParamTraits<content::SyntheticGesturePacket>::Log(const param_type& p,
       LogParam(
           *content::SyntheticTapGestureParams::Cast(p.gesture_params()),
           l);
+      break;
+    case content::SyntheticGestureParams::POINTER_ACTION:
+      LogParam(*content::SyntheticPointerActionParams::Cast(p.gesture_params()),
+               l);
       break;
   }
 }

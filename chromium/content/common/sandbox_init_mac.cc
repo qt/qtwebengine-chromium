@@ -53,8 +53,7 @@ bool GetSandboxTypeFromCommandLine(int* sandbox_type,
     if (command_line.HasSwitch(switches::kDisableGpuSandbox))
       return false;
     *sandbox_type = SANDBOX_TYPE_GPU;
-  } else if ((process_type == switches::kPluginProcess) ||
-             (process_type == switches::kPpapiBrokerProcess)) {
+  } else if (process_type == switches::kPpapiBrokerProcess) {
     return false;
   } else if (process_type == switches::kPpapiPluginProcess) {
     *sandbox_type = SANDBOX_TYPE_PPAPI;
@@ -73,14 +72,6 @@ bool InitializeSandbox() {
   if (!GetSandboxTypeFromCommandLine(&sandbox_type, &allowed_dir))
     return true;
   return InitializeSandbox(sandbox_type, allowed_dir);
-}
-
-bool BrokerDuplicateSharedMemoryHandle(
-    const base::SharedMemoryHandle& source_handle,
-    base::ProcessId target_process_id,
-    base::SharedMemoryHandle* target_handle) {
-  *target_handle = base::SharedMemory::DuplicateHandle(source_handle);
-  return base::SharedMemory::IsHandleValid(*target_handle);
 }
 
 }  // namespace content

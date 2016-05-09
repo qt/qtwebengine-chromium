@@ -19,7 +19,6 @@
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
 #include "net/base/ip_endpoint.h"
-#include "net/base/net_util.h"
 
 #if !defined(OS_NACL) && !defined(OS_WIN)
 #include <net/if.h>
@@ -91,8 +90,8 @@ class IPAttributesGetterTest : public internal::IPAttributesGetterMac {
 bool FillIfaddrs(ifaddrs* interfaces,
                  const char* ifname,
                  uint flags,
-                 const IPAddressNumber& ip_address,
-                 const IPAddressNumber& ip_netmask,
+                 const IPAddress& ip_address,
+                 const IPAddress& ip_netmask,
                  sockaddr_storage sock_addrs[2]) {
   interfaces->ifa_next = NULL;
   interfaces->ifa_name = const_cast<char*>(ifname);
@@ -119,8 +118,9 @@ bool FillIfaddrs(ifaddrs* interfaces,
   return true;
 }
 #endif  // OS_MACOSX
+
 // Verify GetNetworkList().
-TEST(NetUtilTest, GetNetworkList) {
+TEST(NetworkInterfacesTest, GetNetworkList) {
   NetworkInterfaceList list;
   ASSERT_TRUE(GetNetworkList(&list, INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES));
   for (NetworkInterfaceList::iterator it = list.begin();
@@ -130,17 +130,9 @@ TEST(NetUtilTest, GetNetworkList) {
     EXPECT_FALSE(it->friendly_name.empty());
 
     // Verify that the address is correct.
-    EXPECT_TRUE(it->address.size() == kIPv4AddressSize ||
-                it->address.size() == kIPv6AddressSize)
-        << "Invalid address of size " << it->address.size();
-    bool all_zeroes = true;
-    for (size_t i = 0; i < it->address.size(); ++i) {
-      if (it->address[i] != 0) {
-        all_zeroes = false;
-        break;
-      }
-    }
-    EXPECT_FALSE(all_zeroes);
+    EXPECT_TRUE(it->address.IsValid()) << "Invalid address of size "
+                                       << it->address.size();
+    EXPECT_FALSE(it->address.IsZero());
     EXPECT_GT(it->prefix_length, 1u);
     EXPECT_LE(it->prefix_length, it->address.size() * 8);
 
@@ -232,10 +224,9 @@ char* GetInterfaceNameVM(int interface_index, char* ifname) {
   return CopyInterfaceName(ifname_vm, arraysize(ifname_vm), ifname);
 }
 
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
+TEST(NetworkInterfacesTest, GetNetworkListTrimming) {
+  IPAddress ipv6_local_address(kIPv6LocalAddr);
+  IPAddress ipv6_address(kIPv6Addr);
 
   NetworkInterfaceList results;
   ::base::hash_set<int> online_links;
@@ -333,12 +324,10 @@ TEST(NetUtilTest, GetNetworkListTrimming) {
 
 #elif defined(OS_MACOSX)
 
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
-  IPAddressNumber ipv6_netmask(kIPv6Netmask,
-                               kIPv6Netmask + arraysize(kIPv6Netmask));
+TEST(NetworkInterfacesTest, GetNetworkListTrimming) {
+  IPAddress ipv6_local_address(kIPv6LocalAddr);
+  IPAddress ipv6_address(kIPv6Addr);
+  IPAddress ipv6_netmask(kIPv6Netmask);
 
   NetworkInterfaceList results;
   IPAttributesGetterTest ip_attributes_getter;
@@ -432,8 +421,8 @@ TEST(NetUtilTest, GetNetworkListTrimming) {
 // |adapter_address| once the function is returned.
 bool FillAdapterAddress(IP_ADAPTER_ADDRESSES* adapter_address,
                         const char* ifname,
-                        const IPAddressNumber& ip_address,
-                        const IPAddressNumber& ip_netmask,
+                        const IPAddress& ip_address,
+                        const IPAddress& ip_netmask,
                         sockaddr_storage sock_addrs[2]) {
   adapter_address->AdapterName = const_cast<char*>(ifname);
   adapter_address->FriendlyName = const_cast<PWCHAR>(L"interface");
@@ -480,12 +469,10 @@ bool FillAdapterAddress(IP_ADAPTER_ADDRESSES* adapter_address,
   return true;
 }
 
-TEST(NetUtilTest, GetNetworkListTrimming) {
-  IPAddressNumber ipv6_local_address(
-      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
-  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
-  IPAddressNumber ipv6_prefix(kIPv6AddrPrefix,
-                              kIPv6AddrPrefix + arraysize(kIPv6AddrPrefix));
+TEST(NetworkInterfacesTest, GetNetworkListTrimming) {
+  IPAddress ipv6_local_address(kIPv6LocalAddr);
+  IPAddress ipv6_address(kIPv6Addr);
+  IPAddress ipv6_prefix(kIPv6AddrPrefix);
 
   NetworkInterfaceList results;
   sockaddr_storage addresses[2];
@@ -596,7 +583,7 @@ TEST(NetUtilTest, GetNetworkListTrimming) {
 
 #endif  // !OS_MACOSX && !OS_WIN && !OS_NACL
 
-TEST(NetUtilTest, GetWifiSSID) {
+TEST(NetworkInterfacesTest, GetWifiSSID) {
   // We can't check the result of GetWifiSSID() directly, since the result
   // will differ across machines. Simply exercise the code path and hope that it
   // doesn't crash.
@@ -604,7 +591,7 @@ TEST(NetUtilTest, GetWifiSSID) {
 }
 
 #if defined(OS_LINUX) || defined(OS_ANDROID) || defined(OS_CHROMEOS)
-TEST(NetUtilTest, GetWifiSSIDFromInterfaceList) {
+TEST(NetworkInterfacesTest, GetWifiSSIDFromInterfaceList) {
   NetworkInterfaceList list;
   EXPECT_EQ(std::string(), internal::GetWifiSSIDFromInterfaceListInternal(
                                list, TestGetInterfaceSSID));
@@ -743,12 +730,20 @@ void TryChangeWifiOptions(int options) {
 }
 
 // Test SetWifiOptions().
-TEST(NetUtilTest, SetWifiOptionsTest) {
+TEST(NetworkInterfacesTest, SetWifiOptionsTest) {
   TryChangeWifiOptions(0);
   TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN);
   TryChangeWifiOptions(WIFI_OPTIONS_MEDIA_STREAMING_MODE);
   TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN |
                        WIFI_OPTIONS_MEDIA_STREAMING_MODE);
+}
+
+TEST(NetworkInterfacesTest, GetHostName) {
+  // We can't check the result of GetHostName() directly, since the result
+  // will differ across machines. Our goal here is to simply exercise the
+  // code path, and check that things "look about right".
+  std::string hostname = GetHostName();
+  EXPECT_FALSE(hostname.empty());
 }
 
 }  // namespace

@@ -45,6 +45,12 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
+}
+
 namespace WTF {
 
 class ArrayBufferContents;
@@ -95,7 +101,7 @@ public:
     virtual void resetCanvas(SkCanvas*) const;
 
     SkCanvas* canvas() const;
-    void disableDeferral() const;
+    void disableDeferral(DisableDeferralReason) const;
 
     // Called at the end of a task that rendered a whole frame
     void finalizeFrame(const FloatRect &dirtyRect);
@@ -118,17 +124,17 @@ public:
     // with textures that are RGB or RGBA format, UNSIGNED_BYTE type and level 0, as specified in
     // Extensions3D::canUseCopyTextureCHROMIUM().
     // Destroys the TEXTURE_2D binding for the active texture unit of the passed context
-    bool copyToPlatformTexture(WebGraphicsContext3D*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
+    bool copyToPlatformTexture(WebGraphicsContext3D*, gpu::gles2::GLES2Interface*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
 
     bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, SourceDrawingBuffer);
 
-    void flush(); // process deferred draw commands immediately
-    void flushGpu(); // Like flush(), but flushes all the way down to the Gpu context if the surface is accelerated
+    void flush(FlushReason); // process deferred draw commands immediately
+    void flushGpu(FlushReason); // Like flush(), but flushes all the way down to the Gpu context if the surface is accelerated
 
     void notifySurfaceInvalid();
 
-    PassRefPtr<SkImage> newSkImageSnapshot(AccelerationHint) const;
-    PassRefPtr<Image> newImageSnapshot(AccelerationHint = PreferNoAcceleration) const;
+    PassRefPtr<SkImage> newSkImageSnapshot(AccelerationHint, SnapshotReason) const;
+    PassRefPtr<Image> newImageSnapshot(AccelerationHint = PreferNoAcceleration, SnapshotReason = SnapshotReasonUnknown) const;
 
     void draw(GraphicsContext&, const FloatRect&, const FloatRect*, SkXfermode::Mode);
 

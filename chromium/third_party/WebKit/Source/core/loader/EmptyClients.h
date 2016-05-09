@@ -40,6 +40,7 @@
 #include "core/page/SpellCheckerClient.h"
 #include "platform/DragImage.h"
 #include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceError.h"
@@ -67,7 +68,7 @@ namespace blink {
 
 class CORE_EXPORT EmptyChromeClient : public ChromeClient {
 public:
-    static PassOwnPtrWillBeRawPtr<EmptyChromeClient> create() { return adoptPtrWillBeNoop(new EmptyChromeClient); }
+    static EmptyChromeClient* create() { return new EmptyChromeClient; }
 
     ~EmptyChromeClient() override {}
     void chromeDestroyed() override {}
@@ -109,7 +110,7 @@ public:
     void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) override {}
 
     bool canOpenBeforeUnloadConfirmPanel() override { return false; }
-    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&, bool) override { return true; }
+    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, bool) override { return true; }
 
     void closeWindowSoon() override {}
 
@@ -118,7 +119,7 @@ public:
     bool openJavaScriptPromptDelegate(LocalFrame*, const String&, const String&, String&) override { return false; }
 
     bool hasOpenedPopup() const override { return false; }
-    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
+    PopupMenu* openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
     DOMWindow* pagePopupWindowForTesting() const override { return nullptr; }
 
     void setStatusbarText(const String&) override {}
@@ -130,7 +131,8 @@ public:
     void invalidateRect(const IntRect&) override {}
     void scheduleAnimation(Widget*) override {}
 
-    IntRect viewportToScreen(const IntRect& r) const override { return r; }
+    IntRect viewportToScreen(const IntRect& r, const Widget*) const override { return r; }
+    float windowToViewportScalar(const float s) const override { return s; }
     WebScreenInfo screenInfo() const override { return WebScreenInfo(); }
     void contentsSizeChanged(LocalFrame*, const IntSize&) const override {}
 
@@ -142,8 +144,8 @@ public:
 
     void enumerateChosenDirectory(FileChooser*) override {}
 
-    PassOwnPtrWillBeRawPtr<ColorChooser> openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) override;
-    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
+    ColorChooser* openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) override;
+    DateTimeChooser* openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
     void openTextDataListChooser(HTMLInputElement&) override;
 
     void openFileChooser(LocalFrame*, PassRefPtr<FileChooser>) override;
@@ -153,10 +155,14 @@ public:
 
     void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) override {}
 
-    void needTouchEvents(bool) override {}
+    void setEventListenerProperties(WebEventListenerClass, WebEventListenerProperties) override {}
+    WebEventListenerProperties eventListenerProperties(WebEventListenerClass) const override { return WebEventListenerProperties::Nothing; }
+    void setHasScrollEventHandlers(bool) override {}
+    bool hasScrollEventHandlers() const override { return false; }
+
     void setTouchAction(TouchAction) override {}
 
-    void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element>>&, LocalFrame*) override {}
+    void didAssociateFormControls(const HeapVector<Member<Element>>&, LocalFrame*) override {}
 
     void annotatedRegionsChanged() override {}
     String acceptLanguages() override;
@@ -164,14 +170,13 @@ public:
     void registerPopupOpeningObserver(PopupOpeningObserver*) override {}
     void unregisterPopupOpeningObserver(PopupOpeningObserver*) override {}
 
-    PassOwnPtr<WebFrameScheduler> createFrameScheduler() override;
+    PassOwnPtr<WebFrameScheduler> createFrameScheduler(BlameContext*) override;
 };
 
 class CORE_EXPORT EmptyFrameLoaderClient : public FrameLoaderClient {
     WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(EmptyFrameLoaderClient);
 public:
-    static PassOwnPtrWillBeRawPtr<EmptyFrameLoaderClient> create() { return adoptPtrWillBeNoop(new EmptyFrameLoaderClient); }
+    static EmptyFrameLoaderClient* create() { return new EmptyFrameLoaderClient; }
     ~EmptyFrameLoaderClient() override {}
 
     bool hasWebView() const override { return true; } // mainly for assertions
@@ -205,11 +210,11 @@ public:
     void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) override {}
     void dispatchDidFailProvisionalLoad(const ResourceError&, HistoryCommitType) override {}
     void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override {}
-    void dispatchDidFinishDocumentLoad(bool) override {}
+    void dispatchDidFinishDocumentLoad() override {}
     void dispatchDidFinishLoad() override {}
     void dispatchDidChangeThemeColor() override {}
 
-    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool) override;
+    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool, bool) override;
     bool hasPendingNavigation() override;
 
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
@@ -221,7 +226,7 @@ public:
 
     void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String&, bool) override {}
 
-    PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
+    DocumentLoader* createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
 
     String userAgent() override { return ""; }
 
@@ -237,17 +242,19 @@ public:
     void didDisplayContentWithCertificateErrors(const KURL&, const CString&, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) override {}
     void didRunContentWithCertificateErrors(const KURL&, const CString&, const WebURL& mainResourceUrl, const CString& mainResourceSecurityInfo) override {}
     void selectorMatchChanged(const Vector<String>&, const Vector<String>&) override {}
-    PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const AtomicString&, HTMLFrameOwnerElement*) override;
-    PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
+    LocalFrame* createFrame(const FrameLoadRequest&, const AtomicString&, HTMLFrameOwnerElement*) override;
+    Widget* createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
     bool canCreatePluginWithoutRenderer(const String& mimeType) const override { return false; }
     PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
     PassOwnPtr<WebMediaSession> createWebMediaSession() override;
 
-    ObjectContentType objectContentType(const KURL&, const String&, bool) override { return ObjectContentType(); }
+    ObjectContentType getObjectContentType(const KURL&, const String&, bool) override { return ObjectContentType(); }
 
     void didCreateNewDocument() override {}
     void dispatchDidClearWindowObjectInMainWorld() override {}
     void documentElementAvailable() override {}
+    void runScriptsAtDocumentElementAvailable() override {}
+    void runScriptsAtDocumentReady(bool) override {}
 
     void didCreateScriptContext(v8::Local<v8::Context>, int extensionGroup, int worldId) override {}
     void willReleaseScriptContext(v8::Local<v8::Context>, int worldId) override {}
@@ -275,7 +282,7 @@ public:
 
     void checkSpellingOfString(const String&, int*, int*) override {}
     void checkGrammarOfString(const String&, Vector<GrammarDetail>&, int*, int*) override {}
-    void requestCheckingOfString(PassRefPtrWillBeRawPtr<TextCheckingRequest>) override;
+    void requestCheckingOfString(TextCheckingRequest*) override;
 };
 
 class EmptySpellCheckerClient : public SpellCheckerClient {

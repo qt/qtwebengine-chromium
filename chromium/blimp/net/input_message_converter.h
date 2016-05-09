@@ -5,29 +5,40 @@
 #ifndef BLIMP_NET_INPUT_MESSAGE_CONVERTER_H_
 #define BLIMP_NET_INPUT_MESSAGE_CONVERTER_H_
 
+#include <memory>
+
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
+#include "blimp/common/proto/ime.pb.h"
 #include "blimp/net/blimp_net_export.h"
+#include "ui/base/ime/text_input_type.h"
 
 namespace blink {
-class WebInputEvent;
+class WebGestureEvent;
 }
 
 namespace blimp {
 
 class InputMessage;
 
-// Handles creating WebInputEvents from a stream of InputMessage protos.  This
-// class may be stateful to optimize the size of the serialized transmission
-// data.  See InputMessageConverter for the deserialize code.
+// A generic class to provide conversion utilities for protos such as :
+// 1) Creating WebGestureEvents from a stream of InputMessage protos.
+//    This class may be stateful to optimize the size of the serialized
+//    transmission
+//    data. See InputMessageConverter for the deserialize code.
+// 2) Conversion between ui::TextInputType and ImeMessage proto.
 class BLIMP_NET_EXPORT InputMessageConverter {
  public:
   InputMessageConverter();
   ~InputMessageConverter();
 
-  // Process an InputMessage and create a WebInputEvent from it.  This might
+  // Process an InputMessage and create a WebGestureEvent from it.  This might
   // make use of state from previous messages.
-  scoped_ptr<blink::WebInputEvent> ProcessMessage(const InputMessage& message);
+  std::unique_ptr<blink::WebGestureEvent> ProcessMessage(
+      const InputMessage& message);
+
+  // Converts a ui::TextInputType to ImeMessage proto.
+  static ImeMessage_InputType TextInputTypeToProto(ui::TextInputType type);
+  static ui::TextInputType TextInputTypeFromProto(ImeMessage_InputType type);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMessageConverter);

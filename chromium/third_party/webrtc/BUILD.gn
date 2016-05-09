@@ -228,6 +228,7 @@ if (!build_with_chromium) {
 
 source_set("webrtc_common") {
   sources = [
+    "audio_sink.h",
     "common_types.cc",
     "common_types.h",
     "config.cc",
@@ -244,12 +245,6 @@ source_set("webrtc_common") {
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
     configs -= [ "//build/config/clang:find_bad_constructs" ]
   }
-}
-
-source_set("gtest_prod") {
-  sources = [
-    "test/testsupport/gtest_prod_util.h",
-  ]
 }
 
 if (rtc_enable_protobuf) {

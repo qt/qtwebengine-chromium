@@ -16,8 +16,6 @@
         'data_reduction_proxy/core/browser/data_reduction_proxy_compression_stats.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_config.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_config.h',
-        'data_reduction_proxy/core/browser/data_reduction_proxy_config_retrieval_params.cc',
-        'data_reduction_proxy/core/browser/data_reduction_proxy_config_retrieval_params.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_config_service_client.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_config_service_client.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_configurator.cc',
@@ -25,8 +23,6 @@
         'data_reduction_proxy/core/browser/data_reduction_proxy_debug_ui_service.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_delegate.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_delegate.h',
-        'data_reduction_proxy/core/browser/data_reduction_proxy_experiments_stats.cc',
-        'data_reduction_proxy/core/browser/data_reduction_proxy_experiments_stats.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_io_data.cc',
@@ -127,32 +123,6 @@
     }],
     ['OS!="ios"', {
       'targets' : [
-        {
-          # GN Version: //components/data_reduction_proxy/content
-          'target_name': 'data_reduction_proxy_content',
-          'type': 'static_library',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../content/content.gyp:content_browser',
-            '../ui/base/ui_base.gyp:ui_base',
-            'components_resources.gyp:components_resources',
-            'components_strings.gyp:components_strings',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            # Note: sources list duplicated in GN build.
-            'data_reduction_proxy/content/browser/content_data_reduction_proxy_debug_ui_service.cc',
-            'data_reduction_proxy/content/browser/content_data_reduction_proxy_debug_ui_service.h',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_blocking_page.cc',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_blocking_page.h',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_resource_throttle.cc',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_resource_throttle.h',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_ui_manager.cc',
-            'data_reduction_proxy/content/browser/data_reduction_proxy_debug_ui_manager.h',
-          ],
-        },
         {
           # GN version: //components/data_reduction_proxy/content/common
           'target_name': 'data_reduction_proxy_content_common',

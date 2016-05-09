@@ -49,9 +49,9 @@ static const int dateTimeLocalDefaultStep = 60;
 static const int dateTimeLocalDefaultStepBase = 0;
 static const int dateTimeLocalStepScaleFactor = 1000;
 
-PassRefPtrWillBeRawPtr<InputType> DateTimeLocalInputType::create(HTMLInputElement& element)
+InputType* DateTimeLocalInputType::create(HTMLInputElement& element)
 {
-    return adoptRefWillBeNoop(new DateTimeLocalInputType(element));
+    return new DateTimeLocalInputType(element);
 }
 
 void DateTimeLocalInputType::countUsage()
@@ -105,6 +105,12 @@ String DateTimeLocalInputType::localizeValue(const String& proposedValue) const
     Locale::FormatType formatType = shouldHaveSecondField(date) ? Locale::FormatTypeMedium : Locale::FormatTypeShort;
     String localized = element().locale().formatDateTime(date, formatType);
     return localized.isEmpty() ? proposedValue : localized;
+}
+
+void DateTimeLocalInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value != element().sanitizeValue(value))
+        addWarningToConsole("The specified value %s does not conform to the required format.  The format is \"yyyy-MM-ddThh:mm\" followed by optional \":ss\" or \":ss.SSS\".", value);
 }
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)

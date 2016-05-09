@@ -4,18 +4,13 @@
 
 #include "modules/mediacapturefromelement/TimedCanvasDrawListener.h"
 
-#include "platform/Task.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebTaskRunner.h"
-#include "public/platform/WebTraceLocation.h"
-
 namespace blink {
 
 TimedCanvasDrawListener::TimedCanvasDrawListener(const PassOwnPtr<WebCanvasCaptureHandler>& handler, double frameRate)
     : CanvasDrawListener(handler)
+    , m_frameInterval(1 / frameRate)
+    , m_requestFrameTimer(this, &TimedCanvasDrawListener::requestFrameTimerFired)
 {
-    m_frameInterval = 1000 / frameRate;
-    requestNewFrame();
 }
 
 TimedCanvasDrawListener::~TimedCanvasDrawListener() {}
@@ -23,24 +18,21 @@ TimedCanvasDrawListener::~TimedCanvasDrawListener() {}
 // static
 TimedCanvasDrawListener* TimedCanvasDrawListener::create(const PassOwnPtr<WebCanvasCaptureHandler>& handler, double frameRate)
 {
-    return new TimedCanvasDrawListener(handler, frameRate);
-}
-
-bool TimedCanvasDrawListener::needsNewFrame() const
-{
-    return m_requestFrame && CanvasDrawListener::needsNewFrame();
+    TimedCanvasDrawListener* listener = new TimedCanvasDrawListener(handler, frameRate);
+    listener->m_requestFrameTimer.startRepeating(listener->m_frameInterval, BLINK_FROM_HERE);
+    return listener;
 }
 
 void TimedCanvasDrawListener::sendNewFrame(const WTF::PassRefPtr<SkImage>& image)
 {
-    m_requestFrame = false;
+    m_frameCaptureRequested = false;
     CanvasDrawListener::sendNewFrame(image);
 }
 
-void TimedCanvasDrawListener::requestNewFrame()
+void TimedCanvasDrawListener::requestFrameTimerFired(Timer<TimedCanvasDrawListener>*)
 {
-    m_requestFrame = true;
-    Platform::current()->currentThread()->taskRunner()->postDelayedTask(BLINK_FROM_HERE, new Task(bind(&TimedCanvasDrawListener::requestNewFrame, this)), m_frameInterval);
+    // TODO(emircan): Measure the jitter and log, see crbug.com/589974.
+    m_frameCaptureRequested = true;
 }
 
 } // namespace blink

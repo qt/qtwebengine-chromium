@@ -77,6 +77,10 @@ int AudioParameters::GetBytesPerFrame() const {
   return channels_ * bits_per_sample_ / 8;
 }
 
+double AudioParameters::GetMicrosecondsPerFrame() const {
+  return static_cast<double>(base::Time::kMicrosecondsPerSecond) / sample_rate_;
+}
+
 base::TimeDelta AudioParameters::GetBufferDuration() const {
   return base::TimeDelta::FromMicroseconds(static_cast<int64_t>(
       frames_per_buffer_ * base::Time::kMicrosecondsPerSecond /
@@ -90,6 +94,14 @@ bool AudioParameters::Equals(const AudioParameters& other) const {
          bits_per_sample_ == other.bits_per_sample() &&
          frames_per_buffer_ == other.frames_per_buffer() &&
          effects_ == other.effects() && mic_positions_ == other.mic_positions_;
+}
+
+// static
+AudioParameters AudioParameters::UnavailableDeviceParams() {
+  return media::AudioParameters(
+      media::AudioParameters::AUDIO_FAKE, media::CHANNEL_LAYOUT_STEREO,
+      media::AudioParameters::kAudioCDSampleRate, 16,
+      media::AudioParameters::kAudioCDSampleRate / 10);
 }
 
 }  // namespace media

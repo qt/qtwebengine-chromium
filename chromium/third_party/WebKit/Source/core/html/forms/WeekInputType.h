@@ -44,7 +44,7 @@ using BaseWeekInputType = BaseChooserOnlyDateAndTimeInputType;
 
 class WeekInputType final : public BaseWeekInputType {
 public:
-    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
+    static InputType* create(HTMLInputElement&);
 
 private:
     explicit WeekInputType(HTMLInputElement& element) : BaseWeekInputType(element) { }
@@ -54,6 +54,7 @@ private:
     StepRange createStepRange(AnyStepHandling) const override;
     bool parseToDateComponentsInternal(const String&, DateComponents*) const override;
     bool setMillisecondToDateComponents(double, DateComponents*) const override;
+    void warnIfValueIsInvalid(const String&) const override;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // BaseMultipleFieldsDateAndTimeInputType functions

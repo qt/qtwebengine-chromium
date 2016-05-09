@@ -21,15 +21,11 @@
 #include "base/threading/non_thread_safe.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "content/common/message_router.h"
-#include "content/public/common/gpu_memory_stats.h"
 #include "gpu/config/gpu_info.h"
+#include "gpu/ipc/common/memory_stats.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-
-#if defined(OS_MACOSX)
-struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-#endif
+#include "ipc/message_router.h"
 
 namespace ui {
 class LatencyInfo;
@@ -43,7 +39,14 @@ namespace IPC {
 class Message;
 }
 
+namespace gpu {
+struct VideoMemoryUsageStats;
+}
+
 namespace content {
+#if defined(OS_MACOSX)
+struct AcceleratedSurfaceBuffersSwappedParams;
+#endif
 void RouteToGpuProcessHostUIShimTask(int host_id, const IPC::Message& msg);
 
 class GpuProcessHostUIShim : public IPC::Listener,
@@ -98,10 +101,10 @@ class GpuProcessHostUIShim : public IPC::Listener,
 
 #if defined(OS_MACOSX)
   void OnAcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
+      const AcceleratedSurfaceBuffersSwappedParams& params);
 #endif
   void OnVideoMemoryUsageStatsReceived(
-      const GPUVideoMemoryUsageStats& video_memory_usage_stats);
+      const gpu::VideoMemoryUsageStats& video_memory_usage_stats);
   void OnAddSubscription(int32_t process_id, unsigned int target);
   void OnRemoveSubscription(int32_t process_id, unsigned int target);
 

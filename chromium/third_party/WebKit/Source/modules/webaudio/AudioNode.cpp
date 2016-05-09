@@ -31,7 +31,6 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/AudioParam.h"
 #include "wtf/Atomics.h"
-#include "wtf/MainThread.h"
 
 #if DEBUG_AUDIONODE_REFERENCES
 #include <stdio.h>
@@ -72,9 +71,9 @@ AudioHandler::~AudioHandler()
     ASSERT(!node());
     InstanceCounters::decrementCounter(InstanceCounters::AudioHandlerCounter);
 #if DEBUG_AUDIONODE_REFERENCES
-    --s_nodeCount[nodeType()];
+    --s_nodeCount[getNodeType()];
     fprintf(stderr, "%p: %2d: AudioNode::~AudioNode() %d [%d]\n",
-        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
+        this, getNodeType(), m_connectionRefCount, s_nodeCount[getNodeType()]);
 #endif
 }
 
@@ -174,7 +173,7 @@ void AudioHandler::setNodeType(NodeType type)
 
 #if DEBUG_AUDIONODE_REFERENCES
     ++s_nodeCount[type];
-    fprintf(stderr, "%p: %2d: AudioNode::AudioNode [%3d]\n", this, nodeType(), s_nodeCount[nodeType()]);
+    fprintf(stderr, "%p: %2d: AudioNode::AudioNode [%3d]\n", this, getNodeType(), s_nodeCount[getNodeType()]);
 #endif
 }
 
@@ -417,10 +416,10 @@ void AudioHandler::disableOutputsIfNecessary()
         // longer have any input connections. This needs to be handled more generally where
         // AudioNodes have a tailTime attribute. Then the AudioNode only needs to remain "active"
         // for tailTime seconds after there are no longer any active connections.
-        if (nodeType() != NodeTypeConvolver
-            && nodeType() != NodeTypeDelay
-            && nodeType() != NodeTypeBiquadFilter
-            && nodeType() != NodeTypeIIRFilter) {
+        if (getNodeType() != NodeTypeConvolver
+            && getNodeType() != NodeTypeDelay
+            && getNodeType() != NodeTypeBiquadFilter
+            && getNodeType() != NodeTypeIIRFilter) {
             m_isDisabled = true;
             clearInternalStateWhenDisabled();
             for (auto& output : m_outputs)
@@ -435,7 +434,7 @@ void AudioHandler::makeConnection()
 
 #if DEBUG_AUDIONODE_REFERENCES
     fprintf(stderr, "%p: %2d: AudioNode::ref   %3d [%3d]\n",
-        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
+        this, getNodeType(), m_connectionRefCount, s_nodeCount[getNodeType()]);
 #endif
     // See the disabling code in disableOutputsIfNecessary(). This handles
     // the case where a node is being re-connected after being used at least
@@ -474,7 +473,7 @@ void AudioHandler::breakConnectionWithLock()
 
 #if DEBUG_AUDIONODE_REFERENCES
     fprintf(stderr, "%p: %2d: AudioNode::deref %3d [%3d]\n",
-        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
+        this, getNodeType(), m_connectionRefCount, s_nodeCount[getNodeType()]);
 #endif
 
     if (!m_connectionRefCount)
@@ -512,7 +511,7 @@ unsigned AudioHandler::numberOfOutputChannels() const
     // This should only be called for ScriptProcessorNodes which are the only nodes where you can
     // have an output with 0 channels.  All other nodes have have at least one output channel, so
     // there's no reason other nodes should ever call this function.
-    ASSERT_WITH_MESSAGE(1, "numberOfOutputChannels() not valid for node type %d", nodeType());
+    DCHECK(0) << "numberOfOutputChannels() not valid for node type " << getNodeType();
     return 1;
 }
 // ----------------------------------------------------------------
@@ -600,7 +599,7 @@ AudioNode* AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsi
 
     // ScriptProcessorNodes with 0 output channels can't be connected to any destination.  If there
     // are no output channels, what would the destination receive?  Just disallow this.
-    if (handler().nodeType() == AudioHandler::NodeTypeJavaScript
+    if (handler().getNodeType() == AudioHandler::NodeTypeJavaScript
         && handler().numberOfOutputChannels() == 0) {
         exceptionState.throwDOMException(
             InvalidAccessError,
@@ -926,9 +925,9 @@ const AtomicString& AudioNode::interfaceName() const
     return EventTargetNames::AudioNode;
 }
 
-ExecutionContext* AudioNode::executionContext() const
+ExecutionContext* AudioNode::getExecutionContext() const
 {
-    return context()->executionContext();
+    return context()->getExecutionContext();
 }
 
 void AudioNode::didAddOutput(unsigned numberOfOutputs)

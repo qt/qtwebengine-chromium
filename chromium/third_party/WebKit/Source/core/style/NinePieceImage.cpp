@@ -40,7 +40,7 @@ NinePieceImage::NinePieceImage()
 {
 }
 
-NinePieceImage::NinePieceImage(PassRefPtrWillBeRawPtr<StyleImage> image, LengthBox imageSlices, bool fill, const BorderImageLengthBox& borderSlices, const BorderImageLengthBox& outset, ENinePieceImageRule horizontalRule, ENinePieceImageRule verticalRule)
+NinePieceImage::NinePieceImage(StyleImage* image, LengthBox imageSlices, bool fill, const BorderImageLengthBox& borderSlices, const BorderImageLengthBox& outset, ENinePieceImageRule horizontalRule, ENinePieceImageRule verticalRule)
 {
     m_data.init();
     m_data.access()->image = image;
@@ -86,4 +86,4 @@ bool NinePieceImageData::operator==(const NinePieceImageData& other) const
         && verticalRule == other.verticalRule;
 }
 
-}
+} // namespace blink

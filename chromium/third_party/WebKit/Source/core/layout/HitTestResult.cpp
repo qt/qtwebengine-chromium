@@ -22,8 +22,9 @@
 #include "core/layout/HitTestResult.h"
 
 #include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/PseudoElement.h"
-#include "core/dom/shadow/ComposedTreeTraversal.h"
+#include "core/dom/shadow/FlatTreeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleUnits.h"
@@ -42,6 +43,7 @@
 #include "core/layout/LayoutTextFragment.h"
 #include "core/page/FrameTree.h"
 #include "core/svg/SVGElement.h"
+#include "platform/geometry/Region.h"
 #include "platform/scroll/Scrollbar.h"
 
 namespace blink {
@@ -95,7 +97,7 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_isOverWidget(other.isOverWidget())
 {
     // Only copy the NodeSet in case of list hit test.
-    m_listBasedTestResult = adoptPtrWillBeNoop(other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : 0);
+    m_listBasedTestResult = other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : nullptr;
 }
 
 HitTestResult::~HitTestResult()
@@ -141,7 +143,7 @@ void HitTestResult::populateFromCachedResult(const HitTestResult& other)
     m_cacheable = other.m_cacheable;
 
     // Only copy the NodeSet in case of list hit test.
-    m_listBasedTestResult = adoptPtrWillBeNoop(other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : 0);
+    m_listBasedTestResult = other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : nullptr;
 }
 
 DEFINE_TRACE(HitTestResult)
@@ -150,9 +152,7 @@ DEFINE_TRACE(HitTestResult)
     visitor->trace(m_innerPossiblyPseudoNode);
     visitor->trace(m_innerURLElement);
     visitor->trace(m_scrollbar);
-#if ENABLE(OILPAN)
     visitor->trace(m_listBasedTestResult);
-#endif
 }
 
 PositionWithAffinity HitTestResult::position() const
@@ -162,7 +162,7 @@ PositionWithAffinity HitTestResult::position() const
     LayoutObject* layoutObject = this->layoutObject();
     if (!layoutObject)
         return PositionWithAffinity();
-    if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->pseudoId() == BEFORE)
+    if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->getPseudoId() == PseudoIdBefore)
         return mostForwardCaretPosition(Position(m_innerNode, PositionAnchorType::BeforeChildren));
     return layoutObject->positionForPoint(localPoint());
 }
@@ -274,7 +274,7 @@ String HitTestResult::title(TextDirection& dir) const
     // For <area> tags in image maps, walk the tree for the <area>, not the <img> using it.
     if (m_innerNode.get())
         m_innerNode->updateDistribution();
-    for (Node* titleNode = m_innerNode.get(); titleNode; titleNode = ComposedTreeTraversal::parent(*titleNode)) {
+    for (Node* titleNode = m_innerNode.get(); titleNode; titleNode = FlatTreeTraversal::parent(*titleNode)) {
         if (titleNode->isElementNode()) {
             String title = toElement(titleNode)->title();
             if (!title.isNull()) {
@@ -316,7 +316,7 @@ Image* HitTestResult::image() const
     if (layoutObject && layoutObject->isImage()) {
         LayoutImage* image = toLayoutImage(layoutObject);
         if (image->cachedImage() && !image->cachedImage()->errorOccurred())
-            return image->cachedImage()->image();
+            return image->cachedImage()->getImage();
     }
 
     return nullptr;
@@ -340,7 +340,7 @@ KURL HitTestResult::absoluteImageURL() const
     // don't have a LayoutImage (e.g. because the image didn't load and we are using an alt container).
     // For other elements we don't create alt containers so ensure they contain a loaded image.
     if (isHTMLImageElement(*innerNodeOrImageMapImage)
-        || (isHTMLInputElement(*innerNodeOrImageMapImage) && toHTMLInputElement(innerNodeOrImageMapImage)->isImage()))
+        || (isHTMLInputElement(*innerNodeOrImageMapImage) && toHTMLInputElement(innerNodeOrImageMapImage)->type() == InputTypeNames::image))
         urlString = toElement(*innerNodeOrImageMapImage).imageSourceURL();
     else if ((innerNodeOrImageMapImage->layoutObject() && innerNodeOrImageMapImage->layoutObject()->isImage())
         && (isHTMLEmbedElement(*innerNodeOrImageMapImage)
@@ -430,23 +430,38 @@ bool HitTestResult::isContentEditable() const
     return m_innerNode->hasEditableStyle();
 }
 
-bool HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& locationInContainer, const LayoutRect& rect)
+ListBasedHitTestBehavior HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& location, const LayoutRect& rect)
 {
-    // If not a list-based test, this function should be a no-op.
+    // If not a list-based test, stop testing because the hit has been found.
     if (!hitTestRequest().listBased())
-        return false;
+        return StopHitTesting;
 
-    // If node is null, return true so the hit test can continue.
     if (!node)
-        return true;
+        return ContinueHitTesting;
 
     mutableListBasedTestResult().add(node);
 
     if (hitTestRequest().penetratingList())
-        return true;
+        return ContinueHitTesting;
 
-    bool regionFilled = rect.contains(LayoutRect(locationInContainer.boundingBox()));
-    return !regionFilled;
+    return rect.contains(LayoutRect(location.boundingBox())) ? StopHitTesting : ContinueHitTesting;
+}
+
+ListBasedHitTestBehavior HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& location, const Region& region)
+{
+    // If not a list-based test, stop testing because the hit has been found.
+    if (!hitTestRequest().listBased())
+        return StopHitTesting;
+
+    if (!node)
+        return ContinueHitTesting;
+
+    mutableListBasedTestResult().add(node);
+
+    if (hitTestRequest().penetratingList())
+        return ContinueHitTesting;
+
+    return region.contains(location.boundingBox()) ? StopHitTesting : ContinueHitTesting;
 }
 
 void HitTestResult::append(const HitTestResult& other)
@@ -476,14 +491,14 @@ void HitTestResult::append(const HitTestResult& other)
 const HitTestResult::NodeSet& HitTestResult::listBasedTestResult() const
 {
     if (!m_listBasedTestResult)
-        m_listBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
+        m_listBasedTestResult = new NodeSet;
     return *m_listBasedTestResult;
 }
 
 HitTestResult::NodeSet& HitTestResult::mutableListBasedTestResult()
 {
     if (!m_listBasedTestResult)
-        m_listBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
+        m_listBasedTestResult = new NodeSet;
     return *m_listBasedTestResult;
 }
 
@@ -506,7 +521,7 @@ void HitTestResult::resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPo
 
 Element* HitTestResult::innerElement() const
 {
-    for (Node* node = m_innerNode.get(); node; node = ComposedTreeTraversal::parent(*node)) {
+    for (Node* node = m_innerNode.get(); node; node = FlatTreeTraversal::parent(*node)) {
         if (node->isElementNode())
             return toElement(node);
     }

@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_GEOLOCATION_FAKE_ACCESS_TOKEN_STORE_H_
 
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "content/public/browser/access_token_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -22,18 +23,18 @@ class FakeAccessTokenStore : public AccessTokenStore {
 
   // AccessTokenStore
   MOCK_METHOD1(LoadAccessTokens,
-               void(const LoadAccessTokensCallbackType& callback));
+               void(const LoadAccessTokensCallback& callback));
   MOCK_METHOD2(SaveAccessToken,
                void(const GURL& server_url,
                     const base::string16& access_token));
 
-  void DefaultLoadAccessTokens(const LoadAccessTokensCallbackType& callback);
+  void DefaultLoadAccessTokens(const LoadAccessTokensCallback& callback);
 
   void DefaultSaveAccessToken(const GURL& server_url,
                               const base::string16& access_token);
 
-  AccessTokenSet access_token_set_;
-  LoadAccessTokensCallbackType callback_;
+  AccessTokenMap access_token_map_;
+  LoadAccessTokensCallback callback_;
 
  protected:
   // Protected instead of private so we can have NiceMocks.
@@ -43,7 +44,7 @@ class FakeAccessTokenStore : public AccessTokenStore {
   // In some tests, NotifyDelegateTokensLoaded() is called on a thread
   // other than the originating thread, in which case we must post
   // back to it.
-  base::SingleThreadTaskRunner* originating_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> originating_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAccessTokenStore);
 };

@@ -43,11 +43,15 @@ NET_EXPORT void CreateSpdyHeadersFromHttpResponse(
     SpdyMajorVersion protocol_version,
     SpdyHeaderBlock* headers);
 
+// Create HttpRequestHeaders from SpdyHeaderBlock.
+NET_EXPORT void ConvertHeaderBlockToHttpRequestHeaders(
+    const SpdyHeaderBlock& spdy_headers,
+    HttpRequestHeaders* http_headers);
+
 // Returns the URL associated with the |headers| by assembling the
 // scheme, host and path from the protocol specific keys.
 NET_EXPORT GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
-                                              SpdyMajorVersion protocol_version,
-                                              bool pushed);
+                                      SpdyMajorVersion protocol_version);
 
 NET_EXPORT SpdyPriority ConvertRequestPriorityToSpdyPriority(
     RequestPriority priority,

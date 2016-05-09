@@ -21,14 +21,14 @@ class ImagePixelLocker final {
     DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     WTF_MAKE_NONCOPYABLE(ImagePixelLocker);
 public:
-    ImagePixelLocker(PassRefPtr<const SkImage>, SkAlphaType);
+    ImagePixelLocker(PassRefPtr<const SkImage>, SkAlphaType, SkColorType);
 
     const void* pixels() const { return m_pixels; }
 
 private:
     const RefPtr<const SkImage> m_image;
     const void* m_pixels;
-    SkAutoPixmapStorage m_pixelStorage;
+    SkAutoMalloc m_pixelStorage;
 };
 
 } // namespace blink

@@ -15,13 +15,12 @@
 #include <map>
 #include <string>
 
-#include "talk/app/webrtc/mediastreaminterface.h"
-#include "webrtc/examples/peerconnection/client/peer_connection_client.h"
-#include "talk/media/base/mediachannel.h"
-#include "talk/media/base/videocommon.h"
-#include "talk/media/base/videoframe.h"
-#include "talk/media/base/videorenderer.h"
+#include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/base/win32.h"
+#include "webrtc/examples/peerconnection/client/peer_connection_client.h"
+#include "webrtc/media/base/mediachannel.h"
+#include "webrtc/media/base/videocommon.h"
+#include "webrtc/media/base/videoframe.h"
 
 class MainWndCallback {
  public:
@@ -102,7 +101,7 @@ class MainWnd : public MainWindow {
 
   HWND handle() const { return wnd_; }
 
-  class VideoRenderer : public webrtc::VideoRendererInterface {
+  class VideoRenderer : public rtc::VideoSinkInterface<cricket::VideoFrame> {
    public:
     VideoRenderer(HWND wnd, int width, int height,
                   webrtc::VideoTrackInterface* track_to_render);
@@ -116,14 +115,15 @@ class MainWnd : public MainWindow {
       ::LeaveCriticalSection(&buffer_lock_);
     }
 
-    // VideoRendererInterface implementation
-    virtual void SetSize(int width, int height);
-    virtual void RenderFrame(const cricket::VideoFrame* frame);
+    // VideoSinkInterface implementation
+    void OnFrame(const cricket::VideoFrame& frame) override;
 
     const BITMAPINFO& bmi() const { return bmi_; }
     const uint8_t* image() const { return image_.get(); }
 
    protected:
+    void SetSize(int width, int height);
+
     enum {
       SET_SIZE,
       RENDER_FRAME,

@@ -22,6 +22,7 @@
 #ifndef StringHash_h
 #define StringHash_h
 
+#include "wtf/Allocator.h"
 #include "wtf/HashTraits.h"
 #include "wtf/StringHasher.h"
 #include "wtf/text/AtomicString.h"
@@ -43,6 +44,7 @@ inline bool HashTraits<String>::isEmptyValue(const String& value)
 // place.
 
 struct StringHash {
+    STATIC_ONLY(StringHash);
     static unsigned hash(StringImpl* key) { return key->hash(); }
     static inline bool equal(const StringImpl* a, const StringImpl* b)
     {
@@ -65,6 +67,7 @@ struct StringHash {
 };
 
 class CaseFoldingHash {
+    STATIC_ONLY(CaseFoldingHash);
 public:
     static unsigned hash(const UChar* data, unsigned length)
     {
@@ -86,6 +89,11 @@ public:
     static inline unsigned hash(const char* data, unsigned length)
     {
         return CaseFoldingHash::hash(reinterpret_cast<const LChar*>(data), length);
+    }
+
+    static inline unsigned hash(const char* data)
+    {
+        return CaseFoldingHash::hash(reinterpret_cast<const LChar*>(data), strlen(data));
     }
 
     static inline bool equal(const StringImpl* a, const StringImpl* b)
@@ -141,6 +149,7 @@ private:
 // don't want to store the string. It's not really specific to string hashing,
 // but all our current uses of it are for strings.
 struct AlreadyHashed : IntHash<unsigned> {
+    STATIC_ONLY(AlreadyHashed);
     static unsigned hash(unsigned key) { return key; }
 
     // To use a hash value as a key for a hash table, we need to eliminate the
@@ -157,7 +166,7 @@ struct AlreadyHashed : IntHash<unsigned> {
     }
 };
 
-}
+} // namespace WTF
 
 using WTF::AlreadyHashed;
 using WTF::CaseFoldingHash;

@@ -37,6 +37,7 @@
 #include "core/testing/DummyPageHolder.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/ReferrerPolicy.h"
+#include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -75,13 +76,13 @@ void DocumentTest::setHtmlInnerHTML(const char* htmlContent)
 }
 
 class MockDocumentVisibilityObserver
-    : public NoBaseWillBeGarbageCollectedFinalized<MockDocumentVisibilityObserver>
+    : public GarbageCollectedFinalized<MockDocumentVisibilityObserver>
     , public DocumentVisibilityObserver {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MockDocumentVisibilityObserver);
+    USING_GARBAGE_COLLECTED_MIXIN(MockDocumentVisibilityObserver);
 public:
-    static PassOwnPtrWillBeRawPtr<MockDocumentVisibilityObserver> create(Document& document)
+    static RawPtr<MockDocumentVisibilityObserver> create(Document& document)
     {
-        return adoptPtrWillBeNoop(new MockDocumentVisibilityObserver(document));
+        return new MockDocumentVisibilityObserver(document);
     }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
@@ -90,6 +91,7 @@ public:
     }
 
     MOCK_METHOD1(didChangeVisibilityState, void(PageVisibilityState));
+    MOCK_METHOD0(willDetachDocument, void());
 
 private:
     MockDocumentVisibilityObserver(Document& document) : DocumentVisibilityObserver(document) { }
@@ -98,10 +100,10 @@ private:
 TEST_F(DocumentTest, VisibilityOberver)
 {
     page().setVisibilityState(PageVisibilityStateVisible, true); // initial state
-    OwnPtrWillBeRawPtr<MockDocumentVisibilityObserver> observer1 = MockDocumentVisibilityObserver::create(document());
+    RawPtr<MockDocumentVisibilityObserver> observer1 = MockDocumentVisibilityObserver::create(document());
 
     {
-        OwnPtrWillBeRawPtr<MockDocumentVisibilityObserver> observer2 = MockDocumentVisibilityObserver::create(document());
+        RawPtr<MockDocumentVisibilityObserver> observer2 = MockDocumentVisibilityObserver::create(document());
         EXPECT_CALL(*observer1, didChangeVisibilityState(PageVisibilityStateHidden)).Times(0);
         EXPECT_CALL(*observer1, didChangeVisibilityState(PageVisibilityStateVisible)).Times(0);
         EXPECT_CALL(*observer2, didChangeVisibilityState(PageVisibilityStateHidden)).Times(0);
@@ -191,13 +193,13 @@ TEST_F(DocumentTest, LinkManifest)
     EXPECT_EQ(0, document().linkManifest());
 
     // Check that we use the first manifest with <link rel=manifest>
-    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(document(), false);
+    RawPtr<HTMLLinkElement> link = HTMLLinkElement::create(document(), false);
     link->setAttribute(blink::HTMLNames::relAttr, "manifest");
     link->setAttribute(blink::HTMLNames::hrefAttr, "foo.json");
     document().head()->appendChild(link);
     EXPECT_EQ(link, document().linkManifest());
 
-    RefPtrWillBeRawPtr<HTMLLinkElement> link2 = HTMLLinkElement::create(document(), false);
+    RawPtr<HTMLLinkElement> link2 = HTMLLinkElement::create(document(), false);
     link2->setAttribute(blink::HTMLNames::relAttr, "manifest");
     link2->setAttribute(blink::HTMLNames::hrefAttr, "bar.json");
     document().head()->insertBefore(link2, link.get());
@@ -258,7 +260,7 @@ TEST_F(DocumentTest, LinkManifest)
 
 TEST_F(DocumentTest, referrerPolicyParsing)
 {
-    EXPECT_EQ(ReferrerPolicyDefault, document().referrerPolicy());
+    EXPECT_EQ(ReferrerPolicyDefault, document().getReferrerPolicy());
 
     struct TestCase {
         const char* policy;
@@ -280,7 +282,7 @@ TEST_F(DocumentTest, referrerPolicyParsing)
         document().setReferrerPolicy(ReferrerPolicyDefault);
 
         document().processReferrerPolicy(test.policy);
-        EXPECT_EQ(test.expected, document().referrerPolicy()) << test.policy;
+        EXPECT_EQ(test.expected, document().getReferrerPolicy()) << test.policy;
     }
 }
 
@@ -300,12 +302,12 @@ TEST_F(DocumentTest, FrameTimingRelayout)
     EXPECT_FALSE(document().view()->frameTimingRequestsDirty());
 
     // Just calling update should have no effect.
-    document().updateLayoutTreeIfNeeded();
+    document().updateLayoutTree();
     EXPECT_FALSE(document().view()->frameTimingRequestsDirty());
 
     // Calling update with a style change should flag Frame Timing as dirty.
     document().setChildNeedsStyleRecalc();
-    document().updateLayoutTreeIfNeeded();
+    document().updateLayoutTree();
     EXPECT_TRUE(document().view()->frameTimingRequestsDirty());
 }
 
@@ -350,6 +352,42 @@ TEST_F(DocumentTest, StyleVersion)
     previousStyleVersion = document().styleVersion();
     element->setAttribute(blink::HTMLNames::classAttr, "a b");
     EXPECT_NE(previousStyleVersion, document().styleVersion());
+}
+
+TEST_F(DocumentTest, EnforceSandboxFlags)
+{
+    RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString("http://example.test");
+    document().setSecurityOrigin(origin);
+    SandboxFlags mask = SandboxNavigation;
+    document().enforceSandboxFlags(mask);
+    EXPECT_EQ(origin, document().getSecurityOrigin());
+    EXPECT_FALSE(document().getSecurityOrigin()->isPotentiallyTrustworthy());
+
+    mask |= SandboxOrigin;
+    document().enforceSandboxFlags(mask);
+    EXPECT_TRUE(document().getSecurityOrigin()->isUnique());
+    EXPECT_FALSE(document().getSecurityOrigin()->isPotentiallyTrustworthy());
+
+    // A unique origin does not bypass secure context checks unless it
+    // is also potentially trustworthy.
+    SchemeRegistry::registerURLSchemeBypassingSecureContextCheck("very-special-scheme");
+    origin = SecurityOrigin::createFromString("very-special-scheme://example.test");
+    document().setSecurityOrigin(origin);
+    document().enforceSandboxFlags(mask);
+    EXPECT_TRUE(document().getSecurityOrigin()->isUnique());
+    EXPECT_FALSE(document().getSecurityOrigin()->isPotentiallyTrustworthy());
+
+    SchemeRegistry::registerURLSchemeAsSecure("very-special-scheme");
+    document().setSecurityOrigin(origin);
+    document().enforceSandboxFlags(mask);
+    EXPECT_TRUE(document().getSecurityOrigin()->isUnique());
+    EXPECT_TRUE(document().getSecurityOrigin()->isPotentiallyTrustworthy());
+
+    origin = SecurityOrigin::createFromString("https://example.test");
+    document().setSecurityOrigin(origin);
+    document().enforceSandboxFlags(mask);
+    EXPECT_TRUE(document().getSecurityOrigin()->isUnique());
+    EXPECT_TRUE(document().getSecurityOrigin()->isPotentiallyTrustworthy());
 }
 
 } // namespace blink

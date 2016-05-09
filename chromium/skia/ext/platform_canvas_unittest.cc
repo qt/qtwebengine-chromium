@@ -14,6 +14,7 @@
 #include "skia/ext/platform_device.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
@@ -30,6 +31,21 @@ namespace skia {
 
 namespace {
 
+#if defined(OS_WIN)
+void MakeOpaque(SkCanvas* canvas, int x, int y, int width, int height) {
+  if (width <= 0 || height <= 0)
+    return;
+
+  SkRect rect;
+  rect.setXYWH(SkIntToScalar(x), SkIntToScalar(y),
+               SkIntToScalar(width), SkIntToScalar(height));
+  SkPaint paint;
+  paint.setColor(SK_ColorBLACK);
+  paint.setXfermodeMode(SkXfermode::kDstATop_Mode);
+  canvas->drawRect(rect, paint);
+}
+#endif
+
 bool IsOfColor(const SkBitmap& bitmap, int x, int y, uint32_t color) {
   // For masking out the alpha values.
   static uint32_t alpha_mask =
@@ -41,10 +57,10 @@ bool IsOfColor(const SkBitmap& bitmap, int x, int y, uint32_t color) {
 // rectangle filled to rect_color. This function ignores the alpha channel,
 // since Windows will sometimes clear the alpha channel when drawing, and we
 // will fix that up later in cases it's necessary.
-bool VerifyRect(const PlatformCanvas& canvas,
+bool VerifyRect(const SkCanvas& canvas,
                 uint32_t canvas_color, uint32_t rect_color,
                 int x, int y, int w, int h) {
-  const SkBitmap bitmap = skia::ReadPixels(const_cast<PlatformCanvas*>(&canvas));
+  const SkBitmap bitmap = skia::ReadPixels(const_cast<SkCanvas*>(&canvas));
   SkAutoLockPixels lock(bitmap);
 
   for (int cur_y = 0; cur_y < bitmap.height(); cur_y++) {
@@ -68,7 +84,7 @@ bool VerifyRect(const PlatformCanvas& canvas,
 // Return true if canvas has something that passes for a rounded-corner
 // rectangle. Basically, we're just checking to make sure that the pixels in the
 // middle are of rect_color and pixels in the corners are of canvas_color.
-bool VerifyRoundedRect(const PlatformCanvas& canvas,
+bool VerifyRoundedRect(const SkCanvas& canvas,
                        uint32_t canvas_color,
                        uint32_t rect_color,
                        int x,
@@ -97,19 +113,19 @@ bool VerifyRoundedRect(const PlatformCanvas& canvas,
 
 // Checks whether there is a white canvas with a black square at the given
 // location in pixels (not in the canvas coordinate system).
-bool VerifyBlackRect(const PlatformCanvas& canvas, int x, int y, int w, int h) {
+bool VerifyBlackRect(const SkCanvas& canvas, int x, int y, int w, int h) {
   return VerifyRect(canvas, SK_ColorWHITE, SK_ColorBLACK, x, y, w, h);
 }
 
 #if !defined(USE_AURA)  // http://crbug.com/154358
 // Check that every pixel in the canvas is a single color.
-bool VerifyCanvasColor(const PlatformCanvas& canvas, uint32_t canvas_color) {
+bool VerifyCanvasColor(const SkCanvas& canvas, uint32_t canvas_color) {
   return VerifyRect(canvas, canvas_color, 0, 0, 0, 0, 0);
 }
 #endif  // !defined(USE_AURA)
 
 #if defined(OS_WIN)
-void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
+void DrawNativeRect(SkCanvas& canvas, int x, int y, int w, int h) {
   skia::ScopedPlatformPaint scoped_platform_paint(&canvas);
   HDC dc = scoped_platform_paint.GetPlatformSurface();
 
@@ -121,7 +137,7 @@ void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
   FillRect(dc, &inner_rc, reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 }
 #elif defined(OS_MACOSX)
-void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
+void DrawNativeRect(SkCanvas& canvas, int x, int y, int w, int h) {
   skia::ScopedPlatformPaint scoped_platform_paint(&canvas);
   CGContextRef context = scoped_platform_paint.GetPlatformSurface();
 
@@ -133,14 +149,14 @@ void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
   CGContextFillRect(context, inner_rc);
 }
 #else
-void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
+void DrawNativeRect(SkCanvas& canvas, int x, int y, int w, int h) {
   NOTIMPLEMENTED();
 }
 #endif
 
 // Clips the contents of the canvas to the given rectangle. This will be
 // intersected with any existing clip.
-void AddClip(PlatformCanvas& canvas, int x, int y, int w, int h) {
+void AddClip(SkCanvas& canvas, int x, int y, int w, int h) {
   SkRect rect;
   rect.set(SkIntToScalar(x), SkIntToScalar(y),
            SkIntToScalar(x + w), SkIntToScalar(y + h));
@@ -149,7 +165,7 @@ void AddClip(PlatformCanvas& canvas, int x, int y, int w, int h) {
 
 class LayerSaver {
  public:
-  LayerSaver(PlatformCanvas& canvas, int x, int y, int w, int h)
+  LayerSaver(SkCanvas& canvas, int x, int y, int w, int h)
       : canvas_(canvas),
         x_(x),
         y_(y),
@@ -176,7 +192,7 @@ class LayerSaver {
   int bottom() const { return y_ + h_; }
 
  private:
-  PlatformCanvas& canvas_;
+  SkCanvas& canvas_;
   int x_, y_, w_, h_;
 };
 
@@ -198,7 +214,7 @@ const int kInnerH = 3;
 // regular skia primitives.
 TEST(PlatformCanvas, SkLayer) {
   // Create the canvas initialized to opaque white.
-  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  sk_sp<SkCanvas> canvas(CreatePlatformCanvas(16, 16, true));
   canvas->drawColor(SK_ColorWHITE);
 
   // Make a layer and fill it completely to make sure that the bounds are
@@ -214,7 +230,7 @@ TEST(PlatformCanvas, SkLayer) {
 // Test native clipping.
 TEST(PlatformCanvas, ClipRegion) {
   // Initialize a white canvas
-  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  sk_sp<SkCanvas> canvas(CreatePlatformCanvas(16, 16, true));
   canvas->drawColor(SK_ColorWHITE);
   EXPECT_TRUE(VerifyCanvasColor(*canvas, SK_ColorWHITE));
 
@@ -240,7 +256,7 @@ TEST(PlatformCanvas, ClipRegion) {
 // Test the layers get filled properly by native rendering.
 TEST(PlatformCanvas, FillLayer) {
   // Create the canvas initialized to opaque white.
-  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  sk_sp<SkCanvas> canvas(CreatePlatformCanvas(16, 16, true));
 
   // Make a layer and fill it completely to make sure that the bounds are
   // correct.
@@ -299,7 +315,7 @@ TEST(PlatformCanvas, FillLayer) {
 // Test that translation + make layer works properly.
 TEST(PlatformCanvas, TranslateLayer) {
   // Create the canvas initialized to opaque white.
-  RefPtr<SkCanvas> canvas = AdoptRef(CreatePlatformCanvas(16, 16, true));
+  sk_sp<SkCanvas> canvas(CreatePlatformCanvas(16, 16, true));
 
   // Make a layer and fill it completely to make sure that the bounds are
   // correct.

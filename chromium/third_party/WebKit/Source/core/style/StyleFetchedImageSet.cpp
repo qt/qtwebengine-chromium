@@ -40,21 +40,17 @@ StyleFetchedImageSet::StyleFetchedImageSet(ImageResource* image, float imageScal
 {
     m_isImageResourceSet = true;
     m_bestFitImage->addClient(this);
-#if ENABLE(OILPAN)
     ThreadState::current()->registerPreFinalizer(this);
-#endif
 }
 
 StyleFetchedImageSet::~StyleFetchedImageSet()
 {
-#if !ENABLE(OILPAN)
-    dispose();
-#endif
 }
 
 void StyleFetchedImageSet::dispose()
 {
     m_bestFitImage->removeClient(this);
+    m_bestFitImage = nullptr;
 }
 
 WrappedImagePtr StyleFetchedImageSet::data() const
@@ -67,19 +63,19 @@ ImageResource* StyleFetchedImageSet::cachedImage() const
     return m_bestFitImage.get();
 }
 
-PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImageSet::cssValue() const
+CSSValue* StyleFetchedImageSet::cssValue() const
 {
     return m_imageSetValue;
 }
 
-PassRefPtrWillBeRawPtr<CSSValue> StyleFetchedImageSet::computedCSSValue() const
+CSSValue* StyleFetchedImageSet::computedCSSValue() const
 {
     return m_imageSetValue->valueWithURLsMadeAbsolute();
 }
 
 bool StyleFetchedImageSet::canRender() const
 {
-    return m_bestFitImage->canRender();
+    return !m_bestFitImage->errorOccurred() && !m_bestFitImage->getImage()->isNull();
 }
 
 bool StyleFetchedImageSet::isLoaded() const
@@ -92,26 +88,24 @@ bool StyleFetchedImageSet::errorOccurred() const
     return m_bestFitImage->errorOccurred();
 }
 
-LayoutSize StyleFetchedImageSet::imageSize(const LayoutObject* layoutObject, float multiplier) const
+LayoutSize StyleFetchedImageSet::imageSize(const LayoutObject&, float multiplier, const LayoutSize& defaultObjectSize) const
 {
-    LayoutSize scaledImageSize = m_bestFitImage->imageSize(LayoutObject::shouldRespectImageOrientation(layoutObject), multiplier);
+    if (m_bestFitImage->getImage() && m_bestFitImage->getImage()->isSVGImage())
+        return imageSizeForSVGImage(toSVGImage(m_bestFitImage->getImage()), multiplier, defaultObjectSize);
+
+    // Image orientation should only be respected for content images,
+    // not decorative ones such as StyleImage (backgrounds,
+    // border-image, etc.)
+    //
+    // https://drafts.csswg.org/css-images-3/#the-image-orientation
+    LayoutSize scaledImageSize = m_bestFitImage->imageSize(DoNotRespectImageOrientation, multiplier);
     scaledImageSize.scale(1 / m_imageScaleFactor);
     return scaledImageSize;
 }
 
-bool StyleFetchedImageSet::imageHasRelativeWidth() const
+bool StyleFetchedImageSet::imageHasRelativeSize() const
 {
-    return m_bestFitImage->imageHasRelativeWidth();
-}
-
-bool StyleFetchedImageSet::imageHasRelativeHeight() const
-{
-    return m_bestFitImage->imageHasRelativeHeight();
-}
-
-void StyleFetchedImageSet::computeIntrinsicDimensions(const LayoutObject*, Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
-{
-    m_bestFitImage->computeIntrinsicDimensions(intrinsicWidth, intrinsicHeight, intrinsicRatio);
+    return m_bestFitImage->imageHasRelativeSize();
 }
 
 bool StyleFetchedImageSet::usesImageContainerSize() const
@@ -121,30 +115,31 @@ bool StyleFetchedImageSet::usesImageContainerSize() const
 
 void StyleFetchedImageSet::addClient(LayoutObject* layoutObject)
 {
-    m_bestFitImage->addClient(layoutObject);
+    m_bestFitImage->addObserver(layoutObject);
 }
 
 void StyleFetchedImageSet::removeClient(LayoutObject* layoutObject)
 {
-    m_bestFitImage->removeClient(layoutObject);
+    m_bestFitImage->removeObserver(layoutObject);
 }
 
-PassRefPtr<Image> StyleFetchedImageSet::image(const LayoutObject*, const IntSize& containerSize, float zoom) const
+PassRefPtr<Image> StyleFetchedImageSet::image(const LayoutObject&, const IntSize& containerSize, float zoom) const
 {
-    if (!m_bestFitImage->image()->isSVGImage())
-        return m_bestFitImage->image();
+    if (!m_bestFitImage->getImage()->isSVGImage())
+        return m_bestFitImage->getImage();
 
-    return SVGImageForContainer::create(toSVGImage(m_bestFitImage->image()), containerSize, zoom, m_url);
+    return SVGImageForContainer::create(toSVGImage(m_bestFitImage->getImage()), containerSize, zoom, m_url);
 }
 
-bool StyleFetchedImageSet::knownToBeOpaque(const LayoutObject* layoutObject) const
+bool StyleFetchedImageSet::knownToBeOpaque(const LayoutObject& layoutObject) const
 {
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *m_bestFitImage.get()));
-    return m_bestFitImage->image()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(&layoutObject, *m_bestFitImage.get()));
+    return m_bestFitImage->getImage()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
 }
 
 DEFINE_TRACE(StyleFetchedImageSet)
 {
+    visitor->trace(m_bestFitImage);
     visitor->trace(m_imageSetValue);
     StyleImage::trace(visitor);
 }

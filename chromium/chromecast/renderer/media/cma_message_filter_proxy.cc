@@ -98,7 +98,7 @@ bool CmaMessageFilterProxy::SetVideoDelegate(
   return true;
 }
 
-bool CmaMessageFilterProxy::Send(scoped_ptr<IPC::Message> message) {
+bool CmaMessageFilterProxy::Send(std::unique_ptr<IPC::Message> message) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   if (!sender_)
     return false;
@@ -111,7 +111,7 @@ bool CmaMessageFilterProxy::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(CmaMessageFilterProxy, message)
     IPC_MESSAGE_HANDLER(CmaMsg_AvPipeCreated, OnAvPipeCreated)
     IPC_MESSAGE_HANDLER(CmaMsg_NotifyPipeRead, OnPipeRead)
-    IPC_MESSAGE_HANDLER(CmaMsg_MediaStateChanged, OnMediaStateChanged)
+    IPC_MESSAGE_HANDLER(CmaMsg_FlushDone, OnFlushDone)
     IPC_MESSAGE_HANDLER(CmaMsg_TrackStateChanged, OnTrackStateChanged)
     IPC_MESSAGE_HANDLER(CmaMsg_WaitForKey, OnWaitForKey)
     IPC_MESSAGE_HANDLER(CmaMsg_Eos, OnEos)
@@ -170,15 +170,13 @@ void CmaMessageFilterProxy::OnPipeRead(
     cb.Run();
 }
 
-void CmaMessageFilterProxy::OnMediaStateChanged(
-    int id, ::media::PipelineStatus status) {
+void CmaMessageFilterProxy::OnFlushDone(int id) {
   DelegateEntry* entry = delegates_.Lookup(id);
   if (!entry)
     return;
-  const ::media::PipelineStatusCB& cb =
-      entry->media_delegate.state_changed_cb;
+  const base::Closure& cb = entry->media_delegate.flush_cb;
   if (!cb.is_null())
-    cb.Run(status);
+    cb.Run();
 }
 
 void CmaMessageFilterProxy::OnTrackStateChanged(

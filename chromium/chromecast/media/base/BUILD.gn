@@ -51,6 +51,8 @@ source_set("base") {
     "media_caps.h",
     "media_codec_support.cc",
     "media_codec_support.h",
+    "media_resource_tracker.cc",
+    "media_resource_tracker.h",
   ]
 
   public_deps = [
@@ -62,9 +64,10 @@ source_set("base") {
   deps = [
     ":libcast_media_1.0",
     "//base",
+    "//chromecast/base",
     "//crypto",
     "//crypto:platform",
-    "//net",
+    "//media",
   ]
 
   if (chromecast_branding == "public") {
@@ -100,7 +103,9 @@ source_set("libcast_media_1.0_default_core") {
   ]
 
   deps = [
+    "//base",
     "//build/config/sanitizers:deps",
+    "//chromecast/base",
     "//chromecast/media/cma/backend",
   ]
 }
@@ -121,7 +126,9 @@ shared_library("libcast_media_1.0_default") {
   ]
 
   deps = [
+    "//base",
     "//build/config/sanitizers:deps",
+    "//chromecast/base",
     "//chromecast/media/cma/backend",
   ]
 }

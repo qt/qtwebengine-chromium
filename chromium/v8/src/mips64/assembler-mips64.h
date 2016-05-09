@@ -306,6 +306,8 @@ struct FPUControlRegister {
 const FPUControlRegister no_fpucreg = { kInvalidFPUControlRegister };
 const FPUControlRegister FCSR = { kFCSRRegister };
 
+// TODO(mips64) Define SIMD registers.
+typedef DoubleRegister Simd128Register;
 
 // -----------------------------------------------------------------------------
 // Machine instruction Operands.
@@ -533,7 +535,11 @@ class Assembler : public AssemblerBase {
 
   // Distance between the instruction referring to the address of the call
   // target and the return address.
+#ifdef _MIPS_ARCH_MIPS64R6
+  static const int kCallTargetAddressOffset = 5 * kInstrSize;
+#else
   static const int kCallTargetAddressOffset = 6 * kInstrSize;
+#endif
 
   // Distance between start of patched debug break slot and the emitted address
   // to jump to.
@@ -543,7 +549,11 @@ class Assembler : public AssemblerBase {
   // register.
   static const int kPcLoadDelta = 4;
 
+#ifdef _MIPS_ARCH_MIPS64R6
+  static const int kDebugBreakSlotInstructions = 5;
+#else
   static const int kDebugBreakSlotInstructions = 6;
+#endif
   static const int kDebugBreakSlotLength =
       kDebugBreakSlotInstructions * kInstrSize;
 
@@ -781,16 +791,13 @@ class Assembler : public AssemblerBase {
   void dsrl(Register rd, Register rt, uint16_t sa);
   void dsrlv(Register rd, Register rt, Register rs);
   void drotr(Register rd, Register rt, uint16_t sa);
+  void drotr32(Register rd, Register rt, uint16_t sa);
   void drotrv(Register rd, Register rt, Register rs);
   void dsra(Register rt, Register rd, uint16_t sa);
   void dsrav(Register rd, Register rt, Register rs);
   void dsll32(Register rt, Register rd, uint16_t sa);
   void dsrl32(Register rt, Register rd, uint16_t sa);
   void dsra32(Register rt, Register rd, uint16_t sa);
-
-  // Address computing instructions with shift.
-  void lsa(Register rd, Register rt, Register rs, uint8_t sa);
-  void dlsa(Register rd, Register rt, Register rs, uint8_t sa);
 
   // ------------Memory-instructions-------------
 
@@ -1092,7 +1099,7 @@ class Assembler : public AssemblerBase {
 
   // Record a deoptimization reason that can be used by a log or cpu profiler.
   // Use --trace-deopt to enable.
-  void RecordDeoptReason(const int reason, const SourcePosition position);
+  void RecordDeoptReason(const int reason, int raw_position);
 
   static int RelocateInternalReference(RelocInfo::Mode rmode, byte* pc,
                                        intptr_t pc_delta);
@@ -1105,7 +1112,9 @@ class Assembler : public AssemblerBase {
   void dp(uintptr_t data) { dq(data); }
   void dd(Label* label);
 
-  PositionsRecorder* positions_recorder() { return &positions_recorder_; }
+  AssemblerPositionsRecorder* positions_recorder() {
+    return &positions_recorder_;
+  }
 
   // Postpone the generation of the trampoline pool for the specified number of
   // instructions.
@@ -1204,6 +1213,10 @@ class Assembler : public AssemblerBase {
   bool IsPrevInstrCompactBranch() { return prev_instr_compact_branch_; }
 
  protected:
+  // Load Scaled Address instructions.
+  void lsa(Register rd, Register rt, Register rs, uint8_t sa);
+  void dlsa(Register rd, Register rt, Register rs, uint8_t sa);
+
   // Relocation for a type-recording IC has the AST id added to it.  This
   // member variable is a way to pass the information from the call site to
   // the relocation info.
@@ -1272,7 +1285,6 @@ class Assembler : public AssemblerBase {
   void EmitForbiddenSlotInstruction() {
     if (IsPrevInstrCompactBranch()) {
       nop();
-      ClearCompactBranchState();
     }
   }
 
@@ -1489,8 +1501,8 @@ class Assembler : public AssemblerBase {
   friend class CodePatcher;
   friend class BlockTrampolinePoolScope;
 
-  PositionsRecorder positions_recorder_;
-  friend class PositionsRecorder;
+  AssemblerPositionsRecorder positions_recorder_;
+  friend class AssemblerPositionsRecorder;
   friend class EnsureSpace;
 };
 

@@ -52,9 +52,9 @@ public:
     virtual void dispatchOnInspectorBackend(int sessionId, const WebString& message) = 0;
 
     virtual void inspectElementAt(const WebPoint&) = 0;
+    virtual void failedToRequestDevTools() = 0;
 
     // Exposed for TestRunner.
-    virtual void evaluateInWebInspector(long callId, const WebString& script) = 0;
     virtual WebString evaluateInWebInspectorOverlay(const WebString& script) = 0;
 
     class MessageDescriptor {

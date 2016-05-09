@@ -10,11 +10,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/animation/animation_events.h"
+#include "cc/animation/animation_host.h"
 #include "cc/animation/animation_id_provider.h"
 #include "cc/animation/animation_player.h"
+#include "cc/animation/animation_registrar.h"
 #include "cc/animation/animation_timeline.h"
 #include "cc/animation/element_animations.h"
-#include "cc/layers/layer_settings.h"
+#include "cc/animation/layer_animation_controller.h"
 #include "cc/output/begin_frame_args.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
@@ -54,10 +56,8 @@ LayerAnimator::LayerAnimator(base::TimeDelta transition_duration)
       is_started_(false),
       disable_timer_for_test_(false),
       adding_animations_(false) {
-  if (Layer::UILayerSettings().use_compositor_animation_timelines) {
-    animation_player_ =
-        cc::AnimationPlayer::Create(cc::AnimationIdProvider::NextPlayerId());
-  }
+  animation_player_ =
+      cc::AnimationPlayer::Create(cc::AnimationIdProvider::NextPlayerId());
 }
 
 LayerAnimator::~LayerAnimator() {
@@ -67,6 +67,7 @@ LayerAnimator::~LayerAnimator() {
   }
   ClearAnimationsInternal();
   delegate_ = NULL;
+  DCHECK(!animation_player_->animation_timeline());
 }
 
 // static
@@ -136,46 +137,58 @@ void LayerAnimator::SetDelegate(LayerAnimationDelegate* delegate) {
 }
 
 void LayerAnimator::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
-  if (delegate_) {
-    if (animation_player_)
-      DetachLayerFromAnimationPlayer();
-    else
-      delegate_->GetCcLayer()->RemoveLayerAnimationEventObserver(this);
-  }
-  if (new_layer) {
-    if (animation_player_)
-      AttachLayerToAnimationPlayer(new_layer->id());
-    else
-      new_layer->AddLayerAnimationEventObserver(this);
-  }
+  // Release LAC state for old layer.
+  animation_controller_state_ = nullptr;
+
+  if (delegate_)
+    DetachLayerFromAnimationPlayer();
+  if (new_layer)
+    AttachLayerToAnimationPlayer(new_layer->id());
 }
 
 void LayerAnimator::SetCompositor(Compositor* compositor) {
   DCHECK(compositor);
-  if (animation_player_) {
-    cc::AnimationTimeline* timeline = compositor->GetAnimationTimeline();
-    DCHECK(timeline);
-    timeline->AttachPlayer(animation_player_);
 
-    DCHECK(delegate_->GetCcLayer());
-    AttachLayerToAnimationPlayer(delegate_->GetCcLayer()->id());
+  cc::AnimationTimeline* timeline = compositor->GetAnimationTimeline();
+  DCHECK(timeline);
+
+  DCHECK(delegate_->GetCcLayer());
+
+  // Register LAC so ElementAnimations picks it up via
+  // AnimationRegistrar::GetAnimationControllerForId.
+  if (animation_controller_state_) {
+    DCHECK_EQ(animation_controller_state_->id(),
+              delegate_->GetCcLayer()->id());
+    timeline->animation_host()
+        ->animation_registrar()
+        ->RegisterAnimationController(animation_controller_state_.get());
   }
+
+  timeline->AttachPlayer(animation_player_);
+
+  AttachLayerToAnimationPlayer(delegate_->GetCcLayer()->id());
+
+  // Release LAC (it is referenced in ElementAnimations).
+  animation_controller_state_ = nullptr;
 }
 
 void LayerAnimator::ResetCompositor(Compositor* compositor) {
   DCHECK(compositor);
-  if (animation_player_) {
-    DetachLayerFromAnimationPlayer();
 
-    cc::AnimationTimeline* timeline = compositor->GetAnimationTimeline();
-    DCHECK(timeline);
-    timeline->DetachPlayer(animation_player_);
+  // Store a reference to LAC if any so it may be picked up in SetCompositor.
+  if (animation_player_->element_animations()) {
+    animation_controller_state_ =
+        animation_player_->element_animations()->layer_animation_controller();
   }
+
+  DetachLayerFromAnimationPlayer();
+
+  cc::AnimationTimeline* timeline = compositor->GetAnimationTimeline();
+  DCHECK(timeline);
+  timeline->DetachPlayer(animation_player_);
 }
 
 void LayerAnimator::AttachLayerToAnimationPlayer(int layer_id) {
-  DCHECK(animation_player_);
-
   if (!animation_player_->layer_id())
     animation_player_->AttachLayer(layer_id);
   else
@@ -189,8 +202,6 @@ void LayerAnimator::AttachLayerToAnimationPlayer(int layer_id) {
 }
 
 void LayerAnimator::DetachLayerFromAnimationPlayer() {
-  DCHECK(animation_player_);
-
   if (animation_player_->element_animations()) {
     animation_player_->element_animations()
         ->layer_animation_controller()
@@ -202,13 +213,15 @@ void LayerAnimator::DetachLayerFromAnimationPlayer() {
 }
 
 void LayerAnimator::AddThreadedAnimation(scoped_ptr<cc::Animation> animation) {
-  DCHECK(animation_player_);
   animation_player_->AddAnimation(std::move(animation));
 }
 
 void LayerAnimator::RemoveThreadedAnimation(int animation_id) {
-  DCHECK(animation_player_);
   animation_player_->RemoveAnimation(animation_id);
+}
+
+bool LayerAnimator::HasPendingThreadedAnimationsForTesting() const {
+  return animation_player_->has_pending_animations_for_testing();
 }
 
 cc::AnimationPlayer* LayerAnimator::GetAnimationPlayerForTesting() const {
@@ -440,7 +453,7 @@ void LayerAnimator::AddToCollection(LayerAnimatorCollection* collection) {
 }
 
 void LayerAnimator::RemoveFromCollection(LayerAnimatorCollection* collection) {
-  if (is_animating() && is_started_) {
+  if (is_started_) {
     collection->StopAnimator(this);
     is_started_ = false;
   }
@@ -950,6 +963,9 @@ LayerAnimator::RunningAnimation::RunningAnimation(
     const base::WeakPtr<LayerAnimationSequence>& sequence)
     : sequence_(sequence) {
 }
+
+LayerAnimator::RunningAnimation::RunningAnimation(
+    const RunningAnimation& other) = default;
 
 LayerAnimator::RunningAnimation::~RunningAnimation() { }
 

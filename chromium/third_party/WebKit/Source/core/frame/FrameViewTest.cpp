@@ -14,15 +14,10 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/paint/PaintArtifact.h"
-#include "platform/graphics/test/FakeGraphicsLayerFactory.h"
 #include "platform/heap/Handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "wtf/OwnPtr.h"
-
-// This test ensures that FrameView informs the ChromeClient of changes to the
-// paint artifact so that they can be shown to the user (e.g. via the
-// compositor).
 
 using testing::_;
 using testing::AnyNumber;
@@ -35,12 +30,9 @@ public:
     MockChromeClient() : m_hasScheduledAnimation(false) { }
 
     // ChromeClient
-    GraphicsLayerFactory* graphicsLayerFactory() const override
-    {
-        return FakeGraphicsLayerFactory::instance();
-    }
     MOCK_METHOD1(didPaint, void(const PaintArtifact&));
     MOCK_METHOD2(attachRootGraphicsLayer, void(GraphicsLayer*, LocalFrame* localRoot));
+    MOCK_METHOD2(setToolTip, void(const String&, TextDirection));
 
     void scheduleAnimation(Widget*) override { m_hasScheduledAnimation = true; }
     bool m_hasScheduledAnimation;
@@ -49,8 +41,13 @@ public:
 class FrameViewTestBase : public testing::Test {
 protected:
     FrameViewTestBase()
-        : m_chromeClient(adoptPtrWillBeNoop(new MockChromeClient))
+        : m_chromeClient(new MockChromeClient)
     { }
+
+    ~FrameViewTestBase()
+    {
+        testing::Mock::VerifyAndClearExpectations(&chromeClient());
+    }
 
     void SetUp() override
     {
@@ -65,7 +62,7 @@ protected:
     MockChromeClient& chromeClient() { return *m_chromeClient; }
 
 private:
-    OwnPtrWillBePersistent<MockChromeClient> m_chromeClient;
+    Persistent<MockChromeClient> m_chromeClient;
     OwnPtr<DummyPageHolder> m_pageHolder;
 };
 
@@ -90,6 +87,8 @@ protected:
     {
         RuntimeEnabledFeatures::setSlimmingPaintV2Enabled(true);
         FrameViewTestBase::SetUp();
+        document().view()->setParentVisible(true);
+        document().view()->setSelfVisible(true);
     }
 
     void TearDown() override
@@ -101,6 +100,9 @@ private:
     RuntimeEnabledFeatures::Backup m_featuresBackup;
 };
 
+// These tests ensure that FrameView informs the ChromeClient of changes to the
+// paint artifact so that they can be shown to the user (e.g. via the
+// compositor).
 TEST_F(FrameViewSlimmingPaintV2Test, PaintOnce)
 {
     EXPECT_CALL(chromeClient(), didPaint(_));
@@ -140,6 +142,17 @@ TEST_F(FrameViewTest, SetPaintInvalidationOutOfUpdateAllLifecyclePhases)
     chromeClient().m_hasScheduledAnimation = false;
     document().view()->updateAllLifecyclePhases();
     EXPECT_FALSE(chromeClient().m_hasScheduledAnimation);
+}
+
+// If we don't hide the tooltip on scroll, it can negatively impact scrolling
+// performance. See crbug.com/586852 for details.
+TEST_F(FrameViewTest, HideTooltipWhenScrollPositionChanges)
+{
+    document().body()->setInnerHTML("<div style='width:1000px;height:1000px'></div>", ASSERT_NO_EXCEPTION);
+    document().view()->updateAllLifecyclePhases();
+
+    EXPECT_CALL(chromeClient(), setToolTip(String(), _));
+    document().view()->setScrollPosition(DoublePoint(1, 1), UserScroll);
 }
 
 } // namespace

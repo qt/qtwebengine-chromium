@@ -10,6 +10,7 @@
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/ImageData.h"
+#include "core/imagebitmap/ImageBitmapOptions.h"
 #include "core/loader/EmptyClients.h"
 #include "core/testing/DummyPageHolder.h"
 #include "modules/canvas2d/CanvasGradient.h"
@@ -36,10 +37,10 @@ class FakeImageSource : public CanvasImageSource {
 public:
     FakeImageSource(IntSize, BitmapOpacity);
 
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint, SnapshotReason, const FloatSize&) const override;
 
     bool wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const override { return false; }
-    FloatSize elementSize() const override { return FloatSize(m_size); }
+    FloatSize elementSize(const FloatSize&) const override { return FloatSize(m_size); }
     bool isOpaque() const override { return m_isOpaque; }
 
     ~FakeImageSource() override { }
@@ -54,13 +55,13 @@ FakeImageSource::FakeImageSource(IntSize size, BitmapOpacity opacity)
     : m_size(size)
     , m_isOpaque(opacity == OpaqueBitmap)
 {
-    SkAutoTUnref<SkSurface> surface(SkSurface::NewRasterN32Premul(m_size.width(), m_size.height()));
+    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(m_size.width(), m_size.height()));
     surface->getCanvas()->clear(opacity == OpaqueBitmap ? SK_ColorWHITE : SK_ColorTRANSPARENT);
     RefPtr<SkImage> image = adoptRef(surface->newImageSnapshot());
     m_image = StaticBitmapImage::create(image);
 }
 
-PassRefPtr<Image> FakeImageSource::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint) const
+PassRefPtr<Image> FakeImageSource::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint, SnapshotReason, const FloatSize&) const
 {
     if (status)
         *status = NormalSourceImageStatus;
@@ -86,15 +87,15 @@ protected:
 
 private:
     OwnPtr<DummyPageHolder> m_dummyPageHolder;
-    RefPtrWillBePersistent<HTMLDocument> m_document;
-    RefPtrWillBePersistent<HTMLCanvasElement> m_canvasElement;
+    Persistent<HTMLDocument> m_document;
+    Persistent<HTMLCanvasElement> m_canvasElement;
     Persistent<MemoryCache> m_globalMemoryCache;
 
-    class WrapGradients final : public NoBaseWillBeGarbageCollectedFinalized<WrapGradients> {
+    class WrapGradients final : public GarbageCollectedFinalized<WrapGradients> {
     public:
-        static PassOwnPtrWillBeRawPtr<WrapGradients> create()
+        static WrapGradients* create()
         {
-            return adoptPtrWillBeNoop(new WrapGradients);
+            return new WrapGradients;
         }
 
         DEFINE_INLINE_TRACE()
@@ -108,7 +109,7 @@ private:
     };
 
     // TODO(Oilpan): avoid tedious part-object wrapper by supporting on-heap ::testing::Tests.
-    OwnPtrWillBePersistent<WrapGradients> m_wrapGradients;
+    Persistent<WrapGradients> m_wrapGradients;
 
 protected:
     // Pre-canned objects for testing
@@ -445,17 +446,18 @@ TEST_F(CanvasRenderingContext2DTest, NoLayerPromotionUnderImageSizeRatioLimit)
     canvasElement().createImageBufferUsingSurfaceForTesting(surface.release());
 
     NonThrowableExceptionState exceptionState;
-    RefPtrWillBeRawPtr<Element> sourceCanvasElement = document().createElement("canvas", exceptionState);
+    Element* sourceCanvasElement = document().createElement("canvas", exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
-    HTMLCanvasElement* sourceCanvas = static_cast<HTMLCanvasElement*>(sourceCanvasElement.get());
+    HTMLCanvasElement* sourceCanvas = static_cast<HTMLCanvasElement*>(sourceCanvasElement);
     IntSize sourceSize(10, 10 * ExpensiveCanvasHeuristicParameters::ExpensiveImageSizeRatio);
     OwnPtr<UnacceleratedImageBufferSurface> sourceSurface = adoptPtr(new UnacceleratedImageBufferSurface(sourceSize, NonOpaque));
     sourceCanvas->createImageBufferUsingSurfaceForTesting(sourceSurface.release());
 
+    const ImageBitmapOptions defaultOptions;
     // Go through an ImageBitmap to avoid triggering a display list fallback
-    RefPtrWillBeRawPtr<ImageBitmap> sourceImageBitmap = ImageBitmap::create(sourceCanvas, IntRect(IntPoint(0, 0), sourceSize));
+    ImageBitmap* sourceImageBitmap = ImageBitmap::create(sourceCanvas, IntRect(IntPoint(0, 0), sourceSize), defaultOptions);
 
-    context2d()->drawImage(sourceImageBitmap.get(), 0, 0, 1, 1, 0, 0, 1, 1, exceptionState);
+    context2d()->drawImage(sourceImageBitmap, 0, 0, 1, 1, 0, 0, 1, 1, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
 
     EXPECT_FALSE(canvasElement().shouldBeDirectComposited());
@@ -468,17 +470,18 @@ TEST_F(CanvasRenderingContext2DTest, LayerPromotionOverImageSizeRatioLimit)
     canvasElement().createImageBufferUsingSurfaceForTesting(surface.release());
 
     NonThrowableExceptionState exceptionState;
-    RefPtrWillBeRawPtr<Element> sourceCanvasElement = document().createElement("canvas", exceptionState);
+    Element* sourceCanvasElement = document().createElement("canvas", exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
-    HTMLCanvasElement* sourceCanvas = static_cast<HTMLCanvasElement*>(sourceCanvasElement.get());
+    HTMLCanvasElement* sourceCanvas = static_cast<HTMLCanvasElement*>(sourceCanvasElement);
     IntSize sourceSize(10, 10 * ExpensiveCanvasHeuristicParameters::ExpensiveImageSizeRatio + 1);
     OwnPtr<UnacceleratedImageBufferSurface> sourceSurface = adoptPtr(new UnacceleratedImageBufferSurface(sourceSize, NonOpaque));
     sourceCanvas->createImageBufferUsingSurfaceForTesting(sourceSurface.release());
 
+    const ImageBitmapOptions defaultOptions;
     // Go through an ImageBitmap to avoid triggering a display list fallback
-    RefPtrWillBeRawPtr<ImageBitmap> sourceImageBitmap = ImageBitmap::create(sourceCanvas, IntRect(IntPoint(0, 0), sourceSize));
+    ImageBitmap* sourceImageBitmap = ImageBitmap::create(sourceCanvas, IntRect(IntPoint(0, 0), sourceSize), defaultOptions);
 
-    context2d()->drawImage(sourceImageBitmap.get(), 0, 0, 1, 1, 0, 0, 1, 1, exceptionState);
+    context2d()->drawImage(sourceImageBitmap, 0, 0, 1, 1, 0, 0, 1, 1, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
 
     EXPECT_TRUE(canvasElement().shouldBeDirectComposited());
@@ -631,18 +634,45 @@ TEST_F(CanvasRenderingContext2DTest, FallbackWithLargeState)
     canvasElement().doDeferredPaintInvalidation(); // To close the current frame
 }
 
+TEST_F(CanvasRenderingContext2DTest, OpaqueDisplayListFallsBackForText)
+{
+    // Verify that drawing text to an opaque canvas, which is expected to
+    // render with subpixel text anti-aliasing, results in falling out
+    // of display list mode because the current diplay list implementation
+    // does not support pixel geometry settings.
+    // See: crbug.com/583809
+    createContext(Opaque);
+    OwnPtr<RecordingImageBufferSurface> surface = adoptPtr(new RecordingImageBufferSurface(IntSize(10, 10), MockSurfaceFactory::create(MockSurfaceFactory::ExpectFallback), Opaque));
+    canvasElement().createImageBufferUsingSurfaceForTesting(surface.release());
+
+    context2d()->fillText("Text", 0, 5);
+}
+
+TEST_F(CanvasRenderingContext2DTest, NonOpaqueDisplayListDoesNotFallBackForText)
+{
+    createContext(NonOpaque);
+    OwnPtr<RecordingImageBufferSurface> surface = adoptPtr(new RecordingImageBufferSurface(IntSize(10, 10), MockSurfaceFactory::create(MockSurfaceFactory::ExpectNoFallback), NonOpaque));
+    canvasElement().createImageBufferUsingSurfaceForTesting(surface.release());
+
+    context2d()->fillText("Text", 0, 5);
+}
+
 TEST_F(CanvasRenderingContext2DTest, ImageResourceLifetime)
 {
-    RefPtrWillBeRawPtr<HTMLCanvasElement> canvasElement = HTMLCanvasElement::create(*Document::create().get());
-    canvasElement->setHeight(40);
-    canvasElement->setWidth(40);
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapDerived = nullptr;
+    NonThrowableExceptionState nonThrowableExceptionState;
+    Element* canvasElement = document().createElement("canvas", nonThrowableExceptionState);
+    EXPECT_FALSE(nonThrowableExceptionState.hadException());
+    HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(canvasElement);
+    canvas->setHeight(40);
+    canvas->setWidth(40);
+    ImageBitmap* imageBitmapDerived = nullptr;
     {
-        RefPtrWillBeRawPtr<ImageBitmap> imageBitmapFromCanvas = ImageBitmap::create(canvasElement.get(), IntRect(0, 0, canvasElement->width(), canvasElement->height()));
-        imageBitmapDerived = ImageBitmap::create(imageBitmapFromCanvas.get(), IntRect(0, 0, 20, 20));
+        const ImageBitmapOptions defaultOptions;
+        ImageBitmap* imageBitmapFromCanvas = ImageBitmap::create(canvas, IntRect(0, 0, canvas->width(), canvas->height()), defaultOptions);
+        imageBitmapDerived = ImageBitmap::create(imageBitmapFromCanvas, IntRect(0, 0, 20, 20), defaultOptions);
     }
     CanvasContextCreationAttributes attributes;
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(canvasElement->getCanvasRenderingContext("2d", attributes));
+    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(canvas->getCanvasRenderingContext("2d", attributes));
     TrackExceptionState exceptionState;
     CanvasImageSourceUnion imageSource;
     imageSource.setImageBitmap(imageBitmapDerived);

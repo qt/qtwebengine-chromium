@@ -59,6 +59,7 @@
 #include "core/layout/LayoutBox.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EditorClient.h"
+#include "platform/Histogram.h"
 #include "platform/KillRing.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/scroll/Scrollbar.h"
@@ -121,14 +122,14 @@ static bool applyCommandToFrame(LocalFrame& frame, EditorCommandSource source, E
 
 static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
 
 static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValueID propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
@@ -138,14 +139,14 @@ static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, Edi
 //        until https://bugs.webkit.org/show_bug.cgi?id=27818 is resolved.
 static bool executeToggleStyleInList(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValue* value)
 {
-    RefPtrWillBeRawPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
+    RawPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
     if (!selectionStyle || !selectionStyle->style())
         return false;
 
-    RefPtrWillBeRawPtr<CSSValue> selectedCSSValue = selectionStyle->style()->getPropertyCSSValue(propertyID);
+    RawPtr<CSSValue> selectedCSSValue = selectionStyle->style()->getPropertyCSSValue(propertyID);
     String newStyle("none");
     if (selectedCSSValue->isValueList()) {
-        RefPtrWillBeRawPtr<CSSValueList> selectedCSSValueList = toCSSValueList(selectedCSSValue.get());
+        RawPtr<CSSValueList> selectedCSSValueList = toCSSValueList(selectedCSSValue.get());
         if (!selectedCSSValueList->removeAll(value))
             selectedCSSValueList->append(value);
         if (selectedCSSValueList->length())
@@ -156,7 +157,7 @@ static bool executeToggleStyleInList(LocalFrame& frame, EditorCommandSource sour
     }
 
     // FIXME: We shouldn't be having to convert new style into text.  We should have setPropertyCSSValue.
-    RefPtrWillBeRawPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create(HTMLQuirksMode);
     newMutableStyle->setProperty(propertyID, newStyle);
     return applyCommandToFrame(frame, source, action, newMutableStyle.get());
 }
@@ -173,13 +174,13 @@ static bool executeToggleStyle(LocalFrame& frame, EditorCommandSource source, Ed
     else
         styleIsPresent = frame.editor().selectionHasStyle(propertyID, onValue) == TrueTriState;
 
-    RefPtrWillBeRawPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
+    RawPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
     return applyCommandToFrame(frame, source, action, style->style());
 }
 
 static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a good reason for that?
     switch (source) {
@@ -194,17 +195,16 @@ static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource so
     return false;
 }
 
-static bool executeInsertFragment(LocalFrame& frame, PassRefPtrWillBeRawPtr<DocumentFragment> fragment)
+static bool executeInsertFragment(LocalFrame& frame, RawPtr<DocumentFragment> fragment)
 {
     ASSERT(frame.document());
-    ReplaceSelectionCommand::create(*frame.document(), fragment, ReplaceSelectionCommand::PreventNesting, EditActionUnspecified)->apply();
-    return true;
+    return ReplaceSelectionCommand::create(*frame.document(), fragment, ReplaceSelectionCommand::PreventNesting, EditActionUnspecified)->apply();
 }
 
-static bool executeInsertElement(LocalFrame& frame, PassRefPtrWillBeRawPtr<HTMLElement> content)
+static bool executeInsertElement(LocalFrame& frame, RawPtr<HTMLElement> content)
 {
     ASSERT(frame.document());
-    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
+    RawPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
     TrackExceptionState exceptionState;
     fragment->appendChild(content, exceptionState);
     if (exceptionState.hadException())
@@ -276,7 +276,7 @@ static unsigned verticalScrollDistance(LocalFrame& frame)
     const ComputedStyle* style = layoutBox.style();
     if (!style)
         return 0;
-    if (!(style->overflowY() == OSCROLL || style->overflowY() == OAUTO || focusedElement->hasEditableStyle()))
+    if (!(style->overflowY() == OverflowScroll || style->overflowY() == OverflowAuto || focusedElement->hasEditableStyle()))
         return 0;
     int height = std::min<int>(layoutBox.clientHeight(), frame.view()->visibleHeight());
     return static_cast<unsigned>(max(max<int>(height * ScrollableArea::minFractionToStepWhenPaging(), height - ScrollableArea::maxOverlapBetweenPages()), 1));
@@ -301,7 +301,7 @@ static bool canWriteClipboard(LocalFrame& frame, EditorCommandSource source)
     if (source == CommandFromMenuOrKeyBinding)
         return true;
     Settings* settings = frame.settings();
-    bool defaultValue = (settings && settings->javaScriptCanAccessClipboard()) || UserGestureIndicator::processingUserGesture();
+    bool defaultValue = (settings && settings->javaScriptCanAccessClipboard()) || UserGestureIndicator::utilizeUserGesture();
     return frame.editor().client().canCopyCut(&frame, defaultValue);
 }
 
@@ -323,8 +323,7 @@ static bool executeCreateLink(LocalFrame& frame, Event*, EditorCommandSource, co
     if (value.isEmpty())
         return false;
     ASSERT(frame.document());
-    CreateLinkCommand::create(*frame.document(), value)->apply();
-    return true;
+    return CreateLinkCommand::create(*frame.document(), value)->apply();
 }
 
 static bool executeCut(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
@@ -377,7 +376,7 @@ static bool executeDeleteBackward(LocalFrame& frame, Event*, EditorCommandSource
 
 static bool executeDeleteBackwardByDecomposingPreviousCharacter(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    WTF_LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
+    DLOG(ERROR) << "DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead";
     frame.editor().deleteWithDirection(DirectionBackward, CharacterGranularity, false, true);
     return true;
 }
@@ -482,13 +481,14 @@ static bool executeFormatBlock(LocalFrame& frame, Event*, EditorCommandSource, c
     QualifiedName qualifiedTagName(prefix, localName, xhtmlNamespaceURI);
 
     ASSERT(frame.document());
-    RefPtrWillBeRawPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
+    RawPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
     command->apply();
     return command->didApply();
 }
 
 static bool executeForwardDelete(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
+    EditingState editingState;
     switch (source) {
     case CommandFromMenuOrKeyBinding:
         frame.editor().deleteWithDirection(DirectionForward, CharacterGranularity, false, true);
@@ -498,7 +498,9 @@ static bool executeForwardDelete(LocalFrame& frame, Event*, EditorCommandSource 
         // ForwardDelete is not implemented in IE or Firefox, so this behavior is only needed for
         // backward compatibility with ourselves, and for consistency with Delete.
         ASSERT(frame.document());
-        TypingCommand::forwardDeleteKeyPressed(*frame.document());
+        TypingCommand::forwardDeleteKeyPressed(*frame.document(), &editingState);
+        if (editingState.isAborted())
+            return false;
         return true;
     }
     ASSERT_NOT_REACHED();
@@ -514,8 +516,7 @@ static bool executeIgnoreSpelling(LocalFrame& frame, Event*, EditorCommandSource
 static bool executeIndent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Indent)->apply();
-    return true;
+    return IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Indent)->apply();
 }
 
 static bool executeInsertBacktab(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
@@ -526,7 +527,7 @@ static bool executeInsertBacktab(LocalFrame& frame, Event* event, EditorCommandS
 static bool executeInsertHorizontalRule(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
-    RefPtrWillBeRawPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
+    RawPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
         rule->setIdAttribute(AtomicString(value));
     return executeInsertElement(frame, rule.release());
@@ -541,7 +542,7 @@ static bool executeInsertHTML(LocalFrame& frame, Event*, EditorCommandSource, co
 static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
-    RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
+    RawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
     if (!value.isEmpty())
         image->setSrc(value);
     return executeInsertElement(frame, image.release());
@@ -557,8 +558,7 @@ static bool executeInsertLineBreak(LocalFrame& frame, Event* event, EditorComman
         // InsertLineBreak is not implemented in IE or Firefox, so this behavior is only needed for
         // backward compatibility with ourselves, and for consistency with other commands.
         ASSERT(frame.document());
-        TypingCommand::insertLineBreak(*frame.document(), 0);
-        return true;
+        return TypingCommand::insertLineBreak(*frame.document());
     }
     ASSERT_NOT_REACHED();
     return false;
@@ -573,22 +573,19 @@ static bool executeInsertNewline(LocalFrame& frame, Event* event, EditorCommandS
 static bool executeInsertNewlineInQuotedContent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    TypingCommand::insertParagraphSeparatorInQuotedContent(*frame.document());
-    return true;
+    return TypingCommand::insertParagraphSeparatorInQuotedContent(*frame.document());
 }
 
 static bool executeInsertOrderedList(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    InsertListCommand::create(*frame.document(), InsertListCommand::OrderedList)->apply();
-    return true;
+    return InsertListCommand::create(*frame.document(), InsertListCommand::OrderedList)->apply();
 }
 
 static bool executeInsertParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    TypingCommand::insertParagraphSeparator(*frame.document(), 0);
-    return true;
+    return TypingCommand::insertParagraphSeparator(*frame.document());
 }
 
 static bool executeInsertTab(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
@@ -606,8 +603,7 @@ static bool executeInsertText(LocalFrame& frame, Event*, EditorCommandSource, co
 static bool executeInsertUnorderedList(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    InsertListCommand::create(*frame.document(), InsertListCommand::UnorderedList)->apply();
-    return true;
+    return InsertListCommand::create(*frame.document(), InsertListCommand::UnorderedList)->apply();
 }
 
 static bool executeJustifyCenter(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
@@ -632,7 +628,7 @@ static bool executeJustifyRight(LocalFrame& frame, Event*, EditorCommandSource s
 
 static bool executeMakeTextWritingDirectionLeftToRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
     style->setProperty(CSSPropertyDirection, CSSValueLtr);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
@@ -641,7 +637,7 @@ static bool executeMakeTextWritingDirectionLeftToRight(LocalFrame& frame, Event*
 
 static bool executeMakeTextWritingDirectionNatural(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
@@ -649,7 +645,7 @@ static bool executeMakeTextWritingDirectionNatural(LocalFrame& frame, Event*, Ed
 
 static bool executeMakeTextWritingDirectionRightToLeft(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
+    RawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
     style->setProperty(CSSPropertyDirection, CSSValueRtl);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
@@ -955,8 +951,7 @@ static bool executeMoveToRightEndOfLineAndModifySelection(LocalFrame& frame, Eve
 static bool executeOutdent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Outdent)->apply();
-    return true;
+    return IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Outdent)->apply();
 }
 
 static bool executeToggleOverwrite(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -1108,7 +1103,7 @@ static bool executeSetMark(LocalFrame& frame, Event*, EditorCommandSource, const
 
 static bool executeStrikethrough(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
-    RefPtrWillBeRawPtr<CSSPrimitiveValue> lineThrough = CSSPrimitiveValue::createIdentifier(CSSValueLineThrough);
+    RawPtr<CSSPrimitiveValue> lineThrough = CSSPrimitiveValue::createIdentifier(CSSValueLineThrough);
     return executeToggleStyleInList(frame, source, EditActionUnderline, CSSPropertyWebkitTextDecorationsInEffect, lineThrough.get());
 }
 
@@ -1163,7 +1158,7 @@ static bool executeTranspose(LocalFrame& frame, Event*, EditorCommandSource, con
 
 static bool executeUnderline(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
-    RefPtrWillBeRawPtr<CSSPrimitiveValue> underline = CSSPrimitiveValue::createIdentifier(CSSValueUnderline);
+    RawPtr<CSSPrimitiveValue> underline = CSSPrimitiveValue::createIdentifier(CSSValueUnderline);
     return executeToggleStyleInList(frame, source, EditActionUnderline, CSSPropertyWebkitTextDecorationsInEffect, underline.get());
 }
 
@@ -1176,8 +1171,7 @@ static bool executeUndo(LocalFrame& frame, Event*, EditorCommandSource, const St
 static bool executeUnlink(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
-    UnlinkCommand::create(*frame.document())->apply();
-    return true;
+    return UnlinkCommand::create(*frame.document())->apply();
 }
 
 static bool executeUnscript(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
@@ -1273,6 +1267,9 @@ static bool enabledCut(LocalFrame& frame, Event*, EditorCommandSource source)
 
 static bool enabledInEditableText(LocalFrame& frame, Event* event, EditorCommandSource)
 {
+    // We should update selection to canonicalize with current layout and style,
+    // before accessing |FrameSelection::selection()|.
+    frame.selection().updateIfNeeded();
     return frame.editor().selectionForCommand(event).rootEditableElement();
 }
 
@@ -1298,6 +1295,9 @@ static bool enabledInEditableTextOrCaretBrowsing(LocalFrame& frame, Event* event
 
 static bool enabledInRichlyEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
+    // We should update selection to canonicalize with current layout and style,
+    // before accessing |FrameSelection::selection()|.
+    frame.selection().updateIfNeeded();
     return frame.selection().isCaretOrRange() && frame.selection().isContentRichlyEditable() && frame.selection().rootEditableElement();
 }
 
@@ -1310,11 +1310,17 @@ static bool enabledPaste(LocalFrame& frame, Event*, EditorCommandSource source)
 
 static bool enabledRangeInEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
+    // We should update selection to canonicalize with current layout and style,
+    // before accessing |FrameSelection::selection()|.
+    frame.selection().updateIfNeeded();
     return frame.selection().isRange() && frame.selection().isContentEditable();
 }
 
 static bool enabledRangeInRichlyEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
+    // We should update selection to canonicalize with current layout and style,
+    // before accessing |FrameSelection::selection()|.
+    frame.selection().updateIfNeeded();
     return frame.selection().isRange() && frame.selection().isContentRichlyEditable();
 }
 
@@ -1506,9 +1512,9 @@ static const CommandMap& createCommandMap()
         { "DeleteWordBackward", {20, executeDeleteWordBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "DeleteWordForward", {21, executeDeleteWordForward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "FindString", {22, executeFindString, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontName", {23, executeFontName, supported, enabledInEditableText, stateNone, valueFontName, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontSize", {24, executeFontSize, supported, enabledInEditableText, stateNone, valueFontSize, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontSizeDelta", {25, executeFontSizeDelta, supported, enabledInEditableText, stateNone, valueFontSizeDelta, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontName", {23, executeFontName, supported, enabledInRichlyEditableText, stateNone, valueFontName, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontSize", {24, executeFontSize, supported, enabledInRichlyEditableText, stateNone, valueFontSize, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontSizeDelta", {25, executeFontSizeDelta, supported, enabledInRichlyEditableText, stateNone, valueFontSizeDelta, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "ForeColor", {26, executeForeColor, supported, enabledInRichlyEditableText, stateNone, valueForeColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "FormatBlock", {27, executeFormatBlock, supported, enabledInRichlyEditableText, stateNone, valueFormatBlock, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "ForwardDelete", {28, executeForwardDelete, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1677,7 +1683,7 @@ static const CommandMap& createCommandMap()
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(commands); ++i) {
         const CommandEntry& command = commands[i];
         ASSERT(!commandMap.get(command.name));
-        commandMap.set(command.name, &command.command);
+        commandMap.set(String(command.name), &command.command);
 #if ENABLE(ASSERT)
         ASSERT(!idSet.contains(command.command.idForUserMetrics));
         idSet.add(command.command.idForUserMetrics);
@@ -1693,12 +1699,12 @@ static const EditorInternalCommand* internalCommand(const String& commandName)
     return commandName.isEmpty() ? 0 : commandMap.get(commandName);
 }
 
-Editor::Command Editor::command(const String& commandName)
+Editor::Command Editor::createCommand(const String& commandName)
 {
     return Command(internalCommand(commandName), CommandFromMenuOrKeyBinding, m_frame);
 }
 
-Editor::Command Editor::command(const String& commandName, EditorCommandSource source)
+Editor::Command Editor::createCommand(const String& commandName, EditorCommandSource source)
 {
     return Command(internalCommand(commandName), source, m_frame);
 }
@@ -1713,9 +1719,9 @@ bool Editor::executeCommand(const String& commandName)
         return true;
     }
     if (commandName == "DeleteBackward")
-        return command(AtomicString("BackwardDelete")).execute();
+        return createCommand(AtomicString("BackwardDelete")).execute();
     if (commandName == "DeleteForward")
-        return command(AtomicString("ForwardDelete")).execute();
+        return createCommand(AtomicString("ForwardDelete")).execute();
     if (commandName == "AdvanceToNextMisspelling") {
         // Wee need to pass false here or else the currently selected word will never be skipped.
         spellChecker().advanceToNextMisspelling(false);
@@ -1725,7 +1731,7 @@ bool Editor::executeCommand(const String& commandName)
         spellChecker().showSpellingGuessPanel();
         return true;
     }
-    return command(commandName).execute();
+    return createCommand(commandName).execute();
 }
 
 bool Editor::executeCommand(const String& commandName, const String& value)
@@ -1742,7 +1748,7 @@ bool Editor::executeCommand(const String& commandName, const String& value)
         return true;
     }
 
-    return command(commandName).execute(value);
+    return createCommand(commandName).execute(value);
 }
 
 Editor::Command::Command()
@@ -1750,7 +1756,7 @@ Editor::Command::Command()
 {
 }
 
-Editor::Command::Command(const EditorInternalCommand* command, EditorCommandSource source, PassRefPtrWillBeRawPtr<LocalFrame> frame)
+Editor::Command::Command(const EditorInternalCommand* command, EditorCommandSource source, RawPtr<LocalFrame> frame)
     : m_command(command)
     , m_source(source)
     , m_frame(command ? frame : nullptr)
@@ -1774,7 +1780,8 @@ bool Editor::Command::execute(const String& parameter, Event* triggeringEvent) c
             return false;
     }
     frame().document()->updateLayoutIgnorePendingStylesheets();
-    Platform::current()->histogramSparse("WebCore.Editing.Commands", m_command->idForUserMetrics);
+    DEFINE_STATIC_LOCAL(SparseHistogram, commandHistogram, ("WebCore.Editing.Commands"));
+    commandHistogram.sample(m_command->idForUserMetrics);
     return m_command->execute(*m_frame, triggeringEvent, m_source, parameter);
 }
 

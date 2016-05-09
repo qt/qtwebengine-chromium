@@ -26,7 +26,8 @@
 #include "core/xmlhttprequest/XMLHttpRequestUpload.h"
 
 #include "core/EventTypeNames.h"
-#include "core/xmlhttprequest/XMLHttpRequestProgressEvent.h"
+#include "core/events/ProgressEvent.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/AtomicString.h"
 
@@ -44,29 +45,32 @@ const AtomicString& XMLHttpRequestUpload::interfaceName() const
     return EventTargetNames::XMLHttpRequestUpload;
 }
 
-ExecutionContext* XMLHttpRequestUpload::executionContext() const
+ExecutionContext* XMLHttpRequestUpload::getExecutionContext() const
 {
-    return m_xmlHttpRequest->executionContext();
+    return m_xmlHttpRequest->getExecutionContext();
 }
 
 void XMLHttpRequestUpload::dispatchProgressEvent(unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
 {
     m_lastBytesSent = bytesSent;
     m_lastTotalBytesToBeSent = totalBytesToBeSent;
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, true, bytesSent, totalBytesToBeSent));
+    InspectorInstrumentation::AsyncTask asyncTask(getExecutionContext(), m_xmlHttpRequest, m_xmlHttpRequest->isAsync());
+    dispatchEvent(ProgressEvent::create(EventTypeNames::progress, true, bytesSent, totalBytesToBeSent));
 }
 
 void XMLHttpRequestUpload::dispatchEventAndLoadEnd(const AtomicString& type, bool lengthComputable, unsigned long long bytesSent, unsigned long long total)
 {
     ASSERT(type == EventTypeNames::load || type == EventTypeNames::abort || type == EventTypeNames::error || type == EventTypeNames::timeout);
-    dispatchEvent(XMLHttpRequestProgressEvent::create(type, lengthComputable, bytesSent, total));
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend, lengthComputable, bytesSent, total));
+    InspectorInstrumentation::AsyncTask asyncTask(getExecutionContext(), m_xmlHttpRequest, m_xmlHttpRequest->isAsync());
+    dispatchEvent(ProgressEvent::create(type, lengthComputable, bytesSent, total));
+    dispatchEvent(ProgressEvent::create(EventTypeNames::loadend, lengthComputable, bytesSent, total));
 }
 
 void XMLHttpRequestUpload::handleRequestError(const AtomicString& type)
 {
     bool lengthComputable = m_lastTotalBytesToBeSent > 0 && m_lastBytesSent <= m_lastTotalBytesToBeSent;
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent));
+    InspectorInstrumentation::AsyncTask asyncTask(getExecutionContext(), m_xmlHttpRequest, m_xmlHttpRequest->isAsync());
+    dispatchEvent(ProgressEvent::create(EventTypeNames::progress, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent));
     dispatchEventAndLoadEnd(type, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent);
 }
 

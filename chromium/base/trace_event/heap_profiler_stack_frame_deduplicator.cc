@@ -19,6 +19,7 @@ namespace trace_event {
 StackFrameDeduplicator::FrameNode::FrameNode(StackFrame frame,
                                              int parent_frame_index)
     : frame(frame), parent_frame_index(parent_frame_index) {}
+StackFrameDeduplicator::FrameNode::FrameNode(const FrameNode& other) = default;
 StackFrameDeduplicator::FrameNode::~FrameNode() {}
 
 StackFrameDeduplicator::StackFrameDeduplicator() {}
@@ -76,7 +77,7 @@ void StackFrameDeduplicator::AppendAsTraceFormat(std::string* out) const {
     SStringPrintf(&stringify_buffer, "\"%d\":", i);
     out->append(stringify_buffer);
 
-    scoped_refptr<TracedValue> frame_node_value = new TracedValue;
+    std::unique_ptr<TracedValue> frame_node_value(new TracedValue);
     frame_node_value->SetString("name", frame_node->frame);
     if (frame_node->parent_frame_index >= 0) {
       SStringPrintf(&stringify_buffer, "%d", frame_node->parent_frame_index);

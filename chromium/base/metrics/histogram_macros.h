@@ -10,6 +10,11 @@
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
 
+// Macros for efficient use of histograms. See documentation in histogram.h.
+//
+// UMA_HISTOGRAM_SPARSE_SLOWLY is defined in sparse_histogram.h as it has
+// different #include dependencies.
+
 //------------------------------------------------------------------------------
 // Histograms are often put in areas where they are called many many times, and
 // performance is critical.  As a result, they are designed to have a very low
@@ -67,18 +72,24 @@
 // a macro argument here.  The name is only used in a DCHECK, to assure that
 // callers don't try to vary the name of the histogram (which would tend to be
 // ignored by the one-time initialization of the histogtram_pointer).
-#define STATIC_HISTOGRAM_POINTER_BLOCK(constant_histogram_name,           \
-                                       histogram_add_method_invocation,   \
-                                       histogram_factory_get_invocation)  \
+
+// In some cases (integration into 3rd party code), it's useful to seperate the
+// definition of |atomic_histogram_poiner| from its use. To achieve this we
+// define HISTOGRAM_POINTER_USE, which uses an |atomic_histogram_pointer|, and
+// STATIC_HISTOGRAM_POINTER_BLOCK, which defines an |atomic_histogram_pointer|
+// and forwards to HISTOGRAM_POINTER_USE.
+#define HISTOGRAM_POINTER_USE(atomic_histogram_pointer,                   \
+                              constant_histogram_name,                    \
+                              histogram_add_method_invocation,            \
+                              histogram_factory_get_invocation)           \
   do {                                                                    \
-    static base::subtle::AtomicWord atomic_histogram_pointer = 0;         \
     base::HistogramBase* histogram_pointer(                               \
         reinterpret_cast<base::HistogramBase*>(                           \
-            base::subtle::Acquire_Load(&atomic_histogram_pointer)));      \
+            base::subtle::Acquire_Load(atomic_histogram_pointer)));       \
     if (!histogram_pointer) {                                             \
       histogram_pointer = histogram_factory_get_invocation;               \
       base::subtle::Release_Store(                                        \
-          &atomic_histogram_pointer,                                      \
+          atomic_histogram_pointer,                                       \
           reinterpret_cast<base::subtle::AtomicWord>(histogram_pointer)); \
     }                                                                     \
     if (DCHECK_IS_ON())                                                   \
@@ -86,9 +97,27 @@
     histogram_pointer->histogram_add_method_invocation;                   \
   } while (0)
 
+// Defines the static |atomic_histogram_pointer| and forwards to
+// HISTOGRAM_POINTER_USE.
+#define STATIC_HISTOGRAM_POINTER_BLOCK(constant_histogram_name,               \
+                                       histogram_add_method_invocation,       \
+                                       histogram_factory_get_invocation)      \
+  do {                                                                        \
+    static base::subtle::AtomicWord atomic_histogram_pointer = 0;             \
+    HISTOGRAM_POINTER_USE(&atomic_histogram_pointer, constant_histogram_name, \
+                          histogram_add_method_invocation,                    \
+                          histogram_factory_get_invocation);                  \
+  } while (0)
+
 //------------------------------------------------------------------------------
 // Provide easy general purpose histogram in a macro, just like stats counters.
-// The first four macros use 50 buckets.
+// Most of these macros use 50 buckets, but check the definition for details.
+//
+// All of these macros must be called with |name| as a runtime constant --- it
+// doesn't have to literally be a constant, but it must be the same string on
+// all calls from a particular call site. If this rule is violated,
+// STATIC_HISTOGRAM_POINTER_BLOCK will DCHECK, and if DCHECKS are disabled, the
+// data will be written to the wrong histogram.
 
 #define LOCAL_HISTOGRAM_TIMES(name, sample) LOCAL_HISTOGRAM_CUSTOM_TIMES( \
     name, sample, base::TimeDelta::FromMilliseconds(1), \

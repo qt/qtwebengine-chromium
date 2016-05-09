@@ -17,7 +17,7 @@
         'md5sum/md5sum.gyp:md5sum',
         'memtrack_helper/memtrack_helper.gyp:memtrack_helper',
         'purge_ashmem/purge_ashmem.gyp:purge_ashmem',
-        '../../tools/telemetry/telemetry.gyp:*#host',
+        '../../third_party/catapult/telemetry/telemetry.gyp:*#host',
       ],
     },
     {
@@ -83,6 +83,14 @@
       'type': 'none',
       'dependencies': [
         'audio_focus_grabber/audio_focus_grabber.gyp:audio_focus_grabber_apk',
+      ],
+    },
+    {
+      # GN: //tools/android:push_apps_to_background
+      'target_name': 'push_apps_to_background',
+      'type': 'none',
+      'dependencies': [
+        'push_apps_to_background/push_apps_to_background.gyp:push_apps_to_background_apk',
       ],
     },
   ],

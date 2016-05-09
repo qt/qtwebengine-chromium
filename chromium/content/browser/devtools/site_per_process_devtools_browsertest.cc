@@ -23,7 +23,7 @@ class SitePerProcessDevToolsBrowserTest
 
 class TestClient: public DevToolsAgentHostClient {
  public:
-  TestClient() : closed_(false) {}
+  TestClient() : closed_(false), waiting_for_reply_(false) {}
   ~TestClient() override {}
 
   bool closed() { return closed_; }
@@ -31,6 +31,10 @@ class TestClient: public DevToolsAgentHostClient {
   void DispatchProtocolMessage(
       DevToolsAgentHost* agent_host,
       const std::string& message) override {
+    if (waiting_for_reply_) {
+      waiting_for_reply_ = false;
+      base::MessageLoop::current()->QuitNow();
+    }
   }
 
   void AgentHostClosed(
@@ -39,8 +43,14 @@ class TestClient: public DevToolsAgentHostClient {
     closed_ = true;
   }
 
+  void WaitForReply() {
+    waiting_for_reply_ = true;
+    base::MessageLoop::current()->Run();
+  }
+
  private:
   bool closed_;
+  bool waiting_for_reply_;
 };
 
 // Fails on Android, http://crbug.com/464993.
@@ -90,10 +100,20 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsBrowserTest,
   EXPECT_EQ(DevToolsAgentHost::TYPE_FRAME, list[1]->GetType());
   EXPECT_EQ(cross_site_url.spec(), list[1]->GetURL().spec());
 
-  // Attaching to child frame.
+  // Attaching to both agent hosts.
   scoped_refptr<DevToolsAgentHost> child_host = list[1];
-  TestClient client;
-  child_host->AttachClient(&client);
+  TestClient child_client;
+  child_host->AttachClient(&child_client);
+  scoped_refptr<DevToolsAgentHost> parent_host = list[0];
+  TestClient parent_client;
+  parent_host->AttachClient(&parent_client);
+
+  // Send message to parent and child frames and get result back.
+  char message[] = "{\"id\": 0, \"method\": \"incorrect.method\"}";
+  child_host->DispatchProtocolMessage(message);
+  child_client.WaitForReply();
+  parent_host->DispatchProtocolMessage(message);
+  parent_client.WaitForReply();
 
   // Load back same-site page into iframe.
   NavigateFrameToURL(root->child_at(0), http_url);
@@ -102,9 +122,12 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsBrowserTest,
   EXPECT_EQ(1U, list.size());
   EXPECT_EQ(DevToolsAgentHost::TYPE_WEB_CONTENTS, list[0]->GetType());
   EXPECT_EQ(main_url.spec(), list[0]->GetURL().spec());
-  EXPECT_TRUE(client.closed());
+  EXPECT_TRUE(child_client.closed());
   child_host->DetachClient();
   child_host = nullptr;
+  EXPECT_FALSE(parent_client.closed());
+  parent_host->DetachClient();
+  parent_host = nullptr;
 }
 
 IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsBrowserTest, AgentHostForFrames) {
@@ -143,6 +166,38 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsBrowserTest, AgentHostForFrames) {
   child_frame_agent =
       DevToolsAgentHost::GetOrCreateFor(child->current_frame_host());
   EXPECT_NE(page_agent.get(), child_frame_agent.get());
+}
+
+IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsBrowserTest,
+    AgentHostForPageEqualsOneForMainFrame) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  GURL main_url(embedded_test_server()->GetURL("/site_per_process_main.html"));
+  NavigateToURL(shell(), main_url);
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root =
+      static_cast<WebContentsImpl*>(shell()->web_contents())->
+          GetFrameTree()->root();
+  FrameTreeNode* child = root->child_at(0);
+
+  // Load cross-site page into iframe.
+  GURL::Replacements replace_host;
+  GURL cross_site_url(embedded_test_server()->GetURL("/title2.html"));
+  replace_host.SetHostStr("foo.com");
+  cross_site_url = cross_site_url.ReplaceComponents(replace_host);
+  NavigateFrameToURL(child, cross_site_url);
+
+  // First ask for child frame, then for main frame.
+  scoped_refptr<DevToolsAgentHost> child_frame_agent =
+      DevToolsAgentHost::GetOrCreateFor(child->current_frame_host());
+  scoped_refptr<DevToolsAgentHost> main_frame_agent =
+      DevToolsAgentHost::GetOrCreateFor(root->current_frame_host());
+  EXPECT_NE(main_frame_agent.get(), child_frame_agent.get());
+
+  // Agent for web contents should be the the main frame's one.
+  scoped_refptr<DevToolsAgentHost> page_agent =
+      DevToolsAgentHost::GetOrCreateFor(shell()->web_contents());
+  EXPECT_EQ(page_agent.get(), main_frame_agent.get());
 }
 
 }  // namespace content

@@ -158,8 +158,8 @@
 
 namespace media {
 
-class MediaCodecAudioDecoder;
-class MediaCodecVideoDecoder;
+class AudioMediaCodecDecoder;
+class VideoMediaCodecDecoder;
 
 class MEDIA_EXPORT MediaCodecPlayer : public MediaPlayerAndroid,
                                       public DemuxerAndroidClient {
@@ -191,7 +191,8 @@ class MEDIA_EXPORT MediaCodecPlayer : public MediaPlayerAndroid,
       base::WeakPtr<MediaPlayerManager> manager,
       const OnDecoderResourcesReleasedCB& on_decoder_resources_released_cb,
       scoped_ptr<DemuxerAndroid> demuxer,
-      const GURL& frame_url);
+      const GURL& frame_url,
+      int media_session_id);
   ~MediaCodecPlayer() override;
 
   // A helper method that performs the media thread part of initialization.
@@ -204,7 +205,6 @@ class MEDIA_EXPORT MediaCodecPlayer : public MediaPlayerAndroid,
   void Pause(bool is_media_related_action) override;
   void SeekTo(base::TimeDelta timestamp) override;
   void Release() override;
-  void SetVolume(double volume) override;
   bool HasVideo() const override;
   bool HasAudio() const override;
   int GetVideoWidth() override;
@@ -268,6 +268,7 @@ class MEDIA_EXPORT MediaCodecPlayer : public MediaPlayerAndroid,
   };
 
   // MediaPlayerAndroid implementation.
+  void UpdateEffectiveVolumeInternal(double effective_volume) override;
 
   // This method requests playback permission from the manager on UI
   // thread, passing total duration and whether the media has audio
@@ -344,8 +345,8 @@ class MEDIA_EXPORT MediaCodecPlayer : public MediaPlayerAndroid,
 
   // Major components: demuxer, audio and video decoders.
   scoped_ptr<DemuxerAndroid> demuxer_;
-  scoped_ptr<MediaCodecAudioDecoder> audio_decoder_;
-  scoped_ptr<MediaCodecVideoDecoder> video_decoder_;
+  scoped_ptr<AudioMediaCodecDecoder> audio_decoder_;
+  scoped_ptr<VideoMediaCodecDecoder> video_decoder_;
 
   // The state of the state machine.
   PlayerState state_;

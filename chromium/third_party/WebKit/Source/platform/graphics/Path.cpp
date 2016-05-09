@@ -50,6 +50,11 @@ Path::Path(const Path& other)
     m_path = SkPath(other.m_path);
 }
 
+Path::Path(const SkPath& other)
+{
+    m_path = other;
+}
+
 Path::~Path()
 {
 }
@@ -237,8 +242,8 @@ void Path::pointAndNormalAtLength(float length, FloatPoint& point, float& normal
 }
 
 Path::PositionCalculator::PositionCalculator(const Path& path)
-    : m_path(path.skPath())
-    , m_pathMeasure(path.skPath(), false)
+    : m_path(path.getSkPath())
+    , m_pathMeasure(path.getSkPath(), false)
     , m_accumulatedLength(0)
 {
 }
@@ -273,6 +278,11 @@ void Path::clear()
 bool Path::isEmpty() const
 {
     return m_path.isEmpty();
+}
+
+bool Path::isClosed() const
+{
+    return m_path.isLastContourClosed();
 }
 
 void Path::setIsVolatile(bool isVolatile)
@@ -329,6 +339,16 @@ void Path::addBezierCurveTo(const FloatPoint& p1, const FloatPoint& p2, const Fl
 void Path::addArcTo(const FloatPoint& p1, const FloatPoint& p2, float radius)
 {
     m_path.arcTo(p1.data(), p2.data(), WebCoreFloatToSkScalar(radius));
+}
+
+void Path::addArcTo(const FloatPoint& p, const FloatSize& r, float xRotate, bool largeArc, bool sweep)
+{
+    m_path.arcTo(
+        WebCoreFloatToSkScalar(r.width()), WebCoreFloatToSkScalar(r.height()),
+        WebCoreFloatToSkScalar(xRotate),
+        largeArc ? SkPath::kLarge_ArcSize : SkPath::kSmall_ArcSize,
+        sweep ? SkPath::kCW_Direction : SkPath::kCCW_Direction,
+        WebCoreFloatToSkScalar(p.x()), WebCoreFloatToSkScalar(p.y()));
 }
 
 void Path::closeSubpath()
@@ -413,7 +433,7 @@ void Path::addEllipse(const FloatRect& rect)
 
 void Path::addRoundedRect(const FloatRoundedRect& r)
 {
-    addRoundedRect(r.rect(), r.radii().topLeft(), r.radii().topRight(), r.radii().bottomLeft(), r.radii().bottomRight());
+    addRoundedRect(r.rect(), r.getRadii().topLeft(), r.getRadii().topRight(), r.getRadii().bottomLeft(), r.getRadii().bottomRight());
 }
 
 void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii)
@@ -475,7 +495,7 @@ void Path::addPathForRoundedRect(const FloatRect& rect, const FloatSize& topLeft
 
 void Path::addPath(const Path& src, const AffineTransform& transform)
 {
-    m_path.addPath(src.skPath(), affineTransformToSkMatrix(transform));
+    m_path.addPath(src.getSkPath(), affineTransformToSkMatrix(transform));
 }
 
 void Path::translate(const FloatSize& size)
@@ -491,6 +511,11 @@ bool Path::subtractPath(const Path& other)
 bool Path::unionPath(const Path& other)
 {
     return Op(m_path, other.m_path, kUnion_SkPathOp, &m_path);
+}
+
+bool Path::intersectPath(const Path& other)
+{
+    return Op(m_path, other.m_path, kIntersect_SkPathOp, &m_path);
 }
 
 #if ENABLE(ASSERT)

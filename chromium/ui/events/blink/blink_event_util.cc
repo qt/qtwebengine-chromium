@@ -23,6 +23,7 @@
 
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
+using blink::WebPointerProperties;
 using blink::WebTouchEvent;
 using blink::WebTouchPoint;
 
@@ -81,30 +82,11 @@ WebTouchPoint::State ToWebTouchPointState(const MotionEvent& event,
   return WebTouchPoint::StateUndefined;
 }
 
-WebTouchPoint::PointerType ToWebTouchPointPointerType(const MotionEvent& event,
-                                                      size_t pointer_index) {
-  switch (event.GetToolType(pointer_index)) {
-    case MotionEvent::TOOL_TYPE_UNKNOWN:
-      return WebTouchPoint::PointerType::Unknown;
-    case MotionEvent::TOOL_TYPE_FINGER:
-      return WebTouchPoint::PointerType::Touch;
-    case MotionEvent::TOOL_TYPE_STYLUS:
-      return WebTouchPoint::PointerType::Pen;
-    case MotionEvent::TOOL_TYPE_MOUSE:
-      return WebTouchPoint::PointerType::Mouse;
-    case MotionEvent::TOOL_TYPE_ERASER:
-      return WebTouchPoint::PointerType::Unknown;
-  }
-  NOTREACHED() << "Invalid MotionEvent::ToolType = "
-               << event.GetToolType(pointer_index);
-  return WebTouchPoint::PointerType::Unknown;
-}
-
 WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
                                   size_t pointer_index) {
   WebTouchPoint touch;
   touch.id = event.GetPointerId(pointer_index);
-  touch.pointerType = ToWebTouchPointPointerType(event, pointer_index);
+  touch.pointerType = ToWebPointerType(event.GetToolType(pointer_index));
   touch.state = ToWebTouchPointState(event, pointer_index);
   touch.position.x = event.GetX(pointer_index);
   touch.position.y = event.GetY(pointer_index);
@@ -179,7 +161,7 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
 
 blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
     const MotionEvent& event,
-    bool may_cause_scrolling) {
+    bool moved_beyond_slop_region) {
   static_assert(static_cast<int>(MotionEvent::MAX_TOUCH_POINT_COUNT) ==
                     static_cast<int>(blink::WebTouchEvent::touchesLengthCap),
                 "inconsistent maximum number of active touch points");
@@ -187,10 +169,12 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
   blink::WebTouchEvent result;
 
   result.type = ToWebInputEventType(event.GetAction());
-  result.cancelable = (result.type != WebInputEvent::TouchCancel);
+  result.dispatchType = result.type == WebInputEvent::TouchCancel
+                            ? WebInputEvent::EventNonBlocking
+                            : WebInputEvent::Blocking;
   result.timeStampSeconds =
-      (event.GetEventTime() - base::TimeTicks()).InSecondsF(),
-  result.causesScrollingIfUncanceled = may_cause_scrolling;
+      (event.GetEventTime() - base::TimeTicks()).InSecondsF();
+  result.movedBeyondSlopRegion = moved_beyond_slop_region;
   result.modifiers = EventFlagsToWebEventModifiers(event.GetFlags());
   DCHECK_NE(event.GetUniqueEventId(), 0U);
   result.uniqueTouchEventId = event.GetUniqueEventId();
@@ -215,16 +199,7 @@ int EventFlagsToWebEventModifiers(int flags) {
   if (flags & EF_ALT_DOWN)
     modifiers |= blink::WebInputEvent::AltKey;
   if (flags & EF_COMMAND_DOWN)
-#if defined(OS_WIN)
-    // Evaluate whether OSKey should be set for other platforms.
-    // Since this value was never set on Windows before as the meta
-    // key; we don't break backwards compatiblity exposing it as the
-    // true OS key. However this is not the case for Linux; see
-    // http://crbug.com/539979
-    modifiers |= blink::WebInputEvent::OSKey;
-#else
     modifiers |= blink::WebInputEvent::MetaKey;
-#endif
   if (flags & EF_ALTGR_DOWN)
     modifiers |= blink::WebInputEvent::AltGrKey;
   if (flags & EF_NUM_LOCK_ON)
@@ -364,6 +339,129 @@ WebGestureEvent CreateWebGestureEventFromGestureEventData(
   return CreateWebGestureEvent(data.details, data.time - base::TimeTicks(),
                                gfx::PointF(data.x, data.y),
                                gfx::PointF(data.raw_x, data.raw_y), data.flags);
+}
+
+scoped_ptr<blink::WebInputEvent> ScaleWebInputEvent(
+    const blink::WebInputEvent& event,
+    float scale) {
+  scoped_ptr<blink::WebInputEvent> scaled_event;
+  if (scale == 1.f)
+    return scaled_event;
+  if (event.type == blink::WebMouseEvent::MouseWheel) {
+    blink::WebMouseWheelEvent* wheel_event = new blink::WebMouseWheelEvent;
+    scaled_event.reset(wheel_event);
+    *wheel_event = static_cast<const blink::WebMouseWheelEvent&>(event);
+    wheel_event->x *= scale;
+    wheel_event->y *= scale;
+    wheel_event->deltaX *= scale;
+    wheel_event->deltaY *= scale;
+    wheel_event->wheelTicksX *= scale;
+    wheel_event->wheelTicksY *= scale;
+  } else if (blink::WebInputEvent::isMouseEventType(event.type)) {
+    blink::WebMouseEvent* mouse_event = new blink::WebMouseEvent;
+    scaled_event.reset(mouse_event);
+    *mouse_event = static_cast<const blink::WebMouseEvent&>(event);
+    mouse_event->x *= scale;
+    mouse_event->y *= scale;
+    mouse_event->windowX = mouse_event->x;
+    mouse_event->windowY = mouse_event->y;
+    mouse_event->movementX *= scale;
+    mouse_event->movementY *= scale;
+  } else if (blink::WebInputEvent::isTouchEventType(event.type)) {
+    blink::WebTouchEvent* touch_event = new blink::WebTouchEvent;
+    scaled_event.reset(touch_event);
+    *touch_event = static_cast<const blink::WebTouchEvent&>(event);
+    for (unsigned i = 0; i < touch_event->touchesLength; i++) {
+      touch_event->touches[i].position.x *= scale;
+      touch_event->touches[i].position.y *= scale;
+      touch_event->touches[i].radiusX *= scale;
+      touch_event->touches[i].radiusY *= scale;
+    }
+  } else if (blink::WebInputEvent::isGestureEventType(event.type)) {
+    blink::WebGestureEvent* gesture_event = new blink::WebGestureEvent;
+    scaled_event.reset(gesture_event);
+    *gesture_event = static_cast<const blink::WebGestureEvent&>(event);
+    gesture_event->x *= scale;
+    gesture_event->y *= scale;
+    switch (gesture_event->type) {
+      case blink::WebInputEvent::GestureScrollUpdate:
+        gesture_event->data.scrollUpdate.deltaX *= scale;
+        gesture_event->data.scrollUpdate.deltaY *= scale;
+        break;
+      case blink::WebInputEvent::GestureScrollBegin:
+        gesture_event->data.scrollBegin.deltaXHint *= scale;
+        gesture_event->data.scrollBegin.deltaYHint *= scale;
+        break;
+
+      case blink::WebInputEvent::GesturePinchUpdate:
+        // Scale in pinch gesture is DSF agnostic.
+        break;
+
+      case blink::WebInputEvent::GestureDoubleTap:
+      case blink::WebInputEvent::GestureTap:
+      case blink::WebInputEvent::GestureTapUnconfirmed:
+        gesture_event->data.tap.width *= scale;
+        gesture_event->data.tap.height *= scale;
+        break;
+
+      case blink::WebInputEvent::GestureTapDown:
+        gesture_event->data.tapDown.width *= scale;
+        gesture_event->data.tapDown.height *= scale;
+        break;
+
+      case blink::WebInputEvent::GestureShowPress:
+        gesture_event->data.showPress.width *= scale;
+        gesture_event->data.showPress.height *= scale;
+        break;
+
+      case blink::WebInputEvent::GestureLongPress:
+      case blink::WebInputEvent::GestureLongTap:
+        gesture_event->data.longPress.width *= scale;
+        gesture_event->data.longPress.height *= scale;
+        break;
+
+      case blink::WebInputEvent::GestureTwoFingerTap:
+        gesture_event->data.twoFingerTap.firstFingerWidth *= scale;
+        gesture_event->data.twoFingerTap.firstFingerHeight *= scale;
+        break;
+
+      case blink::WebInputEvent::GestureFlingStart:
+        gesture_event->data.flingStart.velocityX *= scale;
+        gesture_event->data.flingStart.velocityY *= scale;
+        break;
+
+      // These event does not have location data.
+      case blink::WebInputEvent::GesturePinchBegin:
+      case blink::WebInputEvent::GesturePinchEnd:
+      case blink::WebInputEvent::GestureTapCancel:
+      case blink::WebInputEvent::GestureFlingCancel:
+      case blink::WebInputEvent::GestureScrollEnd:
+        break;
+
+      // TODO(oshima): Find out if ContextMenu needs to be scaled.
+      default:
+        break;
+    }
+  }
+  return scaled_event;
+}
+
+WebPointerProperties::PointerType ToWebPointerType(
+    MotionEvent::ToolType tool_type) {
+  switch (tool_type) {
+    case MotionEvent::TOOL_TYPE_UNKNOWN:
+      return WebPointerProperties::PointerType::Unknown;
+    case MotionEvent::TOOL_TYPE_FINGER:
+      return WebPointerProperties::PointerType::Touch;
+    case MotionEvent::TOOL_TYPE_STYLUS:
+      return WebPointerProperties::PointerType::Pen;
+    case MotionEvent::TOOL_TYPE_MOUSE:
+      return WebPointerProperties::PointerType::Mouse;
+    case MotionEvent::TOOL_TYPE_ERASER:
+      return WebPointerProperties::PointerType::Unknown;
+  }
+  NOTREACHED() << "Invalid MotionEvent::ToolType = " << tool_type;
+  return WebPointerProperties::PointerType::Unknown;
 }
 
 }  // namespace ui

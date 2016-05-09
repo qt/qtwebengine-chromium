@@ -915,7 +915,7 @@ WebInspector.Spectrum.PaletteGenerator = function(callback)
     this._frequencyMap = new Map();
     var stylesheetPromises = [];
     for (var target of WebInspector.targetManager.targets(WebInspector.Target.Type.Page)) {
-        var cssModel = WebInspector.CSSStyleModel.fromTarget(target);
+        var cssModel = WebInspector.CSSModel.fromTarget(target);
         for (var stylesheet of cssModel.allStyleSheets())
             stylesheetPromises.push(new Promise(this._processStylesheet.bind(this, stylesheet)));
     }
@@ -1000,7 +1000,7 @@ WebInspector.Spectrum.PaletteGenerator.prototype = {
             resolve(null);
         }
 
-        stylesheet.requestContent(parseContent.bind(this));
+        stylesheet.requestContent().then(parseContent.bind(this));
     }
 }
 

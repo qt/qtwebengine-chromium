@@ -13,8 +13,6 @@
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 
-class GURL;
-
 namespace content {
 
 // A virtual app URL identifying the browser itself. This should be used for
@@ -29,20 +27,23 @@ class CONTENT_EXPORT MojoAppConnection {
  public:
   virtual ~MojoAppConnection() {}
 
-  // Creates a new connection to the application at |url| using |requestor_url|
-  // to identify the requestor upon connection. This may be called from any
-  // thread.
-  static scoped_ptr<MojoAppConnection> Create(const GURL& url,
-                                              const GURL& requestor_url);
+  // Creates a new connection to the application at |name| using
+  // |requestor_name| to identify the requestor and |context|'s mojo userid to
+  // specify a profile specific application instantiation. This may be called
+  // from any thread.
+  static scoped_ptr<MojoAppConnection> Create(
+      const std::string& user_id,
+      const std::string& name,
+      const std::string& requestor_name);
 
   // Connects to a service within the application.
   template <typename Interface>
-  void ConnectToService(mojo::InterfacePtr<Interface>* proxy) {
-    ConnectToService(Interface::Name_, mojo::GetProxy(proxy).PassMessagePipe());
+  void GetInterface(mojo::InterfacePtr<Interface>* proxy) {
+    GetInterface(Interface::Name_, mojo::GetProxy(proxy).PassMessagePipe());
   }
 
-  virtual void ConnectToService(const std::string& service_name,
-                                mojo::ScopedMessagePipeHandle handle) = 0;
+  virtual void GetInterface(const std::string& interface_name,
+                            mojo::ScopedMessagePipeHandle handle) = 0;
 };
 
 }  // namespace content

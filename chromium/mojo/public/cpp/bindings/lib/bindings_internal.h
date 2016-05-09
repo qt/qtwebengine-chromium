@@ -9,14 +9,26 @@
 
 #include "mojo/public/cpp/bindings/lib/interface_id.h"
 #include "mojo/public/cpp/bindings/lib/template_util.h"
-#include "mojo/public/cpp/bindings/struct_ptr.h"
 #include "mojo/public/cpp/system/core.h"
 
+namespace WTF {
+class String;
+}
 namespace mojo {
+class String;
+
+template <typename T>
+class StructPtr;
+
+template <typename T>
+class InlinedStructPtr;
+
 namespace internal {
 
 template <typename T>
 class Array_Data;
+
+using String_Data = Array_Data<char>;
 
 #pragma pack(push, 1)
 
@@ -94,12 +106,32 @@ struct IsHandle {
 
 template <typename T>
 struct IsUnionDataType {
+ private:
   template <typename U>
   static YesType Test(const typename U::MojomUnionDataType*);
 
   template <typename U>
   static NoType Test(...);
 
+  EnsureTypeIsComplete<T> check_t_;
+
+ public:
+  static const bool value =
+      sizeof(Test<T>(0)) == sizeof(YesType) && !IsConst<T>::value;
+};
+
+template <typename T>
+struct IsEnumDataType {
+ private:
+  template <typename U>
+  static YesType Test(const typename U::MojomEnumDataType*);
+
+  template <typename U>
+  static NoType Test(...);
+
+  EnsureTypeIsComplete<T> check_t_;
+
+ public:
   static const bool value =
       sizeof(Test<T>(0)) == sizeof(YesType) && !IsConst<T>::value;
 };
@@ -126,6 +158,16 @@ struct WrapperTraits<InlinedStructPtr<S>, true> {
 template <typename S>
 struct WrapperTraits<S, true> {
   typedef typename S::Data_* DataType;
+};
+
+template <>
+struct WrapperTraits<String, false> {
+  typedef String_Data* DataType;
+};
+
+template <>
+struct WrapperTraits<WTF::String, false> {
+  typedef String_Data* DataType;
 };
 
 }  // namespace internal

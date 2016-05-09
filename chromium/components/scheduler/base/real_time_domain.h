@@ -15,11 +15,12 @@ namespace scheduler {
 
 class SCHEDULER_EXPORT RealTimeDomain : public TimeDomain {
  public:
-  RealTimeDomain();
+  explicit RealTimeDomain(const char* tracing_category);
   ~RealTimeDomain() override;
 
   // TimeDomain implementation:
-  LazyNow CreateLazyNow() override;
+  LazyNow CreateLazyNow() const override;
+  base::TimeTicks Now() const override;
   base::TimeTicks ComputeDelayedRunTime(base::TimeTicks time_domain_now,
                                         base::TimeDelta delay) const override;
   bool MaybeAdvanceTime() override;
@@ -28,11 +29,12 @@ class SCHEDULER_EXPORT RealTimeDomain : public TimeDomain {
  protected:
   void OnRegisterWithTaskQueueManager(
       TaskQueueManager* task_queue_manager) override;
-  void RequestWakeup(LazyNow* lazy_now, base::TimeDelta delay) override;
+  void RequestWakeup(base::TimeTicks now, base::TimeDelta delay) override;
   void AsValueIntoInternal(
       base::trace_event::TracedValue* state) const override;
 
  private:
+  const char* tracing_category_;          // NOT OWNED
   TaskQueueManager* task_queue_manager_;  // NOT OWNED
 
   DISALLOW_COPY_AND_ASSIGN(RealTimeDomain);

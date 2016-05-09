@@ -47,6 +47,7 @@ class ServiceWorkerContextWatcher
 
   void GetStoredRegistrationsOnIOThread();
   void OnStoredRegistrationsOnIOThread(
+      ServiceWorkerStatusCode status,
       const std::vector<ServiceWorkerRegistrationInfo>& stored_registrations);
   void StopOnIOThread();
 
@@ -98,8 +99,6 @@ class ServiceWorkerContextWatcher
                             const GURL& pattern) override;
   void OnRegistrationDeleted(int64_t registration_id,
                              const GURL& pattern) override;
-  void OnForceUpdateOnPageLoadChanged(int64_t registration_id,
-                                      bool force_update_on_page_load) override;
 
   base::ScopedPtrHashMap<int64_t, scoped_ptr<ServiceWorkerVersionInfo>>
       version_info_map_;

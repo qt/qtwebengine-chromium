@@ -24,15 +24,15 @@ SyncRegistrationCallbacks::~SyncRegistrationCallbacks()
 {
 }
 
-void SyncRegistrationCallbacks::onSuccess(WebPassOwnPtr<WebSyncRegistration> webSyncRegistration)
+void SyncRegistrationCallbacks::onSuccess(std::unique_ptr<WebSyncRegistration> webSyncRegistration)
 {
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+    if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
 
-    OwnPtr<WebSyncRegistration> registration = webSyncRegistration.release();
+    OwnPtr<WebSyncRegistration> registration = adoptPtr(webSyncRegistration.release());
     if (!registration) {
-        m_resolver->resolve(v8::Null(m_resolver->scriptState()->isolate()));
+        m_resolver->resolve(v8::Null(m_resolver->getScriptState()->isolate()));
         return;
     }
     m_resolver->resolve();
@@ -40,65 +40,7 @@ void SyncRegistrationCallbacks::onSuccess(WebPassOwnPtr<WebSyncRegistration> web
 
 void SyncRegistrationCallbacks::onError(const WebSyncError& error)
 {
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-    m_resolver->reject(SyncError::take(m_resolver.get(), error));
-}
-
-SyncNotifyWhenFinishedCallbacks::SyncNotifyWhenFinishedCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
-    : m_resolver(resolver)
-    , m_serviceWorkerRegistration(serviceWorkerRegistration)
-{
-    ASSERT(m_resolver);
-    ASSERT(m_serviceWorkerRegistration);
-}
-
-SyncNotifyWhenFinishedCallbacks::~SyncNotifyWhenFinishedCallbacks()
-{
-}
-
-void SyncNotifyWhenFinishedCallbacks::onSuccess()
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-
-    m_resolver->resolve();
-}
-
-void SyncNotifyWhenFinishedCallbacks::onError(const WebSyncError& error)
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-    m_resolver->reject(SyncError::take(m_resolver.get(), error));
-}
-
-SyncUnregistrationCallbacks::SyncUnregistrationCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
-    : m_resolver(resolver)
-    , m_serviceWorkerRegistration(serviceWorkerRegistration)
-{
-    ASSERT(m_resolver);
-    ASSERT(m_serviceWorkerRegistration);
-}
-
-SyncUnregistrationCallbacks::~SyncUnregistrationCallbacks()
-{
-}
-
-void SyncUnregistrationCallbacks::onSuccess(bool status)
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-
-    m_resolver->resolve(status);
-}
-
-void SyncUnregistrationCallbacks::onError(const WebSyncError& error)
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+    if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
@@ -118,7 +60,7 @@ SyncGetRegistrationsCallbacks::~SyncGetRegistrationsCallbacks()
 
 void SyncGetRegistrationsCallbacks::onSuccess(const WebVector<WebSyncRegistration*>& webSyncRegistrations)
 {
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+    if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
     Vector<String> tags;
@@ -130,55 +72,10 @@ void SyncGetRegistrationsCallbacks::onSuccess(const WebVector<WebSyncRegistratio
 
 void SyncGetRegistrationsCallbacks::onError(const WebSyncError& error)
 {
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+    if (!m_resolver->getExecutionContext() || m_resolver->getExecutionContext()->activeDOMObjectsAreStopped()) {
         return;
     }
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
-}
-
-SyncGetPermissionStatusCallbacks::SyncGetPermissionStatusCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
-    : m_resolver(resolver)
-    , m_serviceWorkerRegistration(serviceWorkerRegistration)
-{
-    ASSERT(m_resolver);
-    ASSERT(m_serviceWorkerRegistration);
-}
-
-SyncGetPermissionStatusCallbacks::~SyncGetPermissionStatusCallbacks()
-{
-}
-
-void SyncGetPermissionStatusCallbacks::onSuccess(WebSyncPermissionStatus status)
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-
-    m_resolver->resolve(permissionString(status));
-}
-
-void SyncGetPermissionStatusCallbacks::onError(const WebSyncError& error)
-{
-    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-        return;
-    }
-    m_resolver->reject(SyncError::take(m_resolver.get(), error));
-}
-
-// static
-String SyncGetPermissionStatusCallbacks::permissionString(WebSyncPermissionStatus status)
-{
-    switch (status) {
-    case WebSyncPermissionStatusGranted:
-        return "granted";
-    case WebSyncPermissionStatusDenied:
-        return "denied";
-    case WebSyncPermissionStatusPrompt:
-        return "prompt";
-    }
-
-    ASSERT_NOT_REACHED();
-    return "denied";
 }
 
 } // namespace blink

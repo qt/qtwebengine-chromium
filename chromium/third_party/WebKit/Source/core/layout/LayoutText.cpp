@@ -41,10 +41,10 @@
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/LayoutTestSupport.h"
-#include "platform/fonts/Character.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/text/BidiResolver.h"
+#include "platform/text/Character.h"
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextRunIterator.h"
 #include "wtf/text/CharacterNames.h"
@@ -347,7 +347,7 @@ static FloatRect localQuadForTextBox(InlineTextBox* box, unsigned start, unsigne
     return FloatRect();
 }
 
-void LayoutText::absoluteRectsForRange(Vector<IntRect>& rects, unsigned start, unsigned end, bool useSelectionHeight, bool* wasFixed)
+void LayoutText::absoluteRectsForRange(Vector<IntRect>& rects, unsigned start, unsigned end, bool useSelectionHeight)
 {
     // Work around signed/unsigned issues. This function takes unsigneds, and is often passed UINT_MAX
     // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this
@@ -373,12 +373,12 @@ void LayoutText::absoluteRectsForRange(Vector<IntRect>& rects, unsigned start, u
                     r.setX(selectionRect.x().toFloat());
                 }
             }
-            rects.append(localToAbsoluteQuad(r, 0, wasFixed).enclosingBoundingBox());
+            rects.append(localToAbsoluteQuad(r).enclosingBoundingBox());
         } else {
             // FIXME: This code is wrong. It's converting local to absolute twice. http://webkit.org/b/65722
             FloatRect rect = localQuadForTextBox(box, start, end, useSelectionHeight);
             if (!rect.isZero())
-                rects.append(localToAbsoluteQuad(rect, 0, wasFixed).enclosingBoundingBox());
+                rects.append(localToAbsoluteQuad(rect).enclosingBoundingBox());
         }
     }
 }
@@ -407,7 +407,7 @@ static IntRect ellipsisRectForBox(InlineTextBox* box, unsigned startPos, unsigne
     return IntRect();
 }
 
-void LayoutText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed, ClippingOption option) const
+void LayoutText::absoluteQuads(Vector<FloatQuad>& quads, ClippingOption option) const
 {
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
         FloatRect boundaries(box->calculateBoundaries());
@@ -421,16 +421,16 @@ void LayoutText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed, Clippin
             else
                 boundaries.setHeight(ellipsisRect.maxY() - boundaries.y());
         }
-        quads.append(localToAbsoluteQuad(boundaries, 0, wasFixed));
+        quads.append(localToAbsoluteQuad(boundaries));
     }
 }
 
-void LayoutText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
+void LayoutText::absoluteQuads(Vector<FloatQuad>& quads) const
 {
-    absoluteQuads(quads, wasFixed, NoClipping);
+    absoluteQuads(quads, NoClipping);
 }
 
-void LayoutText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start, unsigned end, bool useSelectionHeight, bool* wasFixed)
+void LayoutText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start, unsigned end, bool useSelectionHeight)
 {
     // Work around signed/unsigned issues. This function takes unsigneds, and is often passed UINT_MAX
     // to mean "all the way to the end". InlineTextBox coordinates are unsigneds, so changing this
@@ -464,11 +464,11 @@ void LayoutText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start,
                     r.setX(selectionRect.x());
                 }
             }
-            quads.append(localToAbsoluteQuad(FloatRect(r), 0, wasFixed));
+            quads.append(localToAbsoluteQuad(FloatRect(r)));
         } else {
             FloatRect rect = localQuadForTextBox(box, start, end, useSelectionHeight);
             if (!rect.isZero())
-                quads.append(localToAbsoluteQuad(rect, 0, wasFixed));
+                quads.append(localToAbsoluteQuad(rect));
         }
     }
 }
@@ -524,8 +524,8 @@ static PositionWithAffinity createPositionWithAffinityForBox(const InlineBox* bo
         affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : TextAffinity::Downstream;
         break;
     }
-    int textStartOffset = box->lineLayoutItem().isText() ? LineLayoutText(box->lineLayoutItem()).textStartOffset() : 0;
-    return box->lineLayoutItem().createPositionWithAffinity(offset + textStartOffset, affinity);
+    int textStartOffset = box->getLineLayoutItem().isText() ? LineLayoutText(box->getLineLayoutItem()).textStartOffset() : 0;
+    return box->getLineLayoutItem().createPositionWithAffinity(offset + textStartOffset, affinity);
 }
 
 static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(const InlineTextBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
@@ -542,7 +542,7 @@ static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffset
 
         const InlineBox* prevBox = box->prevLeafChildIgnoringLineBreak();
         if ((prevBox && prevBox->bidiLevel() == box->bidiLevel())
-            || box->lineLayoutItem().containingBlock().style()->direction() == box->direction()) // FIXME: left on 12CBA
+            || box->getLineLayoutItem().containingBlock().style()->direction() == box->direction()) // FIXME: left on 12CBA
             return createPositionWithAffinityForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
 
         if (prevBox && prevBox->bidiLevel() > box->bidiLevel()) {
@@ -572,7 +572,7 @@ static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffset
 
     const InlineBox* nextBox = box->nextLeafChildIgnoringLineBreak();
     if ((nextBox && nextBox->bidiLevel() == box->bidiLevel())
-        || box->lineLayoutItem().containingBlock().style()->direction() == box->direction())
+        || box->getLineLayoutItem().containingBlock().style()->direction() == box->direction())
         return createPositionWithAffinityForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
 
     // offset is on the right edge
@@ -625,7 +625,7 @@ PositionWithAffinity LayoutText::positionForPoint(const LayoutPoint& point)
             if (pointBlockDirection < bottom || (blocksAreFlipped && pointBlockDirection == bottom)) {
                 ShouldAffinityBeDownstream shouldAffinityBeDownstream;
                 if (lineDirectionPointFitsInBox(pointLineDirection, box, shouldAffinityBeDownstream))
-                    return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(box, box->offsetForPosition(pointLineDirection.toFloat()), shouldAffinityBeDownstream);
+                    return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(box, box->offsetForPosition(pointLineDirection), shouldAffinityBeDownstream);
             }
         }
         lastBox = box;
@@ -634,7 +634,7 @@ PositionWithAffinity LayoutText::positionForPoint(const LayoutPoint& point)
     if (lastBox) {
         ShouldAffinityBeDownstream shouldAffinityBeDownstream;
         lineDirectionPointFitsInBox(pointLineDirection, lastBox, shouldAffinityBeDownstream);
-        return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(lastBox, lastBox->offsetForPosition(pointLineDirection.toFloat()) + lastBox->start(), shouldAffinityBeDownstream);
+        return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(lastBox, lastBox->offsetForPosition(pointLineDirection) + lastBox->start(), shouldAffinityBeDownstream);
     }
     return createPositionWithAffinity(0);
 }
@@ -661,7 +661,7 @@ LayoutRect LayoutText::localCaretRect(InlineBox* inlineBox, int caretOffset, Lay
     left -= caretWidthLeftOfOffset;
     LayoutUnit caretWidthRightOfOffset = caretWidth() - caretWidthLeftOfOffset;
 
-    left = left.round();
+    left = LayoutUnit(left.round());
 
     LayoutUnit rootLeft = box->root().logicalLeft();
     LayoutUnit rootRight = box->root().logicalRight();
@@ -727,7 +727,7 @@ ALWAYS_INLINE float LayoutText::widthFromFont(const Font& f, int start, int len,
     TextRun run = constructTextRun(f, this, start, len, styleRef(), textDirection);
     run.setCharactersLength(textLength() - start);
     ASSERT(run.charactersLength() >= run.length());
-    run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
+    run.setTabSize(!style()->collapseWhiteSpace(), style()->getTabSize());
     run.setXPos(leadWidth + textWidthSoFar);
 
     FloatRect newGlyphBounds;
@@ -778,8 +778,8 @@ void LayoutText::trimmedPrefWidths(LayoutUnit leadWidthLayoutUnit,
     floatMinWidth = m_minWidth;
     floatMaxWidth = m_maxWidth;
 
-    firstLineMinWidth = m_firstLineMinWidth;
-    lastLineMinWidth = m_lastLineLineMinWidth;
+    firstLineMinWidth = LayoutUnit(m_firstLineMinWidth);
+    lastLineMinWidth = LayoutUnit(m_lastLineLineMinWidth);
 
     hasBreakableChar = m_hasBreakableChar;
     hasBreak = m_hasBreak;
@@ -794,7 +794,7 @@ void LayoutText::trimmedPrefWidths(LayoutUnit leadWidthLayoutUnit,
             float spaceWidth = font.width(run);
             floatMaxWidth -= spaceWidth;
         } else {
-            floatMaxWidth += font.fontDescription().wordSpacing();
+            floatMaxWidth += font.getFontDescription().wordSpacing();
         }
     }
 
@@ -807,15 +807,15 @@ void LayoutText::trimmedPrefWidths(LayoutUnit leadWidthLayoutUnit,
     if (hasBreak) {
         const Font& f = style()->font(); // FIXME: This ignores first-line.
         bool firstLine = true;
-        firstLineMaxWidth = floatMaxWidth;
-        lastLineMaxWidth = floatMaxWidth;
+        firstLineMaxWidth = LayoutUnit(floatMaxWidth);
+        lastLineMaxWidth = LayoutUnit(floatMaxWidth);
         for (int i = 0; i < len; i++) {
             int linelen = 0;
             while (i + linelen < len && text[i + linelen] != newlineCharacter)
                 linelen++;
 
             if (linelen) {
-                lastLineMaxWidth = widthFromFont(f, i, linelen, leadWidth, lastLineMaxWidth.toFloat(), direction, nullptr, nullptr);
+                lastLineMaxWidth = LayoutUnit(widthFromFont(f, i, linelen, leadWidth, lastLineMaxWidth.toFloat(), direction, nullptr, nullptr));
                 if (firstLine) {
                     firstLine = false;
                     leadWidth = 0.f;
@@ -904,7 +904,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
     BidiCharacterRun* run;
     TextDirection textDirection = styleToUse.direction();
-    if (is8Bit() || isOverride(styleToUse.unicodeBidi())) {
+    if ((is8Bit() && textDirection == LTR) || isOverride(styleToUse.unicodeBidi())) {
         run = 0;
     } else {
         TextRun textRun(text());
@@ -1006,7 +1006,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             // Non-zero only when kerning is enabled, in which case we measure words with their trailing
             // space, then subtract its width.
             float wordTrailingSpaceWidth = 0;
-            if (isSpace && (f.fontDescription().typesettingFeatures() & Kerning)) {
+            if (isSpace && (f.getFontDescription().getTypesettingFeatures() & Kerning)) {
                 ASSERT(textDirection >=0 && textDirection <= 1);
                 if (!cachedWordTrailingSpaceWidth[textDirection])
                     cachedWordTrailingSpaceWidth[textDirection] = f.width(constructTextRun(f, &spaceCharacter, 1, styleToUse, textDirection)) + wordSpacing;
@@ -1081,7 +1081,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                 TextRun run = constructTextRun(f, this, i, 1, styleToUse, textDirection);
                 run.setCharactersLength(len - i);
                 ASSERT(run.charactersLength() >= run.length());
-                run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
+                run.setTabSize(!style()->collapseWhiteSpace(), style()->getTabSize());
                 run.setXPos(leadWidth + currMaxWidth);
 
                 currMaxWidth += f.width(run);
@@ -1110,7 +1110,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     }
 
     GlyphOverflow glyphOverflow;
-    glyphOverflow.setFromBounds(glyphBounds, f.fontMetrics().floatAscent(), f.fontMetrics().floatDescent(), m_maxWidth);
+    glyphOverflow.setFromBounds(glyphBounds, f.getFontMetrics().floatAscent(), f.getFontMetrics().floatDescent(), m_maxWidth);
     // We shouldn't change our mind once we "know".
     ASSERT(!m_knownToHaveNoOverflowAndNoFallbackFonts || (fallbackFonts.isEmpty() && glyphOverflow.isApproximatelyZero()));
     m_knownToHaveNoOverflowAndNoFallbackFonts = fallbackFonts.isEmpty() && glyphOverflow.isApproximatelyZero();
@@ -1185,13 +1185,13 @@ void LayoutText::setSelectionState(SelectionState state)
         if (state == SelectionStart || state == SelectionEnd || state == SelectionBoth) {
             int startPos, endPos;
             selectionStartEnd(startPos, endPos);
-            if (selectionState() == SelectionStart) {
+            if (getSelectionState() == SelectionStart) {
                 endPos = textLength();
 
                 // to handle selection from end of text to end of line
                 if (startPos && startPos == endPos)
                     startPos = endPos - 1;
-            } else if (selectionState() == SelectionEnd) {
+            } else if (getSelectionState() == SelectionEnd) {
                 startPos = 0;
             }
 
@@ -1277,7 +1277,7 @@ void LayoutText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset,
         dirtiedLines = true;
     }
     for (RootInlineBox* curr = firstRootBox; curr && curr != lastRootBox; curr = curr->nextRootBox()) {
-        if (curr->lineBreakObj() == this && curr->lineBreakPos() > end)
+        if (curr->lineBreakObj().isEqual(this) && curr->lineBreakPos() > end)
             curr->setLineBreakPos(clampTo<int>(curr->lineBreakPos() + delta));
     }
 
@@ -1436,7 +1436,7 @@ void LayoutText::dirtyLineBoxes()
 
 InlineTextBox* LayoutText::createTextBox(int start, unsigned short length)
 {
-    return new InlineTextBox(*this, start, length);
+    return new InlineTextBox(LineLayoutItem(this), start, length);
 }
 
 InlineTextBox* LayoutText::createInlineTextBox(int start, unsigned short length)
@@ -1500,7 +1500,7 @@ float LayoutText::width(unsigned from, unsigned len, const Font& f, LayoutUnit x
                 if (preferredLogicalWidthsDirty() || !m_knownToHaveNoOverflowAndNoFallbackFonts)
                     const_cast<LayoutText*>(this)->computePreferredLogicalWidths(0, *fallbackFonts, *glyphBounds);
                 else
-                    *glyphBounds = FloatRect(0, -f.fontMetrics().floatAscent(), m_maxWidth, f.fontMetrics().floatHeight());
+                    *glyphBounds = FloatRect(0, -f.getFontMetrics().floatAscent(), m_maxWidth, f.getFontMetrics().floatHeight());
                 w = m_maxWidth;
             } else {
                 w = maxLogicalWidth();
@@ -1513,7 +1513,7 @@ float LayoutText::width(unsigned from, unsigned len, const Font& f, LayoutUnit x
         run.setCharactersLength(textLength() - from);
         ASSERT(run.charactersLength() >= run.length());
 
-        run.setTabSize(!style()->collapseWhiteSpace(), style()->tabSize());
+        run.setTabSize(!style()->collapseWhiteSpace(), style()->getTabSize());
         run.setXPos(xPos.toFloat());
         w = f.width(run, fallbackFonts, glyphBounds);
     }
@@ -1573,21 +1573,19 @@ LayoutRect LayoutText::visualOverflowRect() const
     return rect;
 }
 
-LayoutRect LayoutText::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutText::localOverflowRectForPaintInvalidation() const
 {
     if (style()->visibility() != VISIBLE)
         return LayoutRect();
 
-    LayoutRect paintInvalidationRect(visualOverflowRect());
-    mapToVisibleRectInAncestorSpace(paintInvalidationContainer, paintInvalidationRect, paintInvalidationState);
-    return paintInvalidationRect;
+    return visualOverflowRect();
 }
 
-LayoutRect LayoutText::selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const
+LayoutRect LayoutText::localSelectionRect() const
 {
     ASSERT(!needsLayout());
 
-    if (selectionState() == SelectionNone)
+    if (getSelectionState() == SelectionNone)
         return LayoutRect();
     LayoutBlock* cb = containingBlock();
     if (!cb)
@@ -1596,15 +1594,15 @@ LayoutRect LayoutText::selectionRectForPaintInvalidation(const LayoutBoxModelObj
     // Now calculate startPos and endPos for painting selection.
     // We include a selection while endPos > 0
     int startPos, endPos;
-    if (selectionState() == SelectionInside) {
+    if (getSelectionState() == SelectionInside) {
         // We are fully selected.
         startPos = 0;
         endPos = textLength();
     } else {
         selectionStartEnd(startPos, endPos);
-        if (selectionState() == SelectionStart)
+        if (getSelectionState() == SelectionStart)
             endPos = textLength();
-        else if (selectionState() == SelectionEnd)
+        else if (getSelectionState() == SelectionEnd)
             startPos = 0;
     }
 
@@ -1618,10 +1616,6 @@ LayoutRect LayoutText::selectionRectForPaintInvalidation(const LayoutBoxModelObj
         rect.unite(LayoutRect(ellipsisRectForBox(box, startPos, endPos)));
     }
 
-    mapToVisibleRectInAncestorSpace(paintInvalidationContainer, rect, 0);
-    // FIXME: groupedMapping() leaks the squashing abstraction.
-    if (paintInvalidationContainer->layer()->groupedMapping())
-        PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 
@@ -1656,176 +1650,6 @@ unsigned LayoutText::resolvedTextLength() const
     return len;
 }
 
-int LayoutText::previousOffset(int current) const
-{
-    if (m_text.is8Bit())
-        return current - 1;
-
-    StringImpl* textImpl = m_text.impl();
-    TextBreakIterator* iterator = cursorMovementIterator(textImpl->characters16(), textImpl->length());
-    if (!iterator)
-        return current - 1;
-
-    long result = iterator->preceding(current);
-    if (result == TextBreakDone)
-        result = current - 1;
-
-
-    return result;
-}
-
-#if OS(POSIX)
-
-#define HANGUL_CHOSEONG_START (0x1100)
-#define HANGUL_CHOSEONG_END (0x115F)
-#define HANGUL_JUNGSEONG_START (0x1160)
-#define HANGUL_JUNGSEONG_END (0x11A2)
-#define HANGUL_JONGSEONG_START (0x11A8)
-#define HANGUL_JONGSEONG_END (0x11F9)
-#define HANGUL_SYLLABLE_START (0xAC00)
-#define HANGUL_SYLLABLE_END (0xD7AF)
-#define HANGUL_JONGSEONG_COUNT (28)
-
-enum HangulState {
-    HangulStateL,
-    HangulStateV,
-    HangulStateT,
-    HangulStateLV,
-    HangulStateLVT,
-    HangulStateBreak
-};
-
-inline bool isHangulLVT(UChar32 character)
-{
-    return (character - HANGUL_SYLLABLE_START) % HANGUL_JONGSEONG_COUNT;
-}
-
-inline bool isMark(UChar32 c)
-{
-    int8_t charType = u_charType(c);
-    return charType == U_NON_SPACING_MARK || charType == U_ENCLOSING_MARK || charType == U_COMBINING_SPACING_MARK;
-}
-
-inline bool isRegionalIndicator(UChar32 c)
-{
-    // National flag emoji each consists of a pair of regional indicator symbols.
-    return 0x1F1E6 <= c && c <= 0x1F1FF;
-}
-
-#endif
-
-int LayoutText::previousOffsetForBackwardDeletion(int current) const
-{
-#if OS(POSIX)
-    ASSERT(m_text);
-    StringImpl& text = *m_text.impl();
-    UChar32 character;
-    bool sawRegionalIndicator = false;
-    while (current > 0) {
-        if (U16_IS_TRAIL(text[--current]))
-            --current;
-        if (current < 0)
-            break;
-
-        UChar32 character = text.characterStartingAt(current);
-
-        if (sawRegionalIndicator) {
-            // We don't check if the pair of regional indicator symbols before current position can actually be combined
-            // into a flag, and just delete it. This may not agree with how the pair is rendered in edge cases,
-            // but is good enough in practice.
-            if (isRegionalIndicator(character))
-                break;
-            // Don't delete a preceding character that isn't a regional indicator symbol.
-            U16_FWD_1_UNSAFE(text, current);
-        }
-
-        // We don't combine characters in Armenian ... Limbu range for backward deletion.
-        if ((character >= 0x0530) && (character < 0x1950))
-            break;
-
-        if (isRegionalIndicator(character)) {
-            sawRegionalIndicator = true;
-            continue;
-        }
-
-        if (!isMark(character) && (character != 0xFF9E) && (character != 0xFF9F))
-            break;
-    }
-
-    if (current <= 0)
-        return current;
-
-    // Hangul
-    character = text.characterStartingAt(current);
-    if (((character >= HANGUL_CHOSEONG_START) && (character <= HANGUL_JONGSEONG_END)) || ((character >= HANGUL_SYLLABLE_START) && (character <= HANGUL_SYLLABLE_END))) {
-        HangulState state;
-
-        if (character < HANGUL_JUNGSEONG_START)
-            state = HangulStateL;
-        else if (character < HANGUL_JONGSEONG_START)
-            state = HangulStateV;
-        else if (character < HANGUL_SYLLABLE_START)
-            state = HangulStateT;
-        else
-            state = isHangulLVT(character) ? HangulStateLVT : HangulStateLV;
-
-        while (current > 0 && ((character = text.characterStartingAt(current - 1)) >= HANGUL_CHOSEONG_START) && (character <= HANGUL_SYLLABLE_END) && ((character <= HANGUL_JONGSEONG_END) || (character >= HANGUL_SYLLABLE_START))) {
-            switch (state) {
-            case HangulStateV:
-                if (character <= HANGUL_CHOSEONG_END)
-                    state = HangulStateL;
-                else if ((character >= HANGUL_SYLLABLE_START) && (character <= HANGUL_SYLLABLE_END) && !isHangulLVT(character))
-                    state = HangulStateLV;
-                else if (character > HANGUL_JUNGSEONG_END)
-                    state = HangulStateBreak;
-                break;
-            case HangulStateT:
-                if ((character >= HANGUL_JUNGSEONG_START) && (character <= HANGUL_JUNGSEONG_END))
-                    state = HangulStateV;
-                else if ((character >= HANGUL_SYLLABLE_START) && (character <= HANGUL_SYLLABLE_END))
-                    state = (isHangulLVT(character) ? HangulStateLVT : HangulStateLV);
-                else if (character < HANGUL_JUNGSEONG_START)
-                    state = HangulStateBreak;
-                break;
-            default:
-                state = (character < HANGUL_JUNGSEONG_START) ? HangulStateL : HangulStateBreak;
-                break;
-            }
-            if (state == HangulStateBreak)
-                break;
-
-            --current;
-        }
-    }
-
-    return current;
-#else
-    // Platforms other than Unix-like delete by one code point.
-    if (U16_IS_TRAIL(m_text[--current]))
-        --current;
-    if (current < 0)
-        current = 0;
-    return current;
-#endif
-}
-
-int LayoutText::nextOffset(int current) const
-{
-    if (m_text.is8Bit())
-        return current + 1;
-
-    StringImpl* textImpl = m_text.impl();
-    TextBreakIterator* iterator = cursorMovementIterator(textImpl->characters16(), textImpl->length());
-    if (!iterator)
-        return current + 1;
-
-    long result = iterator->following(current);
-    if (result == TextBreakDone)
-        result = current + 1;
-
-    return result;
-}
-
 bool LayoutText::computeCanUseSimpleFontCodePath() const
 {
     if (m_text.is8Bit())
@@ -1840,7 +1664,7 @@ void LayoutText::checkConsistency() const
 #ifdef CHECK_CONSISTENCY
     const InlineTextBox* prev = nullptr;
     for (const InlineTextBox* child = m_firstTextBox; child; child = child->nextTextBox()) {
-        ASSERT(child->lineLayoutItem().isEqual(this));
+        ASSERT(child->getLineLayoutItem().isEqual(this));
         ASSERT(child->prevTextBox() == prev);
         prev = child;
     }

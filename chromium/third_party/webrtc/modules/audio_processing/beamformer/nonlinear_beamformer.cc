@@ -334,8 +334,8 @@ void NonlinearBeamformer::InitInterfCovMats() {
   for (size_t i = 0; i < kNumFreqBins; ++i) {
     interf_cov_mats_[i].clear();
     for (size_t j = 0; j < interf_angles_radians_.size(); ++j) {
-      interf_cov_mats_[i].push_back(new ComplexMatrixF(num_input_channels_,
-                                                       num_input_channels_));
+      interf_cov_mats_[i].push_back(std::unique_ptr<ComplexMatrixF>(
+          new ComplexMatrixF(num_input_channels_, num_input_channels_)));
       ComplexMatrixF angled_cov_mat(num_input_channels_, num_input_channels_);
       CovarianceMatrixGenerator::AngledCovarianceMatrix(
           kSpeedOfSoundMeterSeconds,
@@ -471,8 +471,17 @@ float NonlinearBeamformer::CalculatePostfilterMask(
     ratio = rpsiw / rpsim;
   }
 
-  return (1.f - std::min(kCutOffConstant, ratio / rmw_r)) /
-         (1.f - std::min(kCutOffConstant, ratio / ratio_rxiw_rxim));
+  float numerator = 1.f - kCutOffConstant;
+  if (rmw_r > 0.f) {
+    numerator = 1.f - std::min(kCutOffConstant, ratio / rmw_r);
+  }
+
+  float denominator = 1.f - kCutOffConstant;
+  if (ratio_rxiw_rxim > 0.f) {
+    denominator = 1.f - std::min(kCutOffConstant, ratio / ratio_rxiw_rxim);
+  }
+
+  return numerator / denominator;
 }
 
 void NonlinearBeamformer::ApplyMasks(const complex_f* const* input,

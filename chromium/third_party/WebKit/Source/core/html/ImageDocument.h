@@ -35,9 +35,9 @@ class ImageResource;
 
 class CORE_EXPORT ImageDocument final : public HTMLDocument {
 public:
-    static PassRefPtrWillBeRawPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
+    static RawPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRefWillBeNoop(new ImageDocument(initializer));
+        return new ImageDocument(initializer);
     }
 
     enum ScaleType {
@@ -57,12 +57,12 @@ public:
 private:
     explicit ImageDocument(const DocumentInit&);
 
-    PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
+    RawPtr<DocumentParser> createParser() override;
 #if !ENABLE(OILPAN)
     void dispose() override;
 #endif
 
-    void createDocumentStructure(bool loadingMultipartContent);
+    void createDocumentStructure();
 
     // These methods are for m_shrinkToFitMode == Desktop.
     void resizeImageToFit(ScaleType);
@@ -71,9 +71,7 @@ private:
     bool shouldShrinkToFit() const;
     float scale() const;
 
-    String debugName() const override { return "ImageDocument"; }
-
-    RefPtrWillBeMember<HTMLImageElement> m_imageElement;
+    Member<HTMLImageElement> m_imageElement;
 
     // Whether enough of the image has been loaded to determine its size
     bool m_imageSizeIsKnown;
@@ -93,6 +91,6 @@ private:
 
 DEFINE_DOCUMENT_TYPE_CASTS(ImageDocument);
 
-}
+} // namespace blink
 
 #endif // ImageDocument_h

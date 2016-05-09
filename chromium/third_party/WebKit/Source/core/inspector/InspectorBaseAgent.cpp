@@ -30,7 +30,7 @@
 
 #include "core/inspector/InspectorBaseAgent.h"
 
-#include "core/inspector/InspectorState.h"
+#include "platform/inspector_protocol/Parser.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -42,37 +42,41 @@ InspectorAgent::InspectorAgent(const String& name)
 
 InspectorAgent::~InspectorAgent()
 {
-#if ENABLE(OILPAN)
-    m_state = nullptr;
-#endif
 }
 
 DEFINE_TRACE(InspectorAgent)
 {
     visitor->trace(m_instrumentingAgents);
-    visitor->trace(m_state);
 }
 
-void InspectorAgent::appended(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState)
+void InspectorAgent::appended(InstrumentingAgents* instrumentingAgents)
 {
     m_instrumentingAgents = instrumentingAgents;
-    m_state = inspectorState;
     init();
 }
 
-InspectorAgentRegistry::InspectorAgentRegistry(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState)
+void InspectorAgent::setState(protocol::DictionaryValue* state)
+{
+    m_state = state;
+}
+
+InspectorAgentRegistry::InspectorAgentRegistry(InstrumentingAgents* instrumentingAgents)
     : m_instrumentingAgents(instrumentingAgents)
-    , m_inspectorState(inspectorState)
+    , m_state(protocol::DictionaryValue::create())
 {
 }
 
-void InspectorAgentRegistry::append(PassOwnPtrWillBeRawPtr<InspectorAgent> agent)
+void InspectorAgentRegistry::append(RawPtr<InspectorAgent> agent)
 {
-    agent->appended(m_instrumentingAgents, m_inspectorState->createAgentState(agent->name()));
+    ASSERT(!m_state->get(agent->name()));
+    OwnPtr<protocol::DictionaryValue> agentState = protocol::DictionaryValue::create();
+    agent->setState(agentState.get());
+    m_state->setObject(agent->name(), agentState.release());
+    agent->appended(m_instrumentingAgents);
     m_agents.append(agent);
 }
 
-void InspectorAgentRegistry::setFrontend(InspectorFrontend* frontend)
+void InspectorAgentRegistry::setFrontend(protocol::Frontend* frontend)
 {
     for (size_t i = 0; i < m_agents.size(); i++)
         m_agents[i]->setFrontend(frontend);
@@ -84,13 +88,34 @@ void InspectorAgentRegistry::clearFrontend()
         m_agents[i]->clearFrontend();
 }
 
-void InspectorAgentRegistry::restore()
+void InspectorAgentRegistry::restore(const String& savedState)
 {
+    OwnPtr<protocol::Value> state = protocol::parseJSON(savedState);
+    if (state)
+        m_state = protocol::DictionaryValue::cast(state.release());
+    if (!m_state)
+        m_state = protocol::DictionaryValue::create();
+
+    for (size_t i = 0; i < m_agents.size(); i++) {
+        protocol::DictionaryValue* agentState = m_state->getObject(m_agents[i]->name());
+        if (!agentState) {
+            OwnPtr<protocol::DictionaryValue> newState = protocol::DictionaryValue::create();
+            agentState = newState.get();
+            m_state->setObject(m_agents[i]->name(), newState.release());
+        }
+        m_agents[i]->setState(agentState);
+    }
+
     for (size_t i = 0; i < m_agents.size(); i++)
         m_agents[i]->restore();
 }
 
-void InspectorAgentRegistry::registerInDispatcher(InspectorBackendDispatcher* dispatcher)
+String InspectorAgentRegistry::state()
+{
+    return m_state->toJSONString();
+}
+
+void InspectorAgentRegistry::registerInDispatcher(protocol::Dispatcher* dispatcher)
 {
     for (size_t i = 0; i < m_agents.size(); i++)
         m_agents[i]->registerInDispatcher(dispatcher);
@@ -98,8 +123,8 @@ void InspectorAgentRegistry::registerInDispatcher(InspectorBackendDispatcher* di
 
 void InspectorAgentRegistry::discardAgents()
 {
-    for (size_t i = 0; i < m_agents.size(); i++)
-        m_agents[i]->discardAgent();
+    for (size_t i = m_agents.size(); i > 0; i--)
+        m_agents[i - 1]->discardAgent();
 }
 
 void InspectorAgentRegistry::flushPendingProtocolNotifications()
@@ -111,10 +136,7 @@ void InspectorAgentRegistry::flushPendingProtocolNotifications()
 DEFINE_TRACE(InspectorAgentRegistry)
 {
     visitor->trace(m_instrumentingAgents);
-    visitor->trace(m_inspectorState);
-#if ENABLE(OILPAN)
     visitor->trace(m_agents);
-#endif
 }
 
 void InspectorAgentRegistry::didCommitLoadForLocalFrame(LocalFrame* frame)

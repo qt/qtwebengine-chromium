@@ -49,14 +49,14 @@ static String stringForPosition(const NamedGridAreaMap& gridAreaMap, size_t row,
     Vector<String> candidates;
 
     for (const auto& item : gridAreaMap) {
-        const GridCoordinate& coordinate = item.value;
-        if (row >= coordinate.rows.resolvedInitialPosition() && row < coordinate.rows.resolvedFinalPosition())
+        const GridArea& area = item.value;
+        if (row >= area.rows.startLine() && row < area.rows.endLine())
             candidates.append(item.key);
     }
 
     for (const auto& item : gridAreaMap) {
-        const GridCoordinate& coordinate = item.value;
-        if (column >= coordinate.columns.resolvedInitialPosition() && column < coordinate.columns.resolvedFinalPosition() && candidates.contains(item.key))
+        const GridArea& area = item.value;
+        if (column >= area.columns.startLine() && column < area.columns.endLine() && candidates.contains(item.key))
             return item.key;
     }
 

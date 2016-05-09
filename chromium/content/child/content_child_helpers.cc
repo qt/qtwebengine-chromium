@@ -6,8 +6,9 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/process/process_metrics.h"
 #include "build/build_config.h"
 #include "v8/include/v8.h"
@@ -18,6 +19,12 @@
 
 namespace content {
 
+// TODO(primiano): get rid of this file together with --memory-metrics.
+// This function is both misplaced and misnamed. If useful, this should
+// be moved to base/process/process_metrics.h. Regardless the name,
+// though, this provides only a partial and misleading value.
+// Unfortunately some telemetry benchmark rely on it and these need to
+// be refactored before getting rid of this. See crbug.com/581365 .
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 size_t GetMemoryUsageKB() {
   struct mallinfo minfo = mallinfo();
@@ -39,7 +46,7 @@ size_t GetMemoryUsageKB() {
 }
 #elif defined(OS_MACOSX)
 size_t GetMemoryUsageKB() {
-  scoped_ptr<base::ProcessMetrics> process_metrics(
+  std::unique_ptr<base::ProcessMetrics> process_metrics(
       // The default port provider is sufficient to get data for the current
       // process.
       base::ProcessMetrics::CreateProcessMetrics(
@@ -48,7 +55,7 @@ size_t GetMemoryUsageKB() {
 }
 #else
 size_t GetMemoryUsageKB() {
-  scoped_ptr<base::ProcessMetrics> process_metrics(
+  std::unique_ptr<base::ProcessMetrics> process_metrics(
       base::ProcessMetrics::CreateProcessMetrics(
           base::GetCurrentProcessHandle()));
   return process_metrics->GetPagefileUsage() >> 10;

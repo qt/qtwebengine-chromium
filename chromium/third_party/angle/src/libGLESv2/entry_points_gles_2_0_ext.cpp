@@ -27,6 +27,57 @@
 namespace gl
 {
 
+void GL_APIENTRY GenQueriesEXT(GLsizei n, GLuint *ids)
+{
+    EVENT("(GLsizei n = %d, GLuint* ids = 0x%0.8p)", n, ids);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateGenQueriesEXT(context, n))
+        {
+            return;
+        }
+
+        for (GLsizei i = 0; i < n; i++)
+        {
+            ids[i] = context->createQuery();
+        }
+    }
+}
+
+void GL_APIENTRY DeleteQueriesEXT(GLsizei n, const GLuint *ids)
+{
+    EVENT("(GLsizei n = %d, const GLuint *ids = 0x%0.8p)", n, ids);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateDeleteQueriesEXT(context, n))
+        {
+            return;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            context->deleteQuery(ids[i]);
+        }
+    }
+}
+
+GLboolean GL_APIENTRY IsQueryEXT(GLuint id)
+{
+    EVENT("(GLuint id = %d)", id);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        return (context->getQuery(id, false, GL_NONE) != NULL) ? GL_TRUE : GL_FALSE;
+    }
+
+    return GL_FALSE;
+}
+
 void GL_APIENTRY BeginQueryEXT(GLenum target, GLuint id)
 {
     EVENT("(GLenum target = 0x%X, GLuint %d)", target, id);
@@ -34,7 +85,7 @@ void GL_APIENTRY BeginQueryEXT(GLenum target, GLuint id)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateBeginQuery(context, target, id))
+        if (!ValidateBeginQueryEXT(context, target, id))
         {
             return;
         }
@@ -48,7 +99,150 @@ void GL_APIENTRY BeginQueryEXT(GLenum target, GLuint id)
     }
 }
 
-void GL_APIENTRY DeleteFencesNV(GLsizei n, const GLuint* fences)
+void GL_APIENTRY EndQueryEXT(GLenum target)
+{
+    EVENT("GLenum target = 0x%X)", target);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateEndQueryEXT(context, target))
+        {
+            return;
+        }
+
+        Error error = context->endQuery(target);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY QueryCounterEXT(GLuint id, GLenum target)
+{
+    EVENT("GLuint id = %d, GLenum target = 0x%X)", id, target);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateQueryCounterEXT(context, id, target))
+        {
+            return;
+        }
+
+        Error error = context->queryCounter(id, target);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY GetQueryivEXT(GLenum target, GLenum pname, GLint *params)
+{
+    EVENT("GLenum target = 0x%X, GLenum pname = 0x%X, GLint *params = 0x%0.8p)", target, pname,
+          params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetQueryivEXT(context, target, pname, params))
+        {
+            return;
+        }
+
+        context->getQueryiv(target, pname, params);
+    }
+}
+
+void GL_APIENTRY GetQueryObjectivEXT(GLuint id, GLenum pname, GLint *params)
+{
+    EVENT("(GLuint id = %d, GLenum pname = 0x%X, GLuint *params = 0x%0.8p)", id, pname, params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetQueryObjectivEXT(context, id, pname, params))
+        {
+            return;
+        }
+
+        Error error = context->getQueryObjectiv(id, pname, params);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint *params)
+{
+    EVENT("(GLuint id = %d, GLenum pname = 0x%X, GLuint *params = 0x%0.8p)", id, pname, params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetQueryObjectuivEXT(context, id, pname, params))
+        {
+            return;
+        }
+
+        Error error = context->getQueryObjectuiv(id, pname, params);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY GetQueryObjecti64vEXT(GLuint id, GLenum pname, GLint64 *params)
+{
+    EVENT("(GLuint id = %d, GLenum pname = 0x%X, GLuint *params = 0x%0.16p)", id, pname, params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetQueryObjecti64vEXT(context, id, pname, params))
+        {
+            return;
+        }
+
+        Error error = context->getQueryObjecti64v(id, pname, params);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY GetQueryObjectui64vEXT(GLuint id, GLenum pname, GLuint64 *params)
+{
+    EVENT("(GLuint id = %d, GLenum pname = 0x%X, GLuint *params = 0x%0.16p)", id, pname, params);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!ValidateGetQueryObjectui64vEXT(context, id, pname, params))
+        {
+            return;
+        }
+
+        Error error = context->getQueryObjectui64v(id, pname, params);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+void GL_APIENTRY DeleteFencesNV(GLsizei n, const GLuint *fences)
 {
     EVENT("(GLsizei n = %d, const GLuint* fences = 0x%0.8p)", n, fences);
 
@@ -68,29 +262,13 @@ void GL_APIENTRY DeleteFencesNV(GLsizei n, const GLuint* fences)
     }
 }
 
-void GL_APIENTRY DeleteQueriesEXT(GLsizei n, const GLuint *ids)
+void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode,
+                                          GLint first,
+                                          GLsizei count,
+                                          GLsizei primcount)
 {
-    EVENT("(GLsizei n = %d, const GLuint *ids = 0x%0.8p)", n, ids);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        if (n < 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        for (int i = 0; i < n; i++)
-        {
-            context->deleteQuery(ids[i]);
-        }
-    }
-}
-
-void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount)
-{
-    EVENT("(GLenum mode = 0x%X, GLint first = %d, GLsizei count = %d, GLsizei primcount = %d)", mode, first, count, primcount);
+    EVENT("(GLenum mode = 0x%X, GLint first = %d, GLsizei count = %d, GLsizei primcount = %d)",
+          mode, first, count, primcount);
 
     Context *context = GetValidGlobalContext();
     if (context)
@@ -109,43 +287,29 @@ void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei coun
     }
 }
 
-void GL_APIENTRY DrawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices, GLsizei primcount)
+void GL_APIENTRY DrawElementsInstancedANGLE(GLenum mode,
+                                            GLsizei count,
+                                            GLenum type,
+                                            const GLvoid *indices,
+                                            GLsizei primcount)
 {
-    EVENT("(GLenum mode = 0x%X, GLsizei count = %d, GLenum type = 0x%X, const GLvoid* indices = 0x%0.8p, GLsizei primcount = %d)",
-          mode, count, type, indices, primcount);
+    EVENT(
+        "(GLenum mode = 0x%X, GLsizei count = %d, GLenum type = 0x%X, const GLvoid* indices = "
+        "0x%0.8p, GLsizei primcount = %d)",
+        mode, count, type, indices, primcount);
 
     Context *context = GetValidGlobalContext();
     if (context)
     {
         IndexRange indexRange;
-        if (!ValidateDrawElementsInstancedANGLE(context, mode, count, type, indices, primcount, &indexRange))
+        if (!ValidateDrawElementsInstancedANGLE(context, mode, count, type, indices, primcount,
+                                                &indexRange))
         {
             return;
         }
 
         Error error =
             context->drawElementsInstanced(mode, count, type, indices, primcount, indexRange);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
-    }
-}
-
-void GL_APIENTRY EndQueryEXT(GLenum target)
-{
-    EVENT("GLenum target = 0x%X)", target);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        if (!ValidateEndQuery(context, target))
-        {
-            return;
-        }
-
-        Error error = context->endQuery(target);
         if (error.isError())
         {
             context->recordError(error);
@@ -179,7 +343,7 @@ void GL_APIENTRY FinishFenceNV(GLuint fence)
     }
 }
 
-void GL_APIENTRY GenFencesNV(GLsizei n, GLuint* fences)
+void GL_APIENTRY GenFencesNV(GLsizei n, GLuint *fences)
 {
     EVENT("(GLsizei n = %d, GLuint* fences = 0x%0.8p)", n, fences);
 
@@ -195,26 +359,6 @@ void GL_APIENTRY GenFencesNV(GLsizei n, GLuint* fences)
         for (int i = 0; i < n; i++)
         {
             fences[i] = context->createFenceNV();
-        }
-    }
-}
-
-void GL_APIENTRY GenQueriesEXT(GLsizei n, GLuint* ids)
-{
-    EVENT("(GLsizei n = %d, GLuint* ids = 0x%0.8p)", n, ids);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        if (n < 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        for (GLsizei i = 0; i < n; i++)
-        {
-            ids[i] = context->createQuery();
         }
     }
 }
@@ -288,84 +432,6 @@ GLenum GL_APIENTRY GetGraphicsResetStatusEXT(void)
     }
 
     return GL_NO_ERROR;
-}
-
-void GL_APIENTRY GetQueryivEXT(GLenum target, GLenum pname, GLint *params)
-{
-    EVENT("GLenum target = 0x%X, GLenum pname = 0x%X, GLint *params = 0x%0.8p)", target, pname, params);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        if (!ValidQueryType(context, target))
-        {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-
-        switch (pname)
-        {
-          case GL_CURRENT_QUERY_EXT:
-            params[0] = context->getState().getActiveQueryId(target);
-            break;
-
-          default:
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-    }
-}
-
-void GL_APIENTRY GetQueryObjectuivEXT(GLuint id, GLenum pname, GLuint *params)
-{
-    EVENT("(GLuint id = %d, GLenum pname = 0x%X, GLuint *params = 0x%0.8p)", id, pname, params);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        Query *queryObject = context->getQuery(id, false, GL_NONE);
-
-        if (!queryObject)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        if (context->getState().getActiveQueryId(queryObject->getType()) == id)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        switch(pname)
-        {
-          case GL_QUERY_RESULT_EXT:
-            {
-                Error error = queryObject->getResult(params);
-                if (error.isError())
-                {
-                    context->recordError(error);
-                    return;
-                }
-            }
-            break;
-
-          case GL_QUERY_RESULT_AVAILABLE_EXT:
-            {
-                Error error = queryObject->isResultAvailable(params);
-                if (error.isError())
-                {
-                    context->recordError(error);
-                    return;
-                }
-            }
-            break;
-
-          default:
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-    }
 }
 
 void GL_APIENTRY GetTranslatedShaderSourceANGLE(GLuint shader, GLsizei bufsize, GLsizei* length, GLchar* source)
@@ -456,19 +522,6 @@ GLboolean GL_APIENTRY IsFenceNV(GLuint fence)
     return GL_FALSE;
 }
 
-GLboolean GL_APIENTRY IsQueryEXT(GLuint id)
-{
-    EVENT("(GLuint id = %d)", id);
-
-    Context *context = GetValidGlobalContext();
-    if (context)
-    {
-        return (context->getQuery(id, false, GL_NONE) != NULL) ? GL_TRUE : GL_FALSE;
-    }
-
-    return GL_FALSE;
-}
-
 void GL_APIENTRY ReadnPixelsEXT(GLint x, GLint y, GLsizei width, GLsizei height,
                                 GLenum format, GLenum type, GLsizei bufSize,
                                 GLvoid *data)
@@ -480,28 +533,13 @@ void GL_APIENTRY ReadnPixelsEXT(GLint x, GLint y, GLsizei width, GLsizei height,
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (width < 0 || height < 0 || bufSize < 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        if (!ValidateReadPixelsParameters(context, x, y, width, height,
-                                              format, type, &bufSize, data))
+        if (!context->skipValidation() &&
+            !ValidateReadnPixelsEXT(context, x, y, width, height, format, type, bufSize, data))
         {
             return;
         }
 
-        Framebuffer *framebufferObject = context->getState().getReadFramebuffer();
-        ASSERT(framebufferObject);
-
-        Rectangle area(x, y, width, height);
-        Error error = framebufferObject->readPixels(context, area, format, type, data);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->readPixels(x, y, width, height, format, type, data);
     }
 }
 
@@ -615,7 +653,8 @@ void GL_APIENTRY TexStorage2DEXT(GLenum target, GLsizei levels, GLenum internalf
         }
 
         if (context->getClientVersion() >= 3 &&
-            !ValidateES3TexStorageParameters(context, target, levels, internalformat, width, height, 1))
+            !ValidateES3TexStorage2DParameters(context, target, levels, internalformat, width,
+                                               height, 1))
         {
             return;
         }
@@ -674,29 +713,15 @@ void GL_APIENTRY BlitFramebufferANGLE(GLint srcX0, GLint srcY0, GLint srcX1, GLi
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateBlitFramebufferParameters(context, srcX0, srcY0, srcX1, srcY1,
-                                               dstX0, dstY0, dstX1, dstY1, mask, filter,
-                                               true))
+        if (!context->skipValidation() &&
+            !ValidateBlitFramebufferANGLE(context, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1,
+                                          dstY1, mask, filter))
         {
             return;
         }
 
-        Framebuffer *readFramebuffer = context->getState().getReadFramebuffer();
-        ASSERT(readFramebuffer);
-
-        Framebuffer *drawFramebuffer = context->getState().getDrawFramebuffer();
-        ASSERT(drawFramebuffer);
-
-        Rectangle srcArea(srcX0, srcY0, srcX1 - srcX0, srcY1 - srcY0);
-        Rectangle dstArea(dstX0, dstY0, dstX1 - dstX0, dstY1 - dstY0);
-
-        Error error =
-            drawFramebuffer->blit(context, srcArea, dstArea, mask, filter, readFramebuffer);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->blitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask,
+                                 filter);
     }
 }
 
@@ -707,28 +732,13 @@ void GL_APIENTRY DiscardFramebufferEXT(GLenum target, GLsizei numAttachments, co
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!context->getExtensions().discardFramebuffer)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION, "Extension not enabled"));
-            return;
-        }
-
-        if (!ValidateDiscardFramebufferEXT(context, target, numAttachments, attachments))
+        if (!context->skipValidation() &&
+            !ValidateDiscardFramebufferEXT(context, target, numAttachments, attachments))
         {
             return;
         }
 
-        Framebuffer *framebuffer = context->getState().getTargetFramebuffer(target);
-        ASSERT(framebuffer);
-
-        // The specification isn't clear what should be done when the framebuffer isn't complete.
-        // We leave it up to the framebuffer implementation to decide what to do.
-        Error error = framebuffer->discard(numAttachments, attachments);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return;
-        }
+        context->discardFramebuffer(target, numAttachments, attachments);
     }
 }
 
@@ -800,15 +810,12 @@ void GL_APIENTRY DrawBuffersEXT(GLsizei n, const GLenum *bufs)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidateDrawBuffers(context, n, bufs))
+        if (!context->skipValidation() && !ValidateDrawBuffersEXT(context, n, bufs))
         {
             return;
         }
 
-        Framebuffer *framebuffer = context->getState().getDrawFramebuffer();
-        ASSERT(framebuffer);
-
-        framebuffer->setDrawBuffers(n, bufs);
+        context->drawBuffers(n, bufs);
     }
 }
 
@@ -819,28 +826,13 @@ void GL_APIENTRY GetBufferPointervOES(GLenum target, GLenum pname, void** params
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidBufferTarget(context, target))
+        if (!context->skipValidation() &&
+            !ValidateGetBufferPointervOES(context, target, pname, params))
         {
-            context->recordError(Error(GL_INVALID_ENUM));
             return;
         }
 
-        if (pname != GL_BUFFER_MAP_POINTER)
-        {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-
-        Buffer *buffer = context->getState().getTargetBuffer(target);
-
-        if (!buffer || !buffer->isMapped())
-        {
-            *params = NULL;
-        }
-        else
-        {
-            *params = buffer->getMapPointer();
-        }
+        context->getBufferPointerv(target, pname, params);
     }
 }
 
@@ -851,43 +843,15 @@ void *GL_APIENTRY MapBufferOES(GLenum target, GLenum access)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidBufferTarget(context, target))
+        if (!context->skipValidation() && !ValidateMapBufferOES(context, target, access))
         {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return NULL;
+            return nullptr;
         }
 
-        Buffer *buffer = context->getState().getTargetBuffer(target);
-
-        if (buffer == NULL)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        if (access != GL_WRITE_ONLY_OES)
-        {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return NULL;
-        }
-
-        if (buffer->isMapped())
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        Error error = buffer->map(access);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return NULL;
-        }
-
-        return buffer->getMapPointer();
+        return context->mapBuffer(target, access);
     }
 
-    return NULL;
+    return nullptr;
 }
 
 GLboolean GL_APIENTRY UnmapBufferOES(GLenum target)
@@ -897,29 +861,12 @@ GLboolean GL_APIENTRY UnmapBufferOES(GLenum target)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidBufferTarget(context, target))
+        if (!context->skipValidation() && !ValidateUnmapBufferOES(context, target))
         {
-            context->recordError(Error(GL_INVALID_ENUM));
             return GL_FALSE;
         }
 
-        Buffer *buffer = context->getState().getTargetBuffer(target);
-
-        if (buffer == NULL || !buffer->isMapped())
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return GL_FALSE;
-        }
-
-        GLboolean result;
-        Error error = buffer->unmap(&result);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return GL_FALSE;
-        }
-
-        return result;
+        return context->unmapBuffer(target);
     }
 
     return GL_FALSE;
@@ -933,91 +880,16 @@ void *GL_APIENTRY MapBufferRangeEXT(GLenum target, GLintptr offset, GLsizeiptr l
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (!ValidBufferTarget(context, target))
+        if (!context->skipValidation() &&
+            !ValidateMapBufferRangeEXT(context, target, offset, length, access))
         {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return NULL;
+            return nullptr;
         }
 
-        if (offset < 0 || length < 0)
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return NULL;
-        }
-
-        Buffer *buffer = context->getState().getTargetBuffer(target);
-
-        if (buffer == NULL)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        // Check for buffer overflow
-        size_t offsetSize = static_cast<size_t>(offset);
-        size_t lengthSize = static_cast<size_t>(length);
-
-        if (!rx::IsUnsignedAdditionSafe(offsetSize, lengthSize) ||
-            offsetSize + lengthSize > static_cast<size_t>(buffer->getSize()))
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return NULL;
-        }
-
-        // Check for invalid bits in the mask
-        GLbitfield allAccessBits = GL_MAP_READ_BIT |
-                                   GL_MAP_WRITE_BIT |
-                                   GL_MAP_INVALIDATE_RANGE_BIT |
-                                   GL_MAP_INVALIDATE_BUFFER_BIT |
-                                   GL_MAP_FLUSH_EXPLICIT_BIT |
-                                   GL_MAP_UNSYNCHRONIZED_BIT;
-
-        if (access & ~(allAccessBits))
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return NULL;
-        }
-
-        if (length == 0 || buffer->isMapped())
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        // Check for invalid bit combinations
-        if ((access & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT)) == 0)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        GLbitfield writeOnlyBits = GL_MAP_INVALIDATE_RANGE_BIT |
-                                   GL_MAP_INVALIDATE_BUFFER_BIT |
-                                   GL_MAP_UNSYNCHRONIZED_BIT;
-
-        if ((access & GL_MAP_READ_BIT) != 0 && (access & writeOnlyBits) != 0)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        if ((access & GL_MAP_WRITE_BIT) == 0 && (access & GL_MAP_FLUSH_EXPLICIT_BIT) != 0)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return NULL;
-        }
-
-        Error error = buffer->mapRange(offset, length, access);
-        if (error.isError())
-        {
-            context->recordError(error);
-            return NULL;
-        }
-
-        return buffer->getMapPointer();
+        return context->mapBufferRange(target, offset, length, access);
     }
 
-    return NULL;
+    return nullptr;
 }
 
 void GL_APIENTRY FlushMappedBufferRangeEXT(GLenum target, GLintptr offset, GLsizeiptr length)
@@ -1027,44 +899,13 @@ void GL_APIENTRY FlushMappedBufferRangeEXT(GLenum target, GLintptr offset, GLsiz
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        if (offset < 0 || length < 0)
+        if (!context->skipValidation() &&
+            !ValidateFlushMappedBufferRangeEXT(context, target, offset, length))
         {
-            context->recordError(Error(GL_INVALID_VALUE));
             return;
         }
 
-        if (!ValidBufferTarget(context, target))
-        {
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
-
-        Buffer *buffer = context->getState().getTargetBuffer(target);
-
-        if (buffer == NULL)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        if (!buffer->isMapped() || (buffer->getAccessFlags() & GL_MAP_FLUSH_EXPLICIT_BIT) == 0)
-        {
-            context->recordError(Error(GL_INVALID_OPERATION));
-            return;
-        }
-
-        // Check for buffer overflow
-        size_t offsetSize = static_cast<size_t>(offset);
-        size_t lengthSize = static_cast<size_t>(length);
-
-        if (!rx::IsUnsignedAdditionSafe(offsetSize, lengthSize) ||
-            offsetSize + lengthSize > static_cast<size_t>(buffer->getMapLength()))
-        {
-            context->recordError(Error(GL_INVALID_VALUE));
-            return;
-        }
-
-        // We do not currently support a non-trivial implementation of FlushMappedBufferRange
+        context->flushMappedBufferRange(target, offset, length);
     }
 }
 

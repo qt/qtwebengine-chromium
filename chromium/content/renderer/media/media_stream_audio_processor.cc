@@ -16,14 +16,13 @@
 #include "build/build_config.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
-#include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_converter.h"
 #include "media/base/audio_fifo.h"
 #include "media/base/channel_layout.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
-#include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
+#include "third_party/webrtc/api/mediaconstraintsinterface.h"
 #include "third_party/webrtc/modules/audio_processing/typing_detection.h"
 
 namespace content {
@@ -101,11 +100,6 @@ void RecordProcessingState(AudioTrackProcessingStates state) {
                             state, AUDIO_PROCESSING_MAX);
 }
 
-bool IsDelayAgnosticAecEnabled() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(switches::kDisableDelayAgnosticAec);
-}
-
 // Checks if the default minimum starting volume value for the AGC is overridden
 // on the command line.
 bool GetStartupMinVolumeForAgc(int* startup_min_volume) {
@@ -115,6 +109,13 @@ bool GetStartupMinVolumeForAgc(int* startup_min_volume) {
           switches::kAgcStartupMinVolume));
   return !min_volume_str.empty() &&
          base::StringToInt(min_volume_str, startup_min_volume);
+}
+
+// Checks if the AEC's refined adaptive filter tuning was enabled on the command
+// line.
+bool UseAecRefinedAdaptiveFilter() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAecRefinedAdaptiveFilter);
 }
 
 }  // namespace
@@ -150,8 +151,8 @@ class MediaStreamAudioBus {
 
  private:
   base::ThreadChecker thread_checker_;
-  scoped_ptr<media::AudioBus> bus_;
-  scoped_ptr<float*[]> channel_ptrs_;
+  std::unique_ptr<media::AudioBus> bus_;
+  std::unique_ptr<float* []> channel_ptrs_;
 };
 
 // Wraps AudioFifo to provide a cleaner interface to MediaStreamAudioProcessor.
@@ -255,9 +256,9 @@ class MediaStreamAudioFifo {
   const int source_channels_;  // For a DCHECK.
   const int source_frames_;  // For a DCHECK.
   const int sample_rate_;
-  scoped_ptr<media::AudioBus> audio_source_intermediate_;
-  scoped_ptr<MediaStreamAudioBus> destination_;
-  scoped_ptr<media::AudioFifo> fifo_;
+  std::unique_ptr<media::AudioBus> audio_source_intermediate_;
+  std::unique_ptr<MediaStreamAudioBus> destination_;
+  std::unique_ptr<media::AudioFifo> fifo_;
 
   // When using |fifo_|, this is the audio delay of the first sample to be
   // consumed next from the FIFO.  When not using |fifo_|, this is the audio
@@ -432,8 +433,13 @@ void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
                                               int sample_rate,
                                               int audio_delay_milliseconds) {
   DCHECK(render_thread_checker_.CalledOnValidThread());
-  DCHECK(audio_processing_->echo_control_mobile()->is_enabled() ^
-         audio_processing_->echo_cancellation()->is_enabled());
+#if defined(OS_ANDROID)
+  DCHECK(audio_processing_->echo_control_mobile()->is_enabled());
+  DCHECK(!audio_processing_->echo_cancellation()->is_enabled());
+#else
+  DCHECK(!audio_processing_->echo_control_mobile()->is_enabled());
+  DCHECK(audio_processing_->echo_cancellation()->is_enabled());
+#endif
 
   TRACE_EVENT0("audio", "MediaStreamAudioProcessor::OnPlayoutData");
   DCHECK_LT(audio_delay_milliseconds,
@@ -481,38 +487,27 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 
   // Audio mirroring can be enabled even though audio processing is otherwise
   // disabled.
-  audio_mirroring_ = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogAudioMirroring);
+  audio_mirroring_ = audio_constraints.GetGoogAudioMirroring();
 
-#if defined(OS_IOS)
-  // On iOS, VPIO provides built-in AGC and AEC.
-  const bool echo_cancellation = false;
-  const bool goog_agc = false;
-#else
   const bool echo_cancellation =
       audio_constraints.GetEchoCancellationProperty();
-  const bool goog_agc = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogAutoGainControl);
-#endif
+  const bool goog_agc = audio_constraints.GetGoogAutoGainControl();
 
-#if defined(OS_IOS) || defined(OS_ANDROID)
+#if defined(OS_ANDROID)
   const bool goog_experimental_aec = false;
   const bool goog_typing_detection = false;
 #else
-  const bool goog_experimental_aec = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogExperimentalEchoCancellation);
-  const bool goog_typing_detection = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogTypingNoiseDetection);
+  const bool goog_experimental_aec =
+      audio_constraints.GetGoogExperimentalEchoCancellation();
+  const bool goog_typing_detection =
+      audio_constraints.GetGoogTypingNoiseDetection();
 #endif
 
-  const bool goog_ns = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogNoiseSuppression);
-  const bool goog_experimental_ns = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogExperimentalNoiseSuppression);
-  const bool goog_beamforming = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogBeamforming);
-  const bool goog_high_pass_filter = audio_constraints.GetProperty(
-      MediaAudioConstraints::kGoogHighpassFilter);
+  const bool goog_ns = audio_constraints.GetGoogNoiseSuppression();
+  const bool goog_experimental_ns =
+      audio_constraints.GetGoogExperimentalNoiseSuppression();
+  const bool goog_beamforming = audio_constraints.GetGoogBeamforming();
+  const bool goog_high_pass_filter = audio_constraints.GetGoogHighpassFilter();
   // Return immediately if no goog constraint is enabled.
   if (!echo_cancellation && !goog_experimental_aec && !goog_ns &&
       !goog_high_pass_filter && !goog_typing_detection &&
@@ -527,8 +522,11 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
       new webrtc::ExtendedFilter(goog_experimental_aec));
   config.Set<webrtc::ExperimentalNs>(
       new webrtc::ExperimentalNs(goog_experimental_ns));
-  if (IsDelayAgnosticAecEnabled())
-    config.Set<webrtc::DelayAgnostic>(new webrtc::DelayAgnostic(true));
+  config.Set<webrtc::DelayAgnostic>(new webrtc::DelayAgnostic(true));
+  if (UseAecRefinedAdaptiveFilter()) {
+    config.Set<webrtc::RefinedAdaptiveFilter>(
+        new webrtc::RefinedAdaptiveFilter(true));
+  }
   if (goog_beamforming) {
     const auto& geometry =
         GetArrayGeometryPreferringConstraints(audio_constraints, input_params);
@@ -539,8 +537,7 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
   }
 
   // If the experimental AGC is enabled, check for overridden config params.
-  if (audio_constraints.GetProperty(
-          MediaAudioConstraints::kGoogExperimentalAutoGainControl)) {
+  if (audio_constraints.GetGoogExperimentalAutoGainControl()) {
     int startup_min_volume = 0;
     if (GetStartupMinVolumeForAgc(&startup_min_volume)) {
       config.Set<webrtc::ExperimentalAgc>(

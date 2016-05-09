@@ -32,8 +32,13 @@
 
 // IPC messages for testing ----------------------------------------------------
 
+// TODO(mdempsky): Fix properly by moving into a separate
+// browsertest_message_generator.cc file.
+#undef IPC_IPC_MESSAGE_MACROS_H_
+#undef IPC_MESSAGE_EXTRA
 #define IPC_MESSAGE_IMPL
 #include "ipc/ipc_message_macros.h"
+#include "ipc/ipc_message_templates_impl.h"
 
 #undef IPC_MESSAGE_START
 #define IPC_MESSAGE_START TestMsgStart
@@ -96,24 +101,18 @@ class TestTaskCounter : public base::SingleThreadTaskRunner {
 
 class RenderThreadImplForTest : public RenderThreadImpl {
  public:
-  RenderThreadImplForTest(const InProcessChildThreadParams& params,
-                          scoped_ptr<scheduler::RendererScheduler> scheduler,
-                          scoped_refptr<TestTaskCounter> test_task_counter)
-      : RenderThreadImpl(params, std::move(scheduler)),
-        test_task_counter_(test_task_counter) {}
+  RenderThreadImplForTest(
+      const InProcessChildThreadParams& params,
+      scoped_ptr<scheduler::RendererScheduler> scheduler,
+      scoped_refptr<base::SingleThreadTaskRunner>& test_task_counter)
+      : RenderThreadImpl(params, std::move(scheduler), test_task_counter) {
+  }
 
   ~RenderThreadImplForTest() override {}
-
-  void SetResourceDispatchTaskQueue(
-      const scoped_refptr<base::SingleThreadTaskRunner>&) override {
-    // Use our TestTaskCounter instead.
-    RenderThreadImpl::SetResourceDispatchTaskQueue(test_task_counter_);
-  }
 
   using ChildThreadImpl::OnMessageReceived;
 
  private:
-  scoped_refptr<TestTaskCounter> test_task_counter_;
 };
 
 #if defined(COMPILER_MSVC)
@@ -180,13 +179,14 @@ class RenderThreadImplBrowserTest : public testing::Test {
     scoped_ptr<scheduler::RendererScheduler> renderer_scheduler =
         scheduler::RendererScheduler::Create();
     InitializeMojo();
+    scoped_refptr<base::SingleThreadTaskRunner> test_task_counter(
+        test_task_counter_.get());
     thread_ = new RenderThreadImplForTest(
         InProcessChildThreadParams(test_helper_->GetChannelId(),
-                                   test_helper_->GetIOTaskRunner()),
-        std::move(renderer_scheduler), test_task_counter_);
+                                   test_helper_->GetIOTaskRunner(),
+                                   test_helper_->GetMessagePipeHandle()),
+        std::move(renderer_scheduler), test_task_counter);
     cmd->InitFromArgv(old_argv);
-
-    thread_->EnsureWebKitInitialized();
 
     test_msg_filter_ = make_scoped_refptr(
         new QuitOnTestMsgFilter(test_helper_->GetMessageLoop()));

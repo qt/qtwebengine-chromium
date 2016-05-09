@@ -40,12 +40,12 @@ String DocumentType::nodeName() const
     return name();
 }
 
-Node::NodeType DocumentType::nodeType() const
+Node::NodeType DocumentType::getNodeType() const
 {
     return DOCUMENT_TYPE_NODE;
 }
 
-PassRefPtrWillBeRawPtr<Node> DocumentType::cloneNode(bool /*deep*/)
+RawPtr<Node> DocumentType::cloneNode(bool /*deep*/)
 {
     return create(&document(), m_name, m_publicId, m_systemId);
 }
@@ -55,7 +55,7 @@ Node::InsertionNotificationRequest DocumentType::insertedInto(ContainerNode* ins
     Node::insertedInto(insertionPoint);
 
     // DocumentType can only be inserted into a Document.
-    ASSERT(parentNode()->isDocumentNode());
+    DCHECK(parentNode()->isDocumentNode());
 
     document().setDoctype(this);
 
@@ -68,4 +68,4 @@ void DocumentType::removedFrom(ContainerNode* insertionPoint)
     Node::removedFrom(insertionPoint);
 }
 
-}
+} // namespace blink

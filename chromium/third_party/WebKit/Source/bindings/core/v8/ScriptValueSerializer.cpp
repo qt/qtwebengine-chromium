@@ -294,13 +294,25 @@ void SerializedScriptValueWriter::writeArrayBufferView(const DOMArrayBufferView&
     doWriteUint32(arrayBufferView.byteLength());
 }
 
-void SerializedScriptValueWriter::writeImageData(uint32_t width, uint32_t height, const uint8_t* pixelData, uint32_t pixelDataLength)
+// Helper function shared by writeImageData and writeImageBitmap
+void SerializedScriptValueWriter::doWriteImageData(uint32_t width, uint32_t height, const uint8_t* pixelData, uint32_t pixelDataLength)
 {
-    append(ImageDataTag);
     doWriteUint32(width);
     doWriteUint32(height);
     doWriteUint32(pixelDataLength);
     append(pixelData, pixelDataLength);
+}
+
+void SerializedScriptValueWriter::writeImageData(uint32_t width, uint32_t height, const uint8_t* pixelData, uint32_t pixelDataLength)
+{
+    append(ImageDataTag);
+    doWriteImageData(width, height, pixelData, pixelDataLength);
+}
+
+void SerializedScriptValueWriter::writeImageBitmap(uint32_t width, uint32_t height, const uint8_t* pixelData, uint32_t pixelDataLength)
+{
+    append(ImageBitmapTag);
+    doWriteImageData(width, height, pixelData, pixelDataLength);
 }
 
 void SerializedScriptValueWriter::writeRegExp(v8::Local<v8::String> pattern, v8::RegExp::Flags flags)
@@ -436,7 +448,7 @@ void SerializedScriptValueWriter::doWriteFile(const File& file)
         doWriteUint32(static_cast<uint8_t>(0));
     }
 
-    doWriteUint32(static_cast<uint8_t>((file.userVisibility() == File::IsUserVisible) ? 1 : 0));
+    doWriteUint32(static_cast<uint8_t>((file.getUserVisibility() == File::IsUserVisible) ? 1 : 0));
 }
 
 void SerializedScriptValueWriter::doWriteArrayBuffer(const DOMArrayBuffer& arrayBuffer)
@@ -574,7 +586,7 @@ ScriptValueSerializer::StateBase* ScriptValueSerializer::AbstractObjectState::se
 ScriptValueSerializer::StateBase* ScriptValueSerializer::ObjectState::advance(ScriptValueSerializer& serializer)
 {
     if (m_propertyNames.IsEmpty()) {
-        if (!composite()->GetPropertyNames(serializer.context()).ToLocal(&m_propertyNames))
+        if (!composite()->GetOwnPropertyNames(serializer.context()).ToLocal(&m_propertyNames))
             return serializer.checkException(this);
     }
     return serializeProperties(false, serializer);
@@ -798,6 +810,8 @@ ScriptValueSerializer::StateBase* ScriptValueSerializer::doSerializeValue(v8::Lo
             writeImageData(value);
         } else if (value->IsRegExp()) {
             writeRegExp(value);
+        } else if (V8ImageBitmap::hasInstance(value, isolate())) {
+            return writeImageBitmap(value, next);
         } else if (V8ArrayBuffer::hasInstance(value, isolate())) {
             return writeArrayBuffer(value, next);
         } else if (V8CompositorProxy::hasInstance(value, isolate())) {
@@ -991,6 +1005,18 @@ void ScriptValueSerializer::writeImageData(v8::Local<v8::Value> value)
     m_writer.writeImageData(imageData->width(), imageData->height(), pixelArray->data(), pixelArray->length());
 }
 
+ScriptValueSerializer::StateBase* ScriptValueSerializer::writeImageBitmap(v8::Local<v8::Value> value, ScriptValueSerializer::StateBase* next)
+{
+    ImageBitmap* imageBitmap = V8ImageBitmap::toImpl(value.As<v8::Object>());
+    if (!imageBitmap)
+        return nullptr;
+    if (imageBitmap->isNeutered())
+        return handleError(DataCloneError, "An ImageBitmap is neutered and could not be cloned.", next);
+    OwnPtr<uint8_t[]> pixelData = imageBitmap->copyBitmapData(PremultiplyAlpha);
+    m_writer.writeImageBitmap(imageBitmap->width(), imageBitmap->height(), pixelData.get(), imageBitmap->width() * imageBitmap->height() * 4);
+    return nullptr;
+}
+
 void ScriptValueSerializer::writeRegExp(v8::Local<v8::Value> value)
 {
     v8::Local<v8::RegExp> regExp = value.As<v8::RegExp>();
@@ -1082,7 +1108,7 @@ bool ScriptValueSerializer::shouldSerializeDensely(uint32_t length, uint32_t pro
 ScriptValueSerializer::StateBase* ScriptValueSerializer::startArrayState(v8::Local<v8::Array> array, ScriptValueSerializer::StateBase* next)
 {
     v8::Local<v8::Array> propertyNames;
-    if (!array->GetPropertyNames(context()).ToLocal(&propertyNames))
+    if (!array->GetOwnPropertyNames(context()).ToLocal(&propertyNames))
         return checkException(next);
     uint32_t length = array->Length();
 
@@ -1256,6 +1282,11 @@ bool SerializedScriptValueReader::readWithTag(SerializationTag tag, v8::Local<v8
 
     case ImageDataTag:
         if (!readImageData(value))
+            return false;
+        creator.pushObjectReference(*value);
+        break;
+    case ImageBitmapTag:
+        if (!readImageBitmap(value))
             return false;
         creator.pushObjectReference(*value);
         break;
@@ -1566,26 +1597,49 @@ bool SerializedScriptValueReader::readNumberObject(v8::Local<v8::Value>* value)
     return true;
 }
 
-bool SerializedScriptValueReader::readImageData(v8::Local<v8::Value>* value)
+// Helper function shared by readImageData and readImageBitmap
+ImageData* SerializedScriptValueReader::doReadImageData()
 {
     uint32_t width;
     uint32_t height;
     uint32_t pixelDataLength;
     if (!doReadUint32(&width))
-        return false;
+        return nullptr;
     if (!doReadUint32(&height))
-        return false;
+        return nullptr;
     if (!doReadUint32(&pixelDataLength))
-        return false;
+        return nullptr;
     if (m_position + pixelDataLength > m_length)
-        return false;
+        return nullptr;
     ImageData* imageData = ImageData::create(IntSize(width, height));
     DOMUint8ClampedArray* pixelArray = imageData->data();
     ASSERT(pixelArray);
     ASSERT(pixelArray->length() >= pixelDataLength);
     memcpy(pixelArray->data(), m_buffer + m_position, pixelDataLength);
     m_position += pixelDataLength;
+    return imageData;
+}
+
+bool SerializedScriptValueReader::readImageData(v8::Local<v8::Value>* value)
+{
+    ImageData* imageData = doReadImageData();
+    if (!imageData)
+        return false;
     *value = toV8(imageData, m_scriptState->context()->Global(), isolate());
+    return !value->IsEmpty();
+}
+
+bool SerializedScriptValueReader::readImageBitmap(v8::Local<v8::Value>* value)
+{
+    ImageData* imageData = doReadImageData();
+    if (!imageData)
+        return false;
+    ImageBitmapOptions options;
+    options.setPremultiplyAlpha("none");
+    RawPtr<ImageBitmap> imageBitmap = ImageBitmap::create(imageData, IntRect(0, 0, imageData->width(), imageData->height()), options, true);
+    if (!imageBitmap.get())
+        return false;
+    *value = toV8(imageBitmap.get(), m_scriptState->context()->Global(), isolate());
     return !value->IsEmpty();
 }
 
@@ -1740,7 +1794,7 @@ bool SerializedScriptValueReader::readRegExp(v8::Local<v8::Value>* value)
     uint32_t flags;
     if (!doReadUint32(&flags))
         return false;
-    if (!v8::RegExp::New(scriptState()->context(), pattern.As<v8::String>(), static_cast<v8::RegExp::Flags>(flags)).ToLocal(value))
+    if (!v8::RegExp::New(getScriptState()->context(), pattern.As<v8::String>(), static_cast<v8::RegExp::Flags>(flags)).ToLocal(value))
         return false;
     return true;
 }
@@ -1914,7 +1968,7 @@ PassRefPtr<BlobDataHandle> SerializedScriptValueReader::getOrCreateBlobDataHandl
 
 v8::Local<v8::Value> ScriptValueDeserializer::deserialize()
 {
-    v8::Isolate* isolate = m_reader.scriptState()->isolate();
+    v8::Isolate* isolate = m_reader.getScriptState()->isolate();
     if (!m_reader.readVersion(m_version) || m_version > SerializedScriptValue::wireFormatVersion)
         return v8::Null(isolate);
     m_reader.setVersion(m_version);
@@ -1931,28 +1985,28 @@ v8::Local<v8::Value> ScriptValueDeserializer::deserialize()
 
 bool ScriptValueDeserializer::newSparseArray(uint32_t)
 {
-    v8::Local<v8::Array> array = v8::Array::New(m_reader.scriptState()->isolate(), 0);
+    v8::Local<v8::Array> array = v8::Array::New(m_reader.getScriptState()->isolate(), 0);
     openComposite(array);
     return true;
 }
 
 bool ScriptValueDeserializer::newDenseArray(uint32_t length)
 {
-    v8::Local<v8::Array> array = v8::Array::New(m_reader.scriptState()->isolate(), length);
+    v8::Local<v8::Array> array = v8::Array::New(m_reader.getScriptState()->isolate(), length);
     openComposite(array);
     return true;
 }
 
 bool ScriptValueDeserializer::newMap()
 {
-    v8::Local<v8::Map> map = v8::Map::New(m_reader.scriptState()->isolate());
+    v8::Local<v8::Map> map = v8::Map::New(m_reader.getScriptState()->isolate());
     openComposite(map);
     return true;
 }
 
 bool ScriptValueDeserializer::newSet()
 {
-    v8::Local<v8::Set> set = v8::Set::New(m_reader.scriptState()->isolate());
+    v8::Local<v8::Set> set = v8::Set::New(m_reader.getScriptState()->isolate());
     openComposite(set);
     return true;
 }
@@ -1968,7 +2022,7 @@ bool ScriptValueDeserializer::consumeTopOfStack(v8::Local<v8::Value>* object)
 
 bool ScriptValueDeserializer::newObject()
 {
-    v8::Local<v8::Object> object = v8::Object::New(m_reader.scriptState()->isolate());
+    v8::Local<v8::Object> object = v8::Object::New(m_reader.getScriptState()->isolate());
     if (object.IsEmpty())
         return false;
     openComposite(object);
@@ -1984,7 +2038,7 @@ bool ScriptValueDeserializer::completeObject(uint32_t numProperties, v8::Local<v
             return false;
         object = composite.As<v8::Object>();
     } else {
-        object = v8::Object::New(m_reader.scriptState()->isolate());
+        object = v8::Object::New(m_reader.getScriptState()->isolate());
     }
     if (object.IsEmpty())
         return false;
@@ -2000,7 +2054,7 @@ bool ScriptValueDeserializer::completeSparseArray(uint32_t numProperties, uint32
             return false;
         array = composite.As<v8::Array>();
     } else {
-        array = v8::Array::New(m_reader.scriptState()->isolate());
+        array = v8::Array::New(m_reader.getScriptState()->isolate());
     }
     if (array.IsEmpty())
         return false;
@@ -2022,7 +2076,7 @@ bool ScriptValueDeserializer::completeDenseArray(uint32_t numProperties, uint32_
         return false;
     if (length > stackDepth())
         return false;
-    v8::Local<v8::Context> context = m_reader.scriptState()->context();
+    v8::Local<v8::Context> context = m_reader.getScriptState()->context();
     for (unsigned i = 0, stackPos = stackDepth() - length; i < length; i++, stackPos++) {
         v8::Local<v8::Value> elem = element(stackPos);
         if (!elem->IsUndefined()) {
@@ -2043,7 +2097,7 @@ bool ScriptValueDeserializer::completeMap(uint32_t length, v8::Local<v8::Value>*
     v8::Local<v8::Map> map = composite.As<v8::Map>();
     if (map.IsEmpty())
         return false;
-    v8::Local<v8::Context> context = m_reader.scriptState()->context();
+    v8::Local<v8::Context> context = m_reader.getScriptState()->context();
     ASSERT(length % 2 == 0);
     for (unsigned i = stackDepth() - length; i + 1 < stackDepth(); i += 2) {
         v8::Local<v8::Value> key = element(i);
@@ -2065,7 +2119,7 @@ bool ScriptValueDeserializer::completeSet(uint32_t length, v8::Local<v8::Value>*
     v8::Local<v8::Set> set = composite.As<v8::Set>();
     if (set.IsEmpty())
         return false;
-    v8::Local<v8::Context> context = m_reader.scriptState()->context();
+    v8::Local<v8::Context> context = m_reader.getScriptState()->context();
     for (unsigned i = stackDepth() - length; i < stackDepth(); i++) {
         v8::Local<v8::Value> key = element(i);
         if (set->Add(context, key).IsEmpty())
@@ -2087,8 +2141,8 @@ bool ScriptValueDeserializer::tryGetTransferredMessagePort(uint32_t index, v8::L
         return false;
     if (index >= m_transferredMessagePorts->size())
         return false;
-    v8::Local<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
-    *object = toV8(m_transferredMessagePorts->at(index).get(), creationContext, m_reader.scriptState()->isolate());
+    v8::Local<v8::Object> creationContext = m_reader.getScriptState()->context()->Global();
+    *object = toV8(m_transferredMessagePorts->at(index).get(), creationContext, m_reader.getScriptState()->isolate());
     return !object->IsEmpty();
 }
 
@@ -2101,8 +2155,8 @@ bool ScriptValueDeserializer::tryGetTransferredArrayBuffer(uint32_t index, v8::L
     v8::Local<v8::Value> result = m_arrayBuffers.at(index);
     if (result.IsEmpty()) {
         RefPtr<DOMArrayBuffer> buffer = DOMArrayBuffer::create(m_arrayBufferContents->at(index));
-        v8::Isolate* isolate = m_reader.scriptState()->isolate();
-        v8::Local<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
+        v8::Isolate* isolate = m_reader.getScriptState()->isolate();
+        v8::Local<v8::Object> creationContext = m_reader.getScriptState()->context()->Global();
         result = toV8(buffer.get(), creationContext, isolate);
         if (result.IsEmpty())
             return false;
@@ -2120,9 +2174,9 @@ bool ScriptValueDeserializer::tryGetTransferredImageBitmap(uint32_t index, v8::L
         return false;
     v8::Local<v8::Value> result = m_imageBitmaps.at(index);
     if (result.IsEmpty()) {
-        RefPtrWillBeRawPtr<ImageBitmap> bitmap = ImageBitmap::create(m_imageBitmapContents->at(index));
-        v8::Isolate* isolate = m_reader.scriptState()->isolate();
-        v8::Local<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
+        RawPtr<ImageBitmap> bitmap = ImageBitmap::create(m_imageBitmapContents->at(index));
+        v8::Isolate* isolate = m_reader.getScriptState()->isolate();
+        v8::Local<v8::Object> creationContext = m_reader.getScriptState()->context()->Global();
         result = toV8(bitmap.get(), creationContext, isolate);
         if (result.IsEmpty())
             return false;
@@ -2142,8 +2196,8 @@ bool ScriptValueDeserializer::tryGetTransferredSharedArrayBuffer(uint32_t index,
     v8::Local<v8::Value> result = m_arrayBuffers.at(index);
     if (result.IsEmpty()) {
         RefPtr<DOMSharedArrayBuffer> buffer = DOMSharedArrayBuffer::create(m_arrayBufferContents->at(index));
-        v8::Isolate* isolate = m_reader.scriptState()->isolate();
-        v8::Local<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
+        v8::Isolate* isolate = m_reader.getScriptState()->isolate();
+        v8::Local<v8::Object> creationContext = m_reader.getScriptState()->context()->Global();
         result = toV8(buffer.get(), creationContext, isolate);
         if (result.IsEmpty())
             return false;
@@ -2171,7 +2225,7 @@ bool ScriptValueDeserializer::initializeObject(v8::Local<v8::Object> object, uin
     unsigned length = 2 * numProperties;
     if (length > stackDepth())
         return false;
-    v8::Local<v8::Context> context = m_reader.scriptState()->context();
+    v8::Local<v8::Context> context = m_reader.getScriptState()->context();
     for (unsigned i = stackDepth() - length; i < stackDepth(); i += 2) {
         v8::Local<v8::Value> propertyName = element(i);
         v8::Local<v8::Value> propertyValue = element(i + 1);

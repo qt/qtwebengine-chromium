@@ -1,18 +1,17 @@
-{% from 'utilities.cpp' import check_api_experiment %}
+{% from 'utilities.cpp' import check_origin_trial %}
 
 {##############################################################################}
 {% macro constant_getter_callback(constant) %}
 static void {{constant.name}}ConstantGetterCallback(v8::Local<v8::Name>, const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    TRACE_EVENT_SET_SAMPLING_STATE("blink", "DOMGetter");
     {% if constant.deprecate_as %}
-    UseCounter::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{constant.deprecate_as}});
+    Deprecation::countDeprecationIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{constant.deprecate_as}});
     {% endif %}
     {% if constant.measure_as %}
     UseCounter::countIfNotPrivateScript(info.GetIsolate(), currentExecutionContext(info.GetIsolate()), UseCounter::{{constant.measure_as('ConstantGetter')}});
     {% endif %}
-    {% if constant.is_api_experiment_enabled %}
-    {{check_api_experiment(constant) | indent}}
+    {% if constant.origin_trial_enabled_function %}
+    {{check_origin_trial(constant) | indent}}
     {% endif %}
     {% if constant.idl_type in ('Double', 'Float') %}
     v8SetReturnValue(info, {{constant.value}});
@@ -21,7 +20,6 @@ static void {{constant.name}}ConstantGetterCallback(v8::Local<v8::Name>, const v
     {% else %}
     v8SetReturnValueInt(info, {{constant.value}});
     {% endif %}
-    TRACE_EVENT_SET_SAMPLING_STATE("v8", "V8Execution");
 }
 {% endmacro %}
 
@@ -35,7 +33,7 @@ const V8DOMConfiguration::ConstantConfiguration {{v8_class}}Constants[] = {
     {{constant_configuration(constant)}},
     {% endfor %}
 };
-V8DOMConfiguration::installConstants(isolate, functionTemplate, prototypeTemplate, {{v8_class}}Constants, WTF_ARRAY_LENGTH({{v8_class}}Constants));
+V8DOMConfiguration::installConstants(isolate, interfaceTemplate, prototypeTemplate, {{v8_class}}Constants, WTF_ARRAY_LENGTH({{v8_class}}Constants));
 {% endif %}
 {# Runtime-enabled constants #}
 {% for constant_tuple in runtime_enabled_constants %}
@@ -43,13 +41,13 @@ V8DOMConfiguration::installConstants(isolate, functionTemplate, prototypeTemplat
 {% for constant in constant_tuple[1] %}
 {% set constant_name = constant.name.title().replace('_', '') %}
 const V8DOMConfiguration::ConstantConfiguration constant{{constant_name}}Configuration = {{constant_configuration(constant)}};
-V8DOMConfiguration::installConstant(isolate, functionTemplate, prototypeTemplate, constant{{constant_name}}Configuration);
+V8DOMConfiguration::installConstant(isolate, interfaceTemplate, prototypeTemplate, constant{{constant_name}}Configuration);
 {% endfor %}
 {% endfilter %}
 {% endfor %}
-{# Constants with [DeprecateAs] or [MeasureAs] or [APIExperimentEnabled] #}
+{# Constants with [DeprecateAs] or [MeasureAs] or [OriginTrialEnabled] #}
 {% for constant in special_getter_constants %}
-V8DOMConfiguration::installConstantWithGetter(isolate, functionTemplate, prototypeTemplate, "{{constant.name}}", {{cpp_class}}V8Internal::{{constant.name}}ConstantGetterCallback);
+V8DOMConfiguration::installConstantWithGetter(isolate, interfaceTemplate, prototypeTemplate, "{{constant.name}}", {{cpp_class}}V8Internal::{{constant.name}}ConstantGetterCallback);
 {% endfor %}
 {# Check constants #}
 {% if not do_not_check_constants %}

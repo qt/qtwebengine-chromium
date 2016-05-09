@@ -31,7 +31,9 @@
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/heap/Handle.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
 #include "platform/scroll/ScrollAnimatorBase.h"
+#include "public/platform/WebTaskRunner.h"
 #include "wtf/RetainPtr.h"
 
 OBJC_CLASS BlinkScrollAnimationHelperDelegate;
@@ -45,7 +47,7 @@ namespace blink {
 class Scrollbar;
 
 class PLATFORM_EXPORT ScrollAnimatorMac : public ScrollAnimatorBase {
-    WILL_BE_USING_PRE_FINALIZER(ScrollAnimatorMac, dispose);
+    USING_PRE_FINALIZER(ScrollAnimatorMac, dispose);
 public:
     ScrollAnimatorMac(ScrollableArea*);
     ~ScrollAnimatorMac() override;
@@ -65,8 +67,6 @@ public:
 
     void setVisibleScrollerThumbRect(const IntRect&);
 
-    static bool canUseCoordinatedScrollbar();
-
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
         ScrollAnimatorBase::trace(visitor);
@@ -81,20 +81,20 @@ private:
     RetainPtr<BlinkScrollbarPainterDelegate> m_horizontalScrollbarPainterDelegate;
     RetainPtr<BlinkScrollbarPainterDelegate> m_verticalScrollbarPainterDelegate;
 
-    void initialScrollbarPaintTimerFired(Timer<ScrollAnimatorMac>*);
-    Timer<ScrollAnimatorMac> m_initialScrollbarPaintTimer;
+    void initialScrollbarPaintTask();
+    OwnPtr<CancellableTaskFactory> m_initialScrollbarPaintTaskFactory;
 
-    void sendContentAreaScrolledTimerFired(Timer<ScrollAnimatorMac>*);
-    Timer<ScrollAnimatorMac> m_sendContentAreaScrolledTimer;
+    void sendContentAreaScrolledTask();
+    OwnPtr<CancellableTaskFactory> m_sendContentAreaScrolledTaskFactory;
+    OwnPtr<WebTaskRunner> m_taskRunner;
     FloatSize m_contentAreaScrolledTimerScrollDelta;
 
-    ScrollResultOneDimensional userScroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
+    ScrollResult userScroll(ScrollGranularity, const FloatSize& delta) override;
     void scrollToOffsetWithoutAnimation(const FloatPoint&) override;
 
     void handleWheelEventPhase(PlatformWheelEventPhase) override;
 
     void cancelAnimation() override;
-    void setIsActive() override;
 
     void contentAreaWillPaint() const override;
     void mouseEnteredContentArea() const override;
@@ -102,9 +102,7 @@ private:
     void mouseMovedInContentArea() const override;
     void mouseEnteredScrollbar(Scrollbar&) const override;
     void mouseExitedScrollbar(Scrollbar&) const override;
-    void willStartLiveResize() override;
     void contentsResized() const override;
-    void willEndLiveResize() override;
     void contentAreaDidShow() const override;
     void contentAreaDidHide() const override;
     void didBeginScrollGesture() const;

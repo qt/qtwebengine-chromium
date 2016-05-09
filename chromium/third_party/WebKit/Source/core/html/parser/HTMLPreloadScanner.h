@@ -28,7 +28,7 @@
 #define HTMLPreloadScanner_h
 
 #include "core/CoreExport.h"
-#include "core/css/MediaValues.h"
+#include "core/css/MediaValuesCached.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/html/parser/CSSPreloadScanner.h"
 #include "core/html/parser/CompactHTMLToken.h"
@@ -45,33 +45,42 @@ class HTMLParserOptions;
 class HTMLTokenizer;
 class SegmentedString;
 
+struct ViewportDescriptionWrapper {
+    ViewportDescription description;
+    bool set;
+    ViewportDescriptionWrapper()
+        : set(false)
+    {
+    }
+};
+
 struct CORE_EXPORT CachedDocumentParameters {
     USING_FAST_MALLOC(CachedDocumentParameters);
 public:
-    static PassOwnPtr<CachedDocumentParameters> create(Document* document, PassRefPtrWillBeRawPtr<MediaValues> mediaValues = nullptr)
+    static PassOwnPtr<CachedDocumentParameters> create(Document* document)
     {
-        return adoptPtr(new CachedDocumentParameters(document, mediaValues));
+        return adoptPtr(new CachedDocumentParameters(document));
     }
 
     bool doHtmlPreloadScanning;
-    RefPtrWillBeCrossThreadPersistent<MediaValues> mediaValues;
+    bool doDocumentWritePreloadScanning;
     Length defaultViewportMinWidth;
     bool viewportMetaZeroValuesQuirk;
     bool viewportMetaEnabled;
     ReferrerPolicy referrerPolicy;
 
 private:
-    CachedDocumentParameters(Document*, PassRefPtrWillBeRawPtr<MediaValues>);
+    explicit CachedDocumentParameters(Document*);
 };
 
 class TokenPreloadScanner {
     WTF_MAKE_NONCOPYABLE(TokenPreloadScanner); USING_FAST_MALLOC(TokenPreloadScanner);
 public:
-    TokenPreloadScanner(const KURL& documentURL, PassOwnPtr<CachedDocumentParameters>);
+    TokenPreloadScanner(const KURL& documentURL, PassOwnPtr<CachedDocumentParameters>, const MediaValuesCached::MediaValuesCachedData&);
     ~TokenPreloadScanner();
 
-    void scan(const HTMLToken&, const SegmentedString&, PreloadRequestStream& requests);
-    void scan(const CompactHTMLToken&, const SegmentedString&, PreloadRequestStream& requests);
+    void scan(const HTMLToken&, const SegmentedString&, PreloadRequestStream& requests, ViewportDescriptionWrapper*);
+    void scan(const CompactHTMLToken&, const SegmentedString&, PreloadRequestStream& requests, ViewportDescriptionWrapper*, bool* likelyDocumentWriteScript);
 
     void setPredictedBaseElementURL(const KURL& url) { m_predictedBaseElementURL = url; }
 
@@ -80,25 +89,23 @@ public:
     TokenPreloadScannerCheckpoint createCheckpoint();
     void rewindTo(TokenPreloadScannerCheckpoint);
 
-    bool isSafeToSendToAnotherThread()
-    {
-        return m_documentURL.isSafeToSendToAnotherThread()
-            && m_predictedBaseElementURL.isSafeToSendToAnotherThread();
-    }
-
 private:
     class StartTagScanner;
 
+    bool shouldEvaluateForDocumentWrite(const String& source);
+    bool shouldEvaluateForDocumentWrite(const HTMLToken::DataVector& source) { return false; }
+
     template <typename Token>
-    inline void scanCommon(const Token&, const SegmentedString&, PreloadRequestStream& requests);
+    inline void scanCommon(const Token&, const SegmentedString&, PreloadRequestStream& requests, ViewportDescriptionWrapper*, bool* likelyDocumentWriteScript);
 
     template<typename Token>
     void updatePredictedBaseURL(const Token&);
 
     struct Checkpoint {
-        Checkpoint(const KURL& predictedBaseElementURL, bool inStyle, bool isAppCacheEnabled, bool isCSPEnabled, size_t templateCount)
+        Checkpoint(const KURL& predictedBaseElementURL, bool inStyle, bool inScript, bool isAppCacheEnabled, bool isCSPEnabled, size_t templateCount)
             : predictedBaseElementURL(predictedBaseElementURL)
             , inStyle(inStyle)
+            , inScript(inScript)
             , isAppCacheEnabled(isAppCacheEnabled)
             , isCSPEnabled(isCSPEnabled)
             , templateCount(templateCount)
@@ -107,6 +114,7 @@ private:
 
         KURL predictedBaseElementURL;
         bool inStyle;
+        bool inScript;
         bool isAppCacheEnabled;
         bool isCSPEnabled;
         size_t templateCount;
@@ -130,12 +138,16 @@ private:
     KURL m_predictedBaseElementURL;
     bool m_inStyle;
     bool m_inPicture;
+    bool m_inScript;
     bool m_isAppCacheEnabled;
     bool m_isCSPEnabled;
     PictureData m_pictureData;
     size_t m_templateCount;
     OwnPtr<CachedDocumentParameters> m_documentParameters;
+    Persistent<MediaValuesCached> m_mediaValues;
     ClientHintsPreferences m_clientHintsPreferences;
+
+    bool m_didRewind = false;
 
     Vector<Checkpoint> m_checkpoints;
 };
@@ -143,25 +155,26 @@ private:
 class CORE_EXPORT HTMLPreloadScanner {
     WTF_MAKE_NONCOPYABLE(HTMLPreloadScanner); USING_FAST_MALLOC(HTMLPreloadScanner);
 public:
-    static PassOwnPtr<HTMLPreloadScanner> create(const HTMLParserOptions& options, const KURL& documentURL, PassOwnPtr<CachedDocumentParameters> documentParameters)
+    static PassOwnPtr<HTMLPreloadScanner> create(const HTMLParserOptions& options, const KURL& documentURL, PassOwnPtr<CachedDocumentParameters> documentParameters, const MediaValuesCached::MediaValuesCachedData& mediaValuesCachedData)
     {
-        return adoptPtr(new HTMLPreloadScanner(options, documentURL, documentParameters));
+        return adoptPtr(new HTMLPreloadScanner(options, documentURL, documentParameters, mediaValuesCachedData));
     }
 
 
-    HTMLPreloadScanner(const HTMLParserOptions&, const KURL& documentURL, PassOwnPtr<CachedDocumentParameters>);
     ~HTMLPreloadScanner();
 
     void appendToEnd(const SegmentedString&);
-    void scan(ResourcePreloader*, const KURL& documentBaseElementURL);
+    void scanAndPreload(ResourcePreloader*, const KURL& documentBaseElementURL, ViewportDescriptionWrapper*);
 
 private:
+    HTMLPreloadScanner(const HTMLParserOptions&, const KURL& documentURL, PassOwnPtr<CachedDocumentParameters>, const MediaValuesCached::MediaValuesCachedData&);
+
     TokenPreloadScanner m_scanner;
     SegmentedString m_source;
     HTMLToken m_token;
     OwnPtr<HTMLTokenizer> m_tokenizer;
 };
 
-}
+} // namespace blink
 
 #endif

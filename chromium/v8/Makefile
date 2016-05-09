@@ -162,6 +162,9 @@ endif
 ifdef embedscript
   GYPFLAGS += -Dembed_script=$(embedscript)
 endif
+ifdef warmupscript
+  GYPFLAGS += -Dwarmup_script=$(warmupscript)
+endif
 ifeq ($(goma), on)
   GYPFLAGS += -Duse_goma=1
 endif
@@ -219,6 +222,10 @@ endif
 ifeq ($(arm_test_noprobe), on)
   GYPFLAGS += -Darm_test_noprobe=on
 endif
+# Do not omit the frame pointer, needed for profiling with perf
+ifeq ($(no_omit_framepointer), on)
+  GYPFLAGS += -Drelease_extra_cflags=-fno-omit-frame-pointer
+endif
 
 # ----------------- available targets: --------------------
 # - "grokdump": rebuilds heap constants lists used by grokdump
@@ -251,7 +258,7 @@ NACL_ARCHES = nacl_ia32 nacl_x64
 GYPFILES = third_party/icu/icu.gypi third_party/icu/icu.gyp \
 	   build/shim_headers.gypi build/features.gypi build/standalone.gypi \
 	   build/toolchain.gypi build/all.gyp build/mac/asan.gyp \
-	   test/cctest/cctest.gyp \
+	   test/cctest/cctest.gyp test/fuzzer/fuzzer.gyp \
 	   test/unittests/unittests.gyp tools/gyp/v8.gyp \
 	   tools/parser-shell.gyp testing/gmock.gyp testing/gtest.gyp \
 	   buildtools/third_party/libc++abi/libc++abi.gyp \

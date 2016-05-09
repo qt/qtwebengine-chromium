@@ -8,7 +8,6 @@
 #include "net/quic/quic_server_id.h"
 
 namespace net {
-namespace tools {
 
 QuicClientBase::QuicClientBase(const QuicServerId& server_id,
                                const QuicVersionVector& supported_versions,
@@ -42,8 +41,8 @@ ProofVerifier* QuicClientBase::proof_verifier() const {
 
 QuicClientSession* QuicClientBase::CreateQuicClientSession(
     QuicConnection* connection) {
-  session_.reset(
-      new QuicClientSession(config_, connection, server_id_, &crypto_config_));
+  session_.reset(new QuicClientSession(config_, connection, server_id_,
+                                       &crypto_config_, &push_promise_index_));
   if (initial_max_packet_length_ != 0) {
     session()->connection()->SetMaxPacketLength(initial_max_packet_length_);
   }
@@ -104,6 +103,17 @@ void QuicClientBase::UpdateStats() {
   }
 }
 
+int QuicClientBase::GetNumReceivedServerConfigUpdates() {
+  // If we are not actively attempting to connect, the session object
+  // corresponds to the previous connection and should not be used.
+  // We do not need to take stateless rejects into account, since we
+  // don't expect any scup messages to be sent during a
+  // statelessly-rejected connection.
+  return !connected_or_attempting_connect_
+             ? 0
+             : session_->GetNumReceivedServerConfigUpdates();
+}
+
 QuicErrorCode QuicClientBase::connection_error() const {
   // Return the high-level error if there was one.  Otherwise, return the
   // connection error from the last session.
@@ -138,5 +148,4 @@ QuicConnectionId QuicClientBase::GenerateNewConnectionId() {
   return QuicRandom::GetInstance()->RandUint64();
 }
 
-}  // namespace tools
 }  // namespace net

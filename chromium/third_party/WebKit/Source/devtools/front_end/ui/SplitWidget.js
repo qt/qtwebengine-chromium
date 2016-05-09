@@ -150,6 +150,8 @@ WebInspector.SplitWidget.prototype = {
      */
     setMainWidget: function(widget)
     {
+        if (this._mainWidget === widget)
+            return;
         if (this._mainWidget)
             this._mainWidget.detach();
         this._mainWidget = widget;
@@ -166,6 +168,8 @@ WebInspector.SplitWidget.prototype = {
      */
     setSidebarWidget: function(widget)
     {
+        if (this._sidebarWidget === widget)
+            return;
         if (this._sidebarWidget)
             this._sidebarWidget.detach();
         this._sidebarWidget = widget;
@@ -277,6 +281,15 @@ WebInspector.SplitWidget.prototype = {
     },
 
     /**
+     * @param {boolean} minimized
+     */
+    setSidebarMinimized: function(minimized)
+    {
+        this._sidebarMinimized = minimized;
+        this.invalidateConstraints();
+    },
+
+    /**
      * @param {!WebInspector.Widget} sideToShow
      * @param {!WebInspector.Widget} sideToHide
      * @param {!Element} shadowToShow
@@ -355,6 +368,7 @@ WebInspector.SplitWidget.prototype = {
         this._mainElement.classList.remove("maximized", "hidden");
         this._sidebarElement.classList.remove("maximized", "hidden");
         this._resizerElement.classList.remove("hidden");
+        this.setResizable(true);
 
         // Make sure main is the first in the children list.
         if (this._sidebarWidget)
@@ -365,7 +379,6 @@ WebInspector.SplitWidget.prototype = {
         this.setSecondIsSidebar(this._secondIsSidebar);
 
         this._sidebarSizeDIP = -1;
-        this.setResizable(true);
         this._updateShowMode(WebInspector.SplitWidget.ShowMode.Both);
         this._updateLayout(animate);
     },
@@ -599,6 +612,8 @@ WebInspector.SplitWidget.prototype = {
         if (!minSidebarSize)
             minSidebarSize = WebInspector.SplitWidget.MinPadding;
         minSidebarSize *= zoomFactor;
+        if (this._sidebarMinimized)
+            sidebarSize = minSidebarSize;
 
         var preferredSidebarSize = this.isVertical() ? constraints.preferred.width : constraints.preferred.height;
         if (!preferredSidebarSize)

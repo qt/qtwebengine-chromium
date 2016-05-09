@@ -45,7 +45,7 @@ public:
         EventDispatchAllowed,
         EventDispatchDisallowed,
     };
-    class SpinButtonOwner : public WillBeGarbageCollectedMixin {
+    class SpinButtonOwner : public GarbageCollectedMixin {
     public:
         virtual ~SpinButtonOwner() { }
         virtual void focusAndSelectSpinButtonOwner() = 0;
@@ -59,8 +59,8 @@ public:
     // The owner of SpinButtonElement must call removeSpinButtonOwner
     // because SpinButtonElement can be outlive SpinButtonOwner
     // implementation, e.g. during event handling.
-    static PassRefPtrWillBeRawPtr<SpinButtonElement> create(Document&, SpinButtonOwner&);
-    UpDownState upDownState() const { return m_upDownState; }
+    static RawPtr<SpinButtonElement> create(Document&, SpinButtonOwner&);
+    UpDownState getUpDownState() const { return m_upDownState; }
     void releaseCapture(EventDispatch = EventDispatchAllowed);
     void removeSpinButtonOwner() { m_spinButtonOwner = nullptr; }
 
@@ -91,7 +91,7 @@ private:
     bool shouldRespondToMouseEvents();
     bool isMouseFocusable() const override { return false; }
 
-    RawPtrWillBeMember<SpinButtonOwner> m_spinButtonOwner;
+    Member<SpinButtonOwner> m_spinButtonOwner;
     bool m_capturing;
     UpDownState m_upDownState;
     UpDownState m_pressStartingState;
@@ -100,6 +100,6 @@ private:
 
 DEFINE_TYPE_CASTS(SpinButtonElement, Node, node, toElement(node)->isSpinButtonElement(), toElement(node).isSpinButtonElement());
 
-} // namespace
+} // namespace blink
 
 #endif

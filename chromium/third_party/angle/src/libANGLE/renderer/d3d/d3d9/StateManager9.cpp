@@ -18,7 +18,8 @@ namespace rx
 {
 
 StateManager9::StateManager9(Renderer9 *renderer9)
-    : mCurBlendState(),
+    : mUsingZeroColorMaskWorkaround(false),
+      mCurBlendState(),
       mCurBlendColor(0, 0, 0, 0),
       mCurSampleMask(0),
       mCurRasterState(),
@@ -67,6 +68,11 @@ StateManager9::~StateManager9()
 {
 }
 
+void StateManager9::initialize()
+{
+    mUsingZeroColorMaskWorkaround = mRenderer9->getVendorId() == VENDOR_ID_AMD;
+}
+
 void StateManager9::forceSetBlendState()
 {
     mDirtyBits |= mBlendStateDirtyBits;
@@ -109,6 +115,11 @@ void StateManager9::updateStencilSizeIfChanged(bool depthStencilInitialized,
 
 void StateManager9::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)
 {
+    if (!dirtyBits.any())
+    {
+        return;
+    }
+
     for (auto dirtyBit : angle::IterateBitSet(dirtyBits))
     {
         switch (dirtyBit)
@@ -120,6 +131,12 @@ void StateManager9::syncState(const gl::State &state, const gl::State::DirtyBits
                     // BlendColor and funcs and equations has to be set if blend is enabled
                     mDirtyBits.set(DIRTY_BIT_BLEND_COLOR);
                     mDirtyBits.set(DIRTY_BIT_BLEND_FUNCS_EQUATIONS);
+
+                    // The color mask may have to be updated if the blend state changes
+                    if (mUsingZeroColorMaskWorkaround)
+                    {
+                        mDirtyBits.set(DIRTY_BIT_COLOR_MASK);
+                    }
                 }
                 break;
             case gl::State::DIRTY_BIT_BLEND_FUNCS:
@@ -133,6 +150,12 @@ void StateManager9::syncState(const gl::State &state, const gl::State::DirtyBits
                     mDirtyBits.set(DIRTY_BIT_BLEND_FUNCS_EQUATIONS);
                     // BlendColor depends on the values of blend funcs
                     mDirtyBits.set(DIRTY_BIT_BLEND_COLOR);
+
+                    // The color mask may have to be updated if the blend funcs change
+                    if (mUsingZeroColorMaskWorkaround)
+                    {
+                        mDirtyBits.set(DIRTY_BIT_COLOR_MASK);
+                    }
                 }
                 break;
             }
@@ -143,6 +166,12 @@ void StateManager9::syncState(const gl::State &state, const gl::State::DirtyBits
                     blendState.blendEquationAlpha != mCurBlendState.blendEquationAlpha)
                 {
                     mDirtyBits.set(DIRTY_BIT_BLEND_FUNCS_EQUATIONS);
+
+                    // The color mask may have to be updated if the blend funcs change
+                    if (mUsingZeroColorMaskWorkaround)
+                    {
+                        mDirtyBits.set(DIRTY_BIT_COLOR_MASK);
+                    }
                 }
                 break;
             }
@@ -162,6 +191,14 @@ void StateManager9::syncState(const gl::State &state, const gl::State::DirtyBits
                     blendState.colorMaskAlpha != mCurBlendState.colorMaskAlpha)
                 {
                     mDirtyBits.set(DIRTY_BIT_COLOR_MASK);
+
+                    // The color mask can cause the blend state to get out of sync when using the
+                    // zero color mask workaround
+                    if (mUsingZeroColorMaskWorkaround)
+                    {
+                        mDirtyBits.set(DIRTY_BIT_BLEND_ENABLED);
+                        mDirtyBits.set(DIRTY_BIT_BLEND_FUNCS_EQUATIONS);
+                    }
                 }
                 break;
             }
@@ -484,8 +521,8 @@ void StateManager9::setViewportState(const gl::Caps *caps,
     mCurIgnoreViewport = ignoreViewport;
 
     // Setting shader constants
-    dx_VertexConstants vc = {};
-    dx_PixelConstants pc  = {};
+    dx_VertexConstants9 vc = {};
+    dx_PixelConstants9 pc  = {};
 
     vc.viewAdjust[0] =
         static_cast<float>((actualViewport.width - static_cast<int>(dxViewport.Width)) +
@@ -515,13 +552,13 @@ void StateManager9::setViewportState(const gl::Caps *caps,
     pc.depthRange[1] = actualZFar;
     pc.depthRange[2] = actualZFar - actualZNear;
 
-    if (memcmp(&vc, &mVertexConstants, sizeof(dx_VertexConstants)) != 0)
+    if (memcmp(&vc, &mVertexConstants, sizeof(dx_VertexConstants9)) != 0)
     {
         mVertexConstants = vc;
         mDxUniformsDirty = true;
     }
 
-    if (memcmp(&pc, &mPixelConstants, sizeof(dx_PixelConstants)) != 0)
+    if (memcmp(&pc, &mPixelConstants, sizeof(dx_PixelConstants9)) != 0)
     {
         mPixelConstants  = pc;
         mDxUniformsDirty = true;
@@ -537,9 +574,9 @@ void StateManager9::setShaderConstants()
 
     IDirect3DDevice9 *device = mRenderer9->getDevice();
     device->SetVertexShaderConstantF(0, reinterpret_cast<float *>(&mVertexConstants),
-                                     sizeof(dx_VertexConstants) / sizeof(float[4]));
+                                     sizeof(dx_VertexConstants9) / sizeof(float[4]));
     device->SetPixelShaderConstantF(0, reinterpret_cast<float *>(&mPixelConstants),
-                                    sizeof(dx_PixelConstants) / sizeof(float[4]));
+                                    sizeof(dx_PixelConstants9) / sizeof(float[4]));
     mDxUniformsDirty = false;
 }
 
@@ -693,6 +730,7 @@ void StateManager9::setStencilTestEnabled(bool stencilTestEnabled)
     if (stencilTestEnabled && mCurStencilSize > 0)
     {
         mRenderer9->getDevice()->SetRenderState(D3DRS_STENCILENABLE, TRUE);
+        mRenderer9->getDevice()->SetRenderState(D3DRS_TWOSIDEDSTENCILMODE, TRUE);
     }
     else
     {
@@ -795,12 +833,6 @@ void StateManager9::setColorMask(const gl::Framebuffer *framebuffer,
                                  bool alpha)
 {
     // Set the color mask
-    bool zeroColorMaskAllowed = mRenderer9->getVendorId() != VENDOR_ID_AMD;
-    // Apparently some ATI cards have a bug where a draw with a zero color
-    // write mask can cause later draws to have incorrect results. Instead,
-    // set a nonzero color write mask but modify the blend state so that no
-    // drawing is done.
-    // http://code.google.com/p/angleproject/issues/detail?id=169
 
     const gl::FramebufferAttachment *attachment = framebuffer->getFirstColorbuffer();
     GLenum internalFormat                       = attachment ? attachment->getInternalFormat() : GL_NONE;
@@ -811,26 +843,44 @@ void StateManager9::setColorMask(const gl::Framebuffer *framebuffer,
         formatInfo.redBits > 0 && red, formatInfo.greenBits > 0 && green,
         formatInfo.blueBits > 0 && blue, formatInfo.alphaBits > 0 && alpha);
 
-    if (colorMask == 0 && !zeroColorMaskAllowed)
+    // Apparently some ATI cards have a bug where a draw with a zero color write mask can cause
+    // later draws to have incorrect results. Instead, set a nonzero color write mask but modify the
+    // blend state so that no drawing is done.
+    // http://anglebug.com/169
+    if (colorMask == 0 && mUsingZeroColorMaskWorkaround)
     {
         IDirect3DDevice9 *device = mRenderer9->getDevice();
         // Enable green channel, but set blending so nothing will be drawn.
         device->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_GREEN);
+
         device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
 
         device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
         device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ONE);
         device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+
+        mCurBlendState.colorMaskRed   = false;
+        mCurBlendState.colorMaskGreen = true;
+        mCurBlendState.colorMaskBlue  = false;
+        mCurBlendState.colorMaskAlpha = false;
+
+        mCurBlendState.blend              = true;
+        mCurBlendState.sourceBlendRGB     = GL_ZERO;
+        mCurBlendState.sourceBlendAlpha   = GL_ZERO;
+        mCurBlendState.destBlendRGB       = GL_ONE;
+        mCurBlendState.destBlendAlpha     = GL_ONE;
+        mCurBlendState.blendEquationRGB   = GL_FUNC_ADD;
+        mCurBlendState.blendEquationAlpha = GL_FUNC_ADD;
     }
     else
     {
         mRenderer9->getDevice()->SetRenderState(D3DRS_COLORWRITEENABLE, colorMask);
-    }
 
-    mCurBlendState.colorMaskRed   = red;
-    mCurBlendState.colorMaskGreen = green;
-    mCurBlendState.colorMaskBlue  = blue;
-    mCurBlendState.colorMaskAlpha = alpha;
+        mCurBlendState.colorMaskRed   = red;
+        mCurBlendState.colorMaskGreen = green;
+        mCurBlendState.colorMaskBlue  = blue;
+        mCurBlendState.colorMaskAlpha = alpha;
+    }
 }
 
 void StateManager9::setSampleMask(unsigned int sampleMask)

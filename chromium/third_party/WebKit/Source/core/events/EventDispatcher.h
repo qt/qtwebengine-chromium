@@ -27,6 +27,7 @@
 #define EventDispatcher_h
 
 #include "core/dom/SimulatedClickOptions.h"
+#include "core/events/EventDispatchResult.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -48,17 +49,17 @@ enum EventDispatchContinuation {
 class EventDispatcher {
     STACK_ALLOCATED();
 public:
-    static bool dispatchEvent(Node&, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
-    static void dispatchScopedEvent(Node&, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
+    static DispatchEventResult dispatchEvent(Node&, EventDispatchMediator*);
+    static void dispatchScopedEvent(Node&, EventDispatchMediator*);
 
     static void dispatchSimulatedClick(Node&, Event* underlyingEvent, SimulatedClickMouseEventOptions, SimulatedClickCreationScope);
 
-    bool dispatch();
+    DispatchEventResult dispatch();
     Node& node() const { return *m_node; }
     Event& event() const { return *m_event; }
 
 private:
-    EventDispatcher(Node&, PassRefPtrWillBeRawPtr<Event>);
+    EventDispatcher(Node&, Event*);
 
     EventDispatchContinuation dispatchEventPreProcess(void*& preDispatchEventHandlerResult);
     EventDispatchContinuation dispatchEventAtCapturing();
@@ -66,14 +67,14 @@ private:
     void dispatchEventAtBubbling();
     void dispatchEventPostProcess(void* preDispatchEventHandlerResult);
 
-    RefPtrWillBeMember<Node> m_node;
-    RefPtrWillBeMember<Event> m_event;
-    RefPtrWillBeMember<FrameView> m_view;
+    Member<Node> m_node;
+    Member<Event> m_event;
+    Member<FrameView> m_view;
 #if ENABLE(ASSERT)
     bool m_eventDispatched;
 #endif
 };
 
-}
+} // namespace blink
 
 #endif

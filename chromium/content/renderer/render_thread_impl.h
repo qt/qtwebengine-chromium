@@ -25,10 +25,11 @@
 #include "content/child/child_thread_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_replication_state.h"
-#include "content/common/gpu/client/gpu_channel_host.h"
-#include "content/common/gpu/gpu_result_codes.h"
+#include "content/common/gpu_process_launch_causes.h"
+#include "content/common/storage_partition_service.mojom.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/gpu/compositor_dependencies.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
 #include "net/base/network_change_notifier.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "ui/gfx/native_widget_types.h"
@@ -58,11 +59,16 @@ class Thread;
 
 namespace cc {
 class ContextProvider;
+class ImageSerializationProcessor;
 class TaskGraphRunner;
 }
 
 namespace cc_blink {
 class ContextProviderWebContext;
+}
+
+namespace gpu {
+class GpuChannelHost;
 }
 
 namespace IPC {
@@ -90,6 +96,7 @@ class AecDumpMessageFilter;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
+class BlobMessageFilter;
 class BluetoothMessageFilter;
 class BrowserPluginManager;
 class CacheStorageDispatcher;
@@ -99,7 +106,6 @@ class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class EmbeddedWorkerDispatcher;
-class GpuChannelHost;
 class IndexedDBDispatcher;
 class InputHandlerManager;
 class MediaStreamCenter;
@@ -143,7 +149,7 @@ class SynchronousCompositorFilter;
 class CONTENT_EXPORT RenderThreadImpl
     : public RenderThread,
       public ChildThreadImpl,
-      public GpuChannelHostFactory,
+      public gpu::GpuChannelHostFactory,
       NON_EXPORTED_BASE(public CompositorDependencies) {
  public:
   static RenderThreadImpl* Create(const InProcessChildThreadParams& params);
@@ -178,9 +184,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void RemoveObserver(RenderProcessObserver* observer) override;
   void SetResourceDispatcherDelegate(
       ResourceDispatcherDelegate* delegate) override;
-  void EnsureWebKitInitialized() override;
-  void RecordAction(const base::UserMetricsAction& action) override;
-  void RecordComputedAction(const std::string& action) override;
   scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
@@ -216,6 +219,7 @@ class CONTENT_EXPORT RenderThreadImpl
   cc::ContextProvider* GetSharedMainThreadContextProvider() override;
   scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) override;
+  cc::ImageSerializationProcessor* GetImageSerializationProcessor() override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
   bool AreImageDecodeTasksEnabled() override;
   bool IsThreadedAnimationEnabled() override;
@@ -224,8 +228,7 @@ class CONTENT_EXPORT RenderThreadImpl
   // established or if it has been lost (for example if the GPU plugin crashed).
   // If there is a pending asynchronous request, it will be completed by the
   // time this routine returns.
-  GpuChannelHost* EstablishGpuChannelSync(CauseForGpuLaunch);
-
+  gpu::GpuChannelHost* EstablishGpuChannelSync(CauseForGpuLaunch);
 
   // This method modifies how the next message is sent.  Normally, when sending
   // a synchronous message that runs a nested message loop, we need to suspend
@@ -295,7 +298,11 @@ class CONTENT_EXPORT RenderThreadImpl
     return sync_compositor_message_filter_.get();
   }
 
+  static void SetStreamTextureFactory(
+      scoped_refptr<StreamTextureFactory> factory);
+
   scoped_refptr<StreamTextureFactory> GetStreamTexureFactory();
+  bool EnableStreamTextureCopy();
 #endif
 
   // Creates the embedder implementation of WebMediaStreamCenter.
@@ -327,7 +334,7 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // Get the GPU channel. Returns NULL if the channel is not established or
   // has been lost.
-  GpuChannelHost* GetGpuChannel();
+  gpu::GpuChannelHost* GetGpuChannel();
 
   // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which file operations should be run. Must be called
@@ -447,34 +454,37 @@ class CONTENT_EXPORT RenderThreadImpl
 
   void RegisterPendingRenderFrameConnect(
       int routing_id,
-      mojo::InterfaceRequest<mojo::ServiceProvider> services,
-      mojo::ServiceProviderPtr exposed_services);
+      mojo::shell::mojom::InterfaceProviderRequest services,
+      mojo::shell::mojom::InterfaceProviderPtr exposed_services);
+
+  mojom::StoragePartitionService* GetStoragePartitionService();
 
  protected:
-  RenderThreadImpl(const InProcessChildThreadParams& params,
-                   scoped_ptr<scheduler::RendererScheduler> scheduler);
+  RenderThreadImpl(
+      const InProcessChildThreadParams& params,
+      scoped_ptr<scheduler::RendererScheduler> scheduler,
+      scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue);
   RenderThreadImpl(scoped_ptr<base::MessageLoop> main_message_loop,
                    scoped_ptr<scheduler::RendererScheduler> scheduler);
-  virtual void SetResourceDispatchTaskQueue(
-    const scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue);
 
  private:
   // ChildThread
   bool OnControlMessageReceived(const IPC::Message& msg) override;
   void OnProcessBackgrounded(bool backgrounded) override;
+  void RecordAction(const base::UserMetricsAction& action) override;
+  void RecordComputedAction(const std::string& action) override;
 
   // GpuChannelHostFactory implementation:
   bool IsMainThread() override;
   scoped_refptr<base::SingleThreadTaskRunner> GetIOThreadTaskRunner() override;
   scoped_ptr<base::SharedMemory> AllocateSharedMemory(size_t size) override;
-  CreateCommandBufferResult CreateViewCommandBuffer(
-      int32_t surface_id,
-      const GPUCreateCommandBufferConfig& init_params,
-      int32_t route_id) override;
 
-  void Init();
+  void Init(scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue);
 
   void InitializeCompositorThread();
+
+  void InitializeWebKit(
+      scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue);
 
   void OnCreateNewFrame(FrameMsg_NewFrame_Params params);
   void OnCreateNewFrameProxy(int routing_id,
@@ -531,6 +541,7 @@ class CONTENT_EXPORT RenderThreadImpl
   blink::WebMediaStreamCenter* media_stream_center_;
 
   // Used on the renderer and IPC threads.
+  scoped_refptr<BlobMessageFilter> blob_message_filter_;
   scoped_refptr<DBMessageFilter> db_message_filter_;
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<AudioMessageFilter> audio_message_filter_;
@@ -585,7 +596,7 @@ class CONTENT_EXPORT RenderThreadImpl
   base::RepeatingTimer idle_timer_;
 
   // The channel from the renderer process to the GPU process.
-  scoped_refptr<GpuChannelHost> gpu_channel_;
+  scoped_refptr<gpu::GpuChannelHost> gpu_channel_;
 
   // Cache of variables that are needed on the compositor thread by
   // GpuChannelHostFactory methods.
@@ -664,6 +675,7 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_partial_raster_enabled_;
   bool is_elastic_overscroll_enabled_;
   std::vector<unsigned> use_image_texture_targets_;
+  std::vector<unsigned> use_video_frame_image_texture_targets_;
   bool are_image_decode_tasks_enabled_;
   bool is_threaded_animation_enabled_;
 
@@ -672,14 +684,16 @@ class CONTENT_EXPORT RenderThreadImpl
    public:
     PendingRenderFrameConnect(
         int routing_id,
-        mojo::InterfaceRequest<mojo::ServiceProvider> services,
-        mojo::ServiceProviderPtr exposed_services);
+        mojo::shell::mojom::InterfaceProviderRequest services,
+        mojo::shell::mojom::InterfaceProviderPtr exposed_services);
 
-    mojo::InterfaceRequest<mojo::ServiceProvider>& services() {
+    mojo::shell::mojom::InterfaceProviderRequest& services() {
       return services_;
     }
 
-    mojo::ServiceProviderPtr& exposed_services() { return exposed_services_; }
+    mojo::shell::mojom::InterfaceProviderPtr& exposed_services() {
+      return exposed_services_;
+    }
 
    private:
     friend class base::RefCounted<PendingRenderFrameConnect>;
@@ -690,13 +704,15 @@ class CONTENT_EXPORT RenderThreadImpl
     void OnConnectionError();
 
     int routing_id_;
-    mojo::InterfaceRequest<mojo::ServiceProvider> services_;
-    mojo::ServiceProviderPtr exposed_services_;
+    mojo::shell::mojom::InterfaceProviderRequest services_;
+    mojo::shell::mojom::InterfaceProviderPtr exposed_services_;
   };
 
   typedef std::map<int, scoped_refptr<PendingRenderFrameConnect>>
       PendingRenderFrameConnectMap;
   PendingRenderFrameConnectMap pending_render_frame_connects_;
+
+  mojom::StoragePartitionServicePtr storage_partition_service_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

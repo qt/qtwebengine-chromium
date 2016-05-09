@@ -8,17 +8,19 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 
 namespace base {
 
-// This type acts like a hash_map<K, scoped_ptr<V, D> >, based on top of
+// Deprecated. Use std::unordered_map instead. https://crbug.com/579229
+//
+// This type acts like a hash_map<K, std::unique_ptr<V, D> >, based on top of
 // base::hash_map. The ScopedPtrHashMap has ownership of all values in the data
 // structure.
 template <typename Key, typename ScopedPtr>

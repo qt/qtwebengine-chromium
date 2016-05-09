@@ -5,6 +5,9 @@
 #include "storage/browser/fileapi/file_system_operation_runner.h"
 
 #include <stdint.h>
+
+#include <memory>
+#include <tuple>
 #include <utility>
 
 #include "base/bind.h"
@@ -33,6 +36,8 @@ class FileSystemOperationRunner::BeginOperationScoper
 };
 
 FileSystemOperationRunner::OperationHandle::OperationHandle() {}
+FileSystemOperationRunner::OperationHandle::OperationHandle(
+    const OperationHandle& other) = default;
 FileSystemOperationRunner::OperationHandle::~OperationHandle() {}
 
 FileSystemOperationRunner::~FileSystemOperationRunner() {
@@ -241,7 +246,7 @@ OperationID FileSystemOperationRunner::Remove(
 OperationID FileSystemOperationRunner::Write(
     const net::URLRequestContext* url_request_context,
     const FileSystemURL& url,
-    scoped_ptr<storage::BlobDataHandle> blob,
+    std::unique_ptr<storage::BlobDataHandle> blob,
     int64_t offset,
     const WriteCallback& callback) {
   base::File::Error error = base::File::FILE_OK;
@@ -255,7 +260,7 @@ OperationID FileSystemOperationRunner::Write(
     return handle.id;
   }
 
-  scoped_ptr<FileStreamWriter> writer(
+  std::unique_ptr<FileStreamWriter> writer(
       file_system_context_->CreateFileStreamWriter(url, offset));
   if (!writer) {
     // Write is not supported.
@@ -263,10 +268,10 @@ OperationID FileSystemOperationRunner::Write(
     return handle.id;
   }
 
-  scoped_ptr<FileWriterDelegate> writer_delegate(new FileWriterDelegate(
+  std::unique_ptr<FileWriterDelegate> writer_delegate(new FileWriterDelegate(
       std::move(writer), url.mount_option().flush_policy()));
 
-  scoped_ptr<net::URLRequest> blob_request(
+  std::unique_ptr<net::URLRequest> blob_request(
       storage::BlobProtocolHandler::CreateBlobRequest(
           std::move(blob), url_request_context, writer_delegate.get()));
 
@@ -500,7 +505,7 @@ base::File::Error FileSystemOperationRunner::SyncGetPlatformPath(
     const FileSystemURL& url,
     base::FilePath* platform_path) {
   base::File::Error error = base::File::FILE_OK;
-  scoped_ptr<FileSystemOperation> operation(
+  std::unique_ptr<FileSystemOperation> operation(
       file_system_context_->CreateFileSystemOperation(url, &error));
   if (!operation.get())
     return error;
@@ -635,7 +640,7 @@ void FileSystemOperationRunner::PrepareForWrite(OperationID id,
                                                 const FileSystemURL& url) {
   if (file_system_context_->GetUpdateObservers(url.type())) {
     file_system_context_->GetUpdateObservers(url.type())->Notify(
-        &FileUpdateObserver::OnStartUpdate, base::MakeTuple(url));
+        &FileUpdateObserver::OnStartUpdate, std::make_tuple(url));
   }
   write_target_urls_[id].insert(url);
 }
@@ -644,7 +649,7 @@ void FileSystemOperationRunner::PrepareForRead(OperationID id,
                                                const FileSystemURL& url) {
   if (file_system_context_->GetAccessObservers(url.type())) {
     file_system_context_->GetAccessObservers(url.type())->Notify(
-        &FileAccessObserver::OnAccess, base::MakeTuple(url));
+        &FileAccessObserver::OnAccess, std::make_tuple(url));
   }
 }
 
@@ -666,7 +671,7 @@ void FileSystemOperationRunner::FinishOperation(OperationID id) {
         iter != urls.end(); ++iter) {
       if (file_system_context_->GetUpdateObservers(iter->type())) {
         file_system_context_->GetUpdateObservers(iter->type())->Notify(
-            &FileUpdateObserver::OnEndUpdate, base::MakeTuple(*iter));
+            &FileUpdateObserver::OnEndUpdate, std::make_tuple(*iter));
       }
     }
     write_target_urls_.erase(found);

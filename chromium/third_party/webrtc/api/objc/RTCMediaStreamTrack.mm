@@ -15,6 +15,7 @@
 
 @implementation RTCMediaStreamTrack {
   rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> _nativeTrack;
+  RTCMediaStreamTrackType _type;
 }
 
 - (NSString *)kind {
@@ -53,10 +54,12 @@
 }
 
 - (instancetype)initWithNativeTrack:
-    (rtc::scoped_refptr<webrtc::MediaStreamTrackInterface>)nativeTrack {
+    (rtc::scoped_refptr<webrtc::MediaStreamTrackInterface>)nativeTrack
+                               type:(RTCMediaStreamTrackType)type {
   NSParameterAssert(nativeTrack);
   if (self = [super init]) {
     _nativeTrack = nativeTrack;
+    _type = type;
   }
   return self;
 }
@@ -64,41 +67,29 @@
 + (webrtc::MediaStreamTrackInterface::TrackState)nativeTrackStateForState:
     (RTCMediaStreamTrackState)state {
   switch (state) {
-    case RTCMediaStreamTrackStateInitializing:
-      return webrtc::MediaStreamTrackInterface::kInitializing;
     case RTCMediaStreamTrackStateLive:
       return webrtc::MediaStreamTrackInterface::kLive;
     case RTCMediaStreamTrackStateEnded:
       return webrtc::MediaStreamTrackInterface::kEnded;
-    case RTCMediaStreamTrackStateFailed:
-      return webrtc::MediaStreamTrackInterface::kFailed;
   }
 }
 
 + (RTCMediaStreamTrackState)trackStateForNativeState:
     (webrtc::MediaStreamTrackInterface::TrackState)nativeState {
   switch (nativeState) {
-    case webrtc::MediaStreamTrackInterface::kInitializing:
-      return RTCMediaStreamTrackStateInitializing;
     case webrtc::MediaStreamTrackInterface::kLive:
       return RTCMediaStreamTrackStateLive;
     case webrtc::MediaStreamTrackInterface::kEnded:
       return RTCMediaStreamTrackStateEnded;
-    case webrtc::MediaStreamTrackInterface::kFailed:
-      return RTCMediaStreamTrackStateFailed;
   }
 }
 
 + (NSString *)stringForState:(RTCMediaStreamTrackState)state {
   switch (state) {
-    case RTCMediaStreamTrackStateInitializing:
-      return @"Initializing";
     case RTCMediaStreamTrackStateLive:
       return @"Live";
     case RTCMediaStreamTrackStateEnded:
       return @"Ended";
-    case RTCMediaStreamTrackStateFailed:
-      return @"Failed";
   }
 }
 

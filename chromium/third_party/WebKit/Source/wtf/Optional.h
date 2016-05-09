@@ -6,6 +6,7 @@
 #define Optional_h
 
 #include "wtf/Alignment.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/StdLibExtras.h"
@@ -27,11 +28,14 @@ namespace WTF {
 //       recorder.emplace(constructor, args, here);
 //   // recorder destroyed at end of scope
 //
+// It can be used in WTF::Vector.
+//
 // Note in particular that unlike a pointer, though, dereferencing a const
 // optional yields a const reference.
 
 template <typename T>
-class Optional {
+class Optional final {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     WTF_MAKE_NONCOPYABLE(Optional);
 public:
     Optional() : m_ptr(nullptr) { }
@@ -48,6 +52,8 @@ public:
     const T& operator*() const { ASSERT_WITH_SECURITY_IMPLICATION(m_ptr); return *m_ptr; }
     T* operator->() { ASSERT_WITH_SECURITY_IMPLICATION(m_ptr); return m_ptr; }
     const T* operator->() const { ASSERT_WITH_SECURITY_IMPLICATION(m_ptr); return m_ptr; }
+    T* get() { return m_ptr; }
+    const T* get() const { return m_ptr; }
 
     template <typename... Args>
     void emplace(Args&&... args)

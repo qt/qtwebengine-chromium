@@ -6,6 +6,7 @@
 #define CONTENT_RENDERER_MEDIA_ANDROID_RENDERER_MEDIA_SESSION_MANAGER_H_
 
 #include <map>
+#include <memory>
 
 #include "base/id_map.h"
 #include "base/macros.h"
@@ -16,6 +17,7 @@
 namespace content {
 
 class WebMediaSessionAndroid;
+struct MediaMetadata;
 
 class CONTENT_EXPORT RendererMediaSessionManager : public RenderFrameObserver {
  public:
@@ -28,11 +30,13 @@ class CONTENT_EXPORT RendererMediaSessionManager : public RenderFrameObserver {
   int RegisterMediaSession(WebMediaSessionAndroid* session);
   void UnregisterMediaSession(int session_id);
 
-  void Activate(int session_id,
-                scoped_ptr<blink::WebMediaSessionActivateCallback> callback);
+  void Activate(
+      int session_id,
+      std::unique_ptr<blink::WebMediaSessionActivateCallback> callback);
   void Deactivate(
       int session_id,
-      scoped_ptr<blink::WebMediaSessionDeactivateCallback> callback);
+      std::unique_ptr<blink::WebMediaSessionDeactivateCallback> callback);
+  void SetMetadata(int session_id, const MediaMetadata& metadata);
 
   void OnDidActivate(int request_id, bool success);
   void OnDidDeactivate(int request_id);

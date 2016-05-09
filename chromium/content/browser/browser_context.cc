@@ -6,11 +6,15 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <algorithm>
+#include <limits>
 #include <utility>
 
+#include "base/guid.h"
+#include "base/lazy_instance.h"
+#include "base/rand_util.h"
 #include "build/build_config.h"
-
-#if !defined(OS_IOS)
+#include "components/profile_service/user_id_map.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
@@ -22,7 +26,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/site_instance.h"
-#include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/channel_id_store.h"
@@ -30,19 +33,23 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/fileapi/external_mount_points.h"
-#endif // !OS_IOS
 
 using base::UserDataAdapter;
 
 namespace content {
 
-// Only ~BrowserContext() is needed on iOS.
-#if !defined(OS_IOS)
 namespace {
+
+base::LazyInstance<std::set<std::string>> g_used_user_ids =
+    LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<std::vector<std::pair<BrowserContext*, std::string>>>
+g_context_to_user_id = LAZY_INSTANCE_INITIALIZER;
 
 // Key names on BrowserContext.
 const char kDownloadManagerKeyName[] = "download_manager";
 const char kStoragePartitionMapKeyName[] = "content_storage_partition_map";
+
+const char kMojoWasInitialized[] = "mojo-was-initialized";
 
 #if defined(OS_CHROMEOS)
 const char kMountPointsKey[] = "mount_points";
@@ -78,8 +85,7 @@ void SaveSessionStateOnIOThread(
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     AppCacheServiceImpl* appcache_service) {
   net::URLRequestContext* context = context_getter->GetURLRequestContext();
-  context->cookie_store()->GetCookieMonster()->
-      SetForceKeepSessionState();
+  context->cookie_store()->SetForceKeepSessionState();
   context->channel_id_service()->GetChannelIDStore()->
       SetForceKeepSessionState();
   appcache_service->set_force_keep_session_state();
@@ -255,11 +261,12 @@ void BrowserContext::DeliverPushMessage(
     BrowserContext* browser_context,
     const GURL& origin,
     int64_t service_worker_registration_id,
-    const std::string& data,
+    const PushEventPayload& payload,
     const base::Callback<void(PushDeliveryStatus)>& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  PushMessagingRouter::DeliverMessage(
-      browser_context, origin, service_worker_registration_id, data, callback);
+  PushMessagingRouter::DeliverMessage(browser_context, origin,
+                                      service_worker_registration_id, payload,
+                                      callback);
 }
 
 // static
@@ -322,13 +329,44 @@ void BrowserContext::SetDownloadManagerForTesting(
   SetDownloadManager(browser_context, download_manager);
 }
 
-#endif  // !OS_IOS
+void BrowserContext::Initialize(
+    BrowserContext* browser_context,
+    const base::FilePath& path) {
+  // Generate a GUID for |browser_context| to use as the Mojo user id.
+  std::string new_id = base::GenerateGUID();
+  while (g_used_user_ids.Get().find(new_id) != g_used_user_ids.Get().end())
+    new_id = base::GenerateGUID();
+
+  g_used_user_ids.Get().insert(new_id);
+  g_context_to_user_id.Get().push_back(std::make_pair(browser_context, new_id));
+
+  profile::AssociateMojoUserIDWithProfileDir(new_id, path);
+  browser_context->SetUserData(kMojoWasInitialized,
+                               new base::SupportsUserData::Data);
+}
+
+const std::string& BrowserContext::GetMojoUserIdFor(
+    BrowserContext* browser_context) {
+  CHECK(browser_context->GetUserData(kMojoWasInitialized))
+      << "Attempting to get the mojo user id for a BrowserContext that was "
+      << "never Initialize()ed.";
+
+  auto it = std::find_if(
+      g_context_to_user_id.Get().begin(),
+      g_context_to_user_id.Get().end(),
+      [&browser_context](const std::pair<BrowserContext*, std::string>& p) {
+        return p.first == browser_context; });
+  CHECK(it != g_context_to_user_id.Get().end());
+  return it->second;
+}
 
 BrowserContext::~BrowserContext() {
-#if !defined(OS_IOS)
+  CHECK(GetUserData(kMojoWasInitialized))
+      << "Attempting to destroy a BrowserContext that never called "
+      << "Initialize()";
+
   if (GetUserData(kDownloadManagerKeyName))
     GetDownloadManager(this)->Shutdown();
-#endif
 }
 
 }  // namespace content

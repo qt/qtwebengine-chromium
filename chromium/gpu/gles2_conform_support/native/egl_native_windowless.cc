@@ -8,7 +8,7 @@ extern "C" {
 #if defined(GLES2_CONFORM_SUPPORT_ONLY)
 #include "gpu/gles2_conform_support/gtf/gtf_stubs.h"
 #else
-#include "third_party/gles2_conform/GTF_ES/glsl/GTF/Source/eglNative.h"
+#include "third_party/gles2_conform/GTF_ES/glsl/GTF/Source/eglNative.h"  // nogncheck
 #endif
 
 GTFbool GTFNativeCreateDisplay(EGLNativeDisplayType *pNativeDisplay) {
@@ -35,7 +35,7 @@ void GTFNativeDestroyWindow(EGLNativeDisplayType nativeDisplay,
 
 EGLImageKHR GTFCreateEGLImage(int width, int height,
                               GLenum format, GLenum type) {
-  return (EGLImageKHR)NULL;
+  return (EGLImageKHR)0;
 }
 
 void GTFDestroyEGLImage(EGLImageKHR image) {

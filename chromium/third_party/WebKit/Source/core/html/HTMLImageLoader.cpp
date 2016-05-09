@@ -73,11 +73,11 @@ void HTMLImageLoader::noImageResourceToLoad()
         loadFallbackContentForElement(element());
 }
 
-void HTMLImageLoader::notifyFinished(Resource*)
+void HTMLImageLoader::imageNotifyFinished(ImageResource*)
 {
     ImageResource* cachedImage = image();
-    RefPtrWillBeRawPtr<Element> element = this->element();
-    ImageLoader::notifyFinished(cachedImage);
+    RawPtr<Element> element = this->element();
+    ImageLoader::imageNotifyFinished(cachedImage);
 
     bool loadError = cachedImage->errorOccurred();
     if (isHTMLImageElement(*element)) {
@@ -103,4 +103,4 @@ void HTMLImageLoader::ensureFallbackContent()
     loadFallbackContentForElement(element());
 }
 
-}
+} // namespace blink

@@ -34,7 +34,7 @@ void RenderMediaClient::AddKeySystemsInfoForUMA(
   DVLOG(2) << __FUNCTION__;
 #if defined(WIDEVINE_CDM_AVAILABLE)
   key_systems_info_for_uma->push_back(media::KeySystemInfoForUMA(
-      kWidevineKeySystem, kWidevineKeySystemNameForUMA, true));
+      kWidevineKeySystem, kWidevineKeySystemNameForUMA));
 #endif  // WIDEVINE_CDM_AVAILABLE
 }
 
@@ -92,7 +92,7 @@ void RenderMediaClient::RecordRapporURL(const std::string& metric,
 }
 
 void RenderMediaClient::SetTickClockForTesting(
-    scoped_ptr<base::TickClock> tick_clock) {
+    std::unique_ptr<base::TickClock> tick_clock) {
   tick_clock_.swap(tick_clock);
 }
 

@@ -73,9 +73,20 @@ class VideoCodingModule : public Module {
       VideoEncoderRateObserver* encoder_rate_observer,
       VCMQMSettingsCallback* qm_settings_callback);
 
+  static VideoCodingModule* Create(
+      Clock* clock,
+      VideoEncoderRateObserver* encoder_rate_observer,
+      VCMQMSettingsCallback* qm_settings_callback,
+      NackSender* nack_sender,
+      KeyFrameRequestSender* keyframe_request_sender);
+
   static VideoCodingModule* Create(Clock* clock, EventFactory* event_factory);
 
-  static void Destroy(VideoCodingModule* module);
+  static VideoCodingModule* Create(
+      Clock* clock,
+      EventFactory* event_factory,
+      NackSender* nack_sender,
+      KeyFrameRequestSender* keyframe_request_sender);
 
   // Get supported codec settings using codec type
   //
@@ -383,12 +394,6 @@ class VideoCodingModule : public Module {
   // Registers a callback which conveys the size of the render buffer.
   virtual int RegisterRenderBufferSizeCallback(
       VCMRenderBufferSizeCallback* callback) = 0;
-
-  // Reset the decoder state to the initial state.
-  //
-  // Return value      : VCM_OK, on success.
-  //                     < 0,    on error.
-  virtual int32_t ResetDecoder() = 0;
 
   // API to get the codec which is currently used for decoding by the module.
   //

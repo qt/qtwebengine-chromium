@@ -41,7 +41,7 @@
 #include "url/url_canon.h"
 
 #if defined(USE_GIO)
-#include "library_loaders/libgio.h"
+#include "library_loaders/libgio.h"  // nogncheck
 #endif  // defined(USE_GIO)
 
 namespace net {
@@ -85,7 +85,7 @@ std::string FixupProxyHostScheme(ProxyServer::Scheme scheme,
     host = "socks5://" + host;
   // If there is a trailing slash, remove it so |host| will parse correctly
   // even if it includes a port number (since the slash is not numeric).
-  if (host.length() && host[host.length() - 1] == '/')
+  if (!host.empty() && host.back() == '/')
     host.resize(host.length() - 1);
   return host;
 }

@@ -8,6 +8,7 @@
 
 #include "base/auto_reset.h"
 #include "cc/base/math_util.h"
+#include "cc/input/main_thread_scrolling_reason.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/trees/draw_property_utils.h"
@@ -30,18 +31,15 @@ scoped_ptr<LayerImpl> PaintedScrollbarLayer::CreateLayerImpl(
 }
 
 scoped_refptr<PaintedScrollbarLayer> PaintedScrollbarLayer::Create(
-    const LayerSettings& settings,
     scoped_ptr<Scrollbar> scrollbar,
     int scroll_layer_id) {
-  return make_scoped_refptr(new PaintedScrollbarLayer(
-      settings, std::move(scrollbar), scroll_layer_id));
+  return make_scoped_refptr(
+      new PaintedScrollbarLayer(std::move(scrollbar), scroll_layer_id));
 }
 
-PaintedScrollbarLayer::PaintedScrollbarLayer(const LayerSettings& settings,
-                                             scoped_ptr<Scrollbar> scrollbar,
+PaintedScrollbarLayer::PaintedScrollbarLayer(scoped_ptr<Scrollbar> scrollbar,
                                              int scroll_layer_id)
-    : Layer(settings),
-      scrollbar_(std::move(scrollbar)),
+    : scrollbar_(std::move(scrollbar)),
       scroll_layer_id_(scroll_layer_id),
       internal_contents_scale_(1.f),
       thumb_thickness_(scrollbar_->ThumbThickness()),
@@ -50,7 +48,8 @@ PaintedScrollbarLayer::PaintedScrollbarLayer(const LayerSettings& settings,
       has_thumb_(scrollbar_->HasThumb()),
       thumb_opacity_(scrollbar_->ThumbOpacity()) {
   if (!scrollbar_->IsOverlay())
-    SetShouldScrollOnMainThread(true);
+    AddMainThreadScrollingReasons(
+        MainThreadScrollingReason::kScrollbarScrolling);
 }
 
 PaintedScrollbarLayer::~PaintedScrollbarLayer() {}
@@ -191,7 +190,7 @@ void PaintedScrollbarLayer::UpdateInternalContentScale() {
           ->settings()
           .layer_transforms_should_scale_layer_contents) {
     gfx::Transform transform;
-    transform = DrawTransformFromPropertyTrees(
+    transform = draw_property_utils::ScreenSpaceTransform(
         this, layer_tree_host()->property_trees()->transform_tree);
 
     gfx::Vector2dF transform_scales =

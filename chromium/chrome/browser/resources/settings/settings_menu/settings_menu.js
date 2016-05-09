@@ -10,14 +10,17 @@
  *
  *     <settings-menu selected-page-id="{{selectedPageId}}">
  *     </settings-menu>
- *
- * @group Chrome Settings Elements
- * @element settings-menu
  */
 Polymer({
   is: 'settings-menu',
 
   properties: {
+    /** @private */
+    advancedOpened_: Boolean,
+
+    /** @private */
+    basicOpened_: Boolean,
+
     /**
      * The current active route.
      */
@@ -46,5 +49,14 @@ Polymer({
         subpage: [],
       };
     }
-  }
+  },
+
+  /**
+   * @param {boolean} opened Whether the menu is expanded.
+   * @return {string} Which icon to use.
+   * @private
+   * */
+  arrowState_: function(opened) {
+    return opened ? 'arrow-drop-up' : 'arrow-drop-down';
+  },
 });

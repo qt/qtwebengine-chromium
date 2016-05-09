@@ -4,10 +4,10 @@
 
 #include "core/inspector/ConsoleMessage.h"
 
-#include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptCallStack.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/inspector/ScriptArguments.h"
-#include "core/inspector/ScriptAsyncCallStack.h"
+#include "core/workers/WorkerInspectorProxy.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -90,23 +90,22 @@ void ConsoleMessage::setLineNumber(unsigned lineNumber)
     m_lineNumber = lineNumber;
 }
 
-PassRefPtrWillBeRawPtr<ScriptCallStack> ConsoleMessage::callStack() const
+PassRefPtr<ScriptCallStack> ConsoleMessage::callStack() const
 {
     return m_callStack;
 }
 
-void ConsoleMessage::setCallStack(PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
+void ConsoleMessage::setCallStack(PassRefPtr<ScriptCallStack> callStack)
 {
     m_callStack = callStack;
-    if (m_callStack && m_callStack->size() && !m_scriptId) {
-        const ScriptCallFrame& frame = m_callStack->at(0);
-        m_url = frame.sourceURL();
-        m_lineNumber = frame.lineNumber();
-        m_columnNumber = frame.columnNumber();
+    if (m_callStack && !m_callStack->isEmpty() && !m_scriptId) {
+        m_url = m_callStack->topSourceURL();
+        m_lineNumber = m_callStack->topLineNumber();
+        m_columnNumber = m_callStack->topColumnNumber();
     }
 }
 
-ScriptState* ConsoleMessage::scriptState() const
+ScriptState* ConsoleMessage::getScriptState() const
 {
     if (m_scriptState)
         return m_scriptState->get();
@@ -124,12 +123,12 @@ void ConsoleMessage::setScriptState(ScriptState* scriptState)
         m_scriptState.clear();
 }
 
-PassRefPtrWillBeRawPtr<ScriptArguments> ConsoleMessage::scriptArguments() const
+RawPtr<ScriptArguments> ConsoleMessage::scriptArguments() const
 {
     return m_scriptArguments;
 }
 
-void ConsoleMessage::setScriptArguments(PassRefPtrWillBeRawPtr<ScriptArguments> scriptArguments)
+void ConsoleMessage::setScriptArguments(RawPtr<ScriptArguments> scriptArguments)
 {
     m_scriptArguments = scriptArguments;
 }
@@ -183,12 +182,12 @@ unsigned ConsoleMessage::columnNumber() const
 
 void ConsoleMessage::frameWindowDiscarded(LocalDOMWindow* window)
 {
-    if (scriptState() && scriptState()->domWindow() == window)
+    if (getScriptState() && getScriptState()->domWindow() == window)
         setScriptState(nullptr);
 
     if (!m_scriptArguments)
         return;
-    if (m_scriptArguments->scriptState()->domWindow() != window)
+    if (m_scriptArguments->getScriptState()->domWindow() != window)
         return;
     if (!m_message)
         m_message = "<message collected>";
@@ -208,13 +207,13 @@ void ConsoleMessage::collectCallStack()
         return;
 
     if (!m_callStack)
-        setCallStack(currentScriptCallStackForConsole(ScriptCallStack::maxCallStackSizeToCapture));
+        setCallStack(ScriptCallStack::captureForConsole());
 }
 
 DEFINE_TRACE(ConsoleMessage)
 {
-    visitor->trace(m_callStack);
     visitor->trace(m_scriptArguments);
+    visitor->trace(m_workerProxy);
 }
 
 } // namespace blink

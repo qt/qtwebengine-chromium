@@ -30,6 +30,9 @@
 #elif V8_TARGET_ARCH_X87
 #include "src/crankshaft/x87/lithium-x87.h"  // NOLINT
 #include "src/crankshaft/x87/lithium-codegen-x87.h"  // NOLINT
+#elif V8_TARGET_ARCH_S390
+#include "src/crankshaft/s390/lithium-s390.h"          // NOLINT
+#include "src/crankshaft/s390/lithium-codegen-s390.h"  // NOLINT
 #else
 #error "Unknown architecture."
 #endif
@@ -246,22 +249,11 @@ void LPointerMap::PrintTo(StringStream* stream) {
   stream->Add("}");
 }
 
-
-int StackSlotOffset(int index) {
-  if (index >= 0) {
-    // Local or spill slot. Skip the frame pointer, function, and
-    // context in the fixed part of the frame.
-    return -(index + 1) * kPointerSize -
-        StandardFrameConstants::kFixedFrameSizeFromFp;
-  } else {
-    // Incoming parameter. Skip the return address.
-    return -(index + 1) * kPointerSize + kFPOnStackSize + kPCOnStackSize;
-  }
-}
-
-
 LChunk::LChunk(CompilationInfo* info, HGraph* graph)
-    : spill_slot_count_(0),
+    : base_frame_slots_(info->IsStub()
+                            ? TypedFrameConstants::kFixedSlotCount
+                            : StandardFrameConstants::kFixedSlotCount),
+      current_frame_slots_(base_frame_slots_),
       info_(info),
       graph_(graph),
       instructions_(32, info->zone()),
@@ -269,7 +261,6 @@ LChunk::LChunk(CompilationInfo* info, HGraph* graph)
       inlined_functions_(1, info->zone()),
       deprecation_dependencies_(32, info->zone()),
       stability_dependencies_(8, info->zone()) {}
-
 
 LLabel* LChunk::GetLabel(int block_id) const {
   HBasicBlock* block = graph_->blocks()->at(block_id);
@@ -475,7 +466,8 @@ Handle<Code> LChunk::Codegen() {
     void* jit_handler_data =
         assembler.positions_recorder()->DetachJITHandlerData();
     LOG_CODE_EVENT(info()->isolate(),
-                   CodeEndLinePosInfoRecordEvent(*code, jit_handler_data));
+                   CodeEndLinePosInfoRecordEvent(AbstractCode::cast(*code),
+                                                 jit_handler_data));
 
     CodeGenerator::PrintCode(code, info());
     DCHECK(!(info()->isolate()->serializer_enabled() &&
@@ -495,9 +487,9 @@ void LChunk::set_allocated_double_registers(BitVector* allocated_registers) {
   while (!iterator.Done()) {
     if (info()->saves_caller_doubles()) {
       if (kDoubleSize == kPointerSize * 2) {
-        spill_slot_count_ += 2;
+        current_frame_slots_ += 2;
       } else {
-        spill_slot_count_++;
+        current_frame_slots_++;
       }
     }
     iterator.Advance();
@@ -516,18 +508,43 @@ void LChunkBuilderBase::Retry(BailoutReason reason) {
   status_ = ABORTED;
 }
 
+LInstruction* LChunkBuilderBase::AssignEnvironment(LInstruction* instr,
+                                                   HEnvironment* hydrogen_env) {
+  int argument_index_accumulator = 0;
+  ZoneList<HValue*> objects_to_materialize(0, zone());
+  DCHECK_NE(TAIL_CALLER_FUNCTION, hydrogen_env->frame_type());
+  instr->set_environment(CreateEnvironment(
+      hydrogen_env, &argument_index_accumulator, &objects_to_materialize));
+  return instr;
+}
 
 LEnvironment* LChunkBuilderBase::CreateEnvironment(
     HEnvironment* hydrogen_env, int* argument_index_accumulator,
     ZoneList<HValue*>* objects_to_materialize) {
   if (hydrogen_env == NULL) return NULL;
 
+  BailoutId ast_id = hydrogen_env->ast_id();
+  DCHECK(!ast_id.IsNone() ||
+         (hydrogen_env->frame_type() != JS_FUNCTION &&
+          hydrogen_env->frame_type() != TAIL_CALLER_FUNCTION));
+
+  if (hydrogen_env->frame_type() == TAIL_CALLER_FUNCTION) {
+    // Skip potential outer arguments adaptor frame.
+    HEnvironment* outer_hydrogen_env = hydrogen_env->outer();
+    if (outer_hydrogen_env != nullptr &&
+        outer_hydrogen_env->frame_type() == ARGUMENTS_ADAPTOR) {
+      outer_hydrogen_env = outer_hydrogen_env->outer();
+    }
+    LEnvironment* outer = CreateEnvironment(
+        outer_hydrogen_env, argument_index_accumulator, objects_to_materialize);
+    return new (zone())
+        LEnvironment(hydrogen_env->closure(), hydrogen_env->frame_type(),
+                     ast_id, 0, 0, 0, outer, hydrogen_env->entry(), zone());
+  }
+
   LEnvironment* outer =
       CreateEnvironment(hydrogen_env->outer(), argument_index_accumulator,
                         objects_to_materialize);
-  BailoutId ast_id = hydrogen_env->ast_id();
-  DCHECK(!ast_id.IsNone() ||
-         hydrogen_env->frame_type() != JS_FUNCTION);
 
   int omitted_count = (hydrogen_env->frame_type() == JS_FUNCTION)
                           ? 0

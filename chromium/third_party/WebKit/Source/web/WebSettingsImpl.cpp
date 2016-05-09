@@ -52,9 +52,8 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings, DevToolsEmulator* devToolsE
     , m_viewportMetaLayoutSizeQuirk(false)
     , m_viewportMetaNonUserScalableQuirk(false)
     , m_clobberUserAgentInitialScaleQuirk(false)
-    , m_mainFrameResizesAreOrientationChanges(false)
 {
-    ASSERT(settings);
+    DCHECK(settings);
 }
 
 void WebSettingsImpl::setFromStrings(const WebString& name, const WebString& value)
@@ -72,11 +71,6 @@ void WebSettingsImpl::setFixedFontFamily(const WebString& font, UScriptCode scri
 {
     if (m_settings->genericFontFamilySettings().updateFixed(font, script))
         m_settings->notifyGenericFontFamilyChange();
-}
-
-void WebSettingsImpl::setReportWheelOverscroll(bool enabled)
-{
-    m_settings->setReportWheelOverscroll(enabled);
 }
 
 void WebSettingsImpl::setForceZeroLayoutHeight(bool enabled)
@@ -209,6 +203,11 @@ void WebSettingsImpl::setWebSecurityEnabled(bool enabled)
     m_settings->setWebSecurityEnabled(enabled);
 }
 
+void WebSettingsImpl::setWheelGesturesEnabled(bool enabled)
+{
+    m_settings->setWheelGesturesEnabled(enabled);
+}
+
 void WebSettingsImpl::setJavaScriptCanOpenWindowsAutomatically(bool canOpenWindows)
 {
     m_settings->setJavaScriptCanOpenWindowsAutomatically(canOpenWindows);
@@ -286,6 +285,11 @@ void WebSettingsImpl::setImagesEnabled(bool enabled)
 void WebSettingsImpl::setLoadWithOverviewMode(bool enabled)
 {
     m_settings->setLoadWithOverviewMode(enabled);
+}
+
+void WebSettingsImpl::setShouldReuseGlobalForUnownedMainFrame(bool enabled)
+{
+    m_settings->setShouldReuseGlobalForUnownedMainFrame(enabled);
 }
 
 void WebSettingsImpl::setPluginsEnabled(bool enabled)
@@ -408,6 +412,11 @@ void WebSettingsImpl::setTextTrackFontVariant(const WebString& fontVariant)
     m_settings->setTextTrackFontVariant(fontVariant);
 }
 
+void WebSettingsImpl::setTextTrackMarginPercentage(float percentage)
+{
+    m_settings->setTextTrackMarginPercentage(percentage);
+}
+
 void WebSettingsImpl::setTextTrackTextColor(const WebString& color)
 {
     m_settings->setTextTrackTextColor(color);
@@ -421,11 +430,6 @@ void WebSettingsImpl::setTextTrackTextShadow(const WebString& shadow)
 void WebSettingsImpl::setTextTrackTextSize(const WebString& size)
 {
     m_settings->setTextTrackTextSize(size);
-}
-
-void WebSettingsImpl::setUnsafePluginPastingEnabled(bool enabled)
-{
-    m_settings->setUnsafePluginPastingEnabled(enabled);
 }
 
 void WebSettingsImpl::setDNSPrefetchingEnabled(bool enabled)
@@ -463,6 +467,11 @@ void WebSettingsImpl::setAllowFileAccessFromFileURLs(bool allow)
     m_settings->setAllowFileAccessFromFileURLs(allow);
 }
 
+void WebSettingsImpl::setAllowGeolocationOnInsecureOrigins(bool allow)
+{
+    m_settings->setAllowGeolocationOnInsecureOrigins(allow);
+}
+
 void WebSettingsImpl::setThreadedScrollingEnabled(bool enabled)
 {
     m_settings->setThreadedScrollingEnabled(enabled);
@@ -478,19 +487,9 @@ void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
     m_settings->setOfflineWebApplicationCacheEnabled(enabled);
 }
 
-void WebSettingsImpl::setWebAudioEnabled(bool enabled)
-{
-    m_settings->setWebAudioEnabled(enabled);
-}
-
 void WebSettingsImpl::setExperimentalWebGLEnabled(bool enabled)
 {
     m_settings->setWebGLEnabled(enabled);
-}
-
-void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
-{
-    m_settings->setOpenGLMultisamplingEnabled(enabled);
 }
 
 void WebSettingsImpl::setRenderVSyncNotificationEnabled(bool enabled)
@@ -693,9 +692,14 @@ bool WebSettingsImpl::mockGestureTapHighlightsEnabled() const
     return m_settings->mockGestureTapHighlightsEnabled();
 }
 
+bool WebSettingsImpl::wheelGesturesEnabled() const
+{
+    return m_settings->wheelGesturesEnabled();
+}
+
 bool WebSettingsImpl::mainFrameResizesAreOrientationChanges() const
 {
-    return m_mainFrameResizesAreOrientationChanges;
+    return m_devToolsEmulator->mainFrameResizesAreOrientationChanges();
 }
 
 bool WebSettingsImpl::shrinksViewportContentToFit() const
@@ -716,6 +720,11 @@ void WebSettingsImpl::setMediaControlsOverlayPlayButtonEnabled(bool enabled)
 void WebSettingsImpl::setMediaPlaybackRequiresUserGesture(bool required)
 {
     m_settings->setMediaPlaybackRequiresUserGesture(required);
+}
+
+void WebSettingsImpl::setPresentationRequiresUserGesture(bool required)
+{
+    m_settings->setPresentationRequiresUserGesture(required);
 }
 
 void WebSettingsImpl::setViewportEnabled(bool enabled)
@@ -781,7 +790,7 @@ void WebSettingsImpl::setUseSolidColorScrollbars(bool enabled)
 
 void WebSettingsImpl::setMainFrameResizesAreOrientationChanges(bool enabled)
 {
-    m_mainFrameResizesAreOrientationChanges = enabled;
+    m_devToolsEmulator->setMainFrameResizesAreOrientationChanges(enabled);
 }
 
 void WebSettingsImpl::setV8CacheOptions(V8CacheOptions options)

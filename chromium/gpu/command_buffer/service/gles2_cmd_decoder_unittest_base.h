@@ -18,6 +18,7 @@
 #include "gpu/command_buffer/service/gl_context_mock.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
+#include "gpu/command_buffer/service/gpu_preferences.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
@@ -196,6 +197,7 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
 
   struct InitState {
     InitState();
+    InitState(const InitState& other);
 
     std::string extensions;
     std::string gl_version;
@@ -327,6 +329,17 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
                                          uint32_t shared_memory_id,
                                          uint32_t shared_memory_offset,
                                          GLenum expected_internal_format);
+  void DoTexImage3D(GLenum target,
+                    GLint level,
+                    GLenum internal_format,
+                    GLsizei width,
+                    GLsizei height,
+                    GLsizei depth,
+                    GLint border,
+                    GLenum format,
+                    GLenum type,
+                    uint32_t shared_memory_id,
+                    uint32_t shared_memory_offset);
   void DoRenderbufferStorage(
       GLenum target, GLenum internal_format, GLenum actual_format,
       GLsizei width, GLsizei height, GLenum error);
@@ -742,6 +755,7 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
   void SetupInitStateManualExpectations(bool es3_capable);
 
   scoped_ptr< ::testing::StrictMock<MockCommandBufferEngine> > engine_;
+  GpuPreferences gpu_preferences_;
   scoped_refptr<ContextGroup> group_;
   MockGLStates gl_states_;
   base::MessageLoop message_loop_;

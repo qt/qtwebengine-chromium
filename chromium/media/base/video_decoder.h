@@ -10,28 +10,20 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "media/base/cdm_context.h"
+#include "media/base/decode_status.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace media {
 
+class CdmContext;
 class DecoderBuffer;
 class VideoDecoderConfig;
 class VideoFrame;
 
 class MEDIA_EXPORT VideoDecoder {
  public:
-  // Status codes for decode operations on VideoDecoder.
-  // TODO(rileya): Now that both AudioDecoder and VideoDecoder Status enums
-  // match, break them into a decoder_status.h.
-  enum Status {
-    kOk,          // Everything went as planned.
-    kAborted,     // Decode was aborted as a result of Reset() being called.
-    kDecodeError  // Decoding error happened.
-  };
-
   // Callback for VideoDecoder initialization.
   typedef base::Callback<void(bool success)> InitCB;
 
@@ -42,7 +34,7 @@ class MEDIA_EXPORT VideoDecoder {
   // Callback type for Decode(). Called after the decoder has completed decoding
   // corresponding DecoderBuffer, indicating that it's ready to accept another
   // buffer to decode.
-  typedef base::Callback<void(Status status)> DecodeCB;
+  typedef base::Callback<void(DecodeStatus)> DecodeCB;
 
   VideoDecoder();
 
@@ -65,9 +57,8 @@ class MEDIA_EXPORT VideoDecoder {
   // Initialization should fail if |low_delay| is true and the decoder cannot
   // satisfy the requirements above.
   //
-  // |set_cdm_ready_cb| can be used to set/cancel a CdmReadyCB with which the
-  // decoder can be notified when a CDM is ready. The decoder can use the CDM to
-  // handle encrypted video stream.
+  // |cdm_context| can be used to handle encrypted buffers. May be null if the
+  // stream is not encrypted.
   //
   // Note:
   // 1) The VideoDecoder will be reinitialized if it was initialized before.
@@ -76,7 +67,7 @@ class MEDIA_EXPORT VideoDecoder {
   // 3) No VideoDecoder calls should be made before |init_cb| is executed.
   virtual void Initialize(const VideoDecoderConfig& config,
                           bool low_delay,
-                          const SetCdmReadyCB& set_cdm_ready_cb,
+                          CdmContext* cdm_context,
                           const InitCB& init_cb,
                           const OutputCB& output_cb) = 0;
 

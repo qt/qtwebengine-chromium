@@ -314,14 +314,13 @@ class AstGraphBuilder : public AstVisitor {
   Node* BuildGlobalStore(Handle<Name> name, Node* value,
                          const VectorSlotPair& feedback);
 
+  // Builders for dynamic variable loads and stores.
+  Node* BuildDynamicLoad(Handle<Name> name, TypeofMode typeof_mode);
+  Node* BuildDynamicStore(Handle<Name> name, Node* value);
+
   // Builders for accessing the function context.
   Node* BuildLoadGlobalObject();
   Node* BuildLoadNativeContextField(int index);
-  Node* BuildLoadFeedbackVector();
-
-  // Builder for accessing a (potentially immutable) object field.
-  Node* BuildLoadObjectField(Node* object, int offset);
-  Node* BuildLoadImmutableObjectField(Node* object, int offset);
 
   // Builders for automatic type conversion.
   Node* BuildToBoolean(Node* input, TypeFeedbackId feedback_id);
@@ -420,10 +419,19 @@ class AstGraphBuilder : public AstVisitor {
   void VisitTypeof(UnaryOperation* expr);
   void VisitNot(UnaryOperation* expr);
 
+  // Dispatched from VisitTypeof, VisitLiteralCompareTypeof.
+  void VisitTypeofExpression(Expression* expr);
+
   // Dispatched from VisitBinaryOperation.
   void VisitComma(BinaryOperation* expr);
   void VisitLogicalExpression(BinaryOperation* expr);
   void VisitArithmeticExpression(BinaryOperation* expr);
+
+  // Dispatched from VisitCompareOperation.
+  void VisitLiteralCompareNil(CompareOperation* expr, Expression* sub_expr,
+                              Node* nil_value);
+  void VisitLiteralCompareTypeof(CompareOperation* expr, Expression* sub_expr,
+                                 Handle<String> check);
 
   // Dispatched from VisitForInStatement.
   void VisitForInAssignment(Expression* expr, Node* value,
@@ -519,7 +527,8 @@ class AstGraphBuilder::Environment : public ZoneObject {
   // Preserve a checkpoint of the environment for the IR graph. Any
   // further mutation of the environment will not affect checkpoints.
   Node* Checkpoint(BailoutId ast_id, OutputFrameStateCombine combine =
-                                         OutputFrameStateCombine::Ignore());
+                                         OutputFrameStateCombine::Ignore(),
+                   bool node_has_exception = false);
 
   // Control dependency tracked by this environment.
   Node* GetControlDependency() { return control_dependency_; }

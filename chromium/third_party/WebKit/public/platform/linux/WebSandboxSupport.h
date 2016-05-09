@@ -41,7 +41,7 @@ struct WebFontRenderStyle;
 
 // Put methods here that are required due to sandbox restrictions.
 // These are currently only implemented only on Linux:
-// https://code.google.com/p/chromium/wiki/LinuxSandboxIPC
+// https://chromium.googlesource.com/chromium/src/+/master/docs/linux_sandbox_ipc.md
 class WebSandboxSupport {
 public:
     // Get information to instantiate a font which contains glyphs for the given Unicode code-point.
@@ -65,7 +65,7 @@ public:
     //     I: italic flag
     //     B: bold flag
     // TODO(derat): Use separate parameters for the size and the style.
-    virtual void getRenderStyleForStrike(const char* family, int sizeAndStyle, WebFontRenderStyle*) = 0;
+    virtual void getWebFontRenderStyleForStrike(const char* family, int sizeAndStyle, WebFontRenderStyle*) = 0;
 };
 
 } // namespace blink

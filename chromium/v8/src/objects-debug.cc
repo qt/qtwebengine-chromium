@@ -7,6 +7,7 @@
 #include "src/bootstrapper.h"
 #include "src/disasm.h"
 #include "src/disassembler.h"
+#include "src/field-type.h"
 #include "src/macro-assembler.h"
 #include "src/ostreams.h"
 #include "src/regexp/jsregexp.h"
@@ -98,6 +99,7 @@ void HeapObject::HeapObjectVerify() {
       Oddball::cast(this)->OddballVerify();
       break;
     case JS_OBJECT_TYPE:
+    case JS_SPECIAL_API_OBJECT_TYPE:
     case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
     case JS_PROMISE_TYPE:
       JSObject::cast(this)->JSObjectVerify();
@@ -149,9 +151,6 @@ void HeapObject::HeapObjectVerify() {
       break;
     case JS_MAP_ITERATOR_TYPE:
       JSMapIterator::cast(this)->JSMapIteratorVerify();
-      break;
-    case JS_ITERATOR_RESULT_TYPE:
-      JSIteratorResult::cast(this)->JSIteratorResultVerify();
       break;
     case JS_WEAK_MAP_TYPE:
       JSWeakMap::cast(this)->JSWeakMapVerify();
@@ -210,7 +209,7 @@ void HeapObject::VerifyHeapPointer(Object* p) {
 void Symbol::SymbolVerify() {
   CHECK(IsSymbol());
   CHECK(HasHashCode());
-  CHECK_GT(Hash(), 0u);
+  CHECK(GetHeap()->hidden_properties_symbol() == this || Hash() > 0u);
   CHECK(name()->IsUndefined() || name()->IsString());
 }
 
@@ -230,6 +229,10 @@ void ByteArray::ByteArrayVerify() {
 
 void BytecodeArray::BytecodeArrayVerify() {
   // TODO(oth): Walk bytecodes and immediate values to validate sanity.
+  // - All bytecodes are known and well formed.
+  // - Jumps must go to new instructions starts.
+  // - No Illegal bytecodes.
+  // - No consecutive sequences of prefix Wide / ExtraWide.
   CHECK(IsBytecodeArray());
   CHECK(constant_pool()->IsFixedArray());
   VerifyHeapPointer(constant_pool());
@@ -298,9 +301,9 @@ void JSObject::JSObjectVerify() {
         if (value->IsUninitialized()) continue;
         if (r.IsSmi()) DCHECK(value->IsSmi());
         if (r.IsHeapObject()) DCHECK(value->IsHeapObject());
-        HeapType* field_type = descriptors->GetFieldType(i);
-        bool type_is_none = field_type->Is(HeapType::None());
-        bool type_is_any = HeapType::Any()->Is(field_type);
+        FieldType* field_type = descriptors->GetFieldType(i);
+        bool type_is_none = field_type->IsNone();
+        bool type_is_any = field_type->IsAny();
         if (r.IsNone()) {
           CHECK(type_is_none);
         } else if (!type_is_any && !(type_is_none && r.IsHeapObject())) {
@@ -318,7 +321,8 @@ void JSObject::JSObjectVerify() {
   // pointer may point to a one pointer filler map.
   if (ElementsAreSafeToExamine()) {
     CHECK_EQ((map()->has_fast_smi_or_object_elements() ||
-              (elements() == GetHeap()->empty_fixed_array())),
+              (elements() == GetHeap()->empty_fixed_array()) ||
+              HasFastStringWrapperElements()),
              (elements()->map() == GetHeap()->fixed_array_map() ||
               elements()->map() == GetHeap()->fixed_cow_array_map()));
     CHECK(map()->has_fast_object_elements() == HasFastObjectElements());
@@ -553,9 +557,7 @@ void JSBoundFunction::JSBoundFunctionVerify() {
   VerifyObjectField(kBoundThisOffset);
   VerifyObjectField(kBoundTargetFunctionOffset);
   VerifyObjectField(kBoundArgumentsOffset);
-  VerifyObjectField(kCreationContextOffset);
   CHECK(bound_target_function()->IsCallable());
-  CHECK(creation_context()->IsNativeContext());
   CHECK(IsCallable());
   CHECK_EQ(IsConstructor(), bound_target_function()->IsConstructor());
 }
@@ -621,7 +623,7 @@ void Oddball::OddballVerify() {
     CHECK(number->IsSmi());
     int value = Smi::cast(number)->value();
     // Hidden oddballs have negative smis.
-    const int kLeastHiddenOddballNumber = -5;
+    const int kLeastHiddenOddballNumber = -6;
     CHECK_LE(value, 1);
     CHECK(value >= kLeastHiddenOddballNumber);
   }
@@ -644,6 +646,8 @@ void Oddball::OddballVerify() {
     CHECK(this == heap->termination_exception());
   } else if (map() == heap->exception_map()) {
     CHECK(this == heap->exception());
+  } else if (map() == heap->optimized_out_map()) {
+    CHECK(this == heap->optimized_out());
   } else {
     UNREACHABLE();
   }
@@ -762,14 +766,6 @@ void JSMapIterator::JSMapIteratorVerify() {
   CHECK(table()->IsOrderedHashTable() || table()->IsUndefined());
   CHECK(index()->IsSmi() || index()->IsUndefined());
   CHECK(kind()->IsSmi() || kind()->IsUndefined());
-}
-
-
-void JSIteratorResult::JSIteratorResultVerify() {
-  CHECK(IsJSIteratorResult());
-  JSObjectVerify();
-  VerifyPointer(done());
-  VerifyPointer(value());
 }
 
 
@@ -911,12 +907,6 @@ void PrototypeInfo::PrototypeInfoVerify() {
 }
 
 
-void AccessorInfo::AccessorInfoVerify() {
-  VerifyPointer(name());
-  VerifyPointer(expected_receiver_type());
-}
-
-
 void SloppyBlockWithEvalContextExtension::
     SloppyBlockWithEvalContextExtensionVerify() {
   CHECK(IsSloppyBlockWithEvalContextExtension());
@@ -925,9 +915,10 @@ void SloppyBlockWithEvalContextExtension::
 }
 
 
-void ExecutableAccessorInfo::ExecutableAccessorInfoVerify() {
-  CHECK(IsExecutableAccessorInfo());
-  AccessorInfoVerify();
+void AccessorInfo::AccessorInfoVerify() {
+  CHECK(IsAccessorInfo());
+  VerifyPointer(name());
+  VerifyPointer(expected_receiver_type());
   VerifyPointer(getter());
   VerifyPointer(setter());
   VerifyPointer(data());
@@ -1038,7 +1029,7 @@ void NormalizedMapCache::NormalizedMapCacheVerify() {
 void DebugInfo::DebugInfoVerify() {
   CHECK(IsDebugInfo());
   VerifyPointer(shared());
-  VerifyPointer(code());
+  VerifyPointer(abstract_code());
   VerifyPointer(break_points());
 }
 
@@ -1076,7 +1067,8 @@ void JSObject::IncrementSpillStatistics(SpillInformation* info) {
     case FAST_HOLEY_DOUBLE_ELEMENTS:
     case FAST_DOUBLE_ELEMENTS:
     case FAST_HOLEY_ELEMENTS:
-    case FAST_ELEMENTS: {
+    case FAST_ELEMENTS:
+    case FAST_STRING_WRAPPER_ELEMENTS: {
       info->number_of_objects_with_fast_elements_++;
       int holes = 0;
       FixedArray* e = FixedArray::cast(elements());
@@ -1100,7 +1092,8 @@ void JSObject::IncrementSpillStatistics(SpillInformation* info) {
       info->number_of_fast_used_elements_ += e->length();
       break;
     }
-    case DICTIONARY_ELEMENTS: {
+    case DICTIONARY_ELEMENTS:
+    case SLOW_STRING_WRAPPER_ELEMENTS: {
       SeededNumberDictionary* dict = element_dictionary();
       info->number_of_slow_used_elements_ += dict->NumberOfElements();
       info->number_of_slow_unused_elements_ +=
@@ -1109,6 +1102,7 @@ void JSObject::IncrementSpillStatistics(SpillInformation* info) {
     }
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
     case SLOW_SLOPPY_ARGUMENTS_ELEMENTS:
+    case NO_ELEMENTS:
       break;
   }
 }

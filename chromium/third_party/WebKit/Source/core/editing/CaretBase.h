@@ -40,12 +40,12 @@ class GraphicsContext;
 class LayoutBlock;
 class LayoutView;
 
+enum class CaretVisibility { Visible, Hidden };
+
 class CORE_EXPORT CaretBase {
     WTF_MAKE_NONCOPYABLE(CaretBase);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(CaretBase);
-protected:
-    enum CaretVisibility { Visible, Hidden };
-    explicit CaretBase(CaretVisibility = Hidden);
+public:
+    explicit CaretBase(CaretVisibility = CaretVisibility::Hidden);
 
     void invalidateCaretRect(Node*, bool caretRectChanged = false);
     void clearCaretRect();
@@ -62,8 +62,8 @@ protected:
     const LayoutRect& localCaretRectWithoutUpdate() const { return m_caretLocalRect; }
 
     void setCaretVisibility(CaretVisibility visibility) { m_caretVisibility = visibility; }
-    bool caretIsVisible() const { return m_caretVisibility == Visible; }
-    CaretVisibility caretVisibility() const { return m_caretVisibility; }
+    bool caretIsVisible() const { return m_caretVisibility == CaretVisibility::Visible; }
+    CaretVisibility getCaretVisibility() const { return m_caretVisibility; }
 
     static LayoutBlock* caretLayoutObject(Node*);
     static void invalidateLocalCaretRect(Node*, const LayoutRect&);

@@ -8,8 +8,8 @@
 #include <stdint.h>
 #include <utility>
 
+#include "base/logging.h"
 #include "mojo/public/cpp/bindings/lib/message_builder.h"
-#include "mojo/public/cpp/environment/logging.h"
 #include "mojo/public/interfaces/bindings/interface_control_messages.mojom.h"
 
 namespace mojo {
@@ -32,7 +32,7 @@ bool ControlMessageHandler::Accept(Message* message) {
   if (message->header()->name == kRunOrClosePipeMessageId)
     return RunOrClosePipe(message);
 
-  MOJO_NOTREACHED();
+  NOTREACHED();
   return false;
 }
 
@@ -42,7 +42,7 @@ bool ControlMessageHandler::AcceptWithResponder(
   if (message->header()->name == kRunMessageId)
     return Run(message, responder);
 
-  MOJO_NOTREACHED();
+  NOTREACHED();
   return false;
 }
 
@@ -55,16 +55,16 @@ bool ControlMessageHandler::Run(Message* message,
   response_params_ptr->query_version_result = QueryVersionResult::New();
   response_params_ptr->query_version_result->version = interface_version_;
 
-  size_t size = GetSerializedSize_(response_params_ptr);
+  size_t size = GetSerializedSize_(response_params_ptr, nullptr);
   ResponseMessageBuilder builder(kRunMessageId, size, message->request_id());
 
   RunResponseMessageParams_Data* response_params = nullptr;
-  Serialize_(std::move(response_params_ptr), builder.buffer(),
-             &response_params);
+  Serialize_(std::move(response_params_ptr), builder.buffer(), &response_params,
+             nullptr);
   response_params->EncodePointersAndHandles(
       builder.message()->mutable_handles());
   bool ok = responder->Accept(builder.message());
-  MOJO_ALLOW_UNUSED_LOCAL(ok);
+  ALLOW_UNUSED_LOCAL(ok);
   delete responder;
 
   return true;

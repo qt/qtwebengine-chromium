@@ -5,6 +5,7 @@
 #ifndef BASE_MESSAGE_LOOP_MESSAGE_LOOP_H_
 #define BASE_MESSAGE_LOOP_MESSAGE_LOOP_H_
 
+#include <memory>
 #include <queue>
 #include <string>
 
@@ -15,7 +16,6 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/incoming_task_queue.h"
 #include "base/message_loop/message_loop_task_runner.h"
 #include "base/message_loop/message_pump.h"
@@ -115,7 +115,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   explicit MessageLoop(Type type = TYPE_DEFAULT);
   // Creates a TYPE_CUSTOM MessageLoop with the supplied MessagePump, which must
   // be non-NULL.
-  explicit MessageLoop(scoped_ptr<MessagePump> pump);
+  explicit MessageLoop(std::unique_ptr<MessagePump> pump);
 
   ~MessageLoop() override;
 
@@ -124,7 +124,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   static void EnableHistogrammer(bool enable_histogrammer);
 
-  typedef scoped_ptr<MessagePump> (MessagePumpFactory)();
+  typedef std::unique_ptr<MessagePump>(MessagePumpFactory)();
   // Uses the given base::MessagePumpForUIFactory to override the default
   // MessagePump implementation for 'TYPE_UI'. Returns true if the factory
   // was successfully registered.
@@ -132,7 +132,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   // Creates the default MessagePump based on |type|. Caller owns return
   // value.
-  static scoped_ptr<MessagePump> CreateMessagePumpForType(Type type);
+  static std::unique_ptr<MessagePump> CreateMessagePumpForType(Type type);
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These observers are notified prior to MessageLoop::current()
   // being changed to return NULL.  This gives interested parties the chance to
@@ -397,7 +397,20 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   //----------------------------------------------------------------------------
  protected:
-  scoped_ptr<MessagePump> pump_;
+  std::unique_ptr<MessagePump> pump_;
+
+  using MessagePumpFactoryCallback = Callback<std::unique_ptr<MessagePump>()>;
+
+  // Common protected constructor. Other constructors delegate the
+  // initialization to this constructor.
+  // A subclass can invoke this constructor to create a message_loop of a
+  // specific type with a custom loop. The implementation does not call
+  // BindToCurrentThread. If this constructor is invoked directly by a subclass,
+  // then the subclass must subsequently bind the message loop.
+  MessageLoop(Type type, MessagePumpFactoryCallback pump_factory);
+
+  // Configure various members and bind this message loop to the current thread.
+  void BindToCurrentThread();
 
  private:
   friend class RunLoop;
@@ -405,8 +418,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   friend class ScheduleWorkTest;
   friend class Thread;
   FRIEND_TEST_ALL_PREFIXES(MessageLoopTest, DeleteUnboundLoop);
-
-  using MessagePumpFactoryCallback = Callback<scoped_ptr<MessagePump>()>;
 
   // Creates a MessageLoop without binding to a thread.
   // If |type| is TYPE_CUSTOM non-null |pump_factory| must be also given
@@ -419,16 +430,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // thread the message loop runs on, before calling Run().
   // Before BindToCurrentThread() is called, only Post*Task() functions can
   // be called on the message loop.
-  static scoped_ptr<MessageLoop> CreateUnbound(
+  static std::unique_ptr<MessageLoop> CreateUnbound(
       Type type,
       MessagePumpFactoryCallback pump_factory);
-
-  // Common private constructor. Other constructors delegate the initialization
-  // to this constructor.
-  MessageLoop(Type type, MessagePumpFactoryCallback pump_factory);
-
-  // Configure various members and bind this message loop to the current thread.
-  void BindToCurrentThread();
 
   // Sets the ThreadTaskRunnerHandle for the current thread to point to the
   // task runner for this message loop.
@@ -534,7 +538,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   // The task runner associated with this message loop.
   scoped_refptr<SingleThreadTaskRunner> task_runner_;
-  scoped_ptr<ThreadTaskRunnerHandle> thread_task_runner_handle_;
+  std::unique_ptr<ThreadTaskRunnerHandle> thread_task_runner_handle_;
 
   template <class T, class R> friend class base::subtle::DeleteHelperInternal;
   template <class T, class R> friend class base::subtle::ReleaseHelperInternal;
@@ -563,17 +567,19 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   MessageLoopForUI() : MessageLoop(TYPE_UI) {
   }
 
+  explicit MessageLoopForUI(std::unique_ptr<MessagePump> pump);
+
   // Returns the MessageLoopForUI of the current thread.
   static MessageLoopForUI* current() {
     MessageLoop* loop = MessageLoop::current();
     DCHECK(loop);
-    DCHECK_EQ(MessageLoop::TYPE_UI, loop->type());
+    DCHECK(loop->IsType(MessageLoop::TYPE_UI));
     return static_cast<MessageLoopForUI*>(loop);
   }
 
   static bool IsCurrent() {
     MessageLoop* loop = MessageLoop::current();
-    return loop && loop->type() == MessageLoop::TYPE_UI;
+    return loop && loop->IsType(MessageLoop::TYPE_UI);
   }
 
 #if defined(OS_IOS)
@@ -624,6 +630,7 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
   // Returns the MessageLoopForIO of the current thread.
   static MessageLoopForIO* current() {
     MessageLoop* loop = MessageLoop::current();
+    DCHECK(loop);
     DCHECK_EQ(MessageLoop::TYPE_IO, loop->type());
     return static_cast<MessageLoopForIO*>(loop);
   }

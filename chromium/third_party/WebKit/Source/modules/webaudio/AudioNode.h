@@ -118,7 +118,7 @@ public:
         Explicit
     };
 
-    NodeType nodeType() const { return m_nodeType; }
+    NodeType getNodeType() const { return m_nodeType; }
     String nodeTypeName() const;
 
     // This object has been connected to another object. This might have
@@ -303,7 +303,7 @@ public:
 
     // EventTarget
     const AtomicString& interfaceName() const final;
-    ExecutionContext* executionContext() const final;
+    ExecutionContext* getExecutionContext() const final;
 
     // Called inside AudioHandler constructors.
     void didAddOutput(unsigned numberOfOutputs);

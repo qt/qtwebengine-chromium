@@ -54,11 +54,9 @@ class FormData;
 // FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
 class CORE_EXPORT InputType : public InputTypeView {
     WTF_MAKE_NONCOPYABLE(InputType);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(InputType);
-
 public:
-    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&, const AtomicString&);
-    static PassRefPtrWillBeRawPtr<InputType> createText(HTMLInputElement&);
+    static InputType* create(HTMLInputElement&, const AtomicString&);
+    static InputType* createText(HTMLInputElement&);
     static const AtomicString& normalizeTypeName(const AtomicString&);
     ~InputType() override;
 
@@ -76,7 +74,6 @@ public:
     virtual bool isInteractiveContent() const;
     virtual bool isTextButton() const;
     virtual bool isTextField() const;
-    virtual bool isImage() const;
 
     // Form value functions
 
@@ -100,7 +97,10 @@ public:
     virtual void readingChecked() const;
 
     // Validation functions
-    virtual String validationMessage() const;
+
+    // Returns a validation message as .first, and title attribute value as
+    // .second if patternMismatch.
+    virtual std::pair<String, String> validationMessage() const;
     virtual bool supportsValidation() const;
     virtual bool typeMismatchFor(const String&) const;
     // Type check for the current input value. We do nothing for some types
@@ -146,6 +146,7 @@ public:
     virtual void disableSecureTextInput();
     virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool canBeSuccessfulSubmitButton();
+    virtual bool matchesDefaultPseudoClass();
 
     // Miscellaneous functions
 
@@ -228,6 +229,7 @@ protected:
     Decimal findStepBase(const Decimal&) const;
 
     StepRange createStepRange(AnyStepHandling, const Decimal& stepBaseDefault, const Decimal& minimumDefault, const Decimal& maximumDefault, const StepRange::StepDescription&) const;
+    void addWarningToConsole(const char* messageFormat, const String& value) const;
 
 private:
     // Helper for stepUp()/stepDown(). Adds step value * count to the current value.

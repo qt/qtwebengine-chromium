@@ -11,8 +11,8 @@
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -82,9 +82,9 @@ TraceConfigFile::TraceConfigFile()
   }
 
   std::string trace_config_file_content;
-  if (!base::ReadFileToString(trace_config_file,
-                              &trace_config_file_content,
-                              kTraceConfigFileSizeLimit)) {
+  if (!base::ReadFileToStringWithMaxSize(trace_config_file,
+                                         &trace_config_file_content,
+                                         kTraceConfigFileSizeLimit)) {
     DLOG(WARNING) << "Cannot read the trace config file correctly.";
     return;
   }
@@ -108,9 +108,7 @@ bool TraceConfigFile::ParseTraceConfigFileContent(const std::string& content) {
   if (!dict->GetDictionary(kTraceConfigParam, &trace_config_dict))
     return false;
 
-  std::string trace_config_str;
-  base::JSONWriter::Write(*trace_config_dict, &trace_config_str);
-  trace_config_ = base::trace_event::TraceConfig(trace_config_str);
+  trace_config_ = base::trace_event::TraceConfig(*trace_config_dict);
 
   if (!dict->GetInteger(kStartupDurationParam, &startup_duration_))
       startup_duration_ = 0;
@@ -139,7 +137,7 @@ int TraceConfigFile::GetStartupDuration() const {
   return startup_duration_;
 }
 
-#if !defined(OS_ANDROID) || defined(USE_AURA)
+#if !defined(OS_ANDROID)
 base::FilePath TraceConfigFile::GetResultFile() const {
   DCHECK(IsEnabled());
   return result_file_;

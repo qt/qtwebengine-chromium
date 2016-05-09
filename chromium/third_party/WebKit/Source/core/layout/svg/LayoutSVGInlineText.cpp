@@ -58,14 +58,6 @@ static PassRefPtr<StringImpl> applySVGWhitespaceRules(PassRefPtr<StringImpl> str
     return newString.release();
 }
 
-static float squaredDistanceToClosestPoint(const FloatRect& rect, const FloatPoint& point)
-{
-    FloatPoint closestPoint;
-    closestPoint.setX(std::max(std::min(point.x(), rect.maxX()), rect.x()));
-    closestPoint.setY(std::max(std::min(point.y(), rect.maxY()), rect.y()));
-    return (point - closestPoint).diagonalLengthSquared();
-}
-
 LayoutSVGInlineText::LayoutSVGInlineText(Node* n, PassRefPtr<StringImpl> string)
     : LayoutText(n, applySVGWhitespaceRules(string, false))
     , m_scalingFactor(1)
@@ -77,7 +69,7 @@ void LayoutSVGInlineText::setTextInternal(PassRefPtr<StringImpl> text)
 {
     LayoutText::setTextInternal(text);
     if (LayoutSVGText* textLayoutObject = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        textLayoutObject->subtreeTextDidChange(this);
+        textLayoutObject->subtreeTextDidChange();
 }
 
 void LayoutSVGInlineText::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
@@ -104,7 +96,7 @@ void LayoutSVGInlineText::styleDidChange(StyleDifference diff, const ComputedSty
 
 InlineTextBox* LayoutSVGInlineText::createTextBox(int start, unsigned short length)
 {
-    InlineTextBox* box = new SVGInlineTextBox(*this, start, length);
+    InlineTextBox* box = new SVGInlineTextBox(LineLayoutItem(this), start, length);
     box->setHasVirtualLogicalHeight();
     return box;
 }
@@ -165,7 +157,7 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
         return createPositionWithAffinity(0);
 
     ASSERT(m_scalingFactor);
-    float baseline = m_scaledFont.fontMetrics().floatAscent() / m_scalingFactor;
+    float baseline = m_scaledFont.getFontMetrics().floatAscent() / m_scalingFactor;
 
     LayoutBlock* containingBlock = this->containingBlock();
     ASSERT(containingBlock);
@@ -189,7 +181,7 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
 
             float distance = 0;
             if (!fragmentRect.contains(absolutePoint))
-                distance = squaredDistanceToClosestPoint(fragmentRect, absolutePoint);
+                distance = fragmentRect.squaredDistanceTo(absolutePoint);
 
             if (distance <= closestDistance) {
                 closestDistance = distance;
@@ -203,7 +195,7 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
     if (!closestDistanceFragment)
         return createPositionWithAffinity(0);
 
-    int offset = closestDistanceBox->offsetForPositionInFragment(*closestDistanceFragment, absolutePoint.x() - closestDistancePosition, true);
+    int offset = closestDistanceBox->offsetForPositionInFragment(*closestDistanceFragment, LayoutUnit(absolutePoint.x() - closestDistancePosition), true);
     return createPositionWithAffinity(offset + closestDistanceBox->start(), offset > 0 ? VP_UPSTREAM_IF_POSSIBLE : TextAffinity::Downstream);
 }
 
@@ -226,10 +218,10 @@ void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* layoutObjec
         return;
     }
 
-    if (style->fontDescription().textRendering() == GeometricPrecision)
+    if (style->getFontDescription().textRendering() == GeometricPrecision)
         scalingFactor = 1;
 
-    FontDescription fontDescription(style->fontDescription());
+    FontDescription fontDescription(style->getFontDescription());
 
     Document& document = layoutObject->document();
     // FIXME: We need to better handle the case when we compute very small fonts below (below 1pt).
@@ -239,12 +231,14 @@ void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* layoutObjec
     scaledFont.update(document.styleEngine().fontSelector());
 }
 
-LayoutRect LayoutSVGInlineText::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutSVGInlineText::absoluteClippedOverflowRect() const
 {
-    // FIXME: The following works because LayoutSVGBlock has forced slow rect mapping of the paintInvalidationState.
-    // Should let this really work with paintInvalidationState's fast mapping and remove the assert.
-    ASSERT(!paintInvalidationState || !paintInvalidationState->canMapToContainer(paintInvalidationContainer));
-    return parent()->clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
+    return parent()->absoluteClippedOverflowRect();
+}
+
+FloatRect LayoutSVGInlineText::paintInvalidationRectInLocalSVGCoordinates() const
+{
+    return parent()->paintInvalidationRectInLocalSVGCoordinates();
 }
 
 PassRefPtr<StringImpl> LayoutSVGInlineText::originalText() const
@@ -255,4 +249,4 @@ PassRefPtr<StringImpl> LayoutSVGInlineText::originalText() const
     return applySVGWhitespaceRules(result, style() && style()->whiteSpace() == PRE);
 }
 
-}
+} // namespace blink

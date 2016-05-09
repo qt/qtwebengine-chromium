@@ -15,7 +15,7 @@
 namespace content {
 
 namespace {
-void ResetCallback(scoped_ptr<VideoCaptureDeliverFrameCB> callback) {
+void ResetCallback(std::unique_ptr<VideoCaptureDeliverFrameCB> callback) {
   // |callback| will be deleted when this exits.
 }
 
@@ -129,7 +129,7 @@ void MediaStreamVideoTrack::FrameDeliverer::RemoveCallbackOnIO(
   for (; it != callbacks_.end(); ++it) {
     if (it->first == id) {
       // Callback is copied to heap and then deleted on the target thread.
-      scoped_ptr<VideoCaptureDeliverFrameCB> callback;
+      std::unique_ptr<VideoCaptureDeliverFrameCB> callback;
       callback.reset(new VideoCaptureDeliverFrameCB(it->second));
       callbacks_.erase(it);
       task_runner->PostTask(
@@ -175,9 +175,9 @@ MediaStreamVideoTrack::FrameDeliverer::GetBlackFrame(
   // Wrap |black_frame_| so we get a fresh timestamp we can modify. Frames
   // returned from this function may still be in use.
   scoped_refptr<media::VideoFrame> wrapped_black_frame =
-      media::VideoFrame::WrapVideoFrame(
-          black_frame_, black_frame_->visible_rect(),
-          black_frame_->natural_size());
+      media::VideoFrame::WrapVideoFrame(black_frame_, black_frame_->format(),
+                                        black_frame_->visible_rect(),
+                                        black_frame_->natural_size());
   if (!wrapped_black_frame)
     return nullptr;
   wrapped_black_frame->AddDestructionObserver(
@@ -212,7 +212,11 @@ blink::WebMediaStreamTrack MediaStreamVideoTrack::CreateVideoTrack(
 // static
 MediaStreamVideoTrack* MediaStreamVideoTrack::GetVideoTrack(
      const blink::WebMediaStreamTrack& track) {
-  return static_cast<MediaStreamVideoTrack*>(track.extraData());
+  if (track.isNull() ||
+      track.source().getType() != blink::WebMediaStreamSource::TypeVideo) {
+    return nullptr;
+  }
+  return static_cast<MediaStreamVideoTrack*>(track.getExtraData());
 }
 
 MediaStreamVideoTrack::MediaStreamVideoTrack(
@@ -247,6 +251,9 @@ void MediaStreamVideoTrack::AddSink(
   DCHECK(std::find(sinks_.begin(), sinks_.end(), sink) == sinks_.end());
   sinks_.push_back(sink);
   frame_deliverer_->AddCallback(sink, callback);
+  // Request source to deliver a frame because a new sink is added.
+  if (source_)
+    source_->RequestRefreshFrame();
 }
 
 void MediaStreamVideoTrack::RemoveSink(MediaStreamVideoSink* sink) {

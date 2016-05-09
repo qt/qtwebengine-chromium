@@ -1,0 +1,10 @@
+include_rules = [
+  "+components/mus/public",
+  "+gpu/GLES2",
+  "+mojo/shell/public",
+  "+mojo/common",
+  "+mojo/converters/geometry",
+  "+mojo/converters/surfaces",
+  "+mojo/public",
+  "+ui/gfx/geometry",
+]

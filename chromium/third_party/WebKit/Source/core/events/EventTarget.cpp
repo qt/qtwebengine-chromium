@@ -113,19 +113,19 @@ MessagePort* EventTarget::toMessagePort()
 
 inline LocalDOMWindow* EventTarget::executingWindow()
 {
-    if (ExecutionContext* context = executionContext())
+    if (ExecutionContext* context = getExecutionContext())
         return context->executingWindow();
     return nullptr;
 }
 
-bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool EventTarget::addEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
 {
     EventListenerOptions options;
     setDefaultEventListenerOptionsLegacy(options, useCapture);
     return addEventListenerInternal(eventType, listener, options);
 }
 
-bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptionsOrBoolean& optionsUnion)
+bool EventTarget::addEventListener(const AtomicString& eventType, EventListener* listener, const EventListenerOptionsOrBoolean& optionsUnion)
 {
     if (optionsUnion.isBoolean())
         return addEventListener(eventType, listener, optionsUnion.getAsBoolean());
@@ -136,13 +136,13 @@ bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWill
     return addEventListener(eventType, listener);
 }
 
-bool EventTarget::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, EventListenerOptions& options)
+bool EventTarget::addEventListener(const AtomicString& eventType, EventListener* listener, EventListenerOptions& options)
 {
     setDefaultEventListenerOptions(options);
     return addEventListenerInternal(eventType, listener, options);
 }
 
-bool EventTarget::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
+bool EventTarget::addEventListenerInternal(const AtomicString& eventType, EventListener* listener, const EventListenerOptions& options)
 {
     if (!listener)
         return false;
@@ -158,14 +158,14 @@ bool EventTarget::addEventListenerInternal(const AtomicString& eventType, PassRe
     return ensureEventTargetData().eventListenerMap.add(eventType, listener, options);
 }
 
-bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool EventTarget::removeEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
 {
     EventListenerOptions options;
     setDefaultEventListenerOptionsLegacy(options, useCapture);
     return removeEventListenerInternal(eventType, listener, options);
 }
 
-bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptionsOrBoolean& optionsUnion)
+bool EventTarget::removeEventListener(const AtomicString& eventType, EventListener* listener, const EventListenerOptionsOrBoolean& optionsUnion)
 {
     if (optionsUnion.isBoolean())
         return removeEventListener(eventType, listener, optionsUnion.getAsBoolean());
@@ -176,13 +176,13 @@ bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrW
     return removeEventListener(eventType, listener);
 }
 
-bool EventTarget::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, EventListenerOptions& options)
+bool EventTarget::removeEventListener(const AtomicString& eventType, EventListener* listener, EventListenerOptions& options)
 {
     setDefaultEventListenerOptions(options);
     return removeEventListenerInternal(eventType, listener, options);
 }
 
-bool EventTarget::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
+bool EventTarget::removeEventListenerInternal(const AtomicString& eventType, EventListener* listener, const EventListenerOptions& options)
 {
     if (!listener)
         return false;
@@ -193,7 +193,7 @@ bool EventTarget::removeEventListenerInternal(const AtomicString& eventType, Pas
 
     size_t indexOfRemovedListener;
 
-    if (!d->eventListenerMap.remove(eventType, listener.get(), options, indexOfRemovedListener))
+    if (!d->eventListenerMap.remove(eventType, listener, options, indexOfRemovedListener))
         return false;
 
     // Notify firing events planning to invoke the listener at 'index' that
@@ -220,7 +220,7 @@ bool EventTarget::removeEventListenerInternal(const AtomicString& eventType, Pas
     return true;
 }
 
-bool EventTarget::setAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener)
+bool EventTarget::setAttributeEventListener(const AtomicString& eventType, EventListener* listener)
 {
     clearAttributeEventListener(eventType);
     if (!listener)
@@ -249,7 +249,7 @@ bool EventTarget::clearAttributeEventListener(const AtomicString& eventType)
     return removeEventListener(eventType, listener, false);
 }
 
-bool EventTarget::dispatchEventForBindings(PassRefPtrWillBeRawPtr<Event> event, ExceptionState& exceptionState)
+bool EventTarget::dispatchEventForBindings(Event* event, ExceptionState& exceptionState)
 {
     if (event->type().isEmpty()) {
         exceptionState.throwDOMException(InvalidStateError, "The event provided is uninitialized.");
@@ -260,27 +260,31 @@ bool EventTarget::dispatchEventForBindings(PassRefPtrWillBeRawPtr<Event> event, 
         return false;
     }
 
-    if (!executionContext())
+    if (!getExecutionContext())
         return false;
 
     event->setTrusted(false);
-    return dispatchEventInternal(event);
+
+    // Return whether the event was cancelled or not to JS not that it
+    // might have actually been default handled; so check only against
+    // CanceledByEventHandler.
+    return dispatchEventInternal(event) != DispatchEventResult::CanceledByEventHandler;
 }
 
-bool EventTarget::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+DispatchEventResult EventTarget::dispatchEvent(Event* event)
 {
     event->setTrusted(true);
     return dispatchEventInternal(event);
 }
 
-bool EventTarget::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
+DispatchEventResult EventTarget::dispatchEventInternal(Event* event)
 {
     event->setTarget(this);
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);
-    bool defaultWasNotPrevented = fireEventListeners(event.get());
+    DispatchEventResult dispatchResult = fireEventListeners(event);
     event->setEventPhase(0);
-    return defaultWasNotPrevented;
+    return dispatchResult;
 }
 
 void EventTarget::uncaughtExceptionInEventHandler()
@@ -328,6 +332,10 @@ void EventTarget::countLegacyEvents(const AtomicString& legacyTypeName, EventLis
         prefixedFeature = UseCounter::PrefixedAnimationIterationEvent;
         unprefixedFeature = UseCounter::UnprefixedAnimationIterationEvent;
         prefixedAndUnprefixedFeature = UseCounter::PrefixedAndUnprefixedAnimationIterationEvent;
+    } else if (legacyTypeName == EventTypeNames::mousewheel) {
+        prefixedFeature = UseCounter::MouseWheelEvent;
+        unprefixedFeature = UseCounter::WheelEvent;
+        prefixedAndUnprefixedFeature = UseCounter::MouseWheelAndWheelEvent;
     } else {
         return;
     }
@@ -344,14 +352,14 @@ void EventTarget::countLegacyEvents(const AtomicString& legacyTypeName, EventLis
     }
 }
 
-bool EventTarget::fireEventListeners(Event* event)
+DispatchEventResult EventTarget::fireEventListeners(Event* event)
 {
     ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(event && !event->type().isEmpty());
 
     EventTargetData* d = eventTargetData();
     if (!d)
-        return true;
+        return DispatchEventResult::NotCanceled;
 
     EventListenerVector* legacyListenersVector = nullptr;
     AtomicString legacyTypeName = legacyType(event);
@@ -369,15 +377,13 @@ bool EventTarget::fireEventListeners(Event* event)
         event->setType(unprefixedTypeName);
     }
 
-    Editor::countEvent(executionContext(), event);
+    Editor::countEvent(getExecutionContext(), event);
     countLegacyEvents(legacyTypeName, listenersVector, legacyListenersVector);
-    return !event->defaultPrevented();
+    return dispatchEventResult(*event);
 }
 
 void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventListenerVector& entry)
 {
-    RefPtrWillBeRawPtr<EventTarget> protect(this);
-
     // Fire all listeners registered for this event. Don't fire listeners removed
     // during event dispatch. Also, don't fire event listeners added during event
     // dispatch. Conveniently, all new event listeners will be added after or at
@@ -427,7 +433,7 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
         if (event->immediatePropagationStopped())
             break;
 
-        ExecutionContext* context = executionContext();
+        ExecutionContext* context = getExecutionContext();
         if (!context)
             break;
 
@@ -442,9 +448,18 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
 
         RELEASE_ASSERT(i <= size);
 
-        InspectorInstrumentation::didHandleEvent(cookie);
+        InspectorInstrumentation::cancelPauseOnNextStatement(cookie);
     }
     d->firingEventIterators->removeLast();
+}
+
+DispatchEventResult EventTarget::dispatchEventResult(const Event& event)
+{
+    if (event.defaultPrevented())
+        return DispatchEventResult::CanceledByEventHandler;
+    if (event.defaultHandled())
+        return DispatchEventResult::CanceledByDefaultEventHandler;
+    return DispatchEventResult::NotCanceled;
 }
 
 EventListenerVector* EventTarget::getEventListeners(const AtomicString& eventType)

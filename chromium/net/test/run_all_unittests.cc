@@ -21,11 +21,11 @@
 #endif
 
 #if defined(USE_ICU_ALTERNATIVES_ON_ANDROID)
-#include "url/android/url_jni_registrar.h"
+#include "url/android/url_jni_registrar.h"  // nogncheck
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-#include "third_party/mojo/src/mojo/edk/embedder/embedder.h"
+#include "mojo/edk/embedder/embedder.h"  // nogncheck
 #endif
 
 using net::internal::ClientSocketPoolBaseHelper;
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
   net::EnableSSLServerSockets();
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  mojo::embedder::Init();
+  mojo::edk::Init();
 #endif
 
   return base::LaunchUnitTests(

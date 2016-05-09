@@ -13,7 +13,6 @@
 #include "base/sys_byteorder.h"
 #include "base/trace_event/trace_event.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_util.h"
 #include "net/log/net_log.h"
 #include "net/socket/client_socket_handle.h"
 
@@ -112,14 +111,6 @@ void SOCKS5ClientSocket::SetOmniboxSpeculation() {
 
 bool SOCKS5ClientSocket::WasEverUsed() const {
   return was_ever_used_;
-}
-
-bool SOCKS5ClientSocket::UsingTCPFastOpen() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->UsingTCPFastOpen();
-  }
-  NOTREACHED();
-  return false;
 }
 
 bool SOCKS5ClientSocket::WasNpnNegotiated() const {

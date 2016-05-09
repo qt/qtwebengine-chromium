@@ -4,24 +4,14 @@
 
 #include "platform/graphics/BitmapImageMetrics.h"
 
-#include "public/platform/Platform.h"
+#include "platform/Histogram.h"
+#include "wtf/Threading.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 void BitmapImageMetrics::countDecodedImageType(const String& type)
 {
-    enum DecodedImageType { // Values synced with 'DecodedImageType' in src/tools/metrics/histograms/histograms.xml
-        ImageUnknown = 0,
-        ImageJPEG = 1,
-        ImagePNG = 2,
-        ImageGIF = 3,
-        ImageWebP = 4,
-        ImageICO = 5,
-        ImageBMP = 6,
-        DecodedImageTypeEnumEnd = ImageBMP + 1
-    };
-
     DecodedImageType decodedImageType =
         type == "jpg"  ? ImageJPEG :
         type == "png"  ? ImagePNG  :
@@ -30,12 +20,14 @@ void BitmapImageMetrics::countDecodedImageType(const String& type)
         type == "ico"  ? ImageICO  :
         type == "bmp"  ? ImageBMP  : DecodedImageType::ImageUnknown;
 
-    Platform::current()->histogramEnumeration("Blink.DecodedImageType", decodedImageType, DecodedImageTypeEnumEnd);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(EnumerationHistogram, decodedImageTypeHistogram, new EnumerationHistogram("Blink.DecodedImageType", DecodedImageTypeEnumEnd));
+    decodedImageTypeHistogram.count(decodedImageType);
 }
 
 void BitmapImageMetrics::countImageOrientation(const ImageOrientationEnum orientation)
 {
-    Platform::current()->histogramEnumeration("Blink.DecodedImage.Orientation", orientation, ImageOrientationEnumEnd);
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(EnumerationHistogram, orientationHistogram, new EnumerationHistogram("Blink.DecodedImage.Orientation", ImageOrientationEnumEnd));
+    orientationHistogram.count(orientation);
 }
 
 } // namespace blink

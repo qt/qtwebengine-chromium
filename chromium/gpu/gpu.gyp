@@ -5,6 +5,7 @@
 {
   'variables': {
     'nacl_win64_target': 0,
+    'build_angle_deqp_tests%': 0,
   },
   'includes': [
     'gpu_common.gypi',
@@ -172,6 +173,7 @@
         'command_buffer_service',
         'gpu',
         'gpu_unittest_utils',
+        'gl_in_process_context',
         'gles2_implementation',
         'gles2_cmd_helper',
         'gles2_c_lib',
@@ -199,11 +201,12 @@
         'command_buffer/common/gles2_cmd_format_test_autogen.h',
         'command_buffer/common/gles2_cmd_utils_unittest.cc',
         'command_buffer/common/id_allocator_test.cc',
-        'command_buffer/common/trace_event.h',
+        'command_buffer/common/id_type_unittest.cc',
         'command_buffer/common/unittest_main.cc',
         'command_buffer/service/buffer_manager_unittest.cc',
         'command_buffer/service/cmd_parser_test.cc',
         'command_buffer/service/command_buffer_service_unittest.cc',
+        'command_buffer/service/command_executor_unittest.cc',
         'command_buffer/service/common_decoder_unittest.cc',
         'command_buffer/service/context_group_unittest.cc',
         'command_buffer/service/context_state_unittest.cc',
@@ -235,7 +238,6 @@
         'command_buffer/service/gles2_cmd_decoder_unittest_programs.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_textures.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_valuebuffer.cc',
-        'command_buffer/service/gpu_scheduler_unittest.cc',
         'command_buffer/service/gpu_service_test.cc',
         'command_buffer/service/gpu_service_test.h',
         'command_buffer/service/gpu_tracer_unittest.cc',
@@ -244,6 +246,7 @@
         'command_buffer/service/memory_program_cache_unittest.cc',
         'command_buffer/service/mocks.cc',
         'command_buffer/service/mocks.h',
+        'command_buffer/service/path_manager_unittest.cc',
         'command_buffer/service/program_cache_unittest.cc',
         'command_buffer/service/program_manager_unittest.cc',
         'command_buffer/service/query_manager_unittest.cc',
@@ -254,7 +257,6 @@
         'command_buffer/service/sync_point_manager_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
-        'command_buffer/service/path_manager_unittest.cc',
         'command_buffer/service/texture_manager_unittest.cc',
         'command_buffer/service/transfer_buffer_manager_unittest.cc',
         'command_buffer/service/valuebuffer_manager_unittest.cc',
@@ -272,6 +274,8 @@
         'config/gpu_test_config_unittest.cc',
         'config/gpu_test_expectations_parser_unittest.cc',
         'config/gpu_util_unittest.cc',
+        'ipc/client/gpu_memory_buffer_impl_shared_memory_unittest.cc',
+        'ipc/client/gpu_memory_buffer_impl_test_template.h',
       ],
       'conditions': [
         ['OS == "android"', {
@@ -279,15 +283,78 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
-        # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and use_allocator!="none"', {
+        ['OS == "mac"', {
+          'sources+': [
+           'ipc/client/gpu_memory_buffer_impl_io_surface_unittest.cc',
+          ]
+        }],
+        ['use_ozone == 1', {
           'dependencies': [
-            '../base/allocator/allocator.gyp:allocator',
+            '../ui/ozone/ozone.gyp:ozone',
           ],
+          'sources+': [
+           'ipc/client/gpu_memory_buffer_impl_ozone_native_pixmap_unittest.cc',
+          ]
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      # GN version: //gpu/ipc/service:gpu_ipc_service_unittests
+      'target_name': 'gpu_ipc_service_unittests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
+        '../base/base.gyp:test_support_base',
+        '../ipc/ipc.gyp:test_support_ipc',
+        '../skia/skia.gyp:skia',
+        '../testing/gtest.gyp:gtest',
+        '../third_party/mesa/mesa.gyp:mesa_headers',
+        '../ui/gfx/gfx.gyp:gfx_test_support',
+        '../url/url.gyp:url_lib',
+        'command_buffer_common',
+        'command_buffer_service',
+        'gpu_config',
+        'gpu_ipc_common',
+        'gpu_ipc_service',
+        'gpu_ipc_service_test_support',
+      ],
+      'sources': [
+        'ipc/service/gpu_channel_manager_unittest.cc',
+        'ipc/service/gpu_channel_test_common.cc',
+        'ipc/service/gpu_channel_test_common.h',
+        'ipc/service/gpu_channel_unittest.cc',
+      ],
+      'include_dirs': [
+        '../third_party/mesa/src/include',
+      ],
+      'conditions': [
+        ['OS == "android"', {
+          'sources': [
+            'ipc/service/gpu_memory_buffer_factory_surface_texture_unittest.cc',
+          ],
+        }],
+        ['OS == "mac"', {
+          'sources': [
+            'ipc/service/ca_layer_tree_unittest_mac.mm',
+            'ipc/service/gpu_memory_buffer_factory_io_surface_unittest.cc',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/CoreMedia.framework',
+              '$(SDKROOT)/System/Library/Frameworks/AVFoundation.framework',
+              '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
+            ],
+          },
+        }],
+        ['use_ozone == 1', {
+          'sources': [
+            'ipc/service/gpu_memory_buffer_factory_ozone_native_pixmap_unittest.cc',
+          ],
+        }],
+      ],
     },
     {
       # GN version: //gpu/gpu_perftests
@@ -313,14 +380,6 @@
           {
             'dependencies': [
               '../testing/android/native_test.gyp:native_test_native_code',
-            ],
-          }
-        ],
-        # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and use_allocator!="none"',
-          {
-            'dependencies': [
-              '../base/allocator/allocator.gyp:allocator',
             ],
           }
         ],
@@ -365,14 +424,17 @@
         'command_buffer/tests/gl_chromium_path_rendering_unittest.cc',
         'command_buffer/tests/gl_clear_framebuffer_unittest.cc',
         'command_buffer/tests/gl_compressed_copy_texture_CHROMIUM_unittest.cc',
+        'command_buffer/tests/gl_copy_tex_image_2d_workaround_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_cube_map_texture_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
+        'command_buffer/tests/gl_dynamic_config_unittest.cc',
         'command_buffer/tests/gl_ext_blend_func_extended_unittest.cc',
         'command_buffer/tests/gl_ext_multisample_compatibility_unittest.cc',
         'command_buffer/tests/gl_ext_srgb_unittest.cc',
         'command_buffer/tests/gl_fence_sync_unittest.cc',
         'command_buffer/tests/gl_gpu_memory_buffer_unittest.cc',
+        'command_buffer/tests/gl_iosurface_readback_workaround_unittest.cc',
         'command_buffer/tests/gl_lose_context_chromium_unittest.cc',
         'command_buffer/tests/gl_manager.cc',
         'command_buffer/tests/gl_manager.h',
@@ -380,6 +442,7 @@
         'command_buffer/tests/gl_program_unittest.cc',
         'command_buffer/tests/gl_query_unittest.cc',
         'command_buffer/tests/gl_readback_unittest.cc',
+        'command_buffer/tests/gl_request_extension_unittest.cc',
         'command_buffer/tests/gl_shared_resources_unittest.cc',
         'command_buffer/tests/gl_stream_draw_unittest.cc',
         'command_buffer/tests/gl_test_utils.cc',
@@ -430,11 +493,25 @@
       ],
     },
     {
+      # GN version: //gpu/ipc/service:test_support
+      'target_name': 'gpu_ipc_service_test_support',
+      'type': 'static_library',
+      'dependencies': [
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'gpu/ipc/service/gpu_memory_buffer_factory_test_template.h',
+      ],
+    },
+    {
       # GN version: //gpu:command_buffer_gles2
       'target_name': 'command_buffer_gles2',
       'type': 'shared_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:command_buffer_service',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gl/gl.gyp:gl',
@@ -451,23 +528,63 @@
         'gles2_conform_support/egl/egl.cc',
         'gles2_conform_support/egl/surface.cc',
         'gles2_conform_support/egl/surface.h',
+        'gles2_conform_support/egl/test_support.cc',
+        'gles2_conform_support/egl/test_support.h',
+      ],
+          'defines': [
+        'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
+        'EGLAPIENTRY=',
+          ],
+      'conditions': [
+        ['OS=="win"', {
+          'defines': [
+            'EGLAPI=__declspec(dllexport)',
+          ],
+        }, { # OS!="win"
+                  'defines': [
+            'EGLAPI=__attribute__((visibility(\"default\")))'
+          ],
+        }],
+      ],
+    },
+    {
+      # GN version: //gpu:command_buffer_gles2_tests
+      'target_name': 'command_buffer_gles2_tests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
+        'command_buffer_gles2',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'command_buffer/tests/command_buffer_gles2_tests_main.cc',
+        'command_buffer/tests/egl_test.cc',
+      ],
+          'defines': [
+         'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
+         'EGLAPIENTRY=',
       ],
       'conditions': [
         ['OS=="win"', {
           'defines': [
-            'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
-            'EGLAPIENTRY=',
-            'EGLAPI=__declspec(dllexport)',
+            'EGLAPI=__declspec(dllimport)',
           ],
         }, { # OS!="win"
-          'defines': [
-            'COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY',
-            'EGLAPIENTRY=',
-            'EGLAPI=__attribute__((visibility(\"default\")))'
+                  'defines': [
+            'EGLAPI=',
           ],
-        }, ],
+        }],
+        ['OS == "android"', {
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
       ],
-    }
+    },
   ],
   'conditions': [
     ['component=="static_library"', {
@@ -493,7 +610,9 @@
             'command_buffer_service',
             'gles2_cmd_helper',
             'gpu_config',
-            'gpu_ipc',
+            'gpu_ipc_client',
+            'gpu_ipc_common',
+            'gpu_ipc_service',
           ],
           'sources': [
             'gpu_export.h',
@@ -563,14 +682,44 @@
           'msvs_disabled_warnings': [4267, ],
         },
         {
-          # GN version: //gpu/ipc
-          'target_name': 'gpu_ipc',
+          # GN version: //gpu/ipc/common:command_buffer_traits
+          'target_name': 'command_buffer_traits',
           'type': 'static_library',
           'includes': [
-            'gpu_ipc.gypi',
+            'command_buffer_traits.gypi',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/client
+          'target_name': 'gpu_ipc_client',
+          'type': 'static_library',
+          'includes': [
+            'gpu_ipc_client.gypi',
           ],
           'dependencies': [
-            'command_buffer_common',
+            'command_buffer_traits',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/common
+          'target_name': 'gpu_ipc_common',
+          'type': 'static_library',
+          'includes': [
+            'gpu_ipc_common.gypi',
+          ],
+          'dependencies': [
+            'command_buffer_traits',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/service
+          'target_name': 'gpu_ipc_service',
+          'type': 'static_library',
+          'includes': [
+            'gpu_ipc_service.gypi',
+          ],
+          'dependencies': [
+            'command_buffer_traits',
           ],
         },
         {
@@ -603,9 +752,12 @@
             'command_buffer_client.gypi',
             'command_buffer_common.gypi',
             'command_buffer_service.gypi',
+            'command_buffer_traits.gypi',
             'gles2_cmd_helper.gypi',
             'gpu_config.gypi',
-            'gpu_ipc.gypi',
+            'gpu_ipc_client.gypi',
+            'gpu_ipc_common.gypi',
+            'gpu_ipc_service.gypi',
             '../build/android/increase_size_for_speed.gypi',
           ],
           'defines': [
@@ -658,8 +810,39 @@
           ],
         },
         {
-          # GN version: //gpu/ipc
-          'target_name': 'gpu_ipc',
+          # GN version: //gpu/ipc/common:command_buffer_traits
+          'target_name': 'command_buffer_traits',
+          'type': 'none',
+          'dependencies': [
+            'gpu',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/client
+          'target_name': 'gpu_ipc_client',
+          'type': 'none',
+          'dependencies': [
+            'gpu',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/common
+          'target_name': 'gpu_ipc_common',
+          'type': 'none',
+          'dependencies': [
+            'gpu',
+          ],
+        },
+        {
+          # GN version: //gpu/ipc/service
+          'target_name': 'gpu_ipc_service',
+          'type': 'none',
+          'dependencies': [
+            'gpu',
+          ],
+        },
+        {
+          'target_name': 'gpu_config',
           'type': 'none',
           'dependencies': [
             'gpu',
@@ -692,13 +875,38 @@
           },
         },
         {
-          'target_name': 'gpu_ipc_win64',
+          'target_name': 'command_buffer_traits_win64',
           'type': 'static_library',
           'variables': {
             'nacl_win64_target': 1,
           },
           'includes': [
-            'gpu_ipc.gypi',
+            'command_buffer_traits.gypi',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base_win64',
+            '../ipc/ipc.gyp:ipc_win64',
+            'command_buffer_common_win64',
+          ],
+          'defines': [
+            '<@(nacl_win64_defines)',
+            'GPU_IMPLEMENTATION',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+        },
+        {
+          'target_name': 'gpu_ipc_common_win64',
+          'type': 'static_library',
+          'variables': {
+            'nacl_win64_target': 1,
+          },
+          'includes': [
+            'command_buffer_traits.gypi',
+            'gpu_ipc_common.gypi',
           ],
           'dependencies': [
             '../base/base.gyp:base_win64',
@@ -767,6 +975,19 @@
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
+        {
+          'target_name': 'command_buffer_gles2_tests_apk',
+          'type': 'none',
+          'dependencies': [
+            'command_buffer_gles2_tests',
+          ],
+          'variables': {
+            'test_suite_name': 'command_buffer_gles2_tests',
+          },
+          'includes': [
+            '../build/apk_test.gypi',
+          ],
+        },
       ],
     }],
     ['OS == "win" or (OS == "linux" and use_x11==1) or OS == "mac"', {
@@ -834,7 +1055,7 @@
         },
       ],
     }],
-    ['(OS == "win" or OS == "linux") and archive_gpu_tests==1', {
+    ['build_angle_deqp_tests==1', {
       'targets': [
         {
           # Only build dEQP on test configs. Note that dEQP is test-only code,
@@ -893,6 +1114,19 @@
     ['OS == "android" and test_isolation_mode != "noop"',
       {
         'targets': [
+          {
+            'target_name': 'command_buffer_gles2_tests_apk_run',
+            'type': 'none',
+            'dependencies': [
+              'command_buffer_gles2_tests_apk',
+            ],
+            'includes': [
+              '../build/isolate.gypi',
+            ],
+            'sources': [
+              'command_buffer_gles2_apk.isolate',
+            ],
+          },
           {
             'target_name': 'gl_tests_apk_run',
             'type': 'none',

@@ -13,6 +13,8 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include <memory>
+
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
@@ -151,13 +153,13 @@ int AcmReceiveTestOldApi::RegisterExternalReceiveCodec(
 }
 
 void AcmReceiveTestOldApi::Run() {
-  for (rtc::scoped_ptr<Packet> packet(packet_source_->NextPacket()); packet;
+  for (std::unique_ptr<Packet> packet(packet_source_->NextPacket()); packet;
        packet.reset(packet_source_->NextPacket())) {
     // Pull audio until time to insert packet.
     while (clock_.TimeInMilliseconds() < packet->time_ms()) {
       AudioFrame output_frame;
       EXPECT_EQ(0, acm_->PlayoutData10Ms(output_freq_hz_, &output_frame));
-      EXPECT_EQ(output_freq_hz_, output_frame.sample_rate_hz_);
+      ASSERT_EQ(output_freq_hz_, output_frame.sample_rate_hz_);
       const size_t samples_per_block =
           static_cast<size_t>(output_freq_hz_ * 10 / 1000);
       EXPECT_EQ(samples_per_block, output_frame.samples_per_channel_);

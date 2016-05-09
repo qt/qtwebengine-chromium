@@ -8,12 +8,12 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/base.gyp:base_prefs',
         '../content/content.gyp:content',
         '../skia/skia.gyp:skia',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
+        'prefs/prefs.gyp:prefs',
       ],
       'include_dirs': [
         '..',
@@ -23,6 +23,8 @@
       ],
       'sources': [
         'wallpaper/wallpaper_layout.h',
+        'wallpaper/wallpaper_files_id.cc',
+        'wallpaper/wallpaper_files_id.h',
         'wallpaper/wallpaper_resizer.cc',
         'wallpaper/wallpaper_resizer.h',
         'wallpaper/wallpaper_resizer_observer.h',

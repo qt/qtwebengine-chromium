@@ -5,12 +5,25 @@
 // <include src="assert.js">
 
 /**
- * Alias for document.getElementById.
+ * Alias for document.getElementById. Found elements must be HTMLElements.
  * @param {string} id The ID of the element to find.
  * @return {HTMLElement} The found element or null if not found.
  */
 function $(id) {
-  return document.getElementById(id);
+  var el = document.getElementById(id);
+  return el ? assertInstanceof(el, HTMLElement) : null;
+}
+
+// TODO(devlin): This should return SVGElement, but closure compiler is missing
+// those externs.
+/**
+ * Alias for document.getElementById. Found elements must be SVGElements.
+ * @param {string} id The ID of the element to find.
+ * @return {Element} The found element or null if not found.
+ */
+function getSVGElement(id) {
+  var el = document.getElementById(id);
+  return el ? assertInstanceof(el, Element) : null;
 }
 
 /**
@@ -30,25 +43,6 @@ function announceAccessibleMessage(msg) {
   window.setTimeout(function() {
     document.body.removeChild(element);
   }, 0);
-}
-
-/**
- * Calls chrome.send with a callback and restores the original afterwards.
- * @param {string} name The name of the message to send.
- * @param {!Array} params The parameters to send.
- * @param {string} callbackName The name of the function that the backend calls.
- * @param {!Function} callback The function to call.
- */
-function chromeSend(name, params, callbackName, callback) {
-  var old = global[callbackName];
-  global[callbackName] = function() {
-    // restore
-    global[callbackName] = old;
-
-    var args = Array.prototype.slice.call(arguments);
-    return callback.apply(global, args);
-  };
-  chrome.send(name, params);
 }
 
 /**
@@ -380,10 +374,19 @@ function createElementWithClassName(type, className) {
  * or when no paint happens during the animation). This function sets up
  * a timer and emulate the event if it is not fired when the timer expires.
  * @param {!HTMLElement} el The element to watch for webkitTransitionEnd.
- * @param {number} timeOut The maximum wait time in milliseconds for the
- *     webkitTransitionEnd to happen.
+ * @param {number=} opt_timeOut The maximum wait time in milliseconds for the
+ *     webkitTransitionEnd to happen. If not specified, it is fetched from |el|
+ *     using the transitionDuration style value.
  */
-function ensureTransitionEndEvent(el, timeOut) {
+function ensureTransitionEndEvent(el, opt_timeOut) {
+  if (opt_timeOut === undefined) {
+    var style = getComputedStyle(el);
+    opt_timeOut = parseFloat(style.transitionDuration) * 1000;
+
+    // Give an additional 50ms buffer for the animation to complete.
+    opt_timeOut += 50;
+  }
+
   var fired = false;
   el.addEventListener('webkitTransitionEnd', function f(e) {
     el.removeEventListener('webkitTransitionEnd', f);
@@ -392,7 +395,7 @@ function ensureTransitionEndEvent(el, timeOut) {
   window.setTimeout(function() {
     if (!fired)
       cr.dispatchSimpleEvent(el, 'webkitTransitionEnd', true);
-  }, timeOut);
+  }, opt_timeOut);
 }
 
 /**
@@ -461,4 +464,13 @@ function elide(original, maxLength) {
   if (original.length <= maxLength)
     return original;
   return original.substring(0, maxLength - 1) + '\u2026';
+}
+
+/**
+ * Quote a string so it can be used in a regular expression.
+ * @param {string} str The source string.
+ * @return {string} The escaped string.
+ */
+function quoteString(str) {
+  return str.replace(/([\\\.\+\*\?\[\^\]\$\(\)\{\}\=\!\<\>\|\:])/g, '\\$1');
 }

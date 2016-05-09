@@ -30,18 +30,10 @@ function createFileSystemObjectsAndUpdateMetadata(response) {
 binding.registerCustomHook(function(bindingsAPI, extensionId) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
-  // getMediaFileSystems, addUserSelectedFolder, and addScanResults use a
-  // custom callback so that they can instantiate and return an array of file
-  // system objects.
+  // getMediaFileSystems and addUserSelectedFolder use a custom callback so that
+  // they can instantiate and return an array of file system objects.
   apiFunctions.setCustomCallback('getMediaFileSystems',
                                  function(name, request, callback, response) {
-    var result = createFileSystemObjectsAndUpdateMetadata(response);
-    if (callback)
-      callback(result);
-  });
-
-  apiFunctions.setCustomCallback('addScanResults',
-      function(name, request, callback, response) {
     var result = createFileSystemObjectsAndUpdateMetadata(response);
     if (callback)
       callback(result);
@@ -62,22 +54,6 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
     }
     if (callback)
       callback(fileSystems, selectedFileSystemName);
-  });
-
-  apiFunctions.setCustomCallback('dropPermissionForMediaFileSystem',
-      function(name, request, callback, response) {
-    var galleryId = response;
-
-    if (galleryId) {
-      for (var key in mediaGalleriesMetadata) {
-        if (mediaGalleriesMetadata[key].galleryId == galleryId) {
-          delete mediaGalleriesMetadata[key];
-          break;
-        }
-      }
-    }
-    if (callback)
-      callback();
   });
 
   apiFunctions.setHandleRequest('getMediaFileSystemMetadata',
@@ -107,7 +83,7 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
 
   apiFunctions.setCustomCallback('getMetadata',
       function(name, request, callback, response) {
-    if (response.attachedImagesBlobInfo) {
+    if (response && response.attachedImagesBlobInfo) {
       for (var i = 0; i < response.attachedImagesBlobInfo.length; i++) {
         var blobInfo = response.attachedImagesBlobInfo[i];
         var blob = blobNatives.TakeBrowserProcessBlob(
@@ -117,7 +93,7 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
     }
 
     if (callback)
-      callback(response.metadata);
+      callback(response ? response.metadata : null);
 
     // The UUID was in position 0 in the setUpdateArgumentsPostValidate
     // function.
@@ -126,4 +102,4 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
   });
 });
 
-exports.binding = binding.generate();
+exports.$set('binding', binding.generate());

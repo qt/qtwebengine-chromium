@@ -12,7 +12,7 @@
 
 #include <utility>
 
-#include "webrtc/audio/audio_sink.h"
+#include "webrtc/audio_sink.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/voice_engine/channel.h"
 
@@ -57,11 +57,6 @@ void ChannelProxy::SetSendAudioLevelIndicationStatus(bool enable, int id) {
   RTC_DCHECK_EQ(0, error);
 }
 
-void ChannelProxy::EnableSendTransportSequenceNumber(int id) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  channel()->EnableSendTransportSequenceNumber(id);
-}
-
 void ChannelProxy::SetReceiveAbsoluteSenderTimeStatus(bool enable, int id) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   int error = channel()->SetReceiveAbsoluteSenderTimeStatus(enable, id);
@@ -74,13 +69,34 @@ void ChannelProxy::SetReceiveAudioLevelIndicationStatus(bool enable, int id) {
   RTC_DCHECK_EQ(0, error);
 }
 
-void ChannelProxy::SetCongestionControlObjects(
+void ChannelProxy::EnableSendTransportSequenceNumber(int id) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->EnableSendTransportSequenceNumber(id);
+}
+
+void ChannelProxy::EnableReceiveTransportSequenceNumber(int id) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->EnableReceiveTransportSequenceNumber(id);
+}
+
+void ChannelProxy::RegisterSenderCongestionControlObjects(
     RtpPacketSender* rtp_packet_sender,
     TransportFeedbackObserver* transport_feedback_observer,
     PacketRouter* packet_router) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  channel()->SetCongestionControlObjects(
+  channel()->RegisterSenderCongestionControlObjects(
       rtp_packet_sender, transport_feedback_observer, packet_router);
+}
+
+void ChannelProxy::RegisterReceiverCongestionControlObjects(
+    PacketRouter* packet_router) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->RegisterReceiverCongestionControlObjects(packet_router);
+}
+
+void ChannelProxy::ResetCongestionControlObjects() {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->ResetCongestionControlObjects();
 }
 
 CallStatistics ChannelProxy::GetRTCPStatistics() const {
@@ -132,14 +148,12 @@ bool ChannelProxy::SetSendTelephoneEventPayloadType(int payload_type) {
   return channel()->SetSendTelephoneEventPayloadType(payload_type) == 0;
 }
 
-bool ChannelProxy::SendTelephoneEventOutband(uint8_t event,
-                                             uint32_t duration_ms) {
+bool ChannelProxy::SendTelephoneEventOutband(int event, int duration_ms) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  return
-      channel()->SendTelephoneEventOutband(event, duration_ms, 10, false) == 0;
+  return channel()->SendTelephoneEventOutband(event, duration_ms) == 0;
 }
 
-void ChannelProxy::SetSink(rtc::scoped_ptr<AudioSinkInterface> sink) {
+void ChannelProxy::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   channel()->SetSink(std::move(sink));
 }

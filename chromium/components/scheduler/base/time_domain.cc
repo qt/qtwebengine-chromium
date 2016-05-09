@@ -16,78 +16,63 @@ namespace scheduler {
 TimeDomain::TimeDomain(Observer* observer) : observer_(observer) {}
 
 TimeDomain::~TimeDomain() {
-  for (internal::TaskQueueImpl* queue : registered_task_queues_) {
-    queue->SetTimeDomain(nullptr);
-  }
+  DCHECK(main_thread_checker_.CalledOnValidThread());
 }
 
 void TimeDomain::RegisterQueue(internal::TaskQueueImpl* queue) {
-  registered_task_queues_.insert(queue);
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(queue->GetTimeDomain(), this);
 }
 
 void TimeDomain::UnregisterQueue(internal::TaskQueueImpl* queue) {
-  registered_task_queues_.erase(queue);
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(queue->GetTimeDomain(), this);
+  UnregisterAsUpdatableTaskQueue(queue);
 
   // We need to remove |task_queue| from delayed_wakeup_multimap_ which is a
   // little awkward since it's keyed by time. O(n) running time.
   for (DelayedWakeupMultimap::iterator iter = delayed_wakeup_multimap_.begin();
        iter != delayed_wakeup_multimap_.end();) {
     if (iter->second == queue) {
-      DelayedWakeupMultimap::iterator temp = iter;
-      iter++;
       // O(1) amortized.
-      delayed_wakeup_multimap_.erase(temp);
+      iter = delayed_wakeup_multimap_.erase(iter);
     } else {
       iter++;
     }
   }
-
-  // |newly_updatable_| might contain |queue|, we use
-  // MoveNewlyUpdatableQueuesIntoUpdatableQueueSet to flush it out.
-  MoveNewlyUpdatableQueuesIntoUpdatableQueueSet();
-  updatable_queue_set_.erase(queue);
 }
 
 void TimeDomain::MigrateQueue(internal::TaskQueueImpl* queue,
                               TimeDomain* destination_time_domain) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(queue->GetTimeDomain(), this);
   DCHECK(destination_time_domain);
-  registered_task_queues_.erase(queue);
+  UnregisterAsUpdatableTaskQueue(queue);
 
-  LazyNow destination_lazy_now = destination_time_domain->CreateLazyNow();
+  base::TimeTicks destination_now = destination_time_domain->Now();
   // We need to remove |task_queue| from delayed_wakeup_multimap_ which is a
   // little awkward since it's keyed by time. O(n) running time.
   for (DelayedWakeupMultimap::iterator iter = delayed_wakeup_multimap_.begin();
        iter != delayed_wakeup_multimap_.end();) {
     if (iter->second == queue) {
       destination_time_domain->ScheduleDelayedWork(queue, iter->first,
-                                                   &destination_lazy_now);
-      DelayedWakeupMultimap::iterator temp = iter;
-      iter++;
+                                                   destination_now);
       // O(1) amortized.
-      delayed_wakeup_multimap_.erase(temp);
+      iter = delayed_wakeup_multimap_.erase(iter);
     } else {
       iter++;
     }
   }
-
-  // |newly_updatable_| might contain |queue|, we use
-  // MoveNewlyUpdatableQueuesIntoUpdatableQueueSet to flush it out.
-  MoveNewlyUpdatableQueuesIntoUpdatableQueueSet();
-  updatable_queue_set_.erase(queue);
-
-  destination_time_domain->RegisterQueue(queue);
 }
 
 void TimeDomain::ScheduleDelayedWork(internal::TaskQueueImpl* queue,
                                      base::TimeTicks delayed_run_time,
-                                     LazyNow* lazy_now) {
+                                     base::TimeTicks now) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
-
   if (delayed_wakeup_multimap_.empty() ||
       delayed_run_time < delayed_wakeup_multimap_.begin()->first) {
-    base::TimeDelta delay =
-        std::max(base::TimeDelta(), delayed_run_time - lazy_now->Now());
-    RequestWakeup(lazy_now, delay);
+    base::TimeDelta delay = std::max(base::TimeDelta(), delayed_run_time - now);
+    RequestWakeup(now, delay);
   }
 
   delayed_wakeup_multimap_.insert(std::make_pair(delayed_run_time, queue));
@@ -107,16 +92,20 @@ void TimeDomain::RegisterAsUpdatableTaskQueue(internal::TaskQueueImpl* queue) {
 void TimeDomain::UnregisterAsUpdatableTaskQueue(
     internal::TaskQueueImpl* queue) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
-  MoveNewlyUpdatableQueuesIntoUpdatableQueueSet();
-#ifndef NDEBUG
-  {
-    base::AutoLock lock(newly_updatable_lock_);
-    DCHECK(!(updatable_queue_set_.find(queue) == updatable_queue_set_.end() &&
-             std::find(newly_updatable_.begin(), newly_updatable_.end(),
-                       queue) != newly_updatable_.end()));
-  }
-#endif
+
   updatable_queue_set_.erase(queue);
+
+  base::AutoLock lock(newly_updatable_lock_);
+  // Remove all copies of |queue| from |newly_updatable_|.
+  for (size_t i = 0; i < newly_updatable_.size();) {
+    if (newly_updatable_[i] == queue) {
+      // Move last element into slot #i and then compact.
+      newly_updatable_[i] = newly_updatable_.back();
+      newly_updatable_.pop_back();
+    } else {
+      i++;
+    }
+  }
 }
 
 void TimeDomain::UpdateWorkQueues(
@@ -154,6 +143,7 @@ void TimeDomain::WakeupReadyDelayedQueues(
     LazyNow* lazy_now,
     bool should_trigger_wakeup,
     const internal::TaskQueueImpl::Task* previous_task) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   // Wake up any queues with pending delayed work.  Note std::multipmap stores
   // the elements sorted by key, so the begin() iterator points to the earliest
   // queue to wakeup.
@@ -177,6 +167,7 @@ void TimeDomain::WakeupReadyDelayedQueues(
 }
 
 void TimeDomain::ClearExpiredWakeups() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   LazyNow lazy_now(CreateLazyNow());
   while (!delayed_wakeup_multimap_.empty()) {
     DelayedWakeupMultimap::iterator next_wakeup =
@@ -188,6 +179,7 @@ void TimeDomain::ClearExpiredWakeups() {
 }
 
 bool TimeDomain::NextScheduledRunTime(base::TimeTicks* out_time) const {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   if (delayed_wakeup_multimap_.empty())
     return false;
 
@@ -196,6 +188,7 @@ bool TimeDomain::NextScheduledRunTime(base::TimeTicks* out_time) const {
 }
 
 bool TimeDomain::NextScheduledTaskQueue(TaskQueue** out_task_queue) const {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   if (delayed_wakeup_multimap_.empty())
     return false;
 
@@ -210,6 +203,11 @@ void TimeDomain::AsValueInto(base::trace_event::TracedValue* state) const {
   for (auto& queue : updatable_queue_set_)
     state->AppendString(queue->GetName());
   state->EndArray();
+  state->SetInteger("registered_delay_count", delayed_wakeup_multimap_.size());
+  if (!delayed_wakeup_multimap_.empty()) {
+    base::TimeDelta delay = delayed_wakeup_multimap_.begin()->first - Now();
+    state->SetDouble("next_delay_ms", delay.InMillisecondsF());
+  }
   AsValueIntoInternal(state);
   state->EndDictionary();
 }

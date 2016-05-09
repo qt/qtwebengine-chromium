@@ -59,20 +59,6 @@ const Register StringCompareDescriptor::LeftRegister() { return edx; }
 const Register StringCompareDescriptor::RightRegister() { return eax; }
 
 
-const Register ArgumentsAccessReadDescriptor::index() { return edx; }
-const Register ArgumentsAccessReadDescriptor::parameter_count() { return eax; }
-
-
-const Register ArgumentsAccessNewDescriptor::function() { return edi; }
-const Register ArgumentsAccessNewDescriptor::parameter_count() { return ecx; }
-const Register ArgumentsAccessNewDescriptor::parameter_pointer() { return edx; }
-
-
-const Register RestParamAccessDescriptor::parameter_count() { return ecx; }
-const Register RestParamAccessDescriptor::parameter_pointer() { return edx; }
-const Register RestParamAccessDescriptor::rest_parameter_index() { return ebx; }
-
-
 const Register ApiGetterDescriptor::function_address() { return edx; }
 
 
@@ -101,33 +87,35 @@ void FastNewContextDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
-
-void ToNumberDescriptor::InitializePlatformSpecific(
+void FastNewObjectDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
-  // ToNumberStub invokes a function, and therefore needs a context.
-  Register registers[] = {eax};
+  Register registers[] = {edi, edx};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
+
+void FastNewRestParameterDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {edi};
+  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
+}
+
+
+void FastNewSloppyArgumentsDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {edi};
+  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
+}
+
+
+void FastNewStrictArgumentsDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {edi};
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
 
 // static
-const Register ToLengthDescriptor::ReceiverRegister() { return eax; }
-
-
-// static
-const Register ToStringDescriptor::ReceiverRegister() { return eax; }
-
-
-// static
-const Register ToObjectDescriptor::ReceiverRegister() { return eax; }
-
-
-void NumberToStringDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
-}
-
+const Register TypeConversionDescriptor::ArgumentRegister() { return eax; }
 
 void TypeofDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
@@ -168,13 +156,6 @@ void CreateWeakCellDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {ebx, edx, edi};
   data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-
-void StoreArrayLiteralElementDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {ecx, eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
 
@@ -263,6 +244,13 @@ void AllocateHeapNumberDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(0, nullptr, nullptr);
 }
 
+#define SIMD128_ALLOC_DESC(TYPE, Type, type, lane_count, lane_type) \
+  void Allocate##Type##Descriptor::InitializePlatformSpecific(      \
+      CallInterfaceDescriptorData* data) {                          \
+    data->InitializePlatformSpecific(0, nullptr, nullptr);          \
+  }
+SIMD128_TYPES(SIMD128_ALLOC_DESC)
+#undef SIMD128_ALLOC_DESC
 
 void AllocateInNewSpaceDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
@@ -307,24 +295,16 @@ void InternalArrayConstructorDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
+void FastArrayPushDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  // stack param count needs (arg count)
+  Register registers[] = {eax};
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
 
 void CompareDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {edx, eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
-}
-
-
-void CompareNilDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {eax};
-  data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
-}
-
-
-void ToBooleanDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {eax};
   data->InitializePlatformSpecific(arraysize(registers), registers, NULL);
 }
 
@@ -388,21 +368,7 @@ void ArgumentAdaptorDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-
-void ApiFunctionDescriptor::InitializePlatformSpecific(
-    CallInterfaceDescriptorData* data) {
-  Register registers[] = {
-      edi,  // callee
-      ebx,  // call_data
-      ecx,  // holder
-      edx,  // api_function_address
-      eax,  // actual number of arguments
-  };
-  data->InitializePlatformSpecific(arraysize(registers), registers);
-}
-
-
-void ApiAccessorDescriptor::InitializePlatformSpecific(
+void ApiCallbackDescriptorBase::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {
       edi,  // callee
@@ -413,6 +379,13 @@ void ApiAccessorDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
+void InterpreterDispatchDescriptor::InitializePlatformSpecific(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {
+      kInterpreterAccumulatorRegister, kInterpreterRegisterFileRegister,
+      kInterpreterBytecodeOffsetRegister, kInterpreterBytecodeArrayRegister };
+  data->InitializePlatformSpecific(arraysize(registers), registers);
+}
 
 void InterpreterPushArgsAndCallDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
@@ -424,7 +397,6 @@ void InterpreterPushArgsAndCallDescriptor::InitializePlatformSpecific(
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
 
-
 void InterpreterPushArgsAndConstructDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {
   Register registers[] = {
@@ -435,7 +407,6 @@ void InterpreterPushArgsAndConstructDescriptor::InitializePlatformSpecific(
   };
   data->InitializePlatformSpecific(arraysize(registers), registers);
 }
-
 
 void InterpreterCEntryDescriptor::InitializePlatformSpecific(
     CallInterfaceDescriptorData* data) {

@@ -5,10 +5,10 @@
 #include "chromecast/browser/cast_content_window.h"
 
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/browser/cast_browser_process.h"
-#include "chromecast/media/base/video_plane_controller.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -75,12 +75,10 @@ void CastContentWindow::CreateWindowTree(
   // Aura initialization
   CastScreen* cast_screen =
       shell::CastBrowserProcess::GetInstance()->cast_screen();
-  if (!gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE))
-    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, cast_screen);
+  if (!gfx::Screen::GetScreen())
+    gfx::Screen::SetScreenInstance(cast_screen);
   if (cast_screen->GetPrimaryDisplay().size() != initial_size)
     cast_screen->UpdateDisplaySize(initial_size);
-  media::VideoPlaneController::GetInstance()->SetGraphicsPlaneResolution(
-      Size(initial_size.width(), initial_size.height()));
 
   CHECK(aura::Env::GetInstance());
   window_tree_host_.reset(
@@ -107,7 +105,7 @@ void CastContentWindow::CreateWindowTree(
 #endif
 }
 
-scoped_ptr<content::WebContents> CastContentWindow::CreateWebContents(
+std::unique_ptr<content::WebContents> CastContentWindow::CreateWebContents(
     const gfx::Size& initial_size,
     content::BrowserContext* browser_context) {
   content::WebContents::CreateParams create_params(browser_context, NULL);
@@ -116,7 +114,7 @@ scoped_ptr<content::WebContents> CastContentWindow::CreateWebContents(
   content::WebContents* web_contents = content::WebContents::Create(
       create_params);
   content::WebContentsObserver::Observe(web_contents);
-  return make_scoped_ptr(web_contents);
+  return base::WrapUnique(web_contents);
 }
 
 void CastContentWindow::DidFirstVisuallyNonEmptyPaint() {

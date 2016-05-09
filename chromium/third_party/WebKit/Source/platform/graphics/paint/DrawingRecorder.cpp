@@ -17,10 +17,10 @@ bool DrawingRecorder::useCachedDrawingIfPossible(GraphicsContext& context, const
 {
     ASSERT(DisplayItem::isDrawingType(type));
 
-    if (!context.paintController().clientCacheIsValid(client))
+    if (!context.getPaintController().clientCacheIsValid(client))
         return false;
 
-    context.paintController().createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedDrawingType(type));
+    context.getPaintController().createAndAppend<CachedDisplayItem>(client, DisplayItem::drawingTypeToCachedDrawingType(type));
 
 #if ENABLE(ASSERT)
     // When under-invalidation checking is enabled, we output CachedDrawing display item
@@ -36,16 +36,17 @@ DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClie
     : m_context(context)
     , m_displayItemClient(displayItemClient)
     , m_displayItemType(displayItemType)
+    , m_knownToBeOpaque(false)
 #if ENABLE(ASSERT)
-    , m_displayItemPosition(m_context.paintController().newDisplayItemList().size())
+    , m_displayItemPosition(m_context.getPaintController().newDisplayItemList().size())
     , m_underInvalidationCheckingMode(DrawingDisplayItem::CheckPicture)
 #endif
 {
-    if (context.paintController().displayItemConstructionIsDisabled())
+    if (context.getPaintController().displayItemConstructionIsDisabled())
         return;
 
     // Must check DrawingRecorder::useCachedDrawingIfPossible before creating the DrawingRecorder.
-    ASSERT((RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && context.paintController().paintOffsetWasInvalidated(displayItemClient))
+    ASSERT((RuntimeEnabledFeatures::slimmingPaintInvalidationEnabled() && context.getPaintController().paintOffsetWasInvalidated(displayItemClient))
         || RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled()
         || !useCachedDrawingIfPossible(m_context, m_displayItemClient, m_displayItemType));
 
@@ -76,7 +77,7 @@ DrawingRecorder::DrawingRecorder(GraphicsContext& context, const DisplayItemClie
 
 DrawingRecorder::~DrawingRecorder()
 {
-    if (m_context.paintController().displayItemConstructionIsDisabled())
+    if (m_context.getPaintController().displayItemConstructionIsDisabled())
         return;
 
 #if ENABLE(ASSERT)
@@ -84,12 +85,13 @@ DrawingRecorder::~DrawingRecorder()
         m_context.restore();
 
     m_context.setInDrawingRecorder(false);
-    ASSERT(m_displayItemPosition == m_context.paintController().newDisplayItemList().size());
+    ASSERT(m_displayItemPosition == m_context.getPaintController().newDisplayItemList().size());
 #endif
 
-    m_context.paintController().createAndAppend<DrawingDisplayItem>(m_displayItemClient
+    m_context.getPaintController().createAndAppend<DrawingDisplayItem>(m_displayItemClient
         , m_displayItemType
         , m_context.endRecording()
+        , m_knownToBeOpaque
 #if ENABLE(ASSERT)
         , m_underInvalidationCheckingMode
 #endif

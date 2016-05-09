@@ -9,7 +9,6 @@
 #include "net/tools/quic/test_tools/quic_server_peer.h"
 
 namespace net {
-namespace tools {
 namespace test {
 
 ServerThread::ServerThread(QuicServer* server,
@@ -37,7 +36,7 @@ void ServerThread::Initialize() {
     return;
   }
 
-  server_->Listen(address_);
+  server_->CreateUDPSocketAndListen(address_);
 
   port_lock_.Acquire();
   port_ = server_->port();
@@ -110,5 +109,4 @@ void ServerThread::MaybeNotifyOfHandshakeConfirmation() {
 }
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net

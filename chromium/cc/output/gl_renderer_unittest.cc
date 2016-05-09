@@ -901,9 +901,9 @@ TEST_F(GLRendererTest, ActiveTextureState) {
   RenderPass* root_pass =
       AddRenderPass(&render_passes_in_draw_order_, RenderPassId(1, 1),
                     gfx::Rect(100, 100), gfx::Transform());
-  unsigned mailbox_sync_point;
+  gpu::SyncToken mailbox_sync_token;
   AddOneOfEveryQuadType(root_pass, resource_provider.get(), RenderPassId(0, 0),
-                        &mailbox_sync_point);
+                        &mailbox_sync_token);
 
   renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
 
@@ -915,7 +915,6 @@ TEST_F(GLRendererTest, ActiveTextureState) {
 
     // The sync points for all quads are waited on first. This sync point is
     // for a texture quad drawn later in the frame.
-    gpu::SyncToken mailbox_sync_token(mailbox_sync_point);
     EXPECT_CALL(*context, waitSyncToken(MatchesSyncToken(mailbox_sync_token)))
         .Times(1);
 
@@ -1418,8 +1417,8 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   matrix[13] = matrix[14] = 0;
   matrix[15] = matrix[16] = matrix[17] = matrix[19] = 0;
   matrix[18] = 1;
-  skia::RefPtr<SkColorFilter> color_filter(
-      skia::AdoptRef(SkColorMatrixFilter::Create(matrix)));
+  sk_sp<SkColorFilter> color_filter =
+      SkColorFilter::MakeMatrixFilterRowMajor255(matrix);
   skia::RefPtr<SkImageFilter> filter = skia::AdoptRef(
       SkColorFilterImageFilter::Create(color_filter.get(), NULL));
   FilterOperations filters;
@@ -1959,7 +1958,7 @@ class TestOverlayProcessor : public OverlayProcessor {
     ~Strategy() override {}
     MOCK_METHOD3(Attempt,
                  bool(ResourceProvider* resource_provider,
-                      RenderPassList* render_passes,
+                      RenderPass* render_pass,
                       OverlayCandidateList* candidates));
   };
 
@@ -2034,7 +2033,7 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
 
   TextureMailbox mailbox =
       TextureMailbox(gpu::Mailbox::Generate(), gpu::SyncToken(), GL_TEXTURE_2D,
-                     gfx::Size(256, 256), true);
+                     gfx::Size(256, 256), true, false);
   scoped_ptr<SingleReleaseCallbackImpl> release_callback =
       SingleReleaseCallbackImpl::Create(base::Bind(&MailboxReleased));
   ResourceId resource_id = resource_provider->CreateResourceFromTextureMailbox(
@@ -2186,10 +2185,11 @@ TEST_F(GLRendererTest, OverlaySyncTokensAreProcessed) {
                     viewport_rect, gfx::Transform());
   root_pass->has_transparent_background = false;
 
-  gpu::SyncToken sync_token(29);
+  gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0,
+                            gpu::CommandBufferId::FromUnsafeValue(0x123), 29);
   TextureMailbox mailbox =
       TextureMailbox(gpu::Mailbox::Generate(), sync_token, GL_TEXTURE_2D,
-                     gfx::Size(256, 256), true);
+                     gfx::Size(256, 256), true, false);
   scoped_ptr<SingleReleaseCallbackImpl> release_callback =
       SingleReleaseCallbackImpl::Create(base::Bind(&MailboxReleased));
   ResourceId resource_id = resource_provider->CreateResourceFromTextureMailbox(

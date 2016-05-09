@@ -5,6 +5,7 @@
 #include "core/css/parser/CSSSelectorParser.h"
 
 #include "core/css/CSSSelectorList.h"
+#include "core/css/StyleSheetContents.h"
 #include "core/css/parser/CSSTokenizer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -204,10 +205,104 @@ TEST(CSSSelectorParserTest, InvalidSimpleAfterPseudoElementInCompound)
 TEST(CSSSelectorParserTest, WorkaroundForInvalidCustomPseudoInUAStyle)
 {
     // See crbug.com/578131
-    CSSTokenizer::Scope scope("video::-webkit-media-text-track-region-container.scrolling");
-    CSSParserTokenRange range = scope.tokenRange();
-    CSSSelectorList list = CSSSelectorParser::parseSelector(range, CSSParserContext(UASheetMode, nullptr), nullptr);
-    EXPECT_TRUE(list.isValid());
+    const char* testCases[] = {
+        "video::-webkit-media-text-track-region-container.scrolling",
+        "input[type=\"range\" i]::-webkit-media-slider-container > div"
+    };
+
+    for (auto testCase : testCases) {
+        CSSTokenizer::Scope scope(testCase);
+        CSSParserTokenRange range = scope.tokenRange();
+        CSSSelectorList list = CSSSelectorParser::parseSelector(range, CSSParserContext(UASheetMode, nullptr), nullptr);
+        EXPECT_TRUE(list.isValid());
+    }
 }
 
-} // namespace
+TEST(CSSSelectorParserTest, ValidPseudoElementInNonRightmostCompound)
+{
+    const char* testCases[] = {
+        "::content *",
+        "::shadow *",
+        "::content div::before",
+        "::shadow ::first-letter"
+    };
+
+    for (auto testCase : testCases) {
+        CSSTokenizer::Scope scope(testCase);
+        CSSParserTokenRange range = scope.tokenRange();
+        CSSSelectorList list = CSSSelectorParser::parseSelector(range, CSSParserContext(HTMLStandardMode, nullptr), nullptr);
+        EXPECT_TRUE(list.isValid());
+    }
+}
+
+TEST(CSSSelectorParserTest, InvalidPseudoElementInNonRightmostCompound)
+{
+    const char* testCases[] = {
+        "::-webkit-volume-slider *",
+        "::before *",
+        "::-webkit-scrollbar *",
+        "::cue *",
+        "::selection *"
+    };
+
+    for (auto testCase : testCases) {
+        CSSTokenizer::Scope scope(testCase);
+        CSSParserTokenRange range = scope.tokenRange();
+        CSSSelectorList list = CSSSelectorParser::parseSelector(range, CSSParserContext(HTMLStandardMode, nullptr), nullptr);
+        EXPECT_FALSE(list.isValid());
+    }
+}
+
+TEST(CSSSelectorParserTest, UnresolvedNamespacePrefix)
+{
+    const char* testCases[] = {
+        "ns|div",
+        "div ns|div",
+        "div ns|div "
+    };
+
+    CSSParserContext context(HTMLStandardMode, nullptr);
+    StyleSheetContents* sheet = StyleSheetContents::create(context);
+
+    for (auto testCase : testCases) {
+        CSSTokenizer::Scope scope(testCase);
+        CSSParserTokenRange range = scope.tokenRange();
+        CSSSelectorList list = CSSSelectorParser::parseSelector(range, context, sheet);
+        EXPECT_FALSE(list.isValid());
+    }
+}
+
+TEST(CSSSelectorParserTest, SerializedUniversal)
+{
+    const char* testCases[][2] = {
+        { "*::-webkit-volume-slider", "::-webkit-volume-slider" },
+        { "*::cue(i)", "::cue(i)" },
+        { "*::shadow", "::shadow" },
+        { "*:host-context(.x)", "*:host-context(.x)" },
+        { "*:host", "*:host" },
+        { "|*::-webkit-volume-slider", "|*::-webkit-volume-slider" },
+        { "|*::cue(i)", "|*::cue(i)" },
+        { "|*::shadow", "|*::shadow" },
+        { "*|*::-webkit-volume-slider", "::-webkit-volume-slider" },
+        { "*|*::cue(i)", "::cue(i)" },
+        { "*|*::shadow", "::shadow" },
+        { "ns|*::-webkit-volume-slider", "ns|*::-webkit-volume-slider" },
+        { "ns|*::cue(i)", "ns|*::cue(i)" },
+        { "ns|*::shadow", "ns|*::shadow" }
+    };
+
+    CSSParserContext context(HTMLStandardMode, nullptr);
+    StyleSheetContents* sheet = StyleSheetContents::create(context);
+    sheet->parserAddNamespace("ns", "http://ns.org");
+
+    for (auto testCase : testCases) {
+        SCOPED_TRACE(testCase[0]);
+        CSSTokenizer::Scope scope(testCase[0]);
+        CSSParserTokenRange range = scope.tokenRange();
+        CSSSelectorList list = CSSSelectorParser::parseSelector(range, context, sheet);
+        EXPECT_TRUE(list.isValid());
+        EXPECT_STREQ(testCase[1], list.selectorsText().ascii().data());
+    }
+}
+
+} // namespace blink

@@ -37,9 +37,7 @@ public:
     bool currentFrameHasSingleSecurityOrigin() const override { return true; }
 
     bool usesContainerSize() const override { return true; }
-    bool hasRelativeWidth() const override { return true; }
-    bool hasRelativeHeight() const override { return true; }
-    void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) override;
+    bool hasRelativeSize() const override { return true; }
 
     IntSize size() const override { return m_size; }
 

@@ -20,6 +20,7 @@
 #include "content/common/pepper_renderer_instance_data.h"
 #endif
 
+struct FrameHostMsg_CreateChildFrame_Params;
 class GURL;
 
 namespace net {
@@ -48,26 +49,17 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
                            net::URLRequestContextGetter* request_context,
                            RenderWidgetHelper* render_widget_helper);
 
-  // IPC::MessageFilter methods:
-  void OnChannelClosing() override;
-
   // BrowserMessageFilter methods:
   bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
-  class OpenChannelToNpapiPluginCallback;
   class OpenChannelToPpapiPluginCallback;
   class OpenChannelToPpapiBrokerCallback;
 
   ~RenderFrameMessageFilter() override;
 
-  void OnCreateChildFrame(
-      int parent_routing_id,
-      blink::WebTreeScopeType scope,
-      const std::string& frame_name,
-      blink::WebSandboxFlags sandbox_flags,
-      const blink::WebFrameOwnerProperties& frame_owner_properties,
-      int* new_render_frame_id);
+  void OnCreateChildFrame(const FrameHostMsg_CreateChildFrame_Params& params,
+                          int* new_render_frame_id);
   void OnSetCookie(int render_frame_id,
                    const GURL& url,
                    const GURL& first_party_for_cookies,
@@ -97,9 +89,6 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
                           const GURL& top_origin_url,
                           ThreeDAPIType requester,
                           bool* blocked);
-  void OnDidLose3DContext(const GURL& top_origin_url,
-                          ThreeDAPIType context_type,
-                          int arb_robustness_status_code);
 
   void OnRenderProcessGone();
 
@@ -114,13 +103,6 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
                        bool* found,
                        WebPluginInfo* info,
                        std::string* actual_mime_type);
-  void OnOpenChannelToPlugin(int render_frame_id,
-                             const GURL& url,
-                             const GURL& policy_url,
-                             const std::string& mime_type,
-                             IPC::Message* reply_msg);
-  void OnCompletedOpenChannelToNpapiPlugin(
-      OpenChannelToNpapiPluginCallback* client);
   void OnOpenChannelToPepperPlugin(const base::FilePath& path,
                                    IPC::Message* reply_msg);
   void OnDidCreateOutOfProcessPepperInstance(
@@ -149,8 +131,6 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
 
   // Initialized to 0, accessed on FILE thread only.
   base::TimeTicks last_plugin_refresh_time_;
-
-  std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
 #endif  // ENABLE_PLUGINS
 
   // Contextual information to be used for requests created here.

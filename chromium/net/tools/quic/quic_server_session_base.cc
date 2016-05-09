@@ -6,21 +6,25 @@
 
 #include "base/logging.h"
 #include "net/quic/proto/cached_network_parameters.pb.h"
+#include "net/quic/quic_bug_tracker.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_spdy_session.h"
 #include "net/quic/reliable_quic_stream.h"
 
+using std::string;
+
 namespace net {
-namespace tools {
 
 QuicServerSessionBase::QuicServerSessionBase(
     const QuicConfig& config,
     QuicConnection* connection,
     QuicServerSessionVisitor* visitor,
-    const QuicCryptoServerConfig* crypto_config)
+    const QuicCryptoServerConfig* crypto_config,
+    QuicCompressedCertsCache* compressed_certs_cache)
     : QuicSpdySession(connection, config),
       crypto_config_(crypto_config),
+      compressed_certs_cache_(compressed_certs_cache),
       visitor_(visitor),
       bandwidth_resumption_enabled_(false),
       bandwidth_estimate_sent_to_client_(QuicBandwidth::Zero()),
@@ -30,7 +34,8 @@ QuicServerSessionBase::QuicServerSessionBase(
 QuicServerSessionBase::~QuicServerSessionBase() {}
 
 void QuicServerSessionBase::Initialize() {
-  crypto_stream_.reset(CreateQuicCryptoServerStream(crypto_config_));
+  crypto_stream_.reset(
+      CreateQuicCryptoServerStream(crypto_config_, compressed_certs_cache_));
   QuicSpdySession::Initialize();
 }
 
@@ -41,47 +46,49 @@ void QuicServerSessionBase::OnConfigNegotiated() {
     return;
   }
 
-  // If the client has provided a bandwidth estimate from the same serving
-  // region, then pass it to the sent packet manager in preparation for possible
-  // bandwidth resumption.
-  const CachedNetworkParameters* cached_network_params =
-      crypto_stream_->PreviousCachedNetworkParams();
+  // Enable bandwidth resumption if peer sent correct connection options.
   const bool last_bandwidth_resumption =
       ContainsQuicTag(config()->ReceivedConnectionOptions(), kBWRE);
   const bool max_bandwidth_resumption =
       ContainsQuicTag(config()->ReceivedConnectionOptions(), kBWMX);
   bandwidth_resumption_enabled_ =
       last_bandwidth_resumption || max_bandwidth_resumption;
-  if (cached_network_params != nullptr && bandwidth_resumption_enabled_ &&
-      cached_network_params->serving_region() == serving_region_) {
-    int64_t seconds_since_estimate =
-        connection()->clock()->WallNow().ToUNIXSeconds() -
-        cached_network_params->timestamp();
-    bool estimate_within_last_hour =
-        seconds_since_estimate <= kNumSecondsPerHour;
-    if (estimate_within_last_hour) {
-      connection()->ResumeConnectionState(*cached_network_params,
-                                          max_bandwidth_resumption);
-    }
-  }
 
-  if (FLAGS_enable_quic_fec &&
-      ContainsQuicTag(config()->ReceivedConnectionOptions(), kFHDR)) {
-    // kFHDR config maps to FEC protection always for headers stream.
-    // TODO(jri): Add crypto stream in addition to headers for kHDR.
-    headers_stream()->set_fec_policy(FEC_PROTECT_ALWAYS);
+  // If the client has provided a bandwidth estimate from the same serving
+  // region as this server, then decide whether to use the data for bandwidth
+  // resumption.
+  const CachedNetworkParameters* cached_network_params =
+      crypto_stream_->PreviousCachedNetworkParams();
+  if (cached_network_params != nullptr &&
+      cached_network_params->serving_region() == serving_region_) {
+    if (FLAGS_quic_log_received_parameters) {
+      connection()->OnReceiveConnectionState(*cached_network_params);
+    }
+
+    if (bandwidth_resumption_enabled_) {
+      // Only do bandwidth resumption if estimate is recent enough.
+      const int64_t seconds_since_estimate =
+          connection()->clock()->WallNow().ToUNIXSeconds() -
+          cached_network_params->timestamp();
+      if (seconds_since_estimate <= kNumSecondsPerHour) {
+        connection()->ResumeConnectionState(*cached_network_params,
+                                            max_bandwidth_resumption);
+      }
+    }
   }
 }
 
 void QuicServerSessionBase::OnConnectionClosed(QuicErrorCode error,
-                                               bool from_peer) {
-  QuicSession::OnConnectionClosed(error, from_peer);
+                                               const string& error_details,
+                                               ConnectionCloseSource source) {
+  QuicSession::OnConnectionClosed(error, error_details, source);
   // In the unlikely event we get a connection close while doing an asynchronous
   // crypto event, make sure we cancel the callback.
   if (crypto_stream_.get() != nullptr) {
     crypto_stream_->CancelOutstandingCallbacks();
   }
-  visitor_->OnConnectionClosed(connection()->connection_id(), error);
+  visitor_->OnConnectionClosed(connection()->connection_id(), error,
+                               error_details);
 }
 
 void QuicServerSessionBase::OnWriteBlocked() {
@@ -149,11 +156,20 @@ void QuicServerSessionBase::OnCongestionWindowChange(QuicTime now) {
   int32_t max_bandwidth_timestamp = bandwidth_recorder.MaxBandwidthTimestamp();
 
   // Fill the proto before passing it to the crypto stream to send.
+  const int32_t bw_estimate_bytes_per_second =
+      BandwidthToCachedParameterBytesPerSecond(
+          bandwidth_estimate_sent_to_client_);
+  const int32_t max_bw_estimate_bytes_per_second =
+      BandwidthToCachedParameterBytesPerSecond(max_bandwidth_estimate);
+  QUIC_BUG_IF(max_bw_estimate_bytes_per_second < 0)
+      << max_bw_estimate_bytes_per_second;
+  QUIC_BUG_IF(bw_estimate_bytes_per_second < 0) << bw_estimate_bytes_per_second;
+
   CachedNetworkParameters cached_network_params;
   cached_network_params.set_bandwidth_estimate_bytes_per_second(
-      bandwidth_estimate_sent_to_client_.ToBytesPerSecond());
+      bw_estimate_bytes_per_second);
   cached_network_params.set_max_bandwidth_estimate_bytes_per_second(
-      max_bandwidth_estimate.ToBytesPerSecond());
+      max_bw_estimate_bytes_per_second);
   cached_network_params.set_max_bandwidth_timestamp_seconds(
       max_bandwidth_timestamp);
   cached_network_params.set_min_rtt_ms(
@@ -178,14 +194,15 @@ void QuicServerSessionBase::OnCongestionWindowChange(QuicTime now) {
 
 bool QuicServerSessionBase::ShouldCreateIncomingDynamicStream(QuicStreamId id) {
   if (!connection()->connected()) {
-    LOG(DFATAL) << "ShouldCreateIncomingDynamicStream called when disconnected";
+    QUIC_BUG << "ShouldCreateIncomingDynamicStream called when disconnected";
     return false;
   }
 
   if (id % 2 == 0) {
     DVLOG(1) << "Invalid incoming even stream_id:" << id;
-    connection()->SendConnectionCloseWithDetails(
-        QUIC_INVALID_STREAM_ID, "Client created even numbered stream");
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Client created even numbered stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return false;
   }
   return true;
@@ -193,14 +210,14 @@ bool QuicServerSessionBase::ShouldCreateIncomingDynamicStream(QuicStreamId id) {
 
 bool QuicServerSessionBase::ShouldCreateOutgoingDynamicStream() {
   if (!connection()->connected()) {
-    LOG(DFATAL) << "ShouldCreateOutgoingDynamicStream called when disconnected";
+    QUIC_BUG << "ShouldCreateOutgoingDynamicStream called when disconnected";
     return false;
   }
   if (!crypto_stream_->encryption_established()) {
-    LOG(DFATAL) << "Encryption not established so no outgoing stream created.";
+    QUIC_BUG << "Encryption not established so no outgoing stream created.";
     return false;
   }
-  if (GetNumOpenOutgoingStreams() >= get_max_open_streams()) {
+  if (GetNumOpenOutgoingStreams() >= max_open_outgoing_streams()) {
     VLOG(1) << "No more streams should be created. "
             << "Already " << GetNumOpenOutgoingStreams() << " open.";
     return false;
@@ -212,5 +229,12 @@ QuicCryptoServerStreamBase* QuicServerSessionBase::GetCryptoStream() {
   return crypto_stream_.get();
 }
 
-}  // namespace tools
+int32_t QuicServerSessionBase::BandwidthToCachedParameterBytesPerSecond(
+    const QuicBandwidth& bandwidth) {
+  int64_t bytes_per_second = bandwidth.ToBytesPerSecond();
+  return (bytes_per_second > static_cast<int64_t>(INT32_MAX)
+              ? INT32_MAX
+              : static_cast<int32_t>(bytes_per_second));
+}
+
 }  // namespace net

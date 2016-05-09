@@ -12,17 +12,9 @@
       'native/main.cc',
     ],
    'conditions': [
-     ['OS=="linux"', {
+     ['OS=="linux" or OS=="win"', {
        'bootstrap_sources_native': [
          'native/egl_native.cc',
-         'native/egl_native_aura.cc',
-         'native/egl_native_x11.cc',
-       ],
-     }],
-     ['OS=="win"', {
-       'bootstrap_sources_native': [
-         'native/egl_native.cc',
-         'native/egl_native_win.cc',
        ],
      }],
    ],
@@ -107,14 +99,6 @@
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../gpu/gpu.gyp:gles2_c_lib_nocheck',
         '../../third_party/expat/expat.gyp:expat',
-      ],
-      'conditions': [
-        # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and use_allocator!="none"', {
-          'dependencies': [
-            '../../base/allocator/allocator.gyp:allocator',
-          ],
-        }],
       ],
       'defines': [
         'GLES2_CONFORM_SUPPORT_ONLY',

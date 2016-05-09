@@ -52,7 +52,6 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
-#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutSlider.h"
 #include "platform/PlatformMouseEvent.h"
 #include "wtf/MathExtras.h"
@@ -75,9 +74,9 @@ static Decimal ensureMaximum(const Decimal& proposedValue, const Decimal& minimu
     return proposedValue >= minimum ? proposedValue : std::max(minimum, fallbackValue);
 }
 
-PassRefPtrWillBeRawPtr<InputType> RangeInputType::create(HTMLInputElement& element)
+InputType* RangeInputType::create(HTMLInputElement& element)
 {
-    return adoptRefWillBeNoop(new RangeInputType(element));
+    return new RangeInputType(element);
 }
 
 RangeInputType::RangeInputType(HTMLInputElement& element)
@@ -242,13 +241,13 @@ void RangeInputType::createShadowSubtree()
     ASSERT(element().shadow());
 
     Document& document = element().document();
-    RefPtrWillBeRawPtr<HTMLDivElement> track = HTMLDivElement::create(document);
-    track->setShadowPseudoId(AtomicString("-webkit-slider-runnable-track", AtomicString::ConstructFromLiteral));
+    HTMLDivElement* track = HTMLDivElement::create(document);
+    track->setShadowPseudoId(AtomicString("-webkit-slider-runnable-track"));
     track->setAttribute(idAttr, ShadowElementNames::sliderTrack());
     track->appendChild(SliderThumbElement::create(document));
-    RefPtrWillBeRawPtr<HTMLElement> container = SliderContainerElement::create(document);
-    container->appendChild(track.release());
-    element().userAgentShadowRoot()->appendChild(container.release());
+    HTMLElement* container = SliderContainerElement::create(document);
+    container->appendChild(track);
+    element().userAgentShadowRoot()->appendChild(container);
 }
 
 LayoutObject* RangeInputType::createLayoutObject(const ComputedStyle&) const
@@ -312,8 +311,7 @@ void RangeInputType::warnIfValueIsInvalid(const String& value) const
 {
     if (value.isEmpty() || !element().sanitizeValue(value).isEmpty())
         return;
-    element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
-        String::format("The specified value %s is not a valid number. The value must match to the following regular expression: -?(\\d+|\\d+\\.\\d+|\\.\\d+)([eE][-+]?\\d+)?", JSONValue::quoteString(value).utf8().data())));
+    addWarningToConsole("The specified value %s is not a valid number. The value must match to the following regular expression: -?(\\d+|\\d+\\.\\d+|\\.\\d+)([eE][-+]?\\d+)?", value);
 }
 
 void RangeInputType::disabledAttributeChanged()
@@ -359,7 +357,7 @@ void RangeInputType::updateTickMarkValues()
     HTMLDataListElement* dataList = element().dataList();
     if (!dataList)
         return;
-    RefPtrWillBeRawPtr<HTMLDataListOptionsCollection> options = dataList->options();
+    HTMLDataListOptionsCollection* options = dataList->options();
     m_tickMarkValues.reserveCapacity(options->length());
     for (unsigned i = 0; i < options->length(); ++i) {
         HTMLOptionElement* optionElement = options->item(i);

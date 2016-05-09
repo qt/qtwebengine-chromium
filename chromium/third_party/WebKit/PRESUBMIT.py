@@ -8,6 +8,7 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into gcl.
 """
 
+import re
 import sys
 
 
@@ -113,11 +114,15 @@ def _CheckTestExpectations(input_api, output_api):
 
 
 def _CheckStyle(input_api, output_api):
+    # Files that follow Chromium's coding style do not include capital letters.
+    re_chromium_style_file = re.compile(r'\b[a-z_]+\.(cc|h)$')
     style_checker_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
         'Tools', 'Scripts', 'check-webkit-style')
     args = ([input_api.python_executable, style_checker_path, '--diff-files']
             + [input_api.os_path.join('..', '..', f.LocalPath())
-               for f in input_api.AffectedFiles()])
+               for f in input_api.AffectedFiles()
+               # Filter out files that follow Chromium's coding style.
+               if not re_chromium_style_file.search(f.LocalPath())])
     results = []
 
     try:
@@ -162,24 +167,6 @@ def _CheckForPrintfDebugging(input_api, output_api):
                     'printf debugging is best debugging! That said, it might '
                     'be a good idea to drop the following occurances from '
                     'your patch before uploading:\n%s' % '\n'.join(errors))]
-    return []
-
-
-def _CheckForDangerousTestFunctions(input_api, output_api):
-    """Tests should not be using serveAsynchronousMockedRequests, since it does
-    not guarantee that the threaded HTML parser will have completed."""
-    serve_async_requests_re = input_api.re.compile(
-        r'serveAsynchronousMockedRequests')
-    errors = input_api.canned_checks._FindNewViolationsOfRule(
-        lambda _, x: not serve_async_requests_re.search(x),
-        input_api, None)
-    errors = ['  * %s' % violation for violation in errors]
-    if errors:
-        return [output_api.PresubmitError(
-                    'You should be using FrameTestHelpers::'
-                    'pumpPendingRequests() instead of '
-                    'serveAsynchronousMockedRequests() in the following '
-                    'locations:\n%s' % '\n'.join(errors))]
     return []
 
 
@@ -230,7 +217,7 @@ def _CheckForForbiddenNamespace(input_api, output_api):
     """Checks that Blink uses Chromium namespaces only in permitted code."""
     # This list is not exhaustive, but covers likely ones.
     chromium_namespaces = ["base", "cc", "content", "gfx", "net", "ui"]
-    chromium_classes = ["scoped_ptr", "scoped_refptr"]
+    chromium_classes = ["scoped_refptr"]
 
     def source_file_filter(path):
         return input_api.FilterSourceFile(path,
@@ -261,7 +248,6 @@ def CheckChangeOnUpload(input_api, output_api):
     results.extend(_CommonChecks(input_api, output_api))
     results.extend(_CheckStyle(input_api, output_api))
     results.extend(_CheckForPrintfDebugging(input_api, output_api))
-    results.extend(_CheckForDangerousTestFunctions(input_api, output_api))
     results.extend(_CheckForInvalidPreferenceError(input_api, output_api))
     results.extend(_CheckForForbiddenNamespace(input_api, output_api))
     return results

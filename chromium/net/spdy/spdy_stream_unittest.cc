@@ -69,14 +69,12 @@ class SpdyStreamTest : public ::testing::Test,
   SpdyStreamTest()
       : spdy_util_(GetProtocol(), GetDependenciesFromPriority()),
         session_deps_(GetProtocol()),
-        session_(SpdySessionDependencies::SpdyCreateSession(&session_deps_)),
         offset_(0) {
-    SpdySession::SetPriorityDependencyDefaultForTesting(
-        GetDependenciesFromPriority());
+    session_deps_.enable_priority_dependencies = GetDependenciesFromPriority();
+    session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
   }
 
   ~SpdyStreamTest() {
-    SpdySession::SetPriorityDependencyDefaultForTesting(false);
   }
 
   base::WeakPtr<SpdySession> CreateDefaultSpdySession() {
@@ -104,11 +102,11 @@ class SpdyStreamTest : public ::testing::Test,
   // Add{Read,Write}() populates lists that are eventually passed to a
   // SocketData class. |frame| must live for the whole test.
 
-  void AddRead(const SpdyFrame& frame) {
+  void AddRead(const SpdySerializedFrame& frame) {
     reads_.push_back(CreateMockRead(frame, offset_++));
   }
 
-  void AddWrite(const SpdyFrame& frame) {
+  void AddWrite(const SpdySerializedFrame& frame) {
     writes_.push_back(CreateMockWrite(frame, offset_++));
   }
 
@@ -156,20 +154,19 @@ INSTANTIATE_TEST_CASE_P(ProtoPlusDepend,
 TEST_P(SpdyStreamTest, SendDataAfterOpen) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
-  scoped_ptr<SpdyFrame> resp(
+  scoped_ptr<SpdySerializedFrame> resp(
       spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
   AddRead(*resp);
 
-  scoped_ptr<SpdyFrame> msg(
+  scoped_ptr<SpdySerializedFrame> msg(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddWrite(*msg);
 
-  scoped_ptr<SpdyFrame> echo(
+  scoped_ptr<SpdySerializedFrame> echo(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddRead(*echo);
 
@@ -233,24 +230,26 @@ class StreamDelegateWithTrailers : public test::StreamDelegateWithBody {
 TEST_P(SpdyStreamTest, Trailers) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(spdy_util_.ConstructSpdyPost(
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
       kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
-  scoped_ptr<SpdyFrame> msg(
+  scoped_ptr<SpdySerializedFrame> msg(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, true));
   AddWrite(*msg);
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
   AddRead(*resp);
 
-  scoped_ptr<SpdyFrame> echo(
+  scoped_ptr<SpdySerializedFrame> echo(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddRead(*echo);
 
-  const char* const kExtraHeaders[] = {"foo", "bar"};
-  scoped_ptr<SpdyFrame> trailers(
-      spdy_util_.ConstructSpdyHeaderFrame(1, kExtraHeaders, 1));
+  SpdyHeaderBlock late_headers;
+  late_headers["foo"] = "bar";
+  scoped_ptr<SpdySerializedFrame> trailers(
+      spdy_util_.ConstructSpdyResponseHeaders(1, late_headers, false));
   AddRead(*trailers);
 
   AddReadEOF();
@@ -347,20 +346,19 @@ TEST_P(SpdyStreamTest, PushedStream) {
 TEST_P(SpdyStreamTest, StreamError) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
-  scoped_ptr<SpdyFrame> resp(
+  scoped_ptr<SpdySerializedFrame> resp(
       spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*resp);
 
-  scoped_ptr<SpdyFrame> msg(
+  scoped_ptr<SpdySerializedFrame> msg(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddWrite(*msg);
 
-  scoped_ptr<SpdyFrame> echo(
+  scoped_ptr<SpdySerializedFrame> echo(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddRead(*echo);
 
@@ -424,24 +422,22 @@ TEST_P(SpdyStreamTest, StreamError) {
 TEST_P(SpdyStreamTest, SendLargeDataAfterOpenRequestResponse) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
   std::string chunk_data(kMaxSpdyFrameChunkSize, 'x');
-  scoped_ptr<SpdyFrame> chunk(
-      spdy_util_.ConstructSpdyBodyFrame(
-          1, chunk_data.data(), chunk_data.length(), false));
+  scoped_ptr<SpdySerializedFrame> chunk(spdy_util_.ConstructSpdyBodyFrame(
+      1, chunk_data.data(), chunk_data.length(), false));
   AddWrite(*chunk);
   AddWrite(*chunk);
 
-  scoped_ptr<SpdyFrame> last_chunk(
-      spdy_util_.ConstructSpdyBodyFrame(
-          1, chunk_data.data(), chunk_data.length(), true));
+  scoped_ptr<SpdySerializedFrame> last_chunk(spdy_util_.ConstructSpdyBodyFrame(
+      1, chunk_data.data(), chunk_data.length(), true));
   AddWrite(*last_chunk);
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
   AddRead(*resp);
 
   AddReadEOF();
@@ -487,18 +483,17 @@ TEST_P(SpdyStreamTest, SendLargeDataAfterOpenRequestResponse) {
 TEST_P(SpdyStreamTest, SendLargeDataAfterOpenBidirectional) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
   AddRead(*resp);
 
   std::string chunk_data(kMaxSpdyFrameChunkSize, 'x');
-  scoped_ptr<SpdyFrame> chunk(
-      spdy_util_.ConstructSpdyBodyFrame(
-          1, chunk_data.data(), chunk_data.length(), false));
+  scoped_ptr<SpdySerializedFrame> chunk(spdy_util_.ConstructSpdyBodyFrame(
+      1, chunk_data.data(), chunk_data.length(), false));
   AddWrite(*chunk);
   AddWrite(*chunk);
   AddWrite(*chunk);
@@ -545,16 +540,16 @@ TEST_P(SpdyStreamTest, SendLargeDataAfterOpenBidirectional) {
 TEST_P(SpdyStreamTest, UpperCaseHeaders) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> syn(
-      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdySerializedFrame> syn(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
   AddWrite(*syn);
 
   const char* const kExtraHeaders[] = {"X-UpperCase", "yes"};
-  scoped_ptr<SpdyFrame>
-      reply(spdy_util_.ConstructSpdyGetSynReply(kExtraHeaders, 1, 1));
+  scoped_ptr<SpdySerializedFrame> reply(
+      spdy_util_.ConstructSpdyGetSynReply(kExtraHeaders, 1, 1));
   AddRead(*reply);
 
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_PROTOCOL_ERROR));
   AddWrite(*rst);
 
@@ -594,20 +589,20 @@ TEST_P(SpdyStreamTest, UpperCaseHeaders) {
 TEST_P(SpdyStreamTest, UpperCaseHeadersOnPush) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> syn(
-      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdySerializedFrame> syn(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
   AddWrite(*syn);
 
-  scoped_ptr<SpdyFrame>
-      reply(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> reply(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*reply);
 
   const char* const extra_headers[] = {"X-UpperCase", "yes"};
-  scoped_ptr<SpdyFrame>
-      push(spdy_util_.ConstructSpdyPush(extra_headers, 1, 2, 1, kStreamUrl));
+  scoped_ptr<SpdySerializedFrame> push(
+      spdy_util_.ConstructSpdyPush(extra_headers, 1, 2, 1, kStreamUrl));
   AddRead(*push);
 
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(2, RST_STREAM_PROTOCOL_ERROR));
   AddWrite(*rst);
 
@@ -657,30 +652,29 @@ TEST_P(SpdyStreamTest, UpperCaseHeadersOnPush) {
 TEST_P(SpdyStreamTest, UpperCaseHeadersInHeadersFrame) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> syn(
-      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdySerializedFrame> syn(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
   AddWrite(*syn);
 
-  scoped_ptr<SpdyFrame>
-      reply(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> reply(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*reply);
 
-  scoped_ptr<SpdyFrame>
-      push(spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kStreamUrl));
+  scoped_ptr<SpdySerializedFrame> push(
+      spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kStreamUrl));
   AddRead(*push);
 
   AddReadPause();
 
-  scoped_ptr<SpdyHeaderBlock> late_headers(new SpdyHeaderBlock());
-  (*late_headers)["X-UpperCase"] = "yes";
-  scoped_ptr<SpdyFrame> headers_frame(spdy_util_.ConstructSpdyControlFrame(
-      std::move(late_headers), false, 2, LOWEST, HEADERS, CONTROL_FLAG_NONE,
-      0));
+  SpdyHeaderBlock late_headers;
+  late_headers["X-UpperCase"] = "yes";
+  scoped_ptr<SpdySerializedFrame> headers_frame(
+      spdy_util_.ConstructSpdyReply(2, late_headers));
   AddRead(*headers_frame);
 
   AddWritePause();
 
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(2, RST_STREAM_PROTOCOL_ERROR));
   AddWrite(*rst);
 
@@ -734,30 +728,29 @@ TEST_P(SpdyStreamTest, UpperCaseHeadersInHeadersFrame) {
 TEST_P(SpdyStreamTest, DuplicateHeaders) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> syn(
-      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdySerializedFrame> syn(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
   AddWrite(*syn);
 
-  scoped_ptr<SpdyFrame>
-      reply(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> reply(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*reply);
 
-  scoped_ptr<SpdyFrame>
-      push(spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kStreamUrl));
+  scoped_ptr<SpdySerializedFrame> push(
+      spdy_util_.ConstructSpdyPush(NULL, 0, 2, 1, kStreamUrl));
   AddRead(*push);
 
   AddReadPause();
 
-  scoped_ptr<SpdyHeaderBlock> late_headers(new SpdyHeaderBlock());
-  (*late_headers)[spdy_util_.GetStatusKey()] = "500 Server Error";
-  scoped_ptr<SpdyFrame> headers_frame(spdy_util_.ConstructSpdyControlFrame(
-      std::move(late_headers), false, 2, LOWEST, HEADERS, CONTROL_FLAG_NONE,
-      0));
+  SpdyHeaderBlock late_headers;
+  late_headers[spdy_util_.GetStatusKey()] = "500 Server Error";
+  scoped_ptr<SpdySerializedFrame> headers_frame(
+      spdy_util_.ConstructSpdyReply(2, late_headers));
   AddRead(*headers_frame);
 
   AddReadPause();
 
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(2, RST_STREAM_PROTOCOL_ERROR));
   AddWrite(*rst);
 
@@ -810,16 +803,15 @@ TEST_P(SpdyStreamTest, DuplicateHeaders) {
 // to overflow an int32_t. The SpdyStream should handle that case
 // gracefully.
 TEST_P(SpdyStreamTest, IncreaseSendWindowSizeOverflow) {
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
   AddReadPause();
 
   // Triggered by the overflowing call to IncreaseSendWindowSize
   // below.
-  scoped_ptr<SpdyFrame> rst(
+  scoped_ptr<SpdySerializedFrame> rst(
       spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_FLOW_CONTROL_ERROR));
   AddWrite(*rst);
 
@@ -903,16 +895,16 @@ void SpdyStreamTest::RunResumeAfterUnstallRequestResponseTest(
     const UnstallFunction& unstall_function) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
-  scoped_ptr<SpdyFrame> body(
+  scoped_ptr<SpdySerializedFrame> body(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, true));
   AddWrite(*body);
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*resp);
 
   AddReadEOF();
@@ -979,21 +971,21 @@ void SpdyStreamTest::RunResumeAfterUnstallBidirectionalTest(
     const UnstallFunction& unstall_function) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> req(
-      spdy_util_.ConstructSpdyPost(
-          kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
+  scoped_ptr<SpdySerializedFrame> req(spdy_util_.ConstructSpdyPost(
+      kStreamUrl, 1, kPostBodyLength, LOWEST, NULL, 0));
   AddWrite(*req);
 
   AddReadPause();
 
-  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> resp(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*resp);
 
-  scoped_ptr<SpdyFrame> msg(
+  scoped_ptr<SpdySerializedFrame> msg(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddWrite(*msg);
 
-  scoped_ptr<SpdyFrame> echo(
+  scoped_ptr<SpdySerializedFrame> echo(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddRead(*echo);
 
@@ -1063,19 +1055,19 @@ TEST_P(SpdyStreamTest, ResumeAfterSendWindowSizeAdjustBidirectional) {
 TEST_P(SpdyStreamTest, ReceivedBytes) {
   GURL url(kStreamUrl);
 
-  scoped_ptr<SpdyFrame> syn(
-      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdySerializedFrame> syn(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST, true));
   AddWrite(*syn);
 
   AddReadPause();
 
-  scoped_ptr<SpdyFrame>
-      reply(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdySerializedFrame> reply(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
   AddRead(*reply);
 
   AddReadPause();
 
-  scoped_ptr<SpdyFrame> msg(
+  scoped_ptr<SpdySerializedFrame> msg(
       spdy_util_.ConstructSpdyBodyFrame(1, kPostBody, kPostBodyLength, false));
   AddRead(*msg);
 
@@ -1110,8 +1102,8 @@ TEST_P(SpdyStreamTest, ReceivedBytes) {
   EXPECT_EQ(kStreamUrl, stream->GetUrlFromHeaders().spec());
 
   int64_t reply_frame_len = reply->size();
-  int64_t data_header_len =
-      spdy_util_.CreateFramer(false)->GetDataFrameMinimumSize();
+  int64_t data_header_len = SpdyConstants::GetDataFrameMinimumSize(
+      NextProtoToSpdyMajorVersion(GetProtocol()));
   int64_t data_frame_len = data_header_len + kPostBodyLength;
   int64_t response_len = reply_frame_len + data_frame_len;
 

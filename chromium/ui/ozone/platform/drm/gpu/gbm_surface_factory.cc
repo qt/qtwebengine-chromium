@@ -10,6 +10,7 @@
 #include "build/build_config.h"
 #include "third_party/khronos/EGL/egl.h"
 #include "ui/ozone/common/egl_util.h"
+#include "ui/ozone/platform/drm/common/drm_util.h"
 #include "ui/ozone/platform/drm/gpu/drm_thread_proxy.h"
 #include "ui/ozone/platform/drm/gpu/drm_window_proxy.h"
 #include "ui/ozone/platform/drm/gpu/gbm_buffer.h"
@@ -53,28 +54,6 @@ intptr_t GbmSurfaceFactory::GetNativeDisplay() {
   return EGL_DEFAULT_DISPLAY;
 }
 
-const int32_t* GbmSurfaceFactory::GetEGLSurfaceProperties(
-    const int32_t* desired_list) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  static const int32_t kConfigAttribs[] = {EGL_BUFFER_SIZE,
-                                           32,
-                                           EGL_ALPHA_SIZE,
-                                           8,
-                                           EGL_BLUE_SIZE,
-                                           8,
-                                           EGL_GREEN_SIZE,
-                                           8,
-                                           EGL_RED_SIZE,
-                                           8,
-                                           EGL_RENDERABLE_TYPE,
-                                           EGL_OPENGL_ES2_BIT,
-                                           EGL_SURFACE_TYPE,
-                                           EGL_WINDOW_BIT,
-                                           EGL_NONE};
-
-  return kConfigAttribs;
-}
-
 bool GbmSurfaceFactory::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
@@ -103,6 +82,13 @@ GbmSurfaceFactory::CreateSurfacelessEGLSurfaceForWidget(
       new GbmSurfaceless(drm_thread_->CreateDrmWindowProxy(widget), this));
 }
 
+std::vector<gfx::BufferFormat> GbmSurfaceFactory::GetScanoutFormats(
+    gfx::AcceleratedWidget widget) {
+  std::vector<gfx::BufferFormat> scanout_formats;
+  drm_thread_->GetScanoutFormats(widget, &scanout_formats);
+  return scanout_formats;
+}
+
 scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
     gfx::AcceleratedWidget widget,
     gfx::Size size,
@@ -110,7 +96,7 @@ scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
     gfx::BufferUsage usage) {
 #if !defined(OS_CHROMEOS)
   // Support for memory mapping accelerated buffers requires some
-  // CrOS-specific patches (using vgem).
+  // CrOS-specific patches (using dma-buf mmap API).
   DCHECK(gfx::BufferUsage::SCANOUT == usage);
 #endif
 
@@ -119,18 +105,19 @@ scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
   if (!buffer.get())
     return nullptr;
 
-  scoped_refptr<GbmPixmap> pixmap(new GbmPixmap(this));
-  if (!pixmap->InitializeFromBuffer(buffer))
-    return nullptr;
-
-  return pixmap;
+  return make_scoped_refptr(new GbmPixmap(this, buffer));
 }
 
 scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmapFromHandle(
+    gfx::Size size,
+    gfx::BufferFormat format,
     const gfx::NativePixmapHandle& handle) {
-  scoped_refptr<GbmPixmap> pixmap(new GbmPixmap(this));
-  pixmap->Initialize(base::ScopedFD(handle.fd.fd), handle.stride);
-  return pixmap;
+  scoped_refptr<GbmBuffer> buffer = drm_thread_->CreateBufferFromFD(
+      size, format, base::ScopedFD(handle.fd.fd), handle.stride);
+  if (!buffer)
+    return nullptr;
+
+  return make_scoped_refptr(new GbmPixmap(this, buffer));
 }
 
 }  // namespace ui

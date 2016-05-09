@@ -93,7 +93,7 @@ class StunProber::Requester : public sigslot::has_slots<> {
 
   // Temporary SocketAddress and buffer for RecvFrom.
   rtc::SocketAddress addr_;
-  rtc::scoped_ptr<rtc::ByteBuffer> response_packet_;
+  rtc::scoped_ptr<rtc::ByteBufferWriter> response_packet_;
 
   std::vector<Request*> requests_;
   std::vector<rtc::SocketAddress> server_ips_;
@@ -111,7 +111,7 @@ StunProber::Requester::Requester(
     const std::vector<rtc::SocketAddress>& server_ips)
     : prober_(prober),
       socket_(socket),
-      response_packet_(new rtc::ByteBuffer(nullptr, kMaxUdpBufferSize)),
+      response_packet_(new rtc::ByteBufferWriter(nullptr, kMaxUdpBufferSize)),
       server_ips_(server_ips),
       thread_checker_(prober->thread_checker_) {
   socket_->SignalReadPacket.connect(
@@ -140,8 +140,8 @@ void StunProber::Requester::SendStunRequest() {
       rtc::CreateRandomString(cricket::kStunTransactionIdLength));
   message.SetType(cricket::STUN_BINDING_REQUEST);
 
-  rtc::scoped_ptr<rtc::ByteBuffer> request_packet(
-      new rtc::ByteBuffer(nullptr, kMaxUdpBufferSize));
+  rtc::scoped_ptr<rtc::ByteBufferWriter> request_packet(
+      new rtc::ByteBufferWriter(nullptr, kMaxUdpBufferSize));
   if (!message.Write(request_packet.get())) {
     prober_->ReportOnFinished(WRITE_FAILED);
     return;
@@ -161,7 +161,7 @@ void StunProber::Requester::SendStunRequest() {
     return;
   }
 
-  request.sent_time_ms = rtc::Time();
+  request.sent_time_ms = rtc::Time64();
 
   num_request_sent_++;
   RTC_DCHECK(static_cast<size_t>(num_request_sent_) <= server_ips_.size());
@@ -169,8 +169,8 @@ void StunProber::Requester::SendStunRequest() {
 
 void StunProber::Requester::Request::ProcessResponse(const char* buf,
                                                      size_t buf_len) {
-  int64_t now = rtc::Time();
-  rtc::ByteBuffer message(buf, buf_len);
+  int64_t now = rtc::Time64();
+  rtc::ByteBufferReader message(buf, buf_len);
   cricket::StunMessage stun_response;
   if (!stun_response.Read(&message)) {
     // Invalid or incomplete STUN packet.
@@ -394,7 +394,7 @@ bool StunProber::SendNextRequest() {
   return true;
 }
 
-bool StunProber::should_send_next_request(uint32_t now) {
+bool StunProber::should_send_next_request(int64_t now) {
   if (interval_ms_ < THREAD_WAKE_UP_INTERVAL_MS) {
     return now >= next_request_time_ms_;
   } else {
@@ -412,7 +412,7 @@ int StunProber::get_wake_up_interval_ms() {
 
 void StunProber::MaybeScheduleStunRequests() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
-  uint32_t now = rtc::Time();
+  int64_t now = rtc::Time64();
 
   if (Done()) {
     invoker_.AsyncInvokeDelayed<void>(

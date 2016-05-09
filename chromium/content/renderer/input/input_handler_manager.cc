@@ -36,6 +36,8 @@ InputEventAckState InputEventDispositionToAck(
       return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
     case InputHandlerProxy::DROP_EVENT:
       return INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+    case InputHandlerProxy::DID_HANDLE_NON_BLOCKING:
+      return INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING;
   }
   NOTREACHED();
   return INPUT_EVENT_ACK_STATE_UNKNOWN;
@@ -46,9 +48,11 @@ InputEventAckState InputEventDispositionToAck(
 InputHandlerManager::InputHandlerManager(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     InputHandlerManagerClient* client,
+    SynchronousInputHandlerProxyClient* sync_handler_client,
     scheduler::RendererScheduler* renderer_scheduler)
     : task_runner_(task_runner),
       client_(client),
+      synchronous_handler_proxy_client_(sync_handler_client),
       renderer_scheduler_(renderer_scheduler) {
   DCHECK(client_);
   client_->SetBoundHandler(base::Bind(&InputHandlerManager::HandleInputEvent,
@@ -63,20 +67,20 @@ void InputHandlerManager::AddInputHandler(
     int routing_id,
     const base::WeakPtr<cc::InputHandler>& input_handler,
     const base::WeakPtr<RenderViewImpl>& render_view_impl,
-    bool enable_smooth_scrolling) {
+    bool enable_smooth_scrolling,
+    bool enable_wheel_gestures) {
   if (task_runner_->BelongsToCurrentThread()) {
-    AddInputHandlerOnCompositorThread(routing_id,
-                                      base::ThreadTaskRunnerHandle::Get(),
-                                      input_handler, render_view_impl,
-                                      enable_smooth_scrolling);
+    AddInputHandlerOnCompositorThread(
+        routing_id, base::ThreadTaskRunnerHandle::Get(), input_handler,
+        render_view_impl, enable_smooth_scrolling, enable_wheel_gestures);
   } else {
     task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&InputHandlerManager::AddInputHandlerOnCompositorThread,
                    base::Unretained(this), routing_id,
                    base::ThreadTaskRunnerHandle::Get(), input_handler,
-                   render_view_impl,
-                   enable_smooth_scrolling));
+                   render_view_impl, enable_smooth_scrolling,
+                   enable_wheel_gestures));
   }
 }
 
@@ -85,7 +89,8 @@ void InputHandlerManager::AddInputHandlerOnCompositorThread(
     const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner,
     const base::WeakPtr<cc::InputHandler>& input_handler,
     const base::WeakPtr<RenderViewImpl>& render_view_impl,
-    bool enable_smooth_scrolling) {
+    bool enable_smooth_scrolling,
+    bool enable_wheel_gestures) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   // The handler could be gone by this point if the compositor has shut down.
@@ -101,8 +106,12 @@ void InputHandlerManager::AddInputHandlerOnCompositorThread(
       "result", "AddingRoute");
   scoped_ptr<InputHandlerWrapper> wrapper(new InputHandlerWrapper(
       this, routing_id, main_task_runner, input_handler, render_view_impl,
-      enable_smooth_scrolling));
-  client_->DidAddInputHandler(routing_id, wrapper->input_handler_proxy());
+      enable_smooth_scrolling, enable_wheel_gestures));
+  client_->DidAddInputHandler(routing_id);
+  if (synchronous_handler_proxy_client_) {
+    synchronous_handler_proxy_client_->DidAddSynchronousHandlerProxy(
+        routing_id, wrapper->input_handler_proxy());
+  }
   input_handlers_.add(routing_id, std::move(wrapper));
 }
 
@@ -113,6 +122,10 @@ void InputHandlerManager::RemoveInputHandler(int routing_id) {
   TRACE_EVENT0("input", "InputHandlerManager::RemoveInputHandler");
 
   client_->DidRemoveInputHandler(routing_id);
+  if (synchronous_handler_proxy_client_) {
+    synchronous_handler_proxy_client_->DidRemoveSynchronousHandlerProxy(
+        routing_id);
+  }
   input_handlers_.erase(routing_id);
 }
 
@@ -131,6 +144,7 @@ void InputHandlerManager::ObserveWheelEventAndResultOnCompositorThread(
     int routing_id,
     const blink::WebMouseWheelEvent& wheel_event,
     const cc::InputHandlerScrollResult& scroll_result) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   auto it = input_handlers_.find(routing_id);
   if (it == input_handlers_.end())
     return;
@@ -139,6 +153,53 @@ void InputHandlerManager::ObserveWheelEventAndResultOnCompositorThread(
   DCHECK(proxy->scroll_elasticity_controller());
   proxy->scroll_elasticity_controller()->ObserveWheelEventAndResult(
       wheel_event, scroll_result);
+}
+
+void InputHandlerManager::ObserveGestureEventAndResultOnMainThread(
+    int routing_id,
+    const blink::WebGestureEvent& gesture_event,
+    const cc::InputHandlerScrollResult& scroll_result) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &InputHandlerManager::ObserveGestureEventAndResultOnCompositorThread,
+          base::Unretained(this), routing_id, gesture_event, scroll_result));
+}
+
+void InputHandlerManager::ObserveGestureEventAndResultOnCompositorThread(
+    int routing_id,
+    const blink::WebGestureEvent& gesture_event,
+    const cc::InputHandlerScrollResult& scroll_result) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  auto it = input_handlers_.find(routing_id);
+  if (it == input_handlers_.end())
+    return;
+
+  InputHandlerProxy* proxy = it->second->input_handler_proxy();
+  DCHECK(proxy->scroll_elasticity_controller());
+  proxy->scroll_elasticity_controller()->ObserveGestureEventAndResult(
+      gesture_event, scroll_result);
+}
+
+void InputHandlerManager::NotifyInputEventHandledOnMainThread(
+    int routing_id,
+    blink::WebInputEvent::Type type) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &InputHandlerManager::NotifyInputEventHandledOnCompositorThread,
+          base::Unretained(this), routing_id, type));
+}
+
+void InputHandlerManager::NotifyInputEventHandledOnCompositorThread(
+    int routing_id,
+    blink::WebInputEvent::Type handled_type) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  auto it = input_handlers_.find(routing_id);
+  if (it == input_handlers_.end())
+    return;
+
+  client_->NotifyInputEventHandled(routing_id, handled_type);
 }
 
 InputEventAckState InputHandlerManager::HandleInputEvent(

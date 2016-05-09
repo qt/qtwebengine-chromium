@@ -12,11 +12,20 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/keep_ref_until_done.h"
+#include "libyuv/convert.h"
 
 // Aligning pointer to 64 bytes for improved performance, e.g. use SIMD.
 static const int kBufferAlignment = 64;
 
 namespace webrtc {
+
+namespace {
+
+int I420DataSize(int height, int stride_y, int stride_u, int stride_v) {
+  return stride_y * height + (stride_u + stride_v) * ((height + 1) / 2);
+}
+
+}  // namespace
 
 uint8_t* VideoFrameBuffer::MutableData(PlaneType type) {
   RTC_NOTREACHED();
@@ -40,7 +49,7 @@ I420Buffer::I420Buffer(int width,
       stride_u_(stride_u),
       stride_v_(stride_v),
       data_(static_cast<uint8_t*>(AlignedMalloc(
-          stride_y * height + (stride_u + stride_v) * ((height + 1) / 2),
+          I420DataSize(height, stride_y, stride_u, stride_v),
           kBufferAlignment))) {
   RTC_DCHECK_GT(width, 0);
   RTC_DCHECK_GT(height, 0);
@@ -50,6 +59,11 @@ I420Buffer::I420Buffer(int width,
 }
 
 I420Buffer::~I420Buffer() {
+}
+
+void I420Buffer::InitializeData() {
+  memset(data_.get(), 0,
+         I420DataSize(height_, stride_y_, stride_u_, stride_v_));
 }
 
 int I420Buffer::width() const {
@@ -102,6 +116,23 @@ void* I420Buffer::native_handle() const {
 rtc::scoped_refptr<VideoFrameBuffer> I420Buffer::NativeToI420Buffer() {
   RTC_NOTREACHED();
   return nullptr;
+}
+
+rtc::scoped_refptr<I420Buffer> I420Buffer::Copy(
+    const rtc::scoped_refptr<VideoFrameBuffer>& buffer) {
+  int width = buffer->width();
+  int height = buffer->height();
+  rtc::scoped_refptr<I420Buffer> copy =
+      new rtc::RefCountedObject<I420Buffer>(width, height);
+  RTC_CHECK(libyuv::I420Copy(buffer->data(kYPlane), buffer->stride(kYPlane),
+                             buffer->data(kUPlane), buffer->stride(kUPlane),
+                             buffer->data(kVPlane), buffer->stride(kVPlane),
+                             copy->MutableData(kYPlane), copy->stride(kYPlane),
+                             copy->MutableData(kUPlane), copy->stride(kUPlane),
+                             copy->MutableData(kVPlane), copy->stride(kVPlane),
+                             width, height) == 0);
+
+  return copy;
 }
 
 NativeHandleBuffer::NativeHandleBuffer(void* native_handle,

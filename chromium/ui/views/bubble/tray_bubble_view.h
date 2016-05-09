@@ -11,11 +11,6 @@
 #include "ui/views/mouse_watcher.h"
 #include "ui/views/views_export.h"
 
-// Specialized bubble view for bubbles associated with a tray icon (e.g. the
-// Ash status area). Mostly this handles custom anchor location and arrow and
-// border rendering. This also has its own delegate for handling mouse events
-// and other implementation specific details.
-
 namespace ui {
 class LocatedEvent;
 }
@@ -32,6 +27,10 @@ class TrayBubbleBorder;
 class TrayBubbleContentMask;
 }
 
+// Specialized bubble view for bubbles associated with a tray icon (e.g. the
+// Ash status area). Mostly this handles custom anchor location and arrow and
+// border rendering. This also has its own delegate for handling mouse events
+// and other implementation specific details.
 class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
                                     public views::MouseWatcherListener {
  public:
@@ -96,6 +95,7 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
                AnchorAlignment anchor_alignment,
                int min_width,
                int max_width);
+    InitParams(const InitParams& other);
     AnchorType anchor_type;
     AnchorAlignment anchor_alignment;
     int min_width;
@@ -186,7 +186,10 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
   InitParams params_;
   Delegate* delegate_;
   int preferred_width_;
+  // |bubble_border_| and |owned_bubble_border_| point to the same thing, but
+  // the latter ensures we don't leak it before passing off ownership.
   internal::TrayBubbleBorder* bubble_border_;
+  scoped_ptr<views::BubbleBorder> owned_bubble_border_;
   scoped_ptr<internal::TrayBubbleContentMask> bubble_content_mask_;
   bool is_gesture_dragging_;
 

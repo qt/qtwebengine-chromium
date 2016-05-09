@@ -14,6 +14,7 @@
 #include "core/html/HTMLDocument.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintController.h"
@@ -30,13 +31,16 @@ protected:
     void setSelection(const VisibleSelection&);
     FrameSelection& selection() const;
     const VisibleSelection& visibleSelectionInDOMTree() const { return selection().selection(); }
-    const VisibleSelectionInComposedTree& visibleSelectionInComposedTree() const { return selection().selectionInComposedTree(); }
+    const VisibleSelectionInFlatTree& visibleSelectionInFlatTree() const { return selection().selectionInFlatTree(); }
 
-    PassRefPtrWillBeRawPtr<Text> appendTextNode(const String& data);
+    RawPtr<Text> appendTextNode(const String& data);
     int layoutCount() const { return dummyPageHolder().frameView().layoutCount(); }
 
+    bool shouldPaintCaretForTesting() const { return selection().shouldPaintCaretForTesting(); }
+    bool isPreviousCaretDirtyForTesting() const { return selection().isPreviousCaretDirtyForTesting(); }
+
 private:
-    RefPtrWillBePersistent<Text> m_textNode;
+    Persistent<Text> m_textNode;
 };
 
 void FrameSelectionTest::setSelection(const VisibleSelection& newSelection)
@@ -49,16 +53,16 @@ FrameSelection& FrameSelectionTest::selection() const
     return dummyPageHolder().frame().selection();
 }
 
-PassRefPtrWillBeRawPtr<Text> FrameSelectionTest::appendTextNode(const String& data)
+RawPtr<Text> FrameSelectionTest::appendTextNode(const String& data)
 {
-    RefPtrWillBeRawPtr<Text> text = document().createTextNode(data);
+    RawPtr<Text> text = document().createTextNode(data);
     document().body()->appendChild(text);
     return text.release();
 }
 
 TEST_F(FrameSelectionTest, SetValidSelection)
 {
-    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    RawPtr<Text> text = appendTextNode("Hello, World!");
     VisibleSelection validSelection(Position(text, 0), Position(text, 5));
     EXPECT_FALSE(validSelection.isNone());
     setSelection(validSelection);
@@ -69,10 +73,10 @@ TEST_F(FrameSelectionTest, SetInvalidSelection)
 {
     // Create a new document without frame by using DOMImplementation.
     DocumentInit dummy;
-    RefPtrWillBeRawPtr<Document> documentWithoutFrame = Document::create();
-    RefPtrWillBeRawPtr<Element> body = HTMLBodyElement::create(*documentWithoutFrame);
+    RawPtr<Document> documentWithoutFrame = Document::create();
+    RawPtr<Element> body = HTMLBodyElement::create(*documentWithoutFrame);
     documentWithoutFrame->appendChild(body);
-    RefPtrWillBeRawPtr<Text> anotherText = documentWithoutFrame->createTextNode("Hello, another world");
+    RawPtr<Text> anotherText = documentWithoutFrame->createTextNode("Hello, another world");
     body->appendChild(anotherText);
 
     // Create a new VisibleSelection for the new document without frame and
@@ -86,7 +90,7 @@ TEST_F(FrameSelectionTest, SetInvalidSelection)
 
 TEST_F(FrameSelectionTest, InvalidateCaretRect)
 {
-    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    RawPtr<Text> text = appendTextNode("Hello, World!");
     document().view()->updateAllLifecyclePhases();
 
     VisibleSelection validSelection(Position(text, 0), Position(text, 0));
@@ -106,7 +110,7 @@ TEST_F(FrameSelectionTest, InvalidateCaretRect)
 
 TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
 {
-    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    RawPtr<Text> text = appendTextNode("Hello, World!");
     document().view()->updateAllLifecyclePhases();
 
     document().body()->setContentEditable("true", ASSERT_NO_EXCEPTION);
@@ -117,7 +121,7 @@ TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
     selection().setCaretVisible(true);
     setSelection(validSelection);
     EXPECT_TRUE(selection().isCaret());
-    EXPECT_TRUE(selection().ShouldPaintCaretForTesting());
+    EXPECT_TRUE(shouldPaintCaretForTesting());
 
     int startCount = layoutCount();
     {
@@ -135,13 +139,61 @@ TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
     EXPECT_EQ(startCount, layoutCount());
 }
 
+TEST_F(FrameSelectionTest, InvalidatePreviousCaretAfterRemovingLastCharacter)
+{
+    RawPtr<Text> text = appendTextNode("Hello, World!");
+    document().view()->updateAllLifecyclePhases();
+
+    document().body()->setContentEditable("true", ASSERT_NO_EXCEPTION);
+    document().body()->focus();
+    EXPECT_TRUE(document().body()->focused());
+
+    selection().setCaretVisible(true);
+    EXPECT_TRUE(selection().isCaret());
+    EXPECT_TRUE(shouldPaintCaretForTesting());
+
+    // Simulate to type "Hello, World!".
+    DisableCompositingQueryAsserts disabler;
+    selection().moveTo(createVisiblePosition(selection().end(), selection().affinity()), NotUserTriggered);
+    selection().setCaretRectNeedsUpdate();
+    EXPECT_TRUE(selection().isCaretBoundsDirty());
+    EXPECT_FALSE(isPreviousCaretDirtyForTesting());
+    selection().invalidateCaretRect();
+    EXPECT_FALSE(selection().isCaretBoundsDirty());
+    EXPECT_TRUE(isPreviousCaretDirtyForTesting());
+
+    // Simulate to remove all except for "H".
+    text->replaceWholeText("H");
+    selection().moveTo(createVisiblePosition(selection().end(), selection().affinity()), NotUserTriggered);
+    selection().setCaretRectNeedsUpdate();
+    EXPECT_TRUE(selection().isCaretBoundsDirty());
+    // "H" remains so early previousCaret invalidation isn't needed.
+    EXPECT_TRUE(isPreviousCaretDirtyForTesting());
+    selection().invalidateCaretRect();
+    EXPECT_FALSE(selection().isCaretBoundsDirty());
+    EXPECT_TRUE(isPreviousCaretDirtyForTesting());
+
+    // Simulate to remove the last character.
+    document().body()->removeChild(text);
+    // This line is the objective of this test.
+    // As removing the last character, early previousCaret invalidation is executed.
+    EXPECT_FALSE(isPreviousCaretDirtyForTesting());
+    document().updateLayoutIgnorePendingStylesheets();
+    selection().setCaretRectNeedsUpdate();
+    EXPECT_TRUE(selection().isCaretBoundsDirty());
+    EXPECT_FALSE(isPreviousCaretDirtyForTesting());
+    selection().invalidateCaretRect();
+    EXPECT_FALSE(selection().isCaretBoundsDirty());
+    EXPECT_TRUE(isPreviousCaretDirtyForTesting());
+}
+
 #define EXPECT_EQ_SELECTED_TEXT(text) \
     EXPECT_EQ(text, WebString(selection().selectedText()).utf8())
 
 TEST_F(FrameSelectionTest, SelectWordAroundPosition)
 {
     // "Foo Bar  Baz,"
-    RefPtrWillBeRawPtr<Text> text = appendTextNode("Foo Bar&nbsp;&nbsp;Baz,");
+    RawPtr<Text> text = appendTextNode("Foo Bar&nbsp;&nbsp;Baz,");
     // "Fo|o Bar  Baz,"
     EXPECT_TRUE(selection().selectWordAroundPosition(createVisiblePosition(Position(text, 2))));
     EXPECT_EQ_SELECTED_TEXT("Foo");
@@ -155,10 +207,27 @@ TEST_F(FrameSelectionTest, SelectWordAroundPosition)
     EXPECT_EQ_SELECTED_TEXT("Baz");
 }
 
+TEST_F(FrameSelectionTest, ModifyExtendWithFlatTree)
+{
+    setBodyContent("<span id=host></span>one");
+    setShadowContent("two<content></content>", "host");
+    updateLayoutAndStyleForPainting();
+    RawPtr<Element> host = document().getElementById("host");
+    Node* const two = FlatTreeTraversal::firstChild(*host);
+    // Select "two" for selection in DOM tree
+    // Select "twoone" for selection in Flat tree
+    selection().setSelection(VisibleSelectionInFlatTree(PositionInFlatTree(host.get(), 0), PositionInFlatTree(document().body(), 2)));
+    selection().modify(FrameSelection::AlterationExtend, DirectionForward, WordGranularity);
+    EXPECT_EQ(Position(two, 0), visibleSelectionInDOMTree().start());
+    EXPECT_EQ(Position(two, 3), visibleSelectionInDOMTree().end());
+    EXPECT_EQ(PositionInFlatTree(two, 0), visibleSelectionInFlatTree().start());
+    EXPECT_EQ(PositionInFlatTree(two, 3), visibleSelectionInFlatTree().end());
+}
+
 TEST_F(FrameSelectionTest, MoveRangeSelectionTest)
 {
     // "Foo Bar Baz,"
-    RefPtrWillBeRawPtr<Text> text = appendTextNode("Foo Bar Baz,");
+    RawPtr<Text> text = appendTextNode("Foo Bar Baz,");
     // Itinitializes with "Foo B|a>r Baz," (| means start and > means end).
     selection().setSelection(VisibleSelection(Position(text, 5), Position(text, 6)));
     EXPECT_EQ_SELECTED_TEXT("a");
@@ -182,7 +251,7 @@ TEST_F(FrameSelectionTest, setNonDirectionalSelectionIfNeeded)
     const char* bodyContent = "<span id=top>top</span><span id=host></span>";
     const char* shadowContent = "<span id=bottom>bottom</span>";
     setBodyContent(bodyContent);
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = setShadowContent(shadowContent, "host");
+    RawPtr<ShadowRoot> shadowRoot = setShadowContent(shadowContent, "host");
     updateLayoutAndStyleForPainting();
 
     Node* top = document().getElementById("top")->firstChild();
@@ -190,28 +259,36 @@ TEST_F(FrameSelectionTest, setNonDirectionalSelectionIfNeeded)
     Node* host = document().getElementById("host");
 
     // top to bottom
-    selection().setNonDirectionalSelectionIfNeeded(VisibleSelectionInComposedTree(PositionInComposedTree(top, 1), PositionInComposedTree(bottom, 3)), CharacterGranularity);
+    selection().setNonDirectionalSelectionIfNeeded(VisibleSelectionInFlatTree(PositionInFlatTree(top, 1), PositionInFlatTree(bottom, 3)), CharacterGranularity);
     EXPECT_EQ(Position(top, 1), visibleSelectionInDOMTree().base());
     EXPECT_EQ(Position::beforeNode(host), visibleSelectionInDOMTree().extent());
     EXPECT_EQ(Position(top, 1), visibleSelectionInDOMTree().start());
     EXPECT_EQ(Position(top, 3), visibleSelectionInDOMTree().end());
 
-    EXPECT_EQ(PositionInComposedTree(top, 1), visibleSelectionInComposedTree().base());
-    EXPECT_EQ(PositionInComposedTree(bottom, 3), visibleSelectionInComposedTree().extent());
-    EXPECT_EQ(PositionInComposedTree(top, 1), visibleSelectionInComposedTree().start());
-    EXPECT_EQ(PositionInComposedTree(bottom, 3), visibleSelectionInComposedTree().end());
+    EXPECT_EQ(PositionInFlatTree(top, 1), visibleSelectionInFlatTree().base());
+    EXPECT_EQ(PositionInFlatTree(bottom, 3), visibleSelectionInFlatTree().extent());
+    EXPECT_EQ(PositionInFlatTree(top, 1), visibleSelectionInFlatTree().start());
+    EXPECT_EQ(PositionInFlatTree(bottom, 3), visibleSelectionInFlatTree().end());
 
     // bottom to top
-    selection().setNonDirectionalSelectionIfNeeded(VisibleSelectionInComposedTree(PositionInComposedTree(bottom, 3), PositionInComposedTree(top, 1)), CharacterGranularity);
+    selection().setNonDirectionalSelectionIfNeeded(VisibleSelectionInFlatTree(PositionInFlatTree(bottom, 3), PositionInFlatTree(top, 1)), CharacterGranularity);
     EXPECT_EQ(Position(bottom, 3), visibleSelectionInDOMTree().base());
     EXPECT_EQ(Position::beforeNode(bottom->parentNode()), visibleSelectionInDOMTree().extent());
     EXPECT_EQ(Position(bottom, 0), visibleSelectionInDOMTree().start());
     EXPECT_EQ(Position(bottom, 3), visibleSelectionInDOMTree().end());
 
-    EXPECT_EQ(PositionInComposedTree(bottom, 3), visibleSelectionInComposedTree().base());
-    EXPECT_EQ(PositionInComposedTree(top, 1), visibleSelectionInComposedTree().extent());
-    EXPECT_EQ(PositionInComposedTree(top, 1), visibleSelectionInComposedTree().start());
-    EXPECT_EQ(PositionInComposedTree(bottom, 3), visibleSelectionInComposedTree().end());
+    EXPECT_EQ(PositionInFlatTree(bottom, 3), visibleSelectionInFlatTree().base());
+    EXPECT_EQ(PositionInFlatTree(top, 1), visibleSelectionInFlatTree().extent());
+    EXPECT_EQ(PositionInFlatTree(top, 1), visibleSelectionInFlatTree().start());
+    EXPECT_EQ(PositionInFlatTree(bottom, 3), visibleSelectionInFlatTree().end());
+}
+
+TEST_F(FrameSelectionTest, SelectAllWithUnselectableRoot)
+{
+    RawPtr<Element> select = document().createElement("select", ASSERT_NO_EXCEPTION);
+    document().replaceChild(select.get(), document().documentElement());
+    selection().selectAll();
+    EXPECT_TRUE(selection().isNone()) << "Nothing should be selected if the content of the documentElement is not selctable.";
 }
 
 } // namespace blink

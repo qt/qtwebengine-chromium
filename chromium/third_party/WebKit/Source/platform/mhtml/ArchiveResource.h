@@ -31,33 +31,28 @@
 
 #include "platform/SharedBuffer.h"
 #include "platform/heap/Handle.h"
-#include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class PLATFORM_EXPORT ArchiveResource final : public RefCountedWillBeGarbageCollectedFinalized<ArchiveResource> {
+class PLATFORM_EXPORT ArchiveResource final : public GarbageCollectedFinalized<ArchiveResource> {
 public:
-    static PassRefPtrWillBeRawPtr<ArchiveResource> create(
+    static ArchiveResource* create(
         PassRefPtr<SharedBuffer>,
         const KURL&,
         const String& contentId,
         const AtomicString& mimeType,
-        const AtomicString& textEncoding,
-        const String& frameName,
-        const ResourceResponse& = ResourceResponse());
+        const AtomicString& textEncoding);
 
     ~ArchiveResource();
 
     const KURL& url() const { return m_url; }
     const String& contentID() const { return m_contentID; }
-    const ResourceResponse& response() const { return m_response; }
     SharedBuffer* data() const { return m_data.get(); }
     const AtomicString& mimeType() const { return m_mimeType; }
     const AtomicString& textEncoding() const { return m_textEncoding; }
-    const String& frameName() const { return m_frameName; }
 
     DEFINE_INLINE_TRACE() { }
 
@@ -67,19 +62,15 @@ private:
         const KURL&,
         const String& contentID,
         const AtomicString& mimeType,
-        const AtomicString& textEncoding,
-        const String& frameName,
-        const ResourceResponse&);
+        const AtomicString& textEncoding);
 
     KURL m_url;
     String m_contentID;
-    ResourceResponse m_response;
     RefPtr<SharedBuffer> m_data;
     AtomicString m_mimeType;
     AtomicString m_textEncoding;
-    String m_frameName;
 };
 
-}
+} // namespace blink
 
 #endif // ArchiveResource_h

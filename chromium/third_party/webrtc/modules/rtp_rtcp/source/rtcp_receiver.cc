@@ -13,14 +13,14 @@
 #include <assert.h>
 #include <string.h>
 
-#include <algorithm>
-
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+#include "webrtc/modules/rtp_rtcp/source/time_util.h"
+#include "webrtc/system_wrappers/include/ntp_time.h"
 
 namespace webrtc {
 using RTCPHelp::RTCPPacketInformation;
@@ -47,7 +47,6 @@ RTCPReceiver::RTCPReceiver(
     : TMMBRHelp(),
       _clock(clock),
       receiver_only_(receiver_only),
-      _method(RtcpMode::kOff),
       _lastReceived(0),
       _rtpRtcp(*owner),
       _criticalSectionFeedbacks(
@@ -64,9 +63,9 @@ RTCPReceiver::RTCPReceiver(
       _lastReceivedSRNTPfrac(0),
       _lastReceivedXRNTPsecs(0),
       _lastReceivedXRNTPfrac(0),
+      xr_rrtr_status_(false),
       xr_rr_rtt_ms_(0),
       _receivedInfoMap(),
-      _packetTimeOutMS(0),
       _lastReceivedRrMs(0),
       _lastIncreasedSequenceNumberMs(0),
       stats_callback_(NULL),
@@ -101,16 +100,6 @@ RTCPReceiver::~RTCPReceiver() {
     delete first->second;
     _receivedCnameMap.erase(first);
   }
-}
-
-RtcpMode RTCPReceiver::Status() const {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-  return _method;
-}
-
-void RTCPReceiver::SetRTCPStatus(RtcpMode method) {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-  _method = method;
 }
 
 int64_t RTCPReceiver::LastReceived() {
@@ -188,6 +177,11 @@ int32_t RTCPReceiver::RTT(uint32_t remoteSSRC,
     *maxRTT = reportBlock->maxRTT;
   }
   return 0;
+}
+
+void RTCPReceiver::SetRtcpXrRrtrStatus(bool enable) {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+  xr_rrtr_status_ = enable;
 }
 
 bool RTCPReceiver::GetAndResetXrRrRtt(int64_t* rtt_ms) {
@@ -487,13 +481,6 @@ void RTCPReceiver::HandleReportBlock(
     return;
   }
 
-  // To avoid problem with acquiring _criticalSectionRTCPSender while holding
-  // _criticalSectionRTCPReceiver.
-  _criticalSectionRTCPReceiver->Leave();
-  int64_t sendTimeMS =
-      _rtpRtcp.SendTimeOfSendReport(rtcpPacket.ReportBlockItem.LastSR);
-  _criticalSectionRTCPReceiver->Enter();
-
   RTCPReportBlockInformation* reportBlock =
       CreateOrGetReportBlockInformation(remoteSSRC,
                                         rtcpPacket.ReportBlockItem.SSRC);
@@ -526,60 +513,50 @@ void RTCPReceiver::HandleReportBlock(
     reportBlock->remoteMaxJitter = rtcpPacket.ReportBlockItem.Jitter;
   }
 
-  uint32_t delaySinceLastSendReport =
-      rtcpPacket.ReportBlockItem.DelayLastSR;
+  int64_t rtt = 0;
+  uint32_t send_time = rtcpPacket.ReportBlockItem.LastSR;
+  // RFC3550, section 6.4.1, LSR field discription states:
+  // If no SR has been received yet, the field is set to zero.
+  // Receiver rtp_rtcp module is not expected to calculate rtt using
+  // Sender Reports even if it accidentally can.
+  if (!receiver_only_ && send_time != 0) {
+    uint32_t delay = rtcpPacket.ReportBlockItem.DelayLastSR;
+    // Local NTP time.
+    uint32_t receive_time = CompactNtp(NtpTime(*_clock));
 
-  // local NTP time when we received this
-  uint32_t lastReceivedRRNTPsecs = 0;
-  uint32_t lastReceivedRRNTPfrac = 0;
-
-  _clock->CurrentNtp(lastReceivedRRNTPsecs, lastReceivedRRNTPfrac);
-
-  // time when we received this in MS
-  int64_t receiveTimeMS = Clock::NtpToMs(lastReceivedRRNTPsecs,
-                                         lastReceivedRRNTPfrac);
-
-  // Estimate RTT
-  uint32_t d = (delaySinceLastSendReport & 0x0000ffff) * 1000;
-  d /= 65536;
-  d += ((delaySinceLastSendReport & 0xffff0000) >> 16) * 1000;
-
-  int64_t RTT = 0;
-
-  if (sendTimeMS > 0) {
-    RTT = receiveTimeMS - d - sendTimeMS;
-    if (RTT <= 0) {
-      RTT = 1;
-    }
-    if (RTT > reportBlock->maxRTT) {
-      // store max RTT
-      reportBlock->maxRTT = RTT;
+    // RTT in 1/(2^16) seconds.
+    uint32_t rtt_ntp = receive_time - delay - send_time;
+    // Convert to 1/1000 seconds (milliseconds).
+    rtt = CompactNtpRttToMs(rtt_ntp);
+    if (rtt > reportBlock->maxRTT) {
+      // Store max RTT.
+      reportBlock->maxRTT = rtt;
     }
     if (reportBlock->minRTT == 0) {
-      // first RTT
-      reportBlock->minRTT = RTT;
-    } else if (RTT < reportBlock->minRTT) {
-      // Store min RTT
-      reportBlock->minRTT = RTT;
+      // First RTT.
+      reportBlock->minRTT = rtt;
+    } else if (rtt < reportBlock->minRTT) {
+      // Store min RTT.
+      reportBlock->minRTT = rtt;
     }
-    // store last RTT
-    reportBlock->RTT = RTT;
+    // Store last RTT.
+    reportBlock->RTT = rtt;
 
     // store average RTT
     if (reportBlock->numAverageCalcs != 0) {
       float ac = static_cast<float>(reportBlock->numAverageCalcs);
       float newAverage =
-          ((ac / (ac + 1)) * reportBlock->avgRTT) + ((1 / (ac + 1)) * RTT);
+          ((ac / (ac + 1)) * reportBlock->avgRTT) + ((1 / (ac + 1)) * rtt);
       reportBlock->avgRTT = static_cast<int64_t>(newAverage + 0.5f);
     } else {
-      // first RTT
-      reportBlock->avgRTT = RTT;
+      // First RTT.
+      reportBlock->avgRTT = rtt;
     }
     reportBlock->numAverageCalcs++;
   }
 
   TRACE_COUNTER_ID1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "RR_RTT", rb.SSRC,
-                    RTT);
+                    rtt);
 
   rtcpPacketInformation.AddReportInfo(*reportBlock);
 }
@@ -934,28 +911,22 @@ void RTCPReceiver::HandleXrDlrrReportBlockItem(
 
   rtcpPacketInformation.xr_dlrr_item = true;
 
-  // To avoid problem with acquiring _criticalSectionRTCPSender while holding
-  // _criticalSectionRTCPReceiver.
-  _criticalSectionRTCPReceiver->Leave();
-
-  int64_t send_time_ms;
-  bool found = _rtpRtcp.SendTimeOfXrRrReport(
-      packet.XRDLRRReportBlockItem.LastRR, &send_time_ms);
-
-  _criticalSectionRTCPReceiver->Enter();
-
-  if (!found) {
+  // Caller should explicitly enable rtt calculation using extended reports.
+  if (!xr_rrtr_status_)
     return;
-  }
 
-  // The DelayLastRR field is in units of 1/65536 sec.
-  uint32_t delay_rr_ms =
-      (((packet.XRDLRRReportBlockItem.DelayLastRR & 0x0000ffff) * 1000) >> 16) +
-      (((packet.XRDLRRReportBlockItem.DelayLastRR & 0xffff0000) >> 16) * 1000);
+  // The send_time and delay_rr fields are in units of 1/2^16 sec.
+  uint32_t send_time = packet.XRDLRRReportBlockItem.LastRR;
+  // RFC3611, section 4.5, LRR field discription states:
+  // If no such block has been received, the field is set to zero.
+  if (send_time == 0)
+    return;
 
-  int64_t rtt = _clock->CurrentNtpInMilliseconds() - delay_rr_ms - send_time_ms;
+  uint32_t delay_rr = packet.XRDLRRReportBlockItem.DelayLastRR;
+  uint32_t now = CompactNtp(NtpTime(*_clock));
 
-  xr_rr_rtt_ms_ = std::max<int64_t>(rtt, 1);
+  uint32_t rtt_ntp = now - delay_rr - send_time;
+  xr_rr_rtt_ms_ = CompactNtpRttToMs(rtt_ntp);
 
   rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpXrDlrrReportBlock;
 }
@@ -1130,8 +1101,7 @@ RTCPReceiver::HandleRPSI(RTCPUtility::RTCPParserV2& rtcpParser,
 {
     const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
     RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    if (pktType == RTCPPacketTypes::kPsfbRpsi) {
-        rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpRpsi; // received signal that we have a confirmed reference picture
+    if (pktType == RTCPPacketTypes::kPsfbRpsiItem) {
         if(rtcpPacket.RPSI.NumberOfValidBits%8 != 0)
         {
             // to us unknown
@@ -1139,6 +1109,8 @@ RTCPReceiver::HandleRPSI(RTCPUtility::RTCPParserV2& rtcpParser,
             rtcpParser.Iterate();
             return;
         }
+        // Received signal that we have a confirmed reference picture.
+        rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpRpsi;
         rtcpPacketInformation.rpsiPictureId = 0;
 
         // convert NativeBitString to rpsiPictureId

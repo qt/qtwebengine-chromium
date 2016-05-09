@@ -13,9 +13,6 @@
  *
  *    <settings-router current-route="{{currentRoute}}">
  *    </settings-router>
- *
- * @group Chrome Settings Elements
- * @element settings-router
  */
 Polymer({
   is: 'settings-router',
@@ -61,7 +58,7 @@ Polymer({
     /**
      * Page titles for the currently active route. Updated by the currentRoute
      * property observer.
-     * @type {{pageTitle: string, subpageTitles: Array<string>}}
+     * @type {{pageTitle: string}}
      */
     currentRouteTitles: {
       notify: true,
@@ -69,7 +66,6 @@ Polymer({
       value: function() {
         return {
           pageTitle: '',
-          subpageTitles: [],
         };
       },
     },
@@ -86,14 +82,12 @@ Polymer({
       page: 'basic',
       section: '',
       subpage: [],
-      subpageTitles: [],
     },
     {
       url: '/advanced',
       page: 'advanced',
       section: '',
       subpage: [],
-      subpageTitles: [],
     },
 <if expr="chromeos">
     {
@@ -101,14 +95,12 @@ Polymer({
       page: 'basic',
       section: 'internet',
       subpage: ['network-detail'],
-      subpageTitles: ['internetDetailPageTitle'],
     },
     {
       url: '/knownNetworks',
       page: 'basic',
       section: 'internet',
       subpage: ['known-networks'],
-      subpageTitles: ['internetKnownNetworksPageTitle'],
     },
 </if>
     {
@@ -116,21 +108,18 @@ Polymer({
       page: 'basic',
       section: 'appearance',
       subpage: ['appearance-fonts'],
-      subpageTitles: ['customizeFonts'],
     },
     {
       url: '/searchEngines',
       page: 'basic',
       section: 'search',
       subpage: ['search-engines'],
-      subpageTitles: ['searchEnginesPageTitle'],
     },
     {
       url: '/searchEngines/advanced',
       page: 'basic',
       section: 'search',
       subpage: ['search-engines', 'search-engines-advanced'],
-      subpageTitles: ['searchEnginesPageTitle', 'advancedPageTitle'],
     },
 <if expr="chromeos">
     {
@@ -138,7 +127,6 @@ Polymer({
       page: 'basic',
       section: 'people',
       subpage: ['changePicture'],
-      subpageTitles: ['changePictureTitle'],
     },
 </if>
 <if expr="not chromeos">
@@ -147,7 +135,6 @@ Polymer({
       page: 'basic',
       section: 'people',
       subpage: ['manageProfile'],
-      subpageTitles: ['editPerson'],
     },
 </if>
     {
@@ -155,7 +142,6 @@ Polymer({
       page: 'basic',
       section: 'people',
       subpage: ['sync'],
-      subpageTitles: ['syncPageTitle'],
     },
 <if expr="chromeos">
     {
@@ -163,7 +149,6 @@ Polymer({
       page: 'basic',
       section: 'people',
       subpage: ['users'],
-      subpageTitles: ['usersPageTitle'],
     },
 </if>
     {
@@ -171,92 +156,149 @@ Polymer({
       page: 'advanced',
       section: 'privacy',
       subpage: ['manage-certificates'],
-      subpageTitles: ['manageCertificates'],
     },
     {
       url: '/siteSettings',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings'],
-      subpageTitles: ['siteSettings'],
+    },
+    // Site Category routes.
+    {
+      url: '/siteSettings/all',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'all-sites'],
     },
     {
-      url: '/siteSettings/category/camera',
+      url: '/siteSettings/camera',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-camera'],
-      subpageTitles: ['siteSettings', 'siteSettingsCamera'],
     },
     {
-      url: '/siteSettings/category/cookies',
+      url: '/siteSettings/cookies',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-cookies'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryCookies'],
     },
     {
-      url: '/siteSettings/category/fullscreen',
+      url: '/siteSettings/fullscreen',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-fullscreen'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryFullscreen'],
     },
     {
-      url: '/siteSettings/category/images',
+      url: '/siteSettings/images',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-images'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryImages'],
     },
     {
-      url: '/siteSettings/category/location',
+      url: '/siteSettings/location',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-location'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryLocation'],
     },
     {
-      url: '/siteSettings/category/javascript',
+      url: '/siteSettings/javascript',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-javascript'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryJavascript'],
     },
     {
-      url: '/siteSettings/category/microphone',
+      url: '/siteSettings/microphone',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-microphone'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryMicrophone'],
     },
     {
-      url: '/siteSettings/category/notifications',
+      url: '/siteSettings/notifications',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-notifications'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryNotifications'],
     },
     {
-      url: '/siteSettings/category/popups',
+      url: '/siteSettings/popups',
       page: 'advanced',
       section: 'privacy',
       subpage: ['site-settings', 'site-settings-category-popups'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryPopups'],
     },
+    // Site details routes.
     {
-      url: '/siteSettings/category/details',
+      url: '/siteSettings/all/details',
       page: 'advanced',
       section: 'privacy',
-      subpage: ['site-settings', 'site-settings-category', 'site-details'],
-      subpageTitles: ['siteSettings', 'siteSettingsCategoryPageTitle',
-          'siteSettingsSiteDetailsPageTitle'],
+      subpage: ['site-settings', 'all-sites', 'site-details'],
+    },
+    {
+      url: '/siteSettings/camera/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-camera',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/cookies/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-cookies',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/fullscreen/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-fullscreen',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/images/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-images',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/location/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-location',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/javascript/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-javascript',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/microphone/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-microphone',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/notifications/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-notifications',
+          'site-details'],
+    },
+    {
+      url: '/siteSettings/popups/details',
+      page: 'advanced',
+      section: 'privacy',
+      subpage: ['site-settings', 'site-settings-category-popups',
+          'site-details'],
     },
     {
       url: '/clearBrowserData',
       page: 'advanced',
       section: 'privacy',
       subpage: ['clear-browsing-data'],
-      subpageTitles: ['clearBrowsingData'],
     },
 <if expr="chromeos">
     {
@@ -264,30 +306,31 @@ Polymer({
       page: 'advanced',
       section: 'bluetooth',
       subpage: ['bluetooth-add-device'],
-      subpageTitles: ['bluetoothAddDevicePageTitle'],
     },
     {
       url: '/bluetoothAddDevice/bluetoothPairDevice',
       page: 'advanced',
       section: 'bluetooth',
       subpage: ['bluetooth-add-device', 'bluetooth-pair-device'],
-      subpageTitles: ['bluetoothAddDevicePageTitle',
-                      'bluetoothPairDevicePageTitle'],
     },
 </if>
+    {
+      url: '/passwords',
+      page: 'advanced',
+      section: 'passwordsAndForms',
+      subpage: ['manage-passwords'],
+    },
     {
       url: '/languages',
       page: 'advanced',
       section: 'languages',
       subpage: ['manage-languages'],
-      subpageTitles: ['manageLanguagesPageTitle'],
     },
     {
       url: '/languages/edit',
       page: 'advanced',
       section: 'languages',
       subpage: ['language-detail'],
-      subpageTitles: ['manageLanguagesPageTitle'],
     },
 <if expr="not is_macosx">
     {
@@ -295,7 +338,26 @@ Polymer({
       page: 'advanced',
       section: 'languages',
       subpage: ['edit-dictionary'],
-      subpageTitles: ['editDictionaryPageTitle'],
+    },
+</if>
+<if expr="chromeos">
+    {
+      url: '/pointer-overlay',
+      page: 'basic',
+      section: 'device',
+      subpage: ['touchpad'],
+    },
+    {
+      url: '/keyboard-overlay',
+      page: 'basic',
+      section: 'device',
+      subpage: ['keyboard'],
+    },
+    {
+      url: '/display-overlay',
+      page: 'basic',
+      section: 'device',
+      subpage: ['display'],
     },
 </if>
   ],
@@ -328,9 +390,6 @@ Polymer({
         // Update the property containing the titles for the current route.
         this.currentRouteTitles = {
           pageTitle: loadTimeData.getString(route.page + 'PageTitle'),
-          subpageTitles: route.subpageTitles.map(function(titleCode) {
-            return loadTimeData.getString(titleCode);
-          }),
         };
 
         // If we are restoring a state from history, don't push it again.

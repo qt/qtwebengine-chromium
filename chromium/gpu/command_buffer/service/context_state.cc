@@ -87,6 +87,8 @@ TextureUnit::TextureUnit()
     : bind_target(GL_TEXTURE_2D) {
 }
 
+TextureUnit::TextureUnit(const TextureUnit& other) = default;
+
 TextureUnit::~TextureUnit() {
 }
 
@@ -373,10 +375,10 @@ void ContextState::RestoreVertexAttribArrays(
       glVertexAttribDivisorANGLE(attrib_index, attrib->divisor());
 
     // Never touch vertex attribute 0's state (in particular, never
-    // disable it) when running on desktop GL because it will never be
-    // re-enabled.
+    // disable it) when running on desktop GL with compatibility profile
+    // because it will never be re-enabled.
     if (attrib_index != 0 ||
-        gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2) {
+        feature_info_->gl_version_info().BehavesLikeGLES()) {
       if (attrib->enabled()) {
         glEnableVertexAttribArray(attrib_index);
       } else {
@@ -388,28 +390,25 @@ void ContextState::RestoreVertexAttribArrays(
 
 void ContextState::RestoreVertexAttribs() const {
   // Restore Vertex Attrib Arrays
-  // TODO: This if should not be needed. RestoreState is getting called
-  // before GLES2Decoder::Initialize which is a bug.
-  if (vertex_attrib_manager.get()) {
-    // Restore VAOs.
-    if (feature_info_->feature_flags().native_vertex_array_object) {
-      // If default VAO is still using shared id 0 instead of unique ids
-      // per-context, default VAO state must be restored.
-      GLuint default_vao_service_id =
-          default_vertex_attrib_manager->service_id();
-      if (default_vao_service_id == 0)
-        RestoreVertexAttribArrays(default_vertex_attrib_manager);
+  DCHECK(vertex_attrib_manager.get());
+  // Restore VAOs.
+  if (feature_info_->feature_flags().native_vertex_array_object) {
+    // If default VAO is still using shared id 0 instead of unique ids
+    // per-context, default VAO state must be restored.
+    GLuint default_vao_service_id =
+        default_vertex_attrib_manager->service_id();
+    if (default_vao_service_id == 0)
+      RestoreVertexAttribArrays(default_vertex_attrib_manager);
 
-      // Restore the current VAO binding, unless it's the same as the
-      // default above.
-      GLuint curr_vao_service_id = vertex_attrib_manager->service_id();
-      if (curr_vao_service_id != 0)
-        glBindVertexArrayOES(curr_vao_service_id);
-    } else {
-      // If native VAO isn't supported, emulated VAOs are used.
-      // Restore to the currently bound VAO.
-      RestoreVertexAttribArrays(vertex_attrib_manager);
-    }
+    // Restore the current VAO binding, unless it's the same as the
+    // default above.
+    GLuint curr_vao_service_id = vertex_attrib_manager->service_id();
+    if (curr_vao_service_id != 0)
+      glBindVertexArrayOES(curr_vao_service_id);
+  } else {
+    // If native VAO isn't supported, emulated VAOs are used.
+    // Restore to the currently bound VAO.
+    RestoreVertexAttribArrays(vertex_attrib_manager);
   }
 
   // glVertexAttrib4fv aren't part of VAO state and must be restored.
@@ -435,9 +434,10 @@ ErrorState* ContextState::GetErrorState() {
 }
 
 void ContextState::EnableDisable(GLenum pname, bool enable) const {
-  if (pname == GL_PRIMITIVE_RESTART_FIXED_INDEX) {
-    if (feature_info_->feature_flags().emulate_primitive_restart_fixed_index)
-      pname = GL_PRIMITIVE_RESTART;
+  if (pname == GL_PRIMITIVE_RESTART_FIXED_INDEX &&
+      feature_info_->feature_flags().emulate_primitive_restart_fixed_index) {
+    // GLES2DecoderImpl::DoDrawElements can handle this situation
+    return;
   }
   if (enable) {
     glEnable(pname);
@@ -462,15 +462,9 @@ void ContextState::UpdateUnpackParameters() const {
   if (bound_pixel_unpack_buffer.get()) {
     glPixelStorei(GL_UNPACK_ROW_LENGTH, unpack_row_length);
     glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, unpack_image_height);
-    glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpack_skip_pixels);
-    glPixelStorei(GL_UNPACK_SKIP_ROWS, unpack_skip_rows);
-    glPixelStorei(GL_UNPACK_SKIP_IMAGES, unpack_skip_images);
   } else {
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
-    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-    glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
   }
 }
 
@@ -600,23 +594,23 @@ void ContextState::UnbindSampler(Sampler* sampler) {
 }
 
 PixelStoreParams ContextState::GetPackParams() {
+  DCHECK_EQ(0, pack_skip_pixels);
+  DCHECK_EQ(0, pack_skip_rows);
   PixelStoreParams params;
   params.alignment = pack_alignment;
   params.row_length = pack_row_length;
-  params.skip_pixels = pack_skip_pixels;
-  params.skip_rows = pack_skip_rows;
   return params;
 }
 
 PixelStoreParams ContextState::GetUnpackParams(Dimension dimension) {
+  DCHECK_EQ(0, unpack_skip_pixels);
+  DCHECK_EQ(0, unpack_skip_rows);
+  DCHECK_EQ(0, unpack_skip_images);
   PixelStoreParams params;
   params.alignment = unpack_alignment;
   params.row_length = unpack_row_length;
-  params.skip_pixels = unpack_skip_pixels;
-  params.skip_rows = unpack_skip_rows;
   if (dimension == k3D) {
     params.image_height = unpack_image_height;
-    params.skip_images = unpack_skip_images;
   }
   return params;
 }

@@ -177,6 +177,7 @@ class OutputHLSL : public TIntermTraverser
     bool mUsesFrontFacing;
     bool mUsesPointSize;
     bool mUsesInstanceID;
+    bool mUsesVertexID;
     bool mUsesFragDepth;
     bool mUsesXor;
     bool mUsesDiscardRewriting;
@@ -239,6 +240,10 @@ class OutputHLSL : public TIntermTraverser
     // with the other N parameters of the function. This is used to work around that arrays can't be
     // return values in HLSL.
     std::vector<ArrayHelperFunction> mArrayConstructIntoFunctions;
+
+  private:
+    TString samplerNamePrefixFromStruct(TIntermTyped *node);
+    bool ancestorEvaluatesToSamplerInStruct(Visit visit);
 };
 
 }

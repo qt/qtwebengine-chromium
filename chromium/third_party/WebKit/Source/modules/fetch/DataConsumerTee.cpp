@@ -8,10 +8,10 @@
 #include "core/dom/ExecutionContext.h"
 #include "modules/fetch/DataConsumerHandleUtil.h"
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
-#include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
 #include "wtf/Deque.h"
@@ -183,7 +183,7 @@ public:
             }
             ASSERT(m_readerThread);
             if (!m_readerThread->isCurrentThread()) {
-                m_readerThread->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
+                m_readerThread->getWebTaskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&DestinationContext::notify, this));
                 return;
             }
         }
@@ -224,7 +224,7 @@ public:
             m_offset += size;
         }
     }
-    Result result() { return m_result; }
+    Result getResult() { return m_result; }
 
 private:
     DestinationContext()
@@ -270,7 +270,7 @@ public:
             // We need to use threadSafeBind here to retain the context. Note
             // |context()| return value is of type DestinationContext*, not
             // PassRefPtr<DestinationContext>.
-            Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
+            Platform::current()->currentThread()->getWebTaskRunner()->postTask(BLINK_FROM_HERE, threadSafeBind(&DestinationContext::notify, context()));
         }
     }
     ~DestinationReader() override
@@ -285,7 +285,7 @@ public:
         *available = 0;
         *buffer = nullptr;
         if (context()->isEmpty())
-            return context()->result();
+            return context()->getResult();
 
         const OwnPtr<Vector<char>>& chunk = context()->top();
         *available = chunk->size() - context()->offset();
@@ -325,7 +325,7 @@ private:
 
 // Bound to the created thread.
 class SourceContext final : public GarbageCollectedFinalized<SourceContext>, public ActiveDOMObject, public WebDataConsumerHandle::Client {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceContext);
+    USING_GARBAGE_COLLECTED_MIXIN(SourceContext);
 public:
     SourceContext(
         PassRefPtr<TeeRootObject> root,

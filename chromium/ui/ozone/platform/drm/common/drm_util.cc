@@ -157,6 +157,19 @@ int ConnectorIndex(int device_index, int display_index) {
   return ((device_index << 4) + display_index) & 0xFF;
 }
 
+bool HasColorCorrectionMatrix(int fd, drmModeCrtc* crtc) {
+  ScopedDrmObjectPropertyPtr crtc_props(
+      drmModeObjectGetProperties(fd, crtc->crtc_id, DRM_MODE_OBJECT_CRTC));
+
+  for (uint32_t i = 0; i < crtc_props->count_props; ++i) {
+    ScopedDrmPropertyPtr property(drmModeGetProperty(fd, crtc_props->props[i]));
+    if (property && !strcmp(property->name, "CTM")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 HardwareDisplayControllerInfo::HardwareDisplayControllerInfo(
@@ -229,21 +242,23 @@ DisplaySnapshot_Params CreateDisplaySnapshotParams(
   params.type = GetDisplayType(info->connector());
   params.is_aspect_preserving_scaling =
       IsAspectPreserving(fd, info->connector());
+  params.has_color_correction_matrix =
+      HasColorCorrectionMatrix(fd, info->crtc());
 
   ScopedDrmPropertyBlobPtr edid_blob(
       GetDrmPropertyBlob(fd, info->connector(), "EDID"));
 
   if (edid_blob) {
-    std::vector<uint8_t> edid(
+    params.edid.assign(
         static_cast<uint8_t*>(edid_blob->data),
         static_cast<uint8_t*>(edid_blob->data) + edid_blob->length);
 
-    GetDisplayIdFromEDID(edid, connector_index, &params.display_id,
+    GetDisplayIdFromEDID(params.edid, connector_index, &params.display_id,
                          &params.product_id);
 
-    ParseOutputDeviceData(edid, nullptr, nullptr, &params.display_name, nullptr,
-                          nullptr);
-    ParseOutputOverscanFlag(edid, &params.has_overscan);
+    ParseOutputDeviceData(params.edid, nullptr, nullptr, &params.display_name,
+                          nullptr, nullptr);
+    ParseOutputOverscanFlag(params.edid, &params.has_overscan);
   } else {
     VLOG(1) << "Failed to get EDID blob for connector "
             << info->connector()->connector_id;

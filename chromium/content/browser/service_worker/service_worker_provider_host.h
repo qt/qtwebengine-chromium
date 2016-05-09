@@ -51,8 +51,6 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     : public NON_EXPORTED_BASE(ServiceWorkerRegistration::Listener),
       public base::SupportsWeakPtr<ServiceWorkerProviderHost> {
  public:
-  using GetClientInfoCallback =
-      base::Callback<void(const ServiceWorkerClientInfo&)>;
   using GetRegistrationForReadyCallback =
       base::Callback<void(ServiceWorkerRegistration* reigstration)>;
 
@@ -133,9 +131,9 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Clears the associated registration and stop listening to it.
   void DisassociateRegistration();
 
-  // Returns false if the version is not in the expected STARTING in our
-  // process state. That would be indicative of a bad IPC message.
-  bool SetHostedVersionId(int64_t versions_id);
+  // Returns false if we have an active version or |version| is using  a
+  // different process.  That would be indicative of a bad IPC message.
+  bool SetHostedVersion(ServiceWorkerVersion* version);
 
   // Returns a handler for a request, the handler may return NULL if
   // the request doesn't require special handling.
@@ -174,20 +172,6 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       ServiceWorkerVersion* version,
       const base::string16& message,
       const std::vector<TransferredMessagePort>& sent_message_ports);
-
-  // Activates the WebContents associated with
-  // { render_process_id_, route_id_ }.
-  // Runs the |callback| with the updated ServiceWorkerClientInfo in parameter.
-  void Focus(const GetClientInfoCallback& callback);
-
-  // Asks the renderer to send back the document information.
-  void GetWindowClientInfo(const GetClientInfoCallback& callback) const;
-
-  // Same as above but has to be called from the UI thread.
-  // It is taking the process and frame ids in parameter because |this| is meant
-  // to live on the IO thread.
-  static ServiceWorkerClientInfo GetWindowClientInfoOnUI(int render_process_id,
-                                                         int render_frame_id);
 
   // Adds reference of this host's process to the |pattern|, the reference will
   // be removed in destructor.
@@ -264,12 +248,18 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
                            Update_ElongatedScript);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWriteToCacheJobTest,
                            Update_EmptyScript);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDispatcherHostTest,
+                           DispatchExtendableMessageEvent);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDispatcherHostTest,
+                           DispatchExtendableMessageEvent_Fail);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateBefore24Hours);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateAfter24Hours);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateForceBypassCache);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           ServiceWorkerDataRequestAnnotation);
 
   struct OneShotGetReadyCallback {
     GetRegistrationForReadyCallback callback;

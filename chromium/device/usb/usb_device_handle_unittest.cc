@@ -13,6 +13,7 @@
 #include "device/test/usb_test_gadget.h"
 #include "device/usb/usb_device.h"
 #include "device/usb/usb_device_handle.h"
+#include "net/base/io_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace device {
@@ -131,6 +132,16 @@ TEST_F(UsbDeviceHandleTest, InterruptTransfer) {
   handle->ClaimInterface(0, claim_interface.callback());
   ASSERT_TRUE(claim_interface.WaitForResult());
 
+  const UsbInterfaceDescriptor* interface =
+      handle->FindInterfaceByEndpoint(0x81);
+  EXPECT_TRUE(interface);
+  EXPECT_EQ(0, interface->interface_number);
+  interface = handle->FindInterfaceByEndpoint(0x01);
+  EXPECT_TRUE(interface);
+  EXPECT_EQ(0, interface->interface_number);
+  EXPECT_FALSE(handle->FindInterfaceByEndpoint(0x82));
+  EXPECT_FALSE(handle->FindInterfaceByEndpoint(0x02));
+
   scoped_refptr<net::IOBufferWithSize> in_buffer(new net::IOBufferWithSize(64));
   TestCompletionCallback in_completion;
   handle->GenericTransfer(USB_DIRECTION_INBOUND, 0x81, in_buffer.get(),
@@ -163,6 +174,10 @@ TEST_F(UsbDeviceHandleTest, InterruptTransfer) {
         << "Mismatch at index " << i << ".";
   }
 
+  TestResultCallback release_interface;
+  handle->ReleaseInterface(0, release_interface.callback());
+  ASSERT_TRUE(release_interface.WaitForResult());
+
   handle->Close();
 }
 
@@ -184,6 +199,16 @@ TEST_F(UsbDeviceHandleTest, BulkTransfer) {
   TestResultCallback claim_interface;
   handle->ClaimInterface(1, claim_interface.callback());
   ASSERT_TRUE(claim_interface.WaitForResult());
+
+  EXPECT_FALSE(handle->FindInterfaceByEndpoint(0x81));
+  EXPECT_FALSE(handle->FindInterfaceByEndpoint(0x01));
+  const UsbInterfaceDescriptor* interface =
+      handle->FindInterfaceByEndpoint(0x82);
+  EXPECT_TRUE(interface);
+  EXPECT_EQ(1, interface->interface_number);
+  interface = handle->FindInterfaceByEndpoint(0x02);
+  EXPECT_TRUE(interface);
+  EXPECT_EQ(1, interface->interface_number);
 
   scoped_refptr<net::IOBufferWithSize> in_buffer(
       new net::IOBufferWithSize(512));
@@ -218,6 +243,10 @@ TEST_F(UsbDeviceHandleTest, BulkTransfer) {
         << "Mismatch at index " << i << ".";
   }
 
+  TestResultCallback release_interface;
+  handle->ReleaseInterface(1, release_interface.callback());
+  ASSERT_TRUE(release_interface.WaitForResult());
+
   handle->Close();
 }
 
@@ -243,6 +272,10 @@ TEST_F(UsbDeviceHandleTest, SetInterfaceAlternateSetting) {
   TestResultCallback set_interface;
   handle->SetInterfaceAlternateSetting(2, 1, set_interface.callback());
   ASSERT_TRUE(set_interface.WaitForResult());
+
+  TestResultCallback release_interface;
+  handle->ReleaseInterface(2, release_interface.callback());
+  ASSERT_TRUE(release_interface.WaitForResult());
 
   handle->Close();
 }

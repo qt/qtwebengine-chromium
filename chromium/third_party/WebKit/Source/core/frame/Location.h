@@ -49,41 +49,41 @@ class KURL;
 // in a RemoteFrame. Rather than making DOMWindowProperty support RemoteFrames and generating a lot
 // code churn, Location is implemented as a one-off with some custom lifetime management code. Namely,
 // it needs a manual call to reset() from DOMWindow::reset() to ensure it doesn't retain a stale Frame pointer.
-class CORE_EXPORT Location final : public RefCountedWillBeGarbageCollected<Location>, public ScriptWrappable {
+class CORE_EXPORT Location final : public GarbageCollected<Location>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<Location> create(Frame* frame)
+    static Location* create(Frame* frame)
     {
-        return adoptRefWillBeNoop(new Location(frame));
+        return new Location(frame);
     }
 
     Frame* frame() const { return m_frame.get(); }
     void reset() { m_frame = nullptr; }
 
-    void setHref(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setHref(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String href() const;
 
-    void assign(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
-    void replace(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
-    void reload(LocalDOMWindow* callingWindow);
+    void assign(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&, ExceptionState&);
+    void replace(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&, ExceptionState&);
+    void reload(LocalDOMWindow* currentWindow);
 
-    void setProtocol(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&, ExceptionState&);
+    void setProtocol(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&, ExceptionState&);
     String protocol() const;
-    void setHost(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setHost(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String host() const;
-    void setHostname(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setHostname(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String hostname() const;
-    void setPort(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setPort(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String port() const;
-    void setPathname(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setPathname(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String pathname() const;
-    void setSearch(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setSearch(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String search() const;
-    void setHash(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void setHash(LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, const String&);
     String hash() const;
     String origin() const;
 
-    PassRefPtrWillBeRawPtr<DOMStringList> ancestorOrigins() const;
+    DOMStringList* ancestorOrigins() const;
 
     // Just return the |this| object the way the normal valueOf function on the Object prototype would.
     // The valueOf function is only added to make sure that it cannot be overwritten on location
@@ -96,11 +96,11 @@ private:
     explicit Location(Frame*);
 
     enum class SetLocation { Normal, ReplaceThisFrame };
-    void setLocation(const String&, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, SetLocation = SetLocation::Normal);
+    void setLocation(const String&, LocalDOMWindow* currentWindow, LocalDOMWindow* enteredWindow, ExceptionState* = nullptr, SetLocation = SetLocation::Normal);
 
     const KURL& url() const;
 
-    RawPtrWillBeMember<Frame> m_frame;
+    Member<Frame> m_frame;
 };
 
 } // namespace blink

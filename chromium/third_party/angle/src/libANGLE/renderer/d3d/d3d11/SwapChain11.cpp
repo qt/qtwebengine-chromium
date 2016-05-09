@@ -31,6 +31,17 @@
 namespace rx
 {
 
+namespace
+{
+bool NeedsOffscreenTexture(Renderer11 *renderer, NativeWindow nativeWindow, EGLint orientation)
+{
+    // We don't need an offscreen texture if either orientation = INVERT_Y,
+    // or present path fast is enabled and we're not rendering onto an offscreen surface.
+    return orientation != EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE &&
+           !(renderer->presentPathFastEnabled() && nativeWindow.getNativeWindow());
+}
+}  // anonymous namespace
+
 SwapChain11::SwapChain11(Renderer11 *renderer,
                          NativeWindow nativeWindow,
                          HANDLE shareHandle,
@@ -52,7 +63,7 @@ SwapChain11::SwapChain11(Renderer11 *renderer,
       mBackBufferTexture(nullptr),
       mBackBufferRTView(nullptr),
       mBackBufferSRView(nullptr),
-      mNeedsOffscreenTexture(orientation != EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE),
+      mNeedsOffscreenTexture(NeedsOffscreenTexture(renderer, nativeWindow, orientation)),
       mOffscreenTexture(nullptr),
       mOffscreenRTView(nullptr),
       mOffscreenSRView(nullptr),
@@ -68,6 +79,8 @@ SwapChain11::SwapChain11(Renderer11 *renderer,
       mColorRenderTarget(this, renderer, false),
       mDepthStencilRenderTarget(this, renderer, true)
 {
+    // Sanity check that if present path fast is active then we're using the default orientation
+    ASSERT(!mRenderer->presentPathFastEnabled() || orientation == 0);
 }
 
 SwapChain11::~SwapChain11()
@@ -195,9 +208,8 @@ EGLint SwapChain11::resetOffscreenColorBuffer(int backbufferWidth, int backbuffe
 
         if (offscreenTextureDesc.Width != (UINT)backbufferWidth ||
             offscreenTextureDesc.Height != (UINT)backbufferHeight ||
-            offscreenTextureDesc.Format != backbufferFormatInfo.texFormat ||
-            offscreenTextureDesc.MipLevels != 1 ||
-            offscreenTextureDesc.ArraySize != 1)
+            offscreenTextureDesc.Format != backbufferFormatInfo.formatSet->texFormat ||
+            offscreenTextureDesc.MipLevels != 1 || offscreenTextureDesc.ArraySize != 1)
         {
             ERR("Invalid texture parameters in the shared offscreen texture pbuffer");
             release();
@@ -211,7 +223,7 @@ EGLint SwapChain11::resetOffscreenColorBuffer(int backbufferWidth, int backbuffe
         D3D11_TEXTURE2D_DESC offscreenTextureDesc = {0};
         offscreenTextureDesc.Width = backbufferWidth;
         offscreenTextureDesc.Height = backbufferHeight;
-        offscreenTextureDesc.Format = backbufferFormatInfo.texFormat;
+        offscreenTextureDesc.Format               = backbufferFormatInfo.formatSet->texFormat;
         offscreenTextureDesc.MipLevels = 1;
         offscreenTextureDesc.ArraySize = 1;
         offscreenTextureDesc.SampleDesc.Count = 1;
@@ -263,11 +275,13 @@ EGLint SwapChain11::resetOffscreenColorBuffer(int backbufferWidth, int backbuffe
                 }
             }
         }
-        mKeyedMutex = d3d11::DynamicCastComObject<IDXGIKeyedMutex>(mOffscreenTexture);
     }
 
+    // This may return null if the original texture was created without a keyed mutex.
+    mKeyedMutex = d3d11::DynamicCastComObject<IDXGIKeyedMutex>(mOffscreenTexture);
+
     D3D11_RENDER_TARGET_VIEW_DESC offscreenRTVDesc;
-    offscreenRTVDesc.Format = backbufferFormatInfo.rtvFormat;
+    offscreenRTVDesc.Format             = backbufferFormatInfo.formatSet->rtvFormat;
     offscreenRTVDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
     offscreenRTVDesc.Texture2D.MipSlice = 0;
 
@@ -276,7 +290,7 @@ EGLint SwapChain11::resetOffscreenColorBuffer(int backbufferWidth, int backbuffe
     d3d11::SetDebugName(mOffscreenRTView, "Offscreen back buffer render target");
 
     D3D11_SHADER_RESOURCE_VIEW_DESC offscreenSRVDesc;
-    offscreenSRVDesc.Format = backbufferFormatInfo.srvFormat;
+    offscreenSRVDesc.Format                    = backbufferFormatInfo.formatSet->srvFormat;
     offscreenSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     offscreenSRVDesc.Texture2D.MostDetailedMip = 0;
     offscreenSRVDesc.Texture2D.MipLevels = static_cast<UINT>(-1);
@@ -323,7 +337,7 @@ EGLint SwapChain11::resetOffscreenDepthBuffer(int backbufferWidth, int backbuffe
         D3D11_TEXTURE2D_DESC depthStencilTextureDesc;
         depthStencilTextureDesc.Width = backbufferWidth;
         depthStencilTextureDesc.Height = backbufferHeight;
-        depthStencilTextureDesc.Format = depthBufferFormatInfo.texFormat;
+        depthStencilTextureDesc.Format             = depthBufferFormatInfo.formatSet->texFormat;
         depthStencilTextureDesc.MipLevels = 1;
         depthStencilTextureDesc.ArraySize = 1;
         depthStencilTextureDesc.SampleDesc.Count = 1;
@@ -331,7 +345,7 @@ EGLint SwapChain11::resetOffscreenDepthBuffer(int backbufferWidth, int backbuffe
         depthStencilTextureDesc.Usage = D3D11_USAGE_DEFAULT;
         depthStencilTextureDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 
-        if (depthBufferFormatInfo.srvFormat != DXGI_FORMAT_UNKNOWN)
+        if (depthBufferFormatInfo.formatSet->srvFormat != DXGI_FORMAT_UNKNOWN)
         {
             depthStencilTextureDesc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
         }
@@ -359,7 +373,7 @@ EGLint SwapChain11::resetOffscreenDepthBuffer(int backbufferWidth, int backbuffe
         d3d11::SetDebugName(mDepthStencilTexture, "Offscreen depth stencil texture");
 
         D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilDesc;
-        depthStencilDesc.Format = depthBufferFormatInfo.dsvFormat;
+        depthStencilDesc.Format             = depthBufferFormatInfo.formatSet->dsvFormat;
         depthStencilDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
         depthStencilDesc.Flags = 0;
         depthStencilDesc.Texture2D.MipSlice = 0;
@@ -368,10 +382,10 @@ EGLint SwapChain11::resetOffscreenDepthBuffer(int backbufferWidth, int backbuffe
         ASSERT(SUCCEEDED(result));
         d3d11::SetDebugName(mDepthStencilDSView, "Offscreen depth stencil view");
 
-        if (depthBufferFormatInfo.srvFormat != DXGI_FORMAT_UNKNOWN)
+        if (depthBufferFormatInfo.formatSet->srvFormat != DXGI_FORMAT_UNKNOWN)
         {
             D3D11_SHADER_RESOURCE_VIEW_DESC depthStencilSRVDesc;
-            depthStencilSRVDesc.Format = depthBufferFormatInfo.srvFormat;
+            depthStencilSRVDesc.Format                    = depthBufferFormatInfo.formatSet->srvFormat;
             depthStencilSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             depthStencilSRVDesc.Texture2D.MostDetailedMip = 0;
             depthStencilSRVDesc.Texture2D.MipLevels = static_cast<UINT>(-1);
@@ -730,8 +744,10 @@ EGLint SwapChain11::copyOffscreenToBackbuffer(EGLint x, EGLint y, EGLint width, 
     deviceContext->PSSetShader(mPassThroughPS, NULL, 0);
     deviceContext->GSSetShader(NULL, NULL, 0);
 
+    auto stateManager = mRenderer->getStateManager();
+
     // Apply render targets
-    mRenderer->setOneTimeRenderTarget(mBackBufferRTView);
+    stateManager->setOneTimeRenderTarget(mBackBufferRTView, nullptr);
 
     // Set the viewport
     D3D11_VIEWPORT viewport;
@@ -744,7 +760,7 @@ EGLint SwapChain11::copyOffscreenToBackbuffer(EGLint x, EGLint y, EGLint width, 
     deviceContext->RSSetViewports(1, &viewport);
 
     // Apply textures
-    mRenderer->setShaderResource(gl::SAMPLER_PIXEL, 0, mOffscreenSRView);
+    stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, mOffscreenSRView);
     deviceContext->PSSetSamplers(0, 1, &mPassThroughSampler);
 
     // Draw
@@ -753,9 +769,8 @@ EGLint SwapChain11::copyOffscreenToBackbuffer(EGLint x, EGLint y, EGLint width, 
     // Rendering to the swapchain is now complete. Now we can call Present().
     // Before that, we perform any cleanup on the D3D device. We do this before Present() to make sure the
     // cleanup is caught under the current eglSwapBuffers() PIX/Graphics Diagnostics call rather than the next one.
-    mRenderer->setShaderResource(gl::SAMPLER_PIXEL, 0, NULL);
+    stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, NULL);
 
-    mRenderer->unapplyRenderTargets();
     mRenderer->markAllStateDirty();
 
     return EGL_SUCCESS;
@@ -801,14 +816,12 @@ EGLint SwapChain11::present(EGLint x, EGLint y, EGLint width, EGLint height)
 
     // Some swapping mechanisms such as DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL unbind the current render
     // target.  Mark it dirty.
-    mRenderer->markRenderTargetStateDirty();
+    mRenderer->getStateManager()->invalidateRenderTarget();
 
     if (result == DXGI_ERROR_DEVICE_REMOVED)
     {
-        ID3D11Device *device  = mRenderer->getDevice();
-        HRESULT removedReason = device->GetDeviceRemovedReason();
-        UNUSED_TRACE_VARIABLE(removedReason);
-        ERR("Present failed: the D3D11 device was removed: 0x%08X", removedReason);
+        ERR("Present failed: the D3D11 device was removed: 0x%08X",
+            mRenderer->getDevice()->GetDeviceRemovedReason());
         return EGL_CONTEXT_LOST;
     }
     else if (result == DXGI_ERROR_DEVICE_RESET)

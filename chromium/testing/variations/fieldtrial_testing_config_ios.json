@@ -10,6 +10,9 @@
             "params": {
                 "limit": "3"
             }
+        },
+        {
+            "group_name": "Enabled"
         }
     ],
     "ChromotingQUIC": [
@@ -25,12 +28,9 @@
             "group_name": "Enabled"
         }
     ],
-    "DataReductionProxyConfigService": [
+    "PageRevisitInstrumentation": [
         {
-            "group_name": "Enabled",
-            "params": {
-                "minimum_refresh_interval_on_success_msec": "21600000"
-            }
+            "group_name": "Enabled"
         }
     ],
     "PasswordBranding": [
@@ -40,20 +40,12 @@
     ],
     "QUIC": [
         {
-            "group_name": "Enabled",
-            "params": {
-                "alternate_protocol_probability_threshold": "0.001"
-            }
+            "group_name": "Enabled"
         }
     ],
     "SdchPersistence": [
         {
             "group_name": "Enabled"
-        }
-    ],
-    "SpdyEnableDependencies": [
-        {
-            "group_name": "Enable"
         }
     ],
     "SyncHttpContentCompression": [

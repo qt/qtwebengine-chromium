@@ -212,6 +212,8 @@ class SocketDataProvider {
   virtual bool AllReadDataConsumed() const = 0;
   virtual bool AllWriteDataConsumed() const = 0;
 
+  virtual void OnEnableTCPFastOpenIfSupported();
+
   // Returns true if the request should be considered idle, for the purposes of
   // IsConnectedAndIdle.
   virtual bool IsIdle() const;
@@ -347,6 +349,7 @@ class StaticSocketDataProvider : public SocketDataProvider {
 // to Connect().
 struct SSLSocketDataProvider {
   SSLSocketDataProvider(IoMode mode, int result);
+  SSLSocketDataProvider(const SSLSocketDataProvider& other);
   ~SSLSocketDataProvider();
 
   void SetNextProto(NextProto proto);
@@ -361,6 +364,8 @@ struct SSLSocketDataProvider {
   bool channel_id_sent;
   ChannelIDService* channel_id_service;
   int connection_status;
+  bool token_binding_negotiated;
+  TokenBindingParam token_binding_key_param;
 };
 
 // Uses the sequence_number field in the mock reads and writes to
@@ -390,6 +395,7 @@ class SequencedSocketData : public SocketDataProvider {
   MockWriteResult OnWrite(const std::string& data) override;
   bool AllReadDataConsumed() const override;
   bool AllWriteDataConsumed() const override;
+  void OnEnableTCPFastOpenIfSupported() override;
   bool IsIdle() const override;
 
   // An ASYNC read event with a return value of ERR_IO_PENDING will cause the
@@ -406,6 +412,8 @@ class SequencedSocketData : public SocketDataProvider {
   // occur synchronously with the call if it can.
   void Resume();
   void RunUntilPaused();
+
+  bool IsUsingTCPFastOpen() const;
 
   // When true, IsConnectedAndIdle() will return false if the next event in the
   // sequence is a synchronous.  Otherwise, the socket claims to be idle as
@@ -442,6 +450,7 @@ class SequencedSocketData : public SocketDataProvider {
   IoState write_state_;
 
   bool busy_before_sync_reads_;
+  bool is_using_tcp_fast_open_;
 
   // Used by RunUntilPaused.  NULL at all other times.
   scoped_ptr<base::RunLoop> run_until_paused_run_loop_;
@@ -535,9 +544,6 @@ class MockClientSocketFactory : public ClientSocketFactory {
 
 class MockClientSocket : public SSLClientSocket {
  public:
-  // Value returned by GetTLSUniqueChannelBinding().
-  static const char kTlsUnique[];
-
   // The BoundNetLog is needed to test LoadTimingInfo, which uses NetLog IDs as
   // unique socket IDs.
   explicit MockClientSocket(const BoundNetLog& net_log);
@@ -574,9 +580,11 @@ class MockClientSocket : public SSLClientSocket {
                            const base::StringPiece& context,
                            unsigned char* out,
                            unsigned int outlen) override;
-  int GetTLSUniqueChannelBinding(std::string* out) override;
   NextProtoStatus GetNextProto(std::string* proto) const override;
   ChannelIDService* GetChannelIDService() const override;
+  Error GetSignedEKMForTokenBinding(crypto::ECPrivateKey* key,
+                                    std::vector<uint8_t>* out) override;
+  crypto::ECPrivateKey* GetChannelIDKey() const override;
   SSLFailureState GetSSLFailureState() const override;
 
  protected:
@@ -622,7 +630,7 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   bool IsConnectedAndIdle() const override;
   int GetPeerAddress(IPEndPoint* address) const override;
   bool WasEverUsed() const override;
-  bool UsingTCPFastOpen() const override;
+  void EnableTCPFastOpenIfSupported() override;
   bool WasNpnNegotiated() const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
@@ -685,12 +693,13 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   bool IsConnected() const override;
   bool IsConnectedAndIdle() const override;
   bool WasEverUsed() const override;
-  bool UsingTCPFastOpen() const override;
   int GetPeerAddress(IPEndPoint* address) const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // SSLClientSocket implementation.
   void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
+  Error GetSignedEKMForTokenBinding(crypto::ECPrivateKey* key,
+                                    std::vector<uint8_t>* out) override;
   NextProtoStatus GetNextProto(std::string* proto) const override;
 
   // This MockSocket does not implement the manual async IO feature.
@@ -737,10 +746,11 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   const BoundNetLog& NetLog() const override;
 
   // DatagramClientSocket implementation.
-  int BindToNetwork(NetworkChangeNotifier::NetworkHandle network) override;
-  int BindToDefaultNetwork() override;
-  NetworkChangeNotifier::NetworkHandle GetBoundNetwork() const override;
   int Connect(const IPEndPoint& address) override;
+  int ConnectUsingNetwork(NetworkChangeNotifier::NetworkHandle network,
+                          const IPEndPoint& address) override;
+  int ConnectUsingDefaultNetwork(const IPEndPoint& address) override;
+  NetworkChangeNotifier::NetworkHandle GetBoundNetwork() const override;
 
   // AsyncSocket implementation.
   void OnReadComplete(const MockRead& data) override;
@@ -824,17 +834,15 @@ class ClientSocketPoolTest {
       PoolType* socket_pool,
       const std::string& group_name,
       RequestPriority priority,
+      ClientSocketPool::RespectLimits respect_limits,
       const scoped_refptr<typename PoolType::SocketParams>& socket_params) {
     DCHECK(socket_pool);
     TestSocketRequest* request(
         new TestSocketRequest(&request_order_, &completion_count_));
     requests_.push_back(make_scoped_ptr(request));
-    int rv = request->handle()->Init(group_name,
-                                     socket_params,
-                                     priority,
-                                     request->callback(),
-                                     socket_pool,
-                                     BoundNetLog());
+    int rv = request->handle()->Init(group_name, socket_params, priority,
+                                     respect_limits, request->callback(),
+                                     socket_pool, BoundNetLog());
     if (rv != ERR_IO_PENDING)
       request_order_.push_back(request);
     return rv;
@@ -918,6 +926,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
   int RequestSocket(const std::string& group_name,
                     const void* socket_params,
                     RequestPriority priority,
+                    RespectLimits respect_limits,
                     ClientSocketHandle* handle,
                     const CompletionCallback& callback,
                     const BoundNetLog& net_log) override;
@@ -950,6 +959,7 @@ class MockSOCKSClientSocketPool : public SOCKSClientSocketPool {
   int RequestSocket(const std::string& group_name,
                     const void* socket_params,
                     RequestPriority priority,
+                    RespectLimits respect_limits,
                     ClientSocketHandle* handle,
                     const CompletionCallback& callback,
                     const BoundNetLog& net_log) override;

@@ -9,6 +9,7 @@
  */
 
 #include <list>
+#include <memory>
 
 #include "webrtc/base/checks.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -16,7 +17,7 @@
 #include "webrtc/modules/pacing/packet_router.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -29,7 +30,7 @@ class PacketRouterTest : public ::testing::Test {
  public:
   PacketRouterTest() : packet_router_(new PacketRouter()) {}
  protected:
-  const rtc::scoped_ptr<PacketRouter> packet_router_;
+  const std::unique_ptr<PacketRouter> packet_router_;
 };
 
 TEST_F(PacketRouterTest, TimeToSendPacket) {
@@ -157,6 +158,23 @@ TEST_F(PacketRouterTest, TimeToSendPadding) {
   packet_router_->RemoveRtpModule(&rtp_2);
 }
 
+TEST_F(PacketRouterTest, SenderOnlyFunctionsRespectSendingMedia) {
+  MockRtpRtcp rtp;
+  packet_router_->AddRtpModule(&rtp);
+  static const uint16_t kSsrc = 1234;
+  EXPECT_CALL(rtp, SSRC()).WillRepeatedly(Return(kSsrc));
+  EXPECT_CALL(rtp, SendingMedia()).WillRepeatedly(Return(false));
+
+  // Verify that TimeToSendPacket does not end up in a receiver.
+  EXPECT_CALL(rtp, TimeToSendPacket(_, _, _, _)).Times(0);
+  EXPECT_TRUE(packet_router_->TimeToSendPacket(kSsrc, 1, 1, false));
+  // Verify that TimeToSendPadding does not end up in a receiver.
+  EXPECT_CALL(rtp, TimeToSendPadding(_)).Times(0);
+  EXPECT_EQ(0u, packet_router_->TimeToSendPadding(200));
+
+  packet_router_->RemoveRtpModule(&rtp);
+}
+
 TEST_F(PacketRouterTest, AllocateSequenceNumbers) {
   const uint16_t kStartSeq = 0xFFF0;
   const size_t kNumPackets = 32;
@@ -168,5 +186,20 @@ TEST_F(PacketRouterTest, AllocateSequenceNumbers) {
     uint32_t expected_unwrapped_seq = static_cast<uint32_t>(kStartSeq) + i;
     EXPECT_EQ(static_cast<uint16_t>(expected_unwrapped_seq & 0xFFFF), seq);
   }
+}
+
+TEST_F(PacketRouterTest, SendFeedback) {
+  MockRtpRtcp rtp_1;
+  MockRtpRtcp rtp_2;
+  packet_router_->AddRtpModule(&rtp_1);
+  packet_router_->AddRtpModule(&rtp_2);
+
+  rtcp::TransportFeedback feedback;
+  EXPECT_CALL(rtp_1, SendFeedbackPacket(_)).Times(1);
+  packet_router_->SendFeedback(&feedback);
+  packet_router_->RemoveRtpModule(&rtp_1);
+  EXPECT_CALL(rtp_2, SendFeedbackPacket(_)).Times(1);
+  packet_router_->SendFeedback(&feedback);
+  packet_router_->RemoveRtpModule(&rtp_2);
 }
 }  // namespace webrtc

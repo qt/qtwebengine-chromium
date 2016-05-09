@@ -140,7 +140,7 @@ class EndToEndFrameChecker
       : decoder_(), count_frames_checked_(0) {
     bool decoder_init_result;
     decoder_.Initialize(
-        config, false, media::SetCdmReadyCB(),
+        config, false, nullptr,
         base::Bind(&SaveDecoderInitResult, &decoder_init_result),
         base::Bind(&EndToEndFrameChecker::CompareFrameWithExpected,
                    base::Unretained(this)));
@@ -167,9 +167,7 @@ class EndToEndFrameChecker
     ++count_frames_checked_;
   }
 
-  void DecodeDone(VideoDecoder::Status status) {
-    EXPECT_EQ(VideoDecoder::kOk, status);
-  }
+  void DecodeDone(DecodeStatus status) { EXPECT_EQ(DecodeStatus::OK, status); }
 
   int count_frames_checked() const { return count_frames_checked_; }
 
@@ -314,7 +312,7 @@ TEST_F(H264VideoToolboxEncoderTest, CheckFramesAreDecodable) {
   VideoDecoderConfig config(kCodecH264, H264PROFILE_MAIN, frame_->format(),
                             COLOR_SPACE_UNSPECIFIED, frame_->coded_size(),
                             frame_->visible_rect(), frame_->natural_size(),
-                            EmptyExtraData(), false);
+                            EmptyExtraData(), Unencrypted());
   scoped_refptr<EndToEndFrameChecker> checker(new EndToEndFrameChecker(config));
 
   VideoEncoder::FrameEncodedCallback cb =

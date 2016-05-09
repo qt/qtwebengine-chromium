@@ -44,11 +44,9 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/ColorChooser.h"
-#include "core/inspector/ConsoleMessage.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/ChromeClient.h"
-#include "platform/JSONValues.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/Color.h"
@@ -78,9 +76,9 @@ static bool isValidColorString(const String& value)
     return color.setFromString(value) && !color.hasAlpha();
 }
 
-PassRefPtrWillBeRawPtr<InputType> ColorInputType::create(HTMLInputElement& element)
+InputType* ColorInputType::create(HTMLInputElement& element)
 {
-    return adoptRefWillBeNoop(new ColorInputType(element));
+    return new ColorInputType(element);
 }
 
 ColorInputType::~ColorInputType()
@@ -135,12 +133,12 @@ void ColorInputType::createShadowSubtree()
     ASSERT(element().shadow());
 
     Document& document = element().document();
-    RefPtrWillBeRawPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
-    wrapperElement->setShadowPseudoId(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
-    RefPtrWillBeRawPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
-    colorSwatch->setShadowPseudoId(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
-    wrapperElement->appendChild(colorSwatch.release());
-    element().userAgentShadowRoot()->appendChild(wrapperElement.release());
+    HTMLDivElement* wrapperElement = HTMLDivElement::create(document);
+    wrapperElement->setShadowPseudoId(AtomicString("-webkit-color-swatch-wrapper"));
+    HTMLDivElement* colorSwatch = HTMLDivElement::create(document);
+    colorSwatch->setShadowPseudoId(AtomicString("-webkit-color-swatch"));
+    wrapperElement->appendChild(colorSwatch);
+    element().userAgentShadowRoot()->appendChild(wrapperElement);
 
     element().updateView();
 }
@@ -162,7 +160,7 @@ void ColorInputType::handleDOMActivateEvent(Event* event)
     if (element().isDisabledFormControl() || !element().layoutObject())
         return;
 
-    if (!UserGestureIndicator::processingUserGesture())
+    if (!UserGestureIndicator::utilizeUserGesture())
         return;
 
     ChromeClient* chromeClient = this->chromeClient();
@@ -189,10 +187,8 @@ bool ColorInputType::typeMismatchFor(const String& value) const
 
 void ColorInputType::warnIfValueIsInvalid(const String& value) const
 {
-    if (!equalIgnoringCase(value, element().sanitizeValue(value))) {
-        element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
-            String::format("The specified value %s does not conform to the required format.  The format is \"#rrggbb\" where rr, gg, bb are two-digit hexadecimal numbers.", JSONValue::quoteString(value).utf8().data())));
-    }
+    if (!equalIgnoringCase(value, element().sanitizeValue(value)))
+        addWarningToConsole("The specified value %s does not conform to the required format.  The format is \"#rrggbb\" where rr, gg, bb are two-digit hexadecimal numbers.", value);
 }
 
 void ColorInputType::valueAttributeChanged()
@@ -266,7 +262,7 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
     Vector<ColorSuggestion> suggestions;
     HTMLDataListElement* dataList = element().dataList();
     if (dataList) {
-        RefPtrWillBeRawPtr<HTMLDataListOptionsCollection> options = dataList->options();
+        HTMLDataListOptionsCollection* options = dataList->options();
         for (unsigned i = 0; HTMLOptionElement* option = options->item(i); i++) {
             if (!element().isValidValue(option->value()))
                 continue;

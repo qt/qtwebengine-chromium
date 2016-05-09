@@ -28,6 +28,15 @@ class SyncPointManagerTest : public testing::Test {
   // Simple static function which can be used to test callbacks.
   static void SetIntegerFunction(int* test, int value) { *test = value; }
 
+  // Simple static function used for testing OnWaitCallback.
+  static void OnWait(CommandBufferNamespace* namespace_id_ptr,
+                     CommandBufferId* client_id_ptr,
+                     CommandBufferNamespace namespace_id,
+                     CommandBufferId client_id) {
+    *namespace_id_ptr = namespace_id;
+    *client_id_ptr = client_id;
+  }
+
   scoped_ptr<SyncPointManager> sync_point_manager_;
 };
 
@@ -38,7 +47,7 @@ struct SyncPointStream {
 
   SyncPointStream(SyncPointManager* sync_point_manager,
                   CommandBufferNamespace namespace_id,
-                  uint64_t command_buffer_id)
+                  CommandBufferId command_buffer_id)
       : order_data(SyncPointOrderData::Create()),
         client(sync_point_manager->CreateSyncPointClient(order_data,
                                                          namespace_id,
@@ -103,7 +112,7 @@ TEST_F(SyncPointManagerTest, BasicSyncPointOrderDataTest) {
 TEST_F(SyncPointManagerTest, SyncPointClientRegistration) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId = 0x123;
+  const CommandBufferId kBufferId = CommandBufferId::FromUnsafeValue(0x123);
 
   scoped_refptr<SyncPointClientState> empty_state =
       sync_point_manager_->GetSyncPointClientState(kNamespaceId, kBufferId);
@@ -124,7 +133,7 @@ TEST_F(SyncPointManagerTest, SyncPointClientRegistration) {
 TEST_F(SyncPointManagerTest, BasicFenceSyncRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId = 0x123;
+  const CommandBufferId kBufferId = CommandBufferId::FromUnsafeValue(0x123);
 
   scoped_refptr<SyncPointOrderData> order_data = SyncPointOrderData::Create();
   scoped_ptr<SyncPointClient> client =
@@ -148,8 +157,8 @@ TEST_F(SyncPointManagerTest, BasicFenceSyncRelease) {
 TEST_F(SyncPointManagerTest, MultipleClientsPerOrderData) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   scoped_refptr<SyncPointOrderData> order_data = SyncPointOrderData::Create();
   scoped_ptr<SyncPointClient> client1 =
@@ -175,8 +184,8 @@ TEST_F(SyncPointManagerTest, MultipleClientsPerOrderData) {
 TEST_F(SyncPointManagerTest, BasicFenceSyncWaitRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -202,8 +211,8 @@ TEST_F(SyncPointManagerTest, BasicFenceSyncWaitRelease) {
 TEST_F(SyncPointManagerTest, WaitOnSelfFails) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -226,8 +235,8 @@ TEST_F(SyncPointManagerTest, WaitOnSelfFails) {
 TEST_F(SyncPointManagerTest, OutOfOrderRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -250,8 +259,8 @@ TEST_F(SyncPointManagerTest, OutOfOrderRelease) {
 TEST_F(SyncPointManagerTest, HigherOrderNumberRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -279,8 +288,8 @@ TEST_F(SyncPointManagerTest, HigherOrderNumberRelease) {
 TEST_F(SyncPointManagerTest, DestroyedClientRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -306,8 +315,8 @@ TEST_F(SyncPointManagerTest, DestroyedClientRelease) {
 TEST_F(SyncPointManagerTest, NonExistentRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -339,8 +348,8 @@ TEST_F(SyncPointManagerTest, NonExistentRelease) {
 TEST_F(SyncPointManagerTest, NonExistentRelease2) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -383,8 +392,8 @@ TEST_F(SyncPointManagerTest, NonExistentRelease2) {
 TEST_F(SyncPointManagerTest, NonExistentOrderNumRelease) {
   const CommandBufferNamespace kNamespaceId =
       gpu::CommandBufferNamespace::GPU_IO;
-  const uint64_t kBufferId1 = 0x123;
-  const uint64_t kBufferId2 = 0x234;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
 
   SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
                                  kBufferId1);
@@ -427,6 +436,57 @@ TEST_F(SyncPointManagerTest, NonExistentOrderNumRelease) {
   release_stream.BeginProcessing();
   ASSERT_EQ(4u, release_stream.order_data->current_order_num());
   EXPECT_TRUE(release_stream.client->client_state()->IsFenceSyncReleased(1));
+  EXPECT_EQ(123, test_num);
+}
+
+TEST_F(SyncPointManagerTest, OnWaitCallbackTest) {
+  const CommandBufferNamespace kNamespaceId =
+      gpu::CommandBufferNamespace::GPU_IO;
+  const CommandBufferId kBufferId1 = CommandBufferId::FromUnsafeValue(0x123);
+  const CommandBufferId kBufferId2 = CommandBufferId::FromUnsafeValue(0x234);
+
+  SyncPointStream release_stream(sync_point_manager_.get(), kNamespaceId,
+                                 kBufferId1);
+  SyncPointStream wait_stream(sync_point_manager_.get(), kNamespaceId,
+                              kBufferId2);
+
+  CommandBufferNamespace namespace_id = CommandBufferNamespace::INVALID;
+  CommandBufferId client_id;
+  release_stream.client->SetOnWaitCallback(
+      base::Bind(&SyncPointManagerTest::OnWait, &namespace_id, &client_id));
+
+  release_stream.AllocateOrderNum(sync_point_manager_.get());
+  wait_stream.AllocateOrderNum(sync_point_manager_.get());
+  release_stream.AllocateOrderNum(sync_point_manager_.get());
+
+  wait_stream.BeginProcessing();
+  int test_num = 10;
+  bool valid_wait = wait_stream.client->Wait(
+      release_stream.client->client_state().get(), 1,
+      base::Bind(&SyncPointManagerTest::SetIntegerFunction, &test_num, 123));
+  EXPECT_TRUE(valid_wait);
+  EXPECT_EQ(10, test_num);
+  EXPECT_EQ(kNamespaceId, namespace_id);
+  EXPECT_EQ(kBufferId2, client_id);
+
+  release_stream.BeginProcessing();
+  release_stream.client->ReleaseFenceSync(1);
+  EXPECT_EQ(123, test_num);
+
+  wait_stream.EndProcessing();
+
+  namespace_id = CommandBufferNamespace::INVALID;
+  client_id = CommandBufferId();
+  test_num = 10;
+  valid_wait = wait_stream.client->WaitOutOfOrder(
+      release_stream.client->client_state().get(), 2,
+      base::Bind(&SyncPointManagerTest::SetIntegerFunction, &test_num, 123));
+  EXPECT_TRUE(valid_wait);
+  EXPECT_EQ(10, test_num);
+  EXPECT_EQ(kNamespaceId, namespace_id);
+  EXPECT_EQ(kBufferId2, client_id);
+
+  release_stream.client->ReleaseFenceSync(2);
   EXPECT_EQ(123, test_num);
 }
 

@@ -6,9 +6,12 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/macros.h"
 #include "components/mus/public/cpp/property_type_converters.h"
 #include "components/mus/public/cpp/window.h"
+#include "components/mus/public/cpp/window_manager_delegate.h"
 #include "components/mus/public/cpp/window_property.h"
 #include "components/mus/public/interfaces/window_manager.mojom.h"
 #include "components/mus/public/interfaces/window_tree_host.mojom.h"
@@ -22,6 +25,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/compositor/layer.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/views/mus/native_widget_mus.h"
 #include "ui/views/widget/widget.h"
 
@@ -88,12 +92,10 @@ class ContentWindowLayoutManager : public aura::LayoutManager {
 class WmNativeWidgetMus : public views::NativeWidgetMus {
  public:
   WmNativeWidgetMus(views::internal::NativeWidgetDelegate* delegate,
-                    mojo::Shell* shell,
+                    mojo::Connector* connector,
                     mus::Window* window)
-      : NativeWidgetMus(delegate,
-                        shell,
-                        window,
-                        mus::mojom::SURFACE_TYPE_UNDERLAY) {}
+      : NativeWidgetMus(delegate, connector, window,
+                        mus::mojom::SurfaceType::UNDERLAY) {}
   ~WmNativeWidgetMus() override {
   }
 
@@ -125,6 +127,14 @@ class WmNativeWidgetMus : public views::NativeWidgetMus {
   void CenterWindow(const gfx::Size& size) override {
     // Do nothing. The client controls the size, not us.
   }
+  bool SetWindowTitle(const base::string16& title) override {
+    // Do nothing. The client controls the window title, not us.
+    return false;
+  }
+  void SetWindowIcons(const gfx::ImageSkia& window_icon,
+                      const gfx::ImageSkia& app_icon) override {
+    // Do nothing. The client controls window icons, not us.
+  }
   void UpdateClientArea() override {
     // This pushes the client area to the WS. We don't want to do that as
     // the client area should come from the client, not us.
@@ -132,9 +142,9 @@ class WmNativeWidgetMus : public views::NativeWidgetMus {
 
  private:
   // The shadow, may be null.
-  scoped_ptr<Shadow> shadow_;
+  std::unique_ptr<Shadow> shadow_;
 
-  scoped_ptr<MoveEventHandler> move_event_handler_;
+  std::unique_ptr<MoveEventHandler> move_event_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(WmNativeWidgetMus);
 };
@@ -165,29 +175,12 @@ class ClientViewMus : public views::ClientView {
 
 }  // namespace
 
-NonClientFrameController::NonClientFrameController(
-    mojo::Shell* shell,
+// static
+void NonClientFrameController::Create(
+    mojo::Connector* connector,
     mus::Window* window,
-    mus::mojom::WindowTreeHost* window_tree_host)
-    : widget_(new views::Widget),
-      window_(window),
-      mus_window_tree_host_(window_tree_host) {
-  window_->AddObserver(this);
-
-  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
-  // We initiate focus at the mus level, not at the views level.
-  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
-  params.delegate = this;
-  params.native_widget = new WmNativeWidgetMus(widget_, shell, window);
-  widget_->Init(params);
-  widget_->ShowInactive();
-
-  const int shadow_inset =
-      Shadow::GetInteriorInsetForStyle(Shadow::STYLE_ACTIVE);
-  mus_window_tree_host_->SetUnderlaySurfaceOffsetAndExtendedHitArea(
-      window->id(), shadow_inset, shadow_inset,
-      mojo::Insets::From(
-          FrameBorderHitTestController::GetResizeOutsideBoundsSize()));
+    mus::WindowManagerClient* window_manager_client) {
+  new NonClientFrameController(connector, window, window_manager_client);
 }
 
 // static
@@ -198,6 +191,32 @@ gfx::Insets NonClientFrameController::GetPreferredClientAreaInsets() {
 // static
 int NonClientFrameController::GetMaxTitleBarButtonWidth() {
   return NonClientFrameViewMash::GetMaxTitleBarButtonWidth();
+}
+
+NonClientFrameController::NonClientFrameController(
+    mojo::Connector* connector,
+    mus::Window* window,
+    mus::WindowManagerClient* window_manager_client)
+    : widget_(new views::Widget), window_(window) {
+  window_->AddObserver(this);
+
+  // To simplify things this code creates a Widget. While a Widget is created
+  // we need to ensure we don't inadvertently change random properties of the
+  // underlying mus::Window. For example, showing the Widget shouldn't change
+  // the bounds of the mus::Window in anyway.
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  // We initiate focus at the mus level, not at the views level.
+  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
+  params.delegate = this;
+  params.native_widget = new WmNativeWidgetMus(widget_, connector, window);
+  widget_->Init(params);
+  widget_->ShowInactive();
+
+  const int shadow_inset =
+      Shadow::GetInteriorInsetForStyle(Shadow::STYLE_ACTIVE);
+  window_manager_client->SetUnderlaySurfaceOffsetAndExtendedHitArea(
+      window, gfx::Vector2d(shadow_inset, shadow_inset),
+      FrameBorderHitTestController::GetResizeOutsideBoundsSize());
 }
 
 NonClientFrameController::~NonClientFrameController() {
@@ -221,20 +240,20 @@ views::View* NonClientFrameController::GetContentsView() {
 
 bool NonClientFrameController::CanResize() const {
   return window_ &&
-         (GetResizeBehavior(window_) &
-          mus::mojom::RESIZE_BEHAVIOR_CAN_RESIZE) != 0;
+         (GetResizeBehavior(window_) & mus::mojom::kResizeBehaviorCanResize) !=
+             0;
 }
 
 bool NonClientFrameController::CanMaximize() const {
   return window_ &&
          (GetResizeBehavior(window_) &
-          mus::mojom::RESIZE_BEHAVIOR_CAN_MAXIMIZE) != 0;
+          mus::mojom::kResizeBehaviorCanMaximize) != 0;
 }
 
 bool NonClientFrameController::CanMinimize() const {
   return window_ &&
          (GetResizeBehavior(window_) &
-          mus::mojom::RESIZE_BEHAVIOR_CAN_MINIMIZE) != 0;
+          mus::mojom::kResizeBehaviorCanMinimize) != 0;
 }
 
 views::ClientView* NonClientFrameController::CreateClientView(

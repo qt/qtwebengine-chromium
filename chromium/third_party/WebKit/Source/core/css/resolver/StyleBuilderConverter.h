@@ -33,12 +33,14 @@
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/style/QuotesData.h"
 #include "core/style/ShadowList.h"
+#include "core/style/StyleMotionRotation.h"
 #include "core/style/StyleReflection.h"
 #include "core/style/StyleScrollSnapData.h"
 #include "core/style/TransformOrigin.h"
 #include "platform/LengthSize.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/text/TabSize.h"
+#include "platform/transforms/Rotation.h"
 #include "wtf/Allocator.h"
 
 namespace blink {
@@ -79,6 +81,7 @@ public:
     static TabSize convertLengthOrTabSpaces(StyleResolverState&, const CSSValue&);
     static Length convertLineHeight(StyleResolverState&, const CSSValue&);
     static float convertNumberOrPercentage(StyleResolverState&, const CSSValue&);
+    static StyleMotionRotation convertMotionRotation(StyleResolverState&, const CSSValue&);
     static LengthPoint convertPosition(StyleResolverState&, const CSSValue&);
     static float convertPerspective(StyleResolverState&, const CSSValue&);
     static Length convertQuirkyLength(StyleResolverState&, const CSSValue&);
@@ -86,7 +89,7 @@ public:
     static LengthSize convertRadius(StyleResolverState&, const CSSValue&);
     static EPaintOrder convertPaintOrder(StyleResolverState&, const CSSValue&);
     static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, const CSSValue&);
-    static PassRefPtrWillBeRawPtr<ShapeValue> convertShapeValue(StyleResolverState&, const CSSValue&);
+    static ShapeValue* convertShapeValue(StyleResolverState&, const CSSValue&);
     static float convertSpacing(StyleResolverState&, const CSSValue&);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, const CSSValue&);
     static PassRefPtr<SVGDashArray> convertStrokeDasharray(StyleResolverState&, const CSSValue&);
@@ -94,7 +97,9 @@ public:
     static float convertTextStrokeWidth(StyleResolverState&, const CSSValue&);
     static TransformOrigin convertTransformOrigin(StyleResolverState&, const CSSValue&);
 
-    static void convertGridTrackList(const CSSValue&, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&, StyleResolverState&);
+    static void convertGridTrackList(const CSSValue&, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&,
+        Vector<GridTrackSize>& autoRepeatTrackSizes, NamedGridLinesMap&, OrderedNamedGridLines&,
+        size_t& autoRepeatInsertionPoint, AutoRepeatType&, StyleResolverState&);
     static void createImplicitNamedGridLinesFromGridArea(const NamedGridAreaMap&, NamedGridLinesMap&, GridTrackSizingDirection);
     static void convertOrderedNamedGridLinesMapToNamedGridLinesMap(const OrderedNamedGridLines&, NamedGridLinesMap&);
 
@@ -105,7 +110,10 @@ public:
     static PassRefPtr<RotateTransformOperation> convertRotate(StyleResolverState&, const CSSValue&);
     static PassRefPtr<ScaleTransformOperation> convertScale(StyleResolverState&, const CSSValue&);
     static RespectImageOrientationEnum convertImageOrientation(StyleResolverState&, const CSSValue&);
-    static PassRefPtr<StylePath> convertPath(StyleResolverState&, CSSValue&);
+    static PassRefPtr<StylePath> convertPathOrNone(StyleResolverState&, const CSSValue&);
+    static StyleMotionRotation convertMotionRotation(const CSSValue&);
+    template <CSSValueID cssValueFor0, CSSValueID cssValueFor100> static Length convertPositionLength(StyleResolverState&, const CSSValue&);
+    static Rotation convertRotation(const CSSValue&);
 };
 
 template <typename T>

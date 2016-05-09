@@ -59,7 +59,9 @@ struct CONTENT_EXPORT CommonNavigationParams {
                          const GURL& base_url_for_data_url,
                          const GURL& history_url_for_data_url,
                          LoFiState lofi_state,
-                         const base::TimeTicks& navigation_start);
+                         const base::TimeTicks& navigation_start,
+                         std::string method);
+  CommonNavigationParams(const CommonNavigationParams& other);
   ~CommonNavigationParams();
 
   // The URL to navigate to.
@@ -113,6 +115,9 @@ struct CONTENT_EXPORT CommonNavigationParams {
   // PlzNavigate: For renderer initiated navigations, this will be set on the
   // renderer side and sent with FrameHostMsg_BeginNavigation.
   base::TimeTicks navigation_start;
+
+  // The request method: GET, POST, etc.
+  std::string method;
 };
 
 // Provided by the renderer ----------------------------------------------------
@@ -128,15 +133,12 @@ struct CONTENT_EXPORT BeginNavigationParams {
   // TODO(clamy): See if it is possible to reuse this in
   // ResourceMsg_Request_Params.
   BeginNavigationParams();
-  BeginNavigationParams(std::string method,
-                        std::string headers,
+  BeginNavigationParams(std::string headers,
                         int load_flags,
                         bool has_user_gesture,
                         bool skip_service_worker,
                         RequestContextType request_context_type);
-
-  // The request method: GET, POST, etc.
-  std::string method;
+  BeginNavigationParams(const BeginNavigationParams& other);
 
   // Additional HTTP request headers.
   std::string headers;
@@ -171,7 +173,6 @@ struct CONTENT_EXPORT BeginNavigationParams {
 struct CONTENT_EXPORT StartNavigationParams {
   StartNavigationParams();
   StartNavigationParams(
-      bool is_post,
       const std::string& extra_headers,
       const std::vector<unsigned char>& browser_initiated_post_data,
 #if defined(OS_ANDROID)
@@ -179,10 +180,8 @@ struct CONTENT_EXPORT StartNavigationParams {
 #endif
       int transferred_request_child_id,
       int transferred_request_request_id);
+  StartNavigationParams(const StartNavigationParams& other);
   ~StartNavigationParams();
-
-  // Whether the navigation is a POST request (as opposed to a GET).
-  bool is_post;
 
   // Extra headers (separated by \n) to send during the request.
   std::string extra_headers;
@@ -224,6 +223,7 @@ struct CONTENT_EXPORT RequestNavigationParams {
                           int current_history_list_length,
                           bool is_view_source,
                           bool should_clear_history_list);
+  RequestNavigationParams(const RequestNavigationParams& other);
   ~RequestNavigationParams();
 
   // Whether or not the user agent override string should be used.

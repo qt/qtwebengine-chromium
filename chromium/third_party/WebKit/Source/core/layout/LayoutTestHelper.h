@@ -23,7 +23,7 @@ class RenderingTest : public testing::Test {
 public:
     virtual FrameSettingOverrideFunction settingOverrider() const { return nullptr; }
 
-    RenderingTest(PassOwnPtrWillBeRawPtr<FrameLoaderClient> = nullptr);
+    RenderingTest(FrameLoaderClient* = nullptr);
 
 protected:
     void SetUp() override;
@@ -45,18 +45,27 @@ protected:
     void enableCompositing()
     {
         m_pageHolder->page().settings().setAcceleratedCompositingEnabled(true);
+        document().view()->setParentVisible(true);
+        document().view()->setSelfVisible(true);
         document().view()->updateAllLifecyclePhases();
     }
 
+    LayoutObject* getLayoutObjectByElementId(const char* id) const
+    {
+        Node* node = document().getElementById(id);
+        return node ? node->layoutObject() : nullptr;
+    }
+
 private:
-    RefPtrWillBePersistent<LocalFrame> m_subframe;
-    OwnPtrWillBePersistent<FrameLoaderClient> m_frameLoaderClient;
+    Persistent<LocalFrame> m_subframe;
+    Persistent<FrameLoaderClient> m_frameLoaderClient;
+    Persistent<FrameLoaderClient> m_childFrameLoaderClient;
     OwnPtr<DummyPageHolder> m_pageHolder;
 };
 
 class SingleChildFrameLoaderClient final : public EmptyFrameLoaderClient {
 public:
-    static PassOwnPtrWillBeRawPtr<SingleChildFrameLoaderClient> create() { return adoptPtrWillBeNoop(new SingleChildFrameLoaderClient); }
+    static SingleChildFrameLoaderClient* create() { return new SingleChildFrameLoaderClient; }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
@@ -72,14 +81,14 @@ public:
 private:
     SingleChildFrameLoaderClient() : m_child(nullptr) { }
 
-    RefPtrWillBeMember<Frame> m_child;
+    Member<Frame> m_child;
 };
 
 class FrameLoaderClientWithParent final : public EmptyFrameLoaderClient {
 public:
-    static PassOwnPtrWillBeRawPtr<FrameLoaderClientWithParent> create(Frame* parent)
+    static FrameLoaderClientWithParent* create(Frame* parent)
     {
-        return adoptPtrWillBeNoop(new FrameLoaderClientWithParent(parent));
+        return new FrameLoaderClientWithParent(parent);
     }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
@@ -93,7 +102,7 @@ public:
 private:
     explicit FrameLoaderClientWithParent(Frame* parent) : m_parent(parent) { }
 
-    RefPtrWillBeMember<Frame> m_parent;
+    Member<Frame> m_parent;
 };
 
 } // namespace blink

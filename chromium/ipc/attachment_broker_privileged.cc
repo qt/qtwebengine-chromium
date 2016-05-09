@@ -6,7 +6,9 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "ipc/ipc_endpoint.h"
@@ -67,9 +69,7 @@ scoped_ptr<AttachmentBrokerPrivileged> CreateBroker() {
 // the global broker.
 class AttachmentBrokerMakeOnce {
  public:
-  AttachmentBrokerMakeOnce() {
-    attachment_broker_.reset(CreateBroker().release());
-  }
+  AttachmentBrokerMakeOnce() : attachment_broker_(CreateBroker()) {}
 
  private:
   scoped_ptr<IPC::AttachmentBrokerPrivileged> attachment_broker_;
@@ -112,29 +112,55 @@ void AttachmentBrokerPrivileged::CreateBrokerForSingleProcessTests() {
 }
 
 void AttachmentBrokerPrivileged::RegisterCommunicationChannel(
-    Endpoint* endpoint) {
+    Endpoint* endpoint,
+    scoped_refptr<base::SingleThreadTaskRunner> runner) {
   base::AutoLock auto_lock(*get_lock());
   endpoint->SetAttachmentBrokerEndpoint(true);
-  auto it = std::find(endpoints_.begin(), endpoints_.end(), endpoint);
+  auto it = std::find_if(endpoints_.begin(), endpoints_.end(),
+                         [endpoint](const EndpointRunnerPair& pair) {
+                           return pair.first == endpoint;
+                         });
   DCHECK(endpoints_.end() == it);
-  endpoints_.push_back(endpoint);
+  endpoints_.push_back(std::make_pair(endpoint, runner));
 }
 
 void AttachmentBrokerPrivileged::DeregisterCommunicationChannel(
     Endpoint* endpoint) {
   base::AutoLock auto_lock(*get_lock());
-  auto it = std::find(endpoints_.begin(), endpoints_.end(), endpoint);
+  auto it = std::find_if(endpoints_.begin(), endpoints_.end(),
+                         [endpoint](const EndpointRunnerPair& pair) {
+                           return pair.first == endpoint;
+                         });
   if (it != endpoints_.end())
     endpoints_.erase(it);
 }
 
-Sender* AttachmentBrokerPrivileged::GetSenderWithProcessId(base::ProcessId id) {
+bool AttachmentBrokerPrivileged::IsPrivilegedBroker() {
+  return true;
+}
+
+AttachmentBrokerPrivileged::EndpointRunnerPair
+AttachmentBrokerPrivileged::GetSenderWithProcessId(base::ProcessId id) {
   get_lock()->AssertAcquired();
   auto it = std::find_if(endpoints_.begin(), endpoints_.end(),
-                         [id](Endpoint* c) { return c->GetPeerPID() == id; });
+                         [id](const EndpointRunnerPair& pair) {
+                           return pair.first->GetPeerPID() == id;
+                         });
   if (it == endpoints_.end())
-    return nullptr;
+    return std::make_pair(nullptr, nullptr);
   return *it;
+}
+
+void AttachmentBrokerPrivileged::SendMessageToEndpoint(EndpointRunnerPair pair,
+                                                       Message* message) {
+  if (!pair.second || pair.second->BelongsToCurrentThread()) {
+    pair.first->Send(message);
+  } else {
+    pair.second->PostTask(
+        FROM_HERE,
+        base::Bind(&AttachmentBrokerPrivileged::SendMessageToEndpoint,
+                   base::Unretained(this), pair, message));
+  }
 }
 
 void AttachmentBrokerPrivileged::LogError(UMAError error) {

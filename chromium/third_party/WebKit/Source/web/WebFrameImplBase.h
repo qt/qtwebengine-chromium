@@ -6,6 +6,7 @@
 #define WebFrameImplBase_h
 
 #include "platform/heap/Handle.h"
+#include "web/WebExport.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
@@ -27,11 +28,11 @@ class FrameOwner;
 // implementation as an instance of the base class, but has no inheritance
 // relationship with it. The cost is a virtual indirection, but this is nicer
 // than the previous manual dispatch emulating real virtual dispatch.
-class WebFrameImplBase : public RefCountedWillBeGarbageCollectedFinalized<WebFrameImplBase> {
+class WEB_EXPORT WebFrameImplBase : public GarbageCollectedFinalized<WebFrameImplBase> {
 public:
     virtual ~WebFrameImplBase();
 
-    virtual void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& fallbackName) = 0;
+    virtual void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& uniqueName) = 0;
     // TODO(dcheng): Rename this to coreFrame()? This probably also shouldn't be const...
     virtual Frame* frame() const = 0;
 

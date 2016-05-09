@@ -29,6 +29,7 @@
 #define BASE_TUPLE_H_
 
 #include <stddef.h>
+#include <tuple>
 
 #include "base/bind_helpers.h"
 #include "build/build_config.h"
@@ -109,28 +110,6 @@ struct MakeIndexSequenceImpl<N, Ns...>
 template <size_t N>
 using MakeIndexSequence = typename MakeIndexSequenceImpl<N>::Type;
 
-// Traits ----------------------------------------------------------------------
-//
-// A simple traits class for tuple arguments.
-//
-// ValueType: the bare, nonref version of a type (same as the type for nonrefs).
-// RefType: the ref version of a type (same as the type for refs).
-// ParamType: what type to pass to functions (refs should not be constified).
-
-template <class P>
-struct TupleTraits {
-  typedef P ValueType;
-  typedef P& RefType;
-  typedef const P& ParamType;
-};
-
-template <class P>
-struct TupleTraits<P&> {
-  typedef P ValueType;
-  typedef P& RefType;
-  typedef P& ParamType;
-};
-
 // Tuple -----------------------------------------------------------------------
 //
 // This set of classes is useful for bundling 0 or more heterogeneous data types
@@ -145,75 +124,10 @@ struct TupleTraits<P&> {
 // want filled by the dispatchee, and the tuple is merely a container for that
 // output (a "tier").  See MakeRefTuple and its usages.
 
-template <typename IxSeq, typename... Ts>
-struct TupleBaseImpl;
 template <typename... Ts>
-using TupleBase = TupleBaseImpl<MakeIndexSequence<sizeof...(Ts)>, Ts...>;
-template <size_t N, typename T>
-struct TupleLeaf;
+using Tuple = std::tuple<Ts...>;
 
-template <typename... Ts>
-struct Tuple final : TupleBase<Ts...> {
-  Tuple() : TupleBase<Ts...>() {}
-  explicit Tuple(typename TupleTraits<Ts>::ParamType... args)
-      : TupleBase<Ts...>(args...) {}
-};
-
-// Avoids ambiguity between Tuple's two constructors.
-template <>
-struct Tuple<> final {};
-
-template <size_t... Ns, typename... Ts>
-struct TupleBaseImpl<IndexSequence<Ns...>, Ts...> : TupleLeaf<Ns, Ts>... {
-  TupleBaseImpl() : TupleLeaf<Ns, Ts>()... {}
-  explicit TupleBaseImpl(typename TupleTraits<Ts>::ParamType... args)
-      : TupleLeaf<Ns, Ts>(args)... {}
-};
-
-template <size_t N, typename T>
-struct TupleLeaf {
-  TupleLeaf() {}
-  explicit TupleLeaf(typename TupleTraits<T>::ParamType x) : x(x) {}
-
-  T& get() { return x; }
-  const T& get() const { return x; }
-
-  T x;
-};
-
-// Tuple getters --------------------------------------------------------------
-//
-// Allows accessing an arbitrary tuple element by index.
-//
-// Example usage:
-//   base::Tuple<int, double> t2;
-//   base::get<0>(t2) = 42;
-//   base::get<1>(t2) = 3.14;
-
-template <size_t I, typename T>
-T& get(TupleLeaf<I, T>& leaf) {
-  return leaf.get();
-}
-
-template <size_t I, typename T>
-const T& get(const TupleLeaf<I, T>& leaf) {
-  return leaf.get();
-}
-
-// Tuple types ----------------------------------------------------------------
-//
-// Allows for selection of ValueTuple/RefTuple/ParamTuple without needing the
-// definitions of class types the tuple takes as parameters.
-
-template <typename T>
-struct TupleTypes;
-
-template <typename... Ts>
-struct TupleTypes<Tuple<Ts...>> {
-  using ValueTuple = Tuple<typename TupleTraits<Ts>::ValueType...>;
-  using RefTuple = Tuple<typename TupleTraits<Ts>::RefType...>;
-  using ParamTuple = Tuple<typename TupleTraits<Ts>::ParamType...>;
-};
+using std::get;
 
 // Tuple creators -------------------------------------------------------------
 //
@@ -245,15 +159,15 @@ inline Tuple<Ts&...> MakeRefTuple(Ts&... arg) {
 // Non-Static Dispatchers with no out params.
 
 template <typename ObjT, typename Method, typename... Ts, size_t... Ns>
-inline void DispatchToMethodImpl(ObjT* obj,
+inline void DispatchToMethodImpl(const ObjT& obj,
                                  Method method,
                                  const Tuple<Ts...>& arg,
                                  IndexSequence<Ns...>) {
-  (obj->*method)(base::internal::UnwrapTraits<Ts>::Unwrap(get<Ns>(arg))...);
+  (obj->*method)(internal::Unwrap(get<Ns>(arg))...);
 }
 
 template <typename ObjT, typename Method, typename... Ts>
-inline void DispatchToMethod(ObjT* obj,
+inline void DispatchToMethod(const ObjT& obj,
                              Method method,
                              const Tuple<Ts...>& arg) {
   DispatchToMethodImpl(obj, method, arg, MakeIndexSequence<sizeof...(Ts)>());
@@ -265,7 +179,7 @@ template <typename Function, typename... Ts, size_t... Ns>
 inline void DispatchToFunctionImpl(Function function,
                                    const Tuple<Ts...>& arg,
                                    IndexSequence<Ns...>) {
-  (*function)(base::internal::UnwrapTraits<Ts>::Unwrap(get<Ns>(arg))...);
+  (*function)(internal::Unwrap(get<Ns>(arg))...);
 }
 
 template <typename Function, typename... Ts>
@@ -281,18 +195,17 @@ template <typename ObjT,
           typename... OutTs,
           size_t... InNs,
           size_t... OutNs>
-inline void DispatchToMethodImpl(ObjT* obj,
+inline void DispatchToMethodImpl(const ObjT& obj,
                                  Method method,
                                  const Tuple<InTs...>& in,
                                  Tuple<OutTs...>* out,
                                  IndexSequence<InNs...>,
                                  IndexSequence<OutNs...>) {
-  (obj->*method)(base::internal::UnwrapTraits<InTs>::Unwrap(get<InNs>(in))...,
-                 &get<OutNs>(*out)...);
+  (obj->*method)(internal::Unwrap(get<InNs>(in))..., &get<OutNs>(*out)...);
 }
 
 template <typename ObjT, typename Method, typename... InTs, typename... OutTs>
-inline void DispatchToMethod(ObjT* obj,
+inline void DispatchToMethod(const ObjT& obj,
                              Method method,
                              const Tuple<InTs...>& in,
                              Tuple<OutTs...>* out) {

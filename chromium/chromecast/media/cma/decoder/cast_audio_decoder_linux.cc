@@ -11,10 +11,13 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
+#include "chromecast/base/chromecast_switches.h"
 #include "chromecast/media/cma/base/decoder_buffer_adapter.h"
 #include "chromecast/media/cma/base/decoder_buffer_base.h"
 #include "chromecast/media/cma/base/decoder_config_adapter.h"
@@ -47,7 +50,8 @@ const uint8_t kFakeOpusExtraData[19] = {
   0,  // offset 18, stereo mapping
 };
 
-const int kOutputChannelCount = 2;  // Always output stereo audio.
+const int kStereoOutputChannelCount = 2;
+const int kLayout71OutputChannelCount = 8;
 const int kMaxChannelInput = 2;
 
 class CastAudioDecoderImpl : public CastAudioDecoder {
@@ -61,7 +65,20 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
         output_format_(output_format),
         initialized_(false),
         decode_pending_(false),
-        weak_factory_(this) {}
+        weak_factory_(this) {
+    if (base::CommandLine::InitializedForCurrentProcess() &&
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kAlsaNumOutputChannels)) {
+      base::StringToInt(
+          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+              switches::kAlsaNumOutputChannels),
+          &num_output_channels_);
+    } else {
+      num_output_channels_ = kStereoOutputChannelCount;
+    }
+    DCHECK(num_output_channels_ == kStereoOutputChannelCount ||
+           num_output_channels_ == kLayout71OutputChannelCount);
+  }
 
   ~CastAudioDecoderImpl() override {}
 
@@ -69,12 +86,24 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
     DCHECK(!initialized_);
     DCHECK_LE(config_.channel_number, kMaxChannelInput);
     config_ = config;
+
     if (config_.channel_number == 1) {
       // If the input is mono, create a ChannelMixer to convert mono to stereo.
       // TODO(kmackay) Support other channel format conversions?
       mixer_.reset(new ::media::ChannelMixer(::media::CHANNEL_LAYOUT_MONO,
                                              ::media::CHANNEL_LAYOUT_STEREO));
     }
+    if (num_output_channels_ == kLayout71OutputChannelCount) {
+      // If there are 8 output channel, create a Channel Mixer to convert
+      // stereo to CHANNEL_LAYOUT_7_1.
+      // TODO(tianyuwang): This is a hack for 8 channel test USB speaker.
+      // Channel mixer from MONO TO LAYOUT 7_1 doesn't work with the current
+      // test USB speaker. As a result, we need to convert MONO channel
+      // to STEREO first then convert it to LAYOUT_7_1.
+      mixer_7_1_.reset(new ::media::ChannelMixer(::media::CHANNEL_LAYOUT_STEREO,
+                                                 ::media::CHANNEL_LAYOUT_7_1));
+    }
+
     base::WeakPtr<CastAudioDecoderImpl> self = weak_factory_.GetWeakPtr();
     if (config.codec == media::kCodecOpus) {
       // Insert fake extradata to make OpusAudioDecoder work with v2mirroring.
@@ -91,8 +120,7 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
     }
     decoder_->Initialize(
         media::DecoderConfigAdapter::ToMediaAudioDecoderConfig(config_),
-        ::media::SetCdmReadyCB(),
-        base::Bind(&CastAudioDecoderImpl::OnInitialized, self),
+        nullptr, base::Bind(&CastAudioDecoderImpl::OnInitialized, self),
         base::Bind(&CastAudioDecoderImpl::OnDecoderOutput, self));
     // Unfortunately there is no result from decoder_->Initialize() until later
     // (the pipeline status callback is posted to the task runner).
@@ -132,11 +160,10 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
       data->set_timestamp(base::TimeDelta());
 
     decode_pending_ = true;
-    decoder_->Decode(data->ToMediaBuffer(),
-                     base::Bind(&CastAudioDecoderImpl::OnDecodeStatus,
-                                weak_factory_.GetWeakPtr(),
-                                timestamp,
-                                decode_callback));
+    decoder_->Decode(
+        data->ToMediaBuffer(),
+        base::Bind(&CastAudioDecoderImpl::OnDecodeStatus,
+                   weak_factory_.GetWeakPtr(), timestamp, decode_callback));
   }
 
   void OnInitialized(bool success) {
@@ -157,20 +184,23 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
 
   void OnDecodeStatus(base::TimeDelta buffer_timestamp,
                       const DecodeCallback& decode_callback,
-                      ::media::AudioDecoder::Status status) {
+                      ::media::DecodeStatus status) {
     Status result_status = kDecodeOk;
     scoped_refptr<media::DecoderBufferBase> decoded;
-    if (status == ::media::AudioDecoder::kOk && !decoded_chunks_.empty()) {
+    if (status == ::media::DecodeStatus::OK && !decoded_chunks_.empty()) {
       decoded = ConvertDecoded();
     } else {
-      if (status != ::media::AudioDecoder::kOk)
+      if (status != ::media::DecodeStatus::OK)
         result_status = kDecodeError;
       decoded = new media::DecoderBufferAdapter(config_.id,
                                                 new ::media::DecoderBuffer(0));
     }
     decoded_chunks_.clear();
     decoded->set_timestamp(buffer_timestamp);
+    base::WeakPtr<CastAudioDecoderImpl> self = weak_factory_.GetWeakPtr();
     decode_callback.Run(result_status, decoded);
+    if (!self.get())
+      return;  // Return immediately if the decode callback deleted this.
 
     // Do not reset decode_pending_ to false until after the callback has
     // finished running because the callback may call Decode().
@@ -198,21 +228,30 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
       num_frames += chunk->frame_count();
 
     // Copy decoded data into an AudioBus for conversion.
-    scoped_ptr<::media::AudioBus> decoded =
+    std::unique_ptr<::media::AudioBus> decoded =
         ::media::AudioBus::Create(config_.channel_number, num_frames);
     int bus_frame_offset = 0;
     for (auto& chunk : decoded_chunks_) {
-      chunk->ReadFrames(
-          chunk->frame_count(), 0, bus_frame_offset, decoded.get());
+      chunk->ReadFrames(chunk->frame_count(), 0, bus_frame_offset,
+                        decoded.get());
       bus_frame_offset += chunk->frame_count();
     }
 
     if (mixer_) {
       // Convert to stereo if necessary.
-      scoped_ptr<::media::AudioBus> converted_to_stereo =
-          ::media::AudioBus::Create(kOutputChannelCount, num_frames);
+      std::unique_ptr<::media::AudioBus> converted_to_stereo =
+          ::media::AudioBus::Create(kStereoOutputChannelCount, num_frames);
       mixer_->Transform(decoded.get(), converted_to_stereo.get());
       decoded.swap(converted_to_stereo);
+    }
+
+    // TODO(tianyuwang): Remove this hack for 7_1 USB test speaker.
+    if (mixer_7_1_) {
+      // Convert to layout 7_1 if necessary.
+      std::unique_ptr<::media::AudioBus> converted_to_7_1 =
+          ::media::AudioBus::Create(num_output_channels_, num_frames);
+      mixer_7_1_->Transform(decoded.get(), converted_to_7_1.get());
+      decoded.swap(converted_to_7_1);
     }
 
     // Convert to the desired output format.
@@ -221,15 +260,14 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
 
   scoped_refptr<media::DecoderBufferBase> FinishConversion(
       ::media::AudioBus* bus) {
-    DCHECK_EQ(kOutputChannelCount, bus->channels());
-    int size = bus->frames() * kOutputChannelCount *
+    DCHECK_EQ(num_output_channels_, bus->channels());
+    int size = bus->frames() * num_output_channels_ *
                OutputFormatSizeInBytes(output_format_);
     scoped_refptr<::media::DecoderBuffer> result(
         new ::media::DecoderBuffer(size));
 
     if (output_format_ == kOutputSigned16) {
-      bus->ToInterleaved(bus->frames(),
-                         OutputFormatSizeInBytes(output_format_),
+      bus->ToInterleaved(bus->frames(), OutputFormatSizeInBytes(output_format_),
                          result->writable_data());
     } else if (output_format_ == kOutputPlanarFloat) {
       // Data in an AudioBus is already in planar float format; just copy each
@@ -254,10 +292,12 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
   InitializedCallback initialized_callback_;
   OutputFormat output_format_;
   media::AudioConfig config_;
-  scoped_ptr<::media::AudioDecoder> decoder_;
+  std::unique_ptr<::media::AudioDecoder> decoder_;
   std::queue<DecodeBufferCallbackPair> decode_queue_;
   bool initialized_;
-  scoped_ptr<::media::ChannelMixer> mixer_;
+  int num_output_channels_;
+  std::unique_ptr<::media::ChannelMixer> mixer_;
+  std::unique_ptr<::media::ChannelMixer> mixer_7_1_;
   bool decode_pending_;
   std::vector<scoped_refptr<::media::AudioBuffer>> decoded_chunks_;
   base::WeakPtrFactory<CastAudioDecoderImpl> weak_factory_;
@@ -268,12 +308,12 @@ class CastAudioDecoderImpl : public CastAudioDecoder {
 }  // namespace
 
 // static
-scoped_ptr<CastAudioDecoder> CastAudioDecoder::Create(
+std::unique_ptr<CastAudioDecoder> CastAudioDecoder::Create(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const media::AudioConfig& config,
     OutputFormat output_format,
     const InitializedCallback& initialized_callback) {
-  scoped_ptr<CastAudioDecoderImpl> decoder(new CastAudioDecoderImpl(
+  std::unique_ptr<CastAudioDecoderImpl> decoder(new CastAudioDecoderImpl(
       task_runner, initialized_callback, output_format));
   decoder->Initialize(config);
   return std::move(decoder);

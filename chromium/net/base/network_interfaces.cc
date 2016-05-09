@@ -4,6 +4,17 @@
 
 #include "net/base/network_interfaces.h"
 
+#include "build/build_config.h"
+
+#if defined(OS_POSIX)
+#include <unistd.h>
+#endif
+
+#if defined(OS_WIN)
+#include <winsock2.h>
+#include "net/base/winsock_init.h"
+#endif
+
 namespace net {
 
 NetworkInterface::NetworkInterface()
@@ -14,7 +25,7 @@ NetworkInterface::NetworkInterface(const std::string& name,
                                    const std::string& friendly_name,
                                    uint32_t interface_index,
                                    NetworkChangeNotifier::ConnectionType type,
-                                   const IPAddressNumber& address,
+                                   const IPAddress& address,
                                    uint32_t prefix_length,
                                    int ip_address_attributes)
     : name(name),
@@ -23,13 +34,34 @@ NetworkInterface::NetworkInterface(const std::string& name,
       type(type),
       address(address),
       prefix_length(prefix_length),
-      ip_address_attributes(ip_address_attributes) {
-}
+      ip_address_attributes(ip_address_attributes) {}
+
+NetworkInterface::NetworkInterface(const NetworkInterface& other) = default;
 
 NetworkInterface::~NetworkInterface() {
 }
 
 ScopedWifiOptions::~ScopedWifiOptions() {
+}
+
+std::string GetHostName() {
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();
+  return std::string();
+#else  // defined(OS_NACL)
+#if defined(OS_WIN)
+  EnsureWinsockInit();
+#endif
+
+  // Host names are limited to 255 bytes.
+  char buffer[256];
+  int result = gethostname(buffer, sizeof(buffer));
+  if (result != 0) {
+    DVLOG(1) << "gethostname() failed with " << result;
+    buffer[0] = '\0';
+  }
+  return std::string(buffer);
+#endif  // !defined(OS_NACL)
 }
 
 }  // namespace net

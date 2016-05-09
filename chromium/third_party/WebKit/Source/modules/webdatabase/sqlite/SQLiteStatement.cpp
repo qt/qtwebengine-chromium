@@ -73,7 +73,7 @@ int restrictError(int error)
     }
 }
 
-}
+} // namespace
 
 namespace blink {
 
@@ -208,7 +208,7 @@ int SQLiteStatement::bindNull(int index)
 
 int SQLiteStatement::bindValue(int index, const SQLValue& value)
 {
-    switch (value.type()) {
+    switch (value.getType()) {
         case SQLValue::StringValue:
             return bindText(index, value.string());
         case SQLValue::NumberValue:

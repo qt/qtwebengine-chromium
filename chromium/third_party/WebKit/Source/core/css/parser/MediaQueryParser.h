@@ -22,7 +22,7 @@ class MediaQueryData {
     STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(MediaQueryData);
 private:
-    MediaQuery::Restrictor m_restrictor;
+    MediaQuery::RestrictorType m_restrictor;
     String m_mediaType;
     ExpressionHeapVector m_expressions;
     String m_mediaFeature;
@@ -35,15 +35,15 @@ public:
     bool addExpression();
     bool tryAddParserToken(CSSParserTokenType, const CSSParserToken&);
     void setMediaType(const String&);
-    PassOwnPtrWillBeRawPtr<MediaQuery> takeMediaQuery();
+    MediaQuery* takeMediaQuery();
 
     inline bool currentMediaQueryChanged() const
     {
         return (m_restrictor != MediaQuery::None || m_mediaTypeSet || m_expressions.size() > 0);
     }
-    inline MediaQuery::Restrictor restrictor() { return m_restrictor; }
+    inline MediaQuery::RestrictorType restrictor() { return m_restrictor; }
 
-    inline void setRestrictor(MediaQuery::Restrictor restrictor) { m_restrictor = restrictor; }
+    inline void setRestrictor(MediaQuery::RestrictorType restrictor) { m_restrictor = restrictor; }
 
     inline void setMediaFeature(const String& str) { m_mediaFeature = str; }
 };
@@ -51,9 +51,9 @@ public:
 class CORE_EXPORT MediaQueryParser {
     STACK_ALLOCATED();
 public:
-    static PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaQuerySet(const String&);
-    static PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaQuerySet(CSSParserTokenRange);
-    static PassRefPtrWillBeRawPtr<MediaQuerySet> parseMediaCondition(CSSParserTokenRange);
+    static MediaQuerySet* parseMediaQuerySet(const String&);
+    static MediaQuerySet* parseMediaQuerySet(CSSParserTokenRange);
+    static MediaQuerySet* parseMediaCondition(CSSParserTokenRange);
 
 private:
     enum ParserType {
@@ -64,7 +64,7 @@ private:
     MediaQueryParser(ParserType);
     virtual ~MediaQueryParser();
 
-    PassRefPtrWillBeRawPtr<MediaQuerySet> parseImpl(CSSParserTokenRange);
+    MediaQuerySet* parseImpl(CSSParserTokenRange);
 
     void processToken(const CSSParserToken&);
 
@@ -83,13 +83,13 @@ private:
 
     using State = void (MediaQueryParser::*)(CSSParserTokenType, const CSSParserToken&);
 
-    void setStateAndRestrict(State, MediaQuery::Restrictor);
+    void setStateAndRestrict(State, MediaQuery::RestrictorType);
     void handleBlocks(const CSSParserToken&);
 
     State m_state;
     ParserType m_parserType;
     MediaQueryData m_mediaQueryData;
-    RefPtrWillBeMember<MediaQuerySet> m_querySet;
+    Member<MediaQuerySet> m_querySet;
     MediaQueryBlockWatcher m_blockWatcher;
 
     const static State ReadRestrictor;

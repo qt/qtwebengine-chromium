@@ -5,13 +5,15 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_LIB_CONNECTOR_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_LIB_CONNECTOR_H_
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
-#include "mojo/public/c/environment/async_waiter.h"
 #include "mojo/public/cpp/bindings/callback.h"
+#include "mojo/public/cpp/bindings/lib/sync_handle_watcher.h"
 #include "mojo/public/cpp/bindings/message.h"
-#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
+#include "mojo/public/cpp/system/watcher.h"
 
 namespace base {
 class Lock;
@@ -40,10 +42,7 @@ class Connector : public MessageReceiver {
   };
 
   // The Connector takes ownership of |message_pipe|.
-  Connector(
-      ScopedMessagePipeHandle message_pipe,
-      ConnectorConfig config,
-      const MojoAsyncWaiter* waiter = Environment::GetDefaultAsyncWaiter());
+  Connector(ScopedMessagePipeHandle message_pipe, ConnectorConfig config);
   ~Connector() override;
 
   // Sets the receiver to handle messages read from the message pipe.  The
@@ -121,14 +120,36 @@ class Connector : public MessageReceiver {
     return message_pipe_.get();
   }
 
+  // Allows |message_pipe_| to be watched while others perform sync handle
+  // watching on the same thread. Please see comments of
+  // SyncHandleWatcher::AllowWokenUpBySyncWatchOnSameThread().
+  void AllowWokenUpBySyncWatchOnSameThread();
+
+  // Watches |message_pipe_| (as well as other handles registered to be watched
+  // together) synchronously.
+  // This method:
+  //   - returns true when |should_stop| is set to true;
+  //   - return false when any error occurs, including |message_pipe_| being
+  //     closed.
+  bool SyncWatch(const bool* should_stop);
+
+  // Whether currently the control flow is inside the sync handle watcher
+  // callback.
+  bool during_sync_handle_watcher_callback() const {
+    return sync_handle_watcher_callback_count_ > 0;
+  }
+
  private:
-  static void CallOnHandleReady(void* closure, MojoResult result);
-  void OnHandleReady(MojoResult result);
+  // Callback of mojo::Watcher.
+  void OnWatcherHandleReady(MojoResult result);
+  // Callback of SyncHandleWatcher.
+  void OnSyncHandleWatcherHandleReady(MojoResult result);
+  void OnHandleReadyInternal(MojoResult result);
 
   void WaitToReadMore();
 
   // Returns false if |this| was destroyed during message dispatch.
-  MOJO_WARN_UNUSED_RESULT bool ReadSingleMessage(MojoResult* read_result);
+  WARN_UNUSED_RESULT bool ReadSingleMessage(MojoResult* read_result);
 
   // |this| can be destroyed during message dispatch.
   void ReadAllAvailableMessages();
@@ -142,31 +163,39 @@ class Connector : public MessageReceiver {
   // Cancels any calls made to |waiter_|.
   void CancelWait();
 
+  void EnsureSyncWatcherExists();
+
   Closure connection_error_handler_;
-  const MojoAsyncWaiter* waiter_;
 
   ScopedMessagePipeHandle message_pipe_;
   MessageReceiver* incoming_receiver_;
 
-  MojoAsyncWaitID async_wait_id_;
+  Watcher handle_watcher_;
+
   bool error_;
   bool drop_writes_;
   bool enforce_errors_from_incoming_receiver_;
 
   bool paused_;
 
-  // If non-null, this will be set to true when the Connector is destroyed.  We
-  // use this flag to allow for the Connector to be destroyed as a side-effect
-  // of dispatching an incoming message.
-  bool* destroyed_flag_;
-
   // If sending messages is allowed from multiple threads, |lock_| is used to
   // protect modifications to |message_pipe_| and |drop_writes_|.
   scoped_ptr<base::Lock> lock_;
 
+  scoped_ptr<SyncHandleWatcher> sync_watcher_;
+  bool allow_woken_up_by_others_;
+  // If non-zero, currently the control flow is inside the sync handle watcher
+  // callback.
+  size_t sync_handle_watcher_callback_count_;
+
   base::ThreadChecker thread_checker_;
 
-  MOJO_DISALLOW_COPY_AND_ASSIGN(Connector);
+  // Create a single weak ptr and use it everywhere, to avoid the malloc/free
+  // cost of creating a new weak ptr whenever it is needed.
+  base::WeakPtr<Connector> weak_self_;
+  base::WeakPtrFactory<Connector> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(Connector);
 };
 
 }  // namespace internal

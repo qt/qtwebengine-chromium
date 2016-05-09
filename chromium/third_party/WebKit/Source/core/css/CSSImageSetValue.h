@@ -34,20 +34,20 @@
 namespace blink {
 
 class Document;
-class StyleFetchedImageSet;
+class StyleImage;
 
 class CSSImageSetValue : public CSSValueList {
 public:
 
-    static PassRefPtrWillBeRawPtr<CSSImageSetValue> create()
+    static CSSImageSetValue* create()
     {
-        return adoptRefWillBeNoop(new CSSImageSetValue());
+        return new CSSImageSetValue();
     }
     ~CSSImageSetValue();
 
     bool isCachePending(float deviceScaleFactor) const;
-    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor) const;
-    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor, CrossOriginAttributeValue = CrossOriginAttributeNotSet);
+    StyleImage* cachedImage(float deviceScaleFactor) const;
+    StyleImage* cacheImage(Document*, float deviceScaleFactor, CrossOriginAttributeValue = CrossOriginAttributeNotSet);
 
     String customCSSText() const;
 
@@ -58,7 +58,7 @@ public:
         float scaleFactor;
     };
 
-    PassRefPtrWillBeRawPtr<CSSImageSetValue> valueWithURLsMadeAbsolute();
+    CSSImageSetValue* valueWithURLsMadeAbsolute();
 
     bool hasFailedOrCanceledSubresources() const;
 
@@ -73,9 +73,8 @@ private:
     void fillImageSet();
     static inline bool compareByScaleFactor(ImageWithScale first, ImageWithScale second) { return first.scaleFactor < second.scaleFactor; }
 
-    bool m_isCachePending;
     float m_cachedScaleFactor;
-    RefPtrWillBeMember<StyleFetchedImageSet> m_cachedImageSet;
+    Member<StyleImage> m_cachedImage;
 
     Vector<ImageWithScale> m_imagesInSet;
 };

@@ -6,13 +6,37 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 {
+  'variables': {
+    'webrtc_all_dependencies': [
+      'base/base.gyp:*',
+      'common.gyp:*',
+      'common_audio/common_audio.gyp:*',
+      'common_video/common_video.gyp:*',
+      'media/media.gyp:*',
+      'modules/modules.gyp:*',
+      'p2p/p2p.gyp:*',
+      'pc/pc.gyp:*',
+      'system_wrappers/system_wrappers.gyp:*',
+      'tools/tools.gyp:*',
+      'voice_engine/voice_engine.gyp:*',
+      '<(webrtc_vp8_dir)/vp8.gyp:*',
+      '<(webrtc_vp9_dir)/vp9.gyp:*',
+    ],
+  },
   'conditions': [
+    ['build_with_chromium==0', {
+      # TODO(kjellander): Move this to webrtc_all_dependencies once all of talk/
+      # has been moved to webrtc/. It can't be processed by Chromium since the
+      # reference to buid/java.gypi is using an absolute path (and includes
+      # entries cannot contain variables).
+      'variables': {
+        'webrtc_all_dependencies': [
+          'api/api.gyp:*',
+        ],
+      },
+    }],
     ['include_tests==1', {
       'includes': [
-        'libjingle/xmllite/xmllite_tests.gypi',
-        'libjingle/xmpp/xmpp_tests.gypi',
-        'p2p/p2p_tests.gypi',
-        'sound/sound_tests.gypi',
         'webrtc_tests.gypi',
       ],
     }],
@@ -53,22 +77,6 @@
     'call/webrtc_call.gypi',
     'video/webrtc_video.gypi',
   ],
-  'variables': {
-    'webrtc_all_dependencies': [
-      'base/base.gyp:*',
-      'sound/sound.gyp:*',
-      'common.gyp:*',
-      'common_audio/common_audio.gyp:*',
-      'common_video/common_video.gyp:*',
-      'modules/modules.gyp:*',
-      'p2p/p2p.gyp:*',
-      'system_wrappers/system_wrappers.gyp:*',
-      'tools/tools.gyp:*',
-      'voice_engine/voice_engine.gyp:*',
-      '<(webrtc_vp8_dir)/vp8.gyp:*',
-      '<(webrtc_vp9_dir)/vp9.gyp:*',
-    ],
-  },
   'targets': [
     {
       'target_name': 'webrtc_all',
@@ -80,12 +88,12 @@
       'conditions': [
         ['include_tests==1', {
           'dependencies': [
+            'api/api_tests.gyp:*',
             'common_video/common_video_unittests.gyp:*',
             'rtc_unittests',
             'system_wrappers/system_wrappers_tests.gyp:*',
             'test/metrics.gyp:*',
             'test/test.gyp:*',
-            'test/webrtc_test_common.gyp:*',
             'webrtc_tests',
           ],
         }],
@@ -104,7 +112,6 @@
         'stream.h',
         'transport.h',
         'video_receive_stream.h',
-        'video_renderer.h',
         'video_send_stream.h',
 
         '<@(webrtc_audio_sources)',

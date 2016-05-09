@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module presentation;
+module content.mojom;
 
 struct PresentationSessionInfo {
   string url;
@@ -14,6 +14,12 @@ enum PresentationConnectionState {
   CONNECTED,
   CLOSED,
   TERMINATED
+};
+
+enum PresentationConnectionCloseReason {
+  CONNECTION_ERROR,
+  CLOSED,
+  WENT_AWAY
 };
 
 enum PresentationErrorType {
@@ -118,6 +124,12 @@ interface PresentationServiceClient {
   // this frame has changed to |newState|.
   OnConnectionStateChanged(PresentationSessionInfo connection,
                            PresentationConnectionState newState);
+
+  // Caled when the state of |connection| started on this frame has changed to
+  // CLOSED.
+  OnConnectionClosed(PresentationSessionInfo connection,
+                     PresentationConnectionCloseReason reason,
+                     string message);
 
   // See PresentationService::ListenForSessionMessages.
   OnSessionMessagesReceived(PresentationSessionInfo sessionInfo,

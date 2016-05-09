@@ -31,6 +31,7 @@ class WebGraphicsContext3DInProcessCommandBufferImpl;
 namespace content {
 
 class InputHandlerManagerClient;
+class SynchronousInputHandlerProxyClient;
 class StreamTextureFactory;
 class FrameSwapMessageQueue;
 
@@ -49,23 +50,24 @@ class SynchronousCompositorFactory {
   GetCompositorTaskRunner() = 0;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id,
+      uint32_t output_surface_id,
       const scoped_refptr<FrameSwapMessageQueue>& frame_swap_message_queue,
       const scoped_refptr<cc::ContextProvider>& onscreen_context,
       const scoped_refptr<cc::ContextProvider>& worker_context) = 0;
 
   // The factory maintains ownership of the returned interface.
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() = 0;
+  virtual SynchronousInputHandlerProxyClient*
+  GetSynchronousInputHandlerProxyClient() = 0;
 
   virtual scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) = 0;
-  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
-      int frame_id) = 0;
 
  protected:
   SynchronousCompositorFactory() {}
   virtual ~SynchronousCompositorFactory() {}
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_ANDROID_SYNCHRONOUS_COMPOSITOR_FACTORY_H_

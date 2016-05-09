@@ -26,7 +26,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using __gnu_cxx::vector;
 using net::test::CryptoTestUtils;
 using net::test::MockConnection;
 using net::test::MockConnectionHelper;
@@ -49,7 +48,6 @@ using testing::StrictMock;
 using testing::_;
 
 namespace net {
-namespace tools {
 namespace test {
 
 class QuicServerSessionBasePeer {
@@ -75,8 +73,13 @@ class TestServerSession : public QuicServerSessionBase {
   TestServerSession(const QuicConfig& config,
                     QuicConnection* connection,
                     QuicServerSessionVisitor* visitor,
-                    const QuicCryptoServerConfig* crypto_config)
-      : QuicServerSessionBase(config, connection, visitor, crypto_config) {}
+                    const QuicCryptoServerConfig* crypto_config,
+                    QuicCompressedCertsCache* compressed_certs_cache)
+      : QuicServerSessionBase(config,
+                              connection,
+                              visitor,
+                              crypto_config,
+                              compressed_certs_cache) {}
 
   ~TestServerSession() override{};
 
@@ -85,7 +88,9 @@ class TestServerSession : public QuicServerSessionBase {
     if (!ShouldCreateIncomingDynamicStream(id)) {
       return nullptr;
     }
-    return new QuicSimpleServerStream(id, this);
+    QuicSpdyStream* stream = new QuicSimpleServerStream(id, this);
+    ActivateStream(stream);
+    return stream;
   }
 
   QuicSpdyStream* CreateOutgoingDynamicStream(SpdyPriority priority) override {
@@ -101,8 +106,11 @@ class TestServerSession : public QuicServerSessionBase {
   }
 
   QuicCryptoServerStreamBase* CreateQuicCryptoServerStream(
-      const QuicCryptoServerConfig* crypto_config) override {
-    return new QuicCryptoServerStream(crypto_config, this);
+      const QuicCryptoServerConfig* crypto_config,
+      QuicCompressedCertsCache* compressed_certs_cache) override {
+    return new QuicCryptoServerStream(
+        crypto_config, compressed_certs_cache,
+        FLAGS_enable_quic_stateless_reject_support, this);
   }
 };
 
@@ -113,7 +121,10 @@ class QuicServerSessionBaseTest : public ::testing::TestWithParam<QuicVersion> {
   QuicServerSessionBaseTest()
       : crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance(),
-                       CryptoTestUtils::ProofSourceForTesting()) {
+                       CryptoTestUtils::ProofSourceForTesting()),
+        compressed_certs_cache_(
+            QuicCompressedCertsCache::kQuicCompressedCertsCacheSize) {
+    FLAGS_quic_always_log_bugs_for_tests = true;
     config_.SetMaxStreamsPerConnection(kMaxStreamsForTest, kMaxStreamsForTest);
     config_.SetInitialStreamFlowControlWindowToSend(
         kInitialStreamFlowControlWindowForTest);
@@ -122,8 +133,9 @@ class QuicServerSessionBaseTest : public ::testing::TestWithParam<QuicVersion> {
 
     connection_ = new StrictMock<MockConnection>(
         &helper_, Perspective::IS_SERVER, SupportedVersions(GetParam()));
-    session_.reset(
-        new TestServerSession(config_, connection_, &owner_, &crypto_config_));
+    session_.reset(new TestServerSession(config_, connection_, &owner_,
+                                         &crypto_config_,
+                                         &compressed_certs_cache_));
     MockClock clock;
     handshake_message_.reset(crypto_config_.AddDefaultConfig(
         QuicRandom::GetInstance(), &clock,
@@ -137,6 +149,7 @@ class QuicServerSessionBaseTest : public ::testing::TestWithParam<QuicVersion> {
   StrictMock<MockConnection>* connection_;
   QuicConfig config_;
   QuicCryptoServerConfig crypto_config_;
+  QuicCompressedCertsCache compressed_certs_cache_;
   scoped_ptr<TestServerSession> session_;
   scoped_ptr<CryptoHandshakeMessage> handshake_message_;
   QuicConnectionVisitorInterface* visitor_;
@@ -239,12 +252,12 @@ TEST_P(QuicServerSessionBaseTest, MaxOpenStreams) {
   // The slightly increased stream limit is set during config negotiation.  It
   // is either an increase of 10 over negotiated limit, or a fixed percentage
   // scaling, whichever is larger. Test both before continuing.
-  EXPECT_EQ(kMaxStreamsForTest, session_->get_max_open_streams());
+  EXPECT_EQ(kMaxStreamsForTest, session_->max_open_incoming_streams());
   session_->OnConfigNegotiated();
   EXPECT_LT(kMaxStreamsMultiplier * kMaxStreamsForTest,
             kMaxStreamsForTest + kMaxStreamsMinimumIncrement);
   EXPECT_EQ(kMaxStreamsForTest + kMaxStreamsMinimumIncrement,
-            session_->get_max_open_streams());
+            session_->max_open_incoming_streams());
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
   QuicStreamId stream_id = kClientDataStreamId1;
   // Open the max configured number of streams, should be no problem.
@@ -265,10 +278,10 @@ TEST_P(QuicServerSessionBaseTest, MaxOpenStreams) {
   stream_id += 2;
   if (connection_->version() <= QUIC_VERSION_27) {
     EXPECT_CALL(*connection_,
-                SendConnectionCloseWithDetails(QUIC_TOO_MANY_OPEN_STREAMS, _));
+                CloseConnection(QUIC_TOO_MANY_OPEN_STREAMS, _, _));
     EXPECT_CALL(*connection_, SendRstStream(_, _, _)).Times(0);
   } else {
-    EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(_, _)).Times(0);
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
     EXPECT_CALL(*connection_, SendRstStream(stream_id, QUIC_REFUSED_STREAM, 0));
   }
   // Even if the connection remains open, the stream creation should fail.
@@ -282,11 +295,12 @@ TEST_P(QuicServerSessionBaseTest, MaxAvailableStreams) {
   // stream limit to deal with rare cases where a client FIN/RST is lost.
 
   // The slightly increased stream limit is set during config negotiation.
-  EXPECT_EQ(kMaxStreamsForTest, session_->get_max_open_streams());
+  EXPECT_EQ(kMaxStreamsForTest, session_->max_open_incoming_streams());
   session_->OnConfigNegotiated();
-  const size_t kAvailableStreamLimit = session_->get_max_available_streams();
-  EXPECT_EQ(session_->get_max_open_streams() * kMaxAvailableStreamsMultiplier,
-            session_->get_max_available_streams());
+  const size_t kAvailableStreamLimit = session_->MaxAvailableStreams();
+  EXPECT_EQ(
+      session_->max_open_incoming_streams() * kMaxAvailableStreamsMultiplier,
+      session_->MaxAvailableStreams());
   // The protocol specification requires that there can be at least 10 times
   // as many available streams as the connection's maximum open streams.
   EXPECT_LE(10 * kMaxStreamsForTest, kAvailableStreamLimit);
@@ -302,8 +316,8 @@ TEST_P(QuicServerSessionBaseTest, MaxAvailableStreams) {
       session_.get(), kLimitingStreamId));
 
   // A further available stream will result in connection close.
-  EXPECT_CALL(*connection_, SendConnectionCloseWithDetails(
-                                QUIC_TOO_MANY_AVAILABLE_STREAMS, _));
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_TOO_MANY_AVAILABLE_STREAMS, _, _));
   // This forces stream kLimitingStreamId + 2 to become available, which
   // violates the quota.
   EXPECT_FALSE(QuicServerSessionBasePeer::GetOrCreateDynamicStream(
@@ -312,47 +326,29 @@ TEST_P(QuicServerSessionBaseTest, MaxAvailableStreams) {
 
 TEST_P(QuicServerSessionBaseTest, GetEvenIncomingError) {
   // Incoming streams on the server session must be odd.
-  EXPECT_CALL(*connection_,
-              SendConnectionCloseWithDetails(QUIC_INVALID_STREAM_ID, _));
+  EXPECT_CALL(*connection_, CloseConnection(QUIC_INVALID_STREAM_ID, _, _));
   EXPECT_EQ(nullptr, QuicServerSessionBasePeer::GetOrCreateDynamicStream(
                          session_.get(), 4));
 }
 
 TEST_P(QuicServerSessionBaseTest, GetStreamDisconnected) {
   // Don't create new streams if the connection is disconnected.
-  QuicConnectionPeer::CloseConnection(connection_);
+  QuicConnectionPeer::TearDownLocalConnectionState(connection_);
   EXPECT_DFATAL(
       QuicServerSessionBasePeer::GetOrCreateDynamicStream(session_.get(), 5),
       "ShouldCreateIncomingDynamicStream called when disconnected");
-}
-
-TEST_P(QuicServerSessionBaseTest, SetFecProtectionFromConfig) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_fec, true);
-
-  // Set received config to have FEC connection option.
-  QuicTagVector copt;
-  copt.push_back(kFHDR);
-  QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
-  session_->OnConfigNegotiated();
-
-  // Verify that headers stream is always protected and data streams are
-  // optionally protected.
-  EXPECT_EQ(
-      FEC_PROTECT_ALWAYS,
-      QuicSpdySessionPeer::GetHeadersStream(session_.get())->fec_policy());
-  ReliableQuicStream* stream =
-      QuicServerSessionBasePeer::GetOrCreateDynamicStream(session_.get(),
-                                                          kClientDataStreamId1);
-  ASSERT_TRUE(stream);
-  EXPECT_EQ(FEC_PROTECT_OPTIONAL, stream->fec_policy());
 }
 
 class MockQuicCryptoServerStream : public QuicCryptoServerStream {
  public:
   explicit MockQuicCryptoServerStream(
       const QuicCryptoServerConfig* crypto_config,
+      QuicCompressedCertsCache* compressed_certs_cache,
       QuicSession* session)
-      : QuicCryptoServerStream(crypto_config, session) {}
+      : QuicCryptoServerStream(crypto_config,
+                               compressed_certs_cache,
+                               FLAGS_enable_quic_stateless_reject_support,
+                               session) {}
   ~MockQuicCryptoServerStream() override {}
 
   MOCK_METHOD1(SendServerConfigUpdate,
@@ -386,8 +382,8 @@ TEST_P(QuicServerSessionBaseTest, BandwidthEstimates) {
   const string serving_region = "not a real region";
   session_->set_serving_region(serving_region);
 
-  MockQuicCryptoServerStream* crypto_stream =
-      new MockQuicCryptoServerStream(&crypto_config_, session_.get());
+  MockQuicCryptoServerStream* crypto_stream = new MockQuicCryptoServerStream(
+      &crypto_config_, &compressed_certs_cache_, session_.get());
   QuicServerSessionBasePeer::SetCryptoStream(session_.get(), crypto_stream);
 
   // Set some initial bandwidth values.
@@ -407,8 +403,7 @@ TEST_P(QuicServerSessionBaseTest, BandwidthEstimates) {
       &bandwidth_recorder, max_bandwidth_estimate_kbytes_per_second,
       max_bandwidth_estimate_timestamp);
   // Queue up some pending data.
-  session_->MarkConnectionLevelWriteBlocked(kCryptoStreamId,
-                                            net::kV3HighestPriority);
+  session_->MarkConnectionLevelWriteBlocked(kCryptoStreamId);
   EXPECT_TRUE(session_->HasDataToWrite());
 
   // There will be no update sent yet - not enough time has passed.
@@ -536,5 +531,4 @@ TEST_P(QuicServerSessionBaseTest, NoBandwidthResumptionByDefault) {
 
 }  // namespace
 }  // namespace test
-}  // namespace tools
 }  // namespace net

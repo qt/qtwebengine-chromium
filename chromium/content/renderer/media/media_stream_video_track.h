@@ -21,7 +21,7 @@ namespace content {
 // MediaStreamVideoTrack is a video specific representation of a
 // blink::WebMediaStreamTrack in content. It is owned by the blink object
 // and can be retrieved from a blink object using
-// WebMediaStreamTrack::extraData() or MediaStreamVideoTrack::GetVideoTrack.
+// WebMediaStreamTrack::getExtraData() or MediaStreamVideoTrack::GetVideoTrack.
 class CONTENT_EXPORT MediaStreamVideoTrack : public MediaStreamTrack {
  public:
   // Help method to create a blink::WebMediaStreamTrack and a
@@ -49,8 +49,8 @@ class CONTENT_EXPORT MediaStreamVideoTrack : public MediaStreamTrack {
       bool enabled);
   ~MediaStreamVideoTrack() override;
 
+  // MediaStreamTrack overrides.
   void SetEnabled(bool enabled) override;
-
   void Stop() override;
 
   void OnReadyStateChanged(blink::WebMediaStreamSource::ReadyState state);

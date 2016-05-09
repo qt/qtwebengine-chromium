@@ -21,6 +21,10 @@ public:
     // The scheduler may throttle tasks associated with offscreen frames.
     virtual void setFrameVisible(bool) { }
 
+    // Tells the scheduler that the page this frame belongs to is not visible.
+    // The scheduler may throttle tasks associated with pages that are not visible.
+    virtual void setPageVisible(bool) { }
+
     // Returns the WebTaskRunner for loading tasks.
     // WebFrameScheduler owns the returned WebTaskRunner.
     virtual WebTaskRunner* loadingTaskRunner() { return nullptr; }
@@ -28,9 +32,6 @@ public:
     // Returns the WebTaskRunner for timer tasks.
     // WebFrameScheduler owns the returned WebTaskRunner.
     virtual WebTaskRunner* timerTaskRunner() { return nullptr; }
-
-    // Record the current origin. This is for task attribution in tracing.
-    virtual void setFrameOrigin(const WebSecurityOrigin&) { }
 };
 
 } // namespace blink

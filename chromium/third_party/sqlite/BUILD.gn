@@ -39,6 +39,9 @@ if (!use_system_sqlite) {
       "amalgamation/config.h",
       "amalgamation/sqlite3.c",
       "amalgamation/sqlite3.h",
+      "src/src/recover.c",
+      "src/src/recover.h",
+      "src/src/recover_varint.c",
     ]
 
     cflags = []
@@ -79,6 +82,11 @@ if (!use_system_sqlite) {
       # stompers from directly corrupting the database.
       # TODO(shess): Upstream the ability to use this define.
       "SQLITE_MMAP_READ_ONLY=1",
+
+      # By default SQLite pre-allocates 100 pages of pcache data, which will not
+      # be released until the handle is closed.  This is contrary to Chromium's
+      # memory-usage goals.
+      "SQLITE_DEFAULT_PCACHE_INITSZ=0",
 
       # NOTE(shess): Some defines can affect the amalgamation.  Those should be
       # added to google_generate_amalgamation.sh, and the amalgamation
@@ -216,6 +224,9 @@ if (use_system_sqlite) {
   source_set("sqlite") {
     public_configs = [ ":sqlite_config" ]
     if (is_ios) {
+      public_deps = [
+        ":sqlite_recover",
+      ]
       deps = [
         ":sqlite_regexp",
       ]
@@ -223,6 +234,15 @@ if (use_system_sqlite) {
   }
 
   if (is_ios) {
+    source_set("sqlite_recover") {
+      sources = [
+        # TODO(shess): Move out of the SQLite source tree, perhaps to ext/.
+        "src/src/recover.c",
+        "src/src/recover.h",
+        "src/src/recover_varint.c",
+      ]
+    }
+
     source_set("sqlite_regexp") {
       defines = [
         # Necessary to statically compile the extension.

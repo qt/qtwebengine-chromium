@@ -65,10 +65,12 @@ template<> inline float roundForImpreciseConversion(double value)
 // to handle any kind of mutations.
 class CORE_EXPORT CSSPrimitiveValue : public CSSValue {
 public:
+    // These units are iterated through, so be careful when adding or changing the order.
     enum class UnitType {
         Unknown,
         Number,
         Percentage,
+        // Length units
         Ems,
         Exs,
         Pixels,
@@ -77,26 +79,30 @@ public:
         Inches,
         Points,
         Picas,
-        UserUnits, // The SVG term for unitless lengths
-        Degrees,
-        Radians,
-        Gradians,
-        Turns,
-        Milliseconds,
-        Seconds,
-        Hertz,
-        Kilohertz,
         ViewportWidth,
         ViewportHeight,
         ViewportMin,
         ViewportMax,
+        Rems,
+        Chs,
+        UserUnits, // The SVG term for unitless lengths
+        // Angle units
+        Degrees,
+        Radians,
+        Gradians,
+        Turns,
+        // Time units
+        Milliseconds,
+        Seconds,
+        Hertz,
+        Kilohertz,
+        // Resolution
         DotsPerPixel,
         DotsPerInch,
         DotsPerCentimeter,
+        // Other units
         Fraction,
         Integer,
-        Rems,
-        Chs,
         Calc,
         CalcPercentageWithNumber,
         CalcPercentageWithLength,
@@ -142,7 +148,7 @@ public:
         UResolution,
         UOther
     };
-    static UnitCategory unitCategory(UnitType);
+    static UnitCategory unitTypeToUnitCategory(UnitType);
     static float clampToCSSLengthRange(double);
 
     static void initUnitTable();
@@ -169,7 +175,17 @@ public:
     static bool isViewportPercentageLength(UnitType type) { return type >= UnitType::ViewportWidth && type <= UnitType::ViewportMax; }
     static bool isLength(UnitType type)
     {
-        return (type >= UnitType::Ems && type <= UnitType::UserUnits) || type == UnitType::QuirkyEms || type == UnitType::Rems || type == UnitType::Chs || isViewportPercentageLength(type);
+        return (type >= UnitType::Ems && type <= UnitType::UserUnits)
+            || type == UnitType::QuirkyEms;
+    }
+    static inline bool isRelativeUnit(UnitType type)
+    {
+        return type == UnitType::Percentage
+            || type == UnitType::Ems
+            || type == UnitType::Exs
+            || type == UnitType::Rems
+            || type == UnitType::Chs
+            || isViewportPercentageLength(type);
     }
     bool isLength() const { return isLength(typeWithCalcResolved()); }
     bool isNumber() const { return typeWithCalcResolved() == UnitType::Number || typeWithCalcResolved() == UnitType::Integer; }
@@ -184,22 +200,22 @@ public:
     bool isValueID() const { return type() == UnitType::ValueID; }
     bool colorIsDerivedFromElement() const;
 
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifier(CSSValueID valueID)
+    static CSSPrimitiveValue* createIdentifier(CSSValueID valueID)
     {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(valueID));
+        return new CSSPrimitiveValue(valueID);
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(double value, UnitType type)
+    static CSSPrimitiveValue* create(double value, UnitType type)
     {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, type));
+        return new CSSPrimitiveValue(value, type);
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const Length& value, float zoom)
+    static CSSPrimitiveValue* create(const Length& value, float zoom)
     {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, zoom));
+        return new CSSPrimitiveValue(value, zoom);
     }
-    template<typename T> static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(T value)
+    template<typename T> static CSSPrimitiveValue* create(T value)
     {
         static_assert(!std::is_same<T, CSSValueID>::value, "Do not call create() with a CSSValueID; call createIdentifier() instead");
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(value));
+        return new CSSPrimitiveValue(value);
     }
 
     ~CSSPrimitiveValue();
@@ -246,13 +262,8 @@ private:
     CSSPrimitiveValue(double, UnitType);
 
     template<typename T> CSSPrimitiveValue(T); // Defined in CSSPrimitiveValueMappings.h
-    template<typename T> CSSPrimitiveValue(T* val)
-        : CSSValue(PrimitiveClass)
-    {
-        init(PassRefPtrWillBeRawPtr<T>(val));
-    }
 
-    template<typename T> CSSPrimitiveValue(PassRefPtrWillBeRawPtr<T> val)
+    template<typename T> CSSPrimitiveValue(T* val)
         : CSSValue(PrimitiveClass)
     {
         init(val);
@@ -264,7 +275,7 @@ private:
 
     void init(UnitType);
     void init(const Length&);
-    void init(PassRefPtrWillBeRawPtr<CSSCalcValue>);
+    void init(CSSCalcValue*);
 
     double computeLengthDouble(const CSSToLengthConversionData&) const;
 

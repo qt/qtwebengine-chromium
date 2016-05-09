@@ -3,7 +3,6 @@
 <translationbundle lang="zh-TW">
 <translation id="1001534784610492198">安裝程式封存檔案已經損壞或無效，請再次下載 Google Chrome。</translation>
 <translation id="1013290471399003443">Chrome 已驗證這個網站的憑證核發者是 <ph name="ISSUER" />。該伺服器提供了有效的 Certificate Transparency 資訊。</translation>
-<translation id="1016765312371154165">Chrome 未正確關閉。</translation>
 <translation id="103396972844768118">Chrome 資料的相關重要資訊</translation>
 <translation id="1035334672863811645">登入 Chrome</translation>
 <translation id="1061441684050139317">Chrome 需要存取麥克風，才能與這個網站分享。</translation>
@@ -11,7 +10,6 @@
 <translation id="1073391069195728457">Chrome - 通知</translation>
 <translation id="1104959162601287462">關於 Chrome 作業系統(&amp;C)</translation>
 <translation id="110877069173485804">這是您專屬的 Chrome</translation>
-<translation id="1225016890511909183">Chrome 會妥善保存您的資訊，讓您日後付款時不必再重新輸入。不過，您仍然必需驗證驗證信用卡安全碼。</translation>
 <translation id="123620459398936149">Chrome OS 無法同步處理您的資料，請更新您的同步通關密語。</translation>
 <translation id="127345590676626841">Chrome 會自動更新，隨時讓您使用最新版本。完成這項下載作業後，Chrome 會重新啟動，自動為您進行更新。</translation>
 <translation id="1302523850133262269">請稍候，Chrome 正在安裝最新的系統更新。</translation>
@@ -34,6 +32,7 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">前往 Chrome 作業系統說明頁面</translation>
 <translation id="1818142563254268765">由於 Chrome 無法更新至最新版本，您現在無法使用各種最新功能和安全性修正。請更新 Chrome。</translation>
+<translation id="1864458292167284385">Chrome 應用程式啟動器即將停止服務。</translation>
 <translation id="1877026089748256423">Chrome 版本過舊</translation>
 <translation id="2077129598763517140">在可用時使用硬體加速</translation>
 <translation id="2084710999043359739">加到 Chrome</translation>
@@ -51,7 +50,6 @@
 <translation id="2397416548179033562">顯示 Chrome 選單</translation>
 <translation id="2429317896000329049">您的網域無法使用「同步功能」，因此 Google Chrome 無法同步處理您的資料。</translation>
 <translation id="2485422356828889247">解除安裝</translation>
-<translation id="2576431527583832481">Chrome 現在變得更進步了！歡迎您升級使用新版本。</translation>
 <translation id="2580411288591421699">您無法安裝這個版本的 Google Chrome，因為相同的版本目前正在執行中。請關閉 Google Chrome 然後再試一次。</translation>
 <translation id="2582790009689336987">Google Chrome 將停止支援這種 Linux 系統，因此這部電腦很快就不會再收到 Google Chrome 更新。</translation>
 <translation id="2588322182880276190">Chrome 標誌</translation>
@@ -90,6 +88,7 @@
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3881912906674381083">Chrome 已驗證這個網站的憑證核發者是 <ph name="ISSUER" />。該伺服器提供了 Certificate Transparency 資訊，但 Chrome 無法辨識任何 Certificate Transparency 紀錄。</translation>
 <translation id="3889417619312448367">解除安裝 Google Chrome</translation>
+<translation id="396182988103551265">您可以繼續使用 Chrome 書籤列中的 <ph name="APPS_ICON_IMAGE" /> 捷徑存取各項應用程式。</translation>
 <translation id="4042449298237264661">Google Chrome 已停止支援 Windows XP 和 Windows Vista，因此這部電腦不會再收到 Google Chrome 更新。</translation>
 <translation id="4050175100176540509">最新版本包含重要的安全性改善與新功能。</translation>
 <translation id="4053720452172726777">自訂及管理 Google Chrome</translation>
@@ -104,14 +103,12 @@
 <translation id="4407807842708586359">Google Chrome 作業系統</translation>
 <translation id="4458285410772214805">請先登出，然後重新登入，這項變更才會生效。</translation>
 <translation id="4480040274068703980">登入時發生錯誤，因此 Chrome 作業系統無法同步處理您的資料。</translation>
-<translation id="4513711165509885787">Chrome 已儲存您的帳單詳細資訊。</translation>
 <translation id="4561051373932531560">Google Chrome 可讓您按一下網頁上的電話號碼，隨即透過 Skype 撥打電話！</translation>
 <translation id="4567424176335768812">您已使用 <ph name="USER_EMAIL_ADDRESS" /> 的身分登入，可以在所有登入的裝置上使用您的書籤、紀錄和其他設定。</translation>
 <translation id="4631713731678262610">在 Chrome 選單中隱藏</translation>
 <translation id="4633000520311261472">為了讓 Chrome 的安全性更有保障，我們已將部分未列在 <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> 中的擴充功能停用，它們可能在您不知情的情況下加入瀏覽器。</translation>
 <translation id="4700157086864140907">Google Chrome 可將您在瀏覽器中輸入的字詞傳送給 Google 伺服器，並透過 Google 搜尋所使用的拼字檢查技術，為您提供更好用的拼字檢查功能。</translation>
 <translation id="4728575227883772061">安裝因不明錯誤而失敗。如果 Google Chrome 目前正在執行中，請將其關閉然後再試一次。</translation>
-<translation id="473775607612524610">更新</translation>
 <translation id="4743926867934016338">接受並搜尋</translation>
 <translation id="4751441238232965030">這台電腦將不會再收到 32 位元的 Google Chrome 更新，請升級至 64 位元的 Google Chrome。</translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
@@ -217,6 +214,7 @@ Google Chrome 無法復原您的設定。</translation>
 <translation id="8032142183999901390">將您的帳戶從 Chrome 移除後，可能需要重新載入開啟的分頁，操作才會生效。</translation>
 <translation id="8037887340639533879">找不到安裝的 Google Chrome，無法更新。</translation>
 <translation id="8129812357326543296">關於 Google Chrome(&amp;G)</translation>
+<translation id="8183957050892517584">Chrome 會妥善保存您的個人詳細資料，讓您不必重複輸入相同的資料。</translation>
 <translation id="8205111949707227942">選擇性：把使用統計資料及當機報告自動傳送給 Google，將有助於 Chrome OS 更臻完美。</translation>
 <translation id="8227755444512189073">Google Chrome 需要啟動外部應用程式以處理 <ph name="SCHEME" /> 連結。所要求的連結為 <ph name="PROTOLINK" />。 </translation>
 <translation id="8255190535488645436">Google Chrome 正在使用您的攝影機和麥克風。</translation>

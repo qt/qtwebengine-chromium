@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/test/test_simple_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "gpu/command_buffer/client/gles2_interface_stub.h"
 #include "media/base/video_frame.h"
 #include "media/renderers/mock_gpu_video_accelerator_factories.h"
@@ -36,8 +37,8 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
   void GenSyncTokenCHROMIUM(GLuint64 fence_sync, GLbyte* sync_token) override {
     gpu::SyncToken sync_token_data;
     if (fence_sync <= flushed_fence_sync_) {
-      sync_token_data.Set(gpu::CommandBufferNamespace::GPU_IO, 0, 0,
-                          fence_sync);
+      sync_token_data.Set(gpu::CommandBufferNamespace::GPU_IO, 0,
+                          gpu::CommandBufferId(), fence_sync);
       sync_token_data.SetVerifyFlush();
     }
     memcpy(sync_token, &sync_token_data, sizeof(sync_token_data));
@@ -47,8 +48,8 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
                                       GLbyte* sync_token) override {
     gpu::SyncToken sync_token_data;
     if (fence_sync <= flushed_fence_sync_) {
-      sync_token_data.Set(gpu::CommandBufferNamespace::GPU_IO, 0, 0,
-                          fence_sync);
+      sync_token_data.Set(gpu::CommandBufferNamespace::GPU_IO, 0,
+                          gpu::CommandBufferId(), fence_sync);
     }
     memcpy(sync_token, &sync_token_data, sizeof(sync_token_data));
   }
@@ -72,6 +73,8 @@ class GpuMemoryBufferVideoFramePoolTest : public ::testing::Test {
     gles2_.reset(new TestGLES2Interface);
     media_task_runner_ = make_scoped_refptr(new base::TestSimpleTaskRunner);
     copy_task_runner_ = make_scoped_refptr(new base::TestSimpleTaskRunner);
+    media_task_runner_handle_.reset(
+        new base::ThreadTaskRunnerHandle(media_task_runner_));
     mock_gpu_factories_.reset(
         new MockGpuVideoAcceleratorFactories(gles2_.get()));
     gpu_memory_buffer_pool_.reset(new GpuMemoryBufferVideoFramePool(
@@ -123,6 +126,9 @@ class GpuMemoryBufferVideoFramePoolTest : public ::testing::Test {
   scoped_ptr<GpuMemoryBufferVideoFramePool> gpu_memory_buffer_pool_;
   scoped_refptr<base::TestSimpleTaskRunner> media_task_runner_;
   scoped_refptr<base::TestSimpleTaskRunner> copy_task_runner_;
+  // GpuMemoryBufferVideoFramePool uses BindToCurrentLoop(), which requires
+  // ThreadTaskRunnerHandle initialization.
+  scoped_ptr<base::ThreadTaskRunnerHandle> media_task_runner_handle_;
   scoped_ptr<TestGLES2Interface> gles2_;
 };
 
@@ -268,6 +274,8 @@ TEST_F(GpuMemoryBufferVideoFramePoolTest, CreateOneHardwareUYUVFrame) {
 
   EXPECT_NE(software_frame.get(), frame.get());
   EXPECT_EQ(1u, gles2_->gen_textures);
+  EXPECT_TRUE(frame->metadata()->IsTrue(
+      media::VideoFrameMetadata::READ_LOCK_FENCES_ENABLED));
 }
 
 TEST_F(GpuMemoryBufferVideoFramePoolTest, CreateOneHardwareNV12Frame) {
@@ -281,6 +289,8 @@ TEST_F(GpuMemoryBufferVideoFramePoolTest, CreateOneHardwareNV12Frame) {
 
   EXPECT_NE(software_frame.get(), frame.get());
   EXPECT_EQ(1u, gles2_->gen_textures);
+  EXPECT_TRUE(frame->metadata()->IsTrue(
+      media::VideoFrameMetadata::READ_LOCK_FENCES_ENABLED));
 }
 
 // AllocateGpuMemoryBuffer can return null (e.g: when the GPU process is down).

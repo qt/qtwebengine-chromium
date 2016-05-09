@@ -55,49 +55,41 @@ String SVGNumberList::valueAsString() const
 }
 
 template <typename CharType>
-bool SVGNumberList::parse(const CharType*& ptr, const CharType* end)
+SVGParsingError SVGNumberList::parse(const CharType*& ptr, const CharType* end)
 {
-    clear();
-
+    const CharType* listStart = ptr;
     while (ptr < end) {
         float number = 0;
         if (!parseNumber(ptr, end, number))
-            return false;
+            return SVGParsingError(SVGParseStatus::ExpectedNumber, ptr - listStart);
         append(SVGNumber::create(number));
     }
-
-    return true;
+    return SVGParseStatus::NoError;
 }
 
 SVGParsingError SVGNumberList::setValueAsString(const String& value)
 {
-    if (value.isEmpty()) {
-        clear();
-        return NoError;
-    }
+    clear();
 
-    bool valid = false;
+    if (value.isEmpty())
+        return SVGParseStatus::NoError;
+
+    // Don't call |clear()| if an error is encountered. SVG policy is to use
+    // valid items before error.
+    // Spec: http://www.w3.org/TR/SVG/single-page.html#implnote-ErrorProcessing
     if (value.is8Bit()) {
         const LChar* ptr = value.characters8();
         const LChar* end = ptr + value.length();
-        valid = parse(ptr, end);
-    } else {
-        const UChar* ptr = value.characters16();
-        const UChar* end = ptr + value.length();
-        valid = parse(ptr, end);
+        return parse(ptr, end);
     }
-
-    if (!valid) {
-        // No call to |clear()| here. SVG policy is to use valid items before error.
-        // Spec: http://www.w3.org/TR/SVG/single-page.html#implnote-ErrorProcessing
-        return ParsingAttributeFailedError;
-    }
-    return NoError;
+    const UChar* ptr = value.characters16();
+    const UChar* end = ptr + value.length();
+    return parse(ptr, end);
 }
 
-void SVGNumberList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGNumberList::add(SVGPropertyBase* other, SVGElement* contextElement)
 {
-    RefPtrWillBeRawPtr<SVGNumberList> otherList = toSVGNumberList(other);
+    SVGNumberList* otherList = toSVGNumberList(other);
 
     if (length() != otherList->length())
         return;
@@ -106,17 +98,17 @@ void SVGNumberList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElemen
         at(i)->setValue(at(i)->value() + otherList->at(i)->value());
 }
 
-void SVGNumberList::calculateAnimatedValue(SVGAnimationElement* animationElement, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> fromValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement)
+void SVGNumberList::calculateAnimatedValue(SVGAnimationElement* animationElement, float percentage, unsigned repeatCount, SVGPropertyBase* fromValue, SVGPropertyBase* toValue, SVGPropertyBase* toAtEndOfDurationValue, SVGElement* contextElement)
 {
-    RefPtrWillBeRawPtr<SVGNumberList> fromList = toSVGNumberList(fromValue);
-    RefPtrWillBeRawPtr<SVGNumberList> toList = toSVGNumberList(toValue);
-    RefPtrWillBeRawPtr<SVGNumberList> toAtEndOfDurationList = toSVGNumberList(toAtEndOfDurationValue);
+    SVGNumberList* fromList = toSVGNumberList(fromValue);
+    SVGNumberList* toList = toSVGNumberList(toValue);
+    SVGNumberList* toAtEndOfDurationList = toSVGNumberList(toAtEndOfDurationValue);
 
     size_t fromListSize = fromList->length();
     size_t toListSize = toList->length();
     size_t toAtEndOfDurationListSize = toAtEndOfDurationList->length();
 
-    if (!adjustFromToListValues(fromList, toList, percentage, animationElement->animationMode()))
+    if (!adjustFromToListValues(fromList, toList, percentage, animationElement->getAnimationMode()))
         return;
 
     for (size_t i = 0; i < toListSize; ++i) {
@@ -130,7 +122,7 @@ void SVGNumberList::calculateAnimatedValue(SVGAnimationElement* animationElement
     }
 }
 
-float SVGNumberList::calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*)
+float SVGNumberList::calculateDistance(SVGPropertyBase* to, SVGElement*)
 {
     // FIXME: Distance calculation is not possible for SVGNumberList right now. We need the distance for every single value.
     return -1;
@@ -145,4 +137,4 @@ Vector<float> SVGNumberList::toFloatVector() const
     return vec;
 }
 
-}
+} // namespace blink

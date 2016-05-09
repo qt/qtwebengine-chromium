@@ -5,11 +5,11 @@
 #ifndef STORAGE_BROWSER_FILEAPI_SANDBOX_ORIGIN_DATABASE_H_
 #define STORAGE_BROWSER_FILEAPI_SANDBOX_ORIGIN_DATABASE_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "storage/browser/fileapi/sandbox_origin_database_interface.h"
 
@@ -61,6 +61,8 @@ class STORAGE_EXPORT SandboxOriginDatabase
 
   bool Init(InitOption init_option, RecoveryOption recovery_option);
   bool RepairDatabase(const std::string& db_path);
+  // Close the database. Before this, all iterators associated with the database
+  // must be deleted.
   void HandleError(const tracked_objects::Location& from_here,
                    const leveldb::Status& status);
   void ReportInitStatus(const leveldb::Status& status);
@@ -68,7 +70,7 @@ class STORAGE_EXPORT SandboxOriginDatabase
 
   base::FilePath file_system_directory_;
   leveldb::Env* env_override_;
-  scoped_ptr<leveldb::DB> db_;
+  std::unique_ptr<leveldb::DB> db_;
   base::Time last_reported_time_;
   DISALLOW_COPY_AND_ASSIGN(SandboxOriginDatabase);
 };

@@ -32,7 +32,11 @@
 
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/Assertions.h"
+#include "wtf/Functional.h"
 #include "wtf/Partitions.h"
+#include "wtf/Threading.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/StringStatics.h"
 
 namespace WTF {
 
@@ -40,19 +44,36 @@ extern void initializeThreading();
 
 bool s_initialized;
 bool s_shutdown;
+void (*s_callOnMainThreadFunction)(MainThreadFunction, void*);
+ThreadIdentifier s_mainThreadIdentifier;
 
-void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction, HistogramEnumerationFunction histogramEnumerationFunction, AdjustAmountOfExternalAllocatedMemoryFunction adjustAmountOfExternalAllocatedMemoryFunction)
+namespace internal {
+
+void callOnMainThread(MainThreadFunction* function, void* context)
+{
+    (*s_callOnMainThreadFunction)(function, context);
+}
+
+} // namespace internal
+
+bool isMainThread()
+{
+    return currentThread() == s_mainThreadIdentifier;
+}
+
+void initialize(void (*callOnMainThreadFunction)(MainThreadFunction, void*))
 {
     // WTF, and Blink in general, cannot handle being re-initialized, even if shutdown first.
     // Make that explicit here.
     RELEASE_ASSERT(!s_initialized);
     RELEASE_ASSERT(!s_shutdown);
     s_initialized = true;
-    setCurrentTimeFunction(currentTimeFunction);
-    setMonotonicallyIncreasingTimeFunction(monotonicallyIncreasingTimeFunction);
-    Partitions::initialize(histogramEnumerationFunction);
-    ArrayBufferContents::setAdjustAmoutOfExternalAllocatedMemoryFunction(adjustAmountOfExternalAllocatedMemoryFunction);
     initializeThreading();
+
+    s_callOnMainThreadFunction = callOnMainThreadFunction;
+    s_mainThreadIdentifier = currentThread();
+    AtomicString::init();
+    StringStatics::init();
 }
 
 void shutdown()
@@ -60,7 +81,6 @@ void shutdown()
     RELEASE_ASSERT(s_initialized);
     RELEASE_ASSERT(!s_shutdown);
     s_shutdown = true;
-    Partitions::shutdown();
 }
 
 bool isShutdown()

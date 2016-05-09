@@ -21,10 +21,12 @@ class SourceListDirective final : public CSPDirective {
     WTF_MAKE_NONCOPYABLE(SourceListDirective);
 public:
     SourceListDirective(const String& name, const String& value, ContentSecurityPolicy*);
+    DECLARE_TRACE();
 
     bool allows(const KURL&, blink::ContentSecurityPolicy::RedirectStatus) const;
     bool allowInline() const;
     bool allowEval() const;
+    bool allowDynamic() const;
     bool allowNonce(const String& nonce) const;
     bool allowHash(const CSPHashValue&) const;
     bool isHashOrNoncePresent() const;

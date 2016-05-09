@@ -252,7 +252,7 @@ WebInspector.NetworkLogView.prototype = {
 
     _addFilters: function()
     {
-        this._textFilterUI = new WebInspector.TextFilterUI();
+        this._textFilterUI = new WebInspector.TextFilterUI(true);
         this._textFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._filterChanged, this);
         this._filterBar.addFilter(this._textFilterUI);
 
@@ -622,13 +622,13 @@ WebInspector.NetworkLogView.prototype = {
     {
         this._sortingFunctions = {};
         this._sortingFunctions.name = WebInspector.NetworkDataGridNode.NameComparator;
-        this._sortingFunctions.method = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "method", false);
+        this._sortingFunctions.method = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "requestMethod", false);
         this._sortingFunctions.status = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "statusCode", false);
         this._sortingFunctions.protocol = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "protocol", false);
         this._sortingFunctions.scheme = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "scheme", false);
         this._sortingFunctions.domain = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "domain", false);
         this._sortingFunctions.remoteAddress = WebInspector.NetworkDataGridNode.RemoteAddressComparator;
-        this._sortingFunctions.type = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "mimeType", false);
+        this._sortingFunctions.type = WebInspector.NetworkDataGridNode.TypeComparator;
         this._sortingFunctions.initiator = WebInspector.NetworkDataGridNode.InitiatorComparator;
         this._sortingFunctions.cookies = WebInspector.NetworkDataGridNode.RequestCookiesCountComparator;
         this._sortingFunctions.setCookies = WebInspector.NetworkDataGridNode.ResponseCookiesCountComparator;
@@ -961,16 +961,26 @@ WebInspector.NetworkLogView.prototype = {
 
         var dataGrid = this._dataGrid;
         var rootNode = dataGrid.rootNode();
+        /** @type {!Array<!WebInspector.NetworkDataGridNode> } */
         var nodesToInsert = [];
+        /** @type {!Array<!WebInspector.NetworkDataGridNode> } */
+        var nodesToRefresh = [];
         for (var requestId in this._staleRequestIds) {
             var node = this._nodesByRequestId.get(requestId);
             if (!node)
                 continue;
-            if (!node[WebInspector.NetworkLogView._isFilteredOutSymbol])
-                rootNode.removeChild(node);
-            node[WebInspector.NetworkLogView._isFilteredOutSymbol] = !this._applyFilter(node);
-            if (!node[WebInspector.NetworkLogView._isFilteredOutSymbol])
-                nodesToInsert.push(node);
+            var isFilteredOut = !this._applyFilter(node);
+            if (node[WebInspector.NetworkLogView._isFilteredOutSymbol] !== isFilteredOut) {
+                if (!node[WebInspector.NetworkLogView._isFilteredOutSymbol])
+                    rootNode.removeChild(node);
+
+                node[WebInspector.NetworkLogView._isFilteredOutSymbol] = isFilteredOut;
+
+                if (!node[WebInspector.NetworkLogView._isFilteredOutSymbol])
+                    nodesToInsert.push(node);
+            }
+            if (!isFilteredOut)
+                nodesToRefresh.push(node);
             var request = node.request();
             this._timeCalculator.updateBoundaries(request);
             this._durationCalculator.updateBoundaries(request);
@@ -980,23 +990,13 @@ WebInspector.NetworkLogView.prototype = {
             var node = nodesToInsert[i];
             var request = node.request();
             dataGrid.insertChild(node);
-            node.refresh();
             node[WebInspector.NetworkLogView._isMatchingSearchQuerySymbol] = this._matchRequest(request);
         }
 
-        this._highlightNthMatchedRequestForSearch(this._updateMatchCountAndFindMatchIndex(this._currentMatchedRequestNode), false);
+        for (var node of nodesToRefresh)
+            node.refresh();
 
-        if (this._shouldSetWaterfallWindow && this._mainRequestLoadTime !== -1) {
-            var waterfallWindow = this.calculator().boundary();
-            var overtime = this._mainRequestLoadTime - waterfallWindow.minimum;
-            overtime = Number.constrain(overtime, WebInspector.NetworkLogView._waterfallMinOvertime, WebInspector.NetworkLogView._waterfallMaxOvertime)
-            var waterfallEnd = this._mainRequestLoadTime + overtime;
-            if (waterfallEnd <= waterfallWindow.maximum) {
-                waterfallWindow.maximum = waterfallEnd;
-                this._shouldSetWaterfallWindow = false;
-                this._timeCalculator.setWindow(waterfallWindow);
-            }
-        }
+        this._highlightNthMatchedRequestForSearch(this._updateMatchCountAndFindMatchIndex(this._currentMatchedRequestNode), false);
 
         if (!this.calculator().boundary().equals(oldBoundary)) {
             // The boundaries changed, so all item graphs are stale.
@@ -1014,9 +1014,6 @@ WebInspector.NetworkLogView.prototype = {
     {
         this._requestWithHighlightedInitiators = null;
         this.dispatchEventToListeners(WebInspector.NetworkLogView.EventTypes.RequestSelected, null);
-
-        /** @type {boolean} */
-        this._shouldSetWaterfallWindow = Runtime.experiments.isEnabled("showPrimaryLoadWaterfallInNetworkTimeline") && this._networkShowPrimaryLoadWaterfallSetting.get();
 
         this._clearSearchMatchedList();
         if (this._popoverHelper)
@@ -1231,7 +1228,7 @@ WebInspector.NetworkLogView.prototype = {
         anchor = element.enclosingNodeOrSelfWithClass("network-script-initiated");
         if (anchor && anchor.request) {
             var initiator = /** @type {!WebInspector.NetworkRequest} */ (anchor.request).initiator();
-            if (initiator && (initiator.stackTrace || initiator.asyncStackTrace))
+            if (initiator && initiator.stack)
                 return anchor;
         }
     },
@@ -1246,7 +1243,7 @@ WebInspector.NetworkLogView.prototype = {
         if (anchor.classList.contains("network-script-initiated")) {
             var request = /** @type {!WebInspector.NetworkRequest} */ (anchor.request);
             var initiator = /** @type {!NetworkAgent.Initiator} */ (request.initiator());
-            content = WebInspector.DOMPresentationUtils.buildStackTracePreviewContents(request.target(), this._popupLinkifier, initiator.stackTrace, initiator.asyncStackTrace);
+            content = WebInspector.DOMPresentationUtils.buildStackTracePreviewContents(request.target(), this._popupLinkifier, initiator.stack);
             popover.setCanShrink(true);
         } else {
             content = WebInspector.RequestTimingView.createTimingTable(anchor.parentElement.request, this._timeCalculator.minimumBoundary());
@@ -1430,7 +1427,7 @@ WebInspector.NetworkLogView.prototype = {
                 content = request.asDataURL();
             InspectorFrontendHost.copyText(content || "");
         }
-        request.requestContent(callback);
+        request.requestContent().then(callback);
     },
 
     /**
@@ -1585,7 +1582,7 @@ WebInspector.NetworkLogView.prototype = {
      */
     supportsRegexSearch: function()
     {
-        return false;
+        return true;
     },
 
     /**
@@ -1649,8 +1646,14 @@ WebInspector.NetworkLogView.prototype = {
      */
     _parseFilterQuery: function(query)
     {
-        var parsedQuery = this._suggestionBuilder.parseQuery(query);
-        this._filters = parsedQuery.text.map(this._createTextFilter);
+        var parsedQuery;
+        if (this._textFilterUI.isRegexChecked() && query !== "")
+            parsedQuery = {text: [query], filters: []};
+        else
+            parsedQuery = this._suggestionBuilder.parseQuery(query);
+
+        this._filters = parsedQuery.text.map(this._createTextFilter, this);
+
         var n = parsedQuery.filters.length;
         for (var i = 0; i < n; ++i) {
             var filter = parsedQuery.filters[i];
@@ -1666,11 +1669,12 @@ WebInspector.NetworkLogView.prototype = {
     _createTextFilter: function(text)
     {
         var negative = false;
-        if (text[0] === "-" && text.length > 1) {
+        if (!this._textFilterUI.isRegexChecked() && text[0] === "-" && text.length > 1) {
             negative = true;
             text = text.substring(1);
         }
-        var regexp = new RegExp(text.escapeForRegExp(), "i");
+        var regexp = this._textFilterUI.regex();
+
         var filter = WebInspector.NetworkLogView._requestNameOrPathFilter.bind(null, regexp);
         if (negative)
             filter = WebInspector.NetworkLogView._negativeFilter.bind(null, filter);
@@ -1950,12 +1954,14 @@ WebInspector.NetworkLogView._negativeFilter = function(filter, request)
 }
 
 /**
- * @param {!RegExp} regex
+ * @param {?RegExp} regex
  * @param {!WebInspector.NetworkRequest} request
  * @return {boolean}
  */
 WebInspector.NetworkLogView._requestNameOrPathFilter = function(regex, request)
 {
+    if (!regex)
+        return false;
     return regex.test(request.name()) || regex.test(request.path());
 }
 

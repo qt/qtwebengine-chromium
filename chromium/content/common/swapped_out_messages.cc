@@ -9,7 +9,6 @@
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_client.h"
-#include "content/shell/common/shell_messages.h"
 
 namespace content {
 
@@ -40,8 +39,6 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     // Frame detach must occur after the RenderView has swapped out.
     case FrameHostMsg_Detach::ID:
     case FrameHostMsg_DomOperationResponse::ID:
-    case FrameHostMsg_CompositorFrameSwappedACK::ID:
-    case FrameHostMsg_ReclaimCompositorResources::ID:
     // Input events propagate from parent to child.
     case FrameHostMsg_ForwardInputEvent::ID:
     case FrameHostMsg_InitializeChildFrame::ID:
@@ -50,8 +47,8 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
     case FrameHostMsg_DidAssignPageId::ID:
     // A swapped-out frame's opener might be updated with window.open.
     case FrameHostMsg_DidChangeOpener::ID:
-    // Used in layout tests; handled in BlinkTestController.
-    case ShellViewHostMsg_PrintMessage::ID:
+    // For handling pop-ups from cross-site frames.
+    case ViewHostMsg_CreateWidget::ID:
       return true;
     default:
       break;

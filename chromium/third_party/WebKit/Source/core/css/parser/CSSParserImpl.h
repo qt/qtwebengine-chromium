@@ -51,15 +51,19 @@ public:
         AllowNamespaceRules,
         RegularRules,
         KeyframeRules,
+        ApplyRules, // For @apply inside style rules
         NoRules, // For parsing at-rules inside declaration lists
     };
 
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, const CSSParserContext&);
     static bool parseVariableValue(MutableStylePropertySet*, const AtomicString& propertyName, const String&, bool important, const CSSParserContext&);
-    static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
+    static ImmutableStylePropertySet* parseInlineStyleDeclaration(const String&, Element*);
     static bool parseDeclarationList(MutableStylePropertySet*, const String&, const CSSParserContext&);
-    static PassRefPtrWillBeRawPtr<StyleRuleBase> parseRule(const String&, const CSSParserContext&, StyleSheetContents*, AllowedRulesType);
+    static StyleRuleBase* parseRule(const String&, const CSSParserContext&, StyleSheetContents*, AllowedRulesType);
     static void parseStyleSheet(const String&, const CSSParserContext&, StyleSheetContents*);
+    static CSSSelectorList parsePageSelector(CSSParserTokenRange, StyleSheetContents*);
+
+    static ImmutableStylePropertySet* parseCustomPropertySet(CSSParserTokenRange);
 
     static PassOwnPtr<Vector<double>> parseKeyframeKeyList(const String&);
 
@@ -80,35 +84,37 @@ private:
     bool consumeRuleList(CSSParserTokenRange, RuleListType, T callback);
 
     // These two functions update the range they're given
-    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeAtRule(CSSParserTokenRange&, AllowedRulesType);
-    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeQualifiedRule(CSSParserTokenRange&, AllowedRulesType);
+    StyleRuleBase* consumeAtRule(CSSParserTokenRange&, AllowedRulesType);
+    StyleRuleBase* consumeQualifiedRule(CSSParserTokenRange&, AllowedRulesType);
 
-    static PassRefPtrWillBeRawPtr<StyleRuleCharset> consumeCharsetRule(CSSParserTokenRange prelude);
-    PassRefPtrWillBeRawPtr<StyleRuleImport> consumeImportRule(CSSParserTokenRange prelude);
-    PassRefPtrWillBeRawPtr<StyleRuleNamespace> consumeNamespaceRule(CSSParserTokenRange prelude);
-    PassRefPtrWillBeRawPtr<StyleRuleMedia> consumeMediaRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRuleSupports> consumeSupportsRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRuleViewport> consumeViewportRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRuleFontFace> consumeFontFaceRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRuleKeyframes> consumeKeyframesRule(bool webkitPrefixed, CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRulePage> consumePageRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    static StyleRuleCharset* consumeCharsetRule(CSSParserTokenRange prelude);
+    StyleRuleImport* consumeImportRule(CSSParserTokenRange prelude);
+    StyleRuleNamespace* consumeNamespaceRule(CSSParserTokenRange prelude);
+    StyleRuleMedia* consumeMediaRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRuleSupports* consumeSupportsRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRuleViewport* consumeViewportRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRuleFontFace* consumeFontFaceRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRuleKeyframes* consumeKeyframesRule(bool webkitPrefixed, CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRulePage* consumePageRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    // Updates m_parsedProperties
+    void consumeApplyRule(CSSParserTokenRange prelude);
 
-    PassRefPtrWillBeRawPtr<StyleRuleKeyframe> consumeKeyframeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
-    PassRefPtrWillBeRawPtr<StyleRule> consumeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRuleKeyframe* consumeKeyframeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    StyleRule* consumeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
 
-    void consumeDeclarationList(CSSParserTokenRange, StyleRule::Type);
-    void consumeDeclaration(CSSParserTokenRange, StyleRule::Type);
-    void consumeDeclarationValue(CSSParserTokenRange, CSSPropertyID, bool important, StyleRule::Type);
+    void consumeDeclarationList(CSSParserTokenRange, StyleRule::RuleType);
+    void consumeDeclaration(CSSParserTokenRange, StyleRule::RuleType);
+    void consumeDeclarationValue(CSSParserTokenRange, CSSPropertyID, bool important, StyleRule::RuleType);
     void consumeVariableValue(CSSParserTokenRange, const AtomicString& propertyName, bool important);
 
     static PassOwnPtr<Vector<double>> consumeKeyframeKeyList(CSSParserTokenRange);
 
     // FIXME: Can we build StylePropertySets directly?
     // FIXME: Investigate using a smaller inline buffer
-    WillBeHeapVector<CSSProperty, 256> m_parsedProperties;
+    HeapVector<CSSProperty, 256> m_parsedProperties;
     CSSParserContext m_context;
 
-    RawPtrWillBeMember<StyleSheetContents> m_styleSheet;
+    Member<StyleSheetContents> m_styleSheet;
 
     // For the inspector
     CSSParserObserverWrapper* m_observerWrapper;

@@ -37,14 +37,34 @@ public:
     // Returns a clone of the WebTaskRunner.
     virtual WebTaskRunner* clone() = 0;
 
+    // ---
+
+    // Headless Chrome virtualises time for determinism and performance (fast forwarding
+    // of timers). To make this work some parts of blink (e.g. Timers) need to use virtual
+    // time, however by default new code should use the normal non-virtual time APIs.
+
+    // Returns a double which is the number of seconds since epoch (Jan 1, 1970).
+    // This may represent either the real time, or a virtual time depending on
+    // whether or not the WebTaskRunner is associated with a virtual time domain or a
+    // real time domain.
+    virtual double virtualTimeSeconds() const = 0;
+
+    // Returns a microsecond resolution platform dependant time source.
+    // This may represent either the real time, or a virtual time depending on
+    // whether or not the WebTaskRunner is associated with a virtual time domain or a
+    // real time domain.
+    virtual double monotonicallyIncreasingVirtualTimeSeconds() const = 0;
+
 #ifdef INSIDE_BLINK
     // Helpers for posting bound functions as tasks.
-    typedef Function<void()> ClosureTask;
 
-    void postTask(const WebTraceLocation&, PassOwnPtr<ClosureTask>);
-    // TODO(alexclarke): Remove this when possible.
-    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ClosureTask>, long long delayMs);
-    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ClosureTask>, double delayMs);
+    // For cross-thread posting. Can be called from any thread.
+    void postTask(const WebTraceLocation&, PassOwnPtr<CrossThreadClosure>);
+    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<CrossThreadClosure>, long long delayMs);
+
+    // For same-thread posting. Must be called from the associated WebThread.
+    void postTask(const WebTraceLocation&, PassOwnPtr<SameThreadClosure>);
+    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<SameThreadClosure>, long long delayMs);
 
     PassOwnPtr<WebTaskRunner> adoptClone()
     {

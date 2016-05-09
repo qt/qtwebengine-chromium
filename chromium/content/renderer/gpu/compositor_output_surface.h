@@ -47,6 +47,9 @@ class CompositorOutputSurface
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
       const scoped_refptr<ContextProviderCommandBuffer>&
           worker_context_provider,
+#if defined(ENABLE_VULKAN)
+      const scoped_refptr<cc::VulkanContextProvider>& vulkan_context_provider,
+#endif
       scoped_ptr<cc::SoftwareOutputDevice> software,
       scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
       bool use_swap_compositor_frame_message);
@@ -56,10 +59,6 @@ class CompositorOutputSurface
   bool BindToClient(cc::OutputSurfaceClient* client) override;
   void DetachFromClient() override;
   void SwapBuffers(cc::CompositorFrame* frame) override;
-
-  // TODO(epenner): This seems out of place here and would be a better fit
-  // int CompositorThread after it is fully refactored (http://crbug/170828)
-  void UpdateSmoothnessTakesPriority(bool prefer_smoothness) override;
 
  protected:
   void ShortcutSwapAck(uint32_t output_surface_id,
@@ -104,10 +103,6 @@ class CompositorOutputSurface
   scoped_refptr<IPC::SyncMessageFilter> message_sender_;
   scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue_;
   int routing_id_;
-#if defined(OS_ANDROID)
-  bool prefers_smoothness_;
-  scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner_;
-#endif
 
   // TODO(danakj): Remove this when crbug.com/311404
   bool layout_test_mode_;

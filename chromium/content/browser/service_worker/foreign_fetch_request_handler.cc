@@ -4,6 +4,8 @@
 
 #include "content/browser/service_worker/foreign_fetch_request_handler.h"
 
+#include <string>
+
 #include "base/macros.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
@@ -120,8 +122,9 @@ net::URLRequestJob* ForeignFetchRequestHandler::MaybeCreateJob(
 
   ServiceWorkerURLRequestJob* job = new ServiceWorkerURLRequestJob(
       request, network_delegate, std::string(), blob_storage_context_,
-      resource_context, request_mode_, credentials_mode_, redirect_mode_, false,
-      request_context_type_, frame_type_, body_, this);
+      resource_context, request_mode_, credentials_mode_, redirect_mode_,
+      resource_type_, request_context_type_, frame_type_, body_,
+      ServiceWorkerFetchType::FOREIGN_FETCH, this);
   job_ = job->GetWeakPtr();
 
   context_->FindReadyRegistrationForDocument(
@@ -179,7 +182,14 @@ void ForeignFetchRequestHandler::DidFindRegistration(
     }
   }
 
-  if (!scope_matches) {
+  const url::Origin& request_origin = job->request()->initiator();
+  bool origin_matches = active_version->foreign_fetch_origins().empty();
+  for (const url::Origin& origin : active_version->foreign_fetch_origins()) {
+    if (request_origin.IsSameOriginWith(origin))
+      origin_matches = true;
+  }
+
+  if (!scope_matches || !origin_matches) {
     job->FallbackToNetwork();
     return;
   }
@@ -201,7 +211,9 @@ void ForeignFetchRequestHandler::OnStartCompleted(
     const GURL& original_url_via_service_worker,
     blink::WebServiceWorkerResponseType response_type_via_service_worker,
     base::TimeTicks service_worker_start_time,
-    base::TimeTicks service_worker_ready_time) {}
+    base::TimeTicks service_worker_ready_time,
+    bool response_is_in_cache_storage,
+    const std::string& response_cache_storage_cache_name) {}
 
 ServiceWorkerVersion* ForeignFetchRequestHandler::GetServiceWorkerVersion(
     ServiceWorkerMetrics::URLRequestJobResult* result) {
@@ -212,11 +224,6 @@ ServiceWorkerVersion* ForeignFetchRequestHandler::GetServiceWorkerVersion(
     return nullptr;
   }
   return target_worker_.get();
-}
-
-GURL ForeignFetchRequestHandler::GetRequestingOrigin() {
-  // TODO(mek): Implement this.
-  return GURL();
 }
 
 void ForeignFetchRequestHandler::ClearJob() {

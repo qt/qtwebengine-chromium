@@ -35,12 +35,12 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<EventDispatchMediator> EventDispatchMediator::create(PassRefPtrWillBeRawPtr<Event> event)
+EventDispatchMediator* EventDispatchMediator::create(Event* event)
 {
-    return adoptRefWillBeNoop(new EventDispatchMediator(event));
+    return new EventDispatchMediator(event);
 }
 
-EventDispatchMediator::EventDispatchMediator(PassRefPtrWillBeRawPtr<Event> event)
+EventDispatchMediator::EventDispatchMediator(Event* event)
     : m_event(event)
 {
 }
@@ -50,7 +50,7 @@ DEFINE_TRACE(EventDispatchMediator)
     visitor->trace(m_event);
 }
 
-bool EventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
+DispatchEventResult EventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
     ASSERT(m_event.get() == &dispatcher.event());
     return dispatcher.dispatch();

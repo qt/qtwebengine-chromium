@@ -28,8 +28,10 @@
 
 #include "core/workers/WorkerMessagingProxy.h"
 
+#include "bindings/core/v8/V8GCController.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
+#include "core/dom/SecurityContext.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/MessageEvent.h"
 #include "core/frame/Console.h"
@@ -38,7 +40,6 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
@@ -49,16 +50,15 @@
 #include "core/workers/WorkerThreadStartupData.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Functional.h"
-#include "wtf/MainThread.h"
 
 namespace blink {
 
 namespace {
 
-void processExceptionOnWorkerGlobalScope(int exceptionId, bool isHandled, ExecutionContext* scriptContext)
+void processExceptionOnWorkerGlobalScope(int exceptionId, bool handled, ExecutionContext* scriptContext)
 {
     WorkerGlobalScope* globalScope = toWorkerGlobalScope(scriptContext);
-    globalScope->exceptionHandled(exceptionId, isHandled);
+    globalScope->exceptionHandled(exceptionId, handled);
 }
 
 void processMessageOnWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels, WorkerObjectProxy* workerObjectProxy, ExecutionContext* scriptContext)
@@ -66,13 +66,13 @@ void processMessageOnWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message
     WorkerGlobalScope* globalScope = toWorkerGlobalScope(scriptContext);
     MessagePortArray* ports = MessagePort::entanglePorts(*scriptContext, channels);
     globalScope->dispatchEvent(MessageEvent::create(ports, message));
-    workerObjectProxy->confirmMessageFromWorkerObject(scriptContext->hasPendingActivity());
+    workerObjectProxy->confirmMessageFromWorkerObject(V8GCController::hasPendingActivity(globalScope->thread()->isolate(), scriptContext));
 }
 
 } // namespace
 
-WorkerMessagingProxy::WorkerMessagingProxy(InProcessWorkerBase* workerObject, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
-    : m_executionContext(workerObject->executionContext())
+WorkerMessagingProxy::WorkerMessagingProxy(InProcessWorkerBase* workerObject, WorkerClients* workerClients)
+    : m_executionContext(workerObject->getExecutionContext())
     , m_workerObjectProxy(WorkerObjectProxy::create(this))
     , m_workerObject(workerObject)
     , m_mayBeDestroyed(false)
@@ -85,7 +85,6 @@ WorkerMessagingProxy::WorkerMessagingProxy(InProcessWorkerBase* workerObject, Pa
     ASSERT(m_workerObject);
     ASSERT((m_executionContext->isDocument() && isMainThread())
         || (m_executionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_executionContext.get())->thread()->isCurrentThread()));
-    m_workerInspectorProxy->setWorkerGlobalScopeProxy(this);
 }
 
 WorkerMessagingProxy::~WorkerMessagingProxy()
@@ -95,10 +94,9 @@ WorkerMessagingProxy::~WorkerMessagingProxy()
         || (m_executionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_executionContext.get())->thread()->isCurrentThread()));
     if (m_loaderProxy)
         m_loaderProxy->detachProvider(this);
-    m_workerInspectorProxy->setWorkerGlobalScopeProxy(nullptr);
 }
 
-void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode)
+void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode)
 {
     // FIXME: This need to be revisited when we support nested worker one day
     ASSERT(m_executionContext->isDocument());
@@ -107,19 +105,20 @@ void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const S
         return;
     }
     Document* document = toDocument(m_executionContext.get());
-    SecurityOrigin* starterOrigin = document->securityOrigin();
+    SecurityOrigin* starterOrigin = document->getSecurityOrigin();
 
     ContentSecurityPolicy* csp = m_workerObject->contentSecurityPolicy() ? m_workerObject->contentSecurityPolicy() : document->contentSecurityPolicy();
     ASSERT(csp);
 
-    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, csp->headers(), starterOrigin, m_workerClients.release());
+    WorkerThreadStartMode startMode = m_workerInspectorProxy->workerStartMode(document);
+    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, csp->headers(), starterOrigin, m_workerClients.release(), document->addressSpace());
     double originTime = document->loader() ? document->loader()->timing().referenceMonotonicTime() : monotonicallyIncreasingTime();
 
     m_loaderProxy = WorkerLoaderProxy::create(this);
-    RefPtr<WorkerThread> thread = createWorkerThread(originTime);
-    thread->start(startupData.release());
-    workerThreadCreated(thread);
-    m_workerInspectorProxy->workerThreadCreated(m_executionContext.get(), m_workerThread.get(), scriptURL);
+    m_workerThread = createWorkerThread(originTime);
+    m_workerThread->start(startupData.release());
+    workerThreadCreated();
+    m_workerInspectorProxy->workerThreadCreated(document, m_workerThread.get(), scriptURL);
 }
 
 void WorkerMessagingProxy::postMessageToWorkerObject(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
@@ -170,9 +169,9 @@ void WorkerMessagingProxy::reportException(const String& errorMessage, int lineN
     // We don't bother checking the askedToTerminate() flag here, because exceptions should *always* be reported even if the thread is terminated.
     // This is intentionally different than the behavior in MessageWorkerTask, because terminated workers no longer deliver messages (section 4.6 of the WebWorker spec), but they do report exceptions.
 
-    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, nullptr);
-    bool errorHandled = !m_workerObject->dispatchEvent(event);
-    postTaskToWorkerGlobalScope(createCrossThreadTask(&processExceptionOnWorkerGlobalScope, exceptionId, errorHandled));
+    ErrorEvent* event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, nullptr);
+    DispatchEventResult dispatchResult = m_workerObject->dispatchEvent(event);
+    postTaskToWorkerGlobalScope(createCrossThreadTask(&processExceptionOnWorkerGlobalScope, exceptionId, dispatchResult != DispatchEventResult::NotCanceled));
 }
 
 void WorkerMessagingProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
@@ -186,15 +185,15 @@ void WorkerMessagingProxy::reportConsoleMessage(MessageSource source, MessageLev
     if (!frame)
         return;
 
-    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(source, level, message, sourceURL, lineNumber);
-    consoleMessage->setWorkerGlobalScopeProxy(this);
-    frame->console().addMessage(consoleMessage.release());
+    ConsoleMessage* consoleMessage = ConsoleMessage::create(source, level, message, sourceURL, lineNumber);
+    consoleMessage->setWorkerInspectorProxy(m_workerInspectorProxy.get());
+    frame->console().addMessage(consoleMessage);
 }
 
-void WorkerMessagingProxy::workerThreadCreated(PassRefPtr<WorkerThread> workerThread)
+void WorkerMessagingProxy::workerThreadCreated()
 {
     ASSERT(!m_askedToTerminate);
-    m_workerThread = workerThread;
+    ASSERT(m_workerThread);
 
     ASSERT(!m_unconfirmedMessageCount);
     m_unconfirmedMessageCount = m_queuedEarlyTasks.size();
@@ -249,25 +248,14 @@ void WorkerMessagingProxy::terminateWorkerGlobalScope()
 
 void WorkerMessagingProxy::postMessageToPageInspector(const String& message)
 {
-    if (!m_workerInspectorProxy)
-        return;
-    WorkerInspectorProxy::PageInspector* pageInspector = m_workerInspectorProxy->pageInspector();
-    if (pageInspector)
-        pageInspector->dispatchMessageFromWorker(message);
+    if (m_workerInspectorProxy)
+        m_workerInspectorProxy->dispatchMessageFromWorker(message);
 }
 
 void WorkerMessagingProxy::postWorkerConsoleAgentEnabled()
 {
-    if (!m_workerInspectorProxy)
-        return;
-    WorkerInspectorProxy::PageInspector* pageInspector = m_workerInspectorProxy->pageInspector();
-    if (pageInspector)
-        pageInspector->workerConsoleAgentEnabled(this);
-}
-
-WorkerInspectorProxy* WorkerMessagingProxy::workerInspectorProxy()
-{
-    return m_workerInspectorProxy.get();
+    if (m_workerInspectorProxy)
+        m_workerInspectorProxy->workerConsoleAgentEnabled();
 }
 
 void WorkerMessagingProxy::confirmMessageFromWorkerObject(bool hasPendingActivity)
@@ -298,7 +286,7 @@ void WorkerMessagingProxy::terminateInternally()
     Document* document = toDocument(m_executionContext.get());
     LocalFrame* frame = document->frame();
     if (frame)
-        frame->console().adoptWorkerMessagesAfterTermination(this);
+        frame->console().adoptWorkerMessagesAfterTermination(m_workerInspectorProxy.get());
 }
 
 } // namespace blink

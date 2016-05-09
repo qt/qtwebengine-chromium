@@ -3,16 +3,14 @@
 // found in the LICENSE file.
 
 #include "modules/cachestorage/InspectorCacheStorageAgent.h"
-
-#include "core/InspectorBackendDispatcher.h"
-#include "core/InspectorTypeBuilder.h"
-#include "platform/JSONValues.h"
 #include "platform/heap/Handle.h"
-#include "platform/weborigin/DatabaseIdentifier.h"
+#include "platform/inspector_protocol/Dispatcher.h"
+#include "platform/inspector_protocol/TypeBuilder.h"
+#include "platform/inspector_protocol/Values.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebPassOwnPtr.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
@@ -30,16 +28,17 @@
 #include "wtf/text/StringBuilder.h"
 
 #include <algorithm>
+#include <memory>
 
-using blink::TypeBuilder::Array;
-using blink::TypeBuilder::CacheStorage::Cache;
-using blink::TypeBuilder::CacheStorage::DataEntry;
+using blink::protocol::Array;
+using blink::protocol::CacheStorage::Cache;
+using blink::protocol::CacheStorage::DataEntry;
 
-typedef blink::InspectorBackendDispatcher::CacheStorageCommandHandler::DeleteCacheCallback DeleteCacheCallback;
-typedef blink::InspectorBackendDispatcher::CacheStorageCommandHandler::DeleteEntryCallback DeleteEntryCallback;
-typedef blink::InspectorBackendDispatcher::CacheStorageCommandHandler::RequestCacheNamesCallback RequestCacheNamesCallback;
-typedef blink::InspectorBackendDispatcher::CacheStorageCommandHandler::RequestEntriesCallback RequestEntriesCallback;
-typedef blink::InspectorBackendDispatcher::CallbackBase RequestCallback;
+typedef blink::protocol::Backend::CacheStorage::DeleteCacheCallback DeleteCacheCallback;
+typedef blink::protocol::Backend::CacheStorage::DeleteEntryCallback DeleteEntryCallback;
+typedef blink::protocol::Backend::CacheStorage::RequestCacheNamesCallback RequestCacheNamesCallback;
+typedef blink::protocol::Backend::CacheStorage::RequestEntriesCallback RequestEntriesCallback;
+typedef blink::protocol::Dispatcher::CallbackBase RequestCallback;
 typedef blink::WebServiceWorkerCache::BatchOperation BatchOperation;
 
 namespace blink {
@@ -71,11 +70,12 @@ PassOwnPtr<WebServiceWorkerCacheStorage> assertCacheStorage(ErrorString* errorSt
     RefPtr<SecurityOrigin> secOrigin = SecurityOrigin::createFromString(securityOrigin);
 
     // Cache Storage API is restricted to trustworthy origins.
-    if (!secOrigin->isPotentiallyTrustworthy(*errorString))
+    if (!secOrigin->isPotentiallyTrustworthy()) {
+        *errorString = secOrigin->isPotentiallyTrustworthyErrorMessage();
         return nullptr;
+    }
 
-    String identifier = createDatabaseIdentifierFromSecurityOrigin(secOrigin.get());
-    OwnPtr<WebServiceWorkerCacheStorage> cache = adoptPtr(Platform::current()->cacheStorage(identifier));
+    OwnPtr<WebServiceWorkerCacheStorage> cache = adoptPtr(Platform::current()->cacheStorage(WebSecurityOrigin(secOrigin)));
     if (!cache)
         *errorString = "Could not find cache storage.";
     return cache.release();
@@ -113,7 +113,7 @@ class RequestCacheNames
     WTF_MAKE_NONCOPYABLE(RequestCacheNames);
 
 public:
-    RequestCacheNames(const String& securityOrigin, PassRefPtrWillBeRawPtr<RequestCacheNamesCallback> callback)
+    RequestCacheNames(const String& securityOrigin, PassOwnPtr<RequestCacheNamesCallback> callback)
         : m_securityOrigin(securityOrigin)
         , m_callback(callback)
     {
@@ -123,16 +123,16 @@ public:
 
     void onSuccess(const WebVector<WebString>& caches) override
     {
-        RefPtr<Array<Cache>> array = Array<Cache>::create();
+        OwnPtr<Array<Cache>> array = Array<Cache>::create();
         for (size_t i = 0; i < caches.size(); i++) {
             String name = String(caches[i]);
-            RefPtr<Cache> entry = Cache::create()
+            OwnPtr<Cache> entry = Cache::create()
                 .setSecurityOrigin(m_securityOrigin)
                 .setCacheName(name)
-                .setCacheId(buildCacheId(m_securityOrigin, name));
-            array->addItem(entry);
+                .setCacheId(buildCacheId(m_securityOrigin, name)).build();
+            array->addItem(entry.release());
         }
-        m_callback->sendSuccess(array);
+        m_callback->sendSuccess(array.release());
     }
 
     void onError(WebServiceWorkerCacheError error) override
@@ -142,7 +142,7 @@ public:
 
 private:
     String m_securityOrigin;
-    RefPtrWillBePersistent<RequestCacheNamesCallback> m_callback;
+    OwnPtr<RequestCacheNamesCallback> m_callback;
 };
 
 struct DataRequestParams {
@@ -166,7 +166,7 @@ class ResponsesAccumulator : public RefCounted<ResponsesAccumulator> {
     WTF_MAKE_NONCOPYABLE(ResponsesAccumulator);
 
 public:
-    ResponsesAccumulator(int numResponses, const DataRequestParams& params, PassRefPtrWillBeRawPtr<RequestEntriesCallback> callback)
+    ResponsesAccumulator(int numResponses, const DataRequestParams& params, PassOwnPtr<RequestEntriesCallback> callback)
         : m_params(params)
         , m_numResponsesLeft(numResponses)
         , m_responses(static_cast<size_t>(numResponses))
@@ -196,34 +196,36 @@ public:
             m_responses.remove(m_params.pageSize, m_responses.size() - m_params.pageSize);
             hasMore = true;
         }
-        RefPtr<Array<DataEntry>> array = Array<DataEntry>::create();
+        OwnPtr<Array<DataEntry>> array = Array<DataEntry>::create();
         for (const auto& requestResponse : m_responses) {
-            RefPtr<DataEntry> entry = DataEntry::create()
+            OwnPtr<DataEntry> entry = DataEntry::create()
                 .setRequest(requestResponse.request)
-                .setResponse(requestResponse.response);
-            array->addItem(entry);
+                .setResponse(requestResponse.response).build();
+            array->addItem(entry.release());
         }
-        m_callback->sendSuccess(array, hasMore);
+        m_callback->sendSuccess(array.release(), hasMore);
+    }
+
+    void sendFailure(const String& error)
+    {
+        m_callback->sendFailure(error);
     }
 
 private:
     DataRequestParams m_params;
     int m_numResponsesLeft;
     Vector<RequestResponse> m_responses;
-    RefPtrWillBePersistent<RequestEntriesCallback> m_callback;
+    OwnPtr<RequestEntriesCallback> m_callback;
 };
 
 class GetCacheResponsesForRequestData : public WebServiceWorkerCache::CacheMatchCallbacks {
     WTF_MAKE_NONCOPYABLE(GetCacheResponsesForRequestData);
 
 public:
-    GetCacheResponsesForRequestData(
-        const DataRequestParams& params, const WebServiceWorkerRequest& request,
-        PassRefPtr<ResponsesAccumulator> accum, PassRefPtrWillBeRawPtr<RequestEntriesCallback> callback)
+    GetCacheResponsesForRequestData(const DataRequestParams& params, const WebServiceWorkerRequest& request, PassRefPtr<ResponsesAccumulator> accum)
         : m_params(params)
         , m_request(request)
         , m_accumulator(accum)
-        , m_callback(callback)
     {
     }
     ~GetCacheResponsesForRequestData() override { }
@@ -235,21 +237,20 @@ public:
 
     void onError(WebServiceWorkerCacheError error) override
     {
-        m_callback->sendFailure(String::format("Error requesting responses for cache  %s: %s", m_params.cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
+        m_accumulator->sendFailure(String::format("Error requesting responses for cache  %s: %s", m_params.cacheName.utf8().data(), serviceWorkerCacheErrorString(error).data()));
     }
 
 private:
     DataRequestParams m_params;
     WebServiceWorkerRequest m_request;
     RefPtr<ResponsesAccumulator> m_accumulator;
-    RefPtrWillBePersistent<RequestEntriesCallback> m_callback;
 };
 
 class GetCacheKeysForRequestData : public WebServiceWorkerCache::CacheWithRequestsCallbacks {
     WTF_MAKE_NONCOPYABLE(GetCacheKeysForRequestData);
 
 public:
-    GetCacheKeysForRequestData(const DataRequestParams& params, PassOwnPtr<WebServiceWorkerCache> cache, PassRefPtrWillBeRawPtr<RequestEntriesCallback> callback)
+    GetCacheKeysForRequestData(const DataRequestParams& params, PassOwnPtr<WebServiceWorkerCache> cache, PassOwnPtr<RequestEntriesCallback> callback)
         : m_params(params)
         , m_cache(cache)
         , m_callback(callback)
@@ -261,15 +262,15 @@ public:
     void onSuccess(const WebVector<WebServiceWorkerRequest>& requests) override
     {
         if (requests.isEmpty()) {
-            RefPtr<Array<DataEntry>> array = Array<DataEntry>::create();
-            m_callback->sendSuccess(array, false);
+            OwnPtr<Array<DataEntry>> array = Array<DataEntry>::create();
+            m_callback->sendSuccess(array.release(), false);
             return;
         }
-        RefPtr<ResponsesAccumulator> accumulator = adoptRef(new ResponsesAccumulator(requests.size(), m_params, m_callback));
+        RefPtr<ResponsesAccumulator> accumulator = adoptRef(new ResponsesAccumulator(requests.size(), m_params, m_callback.release()));
 
         for (size_t i = 0; i < requests.size(); i++) {
             const auto& request = requests[i];
-            auto* cacheRequest = new GetCacheResponsesForRequestData(m_params, request, accumulator, m_callback);
+            auto* cacheRequest = new GetCacheResponsesForRequestData(m_params, request, accumulator);
             m_cache->dispatchMatch(cacheRequest, request, WebServiceWorkerCache::QueryParams());
         }
     }
@@ -282,7 +283,7 @@ public:
 private:
     DataRequestParams m_params;
     OwnPtr<WebServiceWorkerCache> m_cache;
-    RefPtrWillBePersistent<RequestEntriesCallback> m_callback;
+    OwnPtr<RequestEntriesCallback> m_callback;
 };
 
 class GetCacheForRequestData
@@ -290,16 +291,16 @@ class GetCacheForRequestData
     WTF_MAKE_NONCOPYABLE(GetCacheForRequestData);
 
 public:
-    GetCacheForRequestData(const DataRequestParams& params, PassRefPtrWillBeRawPtr<RequestEntriesCallback> callback)
+    GetCacheForRequestData(const DataRequestParams& params, PassOwnPtr<RequestEntriesCallback> callback)
         : m_params(params)
         , m_callback(callback)
     {
     }
     ~GetCacheForRequestData() override { }
 
-    void onSuccess(WebPassOwnPtr<WebServiceWorkerCache> cache) override
+    void onSuccess(std::unique_ptr<WebServiceWorkerCache> cache) override
     {
-        auto* cacheRequest = new GetCacheKeysForRequestData(m_params, cache.release(), m_callback);
+        auto* cacheRequest = new GetCacheKeysForRequestData(m_params, adoptPtr(cache.release()), m_callback.release());
         cacheRequest->cache()->dispatchKeys(cacheRequest, nullptr, WebServiceWorkerCache::QueryParams());
     }
 
@@ -310,14 +311,14 @@ public:
 
 private:
     DataRequestParams m_params;
-    RefPtrWillBePersistent<RequestEntriesCallback> m_callback;
+    OwnPtr<RequestEntriesCallback> m_callback;
 };
 
 class DeleteCache : public WebServiceWorkerCacheStorage::CacheStorageCallbacks {
     WTF_MAKE_NONCOPYABLE(DeleteCache);
 
 public:
-    DeleteCache(PassRefPtrWillBeRawPtr<DeleteCacheCallback> callback)
+    DeleteCache(PassOwnPtr<DeleteCacheCallback> callback)
         : m_callback(callback)
     {
     }
@@ -334,14 +335,14 @@ public:
     }
 
 private:
-    RefPtrWillBePersistent<DeleteCacheCallback> m_callback;
+    OwnPtr<DeleteCacheCallback> m_callback;
 };
 
 class DeleteCacheEntry : public WebServiceWorkerCache::CacheBatchCallbacks {
     WTF_MAKE_NONCOPYABLE(DeleteCacheEntry);
 public:
 
-    DeleteCacheEntry(PassRefPtrWillBeRawPtr<DeleteEntryCallback> callback)
+    DeleteCacheEntry(PassOwnPtr<DeleteEntryCallback> callback)
         : m_callback(callback)
     {
     }
@@ -358,7 +359,7 @@ public:
     }
 
 private:
-    RefPtrWillBePersistent<DeleteEntryCallback> m_callback;
+    OwnPtr<DeleteEntryCallback> m_callback;
 };
 
 class GetCacheForDeleteEntry
@@ -366,7 +367,7 @@ class GetCacheForDeleteEntry
     WTF_MAKE_NONCOPYABLE(GetCacheForDeleteEntry);
 
 public:
-    GetCacheForDeleteEntry(const String& requestSpec, const String& cacheName, PassRefPtrWillBeRawPtr<DeleteEntryCallback> callback)
+    GetCacheForDeleteEntry(const String& requestSpec, const String& cacheName, PassOwnPtr<DeleteEntryCallback> callback)
         : m_requestSpec(requestSpec)
         , m_cacheName(cacheName)
         , m_callback(callback)
@@ -374,9 +375,9 @@ public:
     }
     ~GetCacheForDeleteEntry() override { }
 
-    void onSuccess(WebPassOwnPtr<WebServiceWorkerCache> cache) override
+    void onSuccess(std::unique_ptr<WebServiceWorkerCache> cache) override
     {
-        auto* deleteRequest = new DeleteCacheEntry(m_callback);
+        auto* deleteRequest = new DeleteCacheEntry(m_callback.release());
         BatchOperation deleteOperation;
         deleteOperation.operationType = WebServiceWorkerCache::OperationTypeDelete;
         deleteOperation.request.setURL(KURL(ParsedURLString, m_requestSpec));
@@ -393,13 +394,13 @@ public:
 private:
     String m_requestSpec;
     String m_cacheName;
-    RefPtrWillBePersistent<DeleteEntryCallback> m_callback;
+    OwnPtr<DeleteEntryCallback> m_callback;
 };
 
 } // namespace
 
 InspectorCacheStorageAgent::InspectorCacheStorageAgent()
-    : InspectorBaseAgent<InspectorCacheStorageAgent, InspectorFrontend::CacheStorage>("CacheStorage")
+    : InspectorBaseAgent<InspectorCacheStorageAgent, protocol::Frontend::CacheStorage>("CacheStorage")
 {
 }
 
@@ -410,14 +411,14 @@ DEFINE_TRACE(InspectorCacheStorageAgent)
     InspectorBaseAgent::trace(visitor);
 }
 
-void InspectorCacheStorageAgent::requestCacheNames(ErrorString* errorString, const String& securityOrigin, PassRefPtrWillBeRawPtr<RequestCacheNamesCallback> callback)
+void InspectorCacheStorageAgent::requestCacheNames(ErrorString* errorString, const String& securityOrigin, PassOwnPtr<RequestCacheNamesCallback> callback)
 {
     RefPtr<SecurityOrigin> secOrigin = SecurityOrigin::createFromString(securityOrigin);
 
     // Cache Storage API is restricted to trustworthy origins.
     if (!secOrigin->isPotentiallyTrustworthy()) {
         // Don't treat this as an error, just don't attempt to open and enumerate the caches.
-        callback->sendSuccess(Array<TypeBuilder::CacheStorage::Cache>::create());
+        callback->sendSuccess(Array<protocol::CacheStorage::Cache>::create());
         return;
     }
 
@@ -429,7 +430,7 @@ void InspectorCacheStorageAgent::requestCacheNames(ErrorString* errorString, con
     cache->dispatchKeys(new RequestCacheNames(securityOrigin, callback));
 }
 
-void InspectorCacheStorageAgent::requestEntries(ErrorString* errorString, const String& cacheId, int skipCount, int pageSize, PassRefPtrWillBeRawPtr<RequestEntriesCallback> callback)
+void InspectorCacheStorageAgent::requestEntries(ErrorString* errorString, const String& cacheId, int skipCount, int pageSize, PassOwnPtr<RequestEntriesCallback> callback)
 {
     String cacheName;
     OwnPtr<WebServiceWorkerCacheStorage> cache = assertCacheStorageAndNameForId(errorString, cacheId, &cacheName);
@@ -444,7 +445,7 @@ void InspectorCacheStorageAgent::requestEntries(ErrorString* errorString, const 
     cache->dispatchOpen(new GetCacheForRequestData(params, callback), WebString(cacheName));
 }
 
-void InspectorCacheStorageAgent::deleteCache(ErrorString* errorString, const String& cacheId, PassRefPtrWillBeRawPtr<DeleteCacheCallback> callback)
+void InspectorCacheStorageAgent::deleteCache(ErrorString* errorString, const String& cacheId, PassOwnPtr<DeleteCacheCallback> callback)
 {
     String cacheName;
     OwnPtr<WebServiceWorkerCacheStorage> cache = assertCacheStorageAndNameForId(errorString, cacheId, &cacheName);
@@ -455,7 +456,7 @@ void InspectorCacheStorageAgent::deleteCache(ErrorString* errorString, const Str
     cache->dispatchDelete(new DeleteCache(callback), WebString(cacheName));
 }
 
-void InspectorCacheStorageAgent::deleteEntry(ErrorString* errorString, const String& cacheId, const String& request, PassRefPtrWillBeRawPtr<DeleteEntryCallback> callback)
+void InspectorCacheStorageAgent::deleteEntry(ErrorString* errorString, const String& cacheId, const String& request, PassOwnPtr<DeleteEntryCallback> callback)
 {
     String cacheName;
     OwnPtr<WebServiceWorkerCacheStorage> cache = assertCacheStorageAndNameForId(errorString, cacheId, &cacheName);

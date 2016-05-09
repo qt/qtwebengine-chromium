@@ -260,7 +260,7 @@
     color: #888;
 }
 
-.styles-section .simple-selector.selector-matches {
+.styles-section .simple-selector.selector-matches, .styles-section.keyframe-key {
     color: #222;
 }
 
@@ -423,7 +423,7 @@
 
 .styles-element-state-pane {
     overflow: hidden;
-    height: 60px;
+    height: 66px;
     padding-left: 2px;
     border-bottom: 1px solid rgb(189, 189, 189);
 }
@@ -467,7 +467,7 @@
 .styles-element-classes-pane {
     background-color: #f3f3f3;
     border-bottom: 1px solid rgb(189, 189, 189);
-    padding: 2px 4px;
+    padding: 6px 2px 2px;
 }
 
 .styles-element-classes-container {
@@ -486,12 +486,14 @@
 
 .styles-element-classes-pane .new-class-input {
     padding-left: 3px;
-    width: 100%;
     border: 1px solid #ddd;
+    line-height: 15px;
+    margin-left: 3px;
+    width: calc(100% - 7px);
 }
 
 .styles-element-state-pane > div {
-    margin: 6px 4px 2px;
+    margin: 8px 4px 6px;
 }
 
 .styles-element-state-pane > table {
@@ -616,30 +618,6 @@
     width: 100%;
     background: transparent;
     margin-left: 4px;
-}
-
-.sidebar-pane.composite .platform-fonts {
-    -webkit-user-select: text;
-}
-
-.sidebar-pane.composite .platform-fonts .sidebar-separator {
-    height: 24px;
-    background-color: #f1f1f1;
-    border-color: #ddd;
-    display: flex;
-    align-items: center;
-}
-
-.sidebar-pane.composite .platform-fonts .stats-section {
-    margin: 5px 0;
-}
-
-.sidebar-pane.composite .platform-fonts .font-stats-item {
-    padding-left: 1em;
-}
-
-.sidebar-pane.composite .platform-fonts .font-stats-item .delimeter {
-    margin: 0 1ex 0 1ex;
 }
 
 .sidebar-pane.composite .metrics-and-styles .metrics {

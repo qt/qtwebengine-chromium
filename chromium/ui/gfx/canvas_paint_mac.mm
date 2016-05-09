@@ -8,25 +8,25 @@
 namespace gfx {
 
 CanvasSkiaPaint::CanvasSkiaPaint(NSRect dirtyRect)
-    : context_(NULL),
-      rectangle_(dirtyRect),
+    : rectangle_(dirtyRect),
       composite_alpha_(false) {
   Init(true);
 }
 
 CanvasSkiaPaint::CanvasSkiaPaint(NSRect dirtyRect, bool opaque)
-    : context_(NULL),
-      rectangle_(dirtyRect),
+    : rectangle_(dirtyRect),
       composite_alpha_(false) {
   Init(opaque);
 }
 
 CanvasSkiaPaint::~CanvasSkiaPaint() {
   if (!is_empty()) {
-    platform_canvas()->restoreToCount(1);
+    SkCanvas* canvas = sk_canvas();
+    canvas->restoreToCount(1);
 
     // Blit the dirty rect to the current context.
-    CGImageRef image = CGBitmapContextCreateImage(context_);
+    CGImageRef image =
+        CGBitmapContextCreateImage(skia::GetBitmapContext(*canvas));
     CGRect dest_rect = NSRectToCGRect(rectangle_);
 
     CGContextRef destination_context =
@@ -60,15 +60,13 @@ void CanvasSkiaPaint::Init(bool opaque) {
 
   gfx::Size size(NSWidth(rectangle_), NSHeight(rectangle_));
   RecreateBackingCanvas(size, scale, opaque);
-  skia::PlatformCanvas* canvas = platform_canvas();
+  SkCanvas* canvas = sk_canvas();
   canvas->clear(SkColorSetARGB(0, 0, 0, 0));
 
     // Need to translate so that the dirty region appears at the origin of the
     // surface.
   canvas->translate(-SkDoubleToScalar(NSMinX(rectangle_)),
                     -SkDoubleToScalar(NSMinY(rectangle_)));
-
-  context_ = skia::GetBitmapContext(*canvas);
 }
 
 }  // namespace skia

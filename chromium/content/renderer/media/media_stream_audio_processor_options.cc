@@ -11,7 +11,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -21,7 +20,6 @@
 #include "content/common/media/media_stream_options.h"
 #include "content/renderer/media/media_stream_constraints_util.h"
 #include "content/renderer/media/media_stream_source.h"
-#include "content/renderer/media/rtc_media_constraints.h"
 #include "media/audio/audio_parameters.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "third_party/webrtc/modules/audio_processing/typing_detection.h"
@@ -58,7 +56,7 @@ struct {
 } const kDefaultAudioConstraints[] = {
   { MediaAudioConstraints::kEchoCancellation, true },
   { MediaAudioConstraints::kGoogEchoCancellation, true },
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(OS_ANDROID)
   { MediaAudioConstraints::kGoogExperimentalEchoCancellation, false },
 #else
   // Enable the extended filter mode AEC on all non-mobile platforms.
@@ -119,24 +117,50 @@ std::vector<webrtc::Point> WebrtcPointsFromMediaPoints(
   return webrtc_points;
 }
 
+// Scan the basic and advanced constraints until a value is found.
+// If nothing is found, the default is returned.
+// Argument 2 is a pointer to class data member.
+bool ScanConstraintsForBoolean(
+    const blink::WebMediaConstraints& constraints,
+    blink::BooleanConstraint blink::WebMediaTrackConstraintSet::*picker,
+    bool the_default) {
+  const auto& the_field = constraints.basic().*picker;
+  if (the_field.hasExact()) {
+    return the_field.exact();
+  }
+  for (const auto& advanced_constraint : constraints.advanced()) {
+    const auto& the_field = advanced_constraint.*picker;
+    if (the_field.hasExact()) {
+      return the_field.exact();
+    }
+  }
+  return the_default;
+}
+
+void SetIfNotSet(rtc::Optional<bool>* field, bool value) {
+  if (!*field) {
+    *field = rtc::Optional<bool>(value);
+  }
+}
+
 }  // namespace
 
 // TODO(xians): Remove this method after the APM in WebRtc is deprecated.
 void MediaAudioConstraints::ApplyFixedAudioConstraints(
-    RTCMediaConstraints* constraints) {
-  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
-    bool already_set_value;
-    if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
-                                &already_set_value, NULL)) {
-      const std::string value = kDefaultAudioConstraints[i].value ?
-          webrtc::MediaConstraintsInterface::kValueTrue :
-          webrtc::MediaConstraintsInterface::kValueFalse;
-      constraints->AddOptional(kDefaultAudioConstraints[i].key, value, false);
-    } else {
-      DVLOG(1) << "Constraint " << kDefaultAudioConstraints[i].key
-               << " already set to " << already_set_value;
-    }
-  }
+    cricket::AudioOptions* options) {
+  SetIfNotSet(&options->echo_cancellation, true);
+#if defined(OS_ANDROID)
+  SetIfNotSet(&options->extended_filter_aec, false);
+#else
+  // Enable the extended filter mode AEC on all non-mobile platforms.
+  SetIfNotSet(&options->extended_filter_aec, true);
+#endif
+  SetIfNotSet(&options->auto_gain_control, true);
+  SetIfNotSet(&options->experimental_agc, true);
+  SetIfNotSet(&options->noise_suppression, true);
+  SetIfNotSet(&options->highpass_filter, true);
+  SetIfNotSet(&options->typing_detection, true);
+  SetIfNotSet(&options->experimental_ns, true);
 }
 
 MediaAudioConstraints::MediaAudioConstraints(
@@ -148,34 +172,17 @@ MediaAudioConstraints::MediaAudioConstraints(
   // - gUM has a specific kMediaStreamSource, which is used by tab capture
   //   and screen capture.
   // - |kEchoCancellation| is explicitly set to false.
-  std::string value_str;
-  bool value_bool = false;
-  if ((GetConstraintValueAsString(constraints, kMediaStreamSource,
-                                  &value_str)) ||
-      (GetConstraintValueAsBoolean(constraints_, kEchoCancellation,
-                                   &value_bool) && !value_bool)) {
+  bool echo_constraint;
+  if (!constraints.basic().mediaStreamSource.isEmpty() ||
+      (GetConstraintValueAsBoolean(
+           constraints, &blink::WebMediaTrackConstraintSet::echoCancellation,
+           &echo_constraint) &&
+       echo_constraint == false)) {
     default_audio_processing_constraint_value_ = false;
   }
 }
 
 MediaAudioConstraints::~MediaAudioConstraints() {}
-
-bool MediaAudioConstraints::GetProperty(const std::string& key) const {
-  // Return the value if the constraint is specified in |constraints|,
-  // otherwise return the default value.
-  bool value = false;
-  if (!GetConstraintValueAsBoolean(constraints_, key, &value))
-    value = GetDefaultValueForConstraint(constraints_, key);
-
-  return value;
-}
-
-std::string MediaAudioConstraints::GetPropertyAsString(
-    const std::string& key) const {
-  std::string value;
-  GetConstraintValueAsString(constraints_, key, &value);
-  return value;
-}
 
 bool MediaAudioConstraints::GetEchoCancellationProperty() const {
   // If platform echo canceller is enabled, disable the software AEC.
@@ -184,44 +191,38 @@ bool MediaAudioConstraints::GetEchoCancellationProperty() const {
 
   // If |kEchoCancellation| is specified in the constraints, it will
   // override the value of |kGoogEchoCancellation|.
-  bool value = false;
-  if (GetConstraintValueAsBoolean(constraints_, kEchoCancellation, &value))
-    return value;
-
-  return GetProperty(kGoogEchoCancellation);
+  const blink::WebMediaTrackConstraintSet& basic = constraints_.basic();
+  if (basic.echoCancellation.hasExact()) {
+    return basic.echoCancellation.exact();
+  }
+  for (const auto& advanced_constraint : constraints_.advanced()) {
+    if (advanced_constraint.echoCancellation.hasExact()) {
+      return advanced_constraint.echoCancellation.exact();
+    }
+  }
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googEchoCancellation,
+      GetDefaultValueForConstraint(kGoogEchoCancellation));
 }
 
 bool MediaAudioConstraints::IsValid() const {
-  blink::WebVector<blink::WebMediaConstraint> mandatory;
-  constraints_.getMandatoryConstraints(mandatory);
-  for (size_t i = 0; i < mandatory.size(); ++i) {
-    const std::string key = mandatory[i].m_name.utf8();
-    if (key == kMediaStreamSource || key == kMediaStreamSourceId ||
-        key == MediaStreamSource::kSourceId) {
-      // Ignore Chrome specific Tab capture and |kSourceId| constraints.
-      continue;
-    }
-
-    bool valid = false;
-    for (size_t j = 0; j < arraysize(kDefaultAudioConstraints); ++j) {
-      if (key == kDefaultAudioConstraints[j].key) {
-        bool value = false;
-        valid = GetMandatoryConstraintValueAsBoolean(constraints_, key, &value);
-        break;
-      }
-    }
-
-    if (!valid) {
-      DLOG(ERROR) << "Invalid MediaStream constraint. Name: " << key;
-      return false;
-    }
+  std::vector<std::string> legal_names(
+      {constraints_.basic().mediaStreamSource.name(),
+       constraints_.basic().deviceId.name(),
+       constraints_.basic().renderToAssociatedSink.name()});
+  for (size_t j = 0; j < arraysize(kDefaultAudioConstraints); ++j) {
+    legal_names.push_back(kDefaultAudioConstraints[j].key);
   }
-
+  std::string failing_name;
+  if (constraints_.basic().hasMandatoryOutsideSet(legal_names, failing_name)) {
+    DLOG(ERROR) << "Invalid MediaStream constraint for audio. Name: "
+                << failing_name;
+    return false;
+  }
   return true;
 }
 
 bool MediaAudioConstraints::GetDefaultValueForConstraint(
-    const blink::WebMediaConstraints& constraints,
     const std::string& key) const {
   if (!default_audio_processing_constraint_value_)
     return false;
@@ -232,6 +233,77 @@ bool MediaAudioConstraints::GetDefaultValueForConstraint(
   }
 
   return false;
+}
+
+bool MediaAudioConstraints::GetGoogAudioMirroring() const {
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googAudioMirroring,
+      GetDefaultValueForConstraint(kGoogAudioMirroring));
+}
+
+bool MediaAudioConstraints::GetGoogAutoGainControl() const {
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googAutoGainControl,
+      GetDefaultValueForConstraint(kGoogAutoGainControl));
+}
+
+bool MediaAudioConstraints::GetGoogExperimentalEchoCancellation() const {
+  return ScanConstraintsForBoolean(
+      constraints_,
+      &blink::WebMediaTrackConstraintSet::googExperimentalEchoCancellation,
+      GetDefaultValueForConstraint(kGoogExperimentalEchoCancellation));
+}
+
+bool MediaAudioConstraints::GetGoogTypingNoiseDetection() const {
+  return ScanConstraintsForBoolean(
+      constraints_,
+      &blink::WebMediaTrackConstraintSet::googTypingNoiseDetection,
+      GetDefaultValueForConstraint(kGoogTypingNoiseDetection));
+}
+bool MediaAudioConstraints::GetGoogNoiseSuppression() const {
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googNoiseSuppression,
+      GetDefaultValueForConstraint(kGoogNoiseSuppression));
+}
+
+bool MediaAudioConstraints::GetGoogExperimentalNoiseSuppression() const {
+  return ScanConstraintsForBoolean(
+      constraints_,
+      &blink::WebMediaTrackConstraintSet::googExperimentalNoiseSuppression,
+      GetDefaultValueForConstraint(kGoogExperimentalNoiseSuppression));
+}
+
+bool MediaAudioConstraints::GetGoogBeamforming() const {
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googBeamforming,
+      GetDefaultValueForConstraint(kGoogBeamforming));
+}
+
+bool MediaAudioConstraints::GetGoogHighpassFilter() const {
+  return ScanConstraintsForBoolean(
+      constraints_, &blink::WebMediaTrackConstraintSet::googHighpassFilter,
+      GetDefaultValueForConstraint(kGoogHighpassFilter));
+}
+
+bool MediaAudioConstraints::GetGoogExperimentalAutoGainControl() const {
+  return ScanConstraintsForBoolean(
+      constraints_,
+      &blink::WebMediaTrackConstraintSet::googExperimentalAutoGainControl,
+      GetDefaultValueForConstraint(kGoogExperimentalAutoGainControl));
+}
+
+std::string MediaAudioConstraints::GetGoogArrayGeometry() const {
+  const auto& the_field = constraints_.basic().googArrayGeometry;
+  if (the_field.hasMandatory()) {
+    return the_field.exact()[0].utf8();
+  }
+  for (const auto& advanced_constraint : constraints_.advanced()) {
+    const auto& the_field = advanced_constraint.googArrayGeometry;
+    if (the_field.hasMandatory()) {
+      return the_field.exact()[0].utf8();
+    }
+  }
+  return "";
 }
 
 EchoInformation::EchoInformation()
@@ -281,18 +353,12 @@ void EchoInformation::UpdateAecDelayStats(
 }
 
 void EnableEchoCancellation(AudioProcessing* audio_processing) {
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("ReplaceAECMWithAEC");
-  if (group_name.empty() ||
-      !(group_name == "Enabled" || group_name == "DefaultEnabled")) {
-    // Mobile devices are using AECM.
-    int err = audio_processing->echo_control_mobile()->set_routing_mode(
-        webrtc::EchoControlMobile::kSpeakerphone);
-    err |= audio_processing->echo_control_mobile()->Enable(true);
-    CHECK_EQ(err, 0);
-    return;
-  }
+#if defined(OS_ANDROID)
+  // Mobile devices are using AECM.
+  CHECK_EQ(0, audio_processing->echo_control_mobile()->set_routing_mode(
+                  webrtc::EchoControlMobile::kSpeakerphone));
+  CHECK_EQ(0, audio_processing->echo_control_mobile()->Enable(true));
+  return;
 #endif
   int err = audio_processing->echo_cancellation()->set_suppression_level(
       webrtc::EchoCancellation::kHighSuppression);
@@ -346,7 +412,7 @@ void StopEchoCancellationDump(AudioProcessing* audio_processing) {
 }
 
 void EnableAutomaticGainControl(AudioProcessing* audio_processing) {
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(OS_ANDROID)
   const webrtc::GainControl::Mode mode = webrtc::GainControl::kFixedDigital;
 #else
   const webrtc::GainControl::Mode mode = webrtc::GainControl::kAdaptiveAnalog;
@@ -401,8 +467,7 @@ std::vector<webrtc::Point> GetArrayGeometryPreferringConstraints(
     const MediaAudioConstraints& audio_constraints,
     const MediaStreamDevice::AudioDeviceParameters& input_params) {
   const std::string constraints_geometry =
-      audio_constraints.GetPropertyAsString(
-          MediaAudioConstraints::kGoogArrayGeometry);
+      audio_constraints.GetGoogArrayGeometry();
 
   // Give preference to the audio constraint over the device-supplied mic
   // positions. This is mainly for testing purposes.

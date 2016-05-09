@@ -36,22 +36,28 @@ CreateLinkCommand::CreateLinkCommand(Document& document, const String& url)
     m_url = url;
 }
 
-void CreateLinkCommand::doApply()
+void CreateLinkCommand::doApply(EditingState* editingState)
 {
     if (endingSelection().isNone())
         return;
 
-    RefPtrWillBeRawPtr<HTMLAnchorElement> anchorElement = HTMLAnchorElement::create(document());
+    RawPtr<HTMLAnchorElement> anchorElement = HTMLAnchorElement::create(document());
     anchorElement->setHref(AtomicString(m_url));
 
     if (endingSelection().isRange()) {
-        applyStyledElement(anchorElement.get());
+        applyStyledElement(anchorElement.get(), editingState);
+        if (editingState->isAborted())
+            return;
     } else {
-        insertNodeAt(anchorElement.get(), endingSelection().start());
-        RefPtrWillBeRawPtr<Text> textNode = Text::create(document(), m_url);
-        appendNode(textNode.get(), anchorElement.get());
+        insertNodeAt(anchorElement.get(), endingSelection().start(), editingState);
+        if (editingState->isAborted())
+            return;
+        RawPtr<Text> textNode = Text::create(document(), m_url);
+        appendNode(textNode.get(), anchorElement.get(), editingState);
+        if (editingState->isAborted())
+            return;
         setEndingSelection(VisibleSelection(positionInParentBeforeNode(*anchorElement), positionInParentAfterNode(*anchorElement), TextAffinity::Downstream, endingSelection().isDirectional()));
     }
 }
 
-}
+} // namespace blink

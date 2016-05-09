@@ -27,7 +27,6 @@
 #define CSSStyleSheetResource_h
 
 #include "core/CoreExport.h"
-#include "core/fetch/ResourcePtr.h"
 #include "core/fetch/StyleSheetResource.h"
 #include "platform/heap/Handle.h"
 
@@ -43,20 +42,18 @@ class CORE_EXPORT CSSStyleSheetResource final : public StyleSheetResource {
 public:
     enum class MIMETypeCheck { Strict, Lax };
 
-    static ResourcePtr<CSSStyleSheetResource> fetch(FetchRequest&, ResourceFetcher*);
-    static ResourcePtr<CSSStyleSheetResource> createForTest(const ResourceRequest&, const String& charset);
+    static CSSStyleSheetResource* fetch(FetchRequest&, ResourceFetcher*);
+    static CSSStyleSheetResource* createForTest(const ResourceRequest&, const String& charset);
 
     ~CSSStyleSheetResource() override;
     DECLARE_VIRTUAL_TRACE();
 
     const String sheetText(MIMETypeCheck = MIMETypeCheck::Strict) const;
 
-    const AtomicString mimeType() const;
-
     void didAddClient(ResourceClient*) override;
 
-    PassRefPtrWillBeRawPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
-    void saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>);
+    StyleSheetContents* restoreParsedStyleSheet(const CSSParserContext&);
+    void saveParsedStyleSheet(StyleSheetContents*);
 
 protected:
     bool isSafeToUnlock() const override;
@@ -69,24 +66,24 @@ private:
         CSSStyleSheetResourceFactory()
             : ResourceFactory(Resource::CSSStyleSheet) { }
 
-        Resource* create(const ResourceRequest& request, const String& charset) const override
+        Resource* create(const ResourceRequest& request, const ResourceLoaderOptions& options, const String& charset) const override
         {
-            return new CSSStyleSheetResource(request, charset);
+            return new CSSStyleSheetResource(request, options, charset);
         }
     };
-    CSSStyleSheetResource(const ResourceRequest&, const String& charset);
+    CSSStyleSheetResource(const ResourceRequest&, const ResourceLoaderOptions&, const String& charset);
 
     bool canUseSheet(MIMETypeCheck) const;
-    void dispose() override;
+    void removedFromMemoryCache() override;
     void checkNotify() override;
 
     String m_decodedSheetText;
 
-    RefPtrWillBeMember<StyleSheetContents> m_parsedStyleSheetCache;
+    Member<StyleSheetContents> m_parsedStyleSheetCache;
 };
 
 DEFINE_RESOURCE_TYPE_CASTS(CSSStyleSheet);
 
-}
+} // namespace blink
 
 #endif

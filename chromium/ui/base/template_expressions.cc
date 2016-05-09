@@ -7,37 +7,69 @@
 #include <stddef.h>
 
 #include "base/logging.h"
+#include "net/base/escape.h"
+
+namespace {
+const char kLeader[] = "$i18n";
+const size_t kLeaderSize = arraysize(kLeader) - 1;
+const char kKeyOpen = '{';
+const char kKeyClose = '}';
+}  // namespace
 
 namespace ui {
 
 std::string ReplaceTemplateExpressions(
-    base::StringPiece format_string,
-    const std::map<base::StringPiece, std::string>& substitutions) {
+    base::StringPiece source,
+    const TemplateReplacements& replacements) {
   std::string formatted;
   const size_t kValueLengthGuess = 16;
-  formatted.reserve(format_string.length() +
-                    substitutions.size() * kValueLengthGuess);
-  base::StringPiece::const_iterator i = format_string.begin();
-  while (i < format_string.end()) {
-    if (*i == '$' && i + 2 < format_string.end() && i[1] == '{' &&
-        i[2] != '}') {
-      size_t key_start = i + strlen("${") - format_string.begin();
-      size_t key_length = format_string.find('}', key_start);
-      if (key_length == base::StringPiece::npos)
-        NOTREACHED() << "TemplateExpression missing ending brace '}'";
-      key_length -= key_start;
-      base::StringPiece key(format_string.begin() + key_start, key_length);
-      const auto& replacement = substitutions.find(key);
-      if (replacement != substitutions.end()) {
-        formatted.append(replacement->second);
-        i += strlen("${") + key_length + strlen("}");
-        continue;
-      } else {
-        NOTREACHED() << "TemplateExpression key not found: " << key;
-      }
+  formatted.reserve(source.length() + replacements.size() * kValueLengthGuess);
+  // Two position markers are used as cursors through the |source|.
+  // The |current_pos| will follow behind |next_pos|.
+  size_t current_pos = 0;
+  while (true) {
+    size_t next_pos = source.find(kLeader, current_pos);
+
+    if (next_pos == std::string::npos) {
+      source.substr(current_pos).AppendToString(&formatted);
+      break;
     }
-    formatted.push_back(*i);
-    ++i;
+
+    source.substr(current_pos, next_pos - current_pos)
+        .AppendToString(&formatted);
+    current_pos = next_pos + kLeaderSize;
+
+    size_t context_end = source.find(kKeyOpen, current_pos);
+    CHECK_NE(context_end, std::string::npos);
+    std::string context;
+    source.substr(current_pos, context_end - current_pos)
+        .AppendToString(&context);
+    current_pos = context_end + sizeof(kKeyOpen);
+
+    size_t key_end = source.find(kKeyClose, current_pos);
+    CHECK_NE(key_end, std::string::npos);
+
+    std::string key =
+        source.substr(current_pos, key_end - current_pos).as_string();
+    CHECK(!key.empty());
+
+    TemplateReplacements::const_iterator value = replacements.find(key);
+    CHECK(value != replacements.end()) << "$i18n replacement key \"" << key
+                                       << "\" not found";
+
+    std::string replacement = value->second;
+    if (context.empty()) {
+      // Make the replacement HTML safe.
+      replacement = net::EscapeForHTML(replacement);
+    } else if (context == "Raw") {
+      // Pass the replacement through unchanged.
+    } else {
+      CHECK(false) << "Unknown context " << context;
+    }
+
+    formatted.append(replacement);
+
+    current_pos = key_end + sizeof(kKeyClose);
   }
   return formatted;
 }

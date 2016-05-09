@@ -16,7 +16,6 @@
   'conditions': [
     ['configuration_policy==1', {
       'dependencies': [
-        '../base/base.gyp:base_prefs',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../google_apis/google_apis.gyp:google_apis',
         '../net/net.gyp:net',
@@ -26,6 +25,7 @@
         'data_use_measurement_core',
         'json_schema',
         'policy',
+        'prefs/prefs.gyp:prefs',
       ],
       'sources': [
         'core/common/async_policy_loader.cc',
@@ -193,11 +193,33 @@
             'core/common/mac_util.h',
           ],
         }],
+        ['OS=="win"', {
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  'shlwapi.lib',
+                  'userenv.lib',
+                  'ntdsapi.lib',
+                ],
+              },
+            },
+          },
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalDependencies': [
+                'shlwapi.lib',
+                'userenv.lib',
+                'ntdsapi.lib',
+              ],
+            },
+          },
+        }],
       ],
     }, {  # configuration_policy==0
       # Some of the policy code is always enabled, so that other parts of
       # Chrome can always interface with the PolicyService without having
-      # to #ifdef on ENABLE_CONFIGURATION_POLICY.
+      # to #ifdef.
       'sources': [
         'core/common/external_data_fetcher.cc',
         'core/common/external_data_fetcher.h',

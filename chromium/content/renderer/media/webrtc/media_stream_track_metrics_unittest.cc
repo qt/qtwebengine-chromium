@@ -12,7 +12,7 @@
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
+#include "third_party/webrtc/api/mediastreaminterface.h"
 
 using webrtc::AudioSourceInterface;
 using webrtc::AudioTrackInterface;
@@ -20,8 +20,7 @@ using webrtc::AudioTrackSinkInterface;
 using webrtc::MediaStreamInterface;
 using webrtc::ObserverInterface;
 using webrtc::PeerConnectionInterface;
-using webrtc::VideoRendererInterface;
-using webrtc::VideoSourceInterface;
+using webrtc::VideoTrackSourceInterface;
 using webrtc::VideoTrackInterface;
 
 namespace content {
@@ -64,9 +63,11 @@ class MockVideoTrackInterface : public VideoTrackInterface {
   MOCK_CONST_METHOD0(state, TrackState());
   MOCK_METHOD1(set_enabled, bool(bool));
   MOCK_METHOD1(set_state, bool(TrackState));
-  MOCK_METHOD1(AddRenderer, void(VideoRendererInterface*));
-  MOCK_METHOD1(RemoveRenderer, void(VideoRendererInterface*));
-  MOCK_CONST_METHOD0(GetSource, VideoSourceInterface*());
+  MOCK_METHOD2(AddOrUpdateSink,
+               void(rtc::VideoSinkInterface<cricket::VideoFrame>*,
+                    const rtc::VideoSinkWants&));
+  MOCK_METHOD1(RemoveSink, void(rtc::VideoSinkInterface<cricket::VideoFrame>*));
+  MOCK_CONST_METHOD0(GetSource, VideoTrackSourceInterface*());
 
  private:
   std::string id_;
@@ -142,7 +143,7 @@ class MediaStreamTrackMetricsTest : public testing::Test {
     return new rtc::RefCountedObject<MockVideoTrackInterface>(id);
   }
 
-  scoped_ptr<MockMediaStreamTrackMetrics> metrics_;
+  std::unique_ptr<MockMediaStreamTrackMetrics> metrics_;
   scoped_refptr<MediaStreamInterface> stream_;
 
   base::MessageLoopForUI message_loop_;

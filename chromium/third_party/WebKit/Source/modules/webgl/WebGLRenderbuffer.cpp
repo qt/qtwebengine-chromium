@@ -25,6 +25,7 @@
 
 #include "modules/webgl/WebGLRenderbuffer.h"
 
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "modules/webgl/WebGLRenderingContextBase.h"
 
 namespace blink {
@@ -36,9 +37,6 @@ WebGLRenderbuffer* WebGLRenderbuffer::create(WebGLRenderingContextBase* ctx)
 
 WebGLRenderbuffer::~WebGLRenderbuffer()
 {
-    // This render buffer (heap) object must finalize itself.
-    m_emulatedStencilBuffer.clear();
-
     // See the comment in WebGLObject::detachAndDeleteObject().
     detachAndDeleteObject();
 }
@@ -50,27 +48,19 @@ WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContextBase* ctx)
     , m_height(0)
     , m_hasEverBeenBound(false)
 {
-    setObject(ctx->webContext()->createRenderbuffer());
+    GLuint rbo;
+    ctx->contextGL()->GenRenderbuffers(1, &rbo);
+    setObject(rbo);
 }
 
-void WebGLRenderbuffer::deleteObjectImpl(WebGraphicsContext3D* context3d)
+void WebGLRenderbuffer::deleteObjectImpl(gpu::gles2::GLES2Interface* gl)
 {
-    context3d->deleteRenderbuffer(m_object);
+    gl->DeleteRenderbuffers(1, &m_object);
     m_object = 0;
-    deleteEmulatedStencilBuffer(context3d);
-}
-
-void WebGLRenderbuffer::deleteEmulatedStencilBuffer(WebGraphicsContext3D* context3d)
-{
-    if (!m_emulatedStencilBuffer)
-        return;
-    m_emulatedStencilBuffer->deleteObject(context3d);
-    m_emulatedStencilBuffer.clear();
 }
 
 DEFINE_TRACE(WebGLRenderbuffer)
 {
-    visitor->trace(m_emulatedStencilBuffer);
     WebGLSharedPlatform3DObject::trace(visitor);
 }
 

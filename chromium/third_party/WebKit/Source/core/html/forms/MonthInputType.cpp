@@ -50,9 +50,9 @@ static const int monthDefaultStep = 1;
 static const int monthDefaultStepBase = 0;
 static const int monthStepScaleFactor = 1;
 
-PassRefPtrWillBeRawPtr<InputType> MonthInputType::create(HTMLInputElement& element)
+InputType* MonthInputType::create(HTMLInputElement& element)
 {
-    return adoptRefWillBeNoop(new MonthInputType(element));
+    return new MonthInputType(element);
 }
 
 void MonthInputType::countUsage()
@@ -125,6 +125,12 @@ bool MonthInputType::setMillisecondToDateComponents(double value, DateComponents
 bool MonthInputType::canSetSuggestedValue()
 {
     return true;
+}
+
+void MonthInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value != element().sanitizeValue(value))
+        addWarningToConsole("The specified value %s does not conform to the required format.  The format is \"yyyy-MM\" where yyyy is year in four or more digits, and MM is 01-12.", value);
 }
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)

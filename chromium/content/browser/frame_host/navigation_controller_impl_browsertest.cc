@@ -15,8 +15,11 @@
 #include "content/browser/frame_host/frame_navigation_entry.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/page_state_serialization.h"
 #include "content/common/site_isolation_policy.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -25,6 +28,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/bindings_policy.h"
+#include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -34,6 +38,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "content/test/test_frame_navigation_observer.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/url_request/url_request_failed_job.h"
@@ -631,7 +636,7 @@ class LoadCommittedCapturer : public WebContentsObserver {
     // Don't pay attention to swapped out RenderFrameHosts in the main frame.
     // TODO(nasko): Remove once swappedout:// is gone.
     // See https://crbug.com/357747.
-    if (!RenderFrameHostImpl::IsRFHStateActive(rfh->rfh_state())) {
+    if (!rfh->is_active()) {
       DLOG(INFO) << "Skipping swapped out RFH: "
                  << rfh->GetSiteInstance()->GetSiteURL();
       return;
@@ -721,15 +726,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   NavigateToURL(shell(), GURL(url::kAboutBlankURL));
   EXPECT_EQ(3, controller.GetEntryCount());
 
-  // ... and replace it with a failed load. (Note that when you set the
-  // should_replace_current_entry flag, the navigation is classified as NEW_PAGE
-  // because that is a classification of the renderer's behavior, and the flag
-  // is a browser-side flag.)
+  // ... and replace it with a failed load.
+  // TODO(creis): Make this be NEW_PAGE along with the other location.replace
+  // cases.  There isn't much impact to having this be EXISTING_PAGE for now.
+  // See https://crbug.com/317872.
   {
     FrameNavigateParamsCapturer capturer(root);
     NavigateToURLAndReplace(shell(), error_url);
     capturer.Wait();
-    EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.details().type);
+    EXPECT_EQ(NAVIGATION_TYPE_EXISTING_PAGE, capturer.details().type);
     NavigationEntry* entry = controller.GetLastCommittedEntry();
     EXPECT_EQ(PAGE_TYPE_ERROR, entry->GetPageType());
     EXPECT_EQ(3, controller.GetEntryCount());
@@ -828,6 +833,20 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
               capturer.params().transition);
     EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.details().type);
     EXPECT_TRUE(capturer.details().is_in_page);
+  }
+
+  if (AreAllSitesIsolatedForTesting()) {
+    // Cross-process location.replace().
+    FrameNavigateParamsCapturer capturer(root);
+    GURL frame_url(embedded_test_server()->GetURL(
+        "foo.com", "/navigation_controller/simple_page_1.html"));
+    std::string script = "location.replace('" + frame_url.spec() + "')";
+    EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+    capturer.Wait();
+    EXPECT_EQ(ui::PAGE_TRANSITION_LINK | ui::PAGE_TRANSITION_CLIENT_REDIRECT,
+              capturer.params().transition);
+    EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.details().type);
+    EXPECT_FALSE(capturer.details().is_in_page);
   }
 }
 
@@ -952,6 +971,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   {
     // location.replace().
+    // TODO(creis): Change this to be NEW_PAGE with replacement in
+    // https://crbug.com/317872.
     FrameNavigateParamsCapturer capturer(root);
     GURL frame_url(embedded_test_server()->GetURL(
         "/navigation_controller/simple_page_1.html"));
@@ -2673,8 +2694,18 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "bar.com", "/navigation_controller/simple_page_1.html"));
   NavigateFrameToURL(foo_subframe, bar_url);
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
-  EXPECT_NE(main_site_instance,
-            foo_subframe->current_frame_host()->GetSiteInstance());
+
+  // When run just with subframe navigation entries enabled and not in
+  // site-per-process-mode the subframe should be in the same SiteInstance as
+  // its parent.
+  if (!AreAllSitesIsolatedForTesting()) {
+    EXPECT_EQ(main_site_instance,
+              foo_subframe->current_frame_host()->GetSiteInstance());
+  } else {
+    EXPECT_NE(main_site_instance,
+              foo_subframe->current_frame_host()->GetSiteInstance());
+  }
+
   foo_subframe_entry =
       controller.GetLastCommittedEntry()->GetFrameEntry(foo_subframe);
   EXPECT_EQ(named_subframe_name, foo_subframe_entry->frame_unique_name());
@@ -2940,6 +2971,63 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   DoReplaceStateWhilePending(shell(), url, url, "simple_page_1.html");
 }
 
+// Ensure that a pending NavigationEntry for a different navigation doesn't
+// cause a commit to be incorrectly treated as a replacement.
+// See https://crbug.com/593153.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       OtherCommitDuringPendingEntryWithReplacement) {
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  // Load an initial page.
+  GURL start_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), start_url));
+  int entry_count = controller.GetEntryCount();
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(start_url, controller.GetLastCommittedEntry()->GetURL());
+
+  // Start a cross-process navigation with replacement, which never completes.
+  GURL foo_url(embedded_test_server()->GetURL(
+      "foo.com", "/navigation_controller/page_with_links.html"));
+  NavigationStallDelegate stall_delegate(foo_url);
+  ResourceDispatcherHost::Get()->SetDelegate(&stall_delegate);
+  NavigationController::LoadURLParams params(foo_url);
+  params.should_replace_current_entry = true;
+  controller.LoadURLWithParams(params);
+
+  // That should be the pending entry.
+  NavigationEntryImpl* entry = controller.GetPendingEntry();
+  ASSERT_NE(nullptr, entry);
+  EXPECT_EQ(foo_url, entry->GetURL());
+  EXPECT_EQ(entry_count, controller.GetEntryCount());
+
+  {
+    // Now the existing page uses history.pushState() while the pending entry
+    // for the other navigation still exists.
+    FrameNavigateParamsCapturer capturer(root);
+    capturer.set_wait_for_load(false);
+    std::string script = "history.pushState({}, '', 'pushed')";
+    EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+    capturer.Wait();
+    EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.details().type);
+    EXPECT_TRUE(capturer.details().is_in_page);
+  }
+
+  // The in-page navigation should not have replaced the previous entry.
+  GURL push_state_url(
+      embedded_test_server()->GetURL("/navigation_controller/pushed"));
+  EXPECT_EQ(entry_count + 1, controller.GetEntryCount());
+  EXPECT_EQ(push_state_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(start_url, controller.GetEntryAtIndex(0)->GetURL());
+
+  ResourceDispatcherHost::Get()->SetDelegate(nullptr);
+}
+
 // Ensure the renderer process does not get confused about the current entry
 // due to subframes and replaced entries.  See https://crbug.com/480201.
 // TODO(creis): Re-enable for Site Isolation FYI bots: https://crbug.com/502317.
@@ -3136,6 +3224,15 @@ class FailureWatcher : public WebContentsObserver {
     message_loop_runner_->Quit();
   }
 
+  void DidFinishNavigation(NavigationHandle* handle) override {
+    if (handle->GetFrameTreeNodeId() != frame_tree_node_id_)
+      return;
+    if (handle->HasCommitted())
+      return;
+
+    message_loop_runner_->Quit();
+  }
+
   // The id of the FrameTreeNode whose navigations to observe.
   int frame_tree_node_id_;
 
@@ -3146,7 +3243,7 @@ class FailureWatcher : public WebContentsObserver {
 }  // namespace
 
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
-                       StopCausesFailureDespiteJavaScriptURL) {
+                       DISABLED_StopCausesFailureDespiteJavaScriptURL) {
   NavigationControllerImpl& controller =
       static_cast<NavigationControllerImpl&>(
           shell()->web_contents()->GetController());
@@ -3160,7 +3257,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url1));
 
-  // Have the user decide to go to a different page which is very slow.
+  // Have the user decide to go to a different page which will not commit.
   GURL url2(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_2.html"));
   NavigationStallDelegate stall_delegate(url2);
@@ -3180,8 +3277,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
     // This LoadURL ends up purging the pending entry, which is why this is
     // tricky.
     EXPECT_EQ(nullptr, controller.GetPendingEntry());
+    EXPECT_TRUE(shell()->web_contents()->IsLoading());
     shell()->web_contents()->Stop();
     watcher.Wait();
+    EXPECT_FALSE(shell()->web_contents()->IsLoading());
   }
 
   ResourceDispatcherHost::Get()->SetDelegate(nullptr);
@@ -3260,6 +3359,311 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, ReloadOriginalRequest) {
   // Make sure the renderer is still alive.
   EXPECT_TRUE(
       ExecuteScript(shell()->web_contents(), "console.log('Success');"));
+}
+
+// This tests that 1) the initial "about:blank" URL is elided from the
+// navigation history of a subframe when it is loaded, and 2) that that initial
+// "about:blank" returns if it is navigated to as part of a history navigation.
+// See http://crbug.com/542299 and https://github.com/whatwg/html/issues/546 .
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       BackToAboutBlankIframe) {
+  GURL original_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html"));
+  NavigateToURL(shell(), original_url);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  NavigationController& controller = shell()->web_contents()->GetController();
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(1, RendererHistoryLength(shell()));
+
+  // Add an iframe with no 'src'.
+
+  std::string script =
+      "var iframe = document.createElement('iframe');"
+      "iframe.id = 'frame';"
+      "document.body.appendChild(iframe);";
+  EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(1, RendererHistoryLength(shell()));
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* frame = root->child_at(0);
+  ASSERT_NE(nullptr, frame);
+
+  EXPECT_EQ(GURL(url::kAboutBlankURL), frame->current_url());
+
+  // Now create a new navigation entry. Note that the old navigation entry has
+  // "about:blank" as the URL in the iframe.
+
+  script = "history.pushState({}, '', 'notarealurl.html')";
+  EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(2, RendererHistoryLength(shell()));
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+
+  // Load the iframe; the initial "about:blank" URL should be elided and thus we
+  // shouldn't get a new navigation entry.
+
+  GURL frame_url = embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_2.html");
+  NavigateFrameToURL(frame, frame_url);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(2, RendererHistoryLength(shell()));
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+
+  EXPECT_EQ(frame_url, frame->current_url());
+
+  // Go back. Because the old state had an empty frame, that should be restored
+  // even though it was replaced in the second navigation entry.
+
+  TestFrameNavigationObserver observer(frame);
+  ASSERT_TRUE(controller.CanGoBack());
+  controller.GoBack();
+  observer.Wait();
+
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(2, RendererHistoryLength(shell()));
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+
+  EXPECT_EQ(GURL(url::kAboutBlankURL), frame->current_url());
+}
+
+// This test is similar to "BackToAboutBlankIframe" above, except that a
+// fragment navigation is used rather than pushState (both create an in-page
+// navigation, so we need to test both), and an initial 'src' is given to the
+// iframe to test proper restoration in that case.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       BackToIframeWithContent) {
+  GURL links_url(embedded_test_server()->GetURL(
+      "/navigation_controller/page_with_links.html"));
+  NavigateToURL(shell(), links_url);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  NavigationController& controller = shell()->web_contents()->GetController();
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(1, RendererHistoryLength(shell()));
+
+  // Add an iframe with a 'src'.
+
+  GURL frame_url_1 = embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html");
+  std::string script =
+      "var iframe = document.createElement('iframe');"
+      "iframe.src = '" + frame_url_1.spec() + "';"
+      "iframe.id = 'frame';"
+      "document.body.appendChild(iframe);";
+  EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(1, controller.GetEntryCount());
+  EXPECT_EQ(1, RendererHistoryLength(shell()));
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+
+  ASSERT_EQ(1U, root->child_count());
+  FrameTreeNode* frame = root->child_at(0);
+  ASSERT_NE(nullptr, frame);
+
+  EXPECT_EQ(frame_url_1, frame->current_url());
+
+  // Do a fragment navigation, creating a new navigation entry. Note that the
+  // old navigation entry has frame_url_1 as the URL in the iframe.
+
+  script = "document.getElementById('fraglink').click()";
+  EXPECT_TRUE(content::ExecuteScript(root->current_frame_host(), script));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(2, RendererHistoryLength(shell()));
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+
+  EXPECT_EQ(frame_url_1, frame->current_url());
+
+  // Navigate the iframe; unlike the test "BackToAboutBlankIframe" above, this
+  // _will_ create a new navigation entry.
+
+  GURL frame_url_2 = embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_2.html");
+  NavigateFrameToURL(frame, frame_url_2);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(3, RendererHistoryLength(shell()));
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+
+  EXPECT_EQ(frame_url_2, frame->current_url());
+
+  // Go back two entries. The original frame URL should be back.
+
+  TestFrameNavigationObserver observer(frame);
+  ASSERT_TRUE(controller.CanGoToOffset(-2));
+  controller.GoToOffset(-2);
+  observer.Wait();
+
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(3, RendererHistoryLength(shell()));
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+
+  EXPECT_EQ(frame_url_1, frame->current_url());
+}
+
+// Ensure that we do not corrupt a NavigationEntry's PageState if a subframe
+// forward navigation commits after we've already started another forward
+// navigation in the main frame.  See https://crbug.com/597322.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       ForwardInSubframeWithPendingForward) {
+  // Navigate to a page with an iframe.
+  GURL url_a(embedded_test_server()->GetURL(
+      "/navigation_controller/page_with_data_iframe.html"));
+  GURL frame_url_a1("data:text/html,Subframe");
+  EXPECT_TRUE(NavigateToURL(shell(), url_a));
+
+  NavigationController& controller = shell()->web_contents()->GetController();
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+  ASSERT_EQ(1U, root->child_count());
+  EXPECT_EQ(url_a, root->current_url());
+  FrameTreeNode* frame = root->child_at(0);
+  EXPECT_EQ(frame_url_a1, frame->current_url());
+
+  // Navigate the iframe to a second page.
+  GURL frame_url_a2 = embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html");
+  NavigateFrameToURL(frame, frame_url_a2);
+
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url_a, root->current_url());
+  EXPECT_EQ(frame_url_a2, frame->current_url());
+
+  // Navigate the top-level frame to another page with an iframe.
+  GURL url_b(embedded_test_server()->GetURL(
+      "/navigation_controller/page_with_iframe.html"));
+  GURL frame_url_b1(url::kAboutBlankURL);
+  EXPECT_TRUE(NavigateToURL(shell(), url_b));
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(url_b, root->current_url());
+  EXPECT_EQ(frame_url_b1, root->child_at(0)->current_url());
+
+  // Go back two entries. The original frame URL should be back.
+  ASSERT_TRUE(controller.CanGoToOffset(-2));
+  controller.GoToOffset(-2);
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url_a, root->current_url());
+  EXPECT_EQ(frame_url_a1, root->child_at(0)->current_url());
+
+  // Go forward two times in a row, being careful that the subframe commits
+  // after the second forward navigation begins but before the main frame
+  // commits.
+  TestNavigationManager subframe_delayer(shell()->web_contents(), frame_url_a2);
+  TestNavigationManager mainframe_delayer(shell()->web_contents(), url_b);
+  controller.GoForward();
+  subframe_delayer.WaitForWillStartRequest();
+  controller.GoForward();
+  mainframe_delayer.WaitForWillStartRequest();
+  EXPECT_EQ(2, controller.GetPendingEntryIndex());
+
+  // Let the subframe commit.
+  subframe_delayer.ResumeNavigation();
+  subframe_delayer.WaitForNavigationFinished();
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url_a, root->current_url());
+  EXPECT_EQ(frame_url_a2, root->child_at(0)->current_url());
+
+  // Let the main frame commit.
+  mainframe_delayer.ResumeNavigation();
+  mainframe_delayer.WaitForNavigationFinished();
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url_b, root->current_url());
+  EXPECT_EQ(frame_url_b1, root->child_at(0)->current_url());
+
+  // Check the PageState of the previous entry to ensure it isn't corrupted.
+  NavigationEntry* entry = controller.GetEntryAtIndex(1);
+  EXPECT_EQ(url_a, entry->GetURL());
+  ExplodedPageState exploded_state;
+  EXPECT_TRUE(
+      DecodePageState(entry->GetPageState().ToEncodedData(), &exploded_state));
+  EXPECT_EQ(url_a, GURL(exploded_state.top.url_string.string()));
+  EXPECT_EQ(frame_url_a2,
+            GURL(exploded_state.top.children.at(0).url_string.string()));
+}
+
+// Ensure that forward navigations in cloned tabs can commit if they redirect to
+// a different site than before.  This causes the navigation's item sequence
+// number to change, meaning that we can't use it for determining whether the
+// commit matches the history item.  See https://crbug.com/600238.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       ForwardRedirectWithNoCommittedEntry) {
+  NavigationController& controller = shell()->web_contents()->GetController();
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  // Put 2 pages in history.
+  GURL url_1(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_1));
+
+  GURL url_2(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_2.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_2));
+
+  EXPECT_EQ(url_2, root->current_url());
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+
+  // Do a replaceState to a URL that will redirect when we come back to it via
+  // session history.
+  GURL url_3(embedded_test_server()->GetURL(
+      "foo.com", "/navigation_controller/page_with_links.html"));
+  {
+    TestNavigationObserver observer(shell()->web_contents());
+    std::string script =
+        "history.replaceState({}, '', '/server-redirect?" + url_3.spec() + "')";
+    EXPECT_TRUE(ExecuteScript(root->current_frame_host(), script));
+    observer.Wait();
+  }
+
+  // Go back.
+  controller.GoBack();
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(url_1, root->current_url());
+
+  // Clone the tab without navigating it.
+  std::unique_ptr<WebContentsImpl> new_tab(
+      static_cast<WebContentsImpl*>(shell()->web_contents()->Clone()));
+  NavigationController& new_controller = new_tab->GetController();
+  FrameTreeNode* new_root = new_tab->GetFrameTree()->root();
+  EXPECT_TRUE(new_controller.IsInitialNavigation());
+  EXPECT_TRUE(new_controller.NeedsReload());
+
+  // Go forward in the new tab.
+  {
+    TestNavigationObserver observer(new_tab.get());
+    new_controller.GoForward();
+    observer.Wait();
+  }
+  EXPECT_TRUE(new_root->current_frame_host()->IsRenderFrameLive());
+  EXPECT_EQ(url_3, new_root->current_url());
 }
 
 }  // namespace content

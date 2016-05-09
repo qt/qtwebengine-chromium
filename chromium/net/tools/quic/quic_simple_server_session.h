@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 
+#include <deque>
+#include <list>
 #include <set>
 #include <string>
 #include <vector>
@@ -31,7 +33,6 @@ class QuicConnection;
 class QuicCryptoServerConfig;
 class ReliableQuicStream;
 
-namespace tools {
 
 namespace test {
 class QuicSimpleServerSessionPeer;
@@ -60,7 +61,8 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
   QuicSimpleServerSession(const QuicConfig& config,
                           QuicConnection* connection,
                           QuicServerSessionVisitor* visitor,
-                          const QuicCryptoServerConfig* crypto_config);
+                          const QuicCryptoServerConfig* crypto_config,
+                          QuicCompressedCertsCache* compressed_certs_cache);
 
   ~QuicSimpleServerSession() override;
 
@@ -77,8 +79,8 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
   // And enqueue HEADERS block in those PUSH_PROMISED for sending push response
   // later.
   virtual void PromisePushResources(
-      const string& request_url,
-      const list<QuicInMemoryCache::ServerPushInfo>& resources,
+      const std::string& request_url,
+      const std::list<QuicInMemoryCache::ServerPushInfo>& resources,
       QuicStreamId original_stream_id,
       const SpdyHeaderBlock& original_request_headers);
 
@@ -98,7 +100,8 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
 
   // QuicServerSessionBaseMethod:
   QuicCryptoServerStreamBase* CreateQuicCryptoServerStream(
-      const QuicCryptoServerConfig* crypto_config) override;
+      const QuicCryptoServerConfig* crypto_config,
+      QuicCompressedCertsCache* compressed_certs_cache) override;
 
  private:
   friend class test::QuicSimpleServerSessionPeer;
@@ -110,7 +113,7 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
   // Copying the rest headers ensures they are the same as the original
   // request, especially cookies.
   SpdyHeaderBlock SynthesizePushRequestHeaders(
-      string request_url,
+      std::string request_url,
       QuicInMemoryCache::ServerPushInfo resource,
       const SpdyHeaderBlock& original_request_headers);
 
@@ -148,7 +151,6 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
   DISALLOW_COPY_AND_ASSIGN(QuicSimpleServerSession);
 };
 
-}  // namespace tools
 }  // namespace net
 
-#endif  // NET_TOOLS_QUIC_QUIC_SERVER_SESSION_H_
+#endif  // NET_TOOLS_QUIC_QUIC_SIMPLE_SERVER_SESSION_H_

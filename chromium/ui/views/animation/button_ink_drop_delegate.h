@@ -8,6 +8,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/events/event_handler.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/views/animation/ink_drop_delegate.h"
 #include "ui/views/views_export.h"
 
@@ -21,22 +22,27 @@ class InkDropAnimationController;
 class InkDropHost;
 class View;
 
-// An InkDropDelegate that handles animations for toolbar buttons.
+// An InkDropDelegate that handles animations for things that act like buttons.
 class VIEWS_EXPORT ButtonInkDropDelegate : public InkDropDelegate,
                                            public ui::EventHandler {
  public:
   ButtonInkDropDelegate(InkDropHost* ink_drop_host, View* view);
   ~ButtonInkDropDelegate() override;
 
+  const gfx::Point& last_ink_drop_location() const {
+    return last_ink_drop_location_;
+  }
+  void set_last_ink_drop_location(const gfx::Point& point) {
+    last_ink_drop_location_ = point;
+  }
+
   // InkDropDelegate:
-  void SetInkDropSize(int large_size,
-                      int large_corner_radius,
-                      int small_size,
-                      int small_corner_radius) override;
-  void OnLayout() override;
   void OnAction(InkDropState state) override;
+  void SnapToActivated() override;
+  void SetHovered(bool is_hovered) override;
 
   // ui::EventHandler:
+  void OnMouseEvent(ui::MouseEvent* event) override;
   void OnGestureEvent(ui::GestureEvent* event) override;
 
  private:
@@ -45,6 +51,10 @@ class VIEWS_EXPORT ButtonInkDropDelegate : public InkDropDelegate,
 
   // Parent InkDropHost (typically a View) that hosts the ink ripple animations.
   InkDropHost* ink_drop_host_;
+
+  // Location of the last ink drop triggering event in coordinate system of the
+  // ctor argument |view|.
+  gfx::Point last_ink_drop_location_;
 
   // Animation controller for the ink drop ripple effect.
   scoped_ptr<InkDropAnimationController> ink_drop_animation_controller_;

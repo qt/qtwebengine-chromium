@@ -51,6 +51,8 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
                         OnConnectedToRemoteDevice)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DisconnectedFromRemoteDevice,
                         OnDisconnectedFromRemoteDevice)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_CancelledRemotePlaybackRequest,
+                        OnCancelledRemotePlaybackRequest)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
@@ -61,22 +63,6 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void RendererMediaPlayerManager::WasHidden() {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableMediaSuspend)) {
-    return;
-  }
-
-  // Suspend and release resources of all playing video.
-  for (auto& player_it : media_players_) {
-    media::RendererMediaPlayerInterface* player = player_it.second;
-    if (!player || player->paused() || !player->hasVideo())
-      continue;
-
-    player->SuspendAndReleaseResources();
-  }
-}
-
 void RendererMediaPlayerManager::Initialize(
     MediaPlayerHostMsg_Initialize_Type type,
     int player_id,
@@ -84,7 +70,9 @@ void RendererMediaPlayerManager::Initialize(
     const GURL& first_party_for_cookies,
     int demuxer_client_id,
     const GURL& frame_url,
-    bool allow_credentials) {
+    bool allow_credentials,
+    int delegate_id,
+    int media_session_id) {
   MediaPlayerHostMsg_Initialize_Params media_player_params;
   media_player_params.type = type;
   media_player_params.player_id = player_id;
@@ -93,6 +81,8 @@ void RendererMediaPlayerManager::Initialize(
   media_player_params.first_party_for_cookies = first_party_for_cookies;
   media_player_params.frame_url = frame_url;
   media_player_params.allow_credentials = allow_credentials;
+  media_player_params.delegate_id = delegate_id;
+  media_player_params.media_session_id = media_session_id;
 
   Send(new MediaPlayerHostMsg_Initialize(routing_id(), media_player_params));
 }
@@ -225,6 +215,13 @@ void RendererMediaPlayerManager::OnDisconnectedFromRemoteDevice(int player_id) {
   media::RendererMediaPlayerInterface* player = GetMediaPlayer(player_id);
   if (player)
     player->OnDisconnectedFromRemoteDevice();
+}
+
+void RendererMediaPlayerManager::OnCancelledRemotePlaybackRequest(
+    int player_id) {
+  media::RendererMediaPlayerInterface* player = GetMediaPlayer(player_id);
+  if (player)
+    player->OnCancelledRemotePlaybackRequest();
 }
 
 void RendererMediaPlayerManager::OnDidExitFullscreen(int player_id) {

@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "webrtc/base/criticalsection.h"
 #include "webrtc/base/random.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
@@ -30,10 +31,9 @@
 
 namespace webrtc {
 
-class BitrateAggregator;
-class CriticalSectionWrapper;
 class RTPSenderAudio;
 class RTPSenderVideo;
+class RtcEventLog;
 
 class RTPSenderInterface {
  public:
@@ -67,7 +67,6 @@ class RTPSenderInterface {
   virtual uint16_t SequenceNumber() const = 0;
   virtual size_t MaxPayloadLength() const = 0;
   virtual size_t MaxDataPayloadLength() const = 0;
-  virtual uint16_t PacketOverHead() const = 0;
   virtual uint16_t ActualSendBitrateKbit() const = 0;
 
   virtual int32_t SendToNetwork(uint8_t* data_buffer,
@@ -90,13 +89,13 @@ class RTPSender : public RTPSenderInterface {
   RTPSender(bool audio,
             Clock* clock,
             Transport* transport,
-            RtpAudioFeedback* audio_feedback,
             RtpPacketSender* paced_sender,
             TransportSequenceNumberAllocator* sequence_number_allocator,
             TransportFeedbackObserver* transport_feedback_callback,
             BitrateStatisticsObserver* bitrate_callback,
             FrameCountObserver* frame_count_observer,
-            SendSideDelayObserver* send_side_delay_observer);
+            SendSideDelayObserver* send_side_delay_observer,
+            RtcEventLog* event_log);
   virtual ~RTPSender();
 
   void ProcessBitrate();
@@ -113,10 +112,11 @@ class RTPSender : public RTPSenderInterface {
   // Includes size of RTP and FEC headers.
   size_t MaxDataPayloadLength() const override;
 
-  int32_t RegisterPayload(
-      const char payload_name[RTP_PAYLOAD_NAME_SIZE],
-      const int8_t payload_type, const uint32_t frequency,
-      const size_t channels, const uint32_t rate);
+  int32_t RegisterPayload(const char* payload_name,
+                          const int8_t payload_type,
+                          const uint32_t frequency,
+                          const size_t channels,
+                          const uint32_t rate);
 
   int32_t DeRegisterSendPayload(const int8_t payload_type);
 
@@ -145,7 +145,7 @@ class RTPSender : public RTPSenderInterface {
 
   void SetCsrcs(const std::vector<uint32_t>& csrcs);
 
-  int32_t SetMaxPayloadLength(size_t length, uint16_t packet_over_head);
+  void SetMaxPayloadLength(size_t max_payload_length);
 
   int32_t SendOutgoingData(FrameType frame_type,
                            int8_t payload_type,
@@ -194,7 +194,7 @@ class RTPSender : public RTPSenderInterface {
                                   const RTPHeader& rtp_header,
                                   size_t extension_length_bytes,
                                   size_t* extension_offset) const
-      EXCLUSIVE_LOCKS_REQUIRED(send_critsect_.get());
+      EXCLUSIVE_LOCKS_REQUIRED(send_critsect_);
 
   bool UpdateAudioLevel(uint8_t* rtp_packet,
                         size_t rtp_packet_length,
@@ -233,7 +233,6 @@ class RTPSender : public RTPSenderInterface {
   void SetRtxSsrc(uint32_t ssrc);
 
   void SetRtxPayloadType(int payload_type, int associated_payload_type);
-  std::pair<int, int> RtxPayloadType() const;
 
   // Functions wrapping RTPSenderInterface.
   int32_t BuildRTPheader(uint8_t* data_buffer,
@@ -247,7 +246,6 @@ class RTPSender : public RTPSenderInterface {
   size_t RTPHeaderLength() const override;
   uint16_t AllocateSequenceNumber(uint16_t packets_to_send) override;
   size_t MaxPayloadLength() const override;
-  uint16_t PacketOverHead() const override;
 
   // Current timestamp.
   uint32_t Timestamp() const override;
@@ -384,28 +382,59 @@ class RTPSender : public RTPSenderInterface {
                       bool is_retransmit);
   bool IsFecPacket(const uint8_t* buffer, const RTPHeader& header) const;
 
-  Clock* clock_;
-  int64_t clock_delta_ms_;
+  class BitrateAggregator {
+   public:
+    explicit BitrateAggregator(BitrateStatisticsObserver* bitrate_callback);
+
+    void OnStatsUpdated() const;
+
+    Bitrate::Observer* total_bitrate_observer();
+    Bitrate::Observer* retransmit_bitrate_observer();
+    void set_ssrc(uint32_t ssrc);
+
+   private:
+    // We assume that these observers are called on the same thread, which is
+    // true for RtpSender as they are called on the Process thread.
+    class BitrateObserver : public Bitrate::Observer {
+     public:
+      explicit BitrateObserver(const BitrateAggregator& aggregator);
+
+      // Implements Bitrate::Observer.
+      void BitrateUpdated(const BitrateStatistics& stats) override;
+      const BitrateStatistics& statistics() const;
+
+     private:
+      BitrateStatistics statistics_;
+      const BitrateAggregator& aggregator_;
+    };
+
+    BitrateStatisticsObserver* const callback_;
+    BitrateObserver total_bitrate_observer_;
+    BitrateObserver retransmit_bitrate_observer_;
+    uint32_t ssrc_;
+  };
+
+  Clock* const clock_;
+  const int64_t clock_delta_ms_;
   Random random_ GUARDED_BY(send_critsect_);
 
-  rtc::scoped_ptr<BitrateAggregator> bitrates_;
+  BitrateAggregator bitrates_;
   Bitrate total_bitrate_sent_;
 
   const bool audio_configured_;
-  rtc::scoped_ptr<RTPSenderAudio> audio_;
-  rtc::scoped_ptr<RTPSenderVideo> video_;
+  const rtc::scoped_ptr<RTPSenderAudio> audio_;
+  const rtc::scoped_ptr<RTPSenderVideo> video_;
 
   RtpPacketSender* const paced_sender_;
   TransportSequenceNumberAllocator* const transport_sequence_number_allocator_;
   TransportFeedbackObserver* const transport_feedback_observer_;
   int64_t last_capture_time_ms_sent_;
-  rtc::scoped_ptr<CriticalSectionWrapper> send_critsect_;
+  rtc::CriticalSection send_critsect_;
 
   Transport *transport_;
   bool sending_media_ GUARDED_BY(send_critsect_);
 
   size_t max_payload_length_;
-  uint16_t packet_over_head_;
 
   int8_t payload_type_ GUARDED_BY(send_critsect_);
   std::map<int8_t, RtpUtility::Payload*> payload_type_map_;
@@ -433,11 +462,12 @@ class RTPSender : public RTPSenderInterface {
   StreamDataCountersCallback* rtp_stats_callback_ GUARDED_BY(statistics_crit_);
   FrameCountObserver* const frame_count_observer_;
   SendSideDelayObserver* const send_side_delay_observer_;
+  RtcEventLog* const event_log_;
 
   // RTP variables
   bool start_timestamp_forced_ GUARDED_BY(send_critsect_);
   uint32_t start_timestamp_ GUARDED_BY(send_critsect_);
-  SSRCDatabase& ssrc_db_ GUARDED_BY(send_critsect_);
+  SSRCDatabase* const ssrc_db_;
   uint32_t remote_ssrc_ GUARDED_BY(send_critsect_);
   bool sequence_number_forced_ GUARDED_BY(send_critsect_);
   uint16_t sequence_number_ GUARDED_BY(send_critsect_);
@@ -452,9 +482,6 @@ class RTPSender : public RTPSenderInterface {
   std::vector<uint32_t> csrcs_ GUARDED_BY(send_critsect_);
   int rtx_ GUARDED_BY(send_critsect_);
   uint32_t ssrc_rtx_ GUARDED_BY(send_critsect_);
-  // TODO(changbin): Remove rtx_payload_type_ once interop with old clients that
-  // only understand one RTX PT is no longer needed.
-  int rtx_payload_type_ GUARDED_BY(send_critsect_);
   // Mapping rtx_payload_type_map_[associated] = rtx.
   std::map<int8_t, int8_t> rtx_payload_type_map_ GUARDED_BY(send_critsect_);
 
@@ -464,6 +491,8 @@ class RTPSender : public RTPSenderInterface {
   // that the target bitrate is still valid.
   rtc::scoped_ptr<CriticalSectionWrapper> target_bitrate_critsect_;
   uint32_t target_bitrate_ GUARDED_BY(target_bitrate_critsect_);
+
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RTPSender);
 };
 
 }  // namespace webrtc

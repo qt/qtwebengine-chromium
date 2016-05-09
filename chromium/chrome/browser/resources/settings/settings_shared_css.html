@@ -1,0 +1,258 @@
+<!-- Common styles for Material Design settings. -->
+<dom-module id="settings-shared">
+  <template>
+    <style>
+      :root {
+        --checkbox-margin-start: 2px;
+        --checkbox-size: 16px;
+        --checkbox-spacing: 18px;
+        --iron-icon-fill-color: var(--paper-grey-600);
+        --iron-icon-height: 20px;
+        --iron-icon-width: 20px;
+        --paper-icon-button: {
+          width: 36px;
+          height: 36px;
+        };
+        --paper-input-max-width: 264px;
+        --settings-background-color: var(--paper-blue-grey-50);
+        --settings-secondary: {
+          color: var(--paper-grey-600);
+          font-weight: 400;
+        };
+        --settings-error-color: var(--paper-red-700);
+        --settings-hover-color: var(--google-grey-300);
+
+        /* Some colors use non-MD colors.  These custom colors are specified by
+         * UX design (bettes@). */
+        --settings-nav-grey: rgb(90, 90, 90);
+        --settings-title-bar-background-color: rgb(52, 73, 94);
+        --settings-title-bar-color: rgb(255, 255, 255);
+      }
+
+      h2 {
+        @apply(--layout-center);
+        color: var(--paper-grey-500);
+        display: flex;
+        font-size: 100%;
+        font-weight: 500;
+        margin: 0;
+        min-height: 40px;
+      }
+
+      iron-icon[icon=check],
+      iron-icon[icon=done] {
+       --iron-icon-fill-color: var(--google-green-500);
+      }
+
+      paper-button {
+        margin: 0;
+        min-width: auto;
+      }
+
+      paper-button[toggles][active] {
+        background-color: var(--paper-grey-300);
+      }
+
+      span ~ a {
+        -webkit-margin-start: 4px;
+      }
+
+      [is='action-link'],
+      [is='action-link']:active,
+      [is='action-link']:hover,
+      [is='action-link']:visited,
+      paper-button.primary-button,
+      paper-button.tertiary-button {
+        color: var(--google-blue-700);
+      }
+
+      [is='action-link']:hover {
+        /* TODO(dbeam): check with bettes@ on this one, but I'm pretty sure we
+         * shouldn't be showing much :hover stuff on Polymer pages. */
+        text-decoration: none;
+      }
+
+      paper-button.primary-button {
+        --paper-button: {
+          font-weight: 500;
+          text-align: start;
+        };
+        margin: 0 -0.57em;  /* Offsets default paper-button padding. */
+      }
+
+      paper-button.secondary-button {
+        --paper-button: {
+          color: var(--paper-grey-700);
+          text-decoration: none;
+          font-weight: 500;
+        };
+      }
+
+      paper-button.tertiary-button {
+        --paper-button: {
+          font-weight: 400;
+          text-decoration: none;
+        };
+      }
+
+      paper-radio-button {
+        --paper-radio-button-checked-color: var(--google-blue-500);
+        --paper-radio-button-label-spacing: 18px;
+        --paper-radio-button-unchecked-color: var(--paper-grey-600);
+        -webkit-margin-start: 2px;
+      }
+
+      .text-elide {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .button-row {
+        display: flex;
+        margin-top: 25px;
+      }
+
+      .button-strip {
+        text-align: end;
+      }
+
+      .action-button {
+        background: var(--google-blue-500);
+        color: white;
+        font-weight: 500;
+      }
+
+      .action-button[disabled] {
+        opacity: .25;  /* TODO(dbeam): check this value with bettes. */
+      }
+
+      .list-frame {
+        @apply(--layout-center);
+        -webkit-padding-end: 20px;
+        -webkit-padding-start: 48px;
+        display: block;
+        padding-bottom: 0;
+        padding-top: 0;
+      }
+
+      .list-frame .secondary,
+      .list-item .secondary {
+        @apply(--settings-secondary);
+      }
+
+      .list-item {
+        @apply(--layout-center);
+        display: flex;
+        min-height: 40px;
+        padding: 0;
+      }
+
+      .list-item.underbar {
+        border-bottom: 1px solid var(--paper-grey-300);
+      }
+
+      .list-item.selected {
+        font-weight: 500;
+      }
+
+      .list-item select {
+        -webkit-margin-start: 4px;
+      }
+
+      .list-item > .middle {
+        flex: 1;
+        margin: 8px 12px;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+
+      .list-item > .start {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+
+      .list-item > paper-icon-item {
+        padding: 0;
+      }
+
+      /* This button has no ink ripple. */
+      .list-item.list-button {
+        @apply(--layout-center);
+        color: rgb(66, 133, 244);
+        font-weight: 500;
+      }
+
+      .settings-box {
+        @apply(--layout-center);
+        border-top: 1px solid var(--paper-grey-300);
+        display: flex;
+        min-height: 40px;
+        padding: 0 20px;
+      }
+
+      .settings-box.first {
+        border-top: none;
+      }
+
+      .settings-box.block {
+        display: block;
+      }
+
+      .settings-box.two-line {
+        min-height: 52px;
+      }
+
+      .settings-box .secondary {
+        @apply(--settings-secondary);
+      }
+
+      .settings-box .middle {
+        -webkit-margin-start: 16px;
+        align-items: center;
+        flex: auto;
+      }
+
+      .settings-box .start {
+        align-items: center;
+        flex: auto;
+      }
+
+      /* The secondary-action wraps a clickable sub-area of a .settings-box.
+       * An example is the |sign out| button on the People settings.
+       * Here is an example with and without a secondary action box:
+       *
+       *  +-------------------------------------------------------+
+       *  | Main action area .settings-box    | .secondary-action |
+       *  +-------------------------------------------------------+
+       *  | Another setting-box without a secondary-action        |
+       *  +-------------------------------------------------------+
+       */
+      .settings-box .secondary-action {
+        -webkit-border-start: 1px solid var(--paper-grey-300);
+        -webkit-padding-start: 20px;
+      }
+
+      .settings-box paper-item iron-icon {
+        /* Same padding as paper-icon-button. */
+        padding: 8px;
+      }
+
+      .vertical-list > div:first-of-type {
+        border-top: none;
+      }
+
+      .vertical-list > div {
+        border-top: 1px solid var(--paper-grey-300);
+      }
+
+      .settings-checkbox-spacer {
+        -webkit-margin-start: calc(
+            var(--checkbox-margin-start) +
+            var(--checkbox-size) +
+            var(--checkbox-spacing));
+      }
+    </style>
+  </template>
+</dom-module>

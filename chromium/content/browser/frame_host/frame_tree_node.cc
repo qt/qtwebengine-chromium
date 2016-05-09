@@ -14,11 +14,13 @@
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/frame_host/traced_frame_tree_node.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 
 namespace content {
 
@@ -77,7 +79,7 @@ FrameTreeNode::FrameTreeNode(
     RenderFrameHostManager::Delegate* manager_delegate,
     blink::WebTreeScopeType scope,
     const std::string& name,
-    blink::WebSandboxFlags sandbox_flags,
+    const std::string& unique_name,
     const blink::WebFrameOwnerProperties& frame_owner_properties)
     : frame_tree_(frame_tree),
       navigator_(navigator),
@@ -94,17 +96,23 @@ FrameTreeNode::FrameTreeNode(
       replication_state_(
           scope,
           name,
-          sandbox_flags,
-          false /* should enforce strict mixed content checking */),
-      // Effective sandbox flags also need to be set, since initial sandbox
-      // flags should apply to the initial empty document in the frame.
-      effective_sandbox_flags_(sandbox_flags),
+          unique_name,
+          blink::WebSandboxFlags::None,
+          false /* should enforce strict mixed content checking */,
+          false /* is a potentially trustworthy unique origin */),
+      pending_sandbox_flags_(blink::WebSandboxFlags::None),
       frame_owner_properties_(frame_owner_properties),
       loading_progress_(kLoadingProgressNotStarted) {
   std::pair<FrameTreeNodeIdMap::iterator, bool> result =
       g_frame_tree_node_id_map.Get().insert(
           std::make_pair(frame_tree_node_id_, this));
   CHECK(result.second);
+
+  TRACE_EVENT_OBJECT_CREATED_WITH_ID(
+      "navigation", "FrameTreeNode",
+      TRACE_ID_WITH_SCOPE("FrameTreeNode", frame_tree_node_id_));
+  // Don't TraceSnapshot() until the RenderFrameHostManager is initialized and
+  // calls SetCurrentURL().
 }
 
 FrameTreeNode::~FrameTreeNode() {
@@ -116,6 +124,10 @@ FrameTreeNode::~FrameTreeNode() {
     opener_->RemoveObserver(opener_observer_.get());
 
   g_frame_tree_node_id_map.Get().erase(frame_tree_node_id_);
+
+  TRACE_EVENT_OBJECT_DELETED_WITH_ID(
+      "navigation", "FrameTreeNode",
+      TRACE_ID_WITH_SCOPE("FrameTreeNode", frame_tree_node_id_));
 }
 
 void FrameTreeNode::AddObserver(Observer* observer) {
@@ -171,7 +183,8 @@ void FrameTreeNode::RemoveChild(FrameTreeNode* child) {
 }
 
 void FrameTreeNode::ResetForNewProcess() {
-  current_url_ = GURL();
+  current_frame_host()->set_last_committed_url(GURL());
+  TraceSnapshot();
 
   // Remove child nodes from the tree, then delete them. This destruction
   // operation will notify observers.
@@ -196,19 +209,34 @@ void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
 void FrameTreeNode::SetCurrentURL(const GURL& url) {
   if (!has_committed_real_load_ && url != GURL(url::kAboutBlankURL))
     has_committed_real_load_ = true;
-  current_url_ = url;
+  current_frame_host()->set_last_committed_url(url);
+  TraceSnapshot();
 }
 
-void FrameTreeNode::SetCurrentOrigin(const url::Origin& origin) {
-  if (!origin.IsSameOriginWith(replication_state_.origin))
-    render_manager_.OnDidUpdateOrigin(origin);
+void FrameTreeNode::SetCurrentOrigin(
+    const url::Origin& origin,
+    bool is_potentially_trustworthy_unique_origin) {
+  if (!origin.IsSameOriginWith(replication_state_.origin) ||
+      replication_state_.has_potentially_trustworthy_unique_origin !=
+          is_potentially_trustworthy_unique_origin) {
+    render_manager_.OnDidUpdateOrigin(origin,
+                                      is_potentially_trustworthy_unique_origin);
+  }
   replication_state_.origin = origin;
+  replication_state_.has_potentially_trustworthy_unique_origin =
+      is_potentially_trustworthy_unique_origin;
 }
 
-void FrameTreeNode::SetFrameName(const std::string& name) {
-  if (name != replication_state_.name)
-    render_manager_.OnDidUpdateName(name);
+void FrameTreeNode::SetFrameName(const std::string& name,
+                                 const std::string& unique_name) {
+  if (name == replication_state_.name) {
+    // |unique_name| shouldn't change unless |name| changes.
+    DCHECK_EQ(unique_name, replication_state_.unique_name);
+    return;
+  }
+  render_manager_.OnDidUpdateName(name, unique_name);
   replication_state_.name = name;
+  replication_state_.unique_name = unique_name;
 }
 
 void FrameTreeNode::SetEnforceStrictMixedContentChecking(bool should_enforce) {
@@ -219,6 +247,15 @@ void FrameTreeNode::SetEnforceStrictMixedContentChecking(bool should_enforce) {
   render_manager_.OnEnforceStrictMixedContentChecking(should_enforce);
   replication_state_.should_enforce_strict_mixed_content_checking =
       should_enforce;
+}
+
+void FrameTreeNode::SetPendingSandboxFlags(
+    blink::WebSandboxFlags sandbox_flags) {
+  pending_sandbox_flags_ = sandbox_flags;
+
+  // Subframes should always inherit their parent's sandbox flags.
+  if (parent())
+    pending_sandbox_flags_ |= parent()->effective_sandbox_flags();
 }
 
 bool FrameTreeNode::IsDescendantOf(FrameTreeNode* other) const {
@@ -271,48 +308,68 @@ bool FrameTreeNode::IsLoading() const {
 
 bool FrameTreeNode::CommitPendingSandboxFlags() {
   bool did_change_flags =
-      effective_sandbox_flags_ != replication_state_.sandbox_flags;
-  effective_sandbox_flags_ = replication_state_.sandbox_flags;
+      pending_sandbox_flags_ != replication_state_.sandbox_flags;
+  replication_state_.sandbox_flags = pending_sandbox_flags_;
   return did_change_flags;
 }
 
 void FrameTreeNode::CreatedNavigationRequest(
     scoped_ptr<NavigationRequest> navigation_request) {
   CHECK(IsBrowserSideNavigationEnabled());
-  ResetNavigationRequest(false);
+
+  bool was_previously_loading = frame_tree()->IsLoading();
+
+  // There's no need to reset the state: there's still an ongoing load, and the
+  // RenderFrameHostManager will take care of updates to the speculative
+  // RenderFrameHost in DidCreateNavigationRequest below.
+  if (was_previously_loading)
+    ResetNavigationRequest(true);
+
+  navigation_request_ = std::move(navigation_request);
+  render_manager()->DidCreateNavigationRequest(navigation_request_.get());
 
   // Force the throbber to start to keep it in sync with what is happening in
   // the UI. Blink doesn't send throb notifications for JavaScript URLs, so it
   // is not done here either.
-  if (!navigation_request->common_params().url.SchemeIs(
+  if (!navigation_request_->common_params().url.SchemeIs(
           url::kJavaScriptScheme)) {
     // TODO(fdegans): Check if this is a same-document navigation and set the
     // proper argument.
-    DidStartLoading(true);
+    DidStartLoading(true, was_previously_loading);
   }
-
-  navigation_request_ = std::move(navigation_request);
-
-  render_manager()->DidCreateNavigationRequest(*navigation_request_);
 }
 
-void FrameTreeNode::ResetNavigationRequest(bool is_commit) {
+void FrameTreeNode::ResetNavigationRequest(bool keep_state) {
   CHECK(IsBrowserSideNavigationEnabled());
   if (!navigation_request_)
     return;
+  bool was_renderer_initiated = !navigation_request_->browser_initiated();
+  NavigationRequest::AssociatedSiteInstanceType site_instance_type =
+      navigation_request_->associated_site_instance_type();
   navigation_request_.reset();
 
-  // During commit, the clean up of a speculative RenderFrameHost is done in
-  // RenderFrameHostManager::DidNavigateFrame. The load is also still being
-  // tracked.
-  if (is_commit)
+  if (keep_state)
     return;
 
-  // If the reset corresponds to a cancelation, the RenderFrameHostManager
-  // should clean up any speculative RenderFrameHost it created for the
-  // navigation.
+  // The RenderFrameHostManager should clean up any speculative RenderFrameHost
+  // it created for the navigation. Also register that the load stopped.
   DidStopLoading();
   render_manager_.CleanUpNavigation();
+
+  // When reusing the same SiteInstance, a pending WebUI may have been created
+  // on behalf of the navigation in the current RenderFrameHost. Clear it.
+  if (site_instance_type ==
+      NavigationRequest::AssociatedSiteInstanceType::CURRENT) {
+    current_frame_host()->ClearPendingWebUI();
+  }
+
+  // If the navigation is renderer-initiated, the renderer should also be
+  // informed that the navigation stopped.
+  if (was_renderer_initiated) {
+    current_frame_host()->Send(
+        new FrameMsg_Stop(current_frame_host()->GetRoutingID()));
+  }
+
 }
 
 bool FrameTreeNode::has_started_loading() const {
@@ -323,7 +380,8 @@ void FrameTreeNode::reset_loading_progress() {
   loading_progress_ = kLoadingProgressNotStarted;
 }
 
-void FrameTreeNode::DidStartLoading(bool to_different_document) {
+void FrameTreeNode::DidStartLoading(bool to_different_document,
+                                    bool was_previously_loading) {
   // Any main frame load to a new document should reset the load progress since
   // it will replace the current page and any frames. The WebContents will
   // be notified when DidChangeLoadProgress is called.
@@ -331,7 +389,7 @@ void FrameTreeNode::DidStartLoading(bool to_different_document) {
     frame_tree_->ResetLoadProgress();
 
   // Notify the WebContents.
-  if (!frame_tree_->IsLoading())
+  if (!was_previously_loading)
     navigator()->GetDelegate()->DidStartLoading(this, to_different_document);
 
   // Set initial load progress and update overall progress. This will notify
@@ -396,6 +454,38 @@ bool FrameTreeNode::StopLoading() {
 void FrameTreeNode::DidFocus() {
   last_focus_time_ = base::TimeTicks::Now();
   FOR_EACH_OBSERVER(Observer, observers_, OnFrameTreeNodeFocused(this));
+}
+
+void FrameTreeNode::BeforeUnloadCanceled() {
+  // TODO(clamy): Support BeforeUnload in subframes.
+  if (!IsMainFrame())
+    return;
+
+  RenderFrameHostImpl* current_frame_host =
+      render_manager_.current_frame_host();
+  DCHECK(current_frame_host);
+  current_frame_host->ResetLoadingState();
+
+  if (IsBrowserSideNavigationEnabled()) {
+    RenderFrameHostImpl* speculative_frame_host =
+        render_manager_.speculative_frame_host();
+    if (speculative_frame_host)
+      speculative_frame_host->ResetLoadingState();
+  } else {
+    RenderFrameHostImpl* pending_frame_host =
+        render_manager_.pending_frame_host();
+    if (pending_frame_host)
+      pending_frame_host->ResetLoadingState();
+  }
+}
+
+void FrameTreeNode::TraceSnapshot() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
+      "navigation", "FrameTreeNode",
+      TRACE_ID_WITH_SCOPE("FrameTreeNode", frame_tree_node_id_),
+      scoped_ptr<base::trace_event::ConvertableToTraceFormat>(
+          new TracedFrameTreeNode(*this)));
 }
 
 }  // namespace content

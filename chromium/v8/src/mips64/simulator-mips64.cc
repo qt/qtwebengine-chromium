@@ -16,6 +16,7 @@
 #include "src/mips64/constants-mips64.h"
 #include "src/mips64/simulator-mips64.h"
 #include "src/ostreams.h"
+#include "src/runtime/runtime-utils.h"
 
 // Only build the simulator if not compiling for real MIPS hardware.
 #if defined(USE_SIMULATOR)
@@ -23,11 +24,8 @@
 namespace v8 {
 namespace internal {
 
-// Utils functions.
-bool HaveSameSign(int64_t a, int64_t b) {
-  return ((a ^ b) >= 0);
-}
-
+// Util functions.
+inline bool HaveSameSign(int64_t a, int64_t b) { return ((a ^ b) >= 0); }
 
 uint32_t get_fcsr_condition_bit(uint32_t cc) {
   if (cc == 0) {
@@ -520,7 +518,8 @@ void MipsDebugger::Debug() {
           HeapObject* obj = reinterpret_cast<HeapObject*>(*cur);
           int64_t value = *cur;
           Heap* current_heap = sim_->isolate_->heap();
-          if (((value & 1) == 0) || current_heap->Contains(obj)) {
+          if (((value & 1) == 0) ||
+              current_heap->ContainsSlow(obj->address())) {
             PrintF(" (");
             if ((value & 1) == 0) {
               PrintF("smi %d", static_cast<int>(value >> 32));
@@ -1159,7 +1158,7 @@ double Simulator::get_fpu_register_double(int fpureg) const {
 // from a0-a3 or f12 and f13 (n64), or f14 (O32).
 void Simulator::GetFpArgs(double* x, double* y, int32_t* z) {
   if (!IsMipsSoftFloatABI) {
-    const int fparg2 = (kMipsAbi == kN64) ? 13 : 14;
+    const int fparg2 = 13;
     *x = get_fpu_register_double(12);
     *y = get_fpu_register_double(fparg2);
     *z = static_cast<int32_t>(get_register(a2));
@@ -1964,11 +1963,6 @@ void Simulator::Format(Instruction* instr, const char* format) {
 // 64 bits of result. If they don't, the v1 result register contains a bogus
 // value, which is fine because it is caller-saved.
 
-struct ObjectPair {
-  Object* x;
-  Object* y;
-};
-
 typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                         int64_t arg1,
                                         int64_t arg2,
@@ -1976,6 +1970,9 @@ typedef ObjectPair (*SimulatorRuntimeCall)(int64_t arg0,
                                         int64_t arg4,
                                         int64_t arg5);
 
+typedef ObjectTriple (*SimulatorRuntimeTripleCall)(int64_t arg0, int64_t arg1,
+                                                   int64_t arg2, int64_t arg3,
+                                                   int64_t arg4);
 
 // These prototypes handle the four types of FP calls.
 typedef int64_t (*SimulatorRuntimeCompareCall)(double darg0, double darg1);
@@ -2010,15 +2007,9 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
     int64_t arg3 = get_register(a3);
     int64_t arg4, arg5;
 
-    if (kMipsAbi == kN64) {
-      arg4 = get_register(a4);  // Abi n64 register a4.
-      arg5 = get_register(a5);  // Abi n64 register a5.
-    } else {  // Abi O32.
-      int64_t* stack_pointer = reinterpret_cast<int64_t*>(get_register(sp));
-      // Args 4 and 5 are on the stack after the reserved space for args 0..3.
-      arg4 = stack_pointer[4];
-      arg5 = stack_pointer[5];
-    }
+    arg4 = get_register(a4);  // Abi n64 register a4.
+    arg5 = get_register(a5);  // Abi n64 register a5.
+
     bool fp_call =
          (redirection->type() == ExternalReference::BUILTIN_FP_FP_CALL) ||
          (redirection->type() == ExternalReference::BUILTIN_COMPARE_CALL) ||
@@ -2175,7 +2166,30 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
       SimulatorRuntimeProfilingGetterCall target =
           reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(external);
       target(arg0, arg1, Redirection::ReverseRedirection(arg2));
+    } else if (redirection->type() == ExternalReference::BUILTIN_CALL_TRIPLE) {
+      // builtin call returning ObjectTriple.
+      SimulatorRuntimeTripleCall target =
+          reinterpret_cast<SimulatorRuntimeTripleCall>(external);
+      if (::v8::internal::FLAG_trace_sim) {
+        PrintF(
+            "Call to host triple returning runtime function %p "
+            "args %016" PRIx64 ", %016" PRIx64 ", %016" PRIx64 ", %016" PRIx64
+            ", %016" PRIx64 "\n",
+            FUNCTION_ADDR(target), arg1, arg2, arg3, arg4, arg5);
+      }
+      // arg0 is a hidden argument pointing to the return location, so don't
+      // pass it to the target function.
+      ObjectTriple result = target(arg1, arg2, arg3, arg4, arg5);
+      if (::v8::internal::FLAG_trace_sim) {
+        PrintF("Returned { %p, %p, %p }\n", result.x, result.y, result.z);
+      }
+      // Return is passed back in address pointed to by hidden first argument.
+      ObjectTriple* sim_result = reinterpret_cast<ObjectTriple*>(arg0);
+      *sim_result = result;
+      set_register(v0, arg0);
     } else {
+      DCHECK(redirection->type() == ExternalReference::BUILTIN_CALL ||
+             redirection->type() == ExternalReference::BUILTIN_CALL_PAIR);
       SimulatorRuntimeCall target =
                   reinterpret_cast<SimulatorRuntimeCall>(external);
       if (::v8::internal::FLAG_trace_sim) {
@@ -2316,6 +2330,89 @@ void Simulator::SignalException(Exception e) {
            static_cast<int>(e));
 }
 
+// Min/Max template functions for Double and Single arguments.
+
+template <typename T>
+static T FPAbs(T a);
+
+template <>
+double FPAbs<double>(double a) {
+  return fabs(a);
+}
+
+template <>
+float FPAbs<float>(float a) {
+  return fabsf(a);
+}
+
+template <typename T>
+static bool FPUProcessNaNsAndZeros(T a, T b, MaxMinKind kind, T& result) {
+  if (std::isnan(a) && std::isnan(b)) {
+    result = a;
+  } else if (std::isnan(a)) {
+    result = b;
+  } else if (std::isnan(b)) {
+    result = a;
+  } else if (b == a) {
+    // Handle -0.0 == 0.0 case.
+    // std::signbit() returns int 0 or 1 so substracting MaxMinKind::kMax
+    // negates the result.
+    result = std::signbit(b) - static_cast<int>(kind) ? b : a;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+template <typename T>
+static T FPUMin(T a, T b) {
+  T result;
+  if (FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    return result;
+  } else {
+    return b < a ? b : a;
+  }
+}
+
+template <typename T>
+static T FPUMax(T a, T b) {
+  T result;
+  if (FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMax, result)) {
+    return result;
+  } else {
+    return b > a ? b : a;
+  }
+}
+
+template <typename T>
+static T FPUMinA(T a, T b) {
+  T result;
+  if (!FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    if (FPAbs(a) < FPAbs(b)) {
+      result = a;
+    } else if (FPAbs(b) < FPAbs(a)) {
+      result = b;
+    } else {
+      result = a < b ? a : b;
+    }
+  }
+  return result;
+}
+
+template <typename T>
+static T FPUMaxA(T a, T b) {
+  T result;
+  if (!FPUProcessNaNsAndZeros(a, b, MaxMinKind::kMin, result)) {
+    if (FPAbs(a) > FPAbs(b)) {
+      result = a;
+    } else if (FPAbs(b) > FPAbs(a)) {
+      result = b;
+    } else {
+      result = a > b ? a : b;
+    }
+  }
+  return result;
+}
 
 // Handle execution based on instruction types.
 
@@ -2600,71 +2697,19 @@ void Simulator::DecodeTypeRegisterSRsType() {
     }
     case MINA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else {
-        float result;
-        if (fabs(fs) > fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) < fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs < ft ? fs : ft);
-        }
-        set_fpu_register_float(fd_reg(), result);
-      }
+      set_fpu_register_float(fd_reg(), FPUMinA(ft, fs));
       break;
     case MAXA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else {
-        float result;
-        if (fabs(fs) < fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) > fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_float(fd_reg(), result);
-      }
+      set_fpu_register_float(fd_reg(), FPUMaxA(ft, fs));
       break;
     case MIN:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else {
-        set_fpu_register_float(fd_reg(), (fs >= ft) ? ft : fs);
-      }
+      set_fpu_register_float(fd_reg(), FPUMin(ft, fs));
       break;
     case MAX:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_float(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_float(fd_reg(), fs);
-      } else {
-        set_fpu_register_float(fd_reg(), (fs <= ft) ? ft : fs);
-      }
+      set_fpu_register_float(fd_reg(), FPUMax(ft, fs));
       break;
     case SEL:
       DCHECK(kArchVariant == kMips64r6);
@@ -2809,71 +2854,19 @@ void Simulator::DecodeTypeRegisterDRsType() {
     }
     case MINA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else {
-        double result;
-        if (fabs(fs) > fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) < fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs < ft ? fs : ft);
-        }
-        set_fpu_register_double(fd_reg(), result);
-      }
+      set_fpu_register_double(fd_reg(), FPUMinA(ft, fs));
       break;
     case MAXA:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else {
-        double result;
-        if (fabs(fs) < fabs(ft)) {
-          result = ft;
-        } else if (fabs(fs) > fabs(ft)) {
-          result = fs;
-        } else {
-          result = (fs > ft ? fs : ft);
-        }
-        set_fpu_register_double(fd_reg(), result);
-      }
+      set_fpu_register_double(fd_reg(), FPUMaxA(ft, fs));
       break;
     case MIN:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else {
-        set_fpu_register_double(fd_reg(), (fs >= ft) ? ft : fs);
-      }
+      set_fpu_register_double(fd_reg(), FPUMin(ft, fs));
       break;
     case MAX:
       DCHECK(kArchVariant == kMips64r6);
-      fs = get_fpu_register_double(fs_reg());
-      if (std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else if (std::isnan(fs) && !std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), ft);
-      } else if (!std::isnan(fs) && std::isnan(ft)) {
-        set_fpu_register_double(fd_reg(), fs);
-      } else {
-        set_fpu_register_double(fd_reg(), (fs <= ft) ? ft : fs);
-      }
+      set_fpu_register_double(fd_reg(), FPUMax(ft, fs));
       break;
     case ADD_D:
       set_fpu_register_double(fd_reg(), fs + ft);
@@ -3482,9 +3475,7 @@ void Simulator::DecodeTypeRegisterSPECIAL() {
         // Logical right-rotate of a word by a variable number of bits.
         // This is special case od SRLV instruction, added in MIPS32
         // Release 2. SA field is equal to 00001.
-        alu_out =
-            base::bits::RotateRight32(static_cast<const uint32_t>(rt_u()),
-                                      static_cast<const uint32_t>(rs_u()));
+        alu_out = base::bits::RotateRight64(rt_u(), rs_u());
       }
       SetResult(rd_reg(), alu_out);
       break;
@@ -4335,13 +4326,8 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
     case POP10:  // BOVC, BEQZALC, BEQC / ADDI (pre-r6)
       if (kArchVariant == kMips64r6) {
         if (rs_reg >= rt_reg) {  // BOVC
-          if (HaveSameSign(rs, rt)) {
-            if (rs > 0) {
-              BranchCompactHelper(rs > Registers::kMaxValue - rt, 16);
-            } else if (rs < 0) {
-              BranchCompactHelper(rs < Registers::kMinValue - rt, 16);
-            }
-          }
+          bool condition = !is_int32(rs) || !is_int32(rt) || !is_int32(rs + rt);
+          BranchCompactHelper(condition, 16);
         } else {
           if (rs_reg == 0) {  // BEQZALC
             BranchAndLinkCompactHelper(rt == 0, 16);
@@ -4367,15 +4353,8 @@ void Simulator::DecodeTypeImmediate(Instruction* instr) {
     case POP30:  // BNVC, BNEZALC, BNEC / DADDI (pre-r6)
       if (kArchVariant == kMips64r6) {
         if (rs_reg >= rt_reg) {  // BNVC
-          if (!HaveSameSign(rs, rt) || rs == 0 || rt == 0) {
-            BranchCompactHelper(true, 16);
-          } else {
-            if (rs > 0) {
-              BranchCompactHelper(rs <= Registers::kMaxValue - rt, 16);
-            } else if (rs < 0) {
-              BranchCompactHelper(rs >= Registers::kMinValue - rt, 16);
-            }
-          }
+          bool condition = is_int32(rs) && is_int32(rt) && is_int32(rs + rt);
+          BranchCompactHelper(condition, 16);
         } else {
           if (rs_reg == 0) {  // BNEZALC
             BranchAndLinkCompactHelper(rt != 0, 16);
@@ -4777,7 +4756,7 @@ void Simulator::CallInternal(byte* entry) {
 
 
 int64_t Simulator::Call(byte* entry, int argument_count, ...) {
-  const int kRegisterPassedArguments = (kMipsAbi == kN64) ? 8 : 4;
+  const int kRegisterPassedArguments = 8;
   va_list parameters;
   va_start(parameters, argument_count);
   // Set up arguments.
@@ -4789,14 +4768,12 @@ int64_t Simulator::Call(byte* entry, int argument_count, ...) {
   set_register(a2, va_arg(parameters, int64_t));
   set_register(a3, va_arg(parameters, int64_t));
 
-  if (kMipsAbi == kN64) {
-    // Up to eight arguments passed in registers in N64 ABI.
-    // TODO(plind): N64 ABI calls these regs a4 - a7. Clarify this.
-    if (argument_count >= 5) set_register(a4, va_arg(parameters, int64_t));
-    if (argument_count >= 6) set_register(a5, va_arg(parameters, int64_t));
-    if (argument_count >= 7) set_register(a6, va_arg(parameters, int64_t));
-    if (argument_count >= 8) set_register(a7, va_arg(parameters, int64_t));
-  }
+  // Up to eight arguments passed in registers in N64 ABI.
+  // TODO(plind): N64 ABI calls these regs a4 - a7. Clarify this.
+  if (argument_count >= 5) set_register(a4, va_arg(parameters, int64_t));
+  if (argument_count >= 6) set_register(a5, va_arg(parameters, int64_t));
+  if (argument_count >= 7) set_register(a6, va_arg(parameters, int64_t));
+  if (argument_count >= 8) set_register(a7, va_arg(parameters, int64_t));
 
   // Remaining arguments passed on stack.
   int64_t original_stack = get_register(sp);
@@ -4831,7 +4808,7 @@ int64_t Simulator::Call(byte* entry, int argument_count, ...) {
 
 double Simulator::CallFP(byte* entry, double d0, double d1) {
   if (!IsMipsSoftFloatABI) {
-    const FPURegister fparg2 = (kMipsAbi == kN64) ? f13 : f14;
+    const FPURegister fparg2 = f13;
     set_fpu_register_double(f12, d0);
     set_fpu_register_double(fparg2, d1);
   } else {

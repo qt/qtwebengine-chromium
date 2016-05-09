@@ -123,10 +123,11 @@ class AudioLogImpl : public media::AudioLog {
   void StoreComponentMetadata(int component_id, base::DictionaryValue* dict);
   std::string FormatCacheKey(int component_id);
 
-  static void SendWebContentsTitleHelper(const std::string& cache_key,
-                                         scoped_ptr<base::DictionaryValue> dict,
-                                         int render_process_id,
-                                         int render_frame_id);
+  static void SendWebContentsTitleHelper(
+      const std::string& cache_key,
+      std::unique_ptr<base::DictionaryValue> dict,
+      int render_process_id,
+      int render_frame_id);
 
   const int owner_id_;
   const media::AudioLogFactory::AudioComponent component_;
@@ -208,7 +209,7 @@ void AudioLogImpl::OnSwitchOutputDevice(int component_id,
 void AudioLogImpl::SendWebContentsTitle(int component_id,
                                         int render_process_id,
                                         int render_frame_id) {
-  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+  std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   StoreComponentMetadata(component_id, dict.get());
   SendWebContentsTitleHelper(FormatCacheKey(component_id), std::move(dict),
                              render_process_id, render_frame_id);
@@ -221,7 +222,7 @@ std::string AudioLogImpl::FormatCacheKey(int component_id) {
 // static
 void AudioLogImpl::SendWebContentsTitleHelper(
     const std::string& cache_key,
-    scoped_ptr<base::DictionaryValue> dict,
+    std::unique_ptr<base::DictionaryValue> dict,
     int render_process_id,
     int render_frame_id) {
   // Page title information can only be retrieved from the UI thread.
@@ -281,20 +282,15 @@ class MediaInternals::MediaInternalsUMAHandler {
 
  private:
   struct PipelineInfo {
-    media::PipelineStatus last_pipeline_status;
-    bool has_audio;
-    bool has_video;
-    bool video_dds;
-    bool video_decoder_changed;
+    bool has_pipeline = false;
+    media::PipelineStatus last_pipeline_status = media::PIPELINE_OK;
+    bool has_audio = false;
+    bool has_video = false;
+    bool video_dds = false;
+    bool video_decoder_changed = false;
     std::string audio_codec_name;
     std::string video_codec_name;
     std::string video_decoder;
-    PipelineInfo()
-        : last_pipeline_status(media::PIPELINE_OK),
-          has_audio(false),
-          has_video(false),
-          video_dds(false),
-          video_decoder_changed(false) {}
   };
 
   // Helper function to report PipelineStatus associated with a player to UMA.
@@ -324,6 +320,10 @@ void MediaInternals::MediaInternalsUMAHandler::SavePlayerState(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   PlayerInfoMap& player_info = renderer_info_[render_process_id];
   switch (event.type) {
+    case media::MediaLogEvent::PIPELINE_STATE_CHANGED: {
+      player_info[event.id].has_pipeline = true;
+      break;
+    }
     case media::MediaLogEvent::PIPELINE_ERROR: {
       int status;
       event.params.GetInteger("pipeline_error", &status);
@@ -404,6 +404,12 @@ std::string MediaInternals::MediaInternalsUMAHandler::GetUMANameForAVStream(
 void MediaInternals::MediaInternalsUMAHandler::ReportUMAForPipelineStatus(
     const PipelineInfo& player_info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  // Don't log pipeline status for players which don't actually have a pipeline;
+  // e.g., the Android MediaSourcePlayer implementation.
+  if (!player_info.has_pipeline)
+    return;
+
   if (player_info.has_video && player_info.has_audio) {
     base::LinearHistogram::FactoryGet(
         GetUMANameForAVStream(player_info), 1, media::PIPELINE_STATUS_MAX,
@@ -419,6 +425,9 @@ void MediaInternals::MediaInternalsUMAHandler::ReportUMAForPipelineStatus(
                               player_info.last_pipeline_status,
                               media::PIPELINE_STATUS_MAX + 1);
   } else {
+    // Note: This metric can be recorded as a result of normal operation with
+    // Media Source Extensions. If a site creates a MediaSource object but never
+    // creates a source buffer or appends data, PIPELINE_OK will be recorded.
     UMA_HISTOGRAM_ENUMERATION("Media.PipelineStatus.Unsupported",
                               player_info.last_pipeline_status,
                               media::PIPELINE_STATUS_MAX + 1);
@@ -612,11 +621,11 @@ void MediaInternals::UpdateVideoCaptureDeviceCapabilities(
   SendVideoCaptureDeviceCapabilities();
 }
 
-scoped_ptr<media::AudioLog> MediaInternals::CreateAudioLog(
+std::unique_ptr<media::AudioLog> MediaInternals::CreateAudioLog(
     AudioComponent component) {
   base::AutoLock auto_lock(lock_);
-  return scoped_ptr<media::AudioLog>(new AudioLogImpl(
-      owner_ids_[component]++, component, this));
+  return std::unique_ptr<media::AudioLog>(
+      new AudioLogImpl(owner_ids_[component]++, component, this));
 }
 
 void MediaInternals::SetWebContentsTitleForAudioLogEntry(
@@ -675,7 +684,7 @@ void MediaInternals::UpdateAudioLog(AudioLogUpdateType type,
       DCHECK_EQ(type, CREATE);
       audio_streams_cached_data_.Set(cache_key, value->DeepCopy());
     } else if (type == UPDATE_AND_DELETE) {
-      scoped_ptr<base::Value> out_value;
+      std::unique_ptr<base::Value> out_value;
       CHECK(audio_streams_cached_data_.Remove(cache_key, &out_value));
     } else {
       base::DictionaryValue* existing_dict = NULL;

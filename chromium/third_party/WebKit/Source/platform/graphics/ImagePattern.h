@@ -20,14 +20,14 @@ public:
     bool isTextureBacked() const override;
 
 protected:
-    PassRefPtr<SkShader> createShader() override;
+    sk_sp<SkShader> createShader() const override;
 
 private:
     ImagePattern(PassRefPtr<Image>, RepeatMode);
 
-    RefPtr<SkImage> m_tileImage;
+    sk_sp<SkImage> m_tileImage;
 };
 
-} // namespace
+} // namespace blink
 
 #endif  /* ImagePattern_h */

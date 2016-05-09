@@ -66,14 +66,14 @@ public:
     }
 
     static const TreeScope* commonAncestorTreeScope(const PositionTemplate<Strategy>&, const PositionTemplate<Strategy>& b);
-    static PositionTemplate<Strategy> editingPositionOf(PassRefPtrWillBeRawPtr<Node> anchorNode, int offset);
+    static PositionTemplate<Strategy> editingPositionOf(RawPtr<Node> anchorNode, int offset);
 
     // For creating before/after positions:
-    PositionTemplate(PassRefPtrWillBeRawPtr<Node> anchorNode, PositionAnchorType);
+    PositionTemplate(RawPtr<Node> anchorNode, PositionAnchorType);
 
     // For creating offset positions:
     // FIXME: This constructor should eventually go away. See bug 63040.
-    PositionTemplate(PassRefPtrWillBeRawPtr<Node> anchorNode, int offset);
+    PositionTemplate(RawPtr<Node> anchorNode, int offset);
 
     PositionTemplate(const PositionTemplate&);
 
@@ -137,11 +137,11 @@ public:
     Node* anchorNode() const { return m_anchorNode.get(); }
 
     Document* document() const { return m_anchorNode ? &m_anchorNode->document() : 0; }
-    bool inDocument() const { return m_anchorNode && m_anchorNode->inDocument(); }
+    bool inShadowIncludingDocument() const { return m_anchorNode && m_anchorNode->inShadowIncludingDocument(); }
 
     bool isNull() const { return !m_anchorNode; }
     bool isNotNull() const { return m_anchorNode; }
-    bool isOrphan() const { return m_anchorNode && !m_anchorNode->inDocument(); }
+    bool isOrphan() const { return m_anchorNode && !m_anchorNode->inShadowIncludingDocument(); }
 
     int compareTo(const PositionTemplate<Strategy>&) const;
 
@@ -172,7 +172,7 @@ public:
     void formatForDebugger(char* buffer, unsigned length) const;
     void showAnchorTypeAndOffset() const;
     void showTreeForThis() const;
-    void showTreeForThisInComposedTree() const;
+    void showTreeForThisInFlatTree() const;
 #endif
 
     DEFINE_INLINE_TRACE()
@@ -186,7 +186,7 @@ private:
         return isAfterAnchor() || isAfterChildren();
     }
 
-    RefPtrWillBeMember<Node> m_anchorNode;
+    Member<Node> m_anchorNode;
     // m_offset can be the offset inside m_anchorNode, or if editingIgnoresContent(m_anchorNode)
     // returns true, then other places in editing will treat m_offset == 0 as "before the anchor"
     // and m_offset > 0 as "after the anchor node".  See parentAnchoredEquivalent for more info.
@@ -195,10 +195,10 @@ private:
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionTemplate<EditingStrategy>;
-extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionTemplate<EditingInComposedTreeStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT PositionTemplate<EditingInFlatTreeStrategy>;
 
 using Position = PositionTemplate<EditingStrategy>;
-using PositionInComposedTree = PositionTemplate<EditingInComposedTreeStrategy>;
+using PositionInFlatTree = PositionTemplate<EditingInFlatTreeStrategy>;
 
 template <typename Strategy>
 bool operator==(const PositionTemplate<Strategy>& a, const PositionTemplate<Strategy>& b)
@@ -371,9 +371,9 @@ PositionTemplate<Strategy> PositionTemplate<Strategy>::lastPositionInOrAfterNode
     return Strategy::editingIgnoresContent(node) ? afterNode(node) : lastPositionInNode(node);
 }
 
-CORE_EXPORT PositionInComposedTree toPositionInComposedTree(const Position&);
+CORE_EXPORT PositionInFlatTree toPositionInFlatTree(const Position&);
 CORE_EXPORT Position toPositionInDOMTree(const Position&);
-CORE_EXPORT Position toPositionInDOMTree(const PositionInComposedTree&);
+CORE_EXPORT Position toPositionInDOMTree(const PositionInFlatTree&);
 
 template <typename Strategy>
 PositionTemplate<Strategy> fromPositionInDOMTree(const Position&);
@@ -385,19 +385,14 @@ inline Position fromPositionInDOMTree<EditingStrategy>(const Position& position)
 }
 
 template <>
-inline PositionInComposedTree fromPositionInDOMTree<EditingInComposedTreeStrategy>(const Position& position)
+inline PositionInFlatTree fromPositionInDOMTree<EditingInFlatTreeStrategy>(const Position& position)
 {
-    return toPositionInComposedTree(position);
+    return toPositionInFlatTree(position);
 }
 
-// These printers are available only for testing in "webkit_unit_tests", and
-// implemented in "core/testing/CoreTestPrinters.cpp".
-std::ostream& operator<<(std::ostream&, const Node&);
-std::ostream& operator<<(std::ostream&, const Node*);
-
-std::ostream& operator<<(std::ostream&, PositionAnchorType);
-std::ostream& operator<<(std::ostream&, const Position&);
-std::ostream& operator<<(std::ostream&, const PositionInComposedTree&);
+CORE_EXPORT std::ostream& operator<<(std::ostream&, PositionAnchorType);
+CORE_EXPORT std::ostream& operator<<(std::ostream&, const Position&);
+CORE_EXPORT std::ostream& operator<<(std::ostream&, const PositionInFlatTree&);
 
 } // namespace blink
 

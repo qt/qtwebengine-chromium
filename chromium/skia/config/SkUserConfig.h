@@ -17,6 +17,8 @@
 #ifndef SkUserConfig_DEFINED
 #define SkUserConfig_DEFINED
 
+#include "skia/ext/skia_histogram.h"
+
 /*  SkTypes.h, the root of the public header files, does the following trick:
 
     #include <SkPreConfig.h>
@@ -80,11 +82,6 @@
  */
 //#define SK_ZLIB_INCLUDE <zlib.h>
 #define SK_ZLIB_INCLUDE "third_party/zlib/zlib.h"
-
-/*  Define this to allow PDF scalars above 32k.  The PDF/A spec doesn't allow
-    them, but modern PDF interpreters should handle them just fine.
- */
-//#define SK_ALLOW_LARGE_PDF_SCALARS
 
 /*  Define this to provide font subsetter for font subsetting when generating
     PDF documents.
@@ -214,6 +211,13 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_SUPPORT_LEGACY_GETDEVICE
 #endif
 
+// Workaround for poor anisotropic mipmap quality,
+// pending Skia ripmap support.
+// (https://bugs.chromium.org/p/skia/issues/detail?id=4863)
+#ifndef    SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
+#   define SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
+#endif
+
 #ifndef    SK_SUPPORT_LEGACY_REFENCODEDDATA_NOCTX
 #   define SK_SUPPORT_LEGACY_REFENCODEDDATA_NOCTX
 #endif
@@ -226,16 +230,32 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_IGNORE_GPU_DITHER
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_HQ_DOWNSAMPLING
-#   define SK_SUPPORT_LEGACY_HQ_DOWNSAMPLING
+#ifndef    SK_SUPPORT_LEGACY_IMAGEFACTORY
+#   define SK_SUPPORT_LEGACY_IMAGEFACTORY
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_PATH_MEASURE_TVALUE
-#   define SK_SUPPORT_LEGACY_PATH_MEASURE_TVALUE
+#ifndef    SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
+#   define SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_BITMAP_FILTER
-#   define SK_SUPPORT_LEGACY_BITMAP_FILTER
+#ifndef    SK_SUPPORT_LEGACY_EVAL_CUBIC
+#   define SK_SUPPORT_LEGACY_EVAL_CUBIC
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_PEEKPIXELS_PARMS
+#   define SK_SUPPORT_LEGACY_PEEKPIXELS_PARMS
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_SETSHADER_PTR
+#   define SK_SUPPORT_LEGACY_SETSHADER_PTR
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_TYPEFACE_PTR
+#   define SK_SUPPORT_LEGACY_TYPEFACE_PTR
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_MASKFILTER_PTR
+#   define SK_SUPPORT_LEGACY_MASKFILTER_PTR
 #endif
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
@@ -249,9 +269,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
  */
 #define SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS
 
-#ifndef SK_IGNORE_GL_TEXTURE_TARGET
-#   define SK_IGNORE_GL_TEXTURE_TARGET
-#endif
 #define SK_IGNORE_BLURRED_RRECT_OPT
 #define SK_USE_DISCARDABLE_SCALEDIMAGECACHE
 #define SK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT

@@ -12,15 +12,16 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_event.h"
-#include "mojo/shell/public/cpp/application_connection.h"
-#include "mojo/shell/public/cpp/application_impl.h"
+#include "mojo/shell/public/cpp/connection.h"
 
 namespace mojo {
 
 TraceProviderImpl::TraceProviderImpl()
     : binding_(this), tracing_forced_(false), weak_factory_(this) {}
 
-TraceProviderImpl::~TraceProviderImpl() {}
+TraceProviderImpl::~TraceProviderImpl() {
+  StopTracing();
+}
 
 void TraceProviderImpl::Bind(InterfaceRequest<tracing::TraceProvider> request) {
   if (!binding_.is_bound()) {
@@ -45,11 +46,12 @@ void TraceProviderImpl::StartTracing(const String& categories,
 }
 
 void TraceProviderImpl::StopTracing() {
-  DCHECK(recorder_);
-  base::trace_event::TraceLog::GetInstance()->SetDisabled();
+  if (recorder_) {
+    base::trace_event::TraceLog::GetInstance()->SetDisabled();
 
-  base::trace_event::TraceLog::GetInstance()->Flush(
-      base::Bind(&TraceProviderImpl::SendChunk, base::Unretained(this)));
+    base::trace_event::TraceLog::GetInstance()->Flush(
+        base::Bind(&TraceProviderImpl::SendChunk, base::Unretained(this)));
+  }
 }
 
 void TraceProviderImpl::ForceEnableTracing() {

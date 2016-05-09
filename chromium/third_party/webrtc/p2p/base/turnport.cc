@@ -145,8 +145,8 @@ class TurnEntry : public sigslot::has_slots<> {
   const rtc::SocketAddress& address() const { return ext_addr_; }
   BindState state() const { return state_; }
 
-  uint32_t destruction_timestamp() { return destruction_timestamp_; }
-  void set_destruction_timestamp(uint32_t destruction_timestamp) {
+  int64_t destruction_timestamp() { return destruction_timestamp_; }
+  void set_destruction_timestamp(int64_t destruction_timestamp) {
     destruction_timestamp_ = destruction_timestamp;
   }
 
@@ -176,7 +176,7 @@ class TurnEntry : public sigslot::has_slots<> {
   // It is also used as an ID of the event scheduling. When the destruction
   // event actually fires, the TurnEntry will be destroyed only if the
   // timestamp here matches the one in the firing event.
-  uint32_t destruction_timestamp_ = 0;
+  int64_t destruction_timestamp_ = 0;
 };
 
 TurnPort::TurnPort(rtc::Thread* thread,
@@ -433,6 +433,7 @@ void TurnPort::OnAllocateMismatch() {
   }
   socket_ = NULL;
 
+  ResetNonce();
   PrepareAddress();
   ++allocate_mismatch_retries_;
 }
@@ -552,6 +553,12 @@ void TurnPort::OnReadPacket(
   // The message must be at least the size of a channel header.
   if (size < TURN_CHANNEL_HEADER_SIZE) {
     LOG_J(LS_WARNING, this) << "Received TURN message that was too short";
+    return;
+  }
+
+  if (state_ == STATE_DISCONNECTED) {
+    LOG_J(LS_WARNING, this)
+        << "Received TURN message while the Turn port is disconnected";
     return;
   }
 
@@ -779,7 +786,7 @@ void TurnPort::OnAllocateRequestTimeout() {
 void TurnPort::HandleDataIndication(const char* data, size_t size,
                                     const rtc::PacketTime& packet_time) {
   // Read in the message, and process according to RFC5766, Section 10.4.
-  rtc::ByteBuffer buf(data, size);
+  rtc::ByteBufferReader buf(data, size);
   TurnMessage msg;
   if (!msg.Read(&buf)) {
     LOG_J(LS_WARNING, this) << "Received invalid TURN data indication";
@@ -927,6 +934,12 @@ bool TurnPort::UpdateNonce(StunMessage* response) {
   return true;
 }
 
+void TurnPort::ResetNonce() {
+  hash_.clear();
+  nonce_.clear();
+  realm_.clear();
+}
+
 static bool MatchesIP(TurnEntry* e, rtc::IPAddress ipaddr) {
   return e->address().ipaddr() == ipaddr;
 }
@@ -977,8 +990,7 @@ void TurnPort::DestroyEntry(TurnEntry* entry) {
   delete entry;
 }
 
-void TurnPort::DestroyEntryIfNotCancelled(TurnEntry* entry,
-                                          uint32_t timestamp) {
+void TurnPort::DestroyEntryIfNotCancelled(TurnEntry* entry, int64_t timestamp) {
   if (!EntryExists(entry)) {
     return;
   }
@@ -999,7 +1011,7 @@ void TurnPort::OnConnectionDestroyed(Connection* conn) {
 
 void TurnPort::ScheduleEntryDestruction(TurnEntry* entry) {
   ASSERT(entry->destruction_timestamp() == 0);
-  uint32_t timestamp = rtc::Time();
+  int64_t timestamp = rtc::Time64();
   entry->set_destruction_timestamp(timestamp);
   invoker_.AsyncInvokeDelayed<void>(
       thread(),
@@ -1413,7 +1425,7 @@ void TurnEntry::SendChannelBindRequest(int delay) {
 
 int TurnEntry::Send(const void* data, size_t size, bool payload,
                     const rtc::PacketOptions& options) {
-  rtc::ByteBuffer buf;
+  rtc::ByteBufferWriter buf;
   if (state_ != STATE_BOUND) {
     // If we haven't bound the channel yet, we have to use a Send Indication.
     TurnMessage msg;

@@ -183,8 +183,11 @@ class GFX_EXPORT Image {
   internal::ImageRep* GetRepresentation(
       RepresentationType rep_type, bool must_exist) const;
 
-  // Stores a representation into the map.
-  void AddRepresentation(scoped_ptr<internal::ImageRep> rep) const;
+  // Stores a representation into the map. A representation of that type must
+  // not already be in the map. Returns a pointer to the representation stored
+  // inside the map.
+  internal::ImageRep* AddRepresentation(
+      scoped_ptr<internal::ImageRep> rep) const;
 
   // Internal class that holds all the representations. This allows the Image to
   // be cheaply copied.

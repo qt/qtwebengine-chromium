@@ -27,10 +27,12 @@ WebPluginMimeType::WebPluginMimeType(const std::string& m,
   file_extensions.push_back(f);
 }
 
+WebPluginMimeType::WebPluginMimeType(const WebPluginMimeType& other) = default;
+
 WebPluginMimeType::~WebPluginMimeType() {}
 
 WebPluginInfo::WebPluginInfo()
-    : type(PLUGIN_TYPE_NPAPI),
+    : type(PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS),
       pepper_permissions(0) {
 }
 
@@ -66,7 +68,7 @@ WebPluginInfo::WebPluginInfo(const base::string16& fake_name,
       version(fake_version),
       desc(fake_desc),
       mime_types(),
-      type(PLUGIN_TYPE_NPAPI),
+      type(PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS),
       pepper_permissions(0) {
 }
 

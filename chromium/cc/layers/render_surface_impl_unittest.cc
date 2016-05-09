@@ -100,7 +100,7 @@ TEST(RenderSurfaceLayerImplTest, AppendQuadsWithScaledMask) {
   impl.host_impl()->active_tree()->UpdateDrawProperties(false);
 
   LayerImpl* surface_raw =
-      impl.host_impl()->active_tree()->root_layer()->children()[0].get();
+      impl.host_impl()->active_tree()->root_layer()->children()[0];
   RenderSurfaceImpl* render_surface_impl = surface_raw->render_surface();
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   AppendQuadsData append_quads_data;
@@ -111,7 +111,7 @@ TEST(RenderSurfaceLayerImplTest, AppendQuadsWithScaledMask) {
 
   const RenderPassDrawQuad* quad =
       RenderPassDrawQuad::MaterialCast(render_pass->quad_list.front());
-  EXPECT_EQ(gfx::Vector2dF(1.f, 1.f), quad->mask_uv_scale);
+  EXPECT_EQ(gfx::Vector2dF(0.0005f, 0.0005f), quad->mask_uv_scale);
   EXPECT_EQ(gfx::Vector2dF(2.f, 2.f), quad->filters_scale);
 }
 

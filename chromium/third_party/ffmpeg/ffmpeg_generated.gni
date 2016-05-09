@@ -122,6 +122,7 @@ if ((is_android && current_cpu == "arm" && arm_use_neon && ffmpeg_branding == "C
     "libavutil/lfg.c",
     "libavutil/log.c",
     "libavutil/log2_tab.c",
+    "libavutil/mastering_display_metadata.c",
     "libavutil/mathematics.c",
     "libavutil/md5.c",
     "libavutil/mem.c",
@@ -214,6 +215,7 @@ if ((is_android && current_cpu == "x64" && ffmpeg_branding == "Chrome") || (is_a
     "libavcodec/x86/fft_init.c",
     "libavutil/x86/autorename_libavutil_x86_cpu.c",
     "libavutil/x86/autorename_libavutil_x86_float_dsp_init.c",
+    "libavutil/x86/fixed_dsp_init.c",
     "libavutil/x86/lls_init.c",
   ]
 }
@@ -223,6 +225,7 @@ if ((is_android && current_cpu == "x64" && ffmpeg_branding == "Chrome") || (is_a
     "libavcodec/x86/fft.asm",
     "libavcodec/x86/vorbisdsp.asm",
     "libavutil/x86/cpuid.asm",
+    "libavutil/x86/fixed_dsp.asm",
     "libavutil/x86/float_dsp.asm",
     "libavutil/x86/lls.asm",
   ]

@@ -28,6 +28,7 @@
 #define ScriptRegexp_h
 
 #include "bindings/core/v8/ScopedPersistent.h"
+#include "core/CoreExport.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
@@ -39,10 +40,15 @@ enum MultilineMode {
     MultilineEnabled
 };
 
-class ScriptRegexp {
+class CORE_EXPORT ScriptRegexp {
     USING_FAST_MALLOC(ScriptRegexp); WTF_MAKE_NONCOPYABLE(ScriptRegexp);
 public:
-    ScriptRegexp(const String&, TextCaseSensitivity, MultilineMode = MultilineDisabled);
+    enum CharacterMode {
+        BMP, // NOLINT
+        UTF16, // NOLINT
+    };
+
+    ScriptRegexp(const String&, TextCaseSensitivity, MultilineMode = MultilineDisabled, CharacterMode = BMP);
 
     int match(const String&, int startFrom = 0, int* matchLength = 0) const;
 

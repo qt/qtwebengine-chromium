@@ -95,7 +95,7 @@ void StatisticsCalculator::PeriodicUmaAverage::RegisterSample(int value) {
 }
 
 int StatisticsCalculator::PeriodicUmaAverage::Metric() const {
-  return static_cast<int>(sum_ / counter_);
+  return counter_ == 0 ? 0 : static_cast<int>(sum_ / counter_);
 }
 
 void StatisticsCalculator::PeriodicUmaAverage::Reset() {
@@ -187,9 +187,9 @@ void StatisticsCalculator::SecondaryDecodedSamples(int num_samples) {
 }
 
 void StatisticsCalculator::LogDelayedPacketOutageEvent(int outage_duration_ms) {
-  RTC_HISTOGRAM_COUNTS_SPARSE("WebRTC.Audio.DelayedPacketOutageEventMs",
-                              outage_duration_ms, 1 /* min */, 2000 /* max */,
-                              100 /* bucket count */);
+  RTC_HISTOGRAM_COUNTS("WebRTC.Audio.DelayedPacketOutageEventMs",
+                       outage_duration_ms, 1 /* min */, 2000 /* max */,
+                       100 /* bucket count */);
   delayed_packet_outage_counter_.RegisterSample();
 }
 

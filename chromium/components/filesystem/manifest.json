@@ -1,0 +1,5 @@
+{
+  "name": "mojo:filesystem",
+  "display_name": "File System Service",
+  "capabilities": { "*": [ "*" ] }
+}

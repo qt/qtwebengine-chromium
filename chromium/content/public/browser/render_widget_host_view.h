@@ -65,6 +65,19 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Retrieves the last known scroll position.
   virtual gfx::Vector2dF GetLastScrollOffset() const = 0;
 
+  // Coordinate points received from a renderer process need to be transformed
+  // to the top-level frame's coordinate space. For coordinates received from
+  // the top-level frame's renderer this is a no-op as they are already
+  // properly transformed; however, coordinates received from an out-of-process
+  // iframe renderer process require transformation.
+  virtual gfx::Point TransformPointToRootCoordSpace(
+      const gfx::Point& point) = 0;
+
+  // A floating point variant of the above. PointF values will be snapped to
+  // integral points before transformation.
+  virtual gfx::PointF TransformPointToRootCoordSpaceF(
+      const gfx::PointF& point) = 0;
+
   // Retrieves the native view used to contain plugins and identify the
   // renderer in IPC messages.
   virtual gfx::NativeView GetNativeView() const = 0;
@@ -149,17 +162,6 @@ class CONTENT_EXPORT RenderWidgetHostView {
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).
   virtual void SetActive(bool active) = 0;
-
-  // Notifies the view that its enclosing window has changed visibility
-  // (minimized/unminimized, app hidden/unhidden, etc).
-  // TODO(stuartmorgan): This is a temporary plugin-specific workaround for
-  // <http://crbug.com/34266>. Once that is fixed, this (and the corresponding
-  // message and renderer-side handling) can be removed in favor of using
-  // WasHidden/WasShown.
-  virtual void SetWindowVisibility(bool visible) = 0;
-
-  // Informs the view that its containing window's frame changed.
-  virtual void WindowFrameChanged() = 0;
 
   // Brings up the dictionary showing a definition for the selected text.
   virtual void ShowDefinitionForSelection() = 0;

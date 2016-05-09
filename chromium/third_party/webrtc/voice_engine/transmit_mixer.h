@@ -11,7 +11,7 @@
 #ifndef WEBRTC_VOICE_ENGINE_TRANSMIT_MIXER_H
 #define WEBRTC_VOICE_ENGINE_TRANSMIT_MIXER_H
 
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/criticalsection.h"
 #include "webrtc/common_audio/resampler/include/push_resampler.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/audio_processing/typing_detection.h"
@@ -74,9 +74,6 @@ public:
     uint32_t CaptureLevel() const;
 
     int32_t StopSend();
-
-    // VoEDtmf
-    void UpdateMuteMicrophoneTime(uint32_t lengthMs);
 
     // VoEExternalMedia
     int RegisterExternalMediaProcessing(VoEMediaProcess* object,
@@ -210,8 +207,8 @@ private:
     bool _fileCallRecording;
     voe::AudioLevel _audioLevel;
     // protect file instances and their variables in MixedParticipants()
-    CriticalSectionWrapper& _critSect;
-    CriticalSectionWrapper& _callbackCritSect;
+    rtc::CriticalSection _critSect;
+    rtc::CriticalSection _callbackCritSect;
 
 #ifdef WEBRTC_VOICE_ENGINE_TYPING_DETECTION
     webrtc::TypingDetection _typingDetection;
@@ -226,7 +223,6 @@ private:
     VoEMediaProcess* external_postproc_ptr_;
     VoEMediaProcess* external_preproc_ptr_;
     bool _mute;
-    int32_t _remainingMuteMicTimeMs;
     bool stereo_codec_;
     bool swap_stereo_channels_;
 };

@@ -11,14 +11,13 @@
 #include "modules/fetch/DataConsumerHandleUtil.h"
 #include "modules/fetch/FetchDataConsumerHandle.h"
 #include "modules/fetch/FetchDataLoader.h"
-#include "platform/Task.h"
 #include "platform/ThreadSafeFunctional.h"
+#include "platform/WaitableEvent.h"
 #include "platform/WebThreadSupportingGC.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebDataConsumerHandle.h"
 #include "public/platform/WebTraceLocation.h"
-#include "public/platform/WebWaitableEvent.h"
 #include "wtf/Deque.h"
 #include "wtf/Locker.h"
 #include "wtf/OwnPtr.h"
@@ -62,8 +61,8 @@ public:
         ~Thread();
 
         WebThreadSupportingGC* thread() { return m_thread.get(); }
-        ExecutionContext* executionContext() { return m_executionContext.get(); }
-        ScriptState* scriptState() { return m_scriptState.get(); }
+        ExecutionContext* getExecutionContext() { return m_executionContext.get(); }
+        ScriptState* getScriptState() { return m_scriptState.get(); }
         v8::Isolate* isolate() { return m_isolateHolder->isolate(); }
 
     private:
@@ -72,8 +71,8 @@ public:
 
         OwnPtr<WebThreadSupportingGC> m_thread;
         const InitializationPolicy m_initializationPolicy;
-        OwnPtr<WebWaitableEvent> m_waitableEvent;
-        RefPtrWillBePersistent<NullExecutionContext> m_executionContext;
+        OwnPtr<WaitableEvent> m_waitableEvent;
+        Persistent<NullExecutionContext> m_executionContext;
         OwnPtr<gin::IsolateHolder> m_isolateHolder;
         RefPtr<ScriptState> m_scriptState;
     };
@@ -116,13 +115,13 @@ public:
                 ASSERT(m_holder);
                 m_holder = nullptr;
             }
-            void postTaskToReadingThread(const WebTraceLocation& location, Task* task)
+            void postTaskToReadingThread(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
             {
                 MutexLocker locker(m_holderMutex);
                 ASSERT(m_holder);
                 m_holder->readingThread()->postTask(location, task);
             }
-            void postTaskToUpdatingThread(const WebTraceLocation& location, Task* task)
+            void postTaskToUpdatingThread(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
             {
                 MutexLocker locker(m_holderMutex);
                 ASSERT(m_holder);
@@ -219,20 +218,20 @@ public:
         void resetReader() { m_reader = nullptr; }
         void signalDone() { m_waitableEvent->signal(); }
         const String& result() { return m_context->result(); }
-        void postTaskToReadingThread(const WebTraceLocation& location, Task* task)
+        void postTaskToReadingThread(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
         {
             m_context->postTaskToReadingThread(location,  task);
         }
-        void postTaskToUpdatingThread(const WebTraceLocation& location, Task* task)
+        void postTaskToUpdatingThread(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
         {
             m_context->postTaskToUpdatingThread(location,  task);
         }
-        void postTaskToReadingThreadAndWait(const WebTraceLocation& location, Task* task)
+        void postTaskToReadingThreadAndWait(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
         {
             postTaskToReadingThread(location,  task);
             m_waitableEvent->wait();
         }
-        void postTaskToUpdatingThreadAndWait(const WebTraceLocation& location, Task* task)
+        void postTaskToUpdatingThreadAndWait(const WebTraceLocation& location, PassOwnPtr<CrossThreadClosure> task)
         {
             postTaskToUpdatingThread(location,  task);
             m_waitableEvent->wait();
@@ -243,7 +242,7 @@ public:
 
         RefPtr<Context> m_context;
         OwnPtr<WebDataConsumerHandle::Reader> m_reader;
-        OwnPtr<WebWaitableEvent> m_waitableEvent;
+        OwnPtr<WaitableEvent> m_waitableEvent;
         NoopClient m_client;
     };
 
@@ -255,10 +254,10 @@ public:
         void run(PassOwnPtr<WebDataConsumerHandle> handle)
         {
             ThreadHolder holder(this);
-            m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
+            m_waitableEvent = adoptPtr(new WaitableEvent());
             m_handle = handle;
 
-            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, threadSafeBind(&Self::obtainReader, this));
         }
 
     private:
@@ -269,8 +268,8 @@ public:
         }
         void didGetReadable() override
         {
-            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::resetReader, this)));
-            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(BLINK_FROM_HERE, threadSafeBind(&Self::resetReader, this));
+            postTaskToReadingThread(BLINK_FROM_HERE, threadSafeBind(&Self::signalDone, this));
         }
 
         OwnPtr<WebDataConsumerHandle> m_handle;
@@ -284,10 +283,10 @@ public:
         void run(PassOwnPtr<WebDataConsumerHandle> handle)
         {
             ThreadHolder holder(this);
-            m_waitableEvent = adoptPtr(Platform::current()->createWaitableEvent());
+            m_waitableEvent = adoptPtr(new WaitableEvent());
             m_handle = handle;
 
-            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::obtainReader, this)));
+            postTaskToReadingThreadAndWait(BLINK_FROM_HERE, threadSafeBind(&Self::obtainReader, this));
         }
 
     private:
@@ -296,7 +295,7 @@ public:
         {
             m_reader = m_handle->obtainReader(this);
             m_reader = nullptr;
-            postTaskToReadingThread(BLINK_FROM_HERE, new Task(threadSafeBind(&Self::signalDone, this)));
+            postTaskToReadingThread(BLINK_FROM_HERE, threadSafeBind(&Self::signalDone, this));
         }
         void didGetReadable() override
         {
@@ -377,7 +376,7 @@ public:
             m_body.append(body, size);
         }
         Command(Name name, const char* body) : Command(name, body, strlen(body)) { }
-        Name name() const { return m_name; }
+        Name getName() const { return m_name; }
         const Vector<char>& body() const { return m_body; }
 
     private:
@@ -408,7 +407,7 @@ public:
             void detachHandle();
             Result beginRead(const void** buffer, Flags, size_t* available);
             Result endRead(size_t readSize);
-            WebWaitableEvent* detached() { return m_detached.get(); }
+            WaitableEvent* detached() { return m_detached.get(); }
 
         private:
             Context();
@@ -426,10 +425,10 @@ public:
             Result m_result;
             bool m_isHandleAttached;
             Mutex m_mutex;
-            OwnPtr<WebWaitableEvent> m_detached;
+            OwnPtr<WaitableEvent> m_detached;
         };
 
-        Context* context() { return m_context.get(); }
+        Context* getContext() { return m_context.get(); }
 
     private:
         class ReaderImpl;
@@ -498,10 +497,10 @@ public:
     public:
         explicit HandleReaderRunner(PassOwnPtr<WebDataConsumerHandle> handle)
             : m_thread(adoptPtr(new Thread("reading thread")))
-            , m_event(adoptPtr(Platform::current()->createWaitableEvent()))
+            , m_event(adoptPtr(new WaitableEvent()))
             , m_isDone(false)
         {
-            m_thread->thread()->postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&HandleReaderRunner::start, AllowCrossThreadAccess(this), handle)));
+            m_thread->thread()->postTask(BLINK_FROM_HERE, threadSafeBind(&HandleReaderRunner::start, AllowCrossThreadAccess(this), handle));
         }
         ~HandleReaderRunner()
         {
@@ -531,7 +530,7 @@ public:
         }
 
         OwnPtr<Thread> m_thread;
-        OwnPtr<WebWaitableEvent> m_event;
+        OwnPtr<WaitableEvent> m_event;
         OwnPtr<HandleReadResult> m_result;
         bool m_isDone;
 

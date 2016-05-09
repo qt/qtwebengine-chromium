@@ -15,17 +15,17 @@ class PointerEvent final : public MouseEvent {
     DEFINE_WRAPPERTYPEINFO();
 
 public:
-    static PassRefPtrWillBeRawPtr<PointerEvent> create()
+    static PointerEvent* create()
     {
-        return adoptRefWillBeNoop(new PointerEvent);
+        return new PointerEvent;
     }
 
-    static PassRefPtrWillBeRawPtr<PointerEvent> create(const AtomicString& type, const PointerEventInit& initializer)
+    static PointerEvent* create(const AtomicString& type, const PointerEventInit& initializer)
     {
-        return adoptRefWillBeNoop(new PointerEvent(type, initializer));
+        return new PointerEvent(type, initializer);
     }
 
-    long pointerId() const { return m_pointerId; }
+    int pointerId() const { return m_pointerId; }
     double width() const { return m_width; }
     double height() const { return m_height; }
     float pressure() const { return m_pressure; }
@@ -38,7 +38,7 @@ public:
     bool isMouseEvent() const override;
     bool isPointerEvent() const override;
 
-    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
+    EventDispatchMediator* createMediator() override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -46,7 +46,7 @@ private:
     PointerEvent();
     PointerEvent(const AtomicString&, const PointerEventInit&);
 
-    long m_pointerId;
+    int m_pointerId;
     double m_width;
     double m_height;
     float m_pressure;
@@ -59,12 +59,12 @@ private:
 
 class PointerEventDispatchMediator final : public EventDispatchMediator {
 public:
-    static PassRefPtrWillBeRawPtr<PointerEventDispatchMediator> create(PassRefPtrWillBeRawPtr<PointerEvent>);
+    static PointerEventDispatchMediator* create(PointerEvent*);
 
 private:
-    explicit PointerEventDispatchMediator(PassRefPtrWillBeRawPtr<PointerEvent>);
+    explicit PointerEventDispatchMediator(PointerEvent*);
     PointerEvent& event() const;
-    bool dispatchEvent(EventDispatcher&) const override;
+    DispatchEventResult dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(PointerEvent);

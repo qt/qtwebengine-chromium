@@ -1,0 +1,7 @@
+include_rules = [
+  "+components/variations",
+  "+content/public/browser",
+  "+content/public/common",
+  "+crypto",
+  "+net",
+]

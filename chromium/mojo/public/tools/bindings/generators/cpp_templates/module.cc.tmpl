@@ -24,21 +24,25 @@
 #include <stdint.h>
 #include <utility>
 
+#include "base/logging.h"
 #include "base/trace_event/trace_event.h"
-#include "mojo/public/cpp/bindings/lib/array_serialization.h"
 #include "mojo/public/cpp/bindings/lib/bindings_serialization.h"
 #include "mojo/public/cpp/bindings/lib/bounds_checker.h"
+#include "mojo/public/cpp/bindings/lib/macros.h"
 #include "mojo/public/cpp/bindings/lib/map_data_internal.h"
-#include "mojo/public/cpp/bindings/lib/map_serialization.h"
 #include "mojo/public/cpp/bindings/lib/message_builder.h"
-#include "mojo/public/cpp/bindings/lib/native_serialization.h"
-#include "mojo/public/cpp/bindings/lib/string_serialization.h"
 #include "mojo/public/cpp/bindings/lib/validate_params.h"
 #include "mojo/public/cpp/bindings/lib/validation_errors.h"
 #include "mojo/public/cpp/bindings/lib/validation_util.h"
-#include "mojo/public/cpp/environment/lib/scoped_task_tracking.h"
-#include "mojo/public/cpp/environment/logging.h"
 #include "mojo/public/interfaces/bindings/interface_control_messages.mojom.h"
+
+{%- if for_blink %}
+#include "mojo/public/cpp/bindings/lib/wtf_serialization.h"
+{%- endif %}
+
+{%- for header in extra_traits_headers %}
+#include "{{header}}"
+{%- endfor %}
 
 {%- for namespace in namespaces_as_array %}
 namespace {{namespace}} {
@@ -90,12 +94,6 @@ const uint32_t {{method_name}} = {{method.ordinal}};
 {%- endfor %}
 
 }  // namespace internal
-
-{#--- Enums #}
-{%- from "enum_macros.tmpl" import is_valid_enum_def -%}
-{%- for enum in enums -%}
-  {{is_valid_enum_def(enum, class_name='')}}
-{%- endfor %}
 
 {#--- Struct Constants #}
 {%- for struct in structs %}

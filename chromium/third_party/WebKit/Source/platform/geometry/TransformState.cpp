@@ -39,12 +39,13 @@ TransformState& TransformState::operator=(const TransformState& other)
     if (m_mapQuad)
         m_lastPlanarQuad = other.m_lastPlanarQuad;
     m_accumulatingTransform = other.m_accumulatingTransform;
+    m_forceAccumulatingTransform = other.m_forceAccumulatingTransform;
     m_direction = other.m_direction;
 
     m_accumulatedTransform.clear();
 
     if (other.m_accumulatedTransform)
-        m_accumulatedTransform = adoptPtr(new TransformationMatrix(*other.m_accumulatedTransform));
+        m_accumulatedTransform = TransformationMatrix::create(*other.m_accumulatedTransform);
 
     return *this;
 }
@@ -68,6 +69,9 @@ void TransformState::translateMappedCoordinates(const LayoutSize& offset)
 
 void TransformState::move(const LayoutSize& offset, TransformAccumulation accumulate)
 {
+    if (m_forceAccumulatingTransform)
+        accumulate = AccumulateTransform;
+
     if (accumulate == FlattenTransform || !m_accumulatedTransform) {
         m_accumulatedOffset += offset;
     } else {
@@ -75,10 +79,6 @@ void TransformState::move(const LayoutSize& offset, TransformAccumulation accumu
         if (m_accumulatingTransform && m_accumulatedTransform) {
             // If we're accumulating into an existing transform, apply the translation.
             translateTransform(offset);
-
-            // Then flatten if necessary.
-            if (accumulate == FlattenTransform)
-                flatten();
         } else {
             // Just move the point and/or quad.
             translateMappedCoordinates(offset);
@@ -113,7 +113,7 @@ void TransformState::applyTransform(const TransformationMatrix& transformFromCon
         *wasClamped = false;
 
     if (transformFromContainer.isIntegerTranslation()) {
-        move(LayoutSize(transformFromContainer.e(), transformFromContainer.f()), accumulate);
+        move(LayoutSize(LayoutUnit(transformFromContainer.e()), LayoutUnit(transformFromContainer.f())), accumulate);
         return;
     }
 
@@ -122,23 +122,28 @@ void TransformState::applyTransform(const TransformationMatrix& transformFromCon
     // If we have an accumulated transform from last time, multiply in this transform
     if (m_accumulatedTransform) {
         if (m_direction == ApplyTransformDirection)
-            m_accumulatedTransform = adoptPtr(new TransformationMatrix(transformFromContainer * *m_accumulatedTransform));
+            m_accumulatedTransform = TransformationMatrix::create(transformFromContainer * *m_accumulatedTransform);
         else
             m_accumulatedTransform->multiply(transformFromContainer);
     } else if (accumulate == AccumulateTransform) {
         // Make one if we started to accumulate
-        m_accumulatedTransform = adoptPtr(new TransformationMatrix(transformFromContainer));
+        m_accumulatedTransform = TransformationMatrix::create(transformFromContainer);
     }
 
     if (accumulate == FlattenTransform) {
-        const TransformationMatrix* finalTransform = m_accumulatedTransform ? m_accumulatedTransform.get() : &transformFromContainer;
-        flattenWithTransform(*finalTransform, wasClamped);
+        if (m_forceAccumulatingTransform) {
+            m_accumulatedTransform->flattenTo2d();
+        } else {
+            const TransformationMatrix* finalTransform = m_accumulatedTransform ? m_accumulatedTransform.get() : &transformFromContainer;
+            flattenWithTransform(*finalTransform, wasClamped);
+        }
     }
-    m_accumulatingTransform = accumulate == AccumulateTransform;
+    m_accumulatingTransform = accumulate == AccumulateTransform || m_forceAccumulatingTransform;
 }
 
 void TransformState::flatten(bool* wasClamped)
 {
+    ASSERT(!m_forceAccumulatingTransform);
     if (wasClamped)
         *wasClamped = false;
 
@@ -182,6 +187,12 @@ FloatQuad TransformState::mappedQuad(bool* wasClamped) const
         return m_accumulatedTransform->mapQuad(quad);
 
     return m_accumulatedTransform->inverse().projectQuad(quad, wasClamped);
+}
+
+const TransformationMatrix& TransformState::accumulatedTransform() const
+{
+    ASSERT(m_forceAccumulatingTransform && m_accumulatingTransform);
+    return *m_accumulatedTransform;
 }
 
 void TransformState::flattenWithTransform(const TransformationMatrix& t, bool* wasClamped)

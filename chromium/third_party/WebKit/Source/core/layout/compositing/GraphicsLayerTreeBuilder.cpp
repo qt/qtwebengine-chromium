@@ -108,8 +108,8 @@ void GraphicsLayerTreeBuilder::rebuild(PaintLayer& layer, AncestorInfo info)
     if (layer.scrollParent()
         && layer.scrollParent()->hasCompositedLayerMapping()
         && layer.scrollParent()->compositedLayerMapping()->needsToReparentOverflowControls()
-        && layer.scrollParent()->scrollableArea()->topmostScrollChild() == &layer)
+        && layer.scrollParent()->getScrollableArea()->topmostScrollChild() == &layer)
         info.childLayersOfEnclosingCompositedLayer->append(layer.scrollParent()->compositedLayerMapping()->detachLayerForOverflowControls(*info.enclosingCompositedLayer));
 }
 
-}
+} // namespace blink

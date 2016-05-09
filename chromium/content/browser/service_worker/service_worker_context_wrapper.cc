@@ -29,7 +29,7 @@
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/net_util.h"
+#include "net/base/url_util.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
 
@@ -62,6 +62,7 @@ void StartActiveWorkerOnIO(
     // it from being deleted while starting the worker. If the refcount of
     // |registration| is 1, it will be deleted after WorkerStarted is called.
     registration->active_version()->StartWorker(
+        ServiceWorkerMetrics::EventType::UNKNOWN,
         base::Bind(WorkerStarted, callback));
     return;
   }
@@ -101,6 +102,8 @@ ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
+  DCHECK(!resource_context_);
+  DCHECK(!request_context_getter_);
 }
 
 void ServiceWorkerContextWrapper::Init(
@@ -128,6 +131,28 @@ void ServiceWorkerContextWrapper::Shutdown() {
       BrowserThread::IO,
       FROM_HERE,
       base::Bind(&ServiceWorkerContextWrapper::ShutdownOnIO, this));
+}
+
+void ServiceWorkerContextWrapper::InitializeResourceContext(
+    ResourceContext* resource_context,
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  resource_context_ = resource_context;
+  request_context_getter_ = request_context_getter;
+  // Can be null in tests.
+  if (request_context_getter_)
+    request_context_getter_->AddObserver(this);
+}
+
+void ServiceWorkerContextWrapper::OnContextShuttingDown() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // OnContextShuttingDown is called when the ProfileIOData (ResourceContext) is
+  // shutting down, so call ShutdownOnIO() to clear resource_context_.
+  // This doesn't seem to be called when using content_shell, so we still must
+  // also call ShutdownOnIO() in Shutdown(), which is called when the storage
+  // partition is destroyed.
+  ShutdownOnIO();
 }
 
 void ServiceWorkerContextWrapper::DeleteAndStartOver() {
@@ -158,12 +183,6 @@ ResourceContext* ServiceWorkerContextWrapper::resource_context() {
   return resource_context_;
 }
 
-void ServiceWorkerContextWrapper::set_resource_context(
-    ResourceContext* resource_context) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  resource_context_ = resource_context;
-}
-
 static void FinishRegistrationOnIO(
     const ServiceWorkerContext::ResultCallback& continuation,
     ServiceWorkerStatusCode status,
@@ -192,10 +211,8 @@ void ServiceWorkerContextWrapper::RegisterServiceWorker(
     return;
   }
   if (!context_core_) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(continuation, false));
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(continuation, false));
     return;
   }
   context()->RegisterServiceWorker(
@@ -228,10 +245,8 @@ void ServiceWorkerContextWrapper::UnregisterServiceWorker(
     return;
   }
   if (!context_core_) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(continuation, false));
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(continuation, false));
     return;
   }
 
@@ -277,19 +292,17 @@ void ServiceWorkerContextWrapper::StartServiceWorker(
 }
 
 void ServiceWorkerContextWrapper::SetForceUpdateOnPageLoad(
-    int64_t registration_id,
     bool force_update_on_page_load) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ServiceWorkerContextWrapper::SetForceUpdateOnPageLoad, this,
-                   registration_id, force_update_on_page_load));
+                   force_update_on_page_load));
     return;
   }
   if (!context_core_)
     return;
-  context_core_->SetForceUpdateOnPageLoad(registration_id,
-                                          force_update_on_page_load);
+  context_core_->set_force_update_on_page_load(force_update_on_page_load);
 }
 
 void ServiceWorkerContextWrapper::GetAllOriginsInfo(
@@ -309,6 +322,7 @@ void ServiceWorkerContextWrapper::GetAllOriginsInfo(
 
 void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
     const GetUsageInfoCallback& callback,
+    ServiceWorkerStatusCode status,
     const std::vector<ServiceWorkerRegistrationInfo>& registrations) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   std::vector<ServiceWorkerUsageInfo> usage_infos;
@@ -574,7 +588,8 @@ void ServiceWorkerContextWrapper::GetAllRegistrations(
     const GetRegistrationsInfosCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!context_core_) {
-    RunSoon(base::Bind(callback, std::vector<ServiceWorkerRegistrationInfo>()));
+    RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_ABORT,
+                       std::vector<ServiceWorkerRegistrationInfo>()));
     return;
   }
   context_core_->storage()->GetAllRegistrationsInfos(callback);
@@ -657,15 +672,11 @@ void ServiceWorkerContextWrapper::InitInternal(
     storage::SpecialStoragePolicy* special_storage_policy) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&ServiceWorkerContextWrapper::InitInternal,
-                   this,
-                   user_data_directory,
-                   base::Passed(&database_task_manager),
-                   disk_cache_thread,
-                   make_scoped_refptr(quota_manager_proxy),
-                   make_scoped_refptr(special_storage_policy)));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ServiceWorkerContextWrapper::InitInternal, this,
+                   user_data_directory, base::Passed(&database_task_manager),
+                   disk_cache_thread, base::RetainedRef(quota_manager_proxy),
+                   base::RetainedRef(special_storage_policy)));
     return;
   }
   // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
@@ -683,6 +694,10 @@ void ServiceWorkerContextWrapper::InitInternal(
 
 void ServiceWorkerContextWrapper::ShutdownOnIO() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // Can be null in tests.
+  if (request_context_getter_)
+    request_context_getter_->RemoveObserver(this);
+  request_context_getter_ = nullptr;
   resource_context_ = nullptr;
   context_core_.reset();
 }

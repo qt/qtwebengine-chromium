@@ -34,6 +34,7 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "core/style/StyleFetchedImageSet.h"
+#include "core/style/StyleInvalidImage.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
@@ -43,7 +44,6 @@ namespace blink {
 
 CSSImageSetValue::CSSImageSetValue()
     : CSSValueList(ImageSetClass, CommaSeparator)
-    , m_isCachePending(true)
     , m_cachedScaleFactor(1)
 {
 }
@@ -51,8 +51,8 @@ CSSImageSetValue::CSSImageSetValue()
 CSSImageSetValue::~CSSImageSetValue()
 {
 #if !ENABLE(OILPAN)
-    if (m_cachedImageSet)
-        m_cachedImageSet->clearImageSetValue();
+    if (m_cachedImage && m_cachedImage->isImageResourceSet())
+        toStyleFetchedImageSet(*m_cachedImage).clearImageSetValue();
 #endif
 }
 
@@ -95,23 +95,23 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor(float
 
 bool CSSImageSetValue::isCachePending(float deviceScaleFactor) const
 {
-    return m_isCachePending || deviceScaleFactor != m_cachedScaleFactor;
+    return !m_cachedImage || deviceScaleFactor != m_cachedScaleFactor;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(float deviceScaleFactor) const
+StyleImage* CSSImageSetValue::cachedImage(float deviceScaleFactor) const
 {
     ASSERT(!isCachePending(deviceScaleFactor));
-    return m_cachedImageSet.get();
+    return m_cachedImage.get();
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float deviceScaleFactor, CrossOriginAttributeValue crossOrigin)
+StyleImage* CSSImageSetValue::cacheImage(Document* document, float deviceScaleFactor, CrossOriginAttributeValue crossOrigin)
 {
     ASSERT(document);
 
     if (!m_imagesInSet.size())
         fillImageSet();
 
-    if (m_isCachePending || deviceScaleFactor != m_cachedScaleFactor) {
+    if (isCachePending(deviceScaleFactor)) {
         // FIXME: In the future, we want to take much more than deviceScaleFactor into acount here.
         // All forms of scale should be included: Page::pageScaleFactor(), LocalFrame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
@@ -120,16 +120,16 @@ StyleFetchedImageSet* CSSImageSetValue::cacheImageSet(Document* document, float 
         request.mutableResourceRequest().setHTTPReferrer(image.referrer);
 
         if (crossOrigin != CrossOriginAttributeNotSet)
-            request.setCrossOriginAccessControl(document->securityOrigin(), crossOrigin);
+            request.setCrossOriginAccessControl(document->getSecurityOrigin(), crossOrigin);
 
-        if (ResourcePtr<ImageResource> cachedImage = ImageResource::fetch(request, document->fetcher())) {
-            m_cachedImageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this, request.url());
-            m_cachedScaleFactor = deviceScaleFactor;
-            m_isCachePending = false;
-        }
+        if (ImageResource* cachedImage = ImageResource::fetch(request, document->fetcher()))
+            m_cachedImage = StyleFetchedImageSet::create(cachedImage, image.scaleFactor, this, request.url());
+        else
+            m_cachedImage = StyleInvalidImage::create(image.imageURL);
+        m_cachedScaleFactor = deviceScaleFactor;
     }
 
-    return m_cachedImageSet.get();
+    return m_cachedImage.get();
 }
 
 String CSSImageSetValue::customCSSText() const
@@ -164,25 +164,25 @@ String CSSImageSetValue::customCSSText() const
 
 bool CSSImageSetValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_cachedImageSet)
+    if (!m_cachedImage)
         return false;
-    if (Resource* cachedResource = m_cachedImageSet->cachedImage())
+    if (Resource* cachedResource = m_cachedImage->cachedImage())
         return cachedResource->loadFailedOrCanceled();
     return true;
 }
 
 DEFINE_TRACE_AFTER_DISPATCH(CSSImageSetValue)
 {
-    visitor->trace(m_cachedImageSet);
+    visitor->trace(m_cachedImage);
     CSSValueList::traceAfterDispatch(visitor);
 }
 
-PassRefPtrWillBeRawPtr<CSSImageSetValue> CSSImageSetValue::valueWithURLsMadeAbsolute()
+CSSImageSetValue* CSSImageSetValue::valueWithURLsMadeAbsolute()
 {
-    RefPtrWillBeRawPtr<CSSImageSetValue> value = CSSImageSetValue::create();
+    CSSImageSetValue* value = CSSImageSetValue::create();
     for (auto& item : *this)
         item->isImageValue() ? value->append(toCSSImageValue(*item).valueWithURLMadeAbsolute()) : value->append(item);
-    return value.release();
+    return value;
 }
 
 

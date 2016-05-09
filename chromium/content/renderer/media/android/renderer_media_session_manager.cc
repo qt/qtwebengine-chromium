@@ -6,17 +6,16 @@
 
 #include "base/logging.h"
 #include "content/common/media/media_session_messages_android.h"
+#include "content/public/common/media_metadata.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/media/android/webmediasession_android.h"
 
 namespace content {
 
-static const int kDefaultMediaSessionID = 0;
-
 RendererMediaSessionManager::RendererMediaSessionManager(
     RenderFrame* render_frame)
     : RenderFrameObserver(render_frame),
-      next_session_id_(kDefaultMediaSessionID + 1) {}
+      next_session_id_(blink::WebMediaSession::DefaultID + 1) {}
 
 RendererMediaSessionManager::~RendererMediaSessionManager() {
   DCHECK(sessions_.empty())
@@ -46,17 +45,34 @@ void RendererMediaSessionManager::UnregisterMediaSession(int session_id) {
 
 void RendererMediaSessionManager::Activate(
     int session_id,
-    scoped_ptr<blink::WebMediaSessionActivateCallback> callback) {
+    std::unique_ptr<blink::WebMediaSessionActivateCallback> callback) {
   int request_id = pending_activation_requests_.Add(callback.release());
   Send(new MediaSessionHostMsg_Activate(routing_id(), session_id, request_id));
 }
 
 void RendererMediaSessionManager::Deactivate(
     int session_id,
-    scoped_ptr<blink::WebMediaSessionDeactivateCallback> callback) {
+    std::unique_ptr<blink::WebMediaSessionDeactivateCallback> callback) {
   int request_id = pending_deactivation_requests_.Add(callback.release());
   Send(
       new MediaSessionHostMsg_Deactivate(routing_id(), session_id, request_id));
+}
+
+void RendererMediaSessionManager::SetMetadata(
+    int session_id,
+    const MediaMetadata& metadata) {
+  // Apply some sanity checks on the MediaMetadata before sending over IPC.
+  MediaMetadata ipc_metadata;
+  ipc_metadata.title =
+      metadata.title.substr(0, MediaMetadata::kMaxIPCStringLength);
+  ipc_metadata.artist =
+      metadata.artist.substr(0, MediaMetadata::kMaxIPCStringLength);
+  ipc_metadata.album =
+      metadata.album.substr(0, MediaMetadata::kMaxIPCStringLength);
+
+  Send(new MediaSessionHostMsg_SetMetadata(routing_id(),
+                                           session_id,
+                                           ipc_metadata));
 }
 
 void RendererMediaSessionManager::OnDidActivate(int request_id, bool success) {

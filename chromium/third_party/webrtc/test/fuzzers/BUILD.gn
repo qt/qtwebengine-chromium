@@ -66,6 +66,15 @@ webrtc_fuzzer_test("producer_fec_fuzzer") {
   ]
 }
 
+webrtc_fuzzer_test("rtcp_receiver_fuzzer") {
+  sources = [
+    "rtcp_receiver_fuzzer.cc",
+  ]
+  deps = [
+    "../../modules/rtp_rtcp/",
+  ]
+}
+
 source_set("audio_decoder_fuzzer") {
   public_configs = [ "../..:common_inherited_config" ]
   sources = [
@@ -94,6 +103,16 @@ webrtc_fuzzer_test("audio_decoder_isac_fuzzer") {
   ]
 }
 
+webrtc_fuzzer_test("audio_decoder_isac_incoming_packet_fuzzer") {
+  sources = [
+    "audio_decoder_isac_incoming_packet_fuzzer.cc",
+  ]
+  deps = [
+    ":audio_decoder_fuzzer",
+    "../../modules/audio_coding:isac",
+  ]
+}
+
 webrtc_fuzzer_test("audio_decoder_isacfix_fuzzer") {
   sources = [
     "audio_decoder_isacfix_fuzzer.cc",
@@ -107,6 +126,16 @@ webrtc_fuzzer_test("audio_decoder_isacfix_fuzzer") {
 webrtc_fuzzer_test("audio_decoder_opus_fuzzer") {
   sources = [
     "audio_decoder_opus_fuzzer.cc",
+  ]
+  deps = [
+    ":audio_decoder_fuzzer",
+    "../../modules/audio_coding:webrtc_opus",
+  ]
+}
+
+webrtc_fuzzer_test("audio_decoder_opus_redundant_fuzzer") {
+  sources = [
+    "audio_decoder_opus_redundant_fuzzer.cc",
   ]
   deps = [
     ":audio_decoder_fuzzer",

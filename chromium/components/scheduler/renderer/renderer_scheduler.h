@@ -6,6 +6,7 @@
 #define COMPONENTS_SCHEDULER_RENDERER_RENDERER_SCHEDULER_H_
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "components/scheduler/child/child_scheduler.h"
 #include "components/scheduler/child/single_thread_idle_task_runner.h"
@@ -13,11 +14,18 @@
 #include "components/scheduler/scheduler_export.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
+namespace base {
+namespace trace_event {
+class BlameContext;
+}
+}
+
 namespace cc {
 struct BeginFrameArgs;
 }
 
 namespace blink {
+class WebLocalFrame;
 class WebThread;
 }
 
@@ -31,8 +39,7 @@ class SCHEDULER_EXPORT RendererScheduler : public ChildScheduler {
   static scoped_ptr<RendererScheduler> Create();
 
   // Returns the compositor task runner.
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-  CompositorTaskRunner() = 0;
+  virtual scoped_refptr<TaskQueue> CompositorTaskRunner() = 0;
 
   // Keep RendererScheduler::UseCaseToString in sync with this enum.
   enum class UseCase {
@@ -53,7 +60,7 @@ class SCHEDULER_EXPORT RendererScheduler : public ChildScheduler {
 
   // Returns the loading task runner.  This queue is intended for tasks related
   // to resource dispatch, foreground HTML parsing, etc...
-  virtual scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() = 0;
+  virtual scoped_refptr<TaskQueue> LoadingTaskRunner() = 0;
 
   // Returns the timer task runner.  This queue is intended for DOM Timers.
   // TODO(alexclarke): Get rid of this default timer queue.
@@ -152,11 +159,10 @@ class SCHEDULER_EXPORT RendererScheduler : public ChildScheduler {
   // received via OnRendererBackgrounded. Defaults to disabled.
   virtual void SetTimerQueueSuspensionWhenBackgroundedEnabled(bool enabled) = 0;
 
-  // Returns a double which is the number of seconds since epoch (Jan 1, 1970).
-  virtual double CurrentTimeSeconds() const = 0;
-
-  // Returns a microsecond resolution platform dependant time source.
-  virtual double MonotonicallyIncreasingTimeSeconds() const = 0;
+  // Sets the default blame context to which top level work should be
+  // attributed in this renderer. |blame_context| must outlive this scheduler.
+  virtual void SetTopLevelBlameContext(
+      base::trace_event::BlameContext* blame_context) = 0;
 
  protected:
   RendererScheduler();

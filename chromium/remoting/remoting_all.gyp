@@ -12,7 +12,6 @@
       'target_name': 'remoting_all',
       'type': 'none',
       'dependencies': [
-        '../remoting/app_remoting_webapp.gyp:ar_sample_app',
         '../remoting/remoting.gyp:ar_sample_test_driver',
         '../remoting/remoting.gyp:chromoting_test_driver',
         '../remoting/remoting.gyp:remoting_base',
@@ -31,6 +30,7 @@
       'conditions' : [
         ['OS=="win"', {
           'dependencies': [
+            '../remoting/remoting.gyp:remote_security_key',
             '../remoting/remoting.gyp:remoting_breakpad_tester',
             '../remoting/remoting.gyp:remoting_console',
             '../remoting/remoting.gyp:remoting_core',
@@ -77,7 +77,6 @@
           'dependencies': [
              '../remoting/remoting.gyp:remoting_key_tester',
              '../remoting/remoting.gyp:remoting_webapp_browser_test',
-             '../remoting/app_remoting_shared_module.gyp:ar_shared_module',
           ],
         }],
       ],

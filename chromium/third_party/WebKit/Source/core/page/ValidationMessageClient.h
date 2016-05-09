@@ -35,7 +35,7 @@ namespace blink {
 class Document;
 class Element;
 
-class ValidationMessageClient : public WillBeGarbageCollectedMixin {
+class ValidationMessageClient : public GarbageCollectedMixin {
 public:
     virtual ~ValidationMessageClient() { }
 
@@ -59,6 +59,6 @@ public:
     DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
-}
+} // namespace blink
 
 #endif

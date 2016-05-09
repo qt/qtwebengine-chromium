@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title i18n-content="title"></title>
-  <link rel="stylesheet" href="chrome://resources/css/roboto.css">
-  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
   <style>
     html {
       background: rgb(236, 239, 241);
@@ -17,8 +16,6 @@
 
     body {
       display: flex;
-      font-family: Roboto;
-      font-size: 81.25%;
       margin: 0;
     }
   </style>
@@ -28,11 +25,13 @@
   <command id="clear-all-command" shortcut="Alt-U+0043"><!-- Alt+C -->
 <if expr="is_macosx">
   <command id="undo-command" shortcut="Meta-U+005A"><!-- Command+Z -->
+  <command id="find-command" shortcut="Meta-U+0046"><!-- Command+F -->
 </if>
 <if expr="not is_macosx">
   <command id="undo-command" shortcut="Ctrl-U+005A"><!-- Ctrl+Z -->
+  <command id="find-command" shortcut="Ctrl-U+0046"><!-- Ctrl+F -->
 </if>
-  <link rel="import" href="chrome://resources/html/polymer_config.html">
+  <link rel="import" href="chrome://resources/html/polymer.html">
   <link rel="import" href="chrome://downloads/i18n_setup.html">
   <link rel="import" href="chrome://downloads/manager.html">
   <!-- i18n_template.html actually does i18n-* attribute substitutions.

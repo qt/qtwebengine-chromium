@@ -1,0 +1,48 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# GYP version: components/ntp_snippets.gypi:ntp_snippets
+source_set("ntp_snippets") {
+  sources = [
+    "inner_iterator.h",
+    "ntp_snippet.cc",
+    "ntp_snippet.h",
+    "ntp_snippets_fetcher.cc",
+    "ntp_snippets_fetcher.h",
+    "ntp_snippets_scheduler.h",
+    "ntp_snippets_service.cc",
+    "ntp_snippets_service.h",
+    "pref_names.cc",
+    "pref_names.h",
+    "switches.cc",
+    "switches.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//components/keyed_service/core",
+    "//components/prefs",
+    "//components/signin/core/browser",
+    "//components/suggestions",
+    "//google_apis",
+    "//net",
+    "//url",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "inner_iterator_unittest.cc",
+    "ntp_snippets_service_unittest.cc",
+  ]
+
+  deps = [
+    ":ntp_snippets",
+    "//base",
+    "//components/signin/core/browser:test_support",
+    "//net:test_support",
+    "//testing/gtest",
+  ]
+}

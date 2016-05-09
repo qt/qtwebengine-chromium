@@ -141,7 +141,6 @@
 #include <openssl/ssl.h>
 
 #include <assert.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <openssl/buf.h>
@@ -1392,7 +1391,7 @@ ssl_create_cipher_list(const SSL_PROTOCOL_METHOD *ssl_method,
   /* Now we have to collect the available ciphers from the compiled in ciphers.
    * We cannot get more than the number compiled in, so it is used for
    * allocation. */
-  co_list = (CIPHER_ORDER *)OPENSSL_malloc(sizeof(CIPHER_ORDER) * kCiphersLen);
+  co_list = OPENSSL_malloc(sizeof(CIPHER_ORDER) * kCiphersLen);
   if (co_list == NULL) {
     OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
     return NULL;
@@ -1417,9 +1416,9 @@ ssl_create_cipher_list(const SSL_PROTOCOL_METHOD *ssl_method,
    * AES_GCM. Of the two CHACHA20 variants, the new one is preferred over the
    * old one. */
   if (EVP_has_aes_hardware()) {
-    ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256GCM, ~0u, 0, CIPHER_ADD, -1, 0,
-                          &head, &tail);
     ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES128GCM, ~0u, 0, CIPHER_ADD, -1, 0,
+                          &head, &tail);
+    ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256GCM, ~0u, 0, CIPHER_ADD, -1, 0,
                           &head, &tail);
     ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_CHACHA20POLY1305, ~0u, 0, CIPHER_ADD,
                           -1, 0, &head, &tail);
@@ -1430,24 +1429,24 @@ ssl_create_cipher_list(const SSL_PROTOCOL_METHOD *ssl_method,
                           -1, 0, &head, &tail);
     ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_CHACHA20POLY1305_OLD, ~0u, 0,
                           CIPHER_ADD, -1, 0, &head, &tail);
-    ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256GCM, ~0u, 0, CIPHER_ADD, -1, 0,
-                          &head, &tail);
     ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES128GCM, ~0u, 0, CIPHER_ADD, -1, 0,
+                          &head, &tail);
+    ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256GCM, ~0u, 0, CIPHER_ADD, -1, 0,
                           &head, &tail);
   }
 
-  /* Then the legacy non-AEAD ciphers: AES_256_CBC, AES-128_CBC, RC4_128_SHA,
-   * RC4_128_MD5, 3DES_EDE_CBC_SHA. */
-  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256, ~0u, 0, CIPHER_ADD, -1, 0,
-                        &head, &tail);
+  /* Then the legacy non-AEAD ciphers: AES_128_CBC, AES_256_CBC,
+   * 3DES_EDE_CBC_SHA, RC4_128_SHA, RC4_128_MD5. */
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES128, ~0u, 0, CIPHER_ADD, -1, 0,
                         &head, &tail);
+  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_AES256, ~0u, 0, CIPHER_ADD, -1, 0,
+                        &head, &tail);
+  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_3DES, ~0u, 0, CIPHER_ADD, -1, 0, &head,
+                        &tail);
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_RC4, ~SSL_MD5, 0, CIPHER_ADD, -1, 0,
                         &head, &tail);
   ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_RC4, SSL_MD5, 0, CIPHER_ADD, -1, 0,
                         &head, &tail);
-  ssl_cipher_apply_rule(0, ~0u, ~0u, SSL_3DES, ~0u, 0, CIPHER_ADD, -1, 0, &head,
-                        &tail);
 
   /* Temporarily enable everything else for sorting */
   ssl_cipher_apply_rule(0, ~0u, ~0u, ~0u, ~0u, 0, CIPHER_ADD, -1, 0, &head,
@@ -1577,6 +1576,10 @@ int SSL_CIPHER_has_SHA1_HMAC(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_mac & SSL_SHA1) != 0;
 }
 
+int SSL_CIPHER_has_SHA256_HMAC(const SSL_CIPHER *cipher) {
+  return (cipher->algorithm_mac & SSL_SHA256) != 0;
+}
+
 int SSL_CIPHER_is_AESGCM(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_enc & (SSL_AES128GCM | SSL_AES256GCM)) != 0;
 }
@@ -1614,6 +1617,10 @@ int SSL_CIPHER_is_block_cipher(const SSL_CIPHER *cipher) {
 
 int SSL_CIPHER_is_ECDSA(const SSL_CIPHER *cipher) {
   return (cipher->algorithm_auth & SSL_aECDSA) != 0;
+}
+
+int SSL_CIPHER_is_ECDHE(const SSL_CIPHER *cipher) {
+  return (cipher->algorithm_mkey & SSL_kECDHE) != 0;
 }
 
 uint16_t SSL_CIPHER_get_min_version(const SSL_CIPHER *cipher) {
@@ -1800,7 +1807,6 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
                                    int len) {
   const char *kx, *au, *enc, *mac;
   uint32_t alg_mkey, alg_auth, alg_enc, alg_mac;
-  static const char *format = "%-23s Kx=%-8s Au=%-4s Enc=%-9s Mac=%-4s\n";
 
   alg_mkey = cipher->algorithm_mkey;
   alg_auth = cipher->algorithm_auth;
@@ -1924,7 +1930,8 @@ const char *SSL_CIPHER_description(const SSL_CIPHER *cipher, char *buf,
     return "Buffer too small";
   }
 
-  BIO_snprintf(buf, len, format, cipher->name, kx, au, enc, mac);
+  BIO_snprintf(buf, len, "%-23s Kx=%-8s Au=%-4s Enc=%-9s Mac=%-4s\n",
+               cipher->name, kx, au, enc, mac);
   return buf;
 }
 

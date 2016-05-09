@@ -15,15 +15,16 @@
 #include "content/common/input/input_event.h"
 #include "content/common/input/input_event_ack.h"
 #include "content/common/input/input_event_ack_state.h"
+#include "content/common/input/input_event_dispatch_type.h"
 #include "content/common/input/input_param_traits.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
+#include "content/common/input/synthetic_pointer_action_params.h"
 #include "content/common/input/synthetic_smooth_drag_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
 #include "content/common/input/touch_action.h"
-#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/ipc/latency_info_param_traits.h"
@@ -31,6 +32,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
+#include "ui/gfx/ipc/skia/gfx_skia_param_traits.h"
 #include "ui/gfx/range/range.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -48,6 +50,12 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 IPC_ENUM_TRAITS_MAX_VALUE(
     content::SyntheticGestureParams::GestureType,
     content::SyntheticGestureParams::SYNTHETIC_GESTURE_TYPE_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    content::SyntheticPointerActionParams::PointerActionType,
+    content::SyntheticPointerActionParams::PointerActionType::
+        POINTER_ACTION_TYPE_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventDispatchType,
+                          content::InputEventDispatchType::DISPATCH_TYPE_MAX)
 IPC_ENUM_TRAITS_VALIDATE(content::TouchAction, (
     value >= 0 &&
     value <= content::TOUCH_ACTION_MAX &&
@@ -105,6 +113,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::SyntheticTapGestureParams)
   IPC_STRUCT_TRAITS_MEMBER(duration_ms)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticPointerActionParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(pointer_action_type_)
+  IPC_STRUCT_TRAITS_MEMBER(index_)
+  IPC_STRUCT_TRAITS_MEMBER(position_)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(content::InputEventAck)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(state)
@@ -114,9 +129,10 @@ IPC_STRUCT_TRAITS_BEGIN(content::InputEventAck)
 IPC_STRUCT_TRAITS_END()
 
 // Sends an input event to the render widget.
-IPC_MESSAGE_ROUTED2(InputMsg_HandleInputEvent,
+IPC_MESSAGE_ROUTED3(InputMsg_HandleInputEvent,
                     IPC::WebInputEventPointer /* event */,
-                    ui::LatencyInfo /* latency_info */)
+                    ui::LatencyInfo /* latency_info */,
+                    content::InputEventDispatchType)
 
 // Sends the cursor visibility state to the render widget.
 IPC_MESSAGE_ROUTED1(InputMsg_CursorVisibilityChange,
@@ -136,10 +152,11 @@ IPC_MESSAGE_ROUTED2(InputMsg_ExtendSelectionAndDelete,
                     int /* after */)
 
 // This message sends a string being composed with an input method.
-IPC_MESSAGE_ROUTED4(
+IPC_MESSAGE_ROUTED5(
     InputMsg_ImeSetComposition,
     base::string16, /* text */
     std::vector<blink::WebCompositionUnderline>, /* underlines */
+    gfx::Range /* replacement_range */,
     int, /* selectiont_start */
     int /* selection_end */)
 
@@ -242,6 +259,8 @@ IPC_MESSAGE_ROUTED3(InputMsg_ActivateNearestFindResult,
 // otherwise a race condition can happen.
 IPC_MESSAGE_ROUTED0(InputMsg_ImeEventAck)
 
+// Request from browser to update text input state.
+IPC_MESSAGE_ROUTED0(InputMsg_RequestTextInputStateUpdate)
 #endif
 
 IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted)

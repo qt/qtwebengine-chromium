@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <vector>
 
 #include "base/callback.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
+#include "base/macros.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
@@ -33,7 +33,7 @@ namespace proxy {
 
 class RawVarData;
 
-typedef base::Callback<void(IPC::Message*, const SerializedHandle&)>
+typedef base::Callback<void(base::Pickle*, const SerializedHandle&)>
     HandleWriter;
 
 // Contains the data associated with a graph of connected PP_Vars. Useful for
@@ -56,8 +56,8 @@ class PPAPI_PROXY_EXPORT RawVarDataGraph {
  public:
   // Construct a RawVarDataGraph from a given root PP_Var. A null pointer
   // is returned upon failure.
-  static scoped_ptr<RawVarDataGraph> Create(const PP_Var& var,
-                                            PP_Instance instance);
+  static std::unique_ptr<RawVarDataGraph> Create(const PP_Var& var,
+                                                 PP_Instance instance);
 
   // Constructs an empty RawVarDataGraph.
   RawVarDataGraph();
@@ -70,11 +70,11 @@ class PPAPI_PROXY_EXPORT RawVarDataGraph {
   PP_Var CreatePPVar(PP_Instance instance);
 
   // Write the graph to a message using the given HandleWriter.
-  void Write(IPC::Message* m, const HandleWriter& handle_writer);
+  void Write(base::Pickle* m, const HandleWriter& handle_writer);
 
   // Create a RawVarDataGraph from the given message.
-  static scoped_ptr<RawVarDataGraph> Read(const IPC::Message* m,
-                                          base::PickleIterator* iter);
+  static std::unique_ptr<RawVarDataGraph> Read(const base::Pickle* m,
+                                               base::PickleIterator* iter);
 
   // Returns a vector of SerializedHandles associated with this RawVarDataGraph.
   // Ownership of the pointers remains with the elements of the RawVarDataGraph.
@@ -86,8 +86,11 @@ class PPAPI_PROXY_EXPORT RawVarDataGraph {
   // (in order to have fast tests).
   static void SetMinimumArrayBufferSizeForShmemForTest(uint32_t threshold);
 
+ private:
   // A list of the nodes in the graph.
-  ScopedVector<RawVarData> data_;
+  std::vector<std::unique_ptr<RawVarData>> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(RawVarDataGraph);
 };
 
 // Abstract base class for the data contained in a PP_Var.
@@ -114,11 +117,10 @@ class RawVarData {
                              const std::vector<PP_Var>& graph) = 0;
 
   // Writes the RawVarData to a message.
-  virtual void Write(IPC::Message* m,
-                     const HandleWriter& handle_writer) = 0;
+  virtual void Write(base::Pickle* m, const HandleWriter& handle_writer) = 0;
   // Reads the RawVarData from a message. Returns true on success.
   virtual bool Read(PP_VarType type,
-                    const IPC::Message* m,
+                    const base::Pickle* m,
                     base::PickleIterator* iter) = 0;
 
   // Returns a SerializedHandle associated with this RawVarData or NULL if none
@@ -143,9 +145,9 @@ class BasicRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
 
  private:
@@ -164,9 +166,9 @@ class StringRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
 
  private:
@@ -193,9 +195,9 @@ class ArrayBufferRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
   SerializedHandle* GetHandle() override;
 
@@ -224,9 +226,9 @@ class ArrayRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
 
  private:
@@ -247,9 +249,9 @@ class DictionaryRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
 
  private:
@@ -273,9 +275,9 @@ class ResourceRawVarData : public RawVarData {
   PP_Var CreatePPVar(PP_Instance instance) override;
   void PopulatePPVar(const PP_Var& var,
                      const std::vector<PP_Var>& graph) override;
-  void Write(IPC::Message* m, const HandleWriter& handle_writer) override;
+  void Write(base::Pickle* m, const HandleWriter& handle_writer) override;
   bool Read(PP_VarType type,
-            const IPC::Message* m,
+            const base::Pickle* m,
             base::PickleIterator* iter) override;
 
  private:
@@ -293,7 +295,7 @@ class ResourceRawVarData : public RawVarData {
   // resource. The message type will vary based on the resource type, and will
   // usually contain a pending resource host ID, and other required information.
   // If the resource was created directly, this is NULL.
-  scoped_ptr<IPC::Message> creation_message_;
+  std::unique_ptr<IPC::Message> creation_message_;
 };
 
 }  // namespace proxy

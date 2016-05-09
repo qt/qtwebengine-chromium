@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/logging.h"
 #include "mojo/public/c/system/macros.h"
 #include "mojo/public/cpp/bindings/lib/bindings_internal.h"
 #include "mojo/public/cpp/bindings/lib/bindings_serialization.h"
@@ -20,13 +21,8 @@
 #include "mojo/public/cpp/bindings/lib/template_util.h"
 #include "mojo/public/cpp/bindings/lib/validate_params.h"
 #include "mojo/public/cpp/bindings/lib/validation_errors.h"
-#include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
-template <typename T>
-class Array;
-class String;
-
 namespace internal {
 
 // std::numeric_limits<uint32_t>::max() is not a compile-time constant (until
@@ -51,7 +47,7 @@ struct ArrayDataTraits {
       (kMaxUint32 - sizeof(ArrayHeader)) / sizeof(StorageType);
 
   static uint32_t GetStorageSize(uint32_t num_elements) {
-    MOJO_DCHECK(num_elements <= kMaxNumElements);
+    DCHECK(num_elements <= kMaxNumElements);
     return sizeof(ArrayHeader) + sizeof(StorageType) * num_elements;
   }
   static Ref ToRef(StorageType* storage, size_t offset) {
@@ -72,7 +68,7 @@ struct ArrayDataTraits<P*> {
       (kMaxUint32 - sizeof(ArrayHeader)) / sizeof(StorageType);
 
   static uint32_t GetStorageSize(uint32_t num_elements) {
-    MOJO_DCHECK(num_elements <= kMaxNumElements);
+    DCHECK(num_elements <= kMaxNumElements);
     return sizeof(ArrayHeader) + sizeof(StorageType) * num_elements;
   }
   static Ref ToRef(StorageType* storage, size_t offset) {
@@ -93,7 +89,7 @@ struct ArrayDataTraits<Array_Data<T>*> {
       (kMaxUint32 - sizeof(ArrayHeader)) / sizeof(StorageType);
 
   static uint32_t GetStorageSize(uint32_t num_elements) {
-    MOJO_DCHECK(num_elements <= kMaxNumElements);
+    DCHECK(num_elements <= kMaxNumElements);
     return sizeof(ArrayHeader) + sizeof(StorageType) * num_elements;
   }
   static Ref ToRef(StorageType* storage, size_t offset) {
@@ -147,14 +143,17 @@ struct ArrayDataTraits<bool> {
 };
 
 // What follows is code to support the serialization of Array_Data<T>. There
-// are two interesting cases: arrays of primitives and arrays of objects.
-// Arrays of objects are represented as arrays of pointers to objects.
+// are four interesting cases: arrays of primitives, arrays of handles,
+// arrays of objects and arrays of unions.
+// Arrays of objects are represented as arrays of pointers to objects. Arrays
+// of unions are inlined so they are not pointers, but comparing with primitives
+// they require more work for serialization/validation.
 
-template <typename T, bool is_handle>
+template <typename T, bool is_handle, bool is_union>
 struct ArraySerializationHelper;
 
 template <typename T>
-struct ArraySerializationHelper<T, false> {
+struct ArraySerializationHelper<T, false, false> {
   typedef typename ArrayDataTraits<T>::StorageType ElementType;
 
   static void EncodePointersAndHandles(const ArrayHeader* header,
@@ -169,16 +168,39 @@ struct ArraySerializationHelper<T, false> {
                                const ElementType* elements,
                                BoundsChecker* bounds_checker,
                                const ArrayValidateParams* validate_params) {
-    MOJO_DCHECK(!validate_params->element_is_nullable)
+    DCHECK(!validate_params->element_is_nullable)
         << "Primitive type should be non-nullable";
-    MOJO_DCHECK(!validate_params->element_validate_params)
+    DCHECK(!validate_params->element_validate_params)
         << "Primitive type should not have array validate params";
-    return true;
+
+    return ValidateCaller<ElementType>::Run(header, elements);
   }
+
+ private:
+  template <typename U, bool is_enum = IsEnumDataType<U>::value>
+  struct ValidateCaller {};
+
+  template <typename U>
+  struct ValidateCaller<U, false> {
+    static bool Run(const ArrayHeader* header, const ElementType* elements) {
+      return true;
+    }
+  };
+
+  template <typename U>
+  struct ValidateCaller<U, true> {
+    static bool Run(const ArrayHeader* header, const ElementType* elements) {
+      for (uint32_t i = 0; i < header->num_elements; ++i) {
+        if (!ValidateEnum(elements[i]))
+          return false;
+      }
+      return true;
+    }
+  };
 };
 
 template <>
-struct ArraySerializationHelper<Handle, true> {
+struct ArraySerializationHelper<Handle, true, false> {
   typedef ArrayDataTraits<Handle>::StorageType ElementType;
 
   static void EncodePointersAndHandles(const ArrayHeader* header,
@@ -193,7 +215,7 @@ struct ArraySerializationHelper<Handle, true> {
                                const ElementType* elements,
                                BoundsChecker* bounds_checker,
                                const ArrayValidateParams* validate_params) {
-    MOJO_DCHECK(!validate_params->element_validate_params)
+    DCHECK(!validate_params->element_validate_params)
         << "Handle type should not have array validate params";
 
     for (uint32_t i = 0; i < header->num_elements; ++i) {
@@ -217,20 +239,20 @@ struct ArraySerializationHelper<Handle, true> {
 };
 
 template <typename H>
-struct ArraySerializationHelper<H, true> {
+struct ArraySerializationHelper<H, true, false> {
   typedef typename ArrayDataTraits<H>::StorageType ElementType;
 
   static void EncodePointersAndHandles(const ArrayHeader* header,
                                        ElementType* elements,
                                        std::vector<Handle>* handles) {
-    ArraySerializationHelper<Handle, true>::EncodePointersAndHandles(
+    ArraySerializationHelper<Handle, true, false>::EncodePointersAndHandles(
         header, elements, handles);
   }
 
   static void DecodePointersAndHandles(const ArrayHeader* header,
                                        ElementType* elements,
                                        std::vector<Handle>* handles) {
-    ArraySerializationHelper<Handle, true>::DecodePointersAndHandles(
+    ArraySerializationHelper<Handle, true, false>::DecodePointersAndHandles(
         header, elements, handles);
   }
 
@@ -238,13 +260,13 @@ struct ArraySerializationHelper<H, true> {
                                const ElementType* elements,
                                BoundsChecker* bounds_checker,
                                const ArrayValidateParams* validate_params) {
-    return ArraySerializationHelper<Handle, true>::ValidateElements(
+    return ArraySerializationHelper<Handle, true, false>::ValidateElements(
         header, elements, bounds_checker, validate_params);
   }
 };
 
 template <typename P>
-struct ArraySerializationHelper<P*, false> {
+struct ArraySerializationHelper<P*, false, false> {
   typedef typename ArrayDataTraits<P*>::StorageType ElementType;
 
   static void EncodePointersAndHandles(const ArrayHeader* header,
@@ -288,36 +310,20 @@ struct ArraySerializationHelper<P*, false> {
   }
 
  private:
-  template <typename T,
-            bool is_union = IsUnionDataType<T>::value>
-  struct ValidateCaller {};
-
   template <typename T>
-  struct ValidateCaller<T, false> {
+  struct ValidateCaller {
     static bool Run(const void* data,
                     BoundsChecker* bounds_checker,
                     const ArrayValidateParams* validate_params) {
-      MOJO_DCHECK(!validate_params)
+      DCHECK(!validate_params)
           << "Struct type should not have array validate params";
 
       return T::Validate(data, bounds_checker);
     }
   };
 
-  template <typename T>
-  struct ValidateCaller<T, true> {
-    static bool Run(const void* data,
-                    BoundsChecker* bounds_checker,
-                    const ArrayValidateParams* validate_params) {
-      MOJO_DCHECK(!validate_params)
-          << "Union type should not have array validate params";
-
-      return T::Validate(data, bounds_checker, true);
-    }
-  };
-
   template <typename Key, typename Value>
-  struct ValidateCaller<Map_Data<Key, Value>, false> {
+  struct ValidateCaller<Map_Data<Key, Value>> {
     static bool Run(const void* data,
                     BoundsChecker* bounds_checker,
                     const ArrayValidateParams* validate_params) {
@@ -327,13 +333,51 @@ struct ArraySerializationHelper<P*, false> {
   };
 
   template <typename T>
-  struct ValidateCaller<Array_Data<T>, false> {
+  struct ValidateCaller<Array_Data<T>> {
     static bool Run(const void* data,
                     BoundsChecker* bounds_checker,
                     const ArrayValidateParams* validate_params) {
       return Array_Data<T>::Validate(data, bounds_checker, validate_params);
     }
   };
+};
+
+template <typename U>
+struct ArraySerializationHelper<U, false, true> {
+  typedef typename ArrayDataTraits<U>::StorageType ElementType;
+
+  static void EncodePointersAndHandles(const ArrayHeader* header,
+                                       ElementType* elements,
+                                       std::vector<Handle>* handles) {
+    for (uint32_t i = 0; i < header->num_elements; ++i)
+      elements[i].EncodePointersAndHandles(handles);
+  }
+
+  static void DecodePointersAndHandles(const ArrayHeader* header,
+                                       ElementType* elements,
+                                       std::vector<Handle>* handles) {
+    for (uint32_t i = 0; i < header->num_elements; ++i)
+      elements[i].DecodePointersAndHandles(handles);
+  }
+
+  static bool ValidateElements(const ArrayHeader* header,
+                               const ElementType* elements,
+                               BoundsChecker* bounds_checker,
+                               const ArrayValidateParams* validate_params) {
+    for (uint32_t i = 0; i < header->num_elements; ++i) {
+      if (!validate_params->element_is_nullable && elements[i].is_null()) {
+        ReportValidationError(
+            VALIDATION_ERROR_UNEXPECTED_NULL_POINTER,
+            MakeMessageWithArrayIndex("null in array expecting valid unions",
+                                      header->num_elements, i)
+                .c_str());
+        return false;
+      }
+      if (!ElementType::Validate(elements + i, bounds_checker, true))
+        return false;
+    }
+    return true;
+  }
 };
 
 template <typename T>
@@ -343,7 +387,10 @@ class Array_Data {
   typedef typename Traits::StorageType StorageType;
   typedef typename Traits::Ref Ref;
   typedef typename Traits::ConstRef ConstRef;
-  typedef ArraySerializationHelper<T, IsHandle<T>::value> Helper;
+  typedef ArraySerializationHelper<T,
+                                   IsHandle<T>::value,
+                                   IsUnionDataType<T>::value>
+      Helper;
 
   // Returns null if |num_elements| or the corresponding storage size cannot be
   // stored in uint32_t.
@@ -399,12 +446,12 @@ class Array_Data {
   size_t size() const { return header_.num_elements; }
 
   Ref at(size_t offset) {
-    MOJO_DCHECK(offset < static_cast<size_t>(header_.num_elements));
+    DCHECK(offset < static_cast<size_t>(header_.num_elements));
     return Traits::ToRef(storage(), offset);
   }
 
   ConstRef at(size_t offset) const {
-    MOJO_DCHECK(offset < static_cast<size_t>(header_.num_elements));
+    DCHECK(offset < static_cast<size_t>(header_.num_elements));
     return Traits::ToConstRef(storage(), offset);
   }
 
@@ -440,96 +487,7 @@ class Array_Data {
 static_assert(sizeof(Array_Data<char>) == 8, "Bad sizeof(Array_Data)");
 
 // UTF-8 encoded
-typedef Array_Data<char> String_Data;
-
-template <typename T, bool kIsMoveOnlyType>
-struct ArrayTraits {};
-
-template <typename T>
-struct ArrayTraits<T, false> {
-  typedef T StorageType;
-  typedef typename std::vector<T>::reference RefType;
-  typedef typename std::vector<T>::const_reference ConstRefType;
-  typedef ConstRefType ForwardType;
-  static inline void Initialize(std::vector<T>* vec) {}
-  static inline void Finalize(std::vector<T>* vec) {}
-  static inline ConstRefType at(const std::vector<T>* vec, size_t offset) {
-    return vec->at(offset);
-  }
-  static inline RefType at(std::vector<T>* vec, size_t offset) {
-    return vec->at(offset);
-  }
-  static inline void Resize(std::vector<T>* vec, size_t size) {
-    vec->resize(size);
-  }
-  static inline void PushBack(std::vector<T>* vec, ForwardType value) {
-    vec->push_back(value);
-  }
-  static inline void Clone(const std::vector<T>& src_vec,
-                           std::vector<T>* dest_vec) {
-    dest_vec->assign(src_vec.begin(), src_vec.end());
-  }
-};
-
-template <typename T>
-struct ArrayTraits<T, true> {
-  struct StorageType {
-    char buf[sizeof(T) + (8 - (sizeof(T) % 8)) % 8];  // Make 8-byte aligned.
-  };
-  typedef T& RefType;
-  typedef const T& ConstRefType;
-  typedef T ForwardType;
-  static inline void Initialize(std::vector<StorageType>* vec) {
-    for (size_t i = 0; i < vec->size(); ++i)
-      new (vec->at(i).buf) T();
-  }
-  static inline void Finalize(std::vector<StorageType>* vec) {
-    for (size_t i = 0; i < vec->size(); ++i)
-      reinterpret_cast<T*>(vec->at(i).buf)->~T();
-  }
-  static inline ConstRefType at(const std::vector<StorageType>* vec,
-                                size_t offset) {
-    return *reinterpret_cast<const T*>(vec->at(offset).buf);
-  }
-  static inline RefType at(std::vector<StorageType>* vec, size_t offset) {
-    return *reinterpret_cast<T*>(vec->at(offset).buf);
-  }
-  static inline void Resize(std::vector<StorageType>* vec, size_t size) {
-    size_t old_size = vec->size();
-    for (size_t i = size; i < old_size; i++)
-      reinterpret_cast<T*>(vec->at(i).buf)->~T();
-    ResizeStorage(vec, size);
-    for (size_t i = old_size; i < vec->size(); i++)
-      new (vec->at(i).buf) T();
-  }
-  static inline void PushBack(std::vector<StorageType>* vec, RefType value) {
-    size_t old_size = vec->size();
-    ResizeStorage(vec, old_size + 1);
-    new (vec->at(old_size).buf) T(std::move(value));
-  }
-  static inline void ResizeStorage(std::vector<StorageType>* vec, size_t size) {
-    if (size <= vec->capacity()) {
-      vec->resize(size);
-      return;
-    }
-    std::vector<StorageType> new_storage(size);
-    for (size_t i = 0; i < vec->size(); i++)
-      new (new_storage.at(i).buf) T(std::move(at(vec, i)));
-    vec->swap(new_storage);
-    Finalize(&new_storage);
-  }
-  static inline void Clone(const std::vector<StorageType>& src_vec,
-                           std::vector<StorageType>* dest_vec) {
-    Resize(dest_vec, src_vec.size());
-    for (size_t i = 0; i < src_vec.size(); ++i)
-      at(dest_vec, i) = at(&src_vec, i).Clone();
-  }
-};
-
-template <>
-struct WrapperTraits<String, false> {
-  typedef String_Data* DataType;
-};
+using String_Data = Array_Data<char>;
 
 }  // namespace internal
 }  // namespace mojo

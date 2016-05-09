@@ -7,46 +7,43 @@
  * Common styles for Settings pages.
  */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+#header {
+  margin-bottom: 12px;
+}
+
+#header .title {
+  color: rgb(104, 113, 116);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#card {
+  background-color: white;
+  overflow: hidden;
+}
+
+#card {
+  flex: 1;
 }
 
 :host(.expanded) {
-  height: 100%;
+  margin-bottom: 0;
 }
 
 :host(.expanded) #header {
   display: none;
 }
 
-#header .title {
-  @apply(--paper-font-body2);
-}
-
-paper-material {
-  background-color: white;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-paper-material,
-#placeholder {
-  margin-bottom: 16px;
-}
-
-:host(.neon-animating) paper-material {
+:host(.frozen) #card {
   position: fixed;
-  z-index: 1;
+  width: 100%;
 }
 
-:host(.expanded) paper-material {
-  margin-bottom: 0;
-  min-height: 100%;
-}
-
-#placeholder {
-  visibility: hidden;
-}
-
-:host(:not(.neon-animating)) #placeholder {
-  position: absolute;
+:host(.expanded.frozen) #card {
+  position: relative;
 }

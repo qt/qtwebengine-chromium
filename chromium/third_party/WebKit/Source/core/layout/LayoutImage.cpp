@@ -85,7 +85,7 @@ void LayoutImage::styleDidChange(StyleDifference diff, const ComputedStyle* oldS
         intrinsicSizeChanged();
 }
 
-void LayoutImage::setImageResource(PassOwnPtrWillBeRawPtr<LayoutImageResource> imageResource)
+void LayoutImage::setImageResource(LayoutImageResource* imageResource)
 {
     ASSERT(!m_imageResource);
     m_imageResource = imageResource;
@@ -175,7 +175,7 @@ void LayoutImage::invalidatePaintAndMarkForLayoutIfNeeded()
     contentChanged(ImageChanged);
 }
 
-void LayoutImage::notifyFinished(Resource* newImage)
+void LayoutImage::imageNotifyFinished(ImageResource* newImage)
 {
     if (!m_imageResource)
         return;
@@ -240,14 +240,14 @@ bool LayoutImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect,
     if (style()->objectPosition() != ComputedStyle::initialObjectPosition())
         return false;
     // Object-fit may leave parts of the content box empty.
-    ObjectFit objectFit = style()->objectFit();
+    ObjectFit objectFit = style()->getObjectFit();
     if (objectFit != ObjectFitFill && objectFit != ObjectFitCover)
         return false;
     if (!m_imageResource->cachedImage())
         return false;
     // Check for image with alpha.
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(this, *m_imageResource->cachedImage()));
-    return m_imageResource->cachedImage()->image()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
+    return m_imageResource->cachedImage()->getImage()->currentFrameKnownToBeOpaque(Image::PreCacheMetadata);
 }
 
 bool LayoutImage::computeBackgroundIsKnownToBeObscured() const
@@ -284,23 +284,23 @@ bool LayoutImage::nodeAtPoint(HitTestResult& result, const HitTestLocation& loca
     return inside;
 }
 
-void LayoutImage::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const
+void LayoutImage::computeIntrinsicSizingInfo(IntrinsicSizingInfo& intrinsicSizingInfo) const
 {
-    LayoutReplaced::computeIntrinsicRatioInformation(intrinsicSize, intrinsicRatio);
+    LayoutReplaced::computeIntrinsicSizingInfo(intrinsicSizingInfo);
 
     // Our intrinsicSize is empty if we're laying out generated images with relative width/height. Figure out the right intrinsic size to use.
-    if (intrinsicSize.isEmpty() && (m_imageResource->imageHasRelativeWidth() || m_imageResource->imageHasRelativeHeight())) {
+    if (intrinsicSizingInfo.size.isEmpty() && m_imageResource->imageHasRelativeSize()) {
         LayoutObject* containingBlock = isOutOfFlowPositioned() ? container() : this->containingBlock();
         if (containingBlock->isBox()) {
             LayoutBox* box = toLayoutBox(containingBlock);
-            intrinsicSize.setWidth(box->availableLogicalWidth().toFloat());
-            intrinsicSize.setHeight(box->availableLogicalHeight(IncludeMarginBorderPadding).toFloat());
+            intrinsicSizingInfo.size.setWidth(box->availableLogicalWidth().toFloat());
+            intrinsicSizingInfo.size.setHeight(box->availableLogicalHeight(IncludeMarginBorderPadding).toFloat());
         }
     }
     // Don't compute an intrinsic ratio to preserve historical WebKit behavior if we're painting alt text and/or a broken image.
     // Video is excluded from this behavior because video elements have a default aspect ratio that a failed poster image load should not override.
     if (m_imageResource && m_imageResource->errorOccurred() && !isVideo()) {
-        intrinsicRatio = 1;
+        intrinsicSizingInfo.aspectRatio = FloatSize(1, 1);
         return;
     }
 }
@@ -309,17 +309,17 @@ bool LayoutImage::needsPreferredWidthsRecalculation() const
 {
     if (LayoutReplaced::needsPreferredWidthsRecalculation())
         return true;
-    return embeddedContentBox();
+    return embeddedReplacedContent();
 }
 
-LayoutBox* LayoutImage::embeddedContentBox() const
+LayoutReplaced* LayoutImage::embeddedReplacedContent() const
 {
     if (!m_imageResource)
         return nullptr;
 
     ImageResource* cachedImage = m_imageResource->cachedImage();
-    if (cachedImage && cachedImage->image() && cachedImage->image()->isSVGImage())
-        return toSVGImage(cachedImage->image())->embeddedContentBox();
+    if (cachedImage && cachedImage->getImage() && cachedImage->getImage()->isSVGImage())
+        return toSVGImage(cachedImage->getImage())->embeddedReplacedContent();
 
     return nullptr;
 }

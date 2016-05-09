@@ -9,18 +9,18 @@
  */
 
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/base/checks.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h"
 #include "webrtc/modules/remote_bitrate_estimator/transport_feedback_adapter.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
-#include "webrtc/modules/utility/include/mock/mock_process_thread.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
 using ::testing::_;
@@ -34,40 +34,34 @@ class TransportFeedbackAdapterTest : public ::testing::Test {
   TransportFeedbackAdapterTest()
       : clock_(0),
         bitrate_estimator_(nullptr),
+        bitrate_controller_(this),
         receiver_estimated_bitrate_(0) {}
 
   virtual ~TransportFeedbackAdapterTest() {}
 
   virtual void SetUp() {
-    adapter_.reset(new TransportFeedbackAdapter(
-        new RtcpBandwidthObserverAdapter(this), &clock_, &process_thread_));
+    adapter_.reset(new TransportFeedbackAdapter(&bitrate_controller_, &clock_));
 
     bitrate_estimator_ = new MockRemoteBitrateEstimator();
-    EXPECT_CALL(process_thread_, RegisterModule(bitrate_estimator_)).Times(1);
     adapter_->SetBitrateEstimator(bitrate_estimator_);
   }
 
   virtual void TearDown() {
-    EXPECT_CALL(process_thread_, DeRegisterModule(bitrate_estimator_)).Times(1);
     adapter_.reset();
   }
 
  protected:
   // Proxy class used since TransportFeedbackAdapter will own the instance
   // passed at construction.
-  class RtcpBandwidthObserverAdapter : public RtcpBandwidthObserver {
+  class MockBitrateControllerAdapter : public MockBitrateController {
    public:
-    explicit RtcpBandwidthObserverAdapter(TransportFeedbackAdapterTest* owner)
-        : owner_(owner) {}
+    explicit MockBitrateControllerAdapter(TransportFeedbackAdapterTest* owner)
+        : MockBitrateController(), owner_(owner) {}
 
-    void OnReceivedEstimatedBitrate(uint32_t bitrate) override {
-      owner_->receiver_estimated_bitrate_ = bitrate;
-    }
+    ~MockBitrateControllerAdapter() override {}
 
-    void OnReceivedRtcpReceiverReport(const ReportBlockList& report_blocks,
-                                      int64_t rtt,
-                                      int64_t now_ms) override {
-      RTC_NOTREACHED();
+    void UpdateDelayBasedEstimate(uint32_t bitrate_bps) override {
+      owner_->receiver_estimated_bitrate_ = bitrate_bps;
     }
 
     TransportFeedbackAdapterTest* const owner_;
@@ -111,9 +105,9 @@ class TransportFeedbackAdapterTest : public ::testing::Test {
   }
 
   SimulatedClock clock_;
-  MockProcessThread process_thread_;
   MockRemoteBitrateEstimator* bitrate_estimator_;
-  rtc::scoped_ptr<TransportFeedbackAdapter> adapter_;
+  MockBitrateControllerAdapter bitrate_controller_;
+  std::unique_ptr<TransportFeedbackAdapter> adapter_;
 
   uint32_t receiver_estimated_bitrate_;
 };
@@ -204,7 +198,7 @@ TEST_F(TransportFeedbackAdapterTest, SendTimeWrapsBothWays) {
     OnSentPacket(packet);
 
   for (size_t i = 0; i < packets.size(); ++i) {
-    rtc::scoped_ptr<rtcp::TransportFeedback> feedback(
+    std::unique_ptr<rtcp::TransportFeedback> feedback(
         new rtcp::TransportFeedback());
     feedback->WithBase(packets[i].sequence_number,
                        packets[i].arrival_time_ms * 1000);
@@ -212,9 +206,9 @@ TEST_F(TransportFeedbackAdapterTest, SendTimeWrapsBothWays) {
     EXPECT_TRUE(feedback->WithReceivedPacket(
         packets[i].sequence_number, packets[i].arrival_time_ms * 1000));
 
-    rtc::scoped_ptr<rtcp::RawPacket> raw_packet = feedback->Build();
-    feedback = rtcp::TransportFeedback::ParseFrom(raw_packet->Buffer(),
-                                                  raw_packet->Length());
+    rtc::Buffer raw_packet = feedback->Build();
+    feedback = rtc::ScopedToUnique(rtcp::TransportFeedback::ParseFrom(
+        raw_packet.data(), raw_packet.size()));
 
     std::vector<PacketInfo> expected_packets;
     expected_packets.push_back(packets[i]);
@@ -269,7 +263,7 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   OnSentPacket(info);
 
   // Create expected feedback and send into adapter.
-  rtc::scoped_ptr<rtcp::TransportFeedback> feedback(
+  std::unique_ptr<rtcp::TransportFeedback> feedback(
       new rtcp::TransportFeedback());
   feedback->WithBase(sent_packets[0].sequence_number,
                      sent_packets[0].arrival_time_ms * 1000);
@@ -281,9 +275,9 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   EXPECT_FALSE(feedback->WithReceivedPacket(info.sequence_number,
                                             info.arrival_time_ms * 1000));
 
-  rtc::scoped_ptr<rtcp::RawPacket> raw_packet = feedback->Build();
-  feedback = rtcp::TransportFeedback::ParseFrom(raw_packet->Buffer(),
-                                                raw_packet->Length());
+  rtc::Buffer raw_packet = feedback->Build();
+  feedback = rtc::ScopedToUnique(
+      rtcp::TransportFeedback::ParseFrom(raw_packet.data(), raw_packet.size()));
 
   std::vector<PacketInfo> received_feedback;
 
@@ -303,8 +297,8 @@ TEST_F(TransportFeedbackAdapterTest, TimestampDeltas) {
   EXPECT_TRUE(feedback->WithReceivedPacket(info.sequence_number,
                                            info.arrival_time_ms * 1000));
   raw_packet = feedback->Build();
-  feedback = rtcp::TransportFeedback::ParseFrom(raw_packet->Buffer(),
-                                                raw_packet->Length());
+  feedback = rtc::ScopedToUnique(
+      rtcp::TransportFeedback::ParseFrom(raw_packet.data(), raw_packet.size()));
 
   EXPECT_TRUE(feedback.get() != nullptr);
   EXPECT_CALL(*bitrate_estimator_, IncomingPacketFeedbackVector(_))

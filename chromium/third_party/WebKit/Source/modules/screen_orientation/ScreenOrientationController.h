@@ -21,13 +21,12 @@ class ScreenOrientation;
 class WebScreenOrientationClient;
 
 class MODULES_EXPORT ScreenOrientationController final
-    : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientationController>
-    , public WillBeHeapSupplement<LocalFrame>
+    : public GarbageCollectedFinalized<ScreenOrientationController>
+    , public Supplement<LocalFrame>
     , public LocalFrameLifecycleObserver
     , public PlatformEventController {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
+    USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
     WTF_MAKE_NONCOPYABLE(ScreenOrientationController);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(ScreenOrientationController);
 public:
     ~ScreenOrientationController() override;
 
@@ -36,9 +35,6 @@ public:
 
     void lock(WebScreenOrientationLockType, WebLockOrientationCallback*);
     void unlock();
-
-    void setOverride(WebScreenOrientationType, unsigned short angle);
-    void clearOverride();
 
     static void provideTo(LocalFrame&, WebScreenOrientationClient*);
     static ScreenOrientationController* from(LocalFrame&);
@@ -61,9 +57,6 @@ private:
     // Inherited from LocalFrameLifecycleObserver.
     void willDetachFrameHost() override;
 
-    unsigned short effectiveAngle(ChromeClient&);
-    WebScreenOrientationType effectiveType(ChromeClient&);
-
     void notifyDispatcher();
 
     void updateOrientation();
@@ -72,12 +65,9 @@ private:
 
     bool isActiveAndVisible() const;
 
-    PersistentWillBeMember<ScreenOrientation> m_orientation;
+    Member<ScreenOrientation> m_orientation;
     WebScreenOrientationClient* m_client;
     Timer<ScreenOrientationController> m_dispatchEventTimer;
-    bool m_override;
-    WebScreenOrientationType m_overrideType;
-    unsigned short m_overrideAngle;
 };
 
 } // namespace blink

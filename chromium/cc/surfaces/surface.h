@@ -10,10 +10,10 @@
 
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <vector>
 
 #include "base/callback.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -71,8 +71,8 @@ class CC_SURFACES_EXPORT Surface {
   // Satisfy all destruction dependencies that are contained in sequences, and
   // remove them from sequences.
   void SatisfyDestructionDependencies(
-      base::hash_set<SurfaceSequence>* sequences,
-      base::hash_set<uint32_t>* valid_id_namespaces);
+      std::unordered_set<SurfaceSequence, SurfaceSequenceHash>* sequences,
+      std::unordered_set<uint32_t>* valid_id_namespaces);
   size_t GetDestructionDependencyCount() const {
     return destruction_dependencies_.size();
   }
@@ -84,12 +84,8 @@ class CC_SURFACES_EXPORT Surface {
   bool destroyed() const { return destroyed_; }
   void set_destroyed(bool destroyed) { destroyed_ = destroyed; }
 
-  void AddBeginFrameSource(BeginFrameSource* begin_frame_source);
-  void RemoveBeginFrameSource(BeginFrameSource* begin_frame_source);
-
  private:
   void ClearCopyRequests();
-  void UpdatePrimaryBeginFrameSource();
 
   SurfaceId surface_id_;
   base::WeakPtr<SurfaceFactory> factory_;

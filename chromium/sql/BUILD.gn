@@ -69,12 +69,14 @@ source_set("redirection_header") {
   ]
 }
 
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("sql_unittests_run") {
+bundle_data("sql_unittests_bundle_data") {
   testonly = true
-  deps = [
-    ":sql_unittests",
+  sources = [
+    "test/data",
+  ]
+  outputs = [
+    "{{bundle_resources_dir}}/" +
+        "{{source_root_relative_dir}}/{{source_file_part}}",
   ]
 }
 
@@ -106,8 +108,8 @@ test("sql_unittests") {
   deps = [
     ":redirection_header",
     ":sql",
+    ":sql_unittests_bundle_data",
     ":test_support",
-    "//base/allocator",
     "//base/test:test_support",
     "//testing/gtest",
     "//third_party/sqlite",

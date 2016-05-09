@@ -32,7 +32,7 @@
       # generated cpp files must be listed explicitly in extensions_common
       'type': 'none',
       'includes': [
-        '../third_party/mojo/mojom_bindings_generator.gypi',
+        '../mojo/mojom_bindings_generator.gypi',
       ],
       'sources': [
         '<@(extensions_common_mojo_sources)',
@@ -65,9 +65,11 @@
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
+        '../ui/gfx/ipc/skia/gfx_ipc_skia.gyp:gfx_ipc_skia',
         '../url/url.gyp:url_lib',
         '../third_party/boringssl/boringssl.gyp:boringssl',
         '../third_party/libxml/libxml.gyp:libxml',
+        '../url/ipc/url_ipc.gyp:url_ipc',
         'common/api/api.gyp:extensions_api',
         'extensions_resources.gyp:extensions_resources',
         'extensions_strings.gyp:extensions_strings',
@@ -107,7 +109,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
-        '../base/base.gyp:base_prefs',
         '../components/components.gyp:browsing_data',
         '../components/components.gyp:device_event_log_component',
         '../components/components.gyp:guest_view_browser',
@@ -123,6 +124,7 @@
         '../components/components.gyp:version_info',
         '../components/components.gyp:web_cache_browser',
         '../components/components.gyp:web_modal',
+        '../components/prefs/prefs.gyp:prefs',
         '../content/content.gyp:content_browser',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
         '../device/serial/serial.gyp:device_serial',
@@ -202,10 +204,11 @@
       'dependencies': [
         'extensions_resources.gyp:extensions_resources',
         '../components/components.gyp:guest_view_renderer',
+        '../content/content.gyp:content_common',
         '../content/content.gyp:content_resources',
         '../gin/gin.gyp:gin',
+        '../mojo/mojo_public.gyp:mojo_js_bindings',
         '../third_party/WebKit/public/blink.gyp:blink',
-        '../third_party/mojo/mojo_public.gyp:mojo_js_bindings',
       ],
       'include_dirs': [
         '..',
@@ -217,8 +220,11 @@
       'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
         ['enable_wifi_display==1', {
+          'dependencies': [
+            '../third_party/wds/wds.gyp:libwds',
+          ],
           'sources': [
-            '<@(extensions_render_sources_wifi_display)',
+            '<@(extensions_renderer_sources_wifi_display)',
           ],
         }],
       ],
@@ -248,9 +254,9 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/base.gyp:base_prefs_test_support',
         '../components/components.gyp:pref_registry_test_support',
         '../components/components.gyp:user_prefs',
+        '../components/prefs/prefs.gyp:prefs_test_support',
         '../content/content.gyp:content_browser',
         '../content/content.gyp:content_common',
         '../content/content_shell_and_tests.gyp:test_support_content',

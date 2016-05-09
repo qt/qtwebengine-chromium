@@ -33,9 +33,9 @@ namespace blink {
 
 class SVGAnimatedViewBoxRect : public SVGAnimatedRect {
 public:
-    static PassRefPtrWillBeRawPtr<SVGAnimatedRect> create(SVGElement* contextElement)
+    static SVGAnimatedRect* create(SVGElement* contextElement)
     {
-        return adoptRefWillBeNoop(new SVGAnimatedViewBoxRect(contextElement));
+        return new SVGAnimatedViewBoxRect(contextElement);
     }
 
     SVGParsingError setBaseValueAsString(const String&) override;
@@ -49,10 +49,10 @@ protected:
 
 SVGParsingError SVGAnimatedViewBoxRect::setBaseValueAsString(const String& value)
 {
-    SVGParsingError parseStatus = baseValue()->setValueAsString(value);
+    SVGParsingError parseStatus = SVGAnimatedRect::setBaseValueAsString(value);
 
-    if (parseStatus == NoError && (baseValue()->width() < 0 || baseValue()->height() < 0)) {
-        parseStatus = NegativeValueForbiddenError;
+    if (parseStatus == SVGParseStatus::NoError && (baseValue()->width() < 0 || baseValue()->height() < 0)) {
+        parseStatus = SVGParseStatus::NegativeValue;
         baseValue()->setInvalid();
     }
     return parseStatus;
@@ -75,7 +75,7 @@ DEFINE_TRACE(SVGFitToViewBox)
     visitor->trace(m_preserveAspectRatio);
 }
 
-AffineTransform SVGFitToViewBox::viewBoxToViewTransform(const FloatRect& viewBoxRect, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio> preserveAspectRatio, float viewWidth, float viewHeight)
+AffineTransform SVGFitToViewBox::viewBoxToViewTransform(const FloatRect& viewBoxRect, SVGPreserveAspectRatio* preserveAspectRatio, float viewWidth, float viewHeight)
 {
     if (!viewBoxRect.width() || !viewBoxRect.height() || !viewWidth || !viewHeight)
         return AffineTransform();
@@ -94,4 +94,4 @@ void SVGFitToViewBox::updateViewBox(const FloatRect& rect)
     m_viewBox->baseValue()->setValue(rect);
 }
 
-}
+} // namespace blink

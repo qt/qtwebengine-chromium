@@ -202,8 +202,16 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("inner-html-change.html"));
 }
 
+#if defined(OS_MACOSX)
+// Mac failures: http://crbug.com/598527.
+#define MAYBE_AccessibilityEventsInputTypeTextValueChanged \
+    DISABLED_AccessibilityEventsInputTypeTextValueChanged
+#else
+#define MAYBE_AccessibilityEventsInputTypeTextValueChanged \
+    AccessibilityEventsInputTypeTextValueChanged
+#endif
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
-                       AccessibilityEventsInputTypeTextValueChanged) {
+                       MAYBE_AccessibilityEventsInputTypeTextValueChanged) {
   RunEventTest(FILE_PATH_LITERAL("input-type-text-value-changed.html"));
 }
 
@@ -213,18 +221,9 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
 }
 
 // Flaky on Windows: http://crbug.com/486861
-#if defined(OS_WIN)
-#define MAYBE_AccessibilityEventsListboxNext \
-  DISABLED_AccessibilityEventsListboxNext
-#define MAYBE_AccessibilityEventsMenuListPopup \
-  DISABLED_AccessibilityEventsMenuListPopup
-#else
-#define MAYBE_AccessibilityEventsListboxNext AccessibilityEventsListboxNext
-#define MAYBE_AccessibilityEventsMenuListPopup AccessibilityEventsMenuListPopup
-#endif
-
+// Flaky on Mac: http://crbug.com/588271
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
-                       MAYBE_AccessibilityEventsListboxNext) {
+                       DISABLED_AccessibilityEventsListboxNext) {
   RunEventTest(FILE_PATH_LITERAL("listbox-next.html"));
 }
 
@@ -238,8 +237,9 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("menulist-next.html"));
 }
 
+// Flaky on Windows: http://crbug.com/486861
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
-                       MAYBE_AccessibilityEventsMenuListPopup) {
+                       DISABLED_AccessibilityEventsMenuListPopup) {
   RunEventTest(FILE_PATH_LITERAL("menulist-popup.html"));
 }
 

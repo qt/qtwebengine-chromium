@@ -58,7 +58,7 @@ class CC_EXPORT BeginFrameObserver {
   // These requirements are designed to allow chaining and nesting of
   // BeginFrameObservers which filter the incoming BeginFrame messages while
   // preventing "double dropping" and other bad side effects.
-  virtual const BeginFrameArgs LastUsedBeginFrameArgs() const = 0;
+  virtual const BeginFrameArgs& LastUsedBeginFrameArgs() const = 0;
 
   virtual void OnBeginFrameSourcePausedChanged(bool paused) = 0;
 
@@ -85,7 +85,7 @@ class CC_EXPORT BeginFrameObserverBase : public BeginFrameObserver {
   // OnBeginFrameDerivedImpl and updates the last_begin_frame_args_ value on
   // true.
   void OnBeginFrame(const BeginFrameArgs& args) override;
-  const BeginFrameArgs LastUsedBeginFrameArgs() const override;
+  const BeginFrameArgs& LastUsedBeginFrameArgs() const override;
 
   // Outputs last_begin_frame_args_
   void AsValueInto(base::trace_event::TracedValue* dict) const override;
@@ -115,26 +115,16 @@ class CC_EXPORT BeginFrameSource {
  public:
   virtual ~BeginFrameSource() {}
 
-  // SetNeedsBeginFrames is the on/off "switch" for the BeginFrameSource. When
-  // set to false no more BeginFrame messages should be sent to observer.
-  virtual bool NeedsBeginFrames() const = 0;
-  virtual void SetNeedsBeginFrames(bool needs_begin_frames) = 0;
-
   // DidFinishFrame provides back pressure to a frame source about frame
   // processing (rather than toggling SetNeedsBeginFrames every frame). It is
   // used by systems like the BackToBackFrameSource to make sure only one frame
   // is pending at a time.
   virtual void DidFinishFrame(size_t remaining_frames) = 0;
 
-  // Add/Remove an observer from the source.
-  // *At the moment* only a single observer can be added to the source, however
-  // in the future this may be extended to allow multiple observers.
-  // If making this change, please use base::ObserverList to do so.
+  // Add/Remove an observer from the source. When no observers are added the BFS
+  // should shut down its timers, disable vsync, etc.
   virtual void AddObserver(BeginFrameObserver* obs) = 0;
   virtual void RemoveObserver(BeginFrameObserver* obs) = 0;
-
-  // Tells the Source that client is ready to handle BeginFrames messages.
-  virtual void SetClientReady() = 0;
 
   // Tracing support - Recommend (but not required) to call this implementation
   // in any override.
@@ -150,15 +140,12 @@ class CC_EXPORT BeginFrameSource {
 //    in their own AsValueInto implementation.
 class CC_EXPORT BeginFrameSourceBase : public BeginFrameSource {
  public:
-  ~BeginFrameSourceBase() override {}
+  ~BeginFrameSourceBase() override;
 
   // BeginFrameSource
-  bool NeedsBeginFrames() const final;
-  void SetNeedsBeginFrames(bool needs_begin_frames) final;
   void DidFinishFrame(size_t remaining_frames) override {}
-  void AddObserver(BeginFrameObserver* obs) final;
-  void RemoveObserver(BeginFrameObserver* obs) final;
-  void SetClientReady() override {}
+  void AddObserver(BeginFrameObserver* obs) override;
+  void RemoveObserver(BeginFrameObserver* obs) override;
 
   // Tracing support - Recommend (but not required) to call this implementation
   // in any override.
@@ -172,12 +159,13 @@ class CC_EXPORT BeginFrameSourceBase : public BeginFrameSource {
   void CallOnBeginFrame(const BeginFrameArgs& args);
   void SetBeginFrameSourcePaused(bool paused);
 
-  // This method should be overridden if you want to change some behaviour on
-  // needs_begin_frames change.
-  virtual void OnNeedsBeginFramesChange(bool needs_begin_frames) {}
+  // This notifies that the subclass that it must turn on or off its mechnanism
+  // for producing BeginFrames.
+  virtual void OnNeedsBeginFramesChanged(bool needs_begin_frames) {}
 
-  BeginFrameObserver* observer_;
-  bool needs_begin_frames_;
+  bool needs_begin_frames() const { return !observers_.empty(); }
+
+  std::set<BeginFrameObserver*> observers_;
   bool paused_;
 
  private:
@@ -190,28 +178,27 @@ class CC_EXPORT BeginFrameSourceBase : public BeginFrameSource {
 // remaining frames reaches zero.
 class CC_EXPORT BackToBackBeginFrameSource : public BeginFrameSourceBase {
  public:
-  static scoped_ptr<BackToBackBeginFrameSource> Create(
+  explicit BackToBackBeginFrameSource(
       base::SingleThreadTaskRunner* task_runner);
   ~BackToBackBeginFrameSource() override;
 
   // BeginFrameSource
   void DidFinishFrame(size_t remaining_frames) override;
 
+  // BeginFrameSourceBase
+  void AddObserver(BeginFrameObserver* obs) override;
+  void OnNeedsBeginFramesChanged(bool needs_begin_frames) override;
+
   // Tracing
   void AsValueInto(base::trace_event::TracedValue* dict) const override;
 
  protected:
-  explicit BackToBackBeginFrameSource(
-      base::SingleThreadTaskRunner* task_runner);
   virtual base::TimeTicks Now();  // Now overridable for testing
 
   base::SingleThreadTaskRunner* task_runner_;
+  base::CancelableClosure begin_frame_task_;
 
-  bool send_begin_frame_posted_;
-
-  // BeginFrameSourceBase
-  void OnNeedsBeginFramesChange(bool needs_begin_frames) override;
-
+  void PostBeginFrame();
   void BeginFrame();
 
  private:
@@ -225,13 +212,18 @@ class CC_EXPORT BackToBackBeginFrameSource : public BeginFrameSourceBase {
 class CC_EXPORT SyntheticBeginFrameSource : public BeginFrameSourceBase,
                                             public DelayBasedTimeSourceClient {
  public:
-  static scoped_ptr<SyntheticBeginFrameSource> Create(
-      base::SingleThreadTaskRunner* task_runner,
-      base::TimeDelta initial_vsync_interval);
+  explicit SyntheticBeginFrameSource(base::SingleThreadTaskRunner* task_runner,
+                                     base::TimeDelta initial_vsync_interval);
+  explicit SyntheticBeginFrameSource(
+      scoped_ptr<DelayBasedTimeSource> time_source);
   ~SyntheticBeginFrameSource() override;
 
   void OnUpdateVSyncParameters(base::TimeTicks new_vsync_timebase,
                                base::TimeDelta new_vsync_interval);
+
+  // BeginFrameSourceBase
+  void AddObserver(BeginFrameObserver* obs) override;
+  void OnNeedsBeginFramesChanged(bool needs_begin_frames) override;
 
   // Tracing
   void AsValueInto(base::trace_event::TracedValue* dict) const override;
@@ -240,68 +232,13 @@ class CC_EXPORT SyntheticBeginFrameSource : public BeginFrameSourceBase,
   void OnTimerTick() override;
 
  protected:
-  explicit SyntheticBeginFrameSource(
-      scoped_ptr<DelayBasedTimeSource> time_source);
-
   BeginFrameArgs CreateBeginFrameArgs(base::TimeTicks frame_time,
                                       BeginFrameArgs::BeginFrameArgsType type);
-
-  // BeginFrameSourceBase
-  void OnNeedsBeginFramesChange(bool needs_begin_frames) override;
 
   scoped_ptr<DelayBasedTimeSource> time_source_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyntheticBeginFrameSource);
-};
-
-// A "virtual" frame source which lets you switch between multiple other frame
-// sources while making sure the BeginFrameArgs stays increasing (possibly
-// enforcing minimum boundry between BeginFrameArgs messages).
-class CC_EXPORT BeginFrameSourceMultiplexer : public BeginFrameSourceBase,
-                                              public BeginFrameObserver {
- public:
-  static scoped_ptr<BeginFrameSourceMultiplexer> Create();
-  ~BeginFrameSourceMultiplexer() override;
-
-  void SetMinimumInterval(base::TimeDelta new_minimum_interval);
-
-  void AddSource(BeginFrameSource* new_source);
-  void RemoveSource(BeginFrameSource* existing_source);
-  void SetActiveSource(BeginFrameSource* new_source);
-  const BeginFrameSource* ActiveSource();
-
-  // BeginFrameObserver
-  // The mux is an BeginFrameObserver as it needs to proxy the OnBeginFrame
-  // calls to preserve the monotonicity of the BeginFrameArgs when switching
-  // sources.
-  void OnBeginFrame(const BeginFrameArgs& args) override;
-  const BeginFrameArgs LastUsedBeginFrameArgs() const override;
-  void OnBeginFrameSourcePausedChanged(bool paused) override;
-
-  // BeginFrameSource
-  void DidFinishFrame(size_t remaining_frames) override;
-
-  // BeginFrameSourceBase
-  void OnNeedsBeginFramesChange(bool needs_begin_frames) override;
-
-  // Tracing
-  void AsValueInto(base::trace_event::TracedValue* dict) const override;
-
- protected:
-  BeginFrameSourceMultiplexer();
-  explicit BeginFrameSourceMultiplexer(base::TimeDelta minimum_interval);
-
-  bool HasSource(BeginFrameSource* source);
-  bool IsIncreasing(const BeginFrameArgs& args);
-
-  base::TimeDelta minimum_interval_;
-
-  BeginFrameSource* active_source_;
-  std::set<BeginFrameSource*> source_list_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BeginFrameSourceMultiplexer);
 };
 
 }  // namespace cc

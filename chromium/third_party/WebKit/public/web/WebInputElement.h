@@ -61,6 +61,9 @@ public:
     BLINK_EXPORT bool isImageButton() const;
     BLINK_EXPORT bool isRadioButton() const;
     BLINK_EXPORT bool isCheckbox() const;
+    // This has different behavior from 'maxLength' IDL attribute, it returns
+    // HTMLInputElement::maximumLength when no valid has been set,
+    // whereas 'maxLength' IDL attribute returns -1.
     BLINK_EXPORT int maxLength() const;
     BLINK_EXPORT void setActivatedSubmit(bool);
     BLINK_EXPORT int size() const;
@@ -85,9 +88,9 @@ public:
     BLINK_EXPORT void setShouldRevealPassword(bool value);
 
 #if BLINK_IMPLEMENTATION
-    WebInputElement(const PassRefPtrWillBeRawPtr<HTMLInputElement>&);
-    WebInputElement& operator=(const PassRefPtrWillBeRawPtr<HTMLInputElement>&);
-    operator PassRefPtrWillBeRawPtr<HTMLInputElement>() const;
+    WebInputElement(HTMLInputElement*);
+    WebInputElement& operator=(HTMLInputElement*);
+    operator HTMLInputElement*() const;
 #endif
 };
 

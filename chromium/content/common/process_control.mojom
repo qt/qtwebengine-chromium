@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module content;
+module content.mojom;
 
-import "mojo/shell/public/interfaces/application.mojom";
+import "mojo/shell/public/interfaces/shell_client.mojom";
 
 interface ProcessControl {
-  LoadApplication(string url, mojo.Application& request) => (bool success);
+  LoadApplication(string url,
+                  mojo.shell.mojom.ShellClient& request) => (bool success);
 };
 

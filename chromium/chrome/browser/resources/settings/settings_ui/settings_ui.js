@@ -9,9 +9,6 @@
  * Example:
  *
  *    <settings-ui prefs="{{prefs}}"></settings-ui>
- *
- * @group Chrome Settings Elements
- * @element settings-ui
  */
 Polymer({
   is: 'settings-ui',
@@ -22,5 +19,16 @@ Polymer({
      * @type {?CrSettingsPrefsElement}
      */
     prefs: Object,
+
+    /** @type {?settings.DirectionDelegate} */
+    directionDelegate: {
+      observer: 'directionDelegateChanged_',
+      type: Object,
+    },
+  },
+
+  /** @private */
+  directionDelegateChanged_: function() {
+    this.$.panel.rightDrawer = this.directionDelegate.isRtl();
   },
 });

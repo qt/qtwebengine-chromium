@@ -49,10 +49,13 @@ DisplaySnapshot_Params GetDisplaySnapshotParams(
   params.type = display.type();
   params.is_aspect_preserving_scaling = display.is_aspect_preserving_scaling();
   params.has_overscan = display.has_overscan();
+  params.has_color_correction_matrix = display.has_color_correction_matrix();
   params.display_name = display.display_name();
   params.sys_path = display.sys_path();
   for (size_t i = 0; i < display.modes().size(); ++i)
     params.modes.push_back(GetDisplayModeParams(*display.modes()[i]));
+
+  params.edid = display.edid();
 
   params.has_current_mode = display.current_mode() != NULL;
   if (params.has_current_mode)

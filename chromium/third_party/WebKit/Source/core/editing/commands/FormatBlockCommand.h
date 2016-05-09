@@ -40,9 +40,9 @@ class Range;
 
 class FormatBlockCommand final : public ApplyBlockElementCommand {
 public:
-    static PassRefPtrWillBeRawPtr<FormatBlockCommand> create(Document& document, const QualifiedName& tagName)
+    static RawPtr<FormatBlockCommand> create(Document& document, const QualifiedName& tagName)
     {
-        return adoptRefWillBeNoop(new FormatBlockCommand(document, tagName));
+        return new FormatBlockCommand(document, tagName);
     }
 
     bool preservesTypingStyle() const override { return true; }
@@ -53,8 +53,8 @@ public:
 private:
     FormatBlockCommand(Document&, const QualifiedName& tagName);
 
-    void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection) override;
-    void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<HTMLElement>&) override;
+    void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection, EditingState*) override;
+    void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RawPtr<HTMLElement>&, EditingState*) override;
     EditAction editingAction() const override { return EditActionFormatBlock; }
 
     bool m_didApply;

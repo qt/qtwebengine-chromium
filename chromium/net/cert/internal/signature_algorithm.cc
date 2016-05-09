@@ -226,7 +226,8 @@ WARN_UNUSED_RESULT bool IsNull(const der::Input& input) {
 // Returns a nullptr on failure.
 //
 // RFC 5912 requires that the parameters for RSA PKCS#1 v1.5 algorithms be NULL
-// ("PARAMS TYPE NULL ARE required"):
+// ("PARAMS TYPE NULL ARE required"), however an empty parameter is also
+// allowed for compatibility with non-compliant OCSP responders:
 //
 //     sa-rsaWithSHA1 SIGNATURE-ALGORITHM ::= {
 //      IDENTIFIER sha1WithRSAEncryption
@@ -261,7 +262,8 @@ WARN_UNUSED_RESULT bool IsNull(const der::Input& input) {
 //     }
 scoped_ptr<SignatureAlgorithm> ParseRsaPkcs1(DigestAlgorithm digest,
                                              const der::Input& params) {
-  if (!IsNull(params))
+  // TODO(svaldez): Add warning about non-strict parsing.
+  if (!IsNull(params) && !IsEmpty(params))
     return nullptr;
 
   return SignatureAlgorithm::CreateRsaPkcs1(digest);
@@ -319,49 +321,6 @@ scoped_ptr<SignatureAlgorithm> ParseEcdsa(DigestAlgorithm digest,
   return SignatureAlgorithm::CreateEcdsa(digest);
 }
 
-// Parses a HashAlgorithm as defined by RFC 5912:
-//
-//     HashAlgorithm  ::=  AlgorithmIdentifier{DIGEST-ALGORITHM,
-//                             {HashAlgorithms}}
-//
-//     HashAlgorithms DIGEST-ALGORITHM ::=  {
-//         { IDENTIFIER id-sha1 PARAMS TYPE NULL ARE preferredPresent } |
-//         { IDENTIFIER id-sha224 PARAMS TYPE NULL ARE preferredPresent } |
-//         { IDENTIFIER id-sha256 PARAMS TYPE NULL ARE preferredPresent } |
-//         { IDENTIFIER id-sha384 PARAMS TYPE NULL ARE preferredPresent } |
-//         { IDENTIFIER id-sha512 PARAMS TYPE NULL ARE preferredPresent }
-//     }
-WARN_UNUSED_RESULT bool ParseHashAlgorithm(const der::Input input,
-                                           DigestAlgorithm* out) {
-  der::Input oid;
-  der::Input params;
-  if (!ParseAlgorithmIdentifier(input, &oid, &params))
-    return false;
-
-  DigestAlgorithm hash;
-
-  if (oid.Equals(der::Input(kOidSha1))) {
-    hash = DigestAlgorithm::Sha1;
-  } else if (oid.Equals(der::Input(kOidSha256))) {
-    hash = DigestAlgorithm::Sha256;
-  } else if (oid.Equals(der::Input(kOidSha384))) {
-    hash = DigestAlgorithm::Sha384;
-  } else if (oid.Equals(der::Input(kOidSha512))) {
-    hash = DigestAlgorithm::Sha512;
-  } else {
-    // Unsupported digest algorithm.
-    return false;
-  }
-
-  // From RFC 5912: "PARAMS TYPE NULL ARE preferredPresent". Which is to say
-  // the can either be absent, or NULL.
-  if (!IsEmpty(params) && !IsNull(params))
-    return false;
-
-  *out = hash;
-  return true;
-}
-
 // Parses a MaskGenAlgorithm as defined by RFC 5912:
 //
 //     MaskGenAlgorithm ::= AlgorithmIdentifier{ALGORITHM,
@@ -395,7 +354,7 @@ WARN_UNUSED_RESULT bool ParseMaskGenAlgorithm(const der::Input input,
     return false;
 
   // MGF1 is the only supported mask generation algorithm.
-  if (!oid.Equals(der::Input(kOidMgf1)))
+  if (oid != der::Input(kOidMgf1))
     return false;
 
   return ParseHashAlgorithm(params, mgf1_hash);
@@ -537,6 +496,37 @@ scoped_ptr<SignatureAlgorithm> ParseRsaPss(const der::Input& params) {
 
 }  // namespace
 
+WARN_UNUSED_RESULT bool ParseHashAlgorithm(const der::Input input,
+                                           DigestAlgorithm* out) {
+  der::Input oid;
+  der::Input params;
+  if (!ParseAlgorithmIdentifier(input, &oid, &params))
+    return false;
+
+  DigestAlgorithm hash;
+
+  if (oid == der::Input(kOidSha1)) {
+    hash = DigestAlgorithm::Sha1;
+  } else if (oid == der::Input(kOidSha256)) {
+    hash = DigestAlgorithm::Sha256;
+  } else if (oid == der::Input(kOidSha384)) {
+    hash = DigestAlgorithm::Sha384;
+  } else if (oid == der::Input(kOidSha512)) {
+    hash = DigestAlgorithm::Sha512;
+  } else {
+    // Unsupported digest algorithm.
+    return false;
+  }
+
+  // From RFC 5912: "PARAMS TYPE NULL ARE preferredPresent". Which is to say
+  // the can either be absent, or NULL.
+  if (!IsEmpty(params) && !IsNull(params))
+    return false;
+
+  *out = hash;
+  return true;
+}
+
 RsaPssParameters::RsaPssParameters(DigestAlgorithm mgf1_hash,
                                    uint32_t salt_length)
     : mgf1_hash_(mgf1_hash), salt_length_(salt_length) {
@@ -555,34 +545,34 @@ scoped_ptr<SignatureAlgorithm> SignatureAlgorithm::CreateFromDer(
   // TODO(eroman): Each OID is tested for equality in order, which is not
   // particularly efficient.
 
-  if (oid.Equals(der::Input(kOidSha1WithRsaEncryption)))
+  if (oid == der::Input(kOidSha1WithRsaEncryption))
     return ParseRsaPkcs1(DigestAlgorithm::Sha1, params);
 
-  if (oid.Equals(der::Input(kOidSha256WithRsaEncryption)))
+  if (oid == der::Input(kOidSha256WithRsaEncryption))
     return ParseRsaPkcs1(DigestAlgorithm::Sha256, params);
 
-  if (oid.Equals(der::Input(kOidSha384WithRsaEncryption)))
+  if (oid == der::Input(kOidSha384WithRsaEncryption))
     return ParseRsaPkcs1(DigestAlgorithm::Sha384, params);
 
-  if (oid.Equals(der::Input(kOidSha512WithRsaEncryption)))
+  if (oid == der::Input(kOidSha512WithRsaEncryption))
     return ParseRsaPkcs1(DigestAlgorithm::Sha512, params);
 
-  if (oid.Equals(der::Input(kOidEcdsaWithSha1)))
+  if (oid == der::Input(kOidEcdsaWithSha1))
     return ParseEcdsa(DigestAlgorithm::Sha1, params);
 
-  if (oid.Equals(der::Input(kOidEcdsaWithSha256)))
+  if (oid == der::Input(kOidEcdsaWithSha256))
     return ParseEcdsa(DigestAlgorithm::Sha256, params);
 
-  if (oid.Equals(der::Input(kOidEcdsaWithSha384)))
+  if (oid == der::Input(kOidEcdsaWithSha384))
     return ParseEcdsa(DigestAlgorithm::Sha384, params);
 
-  if (oid.Equals(der::Input(kOidEcdsaWithSha512)))
+  if (oid == der::Input(kOidEcdsaWithSha512))
     return ParseEcdsa(DigestAlgorithm::Sha512, params);
 
-  if (oid.Equals(der::Input(kOidRsaSsaPss)))
+  if (oid == der::Input(kOidRsaSsaPss))
     return ParseRsaPss(params);
 
-  if (oid.Equals(der::Input(kOidSha1WithRsaSignature)))
+  if (oid == der::Input(kOidSha1WithRsaSignature))
     return ParseRsaPkcs1(DigestAlgorithm::Sha1, params);
 
   return nullptr;  // Unsupported OID.

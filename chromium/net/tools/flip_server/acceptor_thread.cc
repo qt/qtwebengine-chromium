@@ -6,13 +6,13 @@
 
 #include <errno.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>  // For TCP_NODELAY
 #include <string.h>       // For strerror
 #include <sys/socket.h>
 #include <sys/types.h>
 
 #include <string>
 
+#include "net/socket/tcp_socket.h"
 #include "net/tools/flip_server/constants.h"
 #include "net/tools/flip_server/flip_config.h"
 #include "net/tools/flip_server/sm_connection.h"
@@ -82,17 +82,10 @@ void SMAcceptorThread::InitWorker() {
 
 void SMAcceptorThread::HandleConnection(int server_fd,
                                         struct sockaddr_in* remote_addr) {
-  int on = 1;
-  int rc;
   if (acceptor_->disable_nagle_) {
-    rc = setsockopt(server_fd,
-                    IPPROTO_TCP,
-                    TCP_NODELAY,
-                    reinterpret_cast<char*>(&on),
-                    sizeof(on));
-    if (rc < 0) {
+    if (!SetTCPNoDelay(server_fd, /*no_delay=*/true)) {
       close(server_fd);
-      LOG(ERROR) << "setsockopt() failed fd=" << server_fd;
+      LOG(FATAL) << "SetTCPNoDelay() failed on fd: " << server_fd;
       return;
     }
   }

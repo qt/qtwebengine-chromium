@@ -3,7 +3,6 @@
 <translationbundle lang="bn">
 <translation id="1001534784610492198">ইনস্টলার সংরক্ষণাগারটি দূষিত বা অকার্যকর৷ দয়া করে পুনরায় Google Chrome ডাউনলোড করুন৷</translation>
 <translation id="1013290471399003443">Chrome যাচাই করেছে যে <ph name="ISSUER" /> এই ওয়েবসাইটের শংসাপত্র জারি করেছে। সার্ভারটি বৈধ শংসাপত্র স্বচ্ছতা তথ্য সরবরাহ করেছে।</translation>
-<translation id="1016765312371154165">Chrome সঠিকভাবে বন্ধ হয়নি৷</translation>
 <translation id="103396972844768118">আপনার Chrome ডেটা সংক্রান্ত গুরুত্বপূর্ণ তথ্য</translation>
 <translation id="1035334672863811645">Chrome এ সাইন ইন করুন</translation>
 <translation id="1061441684050139317">এই সাইটের সাথে এটি শেয়ার করতে Chrome এর মাইক্রোফোন অ্যাক্সেস প্রয়োজন।</translation>
@@ -11,7 +10,6 @@
 <translation id="1073391069195728457">Chrome - বিজ্ঞপ্তিগুলি</translation>
 <translation id="1104959162601287462">&amp;Chrome OS সম্বন্ধে</translation>
 <translation id="110877069173485804">এটি হল আপনার Chrome</translation>
-<translation id="1225016890511909183">Chrome আপনার তথ্য নিরাপদে সঞ্চয় করে নেবে তাই আপনার আর টাইপ করা প্রয়োজন হবে না, কিন্তু ভবিষ্যতের অর্থপ্রদানের জন্য আপনাকে এখনো আপনার কার্ডের নিরাপত্তা কোড যাচাইকরণের প্রয়োজন হবে৷</translation>
 <translation id="123620459398936149">Chrome OS আপনার ডেটা সিঙ্ক করতে পারেনি৷ দয়া করে আপনার সিঙ্ক পাসফ্রেজ আপডেট করুন৷</translation>
 <translation id="127345590676626841">Chrome স্বয়ংক্রিয়ভাবে আপডেট হয় তাই আপনার কাছে সর্বদা নবীনতম সংস্করণটি থাকে৷ এই ডাউনলোডটি সম্পূর্ণ হলে, Chrome পুনরায় চালু হবে এবং আপনি আবার আগের মতো Chrome ব্যবহার করতে পারবেন৷</translation>
 <translation id="1302523850133262269">Chrome যখন সাম্প্রতিক সিস্টেম আপডেটগুলিকে ইনস্টল করে তখন দয়া করে অপেক্ষা করুন৷</translation>
@@ -36,6 +34,7 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Chrome OS ব্যবহার করে সাহায্য নিন</translation>
 <translation id="1818142563254268765">Chrome নিজে থেকেই এর সর্বশেষ সংস্করণে আপডেট হতে পারেনি, সেহেতু আপনি কিছু অসাধারণ নতুন বৈশিষ্ট্য ও নিরাপত্তা সমাধান উপভোগ করতে পারছেন না। আপনাকে Chrome আপডেট করতে হবে।</translation>
+<translation id="1864458292167284385">Chrome অ্যাপ্লিকেশান লঞ্চার চলে যাচ্ছে।</translation>
 <translation id="1877026089748256423">Chrome পুরানো হয়ে গেছে</translation>
 <translation id="2077129598763517140">যখনই উপলব্ধ তখন হার্ডওয়্যার অ্যাক্সিলারেশন ব্যবহার করুন</translation>
 <translation id="2084710999043359739">Chrome এ জুড়ুন</translation>
@@ -53,7 +52,6 @@
 <translation id="2397416548179033562">Chrome মেনু দেখান</translation>
 <translation id="2429317896000329049">আপনার ডোমেনে সিঙ্ক উপলব্ধ না থাকার কারণে Google Chrome সিঙ্ক করতে পারেনি৷</translation>
 <translation id="2485422356828889247">আনইনস্টল</translation>
-<translation id="2576431527583832481">Chrome আরো ভাল হয়েছে! একটি নতুন সংস্করণ উপলব্ধ আছে৷</translation>
 <translation id="2580411288591421699">বর্তমানে Google Chrome এর যে সংস্করণটি চলছে সেটি ইনস্টল করতে পারে না৷ দয়া করে Google Chrome বন্ধ করুন এবং আবার চেষ্টা করুন৷</translation>
 <translation id="2582790009689336987">এই কম্পিউটারটি শীঘ্রই Google Chrome এর আপডেটগুলি গ্রহণ করা বন্ধ করবে কারণ এই Linux সিস্টেম আর সমর্থন করা হবে না।</translation>
 <translation id="2588322182880276190">Chrome লোগো</translation>
@@ -92,6 +90,7 @@
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3881912906674381083">Chrome যাচাই করেছে যে <ph name="ISSUER" /> এই ওয়েবসাইটের শংসাপত্র জারি করেছে। সার্ভারটি শংসাপত্র স্বচ্ছতা তথ্য সরবরাহ করেছে, কিন্তু Chrome শংসাপত্র স্বচ্ছতা লগের কোনোটিই শনাক্ত করতে পারছে না।</translation>
 <translation id="3889417619312448367">Google Chrome আনইনস্টল করুন</translation>
+<translation id="396182988103551265">আপনার অ্যাপ্লিকেশানগুলি অ্যাক্সেস করা চালিয়ে যেতে Chrome বুকমার্কস দণ্ডের <ph name="APPS_ICON_IMAGE" /> শর্টকাট ব্যবহার করুন।</translation>
 <translation id="4042449298237264661">Windows XP ও Windows Vista আর সমর্থিত না হওয়ায় এই কম্পিউটারটি আর Google Chrome আপডেট গ্রহণ করবে না।</translation>
 <translation id="4050175100176540509">গুরুত্বপূর্ণ নিরাপত্তা উন্নতি এবং নতুন বৈশিষ্ট্যগুলি সর্বশেষ সংস্করণে উপলব্ধ।</translation>
 <translation id="4053720452172726777">Google Chrome কাস্টমাইজ ও নিয়ন্ত্রণ করুন</translation>
@@ -106,14 +105,12 @@
 <translation id="4407807842708586359">Google Chrome OS</translation>
 <translation id="4458285410772214805">দয়া করে পরিবর্তনটি সম্ভব করতে সাইন আউট এবং পুনরায় সাইন ইন করুন৷</translation>
 <translation id="4480040274068703980">সাইন ইনে ত্রুটির কারণে Chrome OS আপনার ডেটা সিঙ্ক করতে পারেনি৷</translation>
-<translation id="4513711165509885787">আপনার বিলের বিশদ বিবরণ Chrome এ সংরক্ষিত হয়েছে৷</translation>
 <translation id="4561051373932531560">Google Chrome আপনাকে ওয়েবে কোনো ফোন নম্বরে ক্লিক করতে এবং Skype-এর মাধ্যমে সেটিতে কল করতে দেয়!</translation>
 <translation id="4567424176335768812">আপনি <ph name="USER_EMAIL_ADDRESS" /> হিসাবে সাইন ইন করেছেন৷ এখন আপনি আপনার সমস্ত সাইন ইন করা ডিভাইসে আপনার বুকমার্ক, ইতিহাস এবং অন্যান্য সেটিংস অ্যাক্সেস করতে পারেন৷</translation>
 <translation id="4631713731678262610">Chromium মেনুর মধ্যে লুকান</translation>
 <translation id="4633000520311261472">Chrome কে আরো নিরাপদ করতে, আমরা কিছু এক্সটেনশান অক্ষম করেছি যা <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> এ তালিকাবদ্ধ করা হয়নি এবং হয়ত আপনাকে না জানিয়ে যোগ করা হয়েছে৷</translation>
 <translation id="4700157086864140907">Google Chrome আপনি Google সার্ভারগুলিতে ব্রাউজারে কী টাইপ করেন তা পাঠিয়ে আরো স্মার্ট বানান-পরীক্ষণ সরবরাহ করতে পারে এতে আপনাকে Google অনুসন্ধানে ব্যবহৃত একই বানান-পরীক্ষণের প্রযুক্তি ব্যবহার করার অনুমতি দেয়৷</translation>
 <translation id="4728575227883772061">অনির্দিষ্ট ত্রুটির জন্য ইনস্টলেশন ব্যর্থ হয়েছে৷ যদি Google Chrome বর্তমানে চলতে থাকে তবে দয়া করে এটি বন্ধ করে আবার চেষ্টা করুন৷</translation>
-<translation id="473775607612524610">আপডেট</translation>
 <translation id="4743926867934016338">স্বীকার ও অনুসন্ধান করুন</translation>
 <translation id="4751441238232965030">এই কম্পিউটারটি শীঘ্রই ৩২-বিট Google Chrome আপডেট গ্রহণ করা বন্ধ করবে। দয়া করে ৬৪-বিট Google Chrome এ আপগ্রেড করুন।</translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
@@ -219,6 +216,7 @@
 <translation id="8032142183999901390">Chrome থেকে আপনার অ্যাকাউন্ট সরানোর পরে, কার্য়করী করতে আপনাকে খোলা ট্যাবগুলিকে  পুনরায় লোড করার প্রয়োজন হতে পারে।</translation>
 <translation id="8037887340639533879">আপডেট করার জন্য Google Chrome এর কোনো ইনস্টলশান পাওয়া যায়নি৷</translation>
 <translation id="8129812357326543296">&amp;Google Chrome সম্বন্ধে</translation>
+<translation id="8183957050892517584">Chrome আপনার ব্যক্তিগত বিবরণ সুরক্ষিত ভাবে সঞ্চয় করবে, তাই আপনার আর টাইপ করার প্রয়োজন হবে না।</translation>
 <translation id="8205111949707227942">ঐচ্ছিক: Google-এ ব্যবহার পরিসংখ্যান এবং ক্র্যাশ প্রতিবেদন স্বয়ংক্রিয়ভাবে পাঠিয়ে  Chrome-কে সর্বোত্তম করে তুলতে সাহায্য করুন৷</translation>
 <translation id="8227755444512189073"><ph name="SCHEME" /> লিঙ্কগুলি নিয়ন্ত্রণ করার জন্য Google Chrome-এর একটি বহিরাগত অ্যাপ্লিকেশন প্রবর্তন করা দরকার৷ অনুরোধ করা লিঙ্কটি হল <ph name="PROTOLINK" />৷</translation>
 <translation id="8255190535488645436">Google Chrome আপনার ক্যামেরা এবং মাইক্রোফোন ব্যবহার করছে৷</translation>

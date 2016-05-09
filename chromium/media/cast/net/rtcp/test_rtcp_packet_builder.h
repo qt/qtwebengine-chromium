@@ -8,6 +8,7 @@
 #define MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
 
 #include <stdint.h>
+#include <vector>
 
 #include "base/big_endian.h"
 #include "base/macros.h"
@@ -48,34 +49,39 @@ static const uint32_t kFrameIdWithLostPackets = 19;
 static const int kLostPacketId1 = 3;
 static const int kLostPacketId2 = 5;
 static const int kLostPacketId3 = 12;
+static const uint8_t kFeedbackSeq = 1;
 }  // namespace
 
 class TestRtcpPacketBuilder {
  public:
   TestRtcpPacketBuilder();
 
-  void AddSr(uint32_t sender_ssrc, int number_of_report_blocks);
-  void AddSrWithNtp(uint32_t sender_ssrc,
+  void AddSr(uint32_t remote_ssrc, int number_of_report_blocks);
+  void AddSrWithNtp(uint32_t remote_ssrc,
                     uint32_t ntp_high,
                     uint32_t ntp_low,
                     uint32_t rtp_timestamp);
-  void AddRr(uint32_t sender_ssrc, int number_of_report_blocks);
+  void AddRr(uint32_t remote_ssrc, int number_of_report_blocks);
   void AddRb(uint32_t rtp_ssrc);
 
-  void AddXrHeader(uint32_t sender_ssrc);
-  void AddXrDlrrBlock(uint32_t sender_ssrc);
-  void AddXrExtendedDlrrBlock(uint32_t sender_ssrc);
+  void AddXrHeader(uint32_t remote_ssrc);
+  void AddXrDlrrBlock(uint32_t remote_ssrc);
+  void AddXrExtendedDlrrBlock(uint32_t remote_ssrc);
   void AddXrRrtrBlock();
   void AddXrUnknownBlock();
   void AddUnknownBlock();
 
-  void AddNack(uint32_t sender_ssrc, uint32_t media_ssrc);
-  void AddSendReportRequest(uint32_t sender_ssrc, uint32_t media_ssrc);
+  void AddNack(uint32_t remote_ssrc, uint32_t local_ssrc);
+  void AddSendReportRequest(uint32_t remote_ssrc, uint32_t local_ssrc);
 
-  void AddCast(uint32_t sender_ssrc,
-               uint32_t media_ssrc,
+  void AddCast(uint32_t remote_ssrc,
+               uint32_t local_ssrc,
                base::TimeDelta target_delay);
-  void AddReceiverLog(uint32_t sender_ssrc);
+  void AddCst2(const std::vector<uint32_t>& later_received_frames);
+  void AddErrorCst2();  // With wrong identifier.
+  void AddPli(uint32_t remote_ssrc, uint32_t local_ssrc);
+
+  void AddReceiverLog(uint32_t remote_ssrc);
   void AddReceiverFrameLog(uint32_t rtp_timestamp,
                            int num_events,
                            uint32_t event_timesamp_base);

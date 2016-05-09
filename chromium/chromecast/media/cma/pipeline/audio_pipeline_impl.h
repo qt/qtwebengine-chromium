@@ -5,10 +5,10 @@
 #ifndef CHROMECAST_MEDIA_CMA_BASE_AUDIO_PIPELINE_IMPL_H_
 #define CHROMECAST_MEDIA_CMA_BASE_AUDIO_PIPELINE_IMPL_H_
 
+#include <memory>
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "chromecast/media/cma/pipeline/av_pipeline_client.h"
 #include "chromecast/media/cma/pipeline/av_pipeline_impl.h"
 #include "chromecast/public/media/media_pipeline_backend.h"
@@ -30,9 +30,9 @@ class AudioPipelineImpl : public AvPipelineImpl {
                     const AvPipelineClient& client);
   ~AudioPipelineImpl() override;
 
-  void Initialize(const ::media::AudioDecoderConfig& config,
-                  scoped_ptr<CodedFrameProvider> frame_provider,
-                  const ::media::PipelineStatusCB& status_cb);
+  ::media::PipelineStatus Initialize(
+      const ::media::AudioDecoderConfig& config,
+      std::unique_ptr<CodedFrameProvider> frame_provider);
 
   void SetVolume(float volume);
 

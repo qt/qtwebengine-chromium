@@ -50,17 +50,17 @@ CONTENT_EXPORT extern const char kChromeUIBadCastCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIBrowserCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIBrowserUIHang[];
 CONTENT_EXPORT extern const char kChromeUICrashURL[];
+CONTENT_EXPORT extern const char kChromeUIDelayedBrowserUIHang[];
 CONTENT_EXPORT extern const char kChromeUIDumpURL[];
 CONTENT_EXPORT extern const char kChromeUIGpuCleanURL[];
 CONTENT_EXPORT extern const char kChromeUIGpuCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIGpuHangURL[];
 CONTENT_EXPORT extern const char kChromeUIHangURL[];
 CONTENT_EXPORT extern const char kChromeUIKillURL[];
-CONTENT_EXPORT extern const char kChromeUINetworkErrorURL[];
 CONTENT_EXPORT extern const char kChromeUINetworkErrorsListingURL[];
+CONTENT_EXPORT extern const char kChromeUINetworkErrorURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashCrashURL[];
 CONTENT_EXPORT extern const char kChromeUIPpapiFlashHangURL[];
-CONTENT_EXPORT extern const char kChromeUIServiceWorkerInternalsURL[];
 
 // Special URL used to start a navigation to an error page.
 CONTENT_EXPORT extern const char kUnreachableWebDataURL[];
@@ -69,9 +69,6 @@ CONTENT_EXPORT extern const char kUnreachableWebDataURL[];
 CONTENT_EXPORT extern const char kChromeUINetworkViewCacheURL[];
 CONTENT_EXPORT extern const char kChromeUIResourcesURL[];
 CONTENT_EXPORT extern const char kChromeUIShorthangURL[];
-
-// Special URL used to swap out a view being rendered by another process.
-CONTENT_EXPORT extern const char kSwappedOutURL[];
 
 }  // namespace content
 

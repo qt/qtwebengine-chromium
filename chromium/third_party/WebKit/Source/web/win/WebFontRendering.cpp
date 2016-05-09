@@ -15,21 +15,16 @@ void WebFontRendering::setUseDirectWrite(bool useDirectWrite)
 }
 
 // static
-void WebFontRendering::setDirectWriteFactory(IDWriteFactory* factory)
+void WebFontRendering::setSkiaFontManager(SkFontMgr* fontMgr)
 {
-    FontCache::setDirectWriteFactory(factory);
+    WTF::adopted(fontMgr);
+    FontCache::setFontManager(RefPtr<SkFontMgr>(fontMgr));
 }
 
 // static
 void WebFontRendering::setDeviceScaleFactor(float deviceScaleFactor)
 {
     FontCache::setDeviceScaleFactor(deviceScaleFactor);
-}
-
-// static
-void WebFontRendering::setUseSubpixelPositioning(bool useSubpixelPositioning)
-{
-    FontCache::setUseSubpixelPositioning(useSubpixelPositioning);
 }
 
 // static
@@ -66,6 +61,18 @@ void WebFontRendering::setLCDOrder(SkFontHost::LCDOrder order)
 void WebFontRendering::setLCDOrientation(SkFontHost::LCDOrientation orientation)
 {
     SkFontHost::SetSubpixelOrientation(orientation);
+}
+
+// static
+void WebFontRendering::setAntialiasedTextEnabled(bool enabled)
+{
+    FontCache::setAntialiasedTextEnabled(enabled);
+}
+
+// static
+void WebFontRendering::setLCDTextEnabled(bool enabled)
+{
+    FontCache::setLCDTextEnabled(enabled);
 }
 
 } // namespace blink

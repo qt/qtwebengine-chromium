@@ -63,7 +63,8 @@ WebInspector.DOMNode = function(domModel, doc, isInShadowTree, payload)
     if (payload.attributes)
         this._setAttributesPayload(payload.attributes);
 
-    this._markers = {};
+    /** @type {!Map<string, ?>} */
+    this._markers = new Map();
     this._subtreeMarkerCount = 0;
 
     this._childNodeCount = payload.childNodeCount || 0;
@@ -795,10 +796,10 @@ WebInspector.DOMNode.prototype = {
     setMarker: function(name, value)
     {
         if (value === null) {
-            if (!this._markers.hasOwnProperty(name))
+            if (!this._markers.has(name))
                 return;
 
-            delete this._markers[name];
+            this._markers.delete(name);
             for (var node = this; node; node = node.parentNode)
                 --node._subtreeMarkerCount;
             for (var node = this; node; node = node.parentNode)
@@ -806,11 +807,11 @@ WebInspector.DOMNode.prototype = {
             return;
         }
 
-        if (this.parentNode && !this._markers.hasOwnProperty(name)) {
+        if (this.parentNode && !this._markers.has(name)) {
             for (var node = this; node; node = node.parentNode)
                 ++node._subtreeMarkerCount;
         }
-        this._markers[name] = value;
+        this._markers.set(name, value);
         for (var node = this; node; node = node.parentNode)
             this._domModel.dispatchEventToListeners(WebInspector.DOMModel.Events.MarkersChanged, node);
     },
@@ -822,15 +823,7 @@ WebInspector.DOMNode.prototype = {
      */
     marker: function(name)
     {
-        return this._markers[name] || null;
-    },
-
-    /**
-     * @return {!Array<string>}
-     */
-    markers: function()
-    {
-        return Object.values(this._markers);
+        return this._markers.get(name) || null;
     },
 
     /**
@@ -845,7 +838,7 @@ WebInspector.DOMNode.prototype = {
         {
             if (!node._subtreeMarkerCount)
                 return;
-            for (var marker in node._markers)
+            for (var marker of node._markers.keys())
                 visitor(node, marker);
             if (!node._children)
                 return;
@@ -1084,8 +1077,7 @@ WebInspector.DOMModel = function(target) {
     this._attributeLoadNodeIds = {};
     target.registerDOMDispatcher(new WebInspector.DOMDispatcher(this));
 
-    this._showRulers = false;
-    this._showExtensionLines = false;
+    this._inspectModeEnabled = false;
 
     this._defaultHighlighter = new WebInspector.DefaultDOMNodeHighlighter(this._agent);
     this._highlighter = this._defaultHighlighter;
@@ -1786,20 +1778,19 @@ WebInspector.DOMModel.prototype = {
          */
         function onDocumentAvailable()
         {
-            this.dispatchEventToListeners(WebInspector.DOMModel.Events.InspectModeWillBeToggled, mode !== DOMAgent.InspectMode.None);
+            this._inspectModeEnabled = mode !== DOMAgent.InspectMode.None;
+            this.dispatchEventToListeners(WebInspector.DOMModel.Events.InspectModeWillBeToggled, this._inspectModeEnabled);
             this._highlighter.setInspectMode(mode, this._buildHighlightConfig(), callback);
         }
         this.requestDocument(onDocumentAvailable.bind(this));
     },
 
     /**
-     * @param {boolean} showRulers
-     * @param {boolean} showExtensionLines
+     * @return {boolean}
      */
-    setHighlightSettings: function(showRulers, showExtensionLines)
+    inspectModeEnabled: function()
     {
-        this._showRulers = showRulers;
-        this._showExtensionLines = showExtensionLines;
+        return this._inspectModeEnabled;
     },
 
     /**
@@ -1809,7 +1800,8 @@ WebInspector.DOMModel.prototype = {
     _buildHighlightConfig: function(mode)
     {
         mode = mode || "all";
-        var highlightConfig = { showInfo: mode === "all", showRulers: this._showRulers, showExtensionLines: this._showExtensionLines };
+        var showRulers = WebInspector.moduleSetting("showMetricsRulers").get();
+        var highlightConfig = { showInfo: mode === "all", showRulers: showRulers, showExtensionLines: showRulers };
         if (mode === "all" || mode === "content")
             highlightConfig.contentColor = WebInspector.Color.PageHighlight.Content.toProtocolRGBA();
 
@@ -1826,7 +1818,7 @@ WebInspector.DOMModel.prototype = {
             highlightConfig.eventTargetColor = WebInspector.Color.PageHighlight.EventTarget.toProtocolRGBA();
             highlightConfig.shapeColor = WebInspector.Color.PageHighlight.Shape.toProtocolRGBA();
             highlightConfig.shapeMarginColor = WebInspector.Color.PageHighlight.ShapeMargin.toProtocolRGBA();
-            highlightConfig.displayAsMaterial = Runtime.experiments.isEnabled("materialDesign");
+            highlightConfig.displayAsMaterial = Runtime.experiments.isEnabled("inspectTooltip");
         }
         return highlightConfig;
     },

@@ -12,11 +12,13 @@
 #define WEBRTC_MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_H_
 
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "webrtc/modules/include/module.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "webrtc/modules/video_coding/include/video_coding_defines.h"
 
 namespace webrtc {
 // Forward declarations.
@@ -24,6 +26,10 @@ class ReceiveStatistics;
 class RemoteBitrateEstimator;
 class RtpReceiver;
 class Transport;
+class RtcEventLog;
+
+RTPExtensionType StringToRtpExtensionType(const std::string& extension);
+
 namespace rtcp {
 class TransportFeedback;
 }
@@ -49,8 +55,6 @@ class RtpRtcp : public Module {
     *  intra_frame_callback - Called when the receiver request a intra frame.
     *  bandwidth_callback   - Called when we receive a changed estimate from
     *                         the receiver of out stream.
-    *  audio_messages       - Telephone events. May not be NULL; default
-    *                         callback will do nothing.
     *  remote_bitrate_estimator - Estimates the bandwidth available for a set of
     *                             streams from the same client.
     *  paced_sender             - Spread any bursts of packets into smaller
@@ -66,13 +70,15 @@ class RtpRtcp : public Module {
     TransportFeedbackObserver* transport_feedback_callback;
     RtcpRttStats* rtt_stats;
     RtcpPacketTypeCounterObserver* rtcp_packet_type_counter_observer;
-    RtpAudioFeedback* audio_messages;
     RemoteBitrateEstimator* remote_bitrate_estimator;
     RtpPacketSender* paced_sender;
     TransportSequenceNumberAllocator* transport_sequence_number_allocator;
     BitrateStatisticsObserver* send_bitrate_observer;
     FrameCountObserver* send_frame_count_observer;
     SendSideDelayObserver* send_side_delay_observer;
+    RtcEventLog* event_log;
+
+    RTC_DISALLOW_COPY_AND_ASSIGN(Configuration);
   };
 
   /*
@@ -160,6 +166,9 @@ class RtpRtcp : public Module {
     virtual int32_t RegisterSendPayload(
         const VideoCodec& videoCodec) = 0;
 
+    virtual void RegisterVideoSendPayload(int payload_type,
+                                          const char* payload_name) = 0;
+
     /*
     *   Unregister a send payload
     *
@@ -243,10 +252,6 @@ class RtpRtcp : public Module {
     // doesn't enable RTX, only the payload type is set.
     virtual void SetRtxSendPayloadType(int payload_type,
                                        int associated_payload_type) = 0;
-
-    // Gets the payload type pair of (RTX, associated) to use when sending RTX
-    // packets.
-    virtual std::pair<int, int> RtxSendPayloadType() const = 0;
 
     /*
     *   sends kRtcpByeCode when going from true to false
@@ -527,7 +532,15 @@ class RtpRtcp : public Module {
     *
     *   return -1 on failure else 0
     */
+    // TODO(philipel): Deprecate this and start using SendNack instead,
+    //                 mostly because we want a function that actually send
+    //                 NACK for the specified packets.
     virtual int32_t SendNACK(const uint16_t* nackList, uint16_t size) = 0;
+
+    /*
+    *   Send NACK for the packets specified.
+    */
+    virtual void SendNack(const std::vector<uint16_t>& sequence_numbers) = 0;
 
     /*
     *   Store the sent packets, needed to answer to a Negative acknowledgement

@@ -8,12 +8,13 @@
 #include <stddef.h>
 
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "media/audio/audio_parameters.h"
+#include "media/base/audio_bus.h"
 #include "media/base/audio_capturer_source.h"
-#include "media/base/audio_fifo.h"
+#include "media/base/audio_push_fifo.h"
 #include "third_party/WebKit/public/platform/WebAudioDestinationConsumer.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -29,12 +30,11 @@ class WebRtcLocalAudioTrack;
 //    (channels, and sample-rate).
 // 2. consumeAudio() is called periodically by WebKit which dispatches the
 //    audio stream to the WebRtcLocalAudioTrack::Capture() method.
-class WebAudioCapturerSource
-    :  public base::RefCountedThreadSafe<WebAudioCapturerSource>,
-       public blink::WebAudioDestinationConsumer {
+class WebAudioCapturerSource : public blink::WebAudioDestinationConsumer {
  public:
-  explicit WebAudioCapturerSource(
-      const blink::WebMediaStreamSource& blink_source);
+  explicit WebAudioCapturerSource(blink::WebMediaStreamSource* blink_source);
+
+  ~WebAudioCapturerSource() override;
 
   // WebAudioDestinationConsumer implementation.
   // setFormat() is called early on, so that we can configure the audio track.
@@ -45,29 +45,27 @@ class WebAudioCapturerSource
                     size_t number_of_frames) override;
 
   // Called when the WebAudioCapturerSource is hooking to a media audio track.
-  // |track| is the sink of the data flow. |source_provider| is the source of
-  // the data flow where stream information like delay, volume, key_pressed,
-  // is stored.
+  // |track| is the sink of the data flow and must remain alive until Stop() is
+  // called.
   void Start(WebRtcLocalAudioTrack* track);
 
   // Called when the media audio track is stopping.
   void Stop();
 
- protected:
-  friend class base::RefCountedThreadSafe<WebAudioCapturerSource>;
-  ~WebAudioCapturerSource() override;
-
  private:
-  // Removes this object from a blink::WebMediaStreamSource with which it
-  // might be registered. The goal is to avoid dangling pointers.
-  void removeFromBlinkSource();
+  // Called by AudioPushFifo zero or more times during the call to
+  // consumeAudio().  Delivers audio data with the required buffer size to the
+  // track.
+  void DeliverRebufferedAudio(const media::AudioBus& audio_bus,
+                              int frame_delay);
+
+  // Deregisters this object from its blink::WebMediaStreamSource.
+  void DeregisterFromBlinkSource();
 
   // Used to DCHECK that some methods are called on the correct thread.
   base::ThreadChecker thread_checker_;
 
   // The audio track this WebAudioCapturerSource is feeding data to.
-  // WebRtcLocalAudioTrack is reference counted, and owning this object.
-  // To avoid circular reference, a raw pointer is kept here.
   WebRtcLocalAudioTrack* track_;
 
   media::AudioParameters params_;
@@ -75,14 +73,18 @@ class WebAudioCapturerSource
   // Flag to help notify the |track_| when the audio format has changed.
   bool audio_format_changed_;
 
-  // Wraps data coming from HandleCapture().
-  scoped_ptr<media::AudioBus> wrapper_bus_;
+  // A wrapper used for providing audio to |fifo_|.
+  std::unique_ptr<media::AudioBus> wrapper_bus_;
 
-  // Bus for reading from FIFO and calling the CaptureCallback.
-  scoped_ptr<media::AudioBus> capture_bus_;
+  // Takes in the audio data passed to consumeAudio() and re-buffers it into 10
+  // ms chunks for the track.  This ensures each chunk of audio delivered to the
+  // track has the required buffer size, regardless of the amount of audio
+  // provided via each consumeAudio() call.
+  media::AudioPushFifo fifo_;
 
-  // Handles mismatch between WebAudio buffer size and WebRTC.
-  scoped_ptr<media::AudioFifo> fifo_;
+  // Used to pass the reference timestamp between DeliverDecodedAudio() and
+  // DeliverRebufferedAudio().
+  base::TimeTicks current_reference_time_;
 
   // Synchronizes HandleCapture() with AudioCapturerSource calls.
   base::Lock lock_;

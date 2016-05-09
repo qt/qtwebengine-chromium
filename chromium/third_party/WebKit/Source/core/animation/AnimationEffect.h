@@ -61,6 +61,8 @@ static inline double nullValue()
     return std::numeric_limits<double>::quiet_NaN();
 }
 
+// Represents the content of an Animation and its fractional timing state.
+// http://w3c.github.io/web-animations/#animation-effect
 class CORE_EXPORT AnimationEffect : public GarbageCollectedFinalized<AnimationEffect>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
     friend class Animation; // Calls attach/detach, updateInheritedTime.
@@ -85,7 +87,7 @@ public:
 
     virtual bool isKeyframeEffect() const { return false; }
 
-    Phase phase() const { return ensureCalculated().phase; }
+    Phase getPhase() const { return ensureCalculated().phase; }
     bool isCurrent() const { return ensureCalculated().isCurrent; }
     bool isInEffect() const { return ensureCalculated().isInEffect; }
     bool isInPlay() const { return ensureCalculated().isInPlay; }
@@ -106,9 +108,6 @@ public:
 
     void computedTiming(ComputedTimingProperties&);
     ComputedTimingProperties computedTiming();
-
-    void setName(const String& name) { m_name = name; }
-    const String& name() const { return m_name; }
 
     DECLARE_VIRTUAL_TRACE();
 

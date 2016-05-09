@@ -26,15 +26,14 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 
 #include "core/html/canvas/CanvasImageSource.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace blink {
 
 CanvasRenderingContext::CanvasRenderingContext(HTMLCanvasElement* canvas)
-    : ActiveDOMObject(&canvas->document())
-    , m_canvas(canvas)
+    : m_canvas(canvas)
 {
-    suspendIfNeeded();
 }
 
 CanvasRenderingContext::ContextType CanvasRenderingContext::contextTypeFromId(const String& id)
@@ -47,7 +46,9 @@ CanvasRenderingContext::ContextType CanvasRenderingContext::contextTypeFromId(co
         return ContextWebgl;
     if (id == "webgl2")
         return ContextWebgl2;
-
+    if (id == "bitmaprenderer" && RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled()) {
+        return ContextImageBitmap;
+    }
     return ContextTypeCount;
 }
 
@@ -64,19 +65,19 @@ bool CanvasRenderingContext::wouldTaintOrigin(CanvasImageSource* imageSource)
     bool hasURL = (sourceURL.isValid() && !sourceURL.isAboutBlankURL());
 
     if (hasURL) {
-        if (sourceURL.protocolIsData() || m_cleanURLs.contains(sourceURL.string()))
+        if (sourceURL.protocolIsData() || m_cleanURLs.contains(sourceURL.getString()))
             return false;
-        if (m_dirtyURLs.contains(sourceURL.string()))
+        if (m_dirtyURLs.contains(sourceURL.getString()))
             return true;
     }
 
-    bool taintOrigin = imageSource->wouldTaintOrigin(canvas()->securityOrigin());
+    bool taintOrigin = imageSource->wouldTaintOrigin(canvas()->getSecurityOrigin());
 
     if (hasURL) {
         if (taintOrigin)
-            m_dirtyURLs.add(sourceURL.string());
+            m_dirtyURLs.add(sourceURL.getString());
         else
-            m_cleanURLs.add(sourceURL.string());
+            m_cleanURLs.add(sourceURL.getString());
     }
     return taintOrigin;
 }
@@ -84,17 +85,6 @@ bool CanvasRenderingContext::wouldTaintOrigin(CanvasImageSource* imageSource)
 DEFINE_TRACE(CanvasRenderingContext)
 {
     visitor->trace(m_canvas);
-    ActiveDOMObject::trace(visitor);
-}
-
-bool CanvasRenderingContext::hasPendingActivity() const
-{
-    return false;
-}
-
-void CanvasRenderingContext::didMoveToNewDocument(Document* document)
-{
-    ActiveDOMObject::didMoveToNewExecutionContext(document);
 }
 
 } // namespace blink

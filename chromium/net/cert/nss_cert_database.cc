@@ -78,6 +78,9 @@ NSSCertDatabase::ImportCertFailure::ImportCertFailure(
     int err)
     : certificate(cert), net_error(err) {}
 
+NSSCertDatabase::ImportCertFailure::ImportCertFailure(
+    const ImportCertFailure& other) = default;
+
 NSSCertDatabase::ImportCertFailure::~ImportCertFailure() {}
 
 NSSCertDatabase::NSSCertDatabase(crypto::ScopedPK11Slot public_slot,
@@ -452,19 +455,19 @@ void NSSCertDatabase::NotifyCertRemovalAndCallBack(
 
 void NSSCertDatabase::NotifyObserversOfCertAdded(const X509Certificate* cert) {
   observer_list_->Notify(FROM_HERE, &Observer::OnCertAdded,
-                         make_scoped_refptr(cert));
+                         base::RetainedRef(cert));
 }
 
 void NSSCertDatabase::NotifyObserversOfCertRemoved(
     const X509Certificate* cert) {
   observer_list_->Notify(FROM_HERE, &Observer::OnCertRemoved,
-                         make_scoped_refptr(cert));
+                         base::RetainedRef(cert));
 }
 
 void NSSCertDatabase::NotifyObserversOfCACertChanged(
     const X509Certificate* cert) {
   observer_list_->Notify(FROM_HERE, &Observer::OnCACertChanged,
-                         make_scoped_refptr(cert));
+                         base::RetainedRef(cert));
 }
 
 // static

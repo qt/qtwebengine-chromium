@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // This file contains structures used to represent SkBitmaps in Mojo.
-module skia;
+module skia.mojom;
 
 // Mirror of SkColorType.
 enum ColorType {
@@ -20,7 +20,7 @@ enum ColorType {
 // Mirror of SkAlphaType.
 enum AlphaType {
   UNKNOWN,
-  OPAQUE,
+  ALPHA_TYPE_OPAQUE,
   PREMUL,
   UNPREMUL,
 };

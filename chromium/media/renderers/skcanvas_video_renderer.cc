@@ -13,6 +13,7 @@
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
 #include "skia/ext/refptr.h"
+#include "skia/ext/texture_handle.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -22,6 +23,7 @@
 #include "third_party/skia/include/gpu/GrTexture.h"
 #include "third_party/skia/include/gpu/GrTextureProvider.h"
 #include "third_party/skia/include/gpu/SkGr.h"
+#include "third_party/skia/include/gpu/gl/GrGLTypes.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/skia_util.h"
 
@@ -95,7 +97,7 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
   gfx::Size uv_tex_size((ya_tex_size.width() + 1) / 2,
                         (ya_tex_size.height() + 1) / 2);
 
-  unsigned source_textures[3] = {0};
+  GrGLTextureInfo source_textures[] = {{0, 0}, {0, 0}, {0, 0}};
   for (size_t i = 0; i < media::VideoFrame::NumPlanes(video_frame->format());
        ++i) {
     // Get the texture from the mailbox and wrap it in a GrTexture.
@@ -104,8 +106,9 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
            mailbox_holder.texture_target == GL_TEXTURE_EXTERNAL_OES ||
            mailbox_holder.texture_target == GL_TEXTURE_RECTANGLE_ARB);
     gl->WaitSyncTokenCHROMIUM(mailbox_holder.sync_token.GetConstData());
-    source_textures[i] = gl->CreateAndConsumeTextureCHROMIUM(
+    source_textures[i].fID = gl->CreateAndConsumeTextureCHROMIUM(
         mailbox_holder.texture_target, mailbox_holder.mailbox.name);
+    source_textures[i].fTarget = mailbox_holder.texture_target;
 
     // TODO(dcastagna): avoid this copy once Skia supports native textures
     // with a texture target different than TEXTURE_2D.
@@ -115,22 +118,18 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
       gl->GenTextures(1, &texture_copy);
       DCHECK(texture_copy);
       gl->BindTexture(GL_TEXTURE_2D, texture_copy);
-      gl->CopyTextureCHROMIUM(source_textures[i], texture_copy, GL_RGB,
+      gl->CopyTextureCHROMIUM(source_textures[i].fID, texture_copy, GL_RGB,
                               GL_UNSIGNED_BYTE, false, true, false);
 
-      gl->DeleteTextures(1, &source_textures[i]);
-      source_textures[i] = texture_copy;
+      gl->DeleteTextures(1, &source_textures[i].fID);
+      source_textures[i].fID = texture_copy;
+      source_textures[i].fTarget = GL_TEXTURE_2D;
     }
   }
-  DCHECK_LE(source_textures[0],
-            static_cast<unsigned>(std::numeric_limits<int>::max()));
-  DCHECK_LE(source_textures[1],
-            static_cast<unsigned>(std::numeric_limits<int>::max()));
-  DCHECK_LE(source_textures[2],
-            static_cast<unsigned>(std::numeric_limits<int>::max()));
-  GrBackendObject handles[3] = {static_cast<int>(source_textures[0]),
-                                static_cast<int>(source_textures[1]),
-                                static_cast<int>(source_textures[2])};
+  GrBackendObject handles[3] = {
+      skia::GrGLTextureInfoToGrBackendObject(source_textures[0]),
+      skia::GrGLTextureInfoToGrBackendObject(source_textures[1]),
+      skia::GrGLTextureInfoToGrBackendObject(source_textures[2])};
 
   SkISize yuvSizes[] = {
       {ya_tex_size.width(), ya_tex_size.height()},
@@ -147,7 +146,10 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
   SkImage* img = SkImage::NewFromYUVTexturesCopy(context_3d.gr_context,
                                                  color_space, handles, yuvSizes,
                                                  kTopLeft_GrSurfaceOrigin);
-  gl->DeleteTextures(3, source_textures);
+  for (size_t i = 0; i < media::VideoFrame::NumPlanes(video_frame->format());
+       ++i) {
+    gl->DeleteTextures(1, &source_textures[i].fID);
+  }
   return skia::AdoptRef(img);
 }
 
@@ -190,9 +192,11 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameNative(
   desc.fWidth = video_frame->coded_size().width();
   desc.fHeight = video_frame->coded_size().height();
   desc.fConfig = kRGBA_8888_GrPixelConfig;
-  DCHECK_LE(source_texture,
-            static_cast<unsigned>(std::numeric_limits<int>::max()));
-  desc.fTextureHandle = static_cast<int>(source_texture);
+  GrGLTextureInfo source_texture_info;
+  source_texture_info.fID = source_texture;
+  source_texture_info.fTarget = GL_TEXTURE_2D;
+  desc.fTextureHandle =
+      skia::GrGLTextureInfoToGrBackendObject(source_texture_info);
   return skia::AdoptRef(
       SkImage::NewFromAdoptedTexture(context_3d.gr_context, desc));
 }
@@ -223,10 +227,8 @@ class VideoImageGenerator : public SkImageGenerator {
     return true;
   }
 
-  bool onGetYUV8Planes(SkISize sizes[3],
-                       void* planes[3],
-                       size_t row_bytes[3],
-                       SkYUVColorSpace* color_space) override {
+  bool onQueryYUV8(SkYUVSizeInfo* sizeInfo,
+                   SkYUVColorSpace* color_space) const override {
     if (!media::IsYuvPlanar(frame_->format()) ||
         // TODO(rileya): Skia currently doesn't support YUVA conversion. Remove
         // this case once it does. As-is we will fall back on the pure-software
@@ -246,46 +248,61 @@ class VideoImageGenerator : public SkImageGenerator {
 
     for (int plane = VideoFrame::kYPlane; plane <= VideoFrame::kVPlane;
          ++plane) {
-      if (sizes) {
-        const gfx::Size size =
-            VideoFrame::PlaneSize(frame_->format(), plane,
-                                  gfx::Size(frame_->visible_rect().width(),
-                                            frame_->visible_rect().height()));
-        sizes[plane].set(size.width(), size.height());
-      }
-      if (row_bytes && planes) {
-        size_t offset;
-        const int y_shift =
-            (frame_->format() == media::PIXEL_FORMAT_YV16) ? 0 : 1;
-        if (plane == VideoFrame::kYPlane) {
-          offset = (frame_->stride(VideoFrame::kYPlane) *
-                    frame_->visible_rect().y()) +
-                   frame_->visible_rect().x();
-        } else {
-          offset = (frame_->stride(VideoFrame::kUPlane) *
-                    (frame_->visible_rect().y() >> y_shift)) +
-                   (frame_->visible_rect().x() >> 1);
-        }
+      const gfx::Size size = VideoFrame::PlaneSize(
+          frame_->format(), plane, gfx::Size(frame_->visible_rect().width(),
+                                             frame_->visible_rect().height()));
+      sizeInfo->fSizes[plane].set(size.width(), size.height());
+      sizeInfo->fWidthBytes[plane] = size.width();
+    }
 
-        // Copy the frame to the supplied memory.
-        // TODO: Find a way (API change?) to avoid this copy.
-        char* out_line = static_cast<char*>(planes[plane]);
-        int out_line_stride = row_bytes[plane];
-        uint8_t* in_line = frame_->data(plane) + offset;
-        int in_line_stride = frame_->stride(plane);
-        int plane_height = sizes[plane].height();
-        if (in_line_stride == out_line_stride) {
-          memcpy(out_line, in_line, plane_height * in_line_stride);
-        } else {
-          // Different line padding so need to copy one line at a time.
-          int bytes_to_copy_per_line = out_line_stride < in_line_stride
-                                           ? out_line_stride
-                                           : in_line_stride;
-          for (int line_no = 0; line_no < plane_height; line_no++) {
-            memcpy(out_line, in_line, bytes_to_copy_per_line);
-            in_line += in_line_stride;
-            out_line += out_line_stride;
-          }
+    return true;
+  }
+
+  bool onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo,
+                       void* planes[3]) override {
+    media::VideoPixelFormat format = frame_->format();
+    DCHECK(media::IsYuvPlanar(format) && format != PIXEL_FORMAT_YV12A);
+
+    for (int plane = VideoFrame::kYPlane; plane <= VideoFrame::kVPlane;
+         ++plane) {
+      const gfx::Size size = VideoFrame::PlaneSize(
+          frame_->format(), plane, gfx::Size(frame_->visible_rect().width(),
+                                             frame_->visible_rect().height()));
+      if (size.width() != sizeInfo.fSizes[plane].width() ||
+          size.height() != sizeInfo.fSizes[plane].height()) {
+        return false;
+      }
+
+      size_t offset;
+      const int y_shift =
+          (frame_->format() == media::PIXEL_FORMAT_YV16) ? 0 : 1;
+      if (plane == VideoFrame::kYPlane) {
+        offset =
+            (frame_->stride(VideoFrame::kYPlane) * frame_->visible_rect().y()) +
+            frame_->visible_rect().x();
+      } else {
+        offset = (frame_->stride(VideoFrame::kUPlane) *
+                  (frame_->visible_rect().y() >> y_shift)) +
+                 (frame_->visible_rect().x() >> 1);
+      }
+
+      // Copy the frame to the supplied memory.
+      // TODO: Find a way (API change?) to avoid this copy.
+      char* out_line = static_cast<char*>(planes[plane]);
+      int out_line_stride = sizeInfo.fWidthBytes[plane];
+      uint8_t* in_line = frame_->data(plane) + offset;
+      int in_line_stride = frame_->stride(plane);
+      int plane_height = sizeInfo.fSizes[plane].height();
+      if (in_line_stride == out_line_stride) {
+        memcpy(out_line, in_line, plane_height * in_line_stride);
+      } else {
+        // Different line padding so need to copy one line at a time.
+        int bytes_to_copy_per_line =
+            out_line_stride < in_line_stride ? out_line_stride : in_line_stride;
+        for (int line_no = 0; line_no < plane_height; line_no++) {
+          memcpy(out_line, in_line, bytes_to_copy_per_line);
+          in_line += in_line_stride;
+          out_line += out_line_stride;
         }
       }
     }
@@ -349,12 +366,12 @@ void SkCanvasVideoRenderer::Paint(const scoped_refptr<VideoFrame>& video_frame,
     if (video_frame->HasTextures()) {
       DCHECK(context_3d.gr_context);
       DCHECK(gl);
-      if (media::VideoFrame::NumPlanes(video_frame->format()) == 1) {
-        last_image_ =
-            NewSkImageFromVideoFrameNative(video_frame.get(), context_3d);
-      } else {
+      if (media::VideoFrame::NumPlanes(video_frame->format()) == 3) {
         last_image_ =
             NewSkImageFromVideoFrameYUVTextures(video_frame.get(), context_3d);
+      } else {
+        last_image_ =
+            NewSkImageFromVideoFrameNative(video_frame.get(), context_3d);
       }
     } else {
       auto video_generator = new VideoImageGenerator(video_frame);
@@ -448,6 +465,62 @@ void SkCanvasVideoRenderer::Copy(const scoped_refptr<VideoFrame>& video_frame,
         SkXfermode::kSrc_Mode, media::VIDEO_ROTATION_0, context_3d);
 }
 
+namespace {
+
+// libyuv doesn't support 9- and 10-bit video frames yet. This function
+// creates a regular 8-bit video frame which we can give to libyuv.
+scoped_refptr<VideoFrame> DownShiftHighbitVideoFrame(
+    const VideoFrame* video_frame) {
+  VideoPixelFormat format;
+  int shift = 1;
+  switch (video_frame->format()) {
+    case PIXEL_FORMAT_YUV420P10:
+      shift = 2;
+    case PIXEL_FORMAT_YUV420P9:
+      format = PIXEL_FORMAT_I420;
+      break;
+    case PIXEL_FORMAT_YUV422P10:
+      shift = 2;
+    case PIXEL_FORMAT_YUV422P9:
+      format = PIXEL_FORMAT_YV16;
+      break;
+    case PIXEL_FORMAT_YUV444P10:
+      shift = 2;
+    case PIXEL_FORMAT_YUV444P9:
+      format = PIXEL_FORMAT_YV24;
+      break;
+
+    default:
+      NOTREACHED();
+      return nullptr;
+  }
+  scoped_refptr<VideoFrame> ret = VideoFrame::CreateFrame(
+      format, video_frame->coded_size(), video_frame->visible_rect(),
+      video_frame->natural_size(), video_frame->timestamp());
+
+  // Copy all metadata.
+  // (May be enough to copy color space)
+  base::DictionaryValue tmp;
+  video_frame->metadata()->MergeInternalValuesInto(&tmp);
+  ret->metadata()->MergeInternalValuesFrom(tmp);
+
+  for (int plane = VideoFrame::kYPlane; plane <= VideoFrame::kVPlane; ++plane) {
+    int width = ret->row_bytes(plane);
+    const uint16_t* src =
+        reinterpret_cast<const uint16_t*>(video_frame->data(plane));
+    uint8_t* dst = ret->data(plane);
+    for (int row = 0; row < video_frame->rows(plane); row++) {
+      for (int x = 0; x < width; x++) {
+        dst[x] = src[x] >> shift;
+      }
+      src += video_frame->stride(plane) / 2;
+      dst += ret->stride(plane);
+    }
+  }
+  return ret;
+}
+}
+
 // static
 void SkCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
     const VideoFrame* video_frame,
@@ -461,8 +534,6 @@ void SkCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
     NOTREACHED() << "Non YUV formats are not supported";
     return;
   }
-  DCHECK_EQ(video_frame->stride(VideoFrame::kUPlane),
-            video_frame->stride(VideoFrame::kVPlane));
 
   switch (video_frame->format()) {
     case PIXEL_FORMAT_YV12:
@@ -538,6 +609,20 @@ void SkCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
                           video_frame->visible_rect().width(),
                           video_frame->visible_rect().height());
       break;
+
+    case PIXEL_FORMAT_YUV420P9:
+    case PIXEL_FORMAT_YUV422P9:
+    case PIXEL_FORMAT_YUV444P9:
+    case PIXEL_FORMAT_YUV420P10:
+    case PIXEL_FORMAT_YUV422P10:
+    case PIXEL_FORMAT_YUV444P10: {
+      scoped_refptr<VideoFrame> temporary_frame =
+          DownShiftHighbitVideoFrame(video_frame);
+      ConvertVideoFrameToRGBPixels(temporary_frame.get(), rgb_pixels,
+                                   row_bytes);
+      break;
+    }
+
     case PIXEL_FORMAT_NV12:
     case PIXEL_FORMAT_NV21:
     case PIXEL_FORMAT_UYVY:
@@ -564,7 +649,6 @@ void SkCanvasVideoRenderer::CopyVideoFrameSingleTextureToGLTexture(
     bool flip_y) {
   DCHECK(video_frame);
   DCHECK(video_frame->HasTextures());
-  DCHECK_EQ(1u, VideoFrame::NumPlanes(video_frame->format()));
 
   const gpu::MailboxHolder& mailbox_holder = video_frame->mailbox_holder(0);
   DCHECK(mailbox_holder.texture_target == GL_TEXTURE_2D ||
@@ -584,7 +668,6 @@ void SkCanvasVideoRenderer::CopyVideoFrameSingleTextureToGLTexture(
   // "flip_y == false" means to keep the intrinsic orientation.
   gl->CopyTextureCHROMIUM(source_texture, texture, internal_format, type,
                           flip_y, premultiply_alpha, false);
-
   gl->DeleteTextures(1, &source_texture);
   gl->Flush();
 

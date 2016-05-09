@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "content/common/presentation/presentation_service.mojom.h"
 #include "content/public/common/presentation_constants.h"
 #include "content/public/common/service_registry.h"
@@ -25,33 +26,50 @@
 namespace {
 
 blink::WebPresentationError::ErrorType GetWebPresentationErrorTypeFromMojo(
-    presentation::PresentationErrorType mojoErrorType) {
+    content::mojom::PresentationErrorType mojoErrorType) {
   switch (mojoErrorType) {
-    case presentation::PRESENTATION_ERROR_TYPE_NO_AVAILABLE_SCREENS:
+    case content::mojom::PresentationErrorType::NO_AVAILABLE_SCREENS:
       return blink::WebPresentationError::ErrorTypeNoAvailableScreens;
-    case presentation::PRESENTATION_ERROR_TYPE_SESSION_REQUEST_CANCELLED:
+    case content::mojom::PresentationErrorType::SESSION_REQUEST_CANCELLED:
       return blink::WebPresentationError::ErrorTypeSessionRequestCancelled;
-    case presentation::PRESENTATION_ERROR_TYPE_NO_PRESENTATION_FOUND:
+    case content::mojom::PresentationErrorType::NO_PRESENTATION_FOUND:
       return blink::WebPresentationError::ErrorTypeNoPresentationFound;
-    case presentation::PRESENTATION_ERROR_TYPE_UNKNOWN:
+    case content::mojom::PresentationErrorType::UNKNOWN:
     default:
       return blink::WebPresentationError::ErrorTypeUnknown;
   }
 }
 
 blink::WebPresentationConnectionState GetWebPresentationConnectionStateFromMojo(
-    presentation::PresentationConnectionState mojoSessionState) {
+    content::mojom::PresentationConnectionState mojoSessionState) {
   switch (mojoSessionState) {
     // TODO(imcheng): Add Connecting state to Blink (crbug.com/575351).
-    case presentation::PRESENTATION_CONNECTION_STATE_CONNECTED:
+    case content::mojom::PresentationConnectionState::CONNECTED:
       return blink::WebPresentationConnectionState::Connected;
-    case presentation::PRESENTATION_CONNECTION_STATE_CLOSED:
+    case content::mojom::PresentationConnectionState::CLOSED:
       return blink::WebPresentationConnectionState::Closed;
-    case presentation::PRESENTATION_CONNECTION_STATE_TERMINATED:
+    case content::mojom::PresentationConnectionState::TERMINATED:
       return blink::WebPresentationConnectionState::Terminated;
     default:
       NOTREACHED();
       return blink::WebPresentationConnectionState::Terminated;
+  }
+}
+
+blink::WebPresentationConnectionCloseReason
+GetWebPresentationConnectionCloseReasonFromMojo(
+    content::mojom::PresentationConnectionCloseReason
+        mojoConnectionCloseReason) {
+  switch (mojoConnectionCloseReason) {
+    case content::mojom::PresentationConnectionCloseReason::CONNECTION_ERROR:
+      return blink::WebPresentationConnectionCloseReason::Error;
+    case content::mojom::PresentationConnectionCloseReason::CLOSED:
+      return blink::WebPresentationConnectionCloseReason::Closed;
+    case content::mojom::PresentationConnectionCloseReason::WENT_AWAY:
+      return blink::WebPresentationConnectionCloseReason::WentAway;
+    default:
+      NOTREACHED();
+      return blink::WebPresentationConnectionCloseReason::Error;
   }
 }
 
@@ -146,11 +164,9 @@ void PresentationDispatcher::sendArrayBuffer(
     return;
   }
 
-  message_request_queue_.push(make_scoped_ptr(
-      CreateSendBinaryMessageRequest(presentationUrl, presentationId,
-                                     presentation::PresentationMessageType::
-                                         PRESENTATION_MESSAGE_TYPE_ARRAY_BUFFER,
-                                     data, length)));
+  message_request_queue_.push(make_scoped_ptr(CreateSendBinaryMessageRequest(
+      presentationUrl, presentationId,
+      mojom::PresentationMessageType::ARRAY_BUFFER, data, length)));
   // Start processing request if only one in the queue.
   if (message_request_queue_.size() == 1)
     DoSendMessage(message_request_queue_.front().get());
@@ -169,8 +185,7 @@ void PresentationDispatcher::sendBlobData(
   }
 
   message_request_queue_.push(make_scoped_ptr(CreateSendBinaryMessageRequest(
-      presentationUrl, presentationId,
-      presentation::PresentationMessageType::PRESENTATION_MESSAGE_TYPE_BLOB,
+      presentationUrl, presentationId, mojom::PresentationMessageType::BLOB,
       data, length)));
   // Start processing request if only one in the queue.
   if (message_request_queue_.size() == 1)
@@ -343,7 +358,7 @@ void PresentationDispatcher::OnScreenAvailabilityNotSupported(
 }
 
 void PresentationDispatcher::OnDefaultSessionStarted(
-    presentation::PresentationSessionInfoPtr session_info) {
+    mojom::PresentationSessionInfoPtr session_info) {
   if (!controller_)
     return;
 
@@ -356,8 +371,8 @@ void PresentationDispatcher::OnDefaultSessionStarted(
 
 void PresentationDispatcher::OnSessionCreated(
     blink::WebPresentationConnectionClientCallbacks* callback,
-    presentation::PresentationSessionInfoPtr session_info,
-    presentation::PresentationErrorPtr error) {
+    mojom::PresentationSessionInfoPtr session_info,
+    mojom::PresentationErrorPtr error) {
   DCHECK(callback);
   if (!error.is_null()) {
     DCHECK(session_info.is_null());
@@ -369,13 +384,13 @@ void PresentationDispatcher::OnSessionCreated(
 
   DCHECK(!session_info.is_null());
   presentation_service_->ListenForSessionMessages(session_info.Clone());
-  callback->onSuccess(blink::adoptWebPtr(
+  callback->onSuccess(base::WrapUnique(
       new PresentationConnectionClient(std::move(session_info))));
 }
 
 void PresentationDispatcher::OnConnectionStateChanged(
-    presentation::PresentationSessionInfoPtr connection,
-    presentation::PresentationConnectionState state) {
+    mojom::PresentationSessionInfoPtr connection,
+    mojom::PresentationConnectionState state) {
   if (!controller_)
     return;
 
@@ -385,9 +400,23 @@ void PresentationDispatcher::OnConnectionStateChanged(
       GetWebPresentationConnectionStateFromMojo(state));
 }
 
+void PresentationDispatcher::OnConnectionClosed(
+    mojom::PresentationSessionInfoPtr connection,
+    mojom::PresentationConnectionCloseReason reason,
+    const mojo::String& message) {
+  if (!controller_)
+    return;
+
+  DCHECK(!connection.is_null());
+  controller_->didCloseConnection(
+      new PresentationConnectionClient(std::move(connection)),
+      GetWebPresentationConnectionCloseReasonFromMojo(reason),
+      blink::WebString::fromUTF8(message));
+}
+
 void PresentationDispatcher::OnSessionMessagesReceived(
-    presentation::PresentationSessionInfoPtr session_info,
-    mojo::Array<presentation::SessionMessagePtr> messages) {
+    mojom::PresentationSessionInfoPtr session_info,
+    mojo::Array<mojom::SessionMessagePtr> messages) {
   if (!controller_)
     return;
 
@@ -397,17 +426,14 @@ void PresentationDispatcher::OnSessionMessagesReceived(
     scoped_ptr<PresentationConnectionClient> session_client(
         new PresentationConnectionClient(session_info->url, session_info->id));
     switch (messages[i]->type) {
-      case presentation::PresentationMessageType::
-          PRESENTATION_MESSAGE_TYPE_TEXT: {
+      case mojom::PresentationMessageType::TEXT: {
         controller_->didReceiveSessionTextMessage(
             session_client.release(),
             blink::WebString::fromUTF8(messages[i]->message));
         break;
       }
-      case presentation::PresentationMessageType::
-          PRESENTATION_MESSAGE_TYPE_ARRAY_BUFFER:
-      case presentation::PresentationMessageType::
-          PRESENTATION_MESSAGE_TYPE_BLOB: {
+      case mojom::PresentationMessageType::ARRAY_BUFFER:
+      case mojom::PresentationMessageType::BLOB: {
         controller_->didReceiveSessionBinaryMessage(
             session_client.release(), &(messages[i]->data.front()),
             messages[i]->data.size());
@@ -427,9 +453,7 @@ void PresentationDispatcher::ConnectToPresentationServiceIfNeeded() {
 
   render_frame()->GetServiceRegistry()->ConnectToRemoteService(
       mojo::GetProxy(&presentation_service_));
-  presentation::PresentationServiceClientPtr client_ptr;
-  binding_.Bind(GetProxy(&client_ptr));
-  presentation_service_->SetClient(std::move(client_ptr));
+  presentation_service_->SetClient(binding_.CreateInterfacePtrAndBind());
 }
 
 void PresentationDispatcher::UpdateListeningState(AvailabilityStatus* status) {
@@ -451,8 +475,8 @@ void PresentationDispatcher::UpdateListeningState(AvailabilityStatus* status) {
 }
 
 PresentationDispatcher::SendMessageRequest::SendMessageRequest(
-    presentation::PresentationSessionInfoPtr session_info,
-    presentation::SessionMessagePtr message)
+    mojom::PresentationSessionInfoPtr session_info,
+    mojom::SessionMessagePtr message)
     : session_info(std::move(session_info)), message(std::move(message)) {}
 
 PresentationDispatcher::SendMessageRequest::~SendMessageRequest() {}
@@ -463,15 +487,13 @@ PresentationDispatcher::CreateSendTextMessageRequest(
     const blink::WebString& presentationUrl,
     const blink::WebString& presentationId,
     const blink::WebString& message) {
-  presentation::PresentationSessionInfoPtr session_info =
-      presentation::PresentationSessionInfo::New();
+  mojom::PresentationSessionInfoPtr session_info =
+      mojom::PresentationSessionInfo::New();
   session_info->url = presentationUrl.utf8();
   session_info->id = presentationId.utf8();
 
-  presentation::SessionMessagePtr session_message =
-      presentation::SessionMessage::New();
-  session_message->type =
-      presentation::PresentationMessageType::PRESENTATION_MESSAGE_TYPE_TEXT;
+  mojom::SessionMessagePtr session_message = mojom::SessionMessage::New();
+  session_message->type = mojom::PresentationMessageType::TEXT;
   session_message->message = message.utf8();
   return new SendMessageRequest(std::move(session_info),
                                 std::move(session_message));
@@ -482,16 +504,15 @@ PresentationDispatcher::SendMessageRequest*
 PresentationDispatcher::CreateSendBinaryMessageRequest(
     const blink::WebString& presentationUrl,
     const blink::WebString& presentationId,
-    presentation::PresentationMessageType type,
+    mojom::PresentationMessageType type,
     const uint8_t* data,
     size_t length) {
-  presentation::PresentationSessionInfoPtr session_info =
-      presentation::PresentationSessionInfo::New();
+  mojom::PresentationSessionInfoPtr session_info =
+      mojom::PresentationSessionInfo::New();
   session_info->url = presentationUrl.utf8();
   session_info->id = presentationId.utf8();
 
-  presentation::SessionMessagePtr session_message =
-      presentation::SessionMessage::New();
+  mojom::SessionMessagePtr session_message = mojom::SessionMessage::New();
   session_message->type = type;
   std::vector<uint8_t> tmp_data_vector(data, data + length);
   session_message->data.Swap(&tmp_data_vector);

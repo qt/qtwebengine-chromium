@@ -54,7 +54,7 @@ public:
     }
 
 private:
-    RawPtrWillBeMember<const InsertionPoint> m_insertionPoint;
+    Member<const InsertionPoint> m_insertionPoint;
 };
 
 CORE_EXPORT ContainerNode* parent(const Node&, ParentDetails* = 0);
@@ -74,7 +74,7 @@ inline Element* parentElement(const Node& node)
     return found && found->isElementNode() ? toElement(found) : 0;
 }
 
-}
+} // namespace LayoutTreeBuilderTraversal
 
 } // namespace blink
 

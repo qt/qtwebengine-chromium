@@ -32,15 +32,15 @@ namespace blink {
 
 class InsertLineBreakCommand final : public CompositeEditCommand {
 public:
-    static PassRefPtrWillBeRawPtr<InsertLineBreakCommand> create(Document& document)
+    static RawPtr<InsertLineBreakCommand> create(Document& document)
     {
-        return adoptRefWillBeNoop(new InsertLineBreakCommand(document));
+        return new InsertLineBreakCommand(document);
     }
 
 private:
     explicit InsertLineBreakCommand(Document&);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
 
     bool preservesTypingStyle() const override;
 

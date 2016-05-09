@@ -86,7 +86,8 @@ size_t ReadProcStatusAndGetFieldAsSizeT(pid_t pid, const std::string& field) {
       return value;
     }
   }
-  NOTREACHED();
+  // This can be reached if the process dies when proc is read -- in that case,
+  // the kernel can return missing fields.
   return 0;
 }
 
@@ -555,8 +556,11 @@ SystemMemoryInfoKB::SystemMemoryInfoKB() {
 #endif
 }
 
-scoped_ptr<Value> SystemMemoryInfoKB::ToValue() const {
-  scoped_ptr<DictionaryValue> res(new DictionaryValue());
+SystemMemoryInfoKB::SystemMemoryInfoKB(const SystemMemoryInfoKB& other) =
+    default;
+
+std::unique_ptr<Value> SystemMemoryInfoKB::ToValue() const {
+  std::unique_ptr<DictionaryValue> res(new DictionaryValue());
 
   res->SetInteger("total", total);
   res->SetInteger("free", free);
@@ -766,8 +770,10 @@ SystemDiskInfo::SystemDiskInfo() {
   weighted_io_time = 0;
 }
 
-scoped_ptr<Value> SystemDiskInfo::ToValue() const {
-  scoped_ptr<DictionaryValue> res(new DictionaryValue());
+SystemDiskInfo::SystemDiskInfo(const SystemDiskInfo& other) = default;
+
+std::unique_ptr<Value> SystemDiskInfo::ToValue() const {
+  std::unique_ptr<DictionaryValue> res(new DictionaryValue());
 
   // Write out uint64_t variables as doubles.
   // Note: this may discard some precision, but for JS there's no other option.
@@ -892,8 +898,8 @@ bool GetSystemDiskInfo(SystemDiskInfo* diskinfo) {
 }
 
 #if defined(OS_CHROMEOS)
-scoped_ptr<Value> SwapInfo::ToValue() const {
-  scoped_ptr<DictionaryValue> res(new DictionaryValue());
+std::unique_ptr<Value> SwapInfo::ToValue() const {
+  std::unique_ptr<DictionaryValue> res(new DictionaryValue());
 
   // Write out uint64_t variables as doubles.
   // Note: this may discard some precision, but for JS there's no other option.

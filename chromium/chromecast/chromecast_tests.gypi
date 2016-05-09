@@ -13,6 +13,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'cast_base',
+        'cast_component',
         'cast_crypto',
         '../base/base.gyp:run_all_unittests',
         '../testing/gmock.gyp:gmock',
@@ -20,6 +21,8 @@
       ],
       'sources': [
         'base/bind_to_task_runner_unittest.cc',
+        'base/chromecast_switches_unittest.cc',
+        'base/component/component_unittest.cc',
         'base/device_capabilities_impl_unittest.cc',
         'base/error_codes_unittest.cc',
         'base/path_utils_unittest.cc',
@@ -175,7 +178,6 @@
         }],
         ['OS!="android"', {
           'dependencies': [
-            'cast_renderer_media_unittests',
             'cast_shell_unittests',
             'cast_shell_browser_test',
             'media/media.gyp:cast_media_unittests',
@@ -185,25 +187,16 @@
               # --enable-local-file-accesses => to load sample media files
               # --test-launcher-jobs=1 => so internal code can bind to port
               'cast_shell_browser_test --no-sandbox --enable-local-file-accesses --enable-cma-media-pipeline --ozone-platform=cast --test-launcher-jobs=1',
+              'cast_media_unittests --test-launcher-jobs=1',
             ],
           },
           'conditions': [
-            # TODO(slan): Reenable this test for Desktop x86 when CQ supports it.
-            # (b/26429268)
-            ['use_alsa==1 and is_cast_desktop_build==0', {
+            ['use_alsa==1', {
               'dependencies': [
                 'media/media.gyp:alsa_cma_backend_unittests',
               ],
             }],
           ],
-        }],
-        ['disable_display==1', {
-          'variables': {
-            'filters': [
-              # These are not supported by the backend right now. b/21737919
-              'cast_media_unittests --gtest_filter=-AudioVideoPipelineDeviceTest.VorbisPlayback:AudioVideoPipelineDeviceTest.WebmPlayback',
-            ],
-          }
         }],
       ],
       'includes': ['build/tests/test_list.gypi'],
@@ -251,6 +244,8 @@
           'type': 'none',
           'variables': {
             'filters': [
+              # ComponentDeathTest is unable to fork processes on Android
+              'cast_base_unittests_apk --gtest_filter=*:-ComponentDeathTest.*',
               # LayerTreeHost has dozens of separate crashing test cases on Fugu. (b/22512618)
               'cc_unittests_apk --gtest_filter=*:-LayerTreeHost*',
               # The following tests all crash on fugu.
@@ -313,22 +308,6 @@
       ],  # end of targets
     }, {  # OS!="android"
       'targets': [
-        {
-          'target_name': 'cast_renderer_media_unittests',
-          'type': '<(gtest_target_type)',
-          'dependencies': [
-            'cast_shell_media',
-            '../base/base.gyp:run_all_unittests',
-            '../testing/gmock.gyp:gmock',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'sources': [
-            'renderer/media/demuxer_stream_adapter_unittest.cc',
-            'renderer/media/demuxer_stream_for_test.cc',
-            'renderer/media/demuxer_stream_for_test.h',
-            'renderer/media/multi_demuxer_stream_adapter_unittest.cc',
-          ],
-        },  # end of cast_renderer_media_unittests
         # GN target: //chromecast/browser:test_support
         {
           'target_name': 'cast_shell_test_support',
@@ -338,9 +317,13 @@
           ],
           'dependencies': [
             'cast_shell_core',
+            '../content/content_shell_and_tests.gyp:content_browser_test_base',
             '../content/content_shell_and_tests.gyp:content_browser_test_support',
+            '../mojo/mojo_public.gyp:mojo_cpp_bindings',
             '../testing/gtest.gyp:gtest',
-            '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
+          ],
+          'export_dependent_settings': [
+            '../content/content_shell_and_tests.gyp:content_browser_test_base',
           ],
           'sources': [
             'browser/test/chromecast_browser_test.cc',

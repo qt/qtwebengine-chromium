@@ -21,8 +21,6 @@
 
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
-#include "core/svg/SVGDocumentExtensions.h"
-#include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntPoint.h"
@@ -44,9 +42,9 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<EdgeModeTyp
 
 class SVGAnimatedOrder : public SVGAnimatedIntegerOptionalInteger {
 public:
-    static PassRefPtrWillBeRawPtr<SVGAnimatedOrder> create(SVGElement* contextElement)
+    static SVGAnimatedOrder* create(SVGElement* contextElement)
     {
-        return adoptRefWillBeNoop(new SVGAnimatedOrder(contextElement));
+        return new SVGAnimatedOrder(contextElement);
     }
 
     SVGParsingError setBaseValueAsString(const String&) override;
@@ -56,17 +54,25 @@ protected:
         : SVGAnimatedIntegerOptionalInteger(contextElement, SVGNames::orderAttr, 0, 0)
     {
     }
+
+    static SVGParsingError checkValue(SVGParsingError parseStatus, int value)
+    {
+        if (parseStatus != SVGParseStatus::NoError)
+            return parseStatus;
+        if (value < 0)
+            return SVGParseStatus::NegativeValue;
+        if (value == 0)
+            return SVGParseStatus::ZeroValue;
+        return SVGParseStatus::NoError;
+    }
 };
 
 SVGParsingError SVGAnimatedOrder::setBaseValueAsString(const String& value)
 {
     SVGParsingError parseStatus = SVGAnimatedIntegerOptionalInteger::setBaseValueAsString(value);
-
-    ASSERT(contextElement());
-    if (parseStatus == NoError && (firstInteger()->baseValue()->value() < 1 || secondInteger()->baseValue()->value() < 1)) {
-        contextElement()->document().accessSVGExtensions().reportWarning(
-            "feConvolveMatrix: problem parsing order=\"" + value + "\".");
-    }
+    // Check for semantic errors.
+    parseStatus = checkValue(parseStatus, firstInteger()->baseValue()->value());
+    parseStatus = checkValue(parseStatus, secondInteger()->baseValue()->value());
     return parseStatus;
 }
 
@@ -156,7 +162,7 @@ void SVGFEConvolveMatrixElement::svgAttributeChanged(const QualifiedName& attrNa
     SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
+FilterEffect* SVGFEConvolveMatrixElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
     ASSERT(input1);
@@ -180,7 +186,7 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilter
 
     float divisorValue = m_divisor->currentValue()->value();
     if (!m_divisor->isSpecified()) {
-        RefPtrWillBeRawPtr<SVGNumberList> kernelMatrix = m_kernelMatrix->currentValue();
+        SVGNumberList* kernelMatrix = m_kernelMatrix->currentValue();
         size_t kernelMatrixSize = kernelMatrix->length();
         for (size_t i = 0; i < kernelMatrixSize; ++i)
             divisorValue += kernelMatrix->at(i)->value();
@@ -188,12 +194,12 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEConvolveMatrixElement::build(SVGFilter
             divisorValue = 1;
     }
 
-    RefPtrWillBeRawPtr<FilterEffect> effect = FEConvolveMatrix::create(filter,
+    FilterEffect* effect = FEConvolveMatrix::create(filter,
         IntSize(orderXValue, orderYValue), divisorValue,
         m_bias->currentValue()->value(), IntPoint(targetXValue, targetYValue), m_edgeMode->currentValue()->enumValue(),
         m_preserveAlpha->currentValue()->value(), m_kernelMatrix->currentValue()->toFloatVector());
     effect->inputEffects().append(input1);
-    return effect.release();
+    return effect;
 }
 
 } // namespace blink

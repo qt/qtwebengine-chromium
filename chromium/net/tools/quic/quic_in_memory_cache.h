@@ -5,20 +5,21 @@
 #ifndef NET_TOOLS_QUIC_QUIC_IN_MEMORY_CACHE_H_
 #define NET_TOOLS_QUIC_QUIC_IN_MEMORY_CACHE_H_
 
+#include <list>
 #include <map>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "base/containers/hash_tables.h"
+#include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/strings/string_piece.h"
+#include "net/http/http_response_headers.h"
 #include "net/quic/spdy_utils.h"
 #include "net/spdy/spdy_framer.h"
 #include "url/gurl.h"
-
-using base::StringPiece;
-using std::string;
-using std::list;
 
 namespace base {
 
@@ -28,7 +29,6 @@ struct DefaultSingletonTraits;
 }  // namespace base
 
 namespace net {
-namespace tools {
 
 namespace test {
 class QuicInMemoryCachePeer;
@@ -45,13 +45,14 @@ class QuicInMemoryCache {
   // comprising a response for the push request.
   struct ServerPushInfo {
     ServerPushInfo(GURL request_url,
-                   const net::SpdyHeaderBlock& headers,
-                   net::SpdyPriority priority,
-                   string body);
+                   const SpdyHeaderBlock& headers,
+                   SpdyPriority priority,
+                   std::string body);
+    ServerPushInfo(const ServerPushInfo& other);
     GURL request_url;
-    net::SpdyHeaderBlock headers;
-    net::SpdyPriority priority;
-    string body;
+    SpdyHeaderBlock headers;
+    SpdyPriority priority;
+    std::string body;
   };
 
   enum SpecialResponseType {
@@ -87,6 +88,56 @@ class QuicInMemoryCache {
     DISALLOW_COPY_AND_ASSIGN(Response);
   };
 
+  // Class to manage loading a resource file into memory.  There are
+  // two uses: called by InitializeFromDirectory to load resources
+  // from files, and recursively called when said resources specify
+  // server push associations.
+  class ResourceFile {
+   public:
+    explicit ResourceFile(const base::FilePath& file_name);
+    virtual ~ResourceFile();
+
+    // abstract: implementation details are chromium and internal
+    // version specific.
+    virtual void Read() = 0;
+    void SetHostPathFromBase(base::StringPiece base);
+
+    base::StringPiece host() { return host_; }
+    void set_host(base::StringPiece host) { host_ = host; }
+
+    base::StringPiece path() { return path_; }
+    void set_path(base::StringPiece path) { path_ = path; }
+
+    SpdyHeaderBlock spdy_headers() { return spdy_headers_; }
+
+    base::StringPiece body() { return body_; }
+
+    const std::vector<base::StringPiece>& push_urls() { return push_urls_; }
+
+    const std::string& file_name() { return file_name_string_; }
+
+   protected:
+    void HandleXOriginalUrl();
+    void HandlePushUrls(const std::vector<base::StringPiece>& push_urls);
+    base::StringPiece RemoveScheme(base::StringPiece url);
+
+    const std::string cache_directory_;
+    const base::FilePath file_name_;
+    const std::string file_name_string_;
+    std::string file_contents_;
+    base::StringPiece body_;
+    SpdyHeaderBlock spdy_headers_;
+    base::StringPiece x_original_url_;
+    std::vector<base::StringPiece> push_urls_;
+
+   private:
+    base::StringPiece host_;
+    base::StringPiece path_;
+    QuicInMemoryCache* cache_;
+
+    DISALLOW_COPY_AND_ASSIGN(ResourceFile);
+  };
+
   // Returns the singleton instance of the cache.
   static QuicInMemoryCache* GetInstance();
 
@@ -107,11 +158,11 @@ class QuicInMemoryCache {
   // path) associated with it.
   // Push resource implicitly come from the same host.
   void AddSimpleResponseWithServerPushResources(
-      StringPiece host,
-      StringPiece path,
+      base::StringPiece host,
+      base::StringPiece path,
       int response_code,
-      StringPiece body,
-      list<ServerPushInfo> push_resources);
+      base::StringPiece body,
+      std::list<ServerPushInfo> push_resources);
 
   // Add a response to the cache.
   void AddResponse(base::StringPiece host,
@@ -136,13 +187,13 @@ class QuicInMemoryCache {
   void AddDefaultResponse(Response* response);
 
   // |cache_cirectory| can be generated using `wget -p --save-headers <url>`.
-  void InitializeFromDirectory(const string& cache_directory);
+  void InitializeFromDirectory(const std::string& cache_directory);
 
   // Find all the server push resources associated with |request_url|.
-  list<ServerPushInfo> GetServerPushResources(string request_url);
+  std::list<ServerPushInfo> GetServerPushResources(std::string request_url);
 
  private:
-  typedef base::hash_map<string, Response*> ResponseMap;
+  typedef std::unordered_map<std::string, Response*> ResponseMap;
 
   friend struct base::DefaultSingletonTraits<QuicInMemoryCache>;
   friend class test::QuicInMemoryCachePeer;
@@ -159,17 +210,17 @@ class QuicInMemoryCache {
                        base::StringPiece response_body,
                        const SpdyHeaderBlock& response_trailers);
 
-  string GetKey(base::StringPiece host, base::StringPiece path) const;
+  std::string GetKey(base::StringPiece host, base::StringPiece path) const;
 
   // Add some server push urls with given responses for specified
   // request if these push resources are not associated with this request yet.
-  void MaybeAddServerPushResources(StringPiece request_host,
-                                   StringPiece request_path,
-                                   list<ServerPushInfo> push_resources);
+  void MaybeAddServerPushResources(base::StringPiece request_host,
+                                   base::StringPiece request_path,
+                                   std::list<ServerPushInfo> push_resources);
 
   // Check if push resource(push_host/push_path) associated with given request
   // url already exists in server push map.
-  bool PushResourceExistsInCache(string original_request_url,
+  bool PushResourceExistsInCache(std::string original_request_url,
                                  ServerPushInfo resource);
 
   // Cached responses.
@@ -179,12 +230,11 @@ class QuicInMemoryCache {
   scoped_ptr<Response> default_response_;
 
   // A map from request URL to associated server push responses (if any).
-  std::multimap<string, ServerPushInfo> server_push_resources_;
+  std::multimap<std::string, ServerPushInfo> server_push_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicInMemoryCache);
 };
 
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_QUIC_IN_MEMORY_CACHE_H_

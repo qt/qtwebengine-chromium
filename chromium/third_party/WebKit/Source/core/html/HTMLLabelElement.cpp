@@ -34,6 +34,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/FormAssociatedElement.h"
+#include "core/html/HTMLFormControlElement.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutObject.h"
 
@@ -48,9 +49,9 @@ inline HTMLLabelElement::HTMLLabelElement(Document& document, HTMLFormElement* f
     FormAssociatedElement::associateByParser(form);
 }
 
-PassRefPtrWillBeRawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document, HTMLFormElement* form)
+RawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document, HTMLFormElement* form)
 {
-    RefPtrWillBeRawPtr<HTMLLabelElement> labelElement = adoptRefWillBeNoop(new HTMLLabelElement(document, form));
+    RawPtr<HTMLLabelElement> labelElement = new HTMLLabelElement(document, form);
     return labelElement.release();
 }
 
@@ -62,15 +63,21 @@ LabelableElement* HTMLLabelElement::control() const
         // per http://dev.w3.org/html5/spec/Overview.html#the-label-element
         // the form element must be "labelable form-associated element".
         for (LabelableElement& element : Traversal<LabelableElement>::descendantsOf(*this)) {
-            if (element.supportLabels())
+            if (element.supportLabels()) {
+                if (!element.isFormControlElement())
+                    UseCounter::count(document(), UseCounter::HTMLLabelElementControlForNonFormAssociatedElement);
                 return &element;
+            }
         }
         return nullptr;
     }
 
     if (Element* element = treeScope().getElementById(controlId)) {
-        if (isLabelableElement(*element) && toLabelableElement(*element).supportLabels())
+        if (isLabelableElement(*element) && toLabelableElement(*element).supportLabels()) {
+            if (!element->isFormControlElement())
+                UseCounter::count(document(), UseCounter::HTMLLabelElementControlForNonFormAssociatedElement);
             return toLabelableElement(element);
+        }
     }
 
     return nullptr;
@@ -79,6 +86,21 @@ LabelableElement* HTMLLabelElement::control() const
 HTMLFormElement* HTMLLabelElement::formOwner() const
 {
     return FormAssociatedElement::form();
+}
+
+HTMLFormElement* HTMLLabelElement::formForBinding() const
+{
+    HTMLFormElement* formOwner = FormAssociatedElement::form();
+    HTMLFormElement* controlForm = nullptr;
+    if (LabelableElement* control = this->control()) {
+        if (control->isFormControlElement())
+            controlForm = toHTMLFormControlElement(control)->form();
+    }
+    if (formOwner != controlForm)
+        UseCounter::count(document(), UseCounter::HTMLLabelElementFormIsDifferentFromControlForm);
+    if (!controlForm && formOwner && formOwner == findFormAncestor())
+        UseCounter::count(document(), UseCounter::HTMLLabelElementHasNoControlAndFormIsAncestor);
+    return formOwner;
 }
 
 void HTMLLabelElement::setActive(bool down)
@@ -114,7 +136,7 @@ bool HTMLLabelElement::isInteractiveContent() const
 
 bool HTMLLabelElement::isInInteractiveContent(Node* node) const
 {
-    if (!containsIncludingShadowDOM(node))
+    if (!isShadowIncludingInclusiveAncestorOf(node))
         return false;
     while (node && this != node) {
         if (node->isHTMLElement() && toHTMLElement(node)->isInteractiveContent())
@@ -127,11 +149,11 @@ bool HTMLLabelElement::isInInteractiveContent(Node* node) const
 void HTMLLabelElement::defaultEventHandler(Event* evt)
 {
     if (evt->type() == EventTypeNames::click && !m_processingClick) {
-        RefPtrWillBeRawPtr<HTMLElement> element = control();
+        RawPtr<HTMLElement> element = control();
 
         // If we can't find a control or if the control received the click
         // event, then there's no need for us to do anything.
-        if (!element || (evt->target() && element->containsIncludingShadowDOM(evt->target()->toNode())))
+        if (!element || (evt->target() && element->isShadowIncludingInclusiveAncestorOf(evt->target()->toNode())))
             return;
 
         if (evt->target() && isInInteractiveContent(evt->target()->toNode()))
@@ -203,6 +225,7 @@ bool HTMLLabelElement::willRespondToMouseClickEvents()
 
 void HTMLLabelElement::focus(const FocusParams& params)
 {
+    document().updateLayoutTreeForNode(this);
     if (isFocusable()) {
         HTMLElement::focus(params);
         return;
@@ -222,7 +245,7 @@ void HTMLLabelElement::accessKeyAction(bool sendMouseEvents)
 
 void HTMLLabelElement::updateLabel(TreeScope& scope, const AtomicString& oldForAttributeValue, const AtomicString& newForAttributeValue)
 {
-    if (!inDocument())
+    if (!inShadowIncludingDocument())
         return;
 
     if (oldForAttributeValue == newForAttributeValue)
@@ -245,7 +268,7 @@ Node::InsertionNotificationRequest HTMLLabelElement::insertedInto(ContainerNode*
     }
 
     // Trigger for elements outside of forms.
-    if (!formOwner() && insertionPoint->inDocument())
+    if (!formOwner() && insertionPoint->inShadowIncludingDocument())
         document().didAssociateFormControl(this);
 
     return result;
@@ -284,4 +307,4 @@ void HTMLLabelElement::parseAttribute(const QualifiedName& attributeName, const 
     }
 }
 
-} // namespace
+} // namespace blink

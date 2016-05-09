@@ -30,12 +30,22 @@
 
 #include "core/inspector/MainThreadDebugger.h"
 
+#include "bindings/core/v8/BindingSecurity.h"
 #include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/V8Window.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
-#include "core/inspector/DebuggerScript.h"
+#include "core/frame/UseCounter.h"
+#include "core/inspector/IdentifiersFactory.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorTaskRunner.h"
-#include "core/inspector/v8/V8Debugger.h"
+#include "core/workers/MainThreadWorkletGlobalScope.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/v8_inspector/public/V8Debugger.h"
+#include "public/platform/Platform.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -50,21 +60,26 @@ int frameId(LocalFrame* frame)
     return WeakIdentifierMap<LocalFrame>::identifier(frame);
 }
 
+Mutex& creationMutex()
+{
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, (new Mutex));
+    return mutex;
+}
+
 }
 
 // TODO(Oilpan): avoid keeping a raw reference separate from the
 // owner one; does not enable heap-movable objects.
 MainThreadDebugger* MainThreadDebugger::s_instance = nullptr;
 
-MainThreadDebugger::MainThreadDebugger(PassOwnPtr<ClientMessageLoop> clientMessageLoop, v8::Isolate* isolate)
-    : m_isolate(isolate)
-    , m_debugger(V8Debugger::create(isolate, this))
-    , m_clientMessageLoop(clientMessageLoop)
-    , m_taskRunner(adoptPtr(new InspectorTaskRunner(isolate)))
+MainThreadDebugger::MainThreadDebugger(v8::Isolate* isolate)
+    : ThreadDebugger(isolate)
+    , m_taskRunner(adoptPtr(new InspectorTaskRunner()))
 {
     MutexLocker locker(creationMutex());
     ASSERT(!s_instance);
     s_instance = this;
+    IdentifiersFactory::setProcessId(Platform::current()->getUniqueIdForProcess());
 }
 
 MainThreadDebugger::~MainThreadDebugger()
@@ -74,16 +89,27 @@ MainThreadDebugger::~MainThreadDebugger()
     s_instance = nullptr;
 }
 
-Mutex& MainThreadDebugger::creationMutex()
+void MainThreadDebugger::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> clientMessageLoop)
 {
-    DEFINE_THREAD_SAFE_STATIC_LOCAL(Mutex, mutex, (new Mutex));
-    return mutex;
+    ASSERT(!m_clientMessageLoop);
+    ASSERT(clientMessageLoop);
+    m_clientMessageLoop = clientMessageLoop;
 }
 
-void MainThreadDebugger::initializeContext(v8::Local<v8::Context> context, LocalFrame* frame, int worldId)
+void MainThreadDebugger::contextCreated(ScriptState* scriptState, LocalFrame* frame, SecurityOrigin* origin)
 {
-    String type = worldId == MainWorldId ? "page" : "injected";
-    V8Debugger::setContextDebugData(context, type, contextGroupId(frame));
+    ASSERT(isMainThread());
+    v8::HandleScope handles(scriptState->isolate());
+    DOMWrapperWorld& world = scriptState->world();
+    if (frame->localFrameRoot() == frame && world.isMainWorld())
+        debugger()->resetContextGroup(contextGroupId(frame));
+    debugger()->contextCreated(V8ContextInfo(scriptState->context(), contextGroupId(frame), world.isMainWorld(), origin ? origin->toRawString() : "", world.isIsolatedWorld() ? world.isolatedWorldHumanReadableName() : "", IdentifiersFactory::frameId(frame)));
+}
+
+void MainThreadDebugger::contextWillBeDestroyed(ScriptState* scriptState)
+{
+    v8::HandleScope handles(scriptState->isolate());
+    debugger()->contextDestroyed(scriptState->context());
 }
 
 int MainThreadDebugger::contextGroupId(LocalFrame* frame)
@@ -95,19 +121,18 @@ int MainThreadDebugger::contextGroupId(LocalFrame* frame)
 MainThreadDebugger* MainThreadDebugger::instance()
 {
     ASSERT(isMainThread());
-    return s_instance;
+    v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
+    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
+    return static_cast<MainThreadDebugger*>(data->threadDebugger());
 }
 
 void MainThreadDebugger::interruptMainThreadAndRun(PassOwnPtr<InspectorTaskRunner::Task> task)
 {
     MutexLocker locker(creationMutex());
-    if (s_instance)
-        s_instance->m_taskRunner->interruptAndRun(task);
-}
-
-v8::Local<v8::Object> MainThreadDebugger::compileDebuggerScript()
-{
-    return blink::compileDebuggerScript(m_isolate);
+    if (s_instance) {
+        s_instance->m_taskRunner->appendTask(task);
+        s_instance->m_taskRunner->interruptAndRunAllTasksDontWait(s_instance->m_isolate);
+    }
 }
 
 void MainThreadDebugger::runMessageLoopOnPause(int contextGroupId)
@@ -121,12 +146,62 @@ void MainThreadDebugger::runMessageLoopOnPause(int contextGroupId)
     if (UserGestureToken* token = UserGestureIndicator::currentToken())
         token->setPauseInDebugger();
     // Wait for continue or step command.
-    m_clientMessageLoop->run(pausedFrame);
+    if (m_clientMessageLoop)
+        m_clientMessageLoop->run(pausedFrame);
 }
 
 void MainThreadDebugger::quitMessageLoopOnPause()
 {
-    m_clientMessageLoop->quitNow();
+    if (m_clientMessageLoop)
+        m_clientMessageLoop->quitNow();
+}
+
+void MainThreadDebugger::muteWarningsAndDeprecations()
+{
+    FrameConsole::mute();
+    UseCounter::muteForInspector();
+}
+
+void MainThreadDebugger::unmuteWarningsAndDeprecations()
+{
+    FrameConsole::unmute();
+    UseCounter::unmuteForInspector();
+}
+
+void MainThreadDebugger::muteConsole()
+{
+    FrameConsole::mute();
+}
+
+void MainThreadDebugger::unmuteConsole()
+{
+    FrameConsole::unmute();
+}
+
+bool MainThreadDebugger::callingContextCanAccessContext(v8::Local<v8::Context> calling, v8::Local<v8::Context> target)
+{
+    ExecutionContext* executionContext = toExecutionContext(target);
+    ASSERT(executionContext);
+
+    if (executionContext->isWorkletGlobalScope()) {
+        MainThreadWorkletGlobalScope* globalScope = toMainThreadWorkletGlobalScope(executionContext);
+        return globalScope && BindingSecurity::shouldAllowAccessTo(m_isolate, toLocalDOMWindow(toDOMWindow(calling)), globalScope, DoNotReportSecurityError);
+    }
+
+    DOMWindow* window = toDOMWindow(target);
+    return window && BindingSecurity::shouldAllowAccessTo(m_isolate, toLocalDOMWindow(toDOMWindow(calling)), window, DoNotReportSecurityError);
+}
+
+int MainThreadDebugger::ensureDefaultContextInGroup(int contextGroupId)
+{
+    LocalFrame* frame = WeakIdentifierMap<LocalFrame>::lookup(contextGroupId);
+    if (!frame)
+        return 0;
+    ScriptState* scriptState = ScriptState::forMainWorld(frame);
+    if (!scriptState)
+        return 0;
+    v8::HandleScope scopes(scriptState->isolate());
+    return V8Debugger::contextId(scriptState->context());
 }
 
 } // namespace blink

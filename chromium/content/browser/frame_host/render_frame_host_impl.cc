@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
@@ -17,6 +18,7 @@
 #include "content/browser/accessibility/ax_tree_id_registry.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/bluetooth/web_bluetooth_service_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
@@ -34,10 +36,11 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/geolocation/geolocation_service_context.h"
+#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/permissions/permission_service_context.h"
 #include "content/browser/permissions/permission_service_impl.h"
 #include "content/browser/presentation/presentation_service_impl.h"
-#include "content/browser/renderer_host/input/input_router.h"
+#include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
@@ -70,11 +73,13 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/isolated_world_ids.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_update.h"
+#include "ui/gfx/geometry/quad_f.h"
 #include "url/gurl.h"
 
 #if defined(OS_ANDROID)
@@ -131,11 +136,6 @@ base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
 }  // namespace
 
 // static
-bool RenderFrameHostImpl::IsRFHStateActive(RenderFrameHostImplState rfh_state) {
-  return rfh_state == STATE_DEFAULT;
-}
-
-// static
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
                                          int render_frame_id) {
   return RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
@@ -181,7 +181,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
                                          FrameTreeNode* frame_tree_node,
                                          int32_t routing_id,
                                          int32_t widget_routing_id,
-                                         int flags)
+                                         bool hidden)
     : render_view_host_(render_view_host),
       delegate_(delegate),
       site_instance_(static_cast<SiteInstanceImpl*>(site_instance)),
@@ -192,6 +192,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
       frame_tree_node_(frame_tree_node),
       render_widget_host_(nullptr),
       routing_id_(routing_id),
+      is_waiting_for_swapout_ack_(false),
       render_frame_created_(false),
       navigations_suspended_(false),
       is_waiting_for_beforeunload_ack_(false),
@@ -201,25 +202,20 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
       nav_entry_id_(0),
       accessibility_reset_token_(0),
       accessibility_reset_count_(0),
+      browser_plugin_embedder_ax_tree_id_(AXTreeIDRegistry::kNoAXTreeID),
       no_create_browser_accessibility_manager_for_testing_(false),
       web_ui_type_(WebUI::kNoWebUI),
       pending_web_ui_type_(WebUI::kNoWebUI),
       should_reuse_web_ui_(false),
+      last_navigation_lofi_state_(LOFI_UNSPECIFIED),
       weak_ptr_factory_(this) {
-  bool is_swapped_out = !!(flags & CREATE_RF_SWAPPED_OUT);
-  bool hidden = !!(flags & CREATE_RF_HIDDEN);
   frame_tree_->AddRenderViewHostRef(render_view_host_);
   GetProcess()->AddRoute(routing_id_, this);
   g_routing_id_frame_map.Get().insert(std::make_pair(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_),
       this));
-
-  if (is_swapped_out) {
-    rfh_state_ = STATE_SWAPPED_OUT;
-  } else {
-    rfh_state_ = STATE_DEFAULT;
-    GetSiteInstance()->IncrementActiveFrameCount();
-  }
+  site_instance_->AddObserver(this);
+  GetSiteInstance()->IncrementActiveFrameCount();
 
   // New child frames should inherit the nav_entry_id of their parent.
   if (frame_tree_node_->parent()) {
@@ -246,6 +242,9 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
     } else {
       DCHECK(!render_widget_host_->owned_by_render_frame_host());
     }
+    InputRouterImpl* ir =
+        static_cast<InputRouterImpl*>(render_widget_host_->input_router());
+    ir->SetFrameTreeNodeId(frame_tree_node_->frame_tree_node_id());
   }
 }
 
@@ -258,21 +257,21 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   g_routing_id_frame_map.Get().erase(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_));
 
+  site_instance_->RemoveObserver(this);
+
   if (delegate_ && render_frame_created_)
     delegate_->RenderFrameDeleted(this);
 
-  bool is_active = IsRFHStateActive(rfh_state_);
-
   // If this RenderFrameHost is swapped out, it already decremented the active
   // frame count of the SiteInstance it belongs to.
-  if (is_active)
+  if (is_active())
     GetSiteInstance()->DecrementActiveFrameCount();
 
   // If this RenderFrameHost is swapping with a RenderFrameProxyHost, the
   // RenderFrame will already be deleted in the renderer process. Main frame
   // RenderFrames will be cleaned up as part of deleting its RenderView. In all
   // other cases, the RenderFrame should be cleaned up (if it exists).
-  if (is_active && !frame_tree_node_->IsMainFrame() && render_frame_created_)
+  if (is_active() && !frame_tree_node_->IsMainFrame() && render_frame_created_)
     Send(new FrameMsg_Delete(routing_id_));
 
   // NULL out the swapout timer; in crash dumps this member will be null only if
@@ -311,7 +310,7 @@ RenderProcessHost* RenderFrameHostImpl::GetProcess() {
   return process_;
 }
 
-RenderFrameHost* RenderFrameHostImpl::GetParent() {
+RenderFrameHostImpl* RenderFrameHostImpl::GetParent() {
   FrameTreeNode* parent_node = frame_tree_node_->parent();
   if (!parent_node)
     return NULL;
@@ -334,8 +333,8 @@ bool RenderFrameHostImpl::IsCrossProcessSubframe() {
       parent_node->current_frame_host()->GetSiteInstance();
 }
 
-GURL RenderFrameHostImpl::GetLastCommittedURL() {
-  return frame_tree_node_->current_url();
+const GURL& RenderFrameHostImpl::GetLastCommittedURL() {
+  return last_committed_url();
 }
 
 url::Origin RenderFrameHostImpl::GetLastCommittedOrigin() {
@@ -459,22 +458,9 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
 }
 
 bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
-  // Filter out most IPC messages if this frame is swapped out.
-  // We still want to handle certain ACKs to keep our state consistent.
-  if (is_swapped_out()) {
-    if (!SwappedOutMessages::CanHandleWhileSwappedOut(msg)) {
-      // If this is a synchronous message and we decided not to handle it,
-      // we must send an error reply, or else the renderer will be stuck
-      // and won't respond to future requests.
-      if (msg.is_sync()) {
-        IPC::Message* reply = IPC::SyncMessage::GenerateReply(&msg);
-        reply->set_reply_error();
-        Send(reply);
-      }
-      // Don't continue looking for someone to handle it.
-      return true;
-    }
-  }
+  // Only process messages if the RenderFrame is alive.
+  if (!render_frame_created_)
+    return false;
 
   // This message map is for handling internal IPC messages which should not
   // be dispatched to other objects.
@@ -513,7 +499,6 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnDidFailLoadWithError)
     IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
                                 OnDidCommitProvisionalLoad(msg))
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDropNavigation, OnDidDropNavigation)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateState, OnUpdateState)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DocumentOnLoadCompleted,
@@ -535,6 +520,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeName, OnDidChangeName)
     IPC_MESSAGE_HANDLER(FrameHostMsg_EnforceStrictMixedContentChecking,
                         OnEnforceStrictMixedContentChecking)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateToUniqueOrigin,
+                        OnUpdateToUniqueOrigin)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAssignPageId, OnDidAssignPageId)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeSandboxFlags,
                         OnDidChangeSandboxFlags)
@@ -552,6 +539,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnAccessibilityLocationChanges)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_FindInPageResult,
                         OnAccessibilityFindInPageResult)
+    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_ChildFrameHitTestResult,
+                        OnAccessibilityChildFrameHitTestResult)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_SnapshotResponse,
                         OnAccessibilitySnapshotResponse)
     IPC_MESSAGE_HANDLER(FrameHostMsg_ToggleFullscreen, OnToggleFullscreen)
@@ -606,7 +595,7 @@ void RenderFrameHostImpl::AccessibilitySetSelection(int anchor_object_id,
                                                     int focus_object_id,
                                                     int focus_offset) {
   Send(new AccessibilityMsg_SetSelection(routing_id_,
-                                         focus_object_id,
+                                         anchor_object_id,
                                          anchor_offset,
                                          focus_object_id,
                                          focus_offset));
@@ -640,6 +629,25 @@ gfx::Point RenderFrameHostImpl::AccessibilityOriginInScreen(
   return gfx::Point();
 }
 
+gfx::Rect RenderFrameHostImpl::AccessibilityTransformToRootCoordSpace(
+    const gfx::Rect& bounds) {
+  RenderWidgetHostViewBase* view =
+      static_cast<RenderWidgetHostViewBase*>(GetView());
+  gfx::Point p1 = view->TransformPointToRootCoordSpace(bounds.origin());
+  gfx::Point p2 = view->TransformPointToRootCoordSpace(bounds.top_right());
+  gfx::Point p3 = view->TransformPointToRootCoordSpace(bounds.bottom_right());
+  gfx::Point p4 = view->TransformPointToRootCoordSpace(bounds.bottom_left());
+  gfx::QuadF transformed_quad = gfx::QuadF(
+      gfx::PointF(p1), gfx::PointF(p2), gfx::PointF(p3), gfx::PointF(p4));
+  gfx::RectF new_bounds = transformed_quad.BoundingBox();
+  return gfx::Rect(new_bounds.x(), new_bounds.y(),
+                   new_bounds.width(), new_bounds.height());
+}
+
+SiteInstance* RenderFrameHostImpl::AccessibilityGetSiteInstance() {
+  return GetSiteInstance();
+}
+
 void RenderFrameHostImpl::AccessibilityHitTest(const gfx::Point& point) {
   Send(new AccessibilityMsg_HitTest(routing_id_, point));
 }
@@ -670,6 +678,14 @@ void RenderFrameHostImpl::AccessibilityFatalError() {
 
 gfx::AcceleratedWidget
     RenderFrameHostImpl::AccessibilityGetAcceleratedWidget() {
+  // Only the main frame's current frame host is connected to the native
+  // widget tree for accessibility, so return null if this is queried on
+  // any other frame.
+  if (frame_tree_node()->parent() ||
+      frame_tree_node()->current_frame_host() != this) {
+    return gfx::kNullAcceleratedWidget;
+  }
+
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       render_view_host_->GetWidget()->GetView());
   if (view)
@@ -684,6 +700,13 @@ gfx::NativeViewAccessible
   if (view)
     return view->AccessibilityGetNativeViewAccessible();
   return NULL;
+}
+
+void RenderFrameHostImpl::RenderProcessGone(SiteInstanceImpl* site_instance) {
+  DCHECK_EQ(site_instance_.get(), site_instance);
+
+  // The renderer process is gone, so this frame can no longer be loading.
+  ResetLoadingState();
 }
 
 bool RenderFrameHostImpl::CreateRenderFrame(int proxy_routing_id,
@@ -709,6 +732,16 @@ bool RenderFrameHostImpl::CreateRenderFrame(int proxy_routing_id,
   params.parent_routing_id = parent_routing_id;
   params.previous_sibling_routing_id = previous_sibling_routing_id;
   params.replication_state = frame_tree_node()->current_replication_state();
+
+  // Normally, the replication state contains effective sandbox flags,
+  // excluding flags that were updated but have not taken effect.  However, a
+  // new RenderFrame should use the pending sandbox flags, since it is being
+  // created as part of the navigation that will commit these flags. (I.e., the
+  // RenderFrame needs to know the flags to use when initializing the new
+  // document once it commits).
+  params.replication_state.sandbox_flags =
+      frame_tree_node()->pending_sandbox_flags();
+
   params.frame_owner_properties = frame_tree_node()->frame_owner_properties();
 
   if (render_widget_host_) {
@@ -769,9 +802,7 @@ void RenderFrameHostImpl::SetRenderFrameCreated(bool created) {
 }
 
 void RenderFrameHostImpl::Init() {
-  // TODO(csharrison): Call GetProcess()->ResumeRequestsForFrame(routing_id_)
-  // once ResourceDispatcherHostImpl is keyed on render frame routing ids
-  // instead of render view routing ids.
+  ResourceDispatcherHost::ResumeBlockedRequestsForFrameFromUI(this);
 }
 
 void RenderFrameHostImpl::OnAddMessageToConsole(
@@ -804,18 +835,21 @@ void RenderFrameHostImpl::OnCreateChildFrame(
     int new_routing_id,
     blink::WebTreeScopeType scope,
     const std::string& frame_name,
+    const std::string& frame_unique_name,
     blink::WebSandboxFlags sandbox_flags,
     const blink::WebFrameOwnerProperties& frame_owner_properties) {
+  // TODO(lukasza): Call ReceivedBadMessage when |frame_unique_name| is empty.
+  DCHECK(!frame_unique_name.empty());
+
   // It is possible that while a new RenderFrameHost was committed, the
   // RenderFrame corresponding to this host sent an IPC message to create a
   // frame and it is delivered after this host is swapped out.
   // Ignore such messages, as we know this RenderFrameHost is going away.
-  if (rfh_state_ != RenderFrameHostImpl::STATE_DEFAULT ||
-      frame_tree_node_->current_frame_host() != this)
+  if (!is_active() || frame_tree_node_->current_frame_host() != this)
     return;
 
   frame_tree_->AddFrame(frame_tree_node_, GetProcess()->GetID(), new_routing_id,
-                        scope, frame_name, sandbox_flags,
+                        scope, frame_name, frame_unique_name, sandbox_flags,
                         frame_owner_properties);
 }
 
@@ -963,6 +997,15 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
     // Kills the process.
     bad_message::ReceivedBadMessage(process,
                                     bad_message::RFH_CAN_COMMIT_URL_BLOCKED);
+    return;
+  }
+
+  // Verify that the origin passed from the renderer process is valid and can
+  // be allowed to commit in this RenderFrameHost.
+  if (!CanCommitOrigin(validated_params.origin, validated_params.url)) {
+    bad_message::ReceivedBadMessage(GetProcess(),
+                                    bad_message::RFH_INVALID_ORIGIN_ON_COMMIT);
+    return;
   }
 
   // Without this check, an evil renderer can trick the browser into creating
@@ -993,8 +1036,30 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   // commit as a new navigation. This can happen if an ongoing slow
   // same-process navigation is interrupted by a synchronous renderer-initiated
   // navigation.
+  // TODO(csharrison): Data navigations loaded with LoadDataWithBaseURL get
+  // reset here, because the NavigationHandle tracks the URL but the
+  // validated_params.url tracks the data. The trick of saving the old entry ids
+  // for these navigations should go away when this is properly handled. See
+  // crbug.com/588317.
+  int entry_id_for_data_nav = 0;
   if (navigation_handle_ &&
-      navigation_handle_->GetURL() != validated_params.url) {
+      (navigation_handle_->GetURL() != validated_params.url)) {
+    // Make sure that the pending entry was really loaded via
+    // LoadDataWithBaseURL and that it matches this handle.
+    NavigationEntry* pending_entry =
+        frame_tree_node()->navigator()->GetController()->GetPendingEntry();
+    bool pending_entry_matches_handle =
+        pending_entry &&
+        pending_entry->GetUniqueID() ==
+            navigation_handle_->pending_nav_entry_id();
+    // TODO(csharrison): The pending entry's base url should equal
+    // |validated_params.base_url|. This is not the case for loads with invalid
+    // base urls.
+    if (navigation_handle_->GetURL() == validated_params.base_url &&
+        pending_entry_matches_handle &&
+        !pending_entry->GetBaseURLForDataURL().is_empty()) {
+      entry_id_for_data_nav = navigation_handle_->pending_nav_entry_id();
+    }
     navigation_handle_.reset();
   }
 
@@ -1002,8 +1067,25 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   // DidCommitProvisionalLoad IPC without a prior DidStartProvisionalLoad
   // message.
   if (!navigation_handle_) {
+    // There is no pending NavigationEntry in these cases, so pass 0 as the
+    // nav_id. If the previous handle was a prematurely aborted navigation
+    // loaded via LoadDataWithBaseURL, propogate the entry id.
     navigation_handle_ = NavigationHandleImpl::Create(
-        validated_params.url, frame_tree_node_, base::TimeTicks::Now());
+        validated_params.url, frame_tree_node_,
+        true,  // is_synchronous
+        validated_params.is_srcdoc, base::TimeTicks::Now(),
+        entry_id_for_data_nav);
+    // PlzNavigate
+    if (IsBrowserSideNavigationEnabled()) {
+      // PlzNavigate: synchronous loads happen in the renderer, and the browser
+      // has not been notified about the start of the load yet. Do it now.
+      if (!is_loading()) {
+        bool was_loading = frame_tree_node()->frame_tree()->IsLoading();
+        is_loading_ = true;
+        frame_tree_node()->DidStartLoading(true, was_loading);
+      }
+      pending_commit_ = false;
+    }
   }
 
   accessibility_reset_count_ = 0;
@@ -1021,19 +1103,6 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
     RenderWidgetHostImpl::From(GetView()->GetRenderWidgetHost())
         ->StartNewContentRenderingTimeout();
   }
-
-  // PlzNavigate
-  if (IsBrowserSideNavigationEnabled())
-    pending_commit_ = false;
-}
-
-void RenderFrameHostImpl::OnDidDropNavigation() {
-  // At the end of Navigate(), the FrameTreeNode's DidStartLoading is called to
-  // force the spinner to start, even if the renderer didn't yet begin the load.
-  // If it turns out that the renderer dropped the navigation, the spinner needs
-  // to be turned off.
-  frame_tree_node_->DidStopLoading();
-  navigation_handle_.reset();
 }
 
 void RenderFrameHostImpl::OnUpdateState(const PageState& state) {
@@ -1065,6 +1134,10 @@ RenderWidgetHostView* RenderFrameHostImpl::GetView() {
 
   NOTREACHED();
   return nullptr;
+}
+
+GlobalFrameRoutingId RenderFrameHostImpl::GetGlobalFrameRoutingId() {
+  return GlobalFrameRoutingId(GetProcess()->GetID(), GetRoutingID());
 }
 
 int RenderFrameHostImpl::GetEnabledBindings() {
@@ -1107,9 +1180,9 @@ void RenderFrameHostImpl::SwapOut(
   // to be fixed when RenderViewHostImpl::OnSwapOut moves to RenderFrameHost.
   TRACE_EVENT_ASYNC_BEGIN0("navigation", "RenderFrameHostImpl::SwapOut", this);
 
-  // If this RenderFrameHost is not in the default state, it must have already
+  // If this RenderFrameHost is already pending deletion, it must have already
   // gone through this, therefore just return.
-  if (rfh_state_ != RenderFrameHostImpl::STATE_DEFAULT) {
+  if (!is_active()) {
     NOTREACHED() << "RFH should be in default state when calling SwapOut.";
     return;
   }
@@ -1131,9 +1204,16 @@ void RenderFrameHostImpl::SwapOut(
                               replication_state));
   }
 
-  // If this is the last active frame in the SiteInstance, the SetState call
-  // below will trigger the deletion of the SiteInstance's proxies.
-  SetState(RenderFrameHostImpl::STATE_PENDING_SWAP_OUT);
+  // TODO(nasko): If the frame is not live, the RFH should just be deleted by
+  // simulating the receipt of swap out ack.
+  is_waiting_for_swapout_ack_ = true;
+  if (frame_tree_node_->IsMainFrame())
+    render_view_host_->set_is_active(false);
+
+  // If this is the last active frame in the SiteInstance, the
+  // DecrementActiveFrameCount call will trigger the deletion of the
+  // SiteInstance's proxies.
+  GetSiteInstance()->DecrementActiveFrameCount();
 
   if (!GetParent())
     delegate_->SwappedOut(this);
@@ -1233,7 +1313,7 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
 
 bool RenderFrameHostImpl::IsWaitingForUnloadACK() const {
   return render_view_host_->is_waiting_for_close_ack_ ||
-      rfh_state_ == STATE_PENDING_SWAP_OUT;
+         is_waiting_for_swapout_ack_;
 }
 
 void RenderFrameHostImpl::OnSwapOutACK() {
@@ -1251,11 +1331,7 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
   // Reset frame tree state associated with this process.  This must happen
   // before RenderViewTerminated because observers expect the subframes of any
   // affected frames to be cleared first.
-  // Note: When a RenderFrameHost is swapped out there is a different one
-  // which is the current host. In this case, the FrameTreeNode state must
-  // not be reset.
-  if (!is_swapped_out())
-    frame_tree_node_->ResetForNewProcess();
+  frame_tree_node_->ResetForNewProcess();
 
   // Reset state for the current RenderFrameHost once the FrameTreeNode has been
   // reset.
@@ -1268,6 +1344,12 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
     iter.second.Run(ui::AXTreeUpdate());
   ax_tree_snapshot_callbacks_.clear();
 
+  // If the process has died, we don't need to wait for the swap out ack from
+  // this RenderFrame if it is pending deletion.  Complete the swap out to
+  // destroy it.
+  if (!is_active())
+    OnSwappedOut();
+
   // Note: don't add any more code at this point in the function because
   // |this| may be deleted. Any additional cleanup should happen before
   // the last block of code here.
@@ -1275,7 +1357,7 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
 
 void RenderFrameHostImpl::OnSwappedOut() {
   // Ignore spurious swap out ack.
-  if (rfh_state_ != STATE_PENDING_SWAP_OUT)
+  if (!is_waiting_for_swapout_ack_)
     return;
 
   TRACE_EVENT_ASYNC_END0("navigation", "RenderFrameHostImpl::SwapOut", this);
@@ -1284,21 +1366,19 @@ void RenderFrameHostImpl::OnSwappedOut() {
   ClearAllWebUI();
 
   // If this is a main frame RFH that's about to be deleted, update its RVH's
-  // swapped-out state here, since SetState won't be called once this RFH is
-  // deleted below. https://crbug.com/505887
-  if (frame_tree_node_->IsMainFrame() &&
-      frame_tree_node_->render_manager()->IsPendingDeletion(this)) {
+  // swapped-out state here. https://crbug.com/505887
+  if (frame_tree_node_->IsMainFrame()) {
     render_view_host_->set_is_active(false);
     render_view_host_->set_is_swapped_out(true);
   }
 
-  if (frame_tree_node_->render_manager()->DeleteFromPendingList(this)) {
-    // We are now deleted.
-    return;
-  }
+  bool deleted =
+      frame_tree_node_->render_manager()->DeleteFromPendingList(this);
+  CHECK(deleted);
+}
 
-  // If this RFH wasn't pending deletion, then it is now swapped out.
-  SetState(RenderFrameHostImpl::STATE_SWAPPED_OUT);
+void RenderFrameHostImpl::ResetSwapOutTimerForTesting() {
+  swapout_event_monitor_timeout_->Stop();
 }
 
 void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
@@ -1317,9 +1397,9 @@ void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
   // It is necessary to transform the coordinates to account for nested
   // RenderWidgetHosts, such as with out-of-process iframes.
   gfx::Point original_point(validated_params.x, validated_params.y);
-  gfx::Point transformed_point = original_point;
-  static_cast<RenderWidgetHostViewBase*>(GetView())
-      ->TransformPointToRootCoordSpace(original_point, &transformed_point);
+  gfx::Point transformed_point =
+      static_cast<RenderWidgetHostViewBase*>(GetView())
+          ->TransformPointToRootCoordSpace(original_point);
   validated_params.x = transformed_point.x();
   validated_params.y = transformed_point.y();
 
@@ -1371,20 +1451,19 @@ void RenderFrameHostImpl::OnRunJavaScriptMessage(
 
 void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
     const GURL& frame_url,
-    const base::string16& message,
     bool is_reload,
     IPC::Message* reply_msg) {
   // While a JS beforeunload dialog is showing, tabs in the same process
   // shouldn't process input events.
   GetProcess()->SetIgnoreInputEvents(true);
   render_view_host_->GetWidget()->StopHangMonitorTimeout();
-  delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
+  delegate_->RunBeforeUnloadConfirm(this, is_reload, reply_msg);
 }
 
 void RenderFrameHostImpl::OnTextSurroundingSelectionResponse(
     const base::string16& content,
-    size_t start_offset,
-    size_t end_offset) {
+    uint32_t start_offset,
+    uint32_t end_offset) {
   render_view_host_->OnTextSurroundingSelectionResponse(
       content, start_offset, end_offset);
 }
@@ -1398,9 +1477,15 @@ void RenderFrameHostImpl::OnDidChangeOpener(int32_t opener_routing_id) {
                                                       GetSiteInstance());
 }
 
-void RenderFrameHostImpl::OnDidChangeName(const std::string& name) {
+void RenderFrameHostImpl::OnDidChangeName(const std::string& name,
+                                          const std::string& unique_name) {
+  if (GetParent() != nullptr) {
+    // TODO(lukasza): Call ReceivedBadMessage when |unique_name| is empty.
+    DCHECK(!unique_name.empty());
+  }
+
   std::string old_name = frame_tree_node()->frame_name();
-  frame_tree_node()->SetFrameName(name);
+  frame_tree_node()->SetFrameName(name, unique_name);
   if (old_name.empty() && !name.empty())
     frame_tree_node_->render_manager()->CreateProxiesForNewNamedFrame();
   delegate_->DidChangeName(this, name);
@@ -1408,6 +1493,14 @@ void RenderFrameHostImpl::OnDidChangeName(const std::string& name) {
 
 void RenderFrameHostImpl::OnEnforceStrictMixedContentChecking() {
   frame_tree_node()->SetEnforceStrictMixedContentChecking(true);
+}
+
+void RenderFrameHostImpl::OnUpdateToUniqueOrigin(
+    bool is_potentially_trustworthy_unique_origin) {
+  url::Origin origin;
+  DCHECK(origin.unique());
+  frame_tree_node()->SetCurrentOrigin(origin,
+                                      is_potentially_trustworthy_unique_origin);
 }
 
 void RenderFrameHostImpl::OnDidAssignPageId(int32_t page_id) {
@@ -1441,7 +1534,7 @@ void RenderFrameHostImpl::OnDidChangeSandboxFlags(
   if (!child)
     return;
 
-  child->set_sandbox_flags(flags);
+  child->SetPendingSandboxFlags(flags);
 
   // Notify the RenderFrame if it lives in a different process from its
   // parent. The frame's proxies in other processes also need to learn about
@@ -1550,8 +1643,7 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
   RenderWidgetHostViewBase* view = GetViewForAccessibility();
 
   AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
-  if ((accessibility_mode != AccessibilityModeOff) && view &&
-      RenderFrameHostImpl::IsRFHStateActive(rfh_state())) {
+  if ((accessibility_mode != AccessibilityModeOff) && view && is_active()) {
     if (accessibility_mode & AccessibilityModeFlagPlatform)
       GetOrCreateBrowserAccessibilityManager();
 
@@ -1565,8 +1657,8 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
       detail.ax_tree_id = GetAXTreeID();
       if (param.update.has_tree_data) {
         detail.update.has_tree_data = true;
-        AXContentTreeDataToAXTreeData(param.update.tree_data,
-                                      &detail.update.tree_data);
+        ax_content_tree_data_ = param.update.tree_data;
+        AXContentTreeDataToAXTreeData(&detail.update.tree_data);
       }
       detail.update.node_id_to_clear = param.update.node_id_to_clear;
       detail.update.nodes.resize(param.update.nodes.size());
@@ -1605,7 +1697,7 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
           CHECK(ax_tree_for_testing_->Unserialize(detail.update))
               << ax_tree_for_testing_->error();
         }
-        accessibility_testing_callback_.Run(detail.event_type, detail.id);
+        accessibility_testing_callback_.Run(this, detail.event_type, detail.id);
       }
     }
   }
@@ -1621,7 +1713,7 @@ void RenderFrameHostImpl::OnAccessibilityLocationChanges(
 
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       render_view_host_->GetWidget()->GetView());
-  if (view && RenderFrameHostImpl::IsRFHStateActive(rfh_state())) {
+  if (view && is_active()) {
     AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
     if (accessibility_mode & AccessibilityModeFlagPlatform) {
       BrowserAccessibilityManager* manager =
@@ -1647,6 +1739,15 @@ void RenderFrameHostImpl::OnAccessibilityFindInPageResult(
   }
 }
 
+void RenderFrameHostImpl::OnAccessibilityChildFrameHitTestResult(
+    const gfx::Point& point,
+    int hit_obj_id) {
+  if (browser_accessibility_manager_) {
+    browser_accessibility_manager_->OnChildFrameHitTestResult(point,
+                                                              hit_obj_id);
+  }
+}
+
 void RenderFrameHostImpl::OnAccessibilitySnapshotResponse(
     int callback_id,
     const AXContentTreeUpdate& snapshot) {
@@ -1659,8 +1760,8 @@ void RenderFrameHostImpl::OnAccessibilitySnapshotResponse(
                                     &dst_snapshot.nodes[i]);
     }
     if (snapshot.has_tree_data) {
-      AXContentTreeDataToAXTreeData(snapshot.tree_data,
-                                    &dst_snapshot.tree_data);
+      ax_content_tree_data_ = snapshot.tree_data;
+      AXContentTreeDataToAXTreeData(&dst_snapshot.tree_data);
       dst_snapshot.has_tree_data = true;
     }
     it->second.Run(dst_snapshot);
@@ -1672,9 +1773,9 @@ void RenderFrameHostImpl::OnAccessibilitySnapshotResponse(
 
 void RenderFrameHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
   if (enter_fullscreen)
-    delegate_->EnterFullscreenMode(GetLastCommittedURL().GetOrigin());
+    delegate_->EnterFullscreenMode(last_committed_url().GetOrigin());
   else
-    delegate_->ExitFullscreenMode();
+    delegate_->ExitFullscreenMode(/* will_cause_resize */ true);
 
   // The previous call might change the fullscreen state. We need to make sure
   // the renderer is aware of that, which is done via the resize message.
@@ -1682,23 +1783,20 @@ void RenderFrameHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
 }
 
 void RenderFrameHostImpl::OnDidStartLoading(bool to_different_document) {
-  // Any main frame load to a new document should reset the load since it will
-  // replace the current page and any frames.
-  if (to_different_document && !GetParent())
-    is_loading_ = false;
-
-  // This method should never be called when the frame is loading.
-  // Unfortunately, it can happen if a history navigation happens during a
-  // BeforeUnload or Unload event.
-  // TODO(fdegans): Change this to a DCHECK after LoadEventProgress has been
-  // refactored in Blink. See crbug.com/466089
-  if (is_loading_) {
-    LOG(WARNING) << "OnDidStartLoading was called twice.";
+  if (IsBrowserSideNavigationEnabled() && to_different_document) {
+    bad_message::ReceivedBadMessage(GetProcess(),
+                                    bad_message::RFH_UNEXPECTED_LOAD_START);
     return;
   }
-
-  frame_tree_node_->DidStartLoading(to_different_document);
+  bool was_previously_loading = frame_tree_node_->frame_tree()->IsLoading();
   is_loading_ = true;
+
+  // Only inform the FrameTreeNode of a change in load state if the load state
+  // of this RenderFrameHost is being tracked.
+  if (is_active()) {
+    frame_tree_node_->DidStartLoading(to_different_document,
+                                      was_previously_loading);
+  }
 }
 
 void RenderFrameHostImpl::OnDidStopLoading() {
@@ -1713,8 +1811,12 @@ void RenderFrameHostImpl::OnDidStopLoading() {
   }
 
   is_loading_ = false;
-  frame_tree_node_->DidStopLoading();
   navigation_handle_.reset();
+
+  // Only inform the FrameTreeNode of a change in load state if the load state
+  // of this RenderFrameHost is being tracked.
+  if (is_active())
+    frame_tree_node_->DidStopLoading();
 }
 
 void RenderFrameHostImpl::OnDidChangeLoadProgress(double load_progress) {
@@ -1735,13 +1837,15 @@ void RenderFrameHostImpl::OnShowPopup(
   RenderViewHostDelegateView* view =
       render_view_host_->delegate_->GetDelegateView();
   if (view) {
-    view->ShowPopupMenu(this,
-                        params.bounds,
-                        params.item_height,
-                        params.item_font_size,
-                        params.selected_item,
-                        params.popup_items,
-                        params.right_aligned,
+    gfx::Point original_point(params.bounds.x(), params.bounds.y());
+    gfx::Point transformed_point =
+        static_cast<RenderWidgetHostViewBase*>(GetView())
+            ->TransformPointToRootCoordSpace(original_point);
+    gfx::Rect transformed_bounds(transformed_point.x(), transformed_point.y(),
+                                 params.bounds.width(), params.bounds.height());
+    view->ShowPopupMenu(this, transformed_bounds, params.item_height,
+                        params.item_font_size, params.selected_item,
+                        params.popup_items, params.right_aligned,
                         params.allow_multiple_selection);
   }
 }
@@ -1761,11 +1865,17 @@ void RenderFrameHostImpl::RegisterMojoServices() {
     // TODO(creis): Bind process ID here so that GeolocationServiceImpl
     // can perform permissions checks once site isolation is complete.
     // crbug.com/426384
-    GetServiceRegistry()->AddService<GeolocationService>(
+    // NOTE: At shutdown, there is no guaranteed ordering between destruction of
+    // this object and destruction of any GeolocationServicesImpls created via
+    // the below service registry, the reason being that the destruction of the
+    // latter is triggered by receiving a message that the pipe was closed from
+    // the renderer side. Hence, supply the reference to this object as a weak
+    // pointer.
+    GetServiceRegistry()->AddService(
         base::Bind(&GeolocationServiceContext::CreateService,
                    base::Unretained(geolocation_service_context),
                    base::Bind(&RenderFrameHostImpl::DidUseGeolocationPermission,
-                              base::Unretained(this))));
+                              weak_ptr_factory_.GetWeakPtr())));
   }
 
   WakeLockServiceContext* wake_lock_service_context =
@@ -1774,7 +1884,7 @@ void RenderFrameHostImpl::RegisterMojoServices() {
     // WakeLockServiceContext is owned by WebContentsImpl so it will outlive
     // this RenderFrameHostImpl, hence a raw pointer can be bound to service
     // factory callback.
-    GetServiceRegistry()->AddService<WakeLockService>(
+    GetServiceRegistry()->AddService<mojom::WakeLockService>(
         base::Bind(&WakeLockServiceContext::CreateService,
                    base::Unretained(wake_lock_service_context),
                    GetProcess()->GetID(), GetRoutingID()));
@@ -1783,18 +1893,29 @@ void RenderFrameHostImpl::RegisterMojoServices() {
   if (!permission_service_context_)
     permission_service_context_.reset(new PermissionServiceContext(this));
 
-  GetServiceRegistry()->AddService<PermissionService>(
+  GetServiceRegistry()->AddService(
       base::Bind(&PermissionServiceContext::CreateService,
                  base::Unretained(permission_service_context_.get())));
 
-  GetServiceRegistry()->AddService<presentation::PresentationService>(
-      base::Bind(&PresentationServiceImpl::CreateMojoService,
-                 base::Unretained(this)));
+  GetServiceRegistry()->AddService(base::Bind(
+      &PresentationServiceImpl::CreateMojoService, base::Unretained(this)));
+
+  bool enable_web_bluetooth = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableWebBluetooth);
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+  enable_web_bluetooth = true;
+#endif
+
+  if (enable_web_bluetooth) {
+    GetServiceRegistry()->AddService(
+        base::Bind(&RenderFrameHostImpl::CreateWebBluetoothService,
+                   base::Unretained(this)));
+  }
 
   if (!frame_mojo_shell_)
     frame_mojo_shell_.reset(new FrameMojoShell(this));
 
-  GetServiceRegistry()->AddService<mojo::Shell>(base::Bind(
+  GetServiceRegistry()->AddService<mojo::shell::mojom::Connector>(base::Bind(
       &FrameMojoShell::BindRequest, base::Unretained(frame_mojo_shell_.get())));
 
 #if defined(ENABLE_WEBVR)
@@ -1802,8 +1923,7 @@ void RenderFrameHostImpl::RegisterMojoServices() {
       *base::CommandLine::ForCurrentProcess();
 
   if (browser_command_line.HasSwitch(switches::kEnableWebVR)) {
-    GetServiceRegistry()->AddService<VRService>(
-        base::Bind(&VRDeviceManager::BindRequest));
+    GetServiceRegistry()->AddService(base::Bind(&VRDeviceManager::BindRequest));
   }
 #endif
 
@@ -1811,43 +1931,26 @@ void RenderFrameHostImpl::RegisterMojoServices() {
       GetServiceRegistry(), this);
 }
 
-void RenderFrameHostImpl::SetState(RenderFrameHostImplState rfh_state) {
-  // Only main frames should be swapped out and retained inside a proxy host.
-  if (rfh_state == STATE_SWAPPED_OUT)
-    CHECK(!GetParent());
+void RenderFrameHostImpl::ResetWaitingState() {
+  DCHECK(is_active());
 
-  // We update the number of RenderFrameHosts in a SiteInstance when the swapped
-  // out status of a RenderFrameHost gets flipped to/from active.
-  if (!IsRFHStateActive(rfh_state_) && IsRFHStateActive(rfh_state))
-    GetSiteInstance()->IncrementActiveFrameCount();
-  else if (IsRFHStateActive(rfh_state_) && !IsRFHStateActive(rfh_state))
-    GetSiteInstance()->DecrementActiveFrameCount();
-
-  // The active and swapped out state of the RVH is determined by its main
-  // frame, since subframes should have their own widgets.
+  // The active state of the RVH is determined by its main frame, since
+  // subframes should have their own widgets.
   if (frame_tree_node_->IsMainFrame()) {
-    render_view_host_->set_is_active(IsRFHStateActive(rfh_state));
-    render_view_host_->set_is_swapped_out(rfh_state == STATE_SWAPPED_OUT);
+    render_view_host_->set_is_active(true);
+    render_view_host_->set_is_swapped_out(false);
   }
 
-  // Whenever we change the RFH state to and from active or swapped out state,
-  // we should not be waiting for beforeunload or close acks.  We clear them
-  // here to be safe, since they can cause navigations to be ignored in
-  // OnDidCommitProvisionalLoad.
-  // TODO(creis): Move is_waiting_for_beforeunload_ack_ into the state machine.
-  if (rfh_state == STATE_DEFAULT ||
-      rfh_state == STATE_SWAPPED_OUT ||
-      rfh_state_ == STATE_DEFAULT ||
-      rfh_state_ == STATE_SWAPPED_OUT) {
-    if (is_waiting_for_beforeunload_ack_) {
-      is_waiting_for_beforeunload_ack_ = false;
-      render_view_host_->GetWidget()->decrement_in_flight_event_count();
-      render_view_host_->GetWidget()->StopHangMonitorTimeout();
-    }
-    send_before_unload_start_time_ = base::TimeTicks();
-    render_view_host_->is_waiting_for_close_ack_ = false;
+  // Whenever we reset the RFH state, we should not be waiting for beforeunload
+  // or close acks.  We clear them here to be safe, since they can cause
+  // navigations to be ignored in OnDidCommitProvisionalLoad.
+  if (is_waiting_for_beforeunload_ack_) {
+    is_waiting_for_beforeunload_ack_ = false;
+    render_view_host_->GetWidget()->decrement_in_flight_event_count();
+    render_view_host_->GetWidget()->StopHangMonitorTimeout();
   }
-  rfh_state_ = rfh_state;
+  send_before_unload_start_time_ = base::TimeTicks();
+  render_view_host_->is_waiting_for_close_ack_ = false;
 }
 
 bool RenderFrameHostImpl::CanCommitURL(const GURL& url) {
@@ -1857,6 +1960,42 @@ bool RenderFrameHostImpl::CanCommitURL(const GURL& url) {
 
   // Give the client a chance to disallow URLs from committing.
   return GetContentClient()->browser()->CanCommitURL(GetProcess(), url);
+}
+
+bool RenderFrameHostImpl::CanCommitOrigin(
+    const url::Origin& origin,
+    const GURL& url) {
+  // If the --disable-web-security flag is specified, all bets are off and the
+  // renderer process can send any origin it wishes.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableWebSecurity)) {
+    return true;
+  }
+
+  // file: URLs can be allowed to access any other origin, based on settings.
+  if (origin.scheme() == url::kFileScheme) {
+    WebPreferences prefs = render_view_host_->GetWebkitPreferences();
+    if (prefs.allow_universal_access_from_file_urls)
+      return true;
+  }
+
+  // It is safe to commit into a unique origin, regardless of the URL, as it is
+  // restricted from accessing other origins.
+  if (origin.unique())
+    return true;
+
+  // Standard URLs must match the reported origin.
+  if (url.IsStandard() && !origin.IsSameOriginWith(url::Origin(url)))
+    return false;
+
+  // A non-unique origin must be a valid URL, which allows us to safely do a
+  // conversion to GURL.
+  GURL origin_url(origin.Serialize());
+
+  // Verify that the origin is allowed to commit in this process.
+  // Note: This also handles non-standard cases for |url|, such as
+  // about:blank, data, and blob URLs.
+  return CanCommitURL(origin_url);
 }
 
 void RenderFrameHostImpl::Navigate(
@@ -1877,8 +2016,8 @@ void RenderFrameHostImpl::Navigate(
         new NavigationParams(common_params, start_params, request_params));
   } else {
     // Get back to a clean state, in case we start a new navigation without
-    // completing a RFH swap or unload handler.
-    SetState(RenderFrameHostImpl::STATE_DEFAULT);
+    // completing an unload handler.
+    ResetWaitingState();
     SendNavigateMessage(common_params, start_params, request_params);
   }
 
@@ -1894,7 +2033,7 @@ void RenderFrameHostImpl::Navigate(
   // Blink doesn't send throb notifications for JavaScript URLs, so it is not
   // done here either.
   if (!common_params.url.SchemeIs(url::kJavaScriptScheme))
-    frame_tree_node_->DidStartLoading(true);
+    OnDidStartLoading(true);
 }
 
 void RenderFrameHostImpl::NavigateToInterstitialURL(const GURL& data_url) {
@@ -1903,10 +2042,10 @@ void RenderFrameHostImpl::NavigateToInterstitialURL(const GURL& data_url) {
       data_url, Referrer(), ui::PAGE_TRANSITION_LINK,
       FrameMsg_Navigate_Type::NORMAL, false, false, base::TimeTicks::Now(),
       FrameMsg_UILoadMetricsReportType::NO_REPORT, GURL(), GURL(), LOFI_OFF,
-      base::TimeTicks::Now());
+      base::TimeTicks::Now(), "GET");
   if (IsBrowserSideNavigationEnabled()) {
-    CommitNavigation(nullptr, nullptr, common_params,
-                     RequestNavigationParams());
+    CommitNavigation(nullptr, nullptr, common_params, RequestNavigationParams(),
+                     false);
   } else {
     Navigate(common_params, StartNavigationParams(), RequestNavigationParams());
   }
@@ -2036,34 +2175,46 @@ void RenderFrameHostImpl::CommitNavigation(
     ResourceResponse* response,
     scoped_ptr<StreamHandle> body,
     const CommonNavigationParams& common_params,
-    const RequestNavigationParams& request_params) {
+    const RequestNavigationParams& request_params,
+    bool is_view_source) {
   DCHECK((response && body.get()) ||
           !ShouldMakeNetworkRequestForURL(common_params.url));
   UpdatePermissionsForNavigation(common_params, request_params);
 
   // Get back to a clean state, in case we start a new navigation without
-  // completing a RFH swap or unload handler.
-  SetState(RenderFrameHostImpl::STATE_DEFAULT);
+  // completing an unload handler.
+  ResetWaitingState();
+
+  // The renderer can exit view source mode when any error or cancellation
+  // happen. When reusing the same renderer, overwrite to recover the mode.
+  if (is_view_source &&
+      this == frame_tree_node_->render_manager()->current_frame_host()) {
+    DCHECK(!GetParent());
+    render_view_host()->Send(new FrameMsg_EnableViewSourceMode(routing_id_));
+  }
 
   const GURL body_url = body.get() ? body->GetURL() : GURL();
   const ResourceResponseHead head = response ?
       response->head : ResourceResponseHead();
   Send(new FrameMsg_CommitNavigation(routing_id_, head, body_url, common_params,
                                      request_params));
-  // TODO(clamy): Check if we should start the throbber for non javascript urls
-  // here.
+
+  // If a network request was made, update the LoFi state.
+  if (ShouldMakeNetworkRequestForURL(common_params.url))
+    last_navigation_lofi_state_ = common_params.lofi_state;
 
   // TODO(clamy): Release the stream handle once the renderer has finished
   // reading it.
   stream_handle_ = std::move(body);
 
   // When navigating to a Javascript url, no commit is expected from the
-  // RenderFrameHost, nor should the throbber start.
+  // RenderFrameHost, nor should the throbber start. The NavigationRequest is
+  // also not stored in the FrameTreeNode. Therefore do not reset it, as this
+  // could cancel an existing pending navigation.
   if (!common_params.url.SchemeIs(url::kJavaScriptScheme)) {
     pending_commit_ = true;
     is_loading_ = true;
   }
-  frame_tree_node_->ResetNavigationRequest(true);
 }
 
 void RenderFrameHostImpl::FailedNavigation(
@@ -2072,8 +2223,8 @@ void RenderFrameHostImpl::FailedNavigation(
     bool has_stale_copy_in_cache,
     int error_code) {
   // Get back to a clean state, in case a new navigation started without
-  // completing a RFH swap or unload handler.
-  SetState(RenderFrameHostImpl::STATE_DEFAULT);
+  // completing an unload handler.
+  ResetWaitingState();
 
   Send(new FrameMsg_FailedNavigation(routing_id_, common_params, request_params,
                                      has_stale_copy_in_cache, error_code));
@@ -2092,21 +2243,21 @@ void RenderFrameHostImpl::SetUpMojoIfNeeded() {
     return;
 
   RegisterMojoServices();
-  RenderFrameSetupPtr setup;
+  mojom::RenderFrameSetupPtr setup;
   GetProcess()->GetServiceRegistry()->ConnectToRemoteService(
       mojo::GetProxy(&setup));
 
-  mojo::ServiceProviderPtr exposed_services;
+  mojo::shell::mojom::InterfaceProviderPtr exposed_services;
   service_registry_->Bind(GetProxy(&exposed_services));
 
-  mojo::ServiceProviderPtr services;
-  setup->ExchangeServiceProviders(routing_id_, GetProxy(&services),
-                                  std::move(exposed_services));
+  mojo::shell::mojom::InterfaceProviderPtr services;
+  setup->ExchangeInterfaceProviders(routing_id_, GetProxy(&services),
+                                    std::move(exposed_services));
   service_registry_->BindRemoteServiceProvider(std::move(services));
 
 #if defined(OS_ANDROID)
-  service_registry_android_.reset(
-      new ServiceRegistryAndroid(service_registry_.get()));
+  service_registry_android_ =
+      ServiceRegistryAndroid::Create(service_registry_.get());
   ServiceRegistrarAndroid::RegisterFrameHostServices(
       service_registry_android_.get());
 #endif
@@ -2226,13 +2377,29 @@ void RenderFrameHostImpl::ClearAllWebUI() {
   web_ui_.reset();
 }
 
-const image_downloader::ImageDownloaderPtr&
+const content::mojom::ImageDownloaderPtr&
 RenderFrameHostImpl::GetMojoImageDownloader() {
   if (!mojo_image_downloader_.get() && GetServiceRegistry()) {
     GetServiceRegistry()->ConnectToRemoteService(
         mojo::GetProxy(&mojo_image_downloader_));
   }
   return mojo_image_downloader_;
+}
+
+void RenderFrameHostImpl::ResetLoadingState() {
+  if (is_loading()) {
+    // When pending deletion, just set the loading state to not loading.
+    // Otherwise, OnDidStopLoading will take care of that, as well as sending
+    // notification to the FrameTreeNode about the change in loading state.
+    if (!is_active())
+      is_loading_ = false;
+    else
+      OnDidStopLoading();
+  }
+}
+
+void RenderFrameHostImpl::SuppressFurtherDialogs() {
+  Send(new FrameMsg_SuppressFurtherDialogs(GetRoutingID()));
 }
 
 bool RenderFrameHostImpl::IsSameSiteInstance(
@@ -2256,8 +2423,29 @@ void RenderFrameHostImpl::RequestAXTreeSnapshot(
 }
 
 void RenderFrameHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(ui::AXEvent, int)>& callback) {
+    const base::Callback<void(RenderFrameHostImpl*, ui::AXEvent, int)>&
+        callback) {
   accessibility_testing_callback_ = callback;
+}
+
+void RenderFrameHostImpl::UpdateAXTreeData() {
+  AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
+  if (accessibility_mode == AccessibilityModeOff || !is_active()) {
+    return;
+  }
+
+  std::vector<AXEventNotificationDetails> details;
+  details.reserve(1U);
+  AXEventNotificationDetails detail;
+  detail.ax_tree_id = GetAXTreeID();
+  detail.update.has_tree_data = true;
+  AXContentTreeDataToAXTreeData(&detail.update.tree_data);
+  details.push_back(detail);
+
+  if (browser_accessibility_manager_)
+    browser_accessibility_manager_->OnAccessibilityEvents(details);
+
+  delegate_->AccessibilityEventReceived(details);
 }
 
 void RenderFrameHostImpl::SetTextTrackSettings(
@@ -2276,8 +2464,9 @@ BrowserAccessibilityManager*
   if (view &&
       !browser_accessibility_manager_ &&
       !no_create_browser_accessibility_manager_for_testing_) {
+    bool is_root_frame = !frame_tree_node()->parent();
     browser_accessibility_manager_.reset(
-        view->CreateBrowserAccessibilityManager(this));
+        view->CreateBrowserAccessibilityManager(this, is_root_frame));
     if (browser_accessibility_manager_)
       UMA_HISTOGRAM_COUNTS("Accessibility.FrameEnabledCount", 1);
     else
@@ -2314,22 +2503,13 @@ bool RenderFrameHostImpl::IsRenderFrameLive() {
   return is_live;
 }
 
-#if defined(OS_WIN)
-
-void RenderFrameHostImpl::SetParentNativeViewAccessible(
-    gfx::NativeViewAccessible accessible_parent) {
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      render_view_host_->GetWidget()->GetView());
-  if (view)
-    view->SetParentNativeViewAccessible(accessible_parent);
+int RenderFrameHostImpl::GetProxyCount() {
+  if (this != frame_tree_node_->current_frame_host())
+    return 0;
+  return frame_tree_node_->render_manager()->GetProxyCount();
 }
 
-gfx::NativeViewAccessible
-RenderFrameHostImpl::GetParentNativeViewAccessible() const {
-  return delegate_->GetParentNativeViewAccessible();
-}
-
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 
 void RenderFrameHostImpl::DidSelectPopupMenuItem(int selected_index) {
   Send(new FrameMsg_SelectPopupMenuItem(routing_id_, selected_index));
@@ -2340,6 +2520,17 @@ void RenderFrameHostImpl::DidCancelPopupMenu() {
 }
 
 #elif defined(OS_ANDROID)
+
+void RenderFrameHostImpl::ActivateNearestFindResult(int request_id,
+                                                    float x,
+                                                    float y) {
+  Send(
+      new InputMsg_ActivateNearestFindResult(GetRoutingID(), request_id, x, y));
+}
+
+void RenderFrameHostImpl::RequestFindMatchRects(int current_version) {
+  Send(new FrameMsg_FindMatchRects(GetRoutingID(), current_version));
+}
 
 void RenderFrameHostImpl::DidSelectPopupMenuItems(
     const std::vector<int>& selected_indices) {
@@ -2370,9 +2561,8 @@ void RenderFrameHostImpl::SetNavigationsSuspended(
 
   if (!suspend && suspended_nav_params_) {
     // There's navigation message params waiting to be sent. Now that we're not
-    // suspended anymore, resume navigation by sending them. If we were swapped
-    // out, we should also stop filtering out the IPC messages now.
-    SetState(RenderFrameHostImpl::STATE_DEFAULT);
+    // suspended anymore, resume navigation by sending them.
+    ResetWaitingState();
 
     DCHECK(!proceed_time.is_null());
     // TODO(csharrison): Make sure that PlzNavigate and the current architecture
@@ -2414,9 +2604,9 @@ void RenderFrameHostImpl::DidUseGeolocationPermission() {
 
   permission_manager->RegisterPermissionUsage(
       PermissionType::GEOLOCATION,
-      GetLastCommittedURL().GetOrigin(),
+      last_committed_url().GetOrigin(),
       frame_tree_node()->frame_tree()->GetMainFrame()
-          ->GetLastCommittedURL().GetOrigin());
+          ->last_committed_url().GetOrigin());
 }
 
 void RenderFrameHostImpl::UpdatePermissionsForNavigation(
@@ -2488,10 +2678,12 @@ AXTreeIDRegistry::AXTreeID RenderFrameHostImpl::RoutingIDToAXTreeID(
 AXTreeIDRegistry::AXTreeID
 RenderFrameHostImpl::BrowserPluginInstanceIDToAXTreeID(
     int instance_id) {
-  RenderFrameHost* guest = delegate()->GetGuestByInstanceID(
-      this, instance_id);
+  RenderFrameHostImpl* guest = static_cast<RenderFrameHostImpl*>(
+      delegate()->GetGuestByInstanceID(this, instance_id));
   if (!guest)
     return AXTreeIDRegistry::kNoAXTreeID;
+
+  guest->set_browser_plugin_embedder_ax_tree_id(GetAXTreeID());
 
   return guest->GetAXTreeID();
 }
@@ -2525,8 +2717,9 @@ void RenderFrameHostImpl::AXContentNodeDataToAXNodeData(
 }
 
 void RenderFrameHostImpl::AXContentTreeDataToAXTreeData(
-    const AXContentTreeData& src,
     ui::AXTreeData* dst) {
+  const AXContentTreeData& src = ax_content_tree_data_;
+
   // Copy the common fields.
   *dst = src;
 
@@ -2535,6 +2728,29 @@ void RenderFrameHostImpl::AXContentTreeDataToAXTreeData(
 
   if (src.parent_routing_id != -1)
     dst->parent_tree_id = RoutingIDToAXTreeID(src.parent_routing_id);
+
+  if (browser_plugin_embedder_ax_tree_id_ != AXTreeIDRegistry::kNoAXTreeID)
+    dst->parent_tree_id = browser_plugin_embedder_ax_tree_id_;
+
+  // If this is not the root frame tree node, we're done.
+  if (frame_tree_node()->parent())
+    return;
+
+  // For the root frame tree node, also store the AXTreeID of the focused frame.
+  FrameTreeNode* focused_frame_tree_node = frame_tree_->GetFocusedFrame();
+  if (!focused_frame_tree_node)
+    return;
+  RenderFrameHostImpl* focused_frame =
+      focused_frame_tree_node->current_frame_host();
+  DCHECK(focused_frame);
+  dst->focused_tree_id = focused_frame->GetAXTreeID();
+}
+
+void RenderFrameHostImpl::CreateWebBluetoothService(
+    blink::mojom::WebBluetoothServiceRequest request) {
+  DCHECK(!web_bluetooth_service_);
+  web_bluetooth_service_.reset(
+      new WebBluetoothServiceImpl(this, std::move(request)));
 }
 
 }  // namespace content

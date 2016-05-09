@@ -312,6 +312,8 @@ CPU::CPU()
       architecture_(0),
       variant_(-1),
       part_(0),
+      icache_line_size_(UNKNOWN_CACHE_LINE_SIZE),
+      dcache_line_size_(UNKNOWN_CACHE_LINE_SIZE),
       has_fpu_(false),
       has_cmov_(false),
       has_sahf_(false),
@@ -466,7 +468,12 @@ CPU::CPU()
     char* end;
     architecture_ = strtol(architecture, &end, 10);
     if (end == architecture) {
-      architecture_ = 0;
+      // Kernels older than 3.18 report "CPU architecture: AArch64" on ARMv8.
+      if (strcmp(architecture, "AArch64") == 0) {
+        architecture_ = 8;
+      } else {
+        architecture_ = 0;
+      }
     }
     delete[] architecture;
 
@@ -644,9 +651,16 @@ CPU::CPU()
       if (n == 0 || entry.a_type == AT_NULL) {
         break;
       }
-      if (entry.a_type == AT_PLATFORM) {
-        auxv_cpu_type = reinterpret_cast<char*>(entry.a_un.a_val);
-        break;
+      switch (entry.a_type) {
+        case AT_PLATFORM:
+          auxv_cpu_type = reinterpret_cast<char*>(entry.a_un.a_val);
+          break;
+        case AT_ICACHEBSIZE:
+          icache_line_size_ = entry.a_un.a_val;
+          break;
+        case AT_DCACHEBSIZE:
+          dcache_line_size_ = entry.a_un.a_val;
+          break;
       }
     }
     fclose(fp);

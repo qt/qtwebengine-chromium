@@ -40,11 +40,13 @@ namespace WTF {
 
 class WTF_EXPORT Partitions {
 public:
+    typedef void (*ReportPartitionAllocSizeFunction)(size_t);
+
     // Name of allocator used by tracing for marking sub-allocations while take
     // memory snapshots.
     static const char* const kAllocatedObjectPoolName;
 
-    static void initialize(HistogramEnumerationFunction);
+    static void initialize(ReportPartitionAllocSizeFunction);
     static void shutdown();
     ALWAYS_INLINE static PartitionRootGeneric* bufferPartition()
     {
@@ -60,8 +62,8 @@ public:
 
     ALWAYS_INLINE static PartitionRoot* nodePartition()
     {
-        ASSERT(s_initialized);
-        return m_nodeAllocator.root();
+        ASSERT_NOT_REACHED();
+        return nullptr;
     }
     ALWAYS_INLINE static PartitionRoot* layoutPartition()
     {
@@ -72,7 +74,8 @@ public:
     static size_t currentDOMMemoryUsage()
     {
         ASSERT(s_initialized);
-        return m_nodeAllocator.root()->totalSizeOfCommittedPages;
+        ASSERT_NOT_REACHED();
+        return 0;
     }
 
     static size_t totalSizeOfCommittedPages()
@@ -80,7 +83,6 @@ public:
         size_t totalSize = 0;
         totalSize += m_fastMallocAllocator.root()->totalSizeOfCommittedPages;
         totalSize += m_bufferAllocator.root()->totalSizeOfCommittedPages;
-        totalSize += m_nodeAllocator.root()->totalSizeOfCommittedPages;
         totalSize += m_layoutAllocator.root()->totalSizeOfCommittedPages;
         return totalSize;
     }
@@ -129,14 +131,12 @@ private:
     static bool s_initialized;
 
     // We have the following four partitions.
-    //   - Node partition: A partition to allocate Nodes. We prepare a
-    //     dedicated partition for Nodes because Nodes are likely to be
-    //     a source of use-after-frees. Another reason is for performance:
-    //     Since Nodes are guaranteed to be used only by the main
-    //     thread, we can bypass acquiring a lock. Also we can improve memory
-    //     locality by putting Nodes together.
-    //   - Layout object partition: A partition to allocate LayoutObjects.
-    //     we prepare a dedicated partition for the same reason as Nodes.
+    //   - LayoutObject partition: A partition to allocate LayoutObjects.
+    //     We prepare a dedicated partition for LayoutObjects because they
+    //     are likely to be a source of use-after-frees. Another reason
+    //     is for performance: As LayoutObjects are guaranteed to only be used
+    //     by the main thread, we can bypass acquiring a lock. Also we can
+    //     improve memory locality by putting LayoutObjects together.
     //   - Buffer partition: A partition to allocate objects that have a strong
     //     risk where the length and/or the contents are exploited from user
     //     scripts. Vectors, HashTables, ArrayBufferContents and Strings are
@@ -144,9 +144,8 @@ private:
     //   - Fast malloc partition: A partition to allocate all other objects.
     static PartitionAllocatorGeneric m_fastMallocAllocator;
     static PartitionAllocatorGeneric m_bufferAllocator;
-    static SizeSpecificPartitionAllocator<3328> m_nodeAllocator;
     static SizeSpecificPartitionAllocator<1024> m_layoutAllocator;
-    static HistogramEnumerationFunction m_histogramEnumeration;
+    static ReportPartitionAllocSizeFunction m_reportSizeFunction;
 };
 
 } // namespace WTF

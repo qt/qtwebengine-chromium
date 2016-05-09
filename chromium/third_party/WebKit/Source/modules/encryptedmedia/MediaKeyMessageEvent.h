@@ -27,7 +27,6 @@
 #ifndef MediaKeyMessageEvent_h
 #define MediaKeyMessageEvent_h
 
-#include "core/html/MediaKeyError.h"
 #include "modules/EventModules.h"
 #include "modules/encryptedmedia/MediaKeyMessageEventInit.h"
 
@@ -40,14 +39,14 @@ class MediaKeyMessageEvent final : public Event {
 public:
     ~MediaKeyMessageEvent() override;
 
-    static PassRefPtrWillBeRawPtr<MediaKeyMessageEvent> create()
+    static MediaKeyMessageEvent* create()
     {
-        return adoptRefWillBeNoop(new MediaKeyMessageEvent);
+        return new MediaKeyMessageEvent;
     }
 
-    static PassRefPtrWillBeRawPtr<MediaKeyMessageEvent> create(const AtomicString& type, const MediaKeyMessageEventInit& initializer)
+    static MediaKeyMessageEvent* create(const AtomicString& type, const MediaKeyMessageEventInit& initializer)
     {
-        return adoptRefWillBeNoop(new MediaKeyMessageEvent(type, initializer));
+        return new MediaKeyMessageEvent(type, initializer);
     }
 
     const AtomicString& interfaceName() const override;

@@ -33,7 +33,7 @@ class FunctionsGLCGL : public FunctionsGL
   public:
     FunctionsGLCGL(void *dylibHandle) : mDylibHandle(dylibHandle) {}
 
-    virtual ~FunctionsGLCGL() { dlclose(mDylibHandle); }
+    ~FunctionsGLCGL() override { dlclose(mDylibHandle); }
 
   private:
     void *loadProcAddress(const std::string &function) override
@@ -119,8 +119,8 @@ SurfaceImpl *DisplayCGL::createWindowSurface(const egl::Config *configuration,
 SurfaceImpl *DisplayCGL::createPbufferSurface(const egl::Config *configuration,
                                               const egl::AttributeMap &attribs)
 {
-    EGLint width  = attribs.get(EGL_WIDTH, 0);
-    EGLint height = attribs.get(EGL_HEIGHT, 0);
+    EGLint width  = static_cast<EGLint>(attribs.get(EGL_WIDTH, 0));
+    EGLint height = static_cast<EGLint>(attribs.get(EGL_HEIGHT, 0));
     return new PbufferSurfaceCGL(this->getRenderer(), width, height, mFunctions);
 }
 
@@ -248,6 +248,7 @@ const FunctionsGL *DisplayCGL::getFunctionsGL() const
 void DisplayCGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
     outExtensions->createContext = true;
+    outExtensions->createContextNoError = true;
 }
 
 void DisplayCGL::generateCaps(egl::Caps *outCaps) const
@@ -255,4 +256,23 @@ void DisplayCGL::generateCaps(egl::Caps *outCaps) const
     outCaps->textureNPOT = true;
 }
 
+egl::Error DisplayCGL::waitClient() const
+{
+    // TODO(cwallez) UNIMPLEMENTED()
+    return egl::Error(EGL_SUCCESS);
+}
+
+egl::Error DisplayCGL::waitNative(EGLint engine,
+                                  egl::Surface *drawSurface,
+                                  egl::Surface *readSurface) const
+{
+    // TODO(cwallez) UNIMPLEMENTED()
+    return egl::Error(EGL_SUCCESS);
+}
+
+egl::Error DisplayCGL::getDriverVersion(std::string *version) const
+{
+    *version = "";
+    return egl::Error(EGL_SUCCESS);
+}
 }

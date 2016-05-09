@@ -15,10 +15,15 @@ namespace cc {
 class Layer;
 }
 
+namespace gfx {
+class Transform;
+}
+
 namespace blink {
 
 class PaintArtifact;
 class WebLayer;
+struct PaintChunk;
 
 // Responsible for managing compositing in terms of a PaintArtifact.
 //
@@ -33,11 +38,6 @@ public:
     PaintArtifactCompositor();
     ~PaintArtifactCompositor();
 
-    // Creates at least a root layer to be managed by this controller. Can't be
-    // done in the constructor, since RuntimeEnabledFeatures may not be
-    // initialized yet.
-    void initializeIfNeeded();
-
     // Updates the layer tree to match the provided paint artifact.
     // Creates the root layer if not already done.
     void update(const PaintArtifact&);
@@ -47,10 +47,13 @@ public:
 
     // Wraps rootLayer(), so that it can be attached as a child of another
     // WebLayer.
-    WebLayer* webLayer() const { return m_webLayer.get(); }
+    WebLayer* getWebLayer() const { return m_webLayer.get(); }
 
 private:
     class ContentLayerClientImpl;
+
+    // Builds a leaf layer that represents a single paint chunk.
+    scoped_refptr<cc::Layer> layerForPaintChunk(const PaintArtifact&, const PaintChunk&, gfx::Transform);
 
     scoped_refptr<cc::Layer> m_rootLayer;
     OwnPtr<WebLayer> m_webLayer;

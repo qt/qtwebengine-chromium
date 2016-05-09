@@ -33,7 +33,8 @@ GENRB_SOURCE =\
  da.txt\
  de.txt de_AT.txt de_CH.txt\
  el.txt\
- en.txt en_001.txt en_GB.txt en_US.txt en_AU.txt en_CA.txt en_NZ.txt en_ZA.txt\
+ en.txt en_001.txt en_150.txt\
+ en_GB.txt en_US.txt en_AU.txt en_CA.txt en_IN.txt en_NZ.txt en_ZA.txt\
  es.txt es_ES.txt es_419.txt es_AR.txt es_MX.txt es_US.txt\
  et.txt\
  fa.txt\
@@ -46,7 +47,7 @@ GENRB_SOURCE =\
  hr.txt\
  hu.txt\
  id.txt\
- it.txt\
+ it.txt it_CH.txt\
  ja.txt\
  kn.txt\
  ko.txt\
@@ -76,6 +77,8 @@ GENRB_SOURCE =\
  zh_Hant.txt zh_Hant_TW.txt zh_Hant_HK.txt\
  af.txt\
  ak.txt\
+ an.txt\
+ ast.txt\
  az.txt\
  be.txt\
  bem.txt\
@@ -129,5 +132,6 @@ GENRB_SOURCE =\
  to.txt\
  ur.txt\
  uz.txt\
+ wa.txt\
  yo.txt\
  zu.txt

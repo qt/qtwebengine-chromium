@@ -27,6 +27,7 @@
 #include "SkMatrixConvolutionImageFilter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
+#include "wtf/CheckedNumeric.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -45,15 +46,15 @@ FEConvolveMatrix::FEConvolveMatrix(Filter* filter, const IntSize& kernelSize,
 {
 }
 
-PassRefPtrWillBeRawPtr<FEConvolveMatrix> FEConvolveMatrix::create(Filter* filter, const IntSize& kernelSize,
+FEConvolveMatrix* FEConvolveMatrix::create(Filter* filter, const IntSize& kernelSize,
     float divisor, float bias, const IntPoint& targetOffset, EdgeModeType edgeMode,
     bool preserveAlpha, const Vector<float>& kernelMatrix)
 {
-    return adoptRefWillBeNoop(new FEConvolveMatrix(filter, kernelSize, divisor, bias, targetOffset, edgeMode,
-        preserveAlpha, kernelMatrix));
+    return new FEConvolveMatrix(filter, kernelSize, divisor, bias, targetOffset, edgeMode,
+        preserveAlpha, kernelMatrix);
 }
 
-FloatRect FEConvolveMatrix::mapPaintRect(const FloatRect& rect, bool forward)
+FloatRect FEConvolveMatrix::mapPaintRect(const FloatRect& rect, bool forward) const
 {
     FloatRect result = rect;
     if (parametersValid()) {
@@ -122,7 +123,7 @@ bool FEConvolveMatrix::parametersValid() const
     if (m_kernelSize.isEmpty())
         return false;
     uint64_t kernelArea = m_kernelSize.area();
-    if (!WTF::isInBounds<int>(kernelArea))
+    if (!CheckedNumeric<int>(kernelArea).IsValid())
         return false;
     if (safeCast<size_t>(kernelArea) != m_kernelMatrix.size())
         return false;
@@ -152,7 +153,7 @@ PassRefPtr<SkImageFilter> FEConvolveMatrix::createImageFilter(SkiaImageFilterBui
     OwnPtr<SkScalar[]> kernel = adoptArrayPtr(new SkScalar[numElements]);
     for (int i = 0; i < numElements; ++i)
         kernel[i] = SkFloatToScalar(m_kernelMatrix[numElements - 1 - i]);
-    SkImageFilter::CropRect cropRect = getCropRect(builder.cropOffset());
+    SkImageFilter::CropRect cropRect = getCropRect();
     return adoptRef(SkMatrixConvolutionImageFilter::Create(kernelSize, kernel.get(), gain, bias, target, tileMode, convolveAlpha, input.get(), &cropRect));
 }
 

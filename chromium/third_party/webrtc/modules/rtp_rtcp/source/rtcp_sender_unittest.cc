@@ -18,10 +18,15 @@
 
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_sender.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+#include "webrtc/test/mock_transport.h"
 #include "webrtc/test/rtcp_packet_parser.h"
 
+using ::testing::_;
 using ::testing::ElementsAre;
+using ::testing::Invoke;
+using webrtc::RTCPUtility::RtcpCommonHeader;
 
 namespace webrtc {
 
@@ -233,7 +238,7 @@ class RtcpSenderTest : public ::testing::Test {
 
     rtp_rtcp_impl_.reset(new ModuleRtpRtcpImpl(configuration));
     rtcp_sender_.reset(new RTCPSender(false, &clock_, receive_statistics_.get(),
-                                      nullptr, &test_transport_));
+                                      nullptr, nullptr, &test_transport_));
     rtcp_sender_->SetSSRC(kSenderSsrc);
     rtcp_sender_->SetRemoteSSRC(kRemoteSsrc);
   }
@@ -456,6 +461,7 @@ TEST_F(RtcpSenderTest, SendRpsi) {
   feedback_state.send_payload_type = kPayloadType;
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state, kRtcpRpsi, 0, nullptr,
                                       false, kPictureId));
+  EXPECT_EQ(1, parser()->rpsi()->num_packets());
   EXPECT_EQ(kPayloadType, parser()->rpsi()->PayloadType());
   EXPECT_EQ(kPictureId, parser()->rpsi()->PictureId());
 }
@@ -638,38 +644,10 @@ TEST_F(RtcpSenderTest, TestNoXrRrtrSentIfNotEnabled) {
   EXPECT_EQ(0, parser()->rrtr()->num_packets());
 }
 
-TEST_F(RtcpSenderTest, TestSendTimeOfXrRrtr) {
-  rtcp_sender_->SetRTCPStatus(RtcpMode::kCompound);
-  RTCPSender::FeedbackState feedback_state = rtp_rtcp_impl_->GetFeedbackState();
-  EXPECT_EQ(0, rtcp_sender_->SetSendingStatus(feedback_state, false));
-  rtcp_sender_->SendRtcpXrReceiverReferenceTime(true);
-  uint32_t ntp_sec;
-  uint32_t ntp_frac;
-  clock_.CurrentNtp(ntp_sec, ntp_frac);
-  uint32_t initial_mid_ntp = RTCPUtility::MidNtp(ntp_sec, ntp_frac);
-
-  // No packet sent.
-  int64_t time_ms;
-  EXPECT_FALSE(rtcp_sender_->SendTimeOfXrRrReport(initial_mid_ntp, &time_ms));
-
-  // Send XR RR packets.
-  for (int i = 0; i <= RTCP_NUMBER_OF_SR; ++i) {
-    EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state, kRtcpReport));
-    EXPECT_EQ(i + 1, test_transport_.parser_.rrtr()->num_packets());
-    clock_.CurrentNtp(ntp_sec, ntp_frac);
-    uint32_t mid_ntp = RTCPUtility::MidNtp(ntp_sec, ntp_frac);
-    EXPECT_TRUE(rtcp_sender_->SendTimeOfXrRrReport(mid_ntp, &time_ms));
-    EXPECT_EQ(clock_.CurrentNtpInMilliseconds(), time_ms);
-    clock_.AdvanceTimeMilliseconds(1000);
-  }
-  // The first report should no longer be stored.
-  EXPECT_FALSE(rtcp_sender_->SendTimeOfXrRrReport(initial_mid_ntp, &time_ms));
-}
-
 TEST_F(RtcpSenderTest, TestRegisterRtcpPacketTypeObserver) {
   RtcpPacketTypeCounterObserverImpl observer;
   rtcp_sender_.reset(new RTCPSender(false, &clock_, receive_statistics_.get(),
-                                    &observer, &test_transport_));
+                                    &observer, nullptr, &test_transport_));
   rtcp_sender_->SetRemoteSSRC(kRemoteSsrc);
   rtcp_sender_->SetRTCPStatus(RtcpMode::kReducedSize);
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpPli));
@@ -719,7 +697,7 @@ TEST_F(RtcpSenderTest, SendTmmbn) {
   const uint32_t kPacketOh = 40;
   const uint32_t kSourceSsrc = 12345;
   bounding_set.AddEntry(kBitrateKbps, kPacketOh, kSourceSsrc);
-  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set, 0));
+  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set));
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpSr));
   EXPECT_EQ(1, parser()->sender_report()->num_packets());
   EXPECT_EQ(1, parser()->tmmbn()->num_packets());
@@ -739,7 +717,7 @@ TEST_F(RtcpSenderTest, SendTmmbn) {
 TEST_F(RtcpSenderTest, SendsTmmbnIfSetAndEmpty) {
   rtcp_sender_->SetRTCPStatus(RtcpMode::kCompound);
   TMMBRSet bounding_set;
-  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set, 3));
+  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set));
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpSr));
   EXPECT_EQ(1, parser()->sender_report()->num_packets());
   EXPECT_EQ(1, parser()->tmmbn()->num_packets());
@@ -759,6 +737,45 @@ TEST_F(RtcpSenderTest, SendCompoundPliRemb) {
   EXPECT_EQ(0, rtcp_sender_->SendCompoundRTCP(feedback_state(), packet_types));
   EXPECT_EQ(1, parser()->remb_item()->num_packets());
   EXPECT_EQ(1, parser()->pli()->num_packets());
+}
+
+
+// This test is written to verify that BYE is always the last packet
+// type in a RTCP compoud packet.  The rtcp_sender_ is recreated with
+// mock_transport, which is used to check for whether BYE at the end
+// of a RTCP compound packet.
+TEST_F(RtcpSenderTest, ByeMustBeLast) {
+  MockTransport mock_transport;
+  EXPECT_CALL(mock_transport, SendRtcp(_, _))
+    .WillOnce(Invoke([](const uint8_t* data, size_t len) {
+    const uint8_t* next_packet = data;
+    while (next_packet < data + len) {
+      RtcpCommonHeader header;
+      RtcpParseCommonHeader(next_packet, len - (next_packet - data), &header);
+      next_packet = next_packet +
+        header.payload_size_bytes +
+        RtcpCommonHeader::kHeaderSizeBytes;
+      if (header.packet_type == RTCPUtility::PT_BYE) {
+        bool is_last_packet = (data + len == next_packet);
+        EXPECT_TRUE(is_last_packet) <<
+          "Bye packet should be last in a compound RTCP packet.";
+      }
+    }
+
+    return true;
+  }));
+
+  // Re-configure rtcp_sender_ with mock_transport_
+  rtcp_sender_.reset(new RTCPSender(false, &clock_, receive_statistics_.get(),
+                                    nullptr, nullptr, &mock_transport));
+  rtcp_sender_->SetSSRC(kSenderSsrc);
+  rtcp_sender_->SetRemoteSSRC(kRemoteSsrc);
+
+  // Set up XR VoIP metric to be included with BYE
+  rtcp_sender_->SetRTCPStatus(RtcpMode::kCompound);
+  RTCPVoIPMetric metric;
+  EXPECT_EQ(0, rtcp_sender_->SetRTCPVoIPMetrics(&metric));
+  EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpBye));
 }
 
 }  // namespace webrtc

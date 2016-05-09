@@ -37,8 +37,6 @@
         '../wm/public/activation_delegate.h',
         '../wm/public/animation_host.cc',
         '../wm/public/animation_host.h',
-        '../wm/public/dispatcher_client.cc',
-        '../wm/public/dispatcher_client.h',
         '../wm/public/drag_drop_client.cc',
         '../wm/public/drag_drop_client.h',
         '../wm/public/drag_drop_delegate.cc',
@@ -88,8 +86,8 @@
         'input_state_lookup_win.h',
         'layout_manager.cc',
         'layout_manager.h',
-        'remote_window_tree_host_win.cc',
-        'remote_window_tree_host_win.h',
+        'mus/mus_util.cc',
+        'mus/mus_util.h',
         'scoped_window_targeter.cc',
         'scoped_window_targeter.h',
         'window.cc',
@@ -126,7 +124,6 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../metro_viewer/metro_viewer.gyp:metro_viewer_messages',
             '../platform_window/win/win_window.gyp:win_window',
             '../../ipc/ipc.gyp:ipc',
           ],
@@ -138,12 +135,6 @@
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
             '../ozone/ozone.gyp:ozone_base',
-          ],
-        }],
-        ['OS!="win" and OS!="android" and use_ozone==0', {
-          'sources!': [
-            'window_tree_host_platform.cc',
-            'window_tree_host_platform.h',
           ],
         }],
         ['OS=="android"', {
@@ -243,40 +234,6 @@
       ]
     },
     {
-      'target_name': 'aura_bench',
-      'type': 'executable',
-      'dependencies': [
-        '../../base/base.gyp:base',
-        '../../base/base.gyp:base_i18n',
-        '../../cc/cc.gyp:cc',
-        '../../gpu/gpu.gyp:gles2_implementation',
-        '../../skia/skia.gyp:skia',
-        '../../third_party/icu/icu.gyp:icui18n',
-        '../../third_party/icu/icu.gyp:icuuc',
-        '../base/ui_base.gyp:ui_base',
-        '../compositor/compositor.gyp:compositor',
-        '../compositor/compositor.gyp:compositor_test_support',
-        '../events/events.gyp:events',
-        '../gfx/gfx.gyp:gfx',
-        '../gfx/gfx.gyp:gfx_geometry',
-        'aura',
-        'aura_test_support',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        'bench/bench_main.cc',
-      ],
-      'conditions': [
-        ['use_x11==1', {
-          'dependencies': [
-            '../gfx/x/gfx_x11.gyp:gfx_x11',
-          ],
-        }],
-      ]
-    },
-    {
       'target_name': 'aura_unittests',
       'type': 'executable',
       'dependencies': [
@@ -312,12 +269,6 @@
         ['OS=="linux"', {
           'dependencies': [
             '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
-          ],
-        }],
-        ['OS=="linux" and use_allocator!="none"', {
-          'dependencies': [
-           # See http://crbug.com/162998#c4 for why this is needed.
-            '../../base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],

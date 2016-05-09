@@ -13,9 +13,9 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
-#include "net/base/ip_address_number.h"
 #include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/host_cache.h"
@@ -24,8 +24,10 @@
 
 namespace net {
 
+class AddressList;
 class BoundNetLog;
 class DnsClient;
+class IPAddress;
 class NetLog;
 
 // For each hostname that is requested, HostResolver creates a
@@ -60,6 +62,7 @@ class NET_EXPORT HostResolverImpl
     : public HostResolver,
       NON_EXPORTED_BASE(public base::NonThreadSafe),
       public NetworkChangeNotifier::IPAddressObserver,
+      public NetworkChangeNotifier::ConnectionTypeObserver,
       public NetworkChangeNotifier::DNSObserver {
  public:
   // Parameters for ProcTask which resolves hostnames using HostResolveProc.
@@ -79,6 +82,8 @@ class NET_EXPORT HostResolverImpl
   struct NET_EXPORT_PRIVATE ProcTaskParams {
     // Sets up defaults.
     ProcTaskParams(HostResolverProc* resolver_proc, size_t max_retry_attempts);
+
+    ProcTaskParams(const ProcTaskParams& other);
 
     ~ProcTaskParams();
 
@@ -165,7 +170,7 @@ class NET_EXPORT HostResolverImpl
   // HOSTS and is not localhost.
   int ResolveHelper(const Key& key,
                     const RequestInfo& info,
-                    const IPAddressNumber* ip_address,
+                    const IPAddress* ip_address,
                     AddressList* addresses,
                     const BoundNetLog& request_net_log);
 
@@ -173,7 +178,7 @@ class NET_EXPORT HostResolverImpl
   // succeeds, returns false otherwise.
   bool ResolveAsIP(const Key& key,
                    const RequestInfo& info,
-                   const IPAddressNumber* ip_address,
+                   const IPAddress* ip_address,
                    int* net_error,
                    AddressList* addresses);
 
@@ -204,7 +209,7 @@ class NET_EXPORT HostResolverImpl
   // "effective" address family by inheriting the resolver's default address
   // family when the request leaves it unspecified.
   Key GetEffectiveKeyForRequest(const RequestInfo& info,
-                                const IPAddressNumber* ip_number,
+                                const IPAddress* ip_address,
                                 const BoundNetLog& net_log);
 
   // Probes IPv6 support and returns true if IPv6 support is enabled.
@@ -235,6 +240,10 @@ class NET_EXPORT HostResolverImpl
 
   // NetworkChangeNotifier::IPAddressObserver:
   void OnIPAddressChanged() override;
+
+  // NetworkChangeNotifier::ConnectionTypeObserver:
+  void OnConnectionTypeChanged(
+      NetworkChangeNotifier::ConnectionType type) override;
 
   // NetworkChangeNotifier::DNSObserver:
   void OnDNSChanged() override;
@@ -306,6 +315,18 @@ class NET_EXPORT HostResolverImpl
 
   DISALLOW_COPY_AND_ASSIGN(HostResolverImpl);
 };
+
+// Resolves a local hostname (such as "localhost" or "localhost6") into
+// IP endpoints with the given port. Returns true if |host| is a local
+// hostname and false otherwise. Special IPv6 names (e.g. "localhost6")
+// will resolve to an IPv6 address only, whereas other names will
+// resolve to both IPv4 and IPv6.
+// This function is only exposed so it can be unit-tested.
+// TODO(tfarina): It would be better to change the tests so this function
+// gets exercised indirectly through HostResolverImpl.
+NET_EXPORT_PRIVATE bool ResolveLocalHostname(base::StringPiece host,
+                                             uint16_t port,
+                                             AddressList* address_list);
 
 }  // namespace net
 

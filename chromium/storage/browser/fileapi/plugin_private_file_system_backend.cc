@@ -5,14 +5,16 @@
 #include "storage/browser/fileapi/plugin_private_file_system_backend.h"
 
 #include <stdint.h>
+
 #include <map>
+#include <memory>
 #include <utility>
 
 #include "base/stl_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner_util.h"
 #include "base/thread_task_runner_handle.h"
-#include "net/base/net_util.h"
+#include "net/base/url_util.h"
 #include "storage/browser/fileapi/async_file_util_adapter.h"
 #include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
@@ -180,7 +182,7 @@ FileSystemOperation* PluginPrivateFileSystemBackend::CreateFileSystemOperation(
     const FileSystemURL& url,
     FileSystemContext* context,
     base::File::Error* error_code) const {
-  scoped_ptr<FileSystemOperationContext> operation_context(
+  std::unique_ptr<FileSystemOperationContext> operation_context(
       new FileSystemOperationContext(context));
   return FileSystemOperation::Create(url, context,
                                      std::move(operation_context));
@@ -196,22 +198,22 @@ bool PluginPrivateFileSystemBackend::HasInplaceCopyImplementation(
   return false;
 }
 
-scoped_ptr<storage::FileStreamReader>
+std::unique_ptr<storage::FileStreamReader>
 PluginPrivateFileSystemBackend::CreateFileStreamReader(
     const FileSystemURL& url,
     int64_t offset,
     int64_t max_bytes_to_read,
     const base::Time& expected_modification_time,
     FileSystemContext* context) const {
-  return scoped_ptr<storage::FileStreamReader>();
+  return std::unique_ptr<storage::FileStreamReader>();
 }
 
-scoped_ptr<FileStreamWriter>
+std::unique_ptr<FileStreamWriter>
 PluginPrivateFileSystemBackend::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64_t offset,
     FileSystemContext* context) const {
-  return scoped_ptr<FileStreamWriter>();
+  return std::unique_ptr<FileStreamWriter>();
 }
 
 FileSystemQuotaUtil* PluginPrivateFileSystemBackend::GetQuotaUtil() {
@@ -238,7 +240,7 @@ void PluginPrivateFileSystemBackend::GetOriginsForTypeOnFileTaskRunner(
     std::set<GURL>* origins) {
   if (!CanHandleType(type))
     return;
-  scoped_ptr<ObfuscatedFileUtil::AbstractOriginEnumerator> enumerator(
+  std::unique_ptr<ObfuscatedFileUtil::AbstractOriginEnumerator> enumerator(
       obfuscated_file_util()->CreateOriginEnumerator());
   GURL origin;
   while (!(origin = enumerator->Next()).is_empty())
@@ -251,7 +253,7 @@ void PluginPrivateFileSystemBackend::GetOriginsForHostOnFileTaskRunner(
     std::set<GURL>* origins) {
   if (!CanHandleType(type))
     return;
-  scoped_ptr<ObfuscatedFileUtil::AbstractOriginEnumerator> enumerator(
+  std::unique_ptr<ObfuscatedFileUtil::AbstractOriginEnumerator> enumerator(
       obfuscated_file_util()->CreateOriginEnumerator());
   GURL origin;
   while (!(origin = enumerator->Next()).is_empty()) {

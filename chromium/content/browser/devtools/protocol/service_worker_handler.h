@@ -57,9 +57,7 @@ class ServiceWorkerHandler : public DevToolsAgentHostClient,
   Response StopWorker(const std::string& version_id);
   Response UpdateRegistration(const std::string& scope_url);
   Response InspectWorker(const std::string& version_id);
-  Response SetDebugOnStart(bool debug_on_start);
-  Response SetForceUpdateOnPageLoad(const std::string& registration_id,
-                                    bool force_update_on_page_load);
+  Response SetForceUpdateOnPageLoad(bool force_update_on_page_load);
   Response DeliverPushMessage(const std::string& origin,
                               const std::string& registration_id,
                               const std::string& data);
@@ -71,7 +69,6 @@ class ServiceWorkerHandler : public DevToolsAgentHostClient,
   void WorkerCreated(ServiceWorkerDevToolsAgentHost* host) override;
   void WorkerReadyForInspection(ServiceWorkerDevToolsAgentHost* host) override;
   void WorkerDestroyed(ServiceWorkerDevToolsAgentHost* host) override;
-  void DebugOnStartUpdated(bool debug_on_start) override;
 
  private:
   // DevToolsAgentHostClient overrides.
@@ -92,6 +89,7 @@ class ServiceWorkerHandler : public DevToolsAgentHostClient,
                        const ServiceWorkerContextObserver::ErrorInfo& info);
 
   void OpenNewDevToolsWindow(int process_id, int devtools_agent_route_id);
+  void ClearForceUpdate();
 
   scoped_refptr<ServiceWorkerContextWrapper> context_;
   scoped_ptr<Client> client_;

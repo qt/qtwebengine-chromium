@@ -29,25 +29,25 @@
 #include "core/dom/VisitedLinkState.h"
 
 #include "core/HTMLNames.h"
-#include "core/XLinkNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLAnchorElement.h"
+#include "core/svg/SVGURIReference.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
 
 static inline const AtomicString& linkAttribute(const Element& element)
 {
-    ASSERT(element.isLink());
+    DCHECK(element.isLink());
     if (element.isHTMLElement())
         return element.fastGetAttribute(HTMLNames::hrefAttr);
-    ASSERT(element.isSVGElement());
-    return element.getAttribute(XLinkNames::hrefAttr);
+    DCHECK(element.isSVGElement());
+    return SVGURIReference::legacyHrefString(toSVGElement(element));
 }
 
 static inline LinkHash linkHashForElement(const Element& element, const AtomicString& attribute = AtomicString())
 {
-    ASSERT(attribute.isNull() || linkAttribute(element) == attribute);
+    DCHECK(attribute.isNull() || linkAttribute(element) == attribute);
     if (isHTMLAnchorElement(element))
         return toHTMLAnchorElement(element).visitedLinkHash();
     return visitedLinkHash(element.document().baseURL(), attribute.isNull() ? linkAttribute(element) : attribute);
@@ -68,6 +68,7 @@ void VisitedLinkState::invalidateStyleForAllLinks(bool invalidateVisitedLinkHash
                 toHTMLAnchorElement(node).invalidateCachedVisitedLinkHash();
             toElement(node).pseudoStateChanged(CSSSelector::PseudoLink);
             toElement(node).pseudoStateChanged(CSSSelector::PseudoVisited);
+            toElement(node).pseudoStateChanged(CSSSelector::PseudoAnyLink);
         }
     }
 }
@@ -80,15 +81,16 @@ void VisitedLinkState::invalidateStyleForLink(LinkHash linkHash)
         if (node.isLink() && linkHashForElement(toElement(node)) == linkHash) {
             toElement(node).pseudoStateChanged(CSSSelector::PseudoLink);
             toElement(node).pseudoStateChanged(CSSSelector::PseudoVisited);
+            toElement(node).pseudoStateChanged(CSSSelector::PseudoAnyLink);
         }
     }
 }
 
 EInsideLink VisitedLinkState::determineLinkStateSlowCase(const Element& element)
 {
-    ASSERT(element.isLink());
-    ASSERT(document().isActive());
-    ASSERT(document() == element.document());
+    DCHECK(element.isLink());
+    DCHECK(document().isActive());
+    DCHECK(document() == element.document());
 
     const AtomicString& attribute = linkAttribute(element);
 

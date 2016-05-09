@@ -37,7 +37,7 @@
 #endif
 
 #if defined(USE_X11)
-#include "ui/gfx/x/x11_connection.h"
+#include "ui/gfx/x/x11_connection.h"  // nogncheck
 #endif
 
 int main(int argc, char** argv) {
@@ -93,8 +93,7 @@ int main(int argc, char** argv) {
 #endif
 #if !defined(OS_CHROMEOS) && defined(USE_AURA)
     scoped_ptr<gfx::Screen> desktop_screen(views::CreateDesktopScreen());
-    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
-                                   desktop_screen.get());
+    gfx::Screen::SetScreenInstance(desktop_screen.get());
 #endif
 
     views::examples::ShowExamplesWindow(

@@ -8,6 +8,8 @@
 #include "core/frame/Settings.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTextCombine.h"
+#include "core/layout/api/LineLayoutAPIShim.h"
+#include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/PaintInfo.h"
@@ -45,10 +47,10 @@ void TextPainter::setEmphasisMark(const AtomicString& emphasisMark, TextEmphasis
     if (emphasisMark.isNull()) {
         m_emphasisMarkOffset = 0;
     } else if (position == TextEmphasisPositionOver) {
-        m_emphasisMarkOffset = -m_font.fontMetrics().ascent() - m_font.emphasisMarkDescent(emphasisMark);
+        m_emphasisMarkOffset = -m_font.getFontMetrics().ascent() - m_font.emphasisMarkDescent(emphasisMark);
     } else {
         ASSERT(position == TextEmphasisPositionUnder);
-        m_emphasisMarkOffset = m_font.fontMetrics().descent() + m_font.emphasisMarkAscent(emphasisMark);
+        m_emphasisMarkOffset = m_font.getFontMetrics().descent() + m_font.emphasisMarkAscent(emphasisMark);
     }
 }
 
@@ -115,7 +117,7 @@ static Color textColorForWhiteBackground(Color textColor)
 }
 
 // static
-TextPainter::Style TextPainter::textPaintingStyle(const LayoutObject& layoutObject, const ComputedStyle& style, const PaintInfo& paintInfo)
+TextPainter::Style TextPainter::textPaintingStyle(LineLayoutItem lineLayoutItem, const ComputedStyle& style, const PaintInfo& paintInfo)
 {
     TextPainter::Style textStyle;
     bool isPrinting = paintInfo.isPrinting();
@@ -130,15 +132,15 @@ TextPainter::Style TextPainter::textPaintingStyle(const LayoutObject& layoutObje
         textStyle.shadow = 0;
     } else {
         textStyle.currentColor = style.visitedDependentColor(CSSPropertyColor);
-        textStyle.fillColor = layoutObject.resolveColor(style, CSSPropertyWebkitTextFillColor);
-        textStyle.strokeColor = layoutObject.resolveColor(style, CSSPropertyWebkitTextStrokeColor);
-        textStyle.emphasisMarkColor = layoutObject.resolveColor(style, CSSPropertyWebkitTextEmphasisColor);
+        textStyle.fillColor = lineLayoutItem.resolveColor(style, CSSPropertyWebkitTextFillColor);
+        textStyle.strokeColor = lineLayoutItem.resolveColor(style, CSSPropertyWebkitTextStrokeColor);
+        textStyle.emphasisMarkColor = lineLayoutItem.resolveColor(style, CSSPropertyWebkitTextEmphasisColor);
         textStyle.strokeWidth = style.textStrokeWidth();
         textStyle.shadow = style.textShadow();
 
         // Adjust text color when printing with a white background.
-        ASSERT(layoutObject.document().printing() == isPrinting);
-        bool forceBackgroundToWhite = BoxPainter::shouldForceWhiteBackgroundForPrintEconomy(style, layoutObject.document());
+        ASSERT(lineLayoutItem.document().printing() == isPrinting);
+        bool forceBackgroundToWhite = BoxPainter::shouldForceWhiteBackgroundForPrintEconomy(style, lineLayoutItem.document());
         if (forceBackgroundToWhite) {
             textStyle.fillColor = textColorForWhiteBackground(textStyle.fillColor);
             textStyle.strokeColor = textColorForWhiteBackground(textStyle.strokeColor);
@@ -153,19 +155,20 @@ TextPainter::Style TextPainter::textPaintingStyle(const LayoutObject& layoutObje
     return textStyle;
 }
 
-TextPainter::Style TextPainter::selectionPaintingStyle(const LayoutObject& layoutObject, bool haveSelection, const PaintInfo& paintInfo, const TextPainter::Style& textStyle)
+TextPainter::Style TextPainter::selectionPaintingStyle(LineLayoutItem lineLayoutItem, bool haveSelection, const PaintInfo& paintInfo, const TextPainter::Style& textStyle)
 {
+    const LayoutObject& layoutObject = *LineLayoutAPIShim::constLayoutObjectFrom(lineLayoutItem);
     TextPainter::Style selectionStyle = textStyle;
     bool usesTextAsClip = paintInfo.phase == PaintPhaseTextClip;
     bool isPrinting = paintInfo.isPrinting();
 
     if (haveSelection) {
         if (!usesTextAsClip) {
-            selectionStyle.fillColor = layoutObject.selectionForegroundColor(paintInfo.globalPaintFlags());
-            selectionStyle.emphasisMarkColor = layoutObject.selectionEmphasisMarkColor(paintInfo.globalPaintFlags());
+            selectionStyle.fillColor = layoutObject.selectionForegroundColor(paintInfo.getGlobalPaintFlags());
+            selectionStyle.emphasisMarkColor = layoutObject.selectionEmphasisMarkColor(paintInfo.getGlobalPaintFlags());
         }
 
-        if (const ComputedStyle* pseudoStyle = layoutObject.getCachedPseudoStyle(SELECTION)) {
+        if (const ComputedStyle* pseudoStyle = layoutObject.getCachedPseudoStyle(PseudoIdSelection)) {
             selectionStyle.strokeColor = usesTextAsClip ? Color::black : layoutObject.resolveColor(*pseudoStyle, CSSPropertyWebkitTextStrokeColor);
             selectionStyle.strokeWidth = pseudoStyle->textStrokeWidth();
             selectionStyle.shadow = usesTextAsClip ? 0 : pseudoStyle->textShadow();
@@ -218,7 +221,7 @@ void TextPainter::paintEmphasisMarkForCombinedText()
 {
     ASSERT(m_combinedText);
     TextRun placeholderTextRun(&ideographicFullStopCharacter, 1);
-    FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
+    FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.getFontMetrics().ascent() + m_emphasisMarkOffset);
     TextRunPaintInfo textRunPaintInfo(placeholderTextRun);
     textRunPaintInfo.bounds = FloatRect(m_textBounds);
     m_graphicsContext.concatCTM(rotation(m_textBounds, Clockwise));

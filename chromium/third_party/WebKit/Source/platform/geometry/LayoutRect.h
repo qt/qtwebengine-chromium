@@ -35,6 +35,7 @@
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/geometry/LayoutRectOutsets.h"
 #include "wtf/Allocator.h"
+#include "wtf/Forward.h"
 #include "wtf/Vector.h"
 #include <iosfwd>
 
@@ -50,6 +51,8 @@ public:
     LayoutRect(const LayoutPoint& location, const LayoutSize& size)
         : m_location(location), m_size(size) { }
     LayoutRect(LayoutUnit x, LayoutUnit y, LayoutUnit width, LayoutUnit height)
+        : m_location(LayoutPoint(x, y)), m_size(LayoutSize(width, height)) { }
+    LayoutRect(int x, int y, int width, int height)
         : m_location(LayoutPoint(x, y)), m_size(LayoutSize(width, height)) { }
     LayoutRect(const FloatPoint& location, const FloatSize& size)
         : m_location(location), m_size(size) { }
@@ -93,9 +96,11 @@ public:
     LayoutPoint center() const { return LayoutPoint(x() + width() / 2, y() + height() / 2); }
 
     void move(const LayoutSize& size) { m_location += size; }
-    void move(const IntSize& size) { m_location.move(size.width(), size.height()); }
+    void move(const IntSize& size) { m_location.move(LayoutUnit(size.width()), LayoutUnit(size.height())); }
     void moveBy(const LayoutPoint& offset) { m_location.move(offset.x(), offset.y()); }
+    void moveBy(const IntPoint& offset) { m_location.move(LayoutUnit(offset.x()), LayoutUnit(offset.y())); }
     void move(LayoutUnit dx, LayoutUnit dy) { m_location.move(dx, dy); }
+    void move(int dx, int dy) { m_location.move(LayoutUnit(dx), LayoutUnit(dy)); }
 
     void expand(const LayoutSize& size) { m_size += size; }
     void expand(const LayoutRectOutsets& box)
@@ -111,6 +116,7 @@ public:
     }
     void contract(const LayoutSize& size) { m_size -= size; }
     void contract(LayoutUnit dw, LayoutUnit dh) { m_size.expand(-dw, -dh); }
+    void contract(int dw, int dh) { m_size.expand(-dw, -dh); }
     void contractEdges(LayoutUnit top, LayoutUnit right, LayoutUnit bottom, LayoutUnit left)
     {
         m_location.move(left, top);
@@ -121,23 +127,23 @@ public:
     {
         LayoutUnit delta = edge - x();
         setX(edge);
-        setWidth(std::max<LayoutUnit>(0, width() - delta));
+        setWidth((width() - delta).clampNegativeToZero());
     }
     void shiftMaxXEdgeTo(LayoutUnit edge)
     {
         LayoutUnit delta = edge - maxX();
-        setWidth(std::max<LayoutUnit>(0, width() + delta));
+        setWidth((width() + delta).clampNegativeToZero());
     }
     void shiftYEdgeTo(LayoutUnit edge)
     {
         LayoutUnit delta = edge - y();
         setY(edge);
-        setHeight(std::max<LayoutUnit>(0, height() - delta));
+        setHeight((height() - delta).clampNegativeToZero());
     }
     void shiftMaxYEdgeTo(LayoutUnit edge)
     {
         LayoutUnit delta = edge - maxY();
-        setHeight(std::max<LayoutUnit>(0, height() + delta));
+        setHeight((height() + delta).clampNegativeToZero());
     }
 
     LayoutPoint minXMinYCorner() const { return m_location; } // typically topLeft
@@ -158,6 +164,15 @@ public:
     void unite(const LayoutRect&);
     void uniteIfNonZero(const LayoutRect&);
 
+    // Set this rect to be the intersection of itself and the argument rect
+    // using edge-inclusive geometry.  If the two rectangles overlap but the
+    // overlap region is zero-area (either because one of the two rectangles
+    // is zero-area, or because the rectangles overlap at an edge or a corner),
+    // the result is the zero-area intersection.  The return value indicates
+    // whether the two rectangle actually have an intersection, since checking
+    // the result for isEmpty() is not conclusive.
+    bool inclusiveIntersect(const LayoutRect&);
+
     // Besides non-empty rects, this method also unites empty rects (as points or line segments).
     // For example, union of (100, 100, 0x0) and (200, 200, 50x0) is (100, 100, 150x100).
     void uniteEvenIfEmpty(const LayoutRect&);
@@ -173,6 +188,7 @@ public:
         m_size.setHeight(m_size.height() + dy + dy);
     }
     void inflate(LayoutUnit d) { inflateX(d); inflateY(d); }
+    void inflate(int d) { inflate(LayoutUnit(d)); }
     void scale(float s);
     void scale(float xAxisScale, float yAxisScale);
 
@@ -188,6 +204,7 @@ public:
 #ifndef NDEBUG
     // Prints the rect to the screen.
     void show(bool showRawValue = false) const;
+    String toString() const;
 #endif
 
 private:

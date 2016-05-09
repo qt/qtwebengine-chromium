@@ -33,18 +33,7 @@
 WebInspector.ConsolePanel = function()
 {
     WebInspector.Panel.call(this, "console");
-    this._view = WebInspector.ConsolePanel._view();
-}
-
-/**
- * @return {!WebInspector.ConsoleView}
- */
-WebInspector.ConsolePanel._view = function()
-{
-    if (!WebInspector.ConsolePanel._consoleView)
-        WebInspector.ConsolePanel._consoleView = new WebInspector.ConsoleView();
-
-    return WebInspector.ConsolePanel._consoleView;
+    this._view = WebInspector.ConsoleView.instance();
 }
 
 WebInspector.ConsolePanel.prototype = {
@@ -60,9 +49,20 @@ WebInspector.ConsolePanel.prototype = {
     /**
      * @override
      */
+    focus: function()
+    {
+        this._view.focus();
+    },
+
+    /**
+     * @override
+     */
     wasShown: function()
     {
         WebInspector.Panel.prototype.wasShown.call(this);
+        var wrapper = WebInspector.ConsolePanel.WrapperView._instance;
+        if (wrapper && wrapper.isShowing())
+            WebInspector.inspectorView.setDrawerMinimized(true);
         this._view.show(this.element);
     },
 
@@ -74,6 +74,7 @@ WebInspector.ConsolePanel.prototype = {
         WebInspector.Panel.prototype.willHide.call(this);
         if (WebInspector.ConsolePanel.WrapperView._instance)
             WebInspector.ConsolePanel.WrapperView._instance._showViewInWrapper();
+        WebInspector.inspectorView.setDrawerMinimized(false);
     },
 
     /**
@@ -82,7 +83,7 @@ WebInspector.ConsolePanel.prototype = {
      */
     searchableView: function()
     {
-        return WebInspector.ConsolePanel._view().searchableView();
+        return WebInspector.ConsoleView.instance().searchableView();
     },
 
     __proto__: WebInspector.Panel.prototype
@@ -99,7 +100,7 @@ WebInspector.ConsolePanel.WrapperView = function()
 
     WebInspector.ConsolePanel.WrapperView._instance = this;
 
-    this._view = WebInspector.ConsolePanel._view();
+    this._view = WebInspector.ConsoleView.instance();
 }
 
 WebInspector.ConsolePanel.WrapperView.prototype = {
@@ -107,6 +108,13 @@ WebInspector.ConsolePanel.WrapperView.prototype = {
     {
         if (!WebInspector.inspectorView.currentPanel() || WebInspector.inspectorView.currentPanel().name !== "console")
             this._showViewInWrapper();
+        else
+            WebInspector.inspectorView.setDrawerMinimized(true);
+    },
+
+    willHide: function()
+    {
+        WebInspector.inspectorView.setDrawerMinimized(false);
     },
 
     /**
@@ -147,7 +155,7 @@ WebInspector.ConsolePanel.ConsoleRevealer.prototype = {
      */
     reveal: function(object)
     {
-        var consoleView = WebInspector.ConsolePanel._view();
+        var consoleView = WebInspector.ConsoleView.instance();
         if (consoleView.isShowing()) {
             consoleView.focus();
             return Promise.resolve();

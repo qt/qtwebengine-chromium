@@ -37,6 +37,7 @@ static const struct CoreException {
     const char* const message;
     const int code;
 } coreExceptions[] = {
+    // This list must be kept in sync with the one in ExceptionCode.h
     { "IndexSizeError", "Index or size was negative, or greater than the allowed value.", 1 },
     { "HierarchyRequestError", "A Node was inserted somewhere it doesn't belong.", 3 },
     { "WrongDocumentError", "A Node was used in a different document than the one that created it (that doesn't support it).", 4 },
@@ -81,6 +82,12 @@ static const struct CoreException {
 
     // Push API
     { "PermissionDeniedError", "User or security policy denied the request.", 0 },
+
+    // Used by HTML and Media Session API.
+    { "NotAllowedError", "The request is not allowed by the user agent or the platform in the current context.", 0 },
+
+    // Pointer Event
+    { "InvalidPointerId", "PointerId was invalid.", 0 },
 };
 
 static const CoreException* getErrorEntry(ExceptionCode ec)
@@ -102,7 +109,7 @@ static int getErrorCode(const String& name)
 
 DOMException::DOMException(unsigned short code, const String& name, const String& sanitizedMessage, const String& unsanitizedMessage)
 {
-    ASSERT(name);
+    DCHECK(name);
     m_code = code;
     m_name = name;
     m_sanitizedMessage = sanitizedMessage;
@@ -112,7 +119,7 @@ DOMException::DOMException(unsigned short code, const String& name, const String
 DOMException* DOMException::create(ExceptionCode ec, const String& sanitizedMessage, const String& unsanitizedMessage)
 {
     const CoreException* entry = getErrorEntry(ec);
-    ASSERT(entry);
+    DCHECK(entry);
     return new DOMException(entry->code,
         entry->name ? entry->name : "Error",
         sanitizedMessage.isNull() ? String(entry->message) : sanitizedMessage,
@@ -137,7 +144,7 @@ String DOMException::toStringForConsole() const
 String DOMException::getErrorName(ExceptionCode ec)
 {
     const CoreException* entry = getErrorEntry(ec);
-    ASSERT(entry);
+    DCHECK(entry);
     if (!entry)
         return "UnknownError";
 
@@ -147,7 +154,7 @@ String DOMException::getErrorName(ExceptionCode ec)
 String DOMException::getErrorMessage(ExceptionCode ec)
 {
     const CoreException* entry = getErrorEntry(ec);
-    ASSERT(entry);
+    DCHECK(entry);
     if (!entry)
         return "Unknown error.";
 

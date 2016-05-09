@@ -31,10 +31,12 @@
 #ifndef Notification_h
 #define Notification_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/DOMTimeStamp.h"
 #include "modules/EventTargetModules.h"
 #include "modules/ModulesExport.h"
 #include "modules/vibration/NavigatorVibration.h"
@@ -56,17 +58,18 @@ class NotificationOptions;
 class NotificationPermissionCallback;
 class ScriptState;
 
-class MODULES_EXPORT Notification final : public RefCountedGarbageCollectedEventTargetWithInlineData<Notification>, public ActiveDOMObject, public WebNotificationDelegate {
+class MODULES_EXPORT Notification final : public RefCountedGarbageCollectedEventTargetWithInlineData<Notification>, public ActiveScriptWrappable, public ActiveDOMObject, public WebNotificationDelegate {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Notification);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Notification);
+    USING_GARBAGE_COLLECTED_MIXIN(Notification);
     DEFINE_WRAPPERTYPEINFO();
 public:
     // Used for JavaScript instantiations of the Notification object. Will automatically schedule for
     // the notification to be displayed to the user when the developer-provided data is valid.
     static Notification* create(ExecutionContext*, const String& title, const NotificationOptions&, ExceptionState&);
 
-    // Used for embedder-created Notification objects. Will initialize the Notification's state as showing.
-    static Notification* create(ExecutionContext*, int64_t persistentId, const WebNotificationData&);
+    // Used for embedder-created Notification objects. If |showing| is true, will initialize the
+    // Notification's state as showing, or as closed otherwise.
+    static Notification* create(ExecutionContext*, int64_t persistentId, const WebNotificationData&, bool showing);
 
     ~Notification() override;
 
@@ -89,7 +92,10 @@ public:
     String body() const;
     String tag() const;
     String icon() const;
+    String badge() const;
     NavigatorVibration::VibrationPattern vibrate(bool& isNull) const;
+    DOMTimeStamp timestamp() const;
+    bool renotify() const;
     bool silent() const;
     bool requireInteraction() const;
     ScriptValue data(ScriptState*);
@@ -103,18 +109,20 @@ public:
     static size_t maxActions();
 
     // EventTarget interface.
-    ExecutionContext* executionContext() const final { return ActiveDOMObject::executionContext(); }
+    ExecutionContext* getExecutionContext() const final { return ActiveDOMObject::getExecutionContext(); }
     const AtomicString& interfaceName() const override;
 
     // ActiveDOMObject interface.
     void stop() override;
-    bool hasPendingActivity() const override;
+
+    // ActiveScriptWrappable interface.
+    bool hasPendingActivity() const final;
 
     DECLARE_VIRTUAL_TRACE();
 
 protected:
     // EventTarget interface.
-    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) final;
+    DispatchEventResult dispatchEventInternal(Event*) final;
 
 private:
     Notification(ExecutionContext*, const WebNotificationData&);

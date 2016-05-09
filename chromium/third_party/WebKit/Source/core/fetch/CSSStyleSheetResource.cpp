@@ -28,48 +28,42 @@
 
 #include "core/css/StyleSheetContents.h"
 #include "core/fetch/FetchRequest.h"
-#include "core/fetch/ResourceClientWalker.h"
+#include "core/fetch/MemoryCache.h"
+#include "core/fetch/ResourceClientOrObserverWalker.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/StyleSheetResourceClient.h"
 #include "platform/SharedBuffer.h"
-#include "platform/network/HTTPParsers.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
 
-ResourcePtr<CSSStyleSheetResource> CSSStyleSheetResource::fetch(FetchRequest& request, ResourceFetcher* fetcher)
+CSSStyleSheetResource* CSSStyleSheetResource::fetch(FetchRequest& request, ResourceFetcher* fetcher)
 {
     ASSERT(request.resourceRequest().frameType() == WebURLRequest::FrameTypeNone);
     request.mutableResourceRequest().setRequestContext(WebURLRequest::RequestContextStyle);
     return toCSSStyleSheetResource(fetcher->requestResource(request, CSSStyleSheetResourceFactory()));
 }
 
-ResourcePtr<CSSStyleSheetResource> CSSStyleSheetResource::createForTest(const ResourceRequest& request, const String& charset)
+CSSStyleSheetResource* CSSStyleSheetResource::createForTest(const ResourceRequest& request, const String& charset)
 {
-    return new CSSStyleSheetResource(request, charset);
+    return new CSSStyleSheetResource(request, ResourceLoaderOptions(), charset);
 }
 
-CSSStyleSheetResource::CSSStyleSheetResource(const ResourceRequest& resourceRequest, const String& charset)
-    : StyleSheetResource(resourceRequest, CSSStyleSheet, "text/css", charset)
+CSSStyleSheetResource::CSSStyleSheetResource(const ResourceRequest& resourceRequest, const ResourceLoaderOptions& options, const String& charset)
+    : StyleSheetResource(resourceRequest, CSSStyleSheet, options, "text/css", charset)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, acceptCSS, ("text/css,*/*;q=0.1", AtomicString::ConstructFromLiteral));
-
-    // Prefer text/css but accept any type (dell.com serves a stylesheet
-    // as text/html; see <http://bugs.webkit.org/show_bug.cgi?id=11451>).
-    setAccept(acceptCSS);
 }
 
 CSSStyleSheetResource::~CSSStyleSheetResource()
 {
-    // Make sure dispose() was cllaed before destruction.
-    ASSERT(!m_parsedStyleSheetCache);
 }
 
-void CSSStyleSheetResource::dispose()
+void CSSStyleSheetResource::removedFromMemoryCache()
 {
     if (m_parsedStyleSheetCache)
         m_parsedStyleSheetCache->removedFromMemoryCache();
     m_parsedStyleSheetCache.clear();
+    Resource::removedFromMemoryCache();
 }
 
 DEFINE_TRACE(CSSStyleSheetResource)
@@ -80,7 +74,7 @@ DEFINE_TRACE(CSSStyleSheetResource)
 
 void CSSStyleSheetResource::didAddClient(ResourceClient* c)
 {
-    ASSERT(c->resourceClientType() == StyleSheetResourceClient::expectedType());
+    ASSERT(StyleSheetResourceClient::isExpectedType(c));
     // Resource::didAddClient() must be before setCSSStyleSheet(),
     // because setCSSStyleSheet() may cause scripts to be executed, which could destroy 'c' if it is an instance of HTMLLinkElement.
     // see the comment of HTMLLinkElement::setCSSStyleSheet.
@@ -102,11 +96,6 @@ const String CSSStyleSheetResource::sheetText(MIMETypeCheck mimeTypeCheck) const
 
     // Don't cache the decoded text, regenerating is cheap and it can use quite a bit of memory
     return decodedText();
-}
-
-const AtomicString CSSStyleSheetResource::mimeType() const
-{
-    return extractMIMETypeFromMediaType(response().httpHeaderField(HTTPNames::Content_Type)).lower();
 }
 
 void CSSStyleSheetResource::checkNotify()
@@ -152,10 +141,11 @@ bool CSSStyleSheetResource::canUseSheet(MIMETypeCheck mimeTypeCheck) const
     // folks can use standards mode for local HTML documents.
     if (mimeTypeCheck == MIMETypeCheck::Lax)
         return true;
-    return mimeType().isEmpty() || equalIgnoringCase(mimeType(), "text/css") || equalIgnoringCase(mimeType(), "application/x-unknown-content-type");
+    AtomicString contentType = httpContentType();
+    return contentType.isEmpty() || equalIgnoringCase(contentType, "text/css") || equalIgnoringCase(contentType, "application/x-unknown-content-type");
 }
 
-PassRefPtrWillBeRawPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedStyleSheet(const CSSParserContext& context)
+StyleSheetContents* CSSStyleSheetResource::restoreParsedStyleSheet(const CSSParserContext& context)
 {
     if (!m_parsedStyleSheetCache)
         return nullptr;
@@ -177,16 +167,20 @@ PassRefPtrWillBeRawPtr<StyleSheetContents> CSSStyleSheetResource::restoreParsedS
     return m_parsedStyleSheetCache;
 }
 
-void CSSStyleSheetResource::saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> sheet)
+void CSSStyleSheetResource::saveParsedStyleSheet(StyleSheetContents* sheet)
 {
     ASSERT(sheet && sheet->isCacheable());
 
     if (m_parsedStyleSheetCache)
         m_parsedStyleSheetCache->removedFromMemoryCache();
     m_parsedStyleSheetCache = sheet;
-    m_parsedStyleSheetCache->addedToMemoryCache();
 
     setDecodedSize(m_parsedStyleSheetCache->estimatedSizeInBytes());
+
+    // Check if this stylesheet resource didn't conflict with
+    // another resource and has indeed been added to the cache.
+    if (memoryCache()->contains(this))
+        m_parsedStyleSheetCache->addedToMemoryCache();
 }
 
-}
+} // namespace blink

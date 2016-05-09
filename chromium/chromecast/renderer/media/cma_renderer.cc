@@ -4,7 +4,9 @@
 
 #include "chromecast/renderer/media/cma_renderer.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -13,11 +15,11 @@
 #include "base/thread_task_runner_handle.h"
 #include "chromecast/media/cma/base/balanced_media_task_runner_factory.h"
 #include "chromecast/media/cma/base/cma_logging.h"
+#include "chromecast/media/cma/base/demuxer_stream_adapter.h"
 #include "chromecast/media/cma/pipeline/av_pipeline_client.h"
 #include "chromecast/media/cma/pipeline/media_pipeline_client.h"
 #include "chromecast/media/cma/pipeline/video_pipeline_client.h"
 #include "chromecast/renderer/media/audio_pipeline_proxy.h"
-#include "chromecast/renderer/media/demuxer_stream_adapter.h"
 #include "chromecast/renderer/media/hole_frame_factory.h"
 #include "chromecast/renderer/media/media_pipeline_proxy.h"
 #include "chromecast/renderer/media/video_pipeline_proxy.h"
@@ -43,7 +45,7 @@ void MediaPipelineClientDummyCallback() {
 
 }  // namespace
 
-CmaRenderer::CmaRenderer(scoped_ptr<MediaPipelineProxy> media_pipeline,
+CmaRenderer::CmaRenderer(std::unique_ptr<MediaPipelineProxy> media_pipeline,
                          ::media::VideoRendererSink* video_renderer_sink,
                          ::media::GpuVideoAcceleratorFactories* gpu_factories)
     : media_task_runner_factory_(
@@ -268,7 +270,7 @@ void CmaRenderer::InitializeAudioPipeline() {
       base::Bind(&CmaRenderer::OnStatisticsUpdated, weak_this_));
   audio_pipeline_->SetClient(av_pipeline_client);
 
-  scoped_ptr<CodedFrameProvider> frame_provider(new DemuxerStreamAdapter(
+  std::unique_ptr<CodedFrameProvider> frame_provider(new DemuxerStreamAdapter(
       base::ThreadTaskRunnerHandle::Get(), media_task_runner_factory_, stream));
 
   const ::media::AudioDecoderConfig& config = stream->audio_decoder_config();
@@ -332,7 +334,7 @@ void CmaRenderer::InitializeVideoPipeline() {
       base::Bind(&CmaRenderer::OnNaturalSizeChanged, weak_this_));
   video_pipeline_->SetClient(client);
 
-  scoped_ptr<CodedFrameProvider> frame_provider(new DemuxerStreamAdapter(
+  std::unique_ptr<CodedFrameProvider> frame_provider(new DemuxerStreamAdapter(
       base::ThreadTaskRunnerHandle::Get(), media_task_runner_factory_, stream));
 
   const ::media::VideoDecoderConfig& config = stream->video_decoder_config();
@@ -431,32 +433,21 @@ void CmaRenderer::OnBufferingNotification(
     ::media::BufferingState buffering_state) {
   CMALOG(kLogControl) << __FUNCTION__ << ": state=" << state_
                       << ", buffering=" << buffering_state;
-  // TODO(gunsch): WebMediaPlayerImpl currently only handles HAVE_ENOUGH while
-  // playing. See OnPipelineBufferingStateChanged, http://crbug.com/144683.
-  if (state_ != kPlaying) {
-    LOG(WARNING) << "Ignoring buffering notification in state: " << state_;
-    return;
-  }
-  if (buffering_state != ::media::BUFFERING_HAVE_ENOUGH) {
-    LOG(WARNING) << "Ignoring buffering notification during playing: "
-                 << buffering_state;
-    return;
-  }
   buffering_state_cb_.Run(buffering_state);
 }
 
-void CmaRenderer::OnFlushDone(::media::PipelineStatus status) {
+void CmaRenderer::OnFlushDone() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (status != ::media::PIPELINE_OK) {
-    OnError(status);
+
+  if (state_ == kError) {
+    // If OnError was called while the flush was in progress,
+    // |flush_cb_| must be null.
+    DCHECK(flush_cb_.is_null());
     return;
   }
 
   CompleteStateTransition(kFlushed);
-  // If OnError was called while the flush was in progress, |flush_cb_| might
-  // be null.
-  if (!flush_cb_.is_null())
-    base::ResetAndReturn(&flush_cb_).Run();
+  base::ResetAndReturn(&flush_cb_).Run();
 }
 
 void CmaRenderer::OnError(::media::PipelineStatus error) {

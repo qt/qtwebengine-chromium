@@ -6,9 +6,21 @@
 
 #include "base/auto_reset.h"
 #include "base/environment.h"
+#include "ui/base/ime/ime_bridge.h"
+#include "ui/base/ime/ime_engine_handler_interface.h"
 #include "ui/base/ime/linux/linux_input_method_context_factory.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
+
+namespace {
+
+ui::IMEEngineHandlerInterface* GetEngine() {
+  if (ui::IMEBridge::Get())
+    return ui::IMEBridge::Get()->GetCurrentEngineHandler();
+  return nullptr;
+}
+
+}  // namespace
 
 namespace ui {
 
@@ -17,7 +29,8 @@ InputMethodAuraLinux::InputMethodAuraLinux(
     : text_input_type_(TEXT_INPUT_TYPE_NONE),
       is_sync_mode_(false),
       composition_changed_(false),
-      suppress_next_result_(false) {
+      suppress_next_result_(false),
+      weak_ptr_factory_(this) {
   SetDelegate(delegate);
   context_ =
       LinuxInputMethodContextFactory::instance()->CreateInputMethodContext(
@@ -52,6 +65,20 @@ void InputMethodAuraLinux::DispatchKeyEvent(ui::KeyEvent* event) {
     return;
   }
 
+  if (!event->HasNativeEvent() && sending_key_event_) {
+    // Faked key events that are sent from input.ime.sendKeyEvents.
+    ui::EventDispatchDetails details = DispatchKeyEventPostIME(event);
+    if (details.dispatcher_destroyed || details.target_destroyed ||
+        event->stopped_propagation()) {
+      return;
+    }
+    if ((event->is_char() || event->GetDomKey().IsCharacter()) &&
+        event->type() == ui::ET_KEY_PRESSED) {
+      GetTextInputClient()->InsertChar(*event);
+    }
+    return;
+  }
+
   suppress_next_result_ = false;
   composition_changed_ = false;
   result_text_.clear();
@@ -67,6 +94,52 @@ void InputMethodAuraLinux::DispatchKeyEvent(ui::KeyEvent* event) {
     }
   }
 
+  // If there's an active IME extension is listening to the key event, and the
+  // current text input client is not password input client, the key event
+  // should be dispatched to the extension engine in the two conditions:
+  // 1) |filtered| == false: the ET_KEY_PRESSED event of non-character key,
+  // or the ET_KEY_RELEASED event of all key.
+  // 2) |filtered| == true && NeedInsertChar(): the ET_KEY_PRESSED event of
+  // character key.
+  if (text_input_type_ != TEXT_INPUT_TYPE_PASSWORD &&
+      GetEngine() && GetEngine()->IsInterestedInKeyEvent() &&
+      (!filtered || NeedInsertChar())) {
+    ui::IMEEngineHandlerInterface::KeyEventDoneCallback callback = base::Bind(
+        &InputMethodAuraLinux::ProcessKeyEventByEngineDone,
+        weak_ptr_factory_.GetWeakPtr(), base::Owned(new ui::KeyEvent(*event)),
+        filtered, composition_changed_,
+        base::Owned(new ui::CompositionText(composition_)),
+        base::Owned(new base::string16(result_text_)));
+    GetEngine()->ProcessKeyEvent(*event, callback);
+  } else {
+    ProcessKeyEventDone(event, filtered, false);
+  }
+}
+
+void InputMethodAuraLinux::ProcessKeyEventByEngineDone(
+    ui::KeyEvent* event,
+    bool filtered,
+    bool composition_changed,
+    ui::CompositionText* composition,
+    base::string16* result_text,
+    bool is_handled) {
+  composition_changed_ = composition_changed;
+  composition_.CopyFrom(*composition);
+  result_text_ = *result_text;
+  ProcessKeyEventDone(event, filtered, is_handled);
+}
+
+void InputMethodAuraLinux::ProcessKeyEventDone(ui::KeyEvent* event,
+                                               bool filtered,
+                                               bool is_handled) {
+  DCHECK(event);
+  if (is_handled)
+    return;
+
+  // If the IME extension has not handled the key event, passes the keyevent
+  // back to the previous processing flow. Preconditions for this situation:
+  // 1) |filtered| == false
+  // 2) |filtered| == true && NeedInsertChar()
   ui::EventDispatchDetails details;
   if (event->type() == ui::ET_KEY_PRESSED && filtered) {
     if (NeedInsertChar())
@@ -177,6 +250,21 @@ void InputMethodAuraLinux::UpdateContextFocusState() {
     context_simple_->Focus();
   else
     context_simple_->Blur();
+
+  if (!ui::IMEBridge::Get())  // IMEBridge could be null for tests.
+    return;
+
+  ui::IMEEngineHandlerInterface::InputContext context(
+      GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+  ui::IMEBridge::Get()->SetCurrentInputContext(context);
+
+  ui::IMEEngineHandlerInterface* engine = GetEngine();
+  if (engine) {
+    if (old_text_input_type != TEXT_INPUT_TYPE_NONE)
+      engine->FocusOut();
+    if (text_input_type_ != TEXT_INPUT_TYPE_NONE)
+      engine->FocusIn(context);
+  }
 }
 
 void InputMethodAuraLinux::OnTextInputTypeChanged(
@@ -191,11 +279,19 @@ void InputMethodAuraLinux::OnCaretBoundsChanged(const TextInputClient* client) {
     return;
   NotifyTextInputCaretBoundsChanged(client);
   context_->SetCursorLocation(GetTextInputClient()->GetCaretBounds());
+
+  if (!IsTextInputTypeNone() && text_input_type_ != TEXT_INPUT_TYPE_PASSWORD &&
+      GetEngine())
+    GetEngine()->SetCompositionBounds(GetCompositionBounds(client));
 }
 
 void InputMethodAuraLinux::CancelComposition(const TextInputClient* client) {
   if (!IsTextInputClientFocused(client))
     return;
+
+  if (GetEngine())
+    GetEngine()->Reset();
+
   ResetContext();
 }
 
@@ -305,17 +401,6 @@ void InputMethodAuraLinux::OnPreeditEnd() {
 
 // Overridden from InputMethodBase.
 
-void InputMethodAuraLinux::OnFocus() {
-  InputMethodBase::OnFocus();
-  UpdateContextFocusState();
-}
-
-void InputMethodAuraLinux::OnBlur() {
-  ConfirmCompositionText();
-  InputMethodBase::OnBlur();
-  UpdateContextFocusState();
-}
-
 void InputMethodAuraLinux::OnWillChangeFocusedClient(
     TextInputClient* focused_before,
     TextInputClient* focused) {
@@ -358,8 +443,12 @@ ui::EventDispatchDetails InputMethodAuraLinux::SendFakeProcessKeyEvent(
 
 void InputMethodAuraLinux::ConfirmCompositionText() {
   TextInputClient* client = GetTextInputClient();
-  if (client && client->HasCompositionText())
+  if (client && client->HasCompositionText()) {
     client->ConfirmCompositionText();
+
+    if (GetEngine())
+      GetEngine()->Reset();
+  }
 
   ResetContext();
 }

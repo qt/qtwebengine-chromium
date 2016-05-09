@@ -8,14 +8,18 @@
 
 #include "base/bind.h"
 #include "base/format_macros.h"
+#include "base/json/json_writer.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event_impl.h"
+#include "base/trace_event/tracing_agent.h"
 #include "components/tracing/trace_config_file.h"
 #include "content/browser/devtools/devtools_io_context.h"
+#include "content/browser/tracing/tracing_controller_impl.h"
 
 namespace content {
 namespace devtools {
@@ -26,6 +30,46 @@ using Response = DevToolsProtocolClient::Response;
 namespace {
 
 const double kMinimumReportingInterval = 250.0;
+
+const char kRecordModeParam[] = "record_mode";
+
+// Convert from camel case to separator + lowercase.
+std::string ConvertFromCamelCase(const std::string& in_str, char separator) {
+  std::string out_str;
+  out_str.reserve(in_str.size());
+  for (const char& c : in_str) {
+    if (isupper(c)) {
+      out_str.push_back(separator);
+      out_str.push_back(tolower(c));
+    } else {
+      out_str.push_back(c);
+    }
+  }
+  return out_str;
+}
+
+scoped_ptr<base::Value> ConvertDictKeyStyle(const base::Value& value) {
+  const base::DictionaryValue* dict = nullptr;
+  if (value.GetAsDictionary(&dict)) {
+    scoped_ptr<base::DictionaryValue> out_dict(new base::DictionaryValue());
+    for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd();
+         it.Advance()) {
+      out_dict->Set(ConvertFromCamelCase(it.key(), '_'),
+                    ConvertDictKeyStyle(it.value()));
+    }
+    return std::move(out_dict);
+  }
+
+  const base::ListValue* list = nullptr;
+  if (value.GetAsList(&list)) {
+    scoped_ptr<base::ListValue> out_list(new base::ListValue());
+    for (const auto& value : *list)
+      out_list->Append(ConvertDictKeyStyle(*value));
+    return std::move(out_list);
+  }
+
+  return value.CreateDeepCopy();
+}
 
 class DevToolsTraceSinkProxy : public TracingController::TraceDataSink {
  public:
@@ -85,9 +129,11 @@ class DevToolsStreamTraceSink : public TracingController::TraceDataSink {
 }  // namespace
 
 TracingHandler::TracingHandler(TracingHandler::Target target,
+                               int frame_tree_node_id,
                                DevToolsIOContext* io_context)
     : target_(target),
       io_context_(io_context),
+      frame_tree_node_id_(frame_tree_node_id),
       did_initiate_recording_(false),
       return_as_stream_(false),
       weak_factory_(this) {}
@@ -125,38 +171,46 @@ void TracingHandler::OnTraceToStreamComplete(const std::string& stream_handle) {
       TracingCompleteParams::Create()->set_stream(stream_handle));
 }
 
-Response TracingHandler::Start(DevToolsCommandId command_id,
-                               const std::string* categories,
-                               const std::string* options,
-                               const double* buffer_usage_reporting_interval,
-                               const std::string* transfer_mode) {
+Response TracingHandler::Start(
+    DevToolsCommandId command_id,
+    const std::string* categories,
+    const std::string* options,
+    const double* buffer_usage_reporting_interval,
+    const std::string* transfer_mode,
+    const scoped_ptr<base::DictionaryValue>& config) {
   if (IsTracing())
     return Response::InternalError("Tracing is already started");
+
+  if (config && (categories || options)) {
+    return Response::InternalError(
+        "Either trace config (preferred), or categories+options should be "
+        "specified, but not both.");
+  }
 
   did_initiate_recording_ = true;
   return_as_stream_ =
       transfer_mode && *transfer_mode == start::kTransferModeReturnAsStream;
-  base::trace_event::TraceConfig trace_config(
-      categories ? *categories : std::string(),
-      options ? *options : std::string());
   if (buffer_usage_reporting_interval)
     SetupTimer(*buffer_usage_reporting_interval);
 
-  // If inspected target is a render process Tracing.start will be handled by
-  // tracing agent in the renderer.
-  if (target_ == Renderer) {
-    TracingController::GetInstance()->StartTracing(
-        trace_config,
-        TracingController::StartTracingDoneCallback());
-    return Response::FallThrough();
+  base::trace_event::TraceConfig trace_config;
+  if (config) {
+    trace_config = GetTraceConfigFromDevToolsConfig(*config);
+  } else if (categories || options) {
+    trace_config = base::trace_event::TraceConfig(
+        categories ? *categories : std::string(),
+        options ? *options : std::string());
   }
 
+  // If inspected target is a render process Tracing.start will be handled by
+  // tracing agent in the renderer.
   TracingController::GetInstance()->StartTracing(
       trace_config,
       base::Bind(&TracingHandler::OnRecordingEnabled,
                  weak_factory_.GetWeakPtr(),
                  command_id));
-  return Response::OK();
+
+  return target_ == Renderer ? Response::FallThrough() : Response::OK();
 }
 
 Response TracingHandler::End(DevToolsCommandId command_id) {
@@ -188,7 +242,11 @@ Response TracingHandler::GetCategories(DevToolsCommandId command_id) {
 }
 
 void TracingHandler::OnRecordingEnabled(DevToolsCommandId command_id) {
-  client_->SendStartResponse(command_id, StartResponse::Create());
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+                       "TracingStartedInBrowser", TRACE_EVENT_SCOPE_THREAD,
+                       "frameTreeNodeId", frame_tree_node_id_);
+  if (target_ != Renderer)
+    client_->SendStartResponse(command_id, StartResponse::Create());
 }
 
 void TracingHandler::OnBufferUsage(float percent_full,
@@ -233,6 +291,17 @@ void TracingHandler::OnMemoryDumpFinished(DevToolsCommandId command_id,
           ->set_success(success));
 }
 
+Response TracingHandler::RecordClockSyncMarker(const std::string& sync_id) {
+  if (!IsTracing())
+    return Response::InternalError("Tracing is not started");
+
+  TracingControllerImpl::GetInstance()->RecordClockSyncMarker(
+      sync_id,
+      base::trace_event::TracingAgent::RecordClockSyncMarkerCallback());
+
+  return Response::OK();
+}
+
 void TracingHandler::SetupTimer(double usage_reporting_interval) {
   if (usage_reporting_interval == 0) return;
 
@@ -265,6 +334,21 @@ bool TracingHandler::IsTracing() const {
 bool TracingHandler::IsStartupTracingActive() {
   return ::tracing::TraceConfigFile::GetInstance()->IsEnabled() &&
       TracingController::GetInstance()->IsTracing();
+}
+
+// static
+base::trace_event::TraceConfig TracingHandler::GetTraceConfigFromDevToolsConfig(
+    const base::DictionaryValue& devtools_config) {
+  scoped_ptr<base::Value> value = ConvertDictKeyStyle(devtools_config);
+  DCHECK(value && value->IsType(base::Value::TYPE_DICTIONARY));
+  scoped_ptr<base::DictionaryValue> tracing_dict(
+      static_cast<base::DictionaryValue*>(value.release()));
+
+  std::string mode;
+  if (tracing_dict->GetString(kRecordModeParam, &mode))
+    tracing_dict->SetString(kRecordModeParam, ConvertFromCamelCase(mode, '-'));
+
+  return base::trace_event::TraceConfig(*tracing_dict);
 }
 
 }  // namespace tracing

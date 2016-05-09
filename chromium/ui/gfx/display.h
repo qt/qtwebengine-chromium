@@ -21,7 +21,7 @@ namespace gfx {
 // system. For platforms that support DIP (density independent pixel),
 // |bounds()| and |work_area| will return values in DIP coordinate
 // system, not in backing pixels.
-class GFX_EXPORT Display {
+class GFX_EXPORT Display final {
  public:
   // Screen Rotation in clock-wise degrees.
   // This enum corresponds to DisplayRotationDefaultProto::Rotation in
@@ -38,11 +38,13 @@ class GFX_EXPORT Display {
   // RotationSource allows for the tracking of a Rotation per source of the
   // change. ROTATION_SOURCE_ACTIVE is the current rotation of the display.
   // Rotation changes not due to an accelerometer, nor the user, are to use this
-  // source directly.
+  // source directly. ROTATION_SOURCE_UNKNOWN is when no rotation source has
+  // been provided.
   enum RotationSource {
     ROTATION_SOURCE_ACCELEROMETER = 0,
     ROTATION_SOURCE_ACTIVE,
     ROTATION_SOURCE_USER,
+    ROTATION_SOURCE_UNKNOWN,
   };
 
   // Touch support for the display.
@@ -58,6 +60,7 @@ class GFX_EXPORT Display {
   Display();
   explicit Display(int64_t id);
   Display(int64_t id, const Rect& bounds);
+  Display(const Display& other);
   ~Display();
 
   // Returns the forced device scale factor, which is given by
@@ -153,6 +156,11 @@ class GFX_EXPORT Display {
   Rotation rotation_;
   TouchSupport touch_support_;
 };
+
+// This is declared here for use in gtest-based unit tests but is defined in
+// the gfx_test_support target. Depend on that to use this in your unit test.
+// This should not be used in production code - call ToString() instead.
+void PrintTo(const Display& display, ::std::ostream* os);
 
 }  // namespace gfx
 

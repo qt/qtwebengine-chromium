@@ -80,6 +80,8 @@ const char kLibCrosServiceInterface[] = "org.chromium.LibCrosServiceInterface";
 // Methods
 const char kResolveNetworkProxy[] = "ResolveNetworkProxy";
 const char kCheckLiveness[] = "CheckLiveness";
+const char kGetKioskAppRequiredPlatforVersion[] =
+    "GetKioskAppRequiredPlatformVersion";
 const char kLockScreen[] = "LockScreen";
 const char kSetDisplayPower[] = "SetDisplayPower";
 const char kSetDisplaySoftwareDimming[] = "SetDisplaySoftwareDimming";
@@ -857,6 +859,7 @@ const char kRemoveActiveInputNode[] = "RemoveActiveInputNode";
 const char kGetNumberOfActiveStreams[] = "GetNumberOfActiveStreams";
 const char kGetNumberOfActiveInputStreams[] = "GetNumberOfActiveInputStreams";
 const char kGetNumberOfActiveOutputStreams[] = "GetNumberOfActiveOutputStreams";
+const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
 
 // Names of properties returned by GetNodes()
 const char kIsInputProperty[] = "IsInput";

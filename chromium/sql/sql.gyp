@@ -109,19 +109,22 @@
         '..',
       ],
       'conditions': [
-        ['os_posix==1 and OS!="mac" and OS!="ios"', {
-          'conditions': [
-            ['use_allocator!="none"', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ],
-        }],
         ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
+        }],
+        ['OS == "ios"', {
+          'actions': [{
+            'action_name': 'copy_test_data',
+            'variables': {
+              'test_data_files': [
+                'test/data',
+              ],
+              'test_data_prefix' : 'sql',
+            },
+            'includes': [ '../build/copy_test_data_ios.gypi' ],
+          }],
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.

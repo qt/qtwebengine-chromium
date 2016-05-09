@@ -8,10 +8,10 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
-#include "media/base/cdm_context.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/pipeline_status.h"
 #include "media/filters/decoder_stream_traits.h"
@@ -22,6 +22,7 @@ class SingleThreadTaskRunner;
 
 namespace media {
 
+class CdmContext;
 class DecoderBuffer;
 class DecryptingDemuxerStream;
 class MediaLog;
@@ -68,10 +69,10 @@ class MEDIA_EXPORT DecoderSelector {
   // 1. This must not be called again before |select_decoder_cb| is run.
   // 2. Decoders that fail to initialize will be deleted. Future calls will
   //    select from the decoders following the decoder that was last returned.
-  // 3. |set_cdm_ready_cb| is optional. If |set_cdm_ready_cb| is
+  // 3. |cdm_context| is optional. If |cdm_context| is
   //    null, no CDM will be available to perform decryption.
   void SelectDecoder(DemuxerStream* stream,
-                     const SetCdmReadyCB& set_cdm_ready_cb,
+                     CdmContext* cdm_context,
                      const SelectDecoderCB& select_decoder_cb,
                      const typename Decoder::OutputCB& output_cb,
                      const base::Closure& waiting_for_decryption_key_cb);
@@ -92,7 +93,7 @@ class MEDIA_EXPORT DecoderSelector {
   scoped_refptr<MediaLog> media_log_;
 
   DemuxerStream* input_stream_;
-  SetCdmReadyCB set_cdm_ready_cb_;
+  CdmContext* cdm_context_;
   SelectDecoderCB select_decoder_cb_;
   typename Decoder::OutputCB output_cb_;
   base::Closure waiting_for_decryption_key_cb_;

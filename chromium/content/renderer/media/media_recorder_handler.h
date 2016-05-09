@@ -5,6 +5,8 @@
 #ifndef CONTENT_RENDERER_MEDIA_MEDIA_RECORDER_HANDLER_H_
 #define CONTENT_RENDERER_MEDIA_MEDIA_RECORDER_HANDLER_H_
 
+#include <memory>
+
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/scoped_vector.h"
@@ -53,7 +55,9 @@ class CONTENT_EXPORT MediaRecorderHandler final
   bool initialize(blink::WebMediaRecorderHandlerClient* client,
                   const blink::WebMediaStream& media_stream,
                   const blink::WebString& type,
-                  const blink::WebString& codecs) override;
+                  const blink::WebString& codecs,
+                  int32_t audio_bits_per_second,
+                  int32_t video_bits_per_second) override;
   bool start() override;
   bool start(int timeslice) override;
   void stop() override;
@@ -64,11 +68,11 @@ class CONTENT_EXPORT MediaRecorderHandler final
   friend class MediaRecorderHandlerTest;
 
   void OnEncodedVideo(const scoped_refptr<media::VideoFrame>& video_frame,
-                      scoped_ptr<std::string> encoded_data,
+                      std::unique_ptr<std::string> encoded_data,
                       base::TimeTicks timestamp,
                       bool is_key_frame);
   void OnEncodedAudio(const media::AudioParameters& params,
-                      scoped_ptr<std::string> encoded_data,
+                      std::unique_ptr<std::string> encoded_data,
                       base::TimeTicks timestamp);
   void WriteData(base::StringPiece data);
 
@@ -80,6 +84,10 @@ class CONTENT_EXPORT MediaRecorderHandler final
 
   // Bound to the main render thread.
   base::ThreadChecker main_render_thread_checker_;
+
+  // Sanitized video and audio bitrate settings passed on initialize().
+  int32_t video_bits_per_second_;
+  int32_t audio_bits_per_second_;
 
   // Force using VP9 for video encoding, otherwise VP8 will be used by default.
   bool use_vp9_;
@@ -100,7 +108,7 @@ class CONTENT_EXPORT MediaRecorderHandler final
   ScopedVector<AudioTrackRecorder> audio_recorders_;
 
   // Worker class doing the actual Webm Muxing work.
-  scoped_ptr<media::WebmMuxer> webm_muxer_;
+  std::unique_ptr<media::WebmMuxer> webm_muxer_;
 
   base::WeakPtrFactory<MediaRecorderHandler> weak_factory_;
 

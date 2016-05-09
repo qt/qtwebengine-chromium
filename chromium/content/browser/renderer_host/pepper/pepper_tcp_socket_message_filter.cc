@@ -6,6 +6,7 @@
 
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/location.h"
@@ -23,6 +24,7 @@
 #include "net/base/address_family.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
+#include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
 #include "net/dns/single_request_host_resolver.h"
 #include "net/socket/client_socket_factory.h"
@@ -573,14 +575,14 @@ void PepperTCPSocketMessageFilter::DoBind(
 
   int pp_result = PP_OK;
   do {
-    net::IPAddressNumber address;
+    std::vector<uint8_t> address;
     uint16_t port;
     if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(
             net_addr, &address, &port)) {
       pp_result = PP_ERROR_ADDRESS_INVALID;
       break;
     }
-    net::IPEndPoint bind_addr(address, port);
+    net::IPEndPoint bind_addr(net::IPAddress(address), port);
 
     DCHECK(!socket_->IsValid());
     pp_result = NetErrorToPepperError(socket_->Open(bind_addr.GetFamily()));
@@ -604,8 +606,7 @@ void PepperTCPSocketMessageFilter::DoBind(
     PP_NetAddress_Private local_addr =
         NetAddressPrivateImpl::kInvalidNetAddress;
     if (!NetAddressPrivateImpl::IPEndPointToNetAddress(
-            ip_end_point_local.address(),
-            ip_end_point_local.port(),
+            ip_end_point_local.address().bytes(), ip_end_point_local.port(),
             &local_addr)) {
       pp_result = PP_ERROR_ADDRESS_INVALID;
       break;
@@ -834,12 +835,10 @@ void PepperTCPSocketMessageFilter::OnConnectCompleted(
     PP_NetAddress_Private remote_addr =
         NetAddressPrivateImpl::kInvalidNetAddress;
     if (!NetAddressPrivateImpl::IPEndPointToNetAddress(
-            ip_end_point_local.address(),
-            ip_end_point_local.port(),
+            ip_end_point_local.address().bytes(), ip_end_point_local.port(),
             &local_addr) ||
         !NetAddressPrivateImpl::IPEndPointToNetAddress(
-            ip_end_point_remote.address(),
-            ip_end_point_remote.port(),
+            ip_end_point_remote.address().bytes(), ip_end_point_remote.port(),
             &remote_addr)) {
       pp_result = PP_ERROR_ADDRESS_INVALID;
       break;
@@ -1007,12 +1006,10 @@ void PepperTCPSocketMessageFilter::OnAcceptCompleted(
     return;
   }
   if (!NetAddressPrivateImpl::IPEndPointToNetAddress(
-          ip_end_point_local.address(),
-          ip_end_point_local.port(),
+          ip_end_point_local.address().bytes(), ip_end_point_local.port(),
           &local_addr) ||
       !NetAddressPrivateImpl::IPEndPointToNetAddress(
-          accepted_address_.address(),
-          accepted_address_.port(),
+          accepted_address_.address().bytes(), accepted_address_.port(),
           &remote_addr)) {
     SendAcceptError(context, PP_ERROR_ADDRESS_INVALID);
     return;

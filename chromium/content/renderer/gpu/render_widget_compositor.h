@@ -42,7 +42,8 @@ class CompositorMessage;
 }
 
 namespace content {
-class RenderWidget;
+
+class RenderWidgetCompositorDelegate;
 
 class CONTENT_EXPORT RenderWidgetCompositor
     : NON_EXPORTED_BASE(public blink::WebLayerTreeView),
@@ -53,7 +54,8 @@ class CONTENT_EXPORT RenderWidgetCompositor
   // Attempt to construct and initialize a compositor instance for the widget
   // with the given settings. Returns NULL if initialization fails.
   static scoped_ptr<RenderWidgetCompositor> Create(
-      RenderWidget* widget,
+      RenderWidgetCompositorDelegate* delegate,
+      float device_scale_factor,
       CompositorDependencies* compositor_deps);
 
   ~RenderWidgetCompositor() override;
@@ -97,9 +99,9 @@ class CONTENT_EXPORT RenderWidgetCompositor
   void setRootLayer(const blink::WebLayer& layer) override;
   void clearRootLayer() override;
   void attachCompositorAnimationTimeline(
-      blink::WebCompositorAnimationTimeline* compositor_timeline) override;
+      cc::AnimationTimeline* compositor_timeline) override;
   void detachCompositorAnimationTimeline(
-      blink::WebCompositorAnimationTimeline* compositor_timeline) override;
+      cc::AnimationTimeline* compositor_timeline) override;
   void setViewportSize(const blink::WebSize& device_viewport_size) override;
   virtual blink::WebFloatPoint adjustEventPointForPinchZoom(
       const blink::WebFloatPoint& point) const;
@@ -124,7 +126,6 @@ class CONTENT_EXPORT RenderWidgetCompositor
   void compositeAndReadbackAsync(
       blink::WebCompositeAndReadbackAsyncCallback* callback) override;
   void setDeferCommits(bool defer_commits) override;
-  void registerForAnimations(blink::WebLayer* layer) override;
   void registerViewportLayers(
       const blink::WebLayer* overscrollElasticityLayer,
       const blink::WebLayer* pageScaleLayer,
@@ -133,6 +134,13 @@ class CONTENT_EXPORT RenderWidgetCompositor
   void clearViewportLayers() override;
   void registerSelection(const blink::WebSelection& selection) override;
   void clearSelection() override;
+  void setEventListenerProperties(
+      blink::WebEventListenerClass eventClass,
+      blink::WebEventListenerProperties properties) override;
+  blink::WebEventListenerProperties eventListenerProperties(
+      blink::WebEventListenerClass eventClass) const override;
+  void setHaveScrollEventHandlers(bool) override;
+  bool haveScrollEventHandlers() const override;
   int layerTreeId() const override;
   void setShowFPSCounter(bool show) override;
   void setShowPaintRects(bool show) override;
@@ -170,7 +178,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
       override;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
-  void ScheduleAnimation() override;
+  void RequestScheduleAnimation() override;
   void DidPostSwapBuffers() override;
   void DidAbortSwapBuffers() override;
 
@@ -184,10 +192,12 @@ class CONTENT_EXPORT RenderWidgetCompositor
   };
 
  protected:
-  RenderWidgetCompositor(RenderWidget* widget,
+  friend class RenderViewImplScaleFactorTest;
+
+  RenderWidgetCompositor(RenderWidgetCompositorDelegate* delegate,
                          CompositorDependencies* compositor_deps);
 
-  void Initialize();
+  void Initialize(float device_scale_factor);
   cc::LayerTreeHost* layer_tree_host() { return layer_tree_host_.get(); }
 
  private:
@@ -197,8 +207,8 @@ class CONTENT_EXPORT RenderWidgetCompositor
   void SynchronouslyComposite();
 
   int num_failed_recreate_attempts_;
-  RenderWidget* widget_;
-  CompositorDependencies* compositor_deps_;
+  RenderWidgetCompositorDelegate* const delegate_;
+  CompositorDependencies* const compositor_deps_;
   scoped_ptr<cc::LayerTreeHost> layer_tree_host_;
   bool never_visible_;
 

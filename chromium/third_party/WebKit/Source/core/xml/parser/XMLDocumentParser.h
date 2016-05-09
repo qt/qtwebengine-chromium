@@ -28,7 +28,6 @@
 #include "core/dom/ParserContentPolicy.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/fetch/ResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
 #include "core/fetch/ScriptResource.h"
 #include "core/xml/parser/XMLErrors.h"
 #include "platform/heap/Handle.h"
@@ -66,15 +65,14 @@ private:
 };
 
 class XMLDocumentParser final : public ScriptableDocumentParser, public ScriptResourceClient {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(XMLDocumentParser);
 public:
-    static PassRefPtrWillBeRawPtr<XMLDocumentParser> create(Document& document, FrameView* view)
+    static RawPtr<XMLDocumentParser> create(Document& document, FrameView* view)
     {
-        return adoptRefWillBeNoop(new XMLDocumentParser(document, view));
+        return new XMLDocumentParser(document, view);
     }
-    static PassRefPtrWillBeRawPtr<XMLDocumentParser> create(DocumentFragment* fragment, Element* element, ParserContentPolicy parserContentPolicy)
+    static RawPtr<XMLDocumentParser> create(DocumentFragment* fragment, Element* element, ParserContentPolicy parserContentPolicy)
     {
-        return adoptRefWillBeNoop(new XMLDocumentParser(fragment, element, parserContentPolicy));
+        return new XMLDocumentParser(fragment, element, parserContentPolicy);
     }
     ~XMLDocumentParser() override;
     DECLARE_VIRTUAL_TRACE();
@@ -168,10 +166,10 @@ private:
     Deque<OwnPtr<PendingCallback>> m_pendingCallbacks;
     Vector<xmlChar> m_bufferedText;
 
-    RawPtrWillBeMember<ContainerNode> m_currentNode;
-    WillBeHeapVector<RawPtrWillBeMember<ContainerNode>> m_currentNodeStack;
+    Member<ContainerNode> m_currentNode;
+    HeapVector<Member<ContainerNode>> m_currentNodeStack;
 
-    RefPtrWillBeMember<Text> m_leafTextNode;
+    Member<Text> m_leafTextNode;
 
     bool m_isCurrentlyParsing8BitChunk;
     bool m_sawError;
@@ -185,8 +183,8 @@ private:
 
     XMLErrors m_xmlErrors;
 
-    ResourcePtr<ScriptResource> m_pendingScript;
-    RefPtrWillBeMember<Element> m_scriptElement;
+    Member<ScriptResource> m_pendingScript;
+    Member<Element> m_scriptElement;
     TextPosition m_scriptStartPosition;
 
     bool m_parsingFragment;

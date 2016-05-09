@@ -4,11 +4,14 @@
 
 #include "net/tools/quic/quic_simple_server_stream.h"
 
+#include <list>
+
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
+#include "net/quic/quic_bug_tracker.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_spdy_stream.h"
 #include "net/quic/spdy_utils.h"
@@ -21,7 +24,6 @@ using base::StringToInt;
 using std::string;
 
 namespace net {
-namespace tools {
 
 QuicSimpleServerStream::QuicSimpleServerStream(QuicStreamId id,
                                                QuicSpdySession* session)
@@ -43,7 +45,7 @@ void QuicSimpleServerStream::OnInitialHeadersComplete(bool fin,
 
 void QuicSimpleServerStream::OnTrailingHeadersComplete(bool fin,
                                                        size_t frame_len) {
-  LOG(DFATAL) << "Server does not support receiving Trailers.";
+  QUIC_BUG << "Server does not support receiving Trailers.";
   SendErrorResponse();
 }
 
@@ -58,7 +60,7 @@ void QuicSimpleServerStream::OnDataAvailable() {
     body_.append(static_cast<char*>(iov.iov_base), iov.iov_len);
 
     if (content_length_ >= 0 &&
-        static_cast<int>(body_.size()) > content_length_) {
+        body_.size() > static_cast<uint64_t>(content_length_)) {
       DVLOG(1) << "Body size (" << body_.size() << ") > content length ("
                << content_length_ << ").";
       SendErrorResponse();
@@ -86,7 +88,7 @@ void QuicSimpleServerStream::OnDataAvailable() {
   }
 
   if (content_length_ > 0 &&
-      content_length_ != static_cast<int>(body_.size())) {
+      static_cast<uint64_t>(content_length_) != body_.size()) {
     DVLOG(1) << "Content length (" << content_length_ << ") != body size ("
              << body_.size() << ").";
     SendErrorResponse();
@@ -99,8 +101,7 @@ void QuicSimpleServerStream::OnDataAvailable() {
 void QuicSimpleServerStream::PushResponse(
     SpdyHeaderBlock push_request_headers) {
   if (id() % 2 != 0) {
-    LOG(DFATAL) << "Client initiated stream shouldn't be used "
-                << "as promised stream.";
+    QUIC_BUG << "Client initiated stream shouldn't be used as promised stream.";
     return;
   }
   // Change the stream state to emulate a client request.
@@ -126,7 +127,7 @@ void QuicSimpleServerStream::SendResponse() {
           request_headers_[":authority"], request_headers_[":path"]);
   if (response == nullptr) {
     DVLOG(1) << "Response not found in cache.";
-    SendErrorResponse();
+    SendNotFoundResponse();
     return;
   }
 
@@ -143,18 +144,11 @@ void QuicSimpleServerStream::SendResponse() {
 
   // Examing response status, if it was not pure integer as typical h2 response
   // status, send error response.
-  string request_url;
-  if (!request_headers_[":scheme"].as_string().empty()) {
-    request_url = request_headers_[":scheme"].as_string() + "://" +
-                  request_headers_[":authority"].as_string() +
-                  request_headers_[":path"].as_string();
-  } else {
-    request_url = request_headers_[":authority"].as_string() +
-                  request_headers_[":path"].as_string();
-  }
+  string request_url = request_headers_[":authority"].as_string() +
+                       request_headers_[":path"].as_string();
   int response_code;
   SpdyHeaderBlock response_headers = response->headers();
-  if (!base::StringToInt(response_headers[":status"], &response_code)) {
+  if (!ParseHeaderStatusCode(&response_headers, &response_code)) {
     DVLOG(1) << "Illegal (non-integer) response :status from cache: "
              << response_headers[":status"].as_string() << " for request "
              << request_url;
@@ -174,7 +168,7 @@ void QuicSimpleServerStream::SendResponse() {
       return;
     }
   }
-  list<QuicInMemoryCache::ServerPushInfo> resources =
+  std::list<QuicInMemoryCache::ServerPushInfo> resources =
       QuicInMemoryCache::GetInstance()->GetServerPushResources(request_url);
   DVLOG(1) << "Found " << resources.size() << " push resources for stream "
            << id();
@@ -189,6 +183,14 @@ void QuicSimpleServerStream::SendResponse() {
   DVLOG(1) << "Sending response for stream " << id();
   SendHeadersAndBodyAndTrailers(response->headers(), response->body(),
                                 response->trailers());
+}
+
+void QuicSimpleServerStream::SendNotFoundResponse() {
+  DVLOG(1) << "Sending not found response for stream " << id();
+  SpdyHeaderBlock headers;
+  headers[":status"] = "404";
+  headers["content-length"] = base::IntToString(strlen(kNotFoundResponseBody));
+  SendHeadersAndBody(headers, kNotFoundResponseBody);
 }
 
 void QuicSimpleServerStream::SendErrorResponse() {
@@ -242,6 +244,7 @@ void QuicSimpleServerStream::SendHeadersAndBodyAndTrailers(
 }
 
 const char* const QuicSimpleServerStream::kErrorResponseBody = "bad";
+const char* const QuicSimpleServerStream::kNotFoundResponseBody =
+    "file not found";
 
-}  // namespace tools
 }  // namespace net

@@ -9,7 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "base/memory/scoped_ptr.h"
+#include <memory>
+
 #include "base/process/process_handle.h"
 #include "base/time/time.h"
 #include "base/tracking_info.h"
@@ -31,8 +32,7 @@ class TrackedObjectsTest : public testing::Test {
     ThreadData::ShutdownSingleThreadedCleanup(true);
 
     test_time_ = 0;
-    ThreadData::SetAlternateTimeSource(&TrackedObjectsTest::GetTestTime);
-    ThreadData::now_function_is_time_ = true;
+    ThreadData::now_function_for_testing_ = &TrackedObjectsTest::GetTestTime;
   }
 
   ~TrackedObjectsTest() override {
@@ -240,7 +240,7 @@ TEST_F(TrackedObjectsTest, TinyStartupShutdown) {
 TEST_F(TrackedObjectsTest, DeathDataTestRecordDeath) {
   ThreadData::InitializeAndSetTrackingStatus(ThreadData::PROFILING_ACTIVE);
 
-  scoped_ptr<DeathData> data(new DeathData());
+  std::unique_ptr<DeathData> data(new DeathData());
   ASSERT_NE(data, nullptr);
   EXPECT_EQ(data->run_duration_sum(), 0);
   EXPECT_EQ(data->run_duration_max(), 0);
@@ -279,7 +279,7 @@ TEST_F(TrackedObjectsTest, DeathDataTestRecordDeath) {
 TEST_F(TrackedObjectsTest, DeathDataTest2Phases) {
   ThreadData::InitializeAndSetTrackingStatus(ThreadData::PROFILING_ACTIVE);
 
-  scoped_ptr<DeathData> data(new DeathData());
+  std::unique_ptr<DeathData> data(new DeathData());
   ASSERT_NE(data, nullptr);
 
   int32_t run_ms = 42;

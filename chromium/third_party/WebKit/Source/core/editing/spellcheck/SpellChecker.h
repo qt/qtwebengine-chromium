@@ -43,11 +43,10 @@ class TextCheckerClient;
 class TextCheckingParagraph;
 struct TextCheckingResult;
 
-class CORE_EXPORT SpellChecker final : public NoBaseWillBeGarbageCollectedFinalized<SpellChecker> {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(SpellChecker);
+class CORE_EXPORT SpellChecker final : public GarbageCollectedFinalized<SpellChecker> {
     WTF_MAKE_NONCOPYABLE(SpellChecker);
 public:
-    static PassOwnPtrWillBeRawPtr<SpellChecker> create(LocalFrame&);
+    static RawPtr<SpellChecker> create(LocalFrame&);
 
     ~SpellChecker();
     DECLARE_TRACE();
@@ -60,12 +59,13 @@ public:
     void ignoreSpelling();
     bool isSpellCheckingEnabledInFocusedNode() const;
     bool isSpellCheckingEnabledFor(Node*) const;
+    static bool isSpellCheckingEnabledFor(const VisibleSelection&);
     void markMisspellingsAfterLineBreak(const VisibleSelection& wordSelection);
     void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping);
     bool markMisspellings(const VisibleSelection&);
     void markBadGrammar(const VisibleSelection&);
     void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
-    void markAndReplaceFor(PassRefPtrWillBeRawPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
+    void markAndReplaceFor(RawPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
     void markAllMisspellingsAndBadGrammarInRanges(TextCheckingTypeMask, const EphemeralRange& spellingRange, const EphemeralRange& grammarRange);
     void advanceToNextMisspelling(bool startBeforeSelection = false);
     void showSpellingGuessPanel();
@@ -84,11 +84,19 @@ public:
     bool selectionStartHasSpellingMarkerFor(int from, int length) const;
     void updateMarkersForWordsAffectedByEditing(bool onlyHandleWordsContainingSelection);
     void cancelCheck();
-    void chunkAndMarkAllMisspellingsAndBadGrammar(Node*);
+    void chunkAndMarkAllMisspellingsAndBadGrammar(Node*, const EphemeralRange&);
     void requestTextChecking(const Element&);
 
     // Exposed for testing only
     SpellCheckRequester& spellCheckRequester() const { return *m_spellCheckRequester; }
+
+    // The leak detector will report leaks should queued requests be posted
+    // while it GCs repeatedly, as the requests keep their associated element
+    // alive.
+    //
+    // Hence allow the leak detector to effectively stop the spell checker to
+    // ensure leak reporting stability.
+    void prepareForLeakDetection();
 
 private:
     explicit SpellChecker(LocalFrame&);
@@ -107,8 +115,8 @@ private:
 
     void chunkAndMarkAllMisspellingsAndBadGrammar(TextCheckingTypeMask textCheckingOptions, const TextCheckingParagraph& fullParagraphToCheck);
 
-    RawPtrWillBeMember<LocalFrame> m_frame;
-    const OwnPtrWillBeMember<SpellCheckRequester> m_spellCheckRequester;
+    Member<LocalFrame> m_frame;
+    const Member<SpellCheckRequester> m_spellCheckRequester;
 };
 
 } // namespace blink

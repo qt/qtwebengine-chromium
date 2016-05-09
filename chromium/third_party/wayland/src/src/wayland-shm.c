@@ -315,41 +315,6 @@ wl_display_init_shm(struct wl_display *display)
 }
 
 WL_EXPORT struct wl_shm_buffer *
-wl_shm_buffer_create(struct wl_client *client,
-		     uint32_t id, int32_t width, int32_t height,
-		     int32_t stride, uint32_t format)
-{
-	struct wl_shm_buffer *buffer;
-
-	if (!format_is_supported(client, format))
-		return NULL;
-
-	buffer = malloc(sizeof *buffer + stride * height);
-	if (buffer == NULL)
-		return NULL;
-
-	buffer->width = width;
-	buffer->height = height;
-	buffer->format = format;
-	buffer->stride = stride;
-	buffer->offset = 0;
-	buffer->pool = NULL;
-
-	buffer->resource =
-		wl_resource_create(client, &wl_buffer_interface, 1, id);
-	if (buffer->resource == NULL) {
-		free(buffer);
-		return NULL;
-	}
-
-	wl_resource_set_implementation(buffer->resource,
-				       &shm_buffer_interface,
-				       buffer, destroy_buffer);
-
-	return buffer;
-}
-
-WL_EXPORT struct wl_shm_buffer *
 wl_shm_buffer_get(struct wl_resource *resource)
 {
 	if (resource == NULL)
@@ -388,10 +353,12 @@ wl_shm_buffer_get_stride(struct wl_shm_buffer *buffer)
 WL_EXPORT void *
 wl_shm_buffer_get_data(struct wl_shm_buffer *buffer)
 {
-	if (buffer->pool)
-		return buffer->pool->data + buffer->offset;
-	else
-		return buffer + 1;
+	assert(buffer->pool);
+
+	if (!buffer->pool)
+		return NULL;
+
+	return buffer->pool->data + buffer->offset;
 }
 
 WL_EXPORT uint32_t
@@ -410,6 +377,48 @@ WL_EXPORT int32_t
 wl_shm_buffer_get_height(struct wl_shm_buffer *buffer)
 {
 	return buffer->height;
+}
+
+/** Get a reference to a shm_buffer's shm_pool
+ *
+ * \param buffer The buffer object
+ *
+ * Returns a pointer to a buffer's shm_pool and increases the
+ * shm_pool refcount.
+ *
+ * The compositor must remember to call wl_shm_pool_unref when
+ * it no longer needs the reference to ensure proper destruction
+ * of the pool.
+ *
+ * \memberof wl_shm_buffer
+ * \sa wl_shm_pool_unref
+ */
+WL_EXPORT struct wl_shm_pool *
+wl_shm_buffer_ref_pool(struct wl_shm_buffer *buffer)
+{
+	assert(buffer->pool->refcount);
+
+	buffer->pool->refcount++;
+	return buffer->pool;
+}
+
+/** Unreference a shm_pool
+ *
+ * \param pool The pool object
+ *
+ * Drops a reference to a wl_shm_pool object.
+ *
+ * This is only necessary if the compositor has explicitly
+ * taken a reference with wl_shm_buffer_ref_pool(), otherwise
+ * the pool will be automatically destroyed when appropriate.
+ *
+ * \memberof wl_shm_pool
+ * \sa wl_shm_buffer_ref_pool
+ */
+WL_EXPORT void
+wl_shm_pool_unref(struct wl_shm_pool *pool)
+{
+	shm_pool_unref(pool);
 }
 
 static void
@@ -527,11 +536,9 @@ wl_shm_buffer_begin_access(struct wl_shm_buffer *buffer)
 
 	sigbus_data = pthread_getspecific(wl_shm_sigbus_data_key);
 	if (sigbus_data == NULL) {
-		sigbus_data = malloc(sizeof *sigbus_data);
+		sigbus_data = zalloc(sizeof *sigbus_data);
 		if (sigbus_data == NULL)
 			return;
-
-		memset(sigbus_data, 0, sizeof *sigbus_data);
 
 		pthread_setspecific(wl_shm_sigbus_data_key, sigbus_data);
 	}
@@ -573,3 +580,20 @@ wl_shm_buffer_end_access(struct wl_shm_buffer *buffer)
 		sigbus_data->current_pool = NULL;
 	}
 }
+
+/** \cond */ /* Deprecated functions below. */
+
+WL_EXPORT struct wl_shm_buffer *
+wl_shm_buffer_create(struct wl_client *client,
+		     uint32_t id, int32_t width, int32_t height,
+		     int32_t stride, uint32_t format)
+{
+	return NULL;
+}
+
+/** \endcond */
+
+/* Functions at the end of this file are deprecated.  Instead of adding new
+ * code here, add it before the comment above that states:
+ * Deprecated functions below.
+ */

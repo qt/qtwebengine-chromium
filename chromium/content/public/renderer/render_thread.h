@@ -75,29 +75,6 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   virtual void SetResourceDispatcherDelegate(
       ResourceDispatcherDelegate* delegate) = 0;
 
-  // We initialize WebKit as late as possible. Call this to force
-  // initialization.
-  virtual void EnsureWebKitInitialized() = 0;
-
-  // Sends over a base::UserMetricsAction to be recorded by user metrics as
-  // an action. Once a new user metric is added, run
-  //   tools/metrics/actions/extract_actions.py
-  // to add the metric to actions.xml, then update the <owner>s and
-  // <description> sections. Make sure to include the actions.xml file when you
-  // upload your code for review!
-  //
-  // WARNING: When using base::UserMetricsAction, base::UserMetricsAction
-  // and a string literal parameter must be on the same line, e.g.
-  //   RenderThread::Get()->RecordAction(
-  //       base::UserMetricsAction("my extremely long action name"));
-  // because otherwise our processing scripts won't pick up on new actions.
-  virtual void RecordAction(const base::UserMetricsAction& action) = 0;
-
-  // Sends over a string to be recorded by user metrics as a computed action.
-  // When you use this you need to also update the rules for extracting known
-  // actions in chrome/tools/extract_actions.py.
-  virtual void RecordComputedAction(const std::string& action) = 0;
-
   // Asks the host to create a block of shared memory for the renderer.
   // The shared memory allocated by the host is returned back.
   virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
@@ -132,7 +109,7 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   // Gets the shutdown event for the process.
   virtual base::WaitableEvent* GetShutdownEvent() = 0;
 
-  // Returns the ServiceRegistry for this thread.
+  // Returns the ServiceRegistry for this thread. Never returns nullptr.
   virtual ServiceRegistry* GetServiceRegistry() = 0;
 };
 

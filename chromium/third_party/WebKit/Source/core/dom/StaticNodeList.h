@@ -30,10 +30,7 @@
 #define StaticNodeList_h
 
 #include "core/dom/NodeList.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
-#include <v8.h>
 
 namespace blink {
 
@@ -43,11 +40,11 @@ class Node;
 template <typename NodeType>
 class StaticNodeTypeList final : public NodeList {
 public:
-    static PassRefPtrWillBeRawPtr<StaticNodeTypeList> adopt(WillBeHeapVector<RefPtrWillBeMember<NodeType>>& nodes);
+    static RawPtr<StaticNodeTypeList> adopt(HeapVector<Member<NodeType>>& nodes);
 
-    static PassRefPtrWillBeRawPtr<StaticNodeTypeList> createEmpty()
+    static RawPtr<StaticNodeTypeList> createEmpty()
     {
-        return adoptRefWillBeNoop(new StaticNodeTypeList);
+        return new StaticNodeTypeList;
     }
 
     ~StaticNodeTypeList() override;
@@ -58,30 +55,23 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    ptrdiff_t AllocationSize()
-    {
-        return m_nodes.capacity() * sizeof(RefPtrWillBeMember<NodeType>);
-    }
-
-    WillBeHeapVector<RefPtrWillBeMember<NodeType>> m_nodes;
+    HeapVector<Member<NodeType>> m_nodes;
 };
 
 typedef StaticNodeTypeList<Node> StaticNodeList;
 typedef StaticNodeTypeList<Element> StaticElementList;
 
 template <typename NodeType>
-PassRefPtrWillBeRawPtr<StaticNodeTypeList<NodeType>> StaticNodeTypeList<NodeType>::adopt(WillBeHeapVector<RefPtrWillBeMember<NodeType>>& nodes)
+RawPtr<StaticNodeTypeList<NodeType>> StaticNodeTypeList<NodeType>::adopt(HeapVector<Member<NodeType>>& nodes)
 {
-    RefPtrWillBeRawPtr<StaticNodeTypeList<NodeType>> nodeList = adoptRefWillBeNoop(new StaticNodeTypeList<NodeType>);
+    RawPtr<StaticNodeTypeList<NodeType>> nodeList = new StaticNodeTypeList<NodeType>;
     nodeList->m_nodes.swap(nodes);
-    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(nodeList->AllocationSize());
     return nodeList.release();
 }
 
 template <typename NodeType>
 StaticNodeTypeList<NodeType>::~StaticNodeTypeList()
 {
-    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-AllocationSize());
 }
 
 template <typename NodeType>

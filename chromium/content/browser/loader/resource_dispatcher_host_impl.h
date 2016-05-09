@@ -15,14 +15,13 @@
 #include <stdint.h>
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -40,6 +39,7 @@
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/resource_type.h"
 #include "ipc/ipc_message.h"
 #include "net/base/request_priority.h"
@@ -64,7 +64,10 @@ class ShareableFileReference;
 namespace content {
 class AppCacheService;
 class AsyncRevalidationManager;
+class CertStore;
+class FrameTree;
 class NavigationURLLoaderImplCore;
+class RenderFrameHostImpl;
 class ResourceContext;
 class ResourceDispatcherHostDelegate;
 class ResourceMessageDelegate;
@@ -78,6 +81,22 @@ struct DownloadSaveInfo;
 struct NavigationRequestInfo;
 struct Referrer;
 
+// This class is responsible for notifying the IO thread (specifically, the
+// ResourceDispatcherHostImpl) of frame events. It has an interace for callers
+// to use and also sends notifications on WebContentsObserver events. All
+// methods (static or class) will be called from the UI thread and post to the
+// IO thread.
+// TODO(csharrison): Add methods tracking visibility and audio changes, to
+// propogate to the ResourceScheduler.
+class LoaderIOThreadNotifier : public WebContentsObserver {
+ public:
+  explicit LoaderIOThreadNotifier(WebContents* web_contents);
+  ~LoaderIOThreadNotifier() override;
+
+  // content::WebContentsObserver:
+  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
+};
+
 class CONTENT_EXPORT ResourceDispatcherHostImpl
     : public ResourceDispatcherHost,
       public ResourceLoaderDelegate {
@@ -89,25 +108,28 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // hasn't been created yet.
   static ResourceDispatcherHostImpl* Get();
 
+  // The following static methods should all be called from the UI thread.
+
+  // Resumes requests for a given render frame routing id. This will only resume
+  // requests for a single frame.
+  static void ResumeBlockedRequestsForRouteFromUI(
+      const GlobalFrameRoutingId& global_routing_id);
+
+  // Blocks (and does not start) all requests for the frame and its subframes.
+  static void BlockRequestsForFrameFromUI(RenderFrameHost* root_frame_host);
+
+  // Resumes any blocked requests for the specified frame and its subframes.
+  static void ResumeBlockedRequestsForFrameFromUI(
+      RenderFrameHost* root_frame_host);
+
+  // Cancels any blocked request for the frame and its subframes.
+  static void CancelBlockedRequestsForFrameFromUI(
+      RenderFrameHostImpl* root_frame_host);
+
   // ResourceDispatcherHost implementation:
   void SetDelegate(ResourceDispatcherHostDelegate* delegate) override;
   void SetAllowCrossOriginAuthPrompt(bool value) override;
-  DownloadInterruptReason BeginDownload(
-      scoped_ptr<net::URLRequest> request,
-      const Referrer& referrer,
-      bool is_content_initiated,
-      ResourceContext* context,
-      int child_id,
-      int render_view_route_id,
-      int render_frame_route_id,
-      bool prefer_cache,
-      bool do_not_prompt_for_login,
-      scoped_ptr<DownloadSaveInfo> save_info,
-      uint32_t download_id,
-      const DownloadStartedCallback& started_callback) override;
   void ClearLoginDelegateForRequest(net::URLRequest* request) override;
-  void BlockRequestsForRoute(int child_id, int route_id) override;
-  void ResumeBlockedRequestsForRoute(int child_id, int route_id) override;
 
   // Puts the resource dispatcher host in an inactive state (unable to begin
   // new requests).  Cancels all pending requests.
@@ -128,6 +150,16 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   bool OnMessageReceived(const IPC::Message& message,
                          ResourceMessageFilter* filter);
 
+  DownloadInterruptReason BeginDownload(
+      std::unique_ptr<net::URLRequest> request,
+      const Referrer& referrer,
+      bool is_content_initiated,
+      ResourceContext* context,
+      int child_id,
+      int render_view_route_id,
+      int render_frame_route_id,
+      bool do_not_prompt_for_login);
+
   // Initiates a save file from the browser process (as opposed to a resource
   // request from the renderer or another child process).
   void BeginSaveFile(const GURL& url,
@@ -142,9 +174,12 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Cancels the given request if it still exists.
   void CancelRequest(int child_id, int request_id);
 
-  // Marks the request as "parked". This happens if a request is
-  // redirected cross-site and needs to be resumed by a new render view.
-  void MarkAsTransferredNavigation(const GlobalRequestID& id);
+  // Marks the request, with its current |response|, as "parked". This
+  // happens if a request is redirected cross-site and needs to be
+  // resumed by a new render view.
+  void MarkAsTransferredNavigation(
+      const GlobalRequestID& id,
+      const scoped_refptr<ResourceResponse>& response);
 
   // Cancels a request previously marked as being transferred, for use when a
   // navigation was cancelled.
@@ -179,9 +214,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Called when a RenderViewHost is created.
   void OnRenderViewHostCreated(int child_id,
-                               int route_id,
-                               bool is_visible,
-                               bool is_audible);
+                               int route_id);
 
   // Called when a RenderViewHost is deleted.
   void OnRenderViewHostDeleted(int child_id, int route_id);
@@ -190,17 +223,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void OnRenderViewHostSetIsLoading(int child_id,
                                     int route_id,
                                     bool is_loading);
-
-  // Called when a RenderViewHost is hidden.
-  void OnRenderViewHostWasHidden(int child_id, int route_id);
-
-  // Called when a RenderViewHost is shown.
-  void OnRenderViewHostWasShown(int child_id, int route_id);
-
-  // Called when an AudioRenderHost starts or stops playing.
-  void OnAudioRenderHostStreamStateChanged(int child_id,
-                                           int route_id,
-                                           bool is_playing);
 
   // Force cancels any pending requests for the given process.
   void CancelRequestsForProcess(int child_id);
@@ -212,8 +234,17 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   void RemovePendingRequest(int child_id, int request_id);
 
+  // Causes all new requests for the route identified by |routing_id| to be
+  // blocked (not being started) until ResumeBlockedRequestsForRoute is called.
+  void BlockRequestsForRoute(const GlobalFrameRoutingId& global_routing_id);
+
+  // Resumes any blocked request for the specified route id.
+  void ResumeBlockedRequestsForRoute(
+      const GlobalFrameRoutingId& global_routing_id);
+
   // Cancels any blocked request for the specified route id.
-  void CancelBlockedRequestsForRoute(int child_id, int route_id);
+  void CancelBlockedRequestsForRoute(
+      const GlobalFrameRoutingId& global_routing_id);
 
   // Maintains a collection of temp files created in support of
   // the download_to_file capability. Used to grant access to the
@@ -239,13 +270,10 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // and associated with the request.
   // |id| should be |content::DownloadItem::kInvalidId| to request automatic
   // assignment. This is marked virtual so it can be overriden in testing.
-  virtual scoped_ptr<ResourceHandler> CreateResourceHandlerForDownload(
+  virtual std::unique_ptr<ResourceHandler> CreateResourceHandlerForDownload(
       net::URLRequest* request,
       bool is_content_initiated,
-      bool must_download,
-      uint32_t id,
-      scoped_ptr<DownloadSaveInfo> save_info,
-      const DownloadUrlParameters::OnStartedCallback& started_cb);
+      bool must_download);
 
   // Called to determine whether the response to |request| should be intercepted
   // and handled as a stream. Streams are used to pass direct access to a
@@ -259,7 +287,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // and associated with the request. If |payload| is set to a non-empty value,
   // the caller must send it to the old resource handler instead of cancelling
   // it.
-  virtual scoped_ptr<ResourceHandler> MaybeInterceptAsStream(
+  virtual std::unique_ptr<ResourceHandler> MaybeInterceptAsStream(
       const base::FilePath& plugin_path,
       net::URLRequest* request,
       ResourceResponse* response,
@@ -291,6 +319,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void EnableStaleWhileRevalidateForTesting();
 
  private:
+  friend class LoaderIOThreadNotifier;
   friend class ResourceDispatcherHostTest;
 
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -301,6 +330,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                            DetachableResourceTimesOut);
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
                            TestProcessCancelDetachableTimesOut);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessIgnoreCertErrorsBrowserTest,
+                           CrossSiteRedirectCertificateStore);
 
   struct OustandingRequestsStats {
     int memory_cost;
@@ -337,12 +368,14 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // A shutdown helper that runs on the IO thread.
   void OnShutdown();
 
+  void OnRenderFrameDeleted(const GlobalFrameRoutingId& global_routing_id);
+
   // Helper function for regular and download requests.
-  void BeginRequestInternal(scoped_ptr<net::URLRequest> request,
-                            scoped_ptr<ResourceHandler> handler);
+  void BeginRequestInternal(std::unique_ptr<net::URLRequest> request,
+                            std::unique_ptr<ResourceHandler> handler);
 
   void StartLoading(ResourceRequestInfoImpl* info,
-                    const linked_ptr<ResourceLoader>& loader);
+                    std::unique_ptr<ResourceLoader> loader);
 
   // We keep track of how much memory each request needs and how many requests
   // are issued by each renderer. These are known as OustandingRequestStats.
@@ -379,8 +412,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   static int CalculateApproximateMemoryCost(net::URLRequest* request);
 
   // Force cancels any pending requests for the given route id.  This method
-  // acts like CancelRequestsForProcess when route_id is -1.
-  void CancelRequestsForRoute(int child_id, int route_id);
+  // acts like CancelRequestsForProcess when the |route_id| member of
+  // |routing_id| is MSG_ROUTING_NONE.
+  void CancelRequestsForRoute(const GlobalFrameRoutingId& global_routing_id);
 
   // The list of all requests that we have pending. This list is not really
   // optimized, and assumes that we have relatively few requests pending at once
@@ -389,7 +423,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // It may be enhanced in the future to provide some kind of prioritization
   // mechanism. We should also consider a hashtable or binary tree if it turns
   // out we have a lot of things here.
-  typedef std::map<GlobalRequestID, linked_ptr<ResourceLoader> > LoaderMap;
+  using LoaderMap = std::map<GlobalRequestID, std::unique_ptr<ResourceLoader>>;
 
   // Deletes the pending request identified by the iterator passed in.
   // This function will invalidate the iterator passed in. Callers should
@@ -416,18 +450,18 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Used to marshal calls to LoadStateChanged from the IO to UI threads.  All
   // are done as a single callback to avoid spamming the UI thread.
-  static void UpdateLoadInfoOnUIThread(scoped_ptr<LoadInfoMap> info_map);
+  static void UpdateLoadInfoOnUIThread(std::unique_ptr<LoadInfoMap> info_map);
 
   // Gets the most interesting LoadInfo for each GlobalRoutingID.
-  scoped_ptr<LoadInfoMap> GetLoadInfoForAllRoutes();
+  std::unique_ptr<LoadInfoMap> GetLoadInfoForAllRoutes();
 
   // Checks all pending requests and updates the load info if necessary.
   void UpdateLoadInfo();
 
   // Resumes or cancels (if |cancel_requests| is true) any blocked requests.
-  void ProcessBlockedRequestsForRoute(int child_id,
-                                      int route_id,
-                                      bool cancel_requests);
+  void ProcessBlockedRequestsForRoute(
+      const GlobalFrameRoutingId& global_routing_id,
+      bool cancel_requests);
 
   void OnRequestResource(int routing_id,
                          int request_id,
@@ -436,13 +470,15 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                   const ResourceHostMsg_Request& request_data,
                   IPC::Message* sync_result);
 
+  bool IsRequestIDInUse(const GlobalRequestID& id) const;
+
   // Update the ResourceRequestInfo and internal maps when a request is
   // transferred from one process to another.
   void UpdateRequestForTransfer(int child_id,
                                 int route_id,
                                 int request_id,
                                 const ResourceHostMsg_Request& request_data,
-                                const linked_ptr<ResourceLoader>& loader);
+                                LoaderMap::iterator iter);
 
   void BeginRequest(int request_id,
                     const ResourceHostMsg_Request& request_data,
@@ -451,7 +487,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // Creates a ResourceHandler to be used by BeginRequest() for normal resource
   // loading.
-  scoped_ptr<ResourceHandler> CreateResourceHandler(
+  std::unique_ptr<ResourceHandler> CreateResourceHandler(
       net::URLRequest* request,
       const ResourceHostMsg_Request& request_data,
       IPC::Message* sync_result,
@@ -463,14 +499,14 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Wraps |handler| in the standard resource handlers for normal resource
   // loading and navigation requests. This adds MimeTypeResourceHandler and
   // ResourceThrottles.
-  scoped_ptr<ResourceHandler> AddStandardHandlers(
+  std::unique_ptr<ResourceHandler> AddStandardHandlers(
       net::URLRequest* request,
       ResourceType resource_type,
       ResourceContext* resource_context,
       AppCacheService* appcache_service,
       int child_id,
       int route_id,
-      scoped_ptr<ResourceHandler> handler);
+      std::unique_ptr<ResourceHandler> handler);
 
   void OnDataDownloadedACK(int request_id);
   void OnCancelRequest(int request_id);
@@ -521,6 +557,16 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                                int child_id,
                                bool is_sync_load);
 
+  // The certificate on a ResourceResponse is associated with a
+  // particular renderer process. As a transfer to a new process
+  // completes, the stored certificate has to be updated to reflect the
+  // new renderer process.
+  void UpdateResponseCertificateForTransfer(ResourceResponse* response,
+                                            const net::SSLInfo& ssl_info,
+                                            int child_id);
+
+  CertStore* GetCertStore();
+
   LoaderMap pending_loaders_;
 
   // Collection of temp files downloaded for child processes via
@@ -534,7 +580,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // A timer that periodically calls UpdateLoadInfo while pending_loaders_ is
   // not empty and at least one RenderViewHost is loading.
-  scoped_ptr<base::RepeatingTimer> update_load_states_timer_;
+  std::unique_ptr<base::RepeatingTimer> update_load_states_timer_;
 
   // We own the save file manager.
   scoped_refptr<SaveFileManager> save_file_manager_;
@@ -551,8 +597,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // True if the resource dispatcher host has been shut down.
   bool is_shutdown_;
 
-  typedef std::vector<linked_ptr<ResourceLoader> > BlockedLoadersList;
-  typedef std::map<GlobalRoutingID, BlockedLoadersList*> BlockedLoadersMap;
+  using BlockedLoadersList = std::vector<std::unique_ptr<ResourceLoader>>;
+  using BlockedLoadersMap =
+      std::map<GlobalFrameRoutingId, std::unique_ptr<BlockedLoadersList>>;
   BlockedLoadersMap blocked_loaders_map_;
 
   // Maps the child_ids to the approximate number of bytes
@@ -600,7 +647,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // AsyncRevalidationManager is non-NULL if and only if
   // stale-while-revalidate is enabled.
-  scoped_ptr<AsyncRevalidationManager> async_revalidation_manager_;
+  std::unique_ptr<AsyncRevalidationManager> async_revalidation_manager_;
 
   // http://crbug.com/90971 - Assists in tracking down use-after-frees on
   // shutdown.
@@ -610,7 +657,11 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                    base::ObserverList<ResourceMessageDelegate>*> DelegateMap;
   DelegateMap delegate_map_;
 
-  scoped_ptr<ResourceScheduler> scheduler_;
+  std::unique_ptr<ResourceScheduler> scheduler_;
+
+  // Allows tests to use a mock CertStore. If set, the CertStore must
+  // outlive this ResourceDispatcherHostImpl.
+  CertStore* cert_store_for_testing_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostImpl);
 };

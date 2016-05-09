@@ -94,7 +94,7 @@ public:
     virtual void didEvaluateWorkerScript(bool success) { }
 
     // Called when the worker context is initialized.
-    virtual void didInitializeWorkerContext(v8::Local<v8::Context> context, const blink::WebURL& url) { }
+    virtual void didInitializeWorkerContext(v8::Local<v8::Context> context) { }
 
     // Called when the WorkerGlobalScope had an error or an exception.
     virtual void reportException(const WebString& errorMessage, int lineNumber, int columnNumber, const WebString& sourceURL) { }
@@ -107,6 +107,10 @@ public:
 
     // ServiceWorker specific method.
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult result) { }
+
+    // Called after ExtendableMessageEvent is handled by the ServiceWorker's
+    // script context.
+    virtual void didHandleExtendableMessageEvent(int eventID, WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific methods. Called after FetchEvent is handled by the
     // ServiceWorker's script context. When no response is provided, the browser
@@ -123,6 +127,11 @@ public:
     // (dispatched via WebServiceWorkerContextProxy) is handled by the
     // ServiceWorker's script context.
     virtual void didHandleNotificationClickEvent(int eventID, WebServiceWorkerEventResult result) { }
+
+    // ServiceWorker specific method. Called after NotificationCloseEvent
+    // (dispatched via WebServiceWorkerContextProxy) is handled by the
+    // ServiceWorker's script context.
+    virtual void didHandleNotificationCloseEvent(int eventID, WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific method. Called after PushEvent (dispatched via
     // WebServiceWorkerContextProxy) is handled by the ServiceWorker's script
@@ -144,15 +153,21 @@ public:
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
+    // WebServiceWorkerClientInfo and WebServiceWorkerError ownerships are
+    // passed to the WebServiceWorkerClientCallbacks implementation.
+    virtual void getClient(const WebString&, WebServiceWorkerClientCallbacks*) = 0;
+
+    // Ownership of the passed callbacks is transferred to the callee, callee
+    // should delete the callbacks after calling either onSuccess or onError.
     // WebServiceWorkerClientsInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
-    virtual void getClients(const WebServiceWorkerClientQueryOptions&, WebServiceWorkerClientsCallbacks* callbacks) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void getClients(const WebServiceWorkerClientQueryOptions&, WebServiceWorkerClientsCallbacks*) = 0;
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
     // WebServiceWorkerClientInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
-    virtual void openWindow(const WebURL& url, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void openWindow(const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
 
     // A suggestion to cache this metadata in association with this URL.
     virtual void setCachedMetadata(const WebURL& url, const char* data, size_t size) { }
@@ -162,33 +177,33 @@ public:
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
-    virtual void postMessageToClient(const WebString& uuid, const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void postMessageToClient(const WebString& uuid, const WebString&, WebMessagePortChannelArray*) = 0;
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
-    virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString&, WebMessagePortChannelArray*) = 0;
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after run.
-    virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) = 0;
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after run.
-    virtual void claim(WebServiceWorkerClientsClaimCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void claim(WebServiceWorkerClientsClaimCallbacks*) = 0;
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callback after calling either onSuccess or onError.
-    virtual void focus(const WebString& uuid, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void focus(const WebString& uuid, WebServiceWorkerClientCallbacks*) = 0;
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
     // WebServiceWorkerClientInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
-    virtual void navigate(const WebString& uuid, const WebURL&, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void navigate(const WebString& uuid, const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
 
     // Called when the worker wants to register subscopes to handle via foreign
     // fetch. Will only be called while an install event is in progress.
-    virtual void registerForeignFetchScopes(const WebVector<WebURL>& subScopes) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void registerForeignFetchScopes(const WebVector<WebURL>& subScopes, const WebVector<WebSecurityOrigin>& origins) = 0;
 };
 
 } // namespace blink

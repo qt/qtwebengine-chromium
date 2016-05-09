@@ -1,0 +1,5 @@
+{
+  "name": "mojo:views_examples",
+  "display_name": "Views Examples",
+  "capabilities": { "*": ["*"] }
+}

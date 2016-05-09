@@ -40,7 +40,9 @@
             ],
           },
           'dependencies': [
+            'allocator/allocator.gyp:allocator_features#target',
             'base.gyp:base_debugging_flags',
+            'base.gyp:base_build_date',
           ],
         },
         {
@@ -63,6 +65,8 @@
             ],
           },
           'dependencies': [
+            'allocator/allocator.gyp:allocator_features#target',
+            'base.gyp:base_build_date',
             '../third_party/icu/icu_nacl.gyp:icudata_nacl',
             '../third_party/icu/icu_nacl.gyp:icui18n_nacl',
             '../third_party/icu/icu_nacl.gyp:icuuc_nacl',
@@ -117,7 +121,9 @@
             'rand_util_nacl.cc',
           ],
           'dependencies': [
+            'allocator/allocator.gyp:allocator_features#target',
             'base.gyp:base_debugging_flags',
+            'base.gyp:base_build_date',
             'third_party/libevent/libevent_nacl_nonsfi.gyp:event_nacl_nonsfi',
           ],
         },
@@ -141,6 +147,7 @@
             ],
           },
           'dependencies': [
+            'base.gyp:base_build_date',
             'base_nacl_nonsfi',
             '../testing/gtest_nacl.gyp:gtest_nacl',
           ],

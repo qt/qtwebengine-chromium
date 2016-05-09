@@ -52,12 +52,14 @@ def get_options(args):
 
 
 class TestUtilityFunctions(unittest.TestCase):
+
     def test_print_options(self):
         options, args = get_options([])
         self.assertIsNotNone(options)
 
 
 class FakeRunResults(object):
+
     def __init__(self, total=1, expected=1, unexpected=0, fake_results=None):
         fake_results = fake_results or []
         self.total = total
@@ -74,12 +76,14 @@ class FakeRunResults(object):
 
 
 class FakeShard(object):
+
     def __init__(self, shard_name, total_run_time):
         self.shard_name = shard_name
         self.total_run_time = total_run_time
 
 
-class  Testprinter(unittest.TestCase):
+class Testprinter(unittest.TestCase):
+
     def assertEmpty(self, stream):
         self.assertFalse(stream.getvalue())
 
@@ -130,11 +134,11 @@ class  Testprinter(unittest.TestCase):
         printer._options.time_out_ms = 6000
         printer._options.slow_time_out_ms = 12000
         printer.print_config('/tmp')
-        self.assertIn("Using port 'test-mac-leopard'", err.getvalue())
-        self.assertIn('Test configuration: <leopard, x86, release>', err.getvalue())
+        self.assertIn("Using port 'test-mac-mac10.10'", err.getvalue())
+        self.assertIn('Test configuration: <mac10.10, x86, release>', err.getvalue())
         self.assertIn('View the test results at file:///tmp', err.getvalue())
         self.assertIn('View the archived results dashboard at file:///tmp', err.getvalue())
-        self.assertIn('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic', err.getvalue())
+        self.assertIn('Baseline search path: test-mac-mac10.10 -> test-mac-mac10.11 -> generic', err.getvalue())
         self.assertIn('Using Release build', err.getvalue())
         self.assertIn('Pixel tests enabled', err.getvalue())
         self.assertIn('Command line:', err.getvalue())
@@ -143,7 +147,7 @@ class  Testprinter(unittest.TestCase):
         self.reset(err)
         printer._options.quiet = True
         printer.print_config('/tmp')
-        self.assertNotIn('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic', err.getvalue())
+        self.assertNotIn('Baseline search path: test-mac-mac10.10 -> test-mac-mac10.11 -> generic', err.getvalue())
 
     def test_print_directory_timings(self):
         printer, err = self.get_printer()
@@ -157,7 +161,8 @@ class  Testprinter(unittest.TestCase):
         }
 
         printer._print_directory_timings(run_results)
-        self.assertWritten(err, ['Time to process slowest subdirectories:\n', '  slowShard took 16.0 seconds to run 1 tests.\n', '\n'])
+        self.assertWritten(err, ['Time to process slowest subdirectories:\n',
+                                 '  slowShard took 16.0 seconds to run 1 tests.\n', '\n'])
 
         printer, err = self.get_printer()
         printer._options.debug_rwt_logging = True
@@ -194,27 +199,32 @@ class  Testprinter(unittest.TestCase):
     def test_test_status_line(self):
         printer, _ = self.get_printer()
         printer._meter.number_of_columns = lambda: 80
-        actual = printer._test_status_line('fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
+        actual = printer._test_status_line(
+            'fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
         self.assertEqual(80, len(actual))
         self.assertEqual(actual, '[0/0] fast/dom/HTMLFormElement/associa...after-index-assertion-fail1.html passed')
 
         printer._meter.number_of_columns = lambda: 89
-        actual = printer._test_status_line('fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
+        actual = printer._test_status_line(
+            'fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
         self.assertEqual(89, len(actual))
         self.assertEqual(actual, '[0/0] fast/dom/HTMLFormElement/associated-...ents-after-index-assertion-fail1.html passed')
 
         printer._meter.number_of_columns = lambda: sys.maxint
-        actual = printer._test_status_line('fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
+        actual = printer._test_status_line(
+            'fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
         self.assertEqual(90, len(actual))
         self.assertEqual(actual, '[0/0] fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html passed')
 
         printer._meter.number_of_columns = lambda: 18
-        actual = printer._test_status_line('fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
+        actual = printer._test_status_line(
+            'fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
         self.assertEqual(18, len(actual))
         self.assertEqual(actual, '[0/0] f...l passed')
 
         printer._meter.number_of_columns = lambda: 10
-        actual = printer._test_status_line('fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
+        actual = printer._test_status_line(
+            'fast/dom/HTMLFormElement/associated-elements-after-index-assertion-fail1.html', ' passed')
         self.assertEqual(actual, '[0/0] associated-elements-after-index-assertion-fail1.html passed')
 
     def test_details(self):

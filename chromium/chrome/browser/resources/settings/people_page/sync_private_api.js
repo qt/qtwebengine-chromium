@@ -93,9 +93,6 @@ cr.define('settings', function() {
   /** @private {?function(!string, !string)} */
   SyncPrivateApi.getProfileInfoCallback_ = null;
 
-  /** @private {?function(!Array<string>)} */
-  SyncPrivateApi.getAvailableIconsCallback_ = null;
-
   /** @private {?function(settings.SyncPrefs)} */
   SyncPrivateApi.syncPrefsCallback_ = null;
 
@@ -121,42 +118,16 @@ cr.define('settings', function() {
       SyncPrivateApi.getProfileInfoCallback_(name, iconUrl);
   };
 
-<if expr="not chromeos">
-  /**
-   * Called from JavaScript. Gets the available profile icons to choose from.
-   * @param {!function(!Array<string>)} callback
-   */
-  SyncPrivateApi.getAvailableIcons = function(callback) {
-    SyncPrivateApi.getAvailableIconsCallback_ = callback;
-    chrome.send('requestDefaultProfileIcons');
-  };
-
-  /**
-   * Called from C++ as a response to getAvailableIcons.
-   * @param {!Array<string>} iconUrls An array of icon URLs.
-   */
-  SyncPrivateApi.receiveAvailableIcons = function(iconUrls) {
-    if (SyncPrivateApi.getAvailableIconsCallback_)
-      SyncPrivateApi.getAvailableIconsCallback_(iconUrls);
-  };
-
-  /**
-   * Called from JavaScript. Sets the profile icon and name.
-   * @param {!string} iconUrl The new profile URL.
-   * @param {!string} name The new profile name.
-   */
-  SyncPrivateApi.setProfileIconAndName = function(iconUrl, name) {
-    chrome.send('setProfileIconAndName', [iconUrl, name]);
-  };
-</if>
-
   /**
    * Starts the signin process for the user. Does nothing if the user is
    * already signed in.
    * @private
    */
   SyncPrivateApi.startSignIn = function() {
-    chrome.send('SyncSetupStartSignIn');
+    // TODO(tommycli): Currently this is always false, but this will become
+    // a parameter once supervised users are implemented in MD Settings.
+    var creatingSupervisedUser = false;
+    chrome.send('SyncSetupStartSignIn', [creatingSupervisedUser]);
   };
 
   /**

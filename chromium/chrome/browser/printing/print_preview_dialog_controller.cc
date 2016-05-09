@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
@@ -259,7 +258,7 @@ bool PrintPreviewDialogController::IsPrintPreviewDialog(WebContents* contents) {
 // static
 bool PrintPreviewDialogController::IsPrintPreviewURL(const GURL& url) {
   return (url.SchemeIs(content::kChromeUIScheme) &&
-          url.host() == chrome::kChromeUIPrintHost);
+          url.host_piece() == chrome::kChromeUIPrintHost);
 }
 
 void PrintPreviewDialogController::EraseInitiatorInfo(

@@ -47,6 +47,7 @@ NET_EXPORT extern const uint16_t kDefaultSSLVersionFallbackMin;
 struct NET_EXPORT SSLConfig {
   // Default to revocation checking.
   SSLConfig();
+  SSLConfig(const SSLConfig& other);
   ~SSLConfig();
 
   // Returns true if |cert| is one of the certs in |allowed_bad_certs|.
@@ -95,19 +96,6 @@ struct NET_EXPORT SSLConfig {
 
   // Presorted list of cipher suites which should be explicitly prevented from
   // being used in addition to those disabled by the net built-in policy.
-  //
-  // By default, all cipher suites supported by the underlying SSL
-  // implementation will be enabled except for:
-  // - Null encryption cipher suites.
-  // - Weak cipher suites: < 80 bits of security strength.
-  // - FORTEZZA cipher suites (obsolete).
-  // - IDEA cipher suites (RFC 5469 explains why).
-  // - Anonymous cipher suites.
-  // - ECDSA cipher suites on platforms that do not support ECDSA signed
-  //   certificates, as servers may use the presence of such ciphersuites as a
-  //   hint to send an ECDSA certificate.
-  // The ciphers listed in |disabled_cipher_suites| will be removed in addition
-  // to the above list.
   //
   // Though cipher suites are sent in TLS as "uint8_t CipherSuite[2]", in
   // big-endian form, they should be declared in host byte order, with the

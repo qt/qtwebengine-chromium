@@ -25,7 +25,7 @@
 
 #include "platform/text/TextRun.h"
 
-#include "platform/fonts/Character.h"
+#include "platform/text/Character.h"
 
 namespace blink {
 
@@ -57,4 +57,4 @@ void TextRun::setText(const String& string)
         m_data.characters16 = string.characters16();
 }
 
-}
+} // namespace blink

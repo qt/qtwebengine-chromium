@@ -43,14 +43,15 @@ namespace blink {
 // Delay time in second for start autoscroll if pointer is in border edge of scrollable element.
 static double autoscrollDelay = 0.2;
 
-PassOwnPtrWillBeRawPtr<AutoscrollController> AutoscrollController::create(Page& page)
+AutoscrollController* AutoscrollController::create(Page& page)
 {
-    return adoptPtrWillBeNoop(new AutoscrollController(page));
+    return new AutoscrollController(page);
 }
 
 AutoscrollController::AutoscrollController(Page& page)
     : m_page(&page)
     , m_autoscrollLayoutObject(nullptr)
+    , m_pressedLayoutObject(nullptr)
     , m_autoscrollType(NoAutoscroll)
     , m_dragAndDropAutoscrollStartTime(0)
 {
@@ -81,6 +82,8 @@ void AutoscrollController::startAutoscrollForSelection(LayoutObject* layoutObjec
         scrollable = layoutObject->isListBox() ? toLayoutListBox(layoutObject) : nullptr;
     if (!scrollable)
         return;
+
+    m_pressedLayoutObject = layoutObject && layoutObject->isBox() ? toLayoutBox(layoutObject) : nullptr;
     m_autoscrollType = AutoscrollForSelection;
     m_autoscrollLayoutObject = scrollable;
     startAutoscroll();
@@ -88,13 +91,16 @@ void AutoscrollController::startAutoscrollForSelection(LayoutObject* layoutObjec
 
 void AutoscrollController::stopAutoscroll()
 {
+    if (m_pressedLayoutObject) {
+        m_pressedLayoutObject->stopAutoscroll();
+        m_pressedLayoutObject = nullptr;
+    }
     LayoutBox* scrollable = m_autoscrollLayoutObject;
     m_autoscrollLayoutObject = nullptr;
 
     if (!scrollable)
         return;
 
-    scrollable->stopAutoscroll();
 #if OS(WIN)
     if (panScrollInProgress()) {
         if (FrameView* view = scrollable->frame()->view()) {
@@ -108,6 +114,9 @@ void AutoscrollController::stopAutoscroll()
 
 void AutoscrollController::stopAutoscrollIfNeeded(LayoutObject* layoutObject)
 {
+    if (m_pressedLayoutObject == layoutObject)
+        m_pressedLayoutObject = nullptr;
+
     if (m_autoscrollLayoutObject != layoutObject)
         return;
     m_autoscrollLayoutObject = nullptr;
@@ -131,11 +140,10 @@ void AutoscrollController::updateAutoscrollLayoutObject()
     while (layoutObject && !(layoutObject->isBox() && toLayoutBox(layoutObject)->canAutoscroll()))
         layoutObject = layoutObject->parent();
 
-    LayoutBox* autoscrollLayoutObject = layoutObject && layoutObject->isBox() ? toLayoutBox(layoutObject) : nullptr;
-    if (m_autoscrollLayoutObject && !autoscrollLayoutObject)
-        stopAutoscrollIfNeeded(m_autoscrollLayoutObject);
+    m_autoscrollLayoutObject = layoutObject && layoutObject->isBox() ? toLayoutBox(layoutObject) : nullptr;
 
-    m_autoscrollLayoutObject = autoscrollLayoutObject;
+    if (m_autoscrollType != NoAutoscroll && !m_autoscrollLayoutObject)
+        m_autoscrollType = NoAutoscroll;
 }
 
 void AutoscrollController::updateDragAndDrop(Node* dropTargetNode, const IntPoint& eventPosition, double eventTime)
@@ -262,7 +270,7 @@ void AutoscrollController::animate(double)
         break;
 #endif
     }
-    if (m_autoscrollType != NoAutoscroll)
+    if (m_autoscrollType != NoAutoscroll && m_autoscrollLayoutObject)
         m_page->chromeClient().scheduleAnimation(m_autoscrollLayoutObject->frame()->view());
 }
 

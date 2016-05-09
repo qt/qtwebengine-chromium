@@ -6,8 +6,9 @@
 #define WebUSBDevice_h
 
 #include "public/platform/WebCallbacks.h"
-#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/WebVector.h"
+
+#include <memory>
 
 namespace blink {
 
@@ -17,20 +18,13 @@ struct WebUSBTransferInfo;
 
 using WebUSBDeviceOpenCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceCloseCallbacks = WebCallbacks<void, const WebUSBError&>;
-using WebUSBDeviceGetConfigurationCallbacks = WebCallbacks<uint8_t, const WebUSBError&>;
 using WebUSBDeviceSetConfigurationCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceClaimInterfaceCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceReleaseInterfaceCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceResetCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceSetInterfaceAlternateSettingCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceClearHaltCallbacks = WebCallbacks<void, const WebUSBError&>;
-using WebUSBDeviceTransferCallbacks = WebCallbacks<WebPassOwnPtr<WebUSBTransferInfo>, const WebUSBError&>;
-
-// TODO(rockot): Eliminate these aliases once they're no longer used outside of
-// Blink code.
-using WebUSBDeviceControlTransferCallbacks = WebUSBDeviceTransferCallbacks;
-using WebUSBDeviceBulkTransferCallbacks = WebUSBDeviceTransferCallbacks;
-using WebUSBDeviceInterruptTransferCallbacks = WebUSBDeviceTransferCallbacks;
+using WebUSBDeviceTransferCallbacks = WebCallbacks<std::unique_ptr<WebUSBTransferInfo>, const WebUSBError&>;
 
 class WebUSBDevice {
 public:
@@ -73,10 +67,6 @@ public:
     // Ownership of the WebUSBDeviceCloseCallbacks is transferred to the client.
     virtual void close(WebUSBDeviceCloseCallbacks*) = 0;
 
-    // Gets the active configuration of the device.
-    // Ownership of the WebUSBDeviceGetConfigurationCallbacks is transferred to the client.
-    virtual void getConfiguration(WebUSBDeviceGetConfigurationCallbacks*) = 0;
-
     // Sets the active configuration for the device.
     // Ownership of the WebUSBDeviceSetConfigurationCallbacks is transferred to the client.
     virtual void setConfiguration(uint8_t configurationValue, WebUSBDeviceSetConfigurationCallbacks*) = 0;
@@ -98,12 +88,16 @@ public:
     virtual void clearHalt(uint8_t endpointNumber, WebUSBDeviceClearHaltCallbacks*) = 0;
 
     // Initiates a control transfer.
-    // Ownership of the WebUSBDeviceControlTransferCallbacks is transferred to the client.
-    virtual void controlTransfer(const ControlTransferParameters&, uint8_t* data, size_t dataSize, unsigned timeout, WebUSBDeviceControlTransferCallbacks*) = 0;
+    // Ownership of the WebUSBDeviceTransferCallbacks is transferred to the client.
+    virtual void controlTransfer(const ControlTransferParameters&, uint8_t* data, size_t dataSize, unsigned timeout, WebUSBDeviceTransferCallbacks*) = 0;
 
     // Initiates a bulk or interrupt transfer.
-    // Ownership of the WebUSBDeviceBulkTransferCallbacks is transferred to the client.
-    virtual void transfer(TransferDirection, uint8_t endpointNumber, uint8_t* data, size_t dataSize, unsigned timeout, WebUSBDeviceBulkTransferCallbacks*) = 0;
+    // Ownership of the WebUSBDeviceTransferCallbacks is transferred to the client.
+    virtual void transfer(TransferDirection, uint8_t endpointNumber, uint8_t* data, size_t dataSize, unsigned timeout, WebUSBDeviceTransferCallbacks*) = 0;
+
+    // Initiates an isochronous transfer.
+    // Ownership of the WebUSBDeviceTransferCallbacks is transferred to the client.
+    virtual void isochronousTransfer(TransferDirection, uint8_t endpointNumber, uint8_t* data, size_t dataSize, WebVector<unsigned> packetLengths, unsigned timeout, WebUSBDeviceTransferCallbacks*) = 0;
 
     // Resets the device.
     // Ownership of the WebUSBDeviceResetCallbacks is transferred to the client.

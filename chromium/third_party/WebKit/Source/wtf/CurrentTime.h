@@ -51,14 +51,26 @@ inline double currentTimeMS()
 // On unsupported platforms, this function only guarantees the result will be non-decreasing.
 WTF_EXPORT double monotonicallyIncreasingTime();
 
-typedef double(*TimeFunction)(void);
-void setCurrentTimeFunction(TimeFunction);
-WTF_EXPORT void setMonotonicallyIncreasingTimeFunction(TimeFunction);
+// Same thing, in milliseconds.
+inline double monotonicallyIncreasingTimeMS()
+{
+    return monotonicallyIncreasingTime() * 1000.0;
+}
+
+using TimeFunction = double (*)();
+
+// Make all the time functions (currentTime(), monotonicallyIncreasingTime(), systemTraceTime()) return the result
+// of the supplied function. Returns the pointer to the old time function. For both setting and getting, nullptr means
+// using the default timing function returning the actual time.
+WTF_EXPORT TimeFunction setTimeFunctionsForTesting(TimeFunction);
 
 } // namespace WTF
 
 using WTF::currentTime;
 using WTF::currentTimeMS;
 using WTF::monotonicallyIncreasingTime;
+using WTF::monotonicallyIncreasingTimeMS;
+using WTF::TimeFunction;
+using WTF::setTimeFunctionsForTesting;
 
 #endif // CurrentTime_h

@@ -20,21 +20,21 @@ namespace {
 mus::mojom::Cursor CursorForWindowComponent(int window_component) {
   switch (window_component) {
     case HTBOTTOM:
-      return mus::mojom::Cursor::CURSOR_SOUTH_RESIZE;
+      return mus::mojom::Cursor::SOUTH_RESIZE;
     case HTBOTTOMLEFT:
-      return mus::mojom::Cursor::CURSOR_SOUTH_WEST_RESIZE;
+      return mus::mojom::Cursor::SOUTH_WEST_RESIZE;
     case HTBOTTOMRIGHT:
-      return mus::mojom::Cursor::CURSOR_SOUTH_EAST_RESIZE;
+      return mus::mojom::Cursor::SOUTH_EAST_RESIZE;
     case HTLEFT:
-      return mus::mojom::Cursor::CURSOR_WEST_RESIZE;
+      return mus::mojom::Cursor::WEST_RESIZE;
     case HTRIGHT:
-      return mus::mojom::Cursor::CURSOR_EAST_RESIZE;
+      return mus::mojom::Cursor::EAST_RESIZE;
     case HTTOP:
-      return mus::mojom::Cursor::CURSOR_NORTH_RESIZE;
+      return mus::mojom::Cursor::NORTH_RESIZE;
     case HTTOPLEFT:
-      return mus::mojom::Cursor::CURSOR_NORTH_WEST_RESIZE;
+      return mus::mojom::Cursor::NORTH_WEST_RESIZE;
     case HTTOPRIGHT:
-      return mus::mojom::Cursor::CURSOR_NORTH_EAST_RESIZE;
+      return mus::mojom::Cursor::NORTH_EAST_RESIZE;
     default:
       return mus::mojom::Cursor::CURSOR_NULL;
   }
@@ -56,20 +56,33 @@ MoveEventHandler::~MoveEventHandler() {
 
 void MoveEventHandler::ProcessLocatedEvent(ui::LocatedEvent* event) {
   const bool had_move_loop = move_loop_.get() != nullptr;
-  ui::Event* ui_event = static_cast<ui::Event*>(event);
+  DCHECK(event->IsMouseEvent() || event->IsTouchEvent());
+
+  // This event handler can receive mouse events like ET_MOUSE_CAPTURE_CHANGED
+  // that cannot be converted to PointerEvents. Ignore them because they aren't
+  // needed for move handling.
+  if (!ui::PointerEvent::CanConvertFrom(*event))
+    return;
+
+  // TODO(moshayedi): no need for this once MoveEventHandler directly receives
+  // pointer events.
+  std::unique_ptr<ui::PointerEvent> pointer_event;
+  if (event->IsMouseEvent())
+    pointer_event.reset(new ui::PointerEvent(*event->AsMouseEvent()));
+  else
+    pointer_event.reset(new ui::PointerEvent(*event->AsTouchEvent()));
+
   if (move_loop_) {
-    if (move_loop_->Move(*mus::mojom::Event::From(*ui_event)) == MoveLoop::DONE)
+    if (move_loop_->Move(*pointer_event.get()) == MoveLoop::DONE)
       move_loop_.reset();
-  } else if (event->type() == ui::ET_MOUSE_PRESSED ||
-             event->type() == ui::ET_TOUCH_PRESSED) {
-    const int ht_location = GetNonClientComponentForEvent(event);
+  } else if (pointer_event->type() == ui::ET_POINTER_DOWN) {
+    const int ht_location = GetNonClientComponentForEvent(pointer_event.get());
     if (ht_location != HTNOWHERE) {
-      // TODO(sky): convert MoveLoop to take ui::Event.
-      move_loop_ = MoveLoop::Create(mus_window_, ht_location,
-                                    *mus::mojom::Event::From(*ui_event));
+      move_loop_ =
+          MoveLoop::Create(mus_window_, ht_location, *pointer_event.get());
     }
-  } else if (event->type() == ui::ET_MOUSE_MOVED) {
-    const int ht_location = GetNonClientComponentForEvent(event);
+  } else if (pointer_event->type() == ui::ET_POINTER_MOVED) {
+    const int ht_location = GetNonClientComponentForEvent(pointer_event.get());
     mus_window_->SetPredefinedCursor(CursorForWindowComponent(ht_location));
   }
   if (had_move_loop || move_loop_)

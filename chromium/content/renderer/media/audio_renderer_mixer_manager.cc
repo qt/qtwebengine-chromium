@@ -17,8 +17,7 @@
 
 namespace content {
 
-AudioRendererMixerManager::AudioRendererMixerManager()
-    : sink_for_testing_(nullptr) {}
+AudioRendererMixerManager::AudioRendererMixerManager() {}
 
 AudioRendererMixerManager::~AudioRendererMixerManager() {
   // References to AudioRendererMixers may be owned by garbage collected
@@ -35,12 +34,8 @@ media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
                  source_render_frame_id),
       base::Bind(&AudioRendererMixerManager::RemoveMixer,
                  base::Unretained(this), source_render_frame_id),
-      device_id, security_origin);
-}
-
-void AudioRendererMixerManager::SetAudioRendererSinkForTesting(
-    media::AudioRendererSink* sink) {
-  sink_for_testing_ = sink;
+      device_id,
+      security_origin);
 }
 
 media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
@@ -66,40 +61,35 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
   }
 
   scoped_refptr<media::AudioRendererSink> sink =
-      sink_for_testing_
-          ? sink_for_testing_
-          : AudioDeviceFactory::NewOutputDevice(source_render_frame_id, 0,
-                                                device_id, security_origin)
-                .get();
+      AudioDeviceFactory::NewAudioRendererMixerSink(source_render_frame_id, 0,
+                                                    device_id, security_origin);
 
-  media::OutputDeviceStatus new_device_status =
-      sink->GetOutputDevice()->GetDeviceStatus();
+  const media::OutputDeviceInfo& device_info = sink->GetOutputDeviceInfo();
   if (device_status)
-    *device_status = new_device_status;
-  if (new_device_status != media::OUTPUT_DEVICE_STATUS_OK) {
+    *device_status = device_info.device_status();
+  if (device_info.device_status() != media::OUTPUT_DEVICE_STATUS_OK) {
     sink->Stop();
     return nullptr;
   }
 
-  media::AudioParameters hardware_params =
-      sink->GetOutputDevice()->GetOutputParameters();
-
-// On ChromeOS and Android we can rely on the playback device to handle
-// resampling, so don't waste cycles on it here.
-#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+  // On ChromeOS as well as when a fake device is used, we can rely on the
+  // playback device to handle resampling, so don't waste cycles on it here.
   int sample_rate = params.sample_rate();
-#else
-  int sample_rate =
-      hardware_params.format() != media::AudioParameters::AUDIO_FAKE
-          ? hardware_params.sample_rate()
-          : params.sample_rate();
-#endif
-
   int buffer_size =
-      hardware_params.format() != media::AudioParameters::AUDIO_FAKE
-          ? media::AudioHardwareConfig::GetHighLatencyBufferSize(
-                hardware_params)
-          : params.frames_per_buffer();
+      media::AudioHardwareConfig::GetHighLatencyBufferSize(sample_rate, 0);
+
+#if !defined(OS_CHROMEOS)
+  const media::AudioParameters& hardware_params = device_info.output_params();
+
+  // If we have valid, non-fake hardware parameters, use them.  Otherwise, pass
+  // on the input params and let the browser side handle automatic fallback.
+  if (hardware_params.format() != media::AudioParameters::AUDIO_FAKE &&
+      hardware_params.IsValid()) {
+    sample_rate = hardware_params.sample_rate();
+    buffer_size = media::AudioHardwareConfig::GetHighLatencyBufferSize(
+        sample_rate, hardware_params.frames_per_buffer());
+  }
+#endif
 
   // Create output parameters based on the audio hardware configuration for
   // passing on to the output sink.  Force to 16-bit output for now since we
@@ -107,11 +97,7 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
   media::AudioParameters output_params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY, params.channel_layout(),
       sample_rate, 16, buffer_size);
-
-  // If we've created invalid output parameters, simply pass on the input
-  // params and let the browser side handle automatic fallback.
-  if (!output_params.IsValid())
-    output_params = params;
+  DCHECK(output_params.IsValid());
 
   media::AudioRendererMixer* mixer =
       new media::AudioRendererMixer(output_params, sink);
@@ -149,5 +135,7 @@ AudioRendererMixerManager::MixerKey::MixerKey(
       params(params),
       device_id(device_id),
       security_origin(security_origin) {}
+
+AudioRendererMixerManager::MixerKey::MixerKey(const MixerKey& other) = default;
 
 }  // namespace content

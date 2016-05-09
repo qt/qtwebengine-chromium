@@ -38,7 +38,7 @@ static LPCTSTR kMagnifierWindowName = L"MagnifierWindow";
 Atomic32 ScreenCapturerWinMagnifier::tls_index_(TLS_OUT_OF_INDEXES);
 
 ScreenCapturerWinMagnifier::ScreenCapturerWinMagnifier(
-    rtc::scoped_ptr<ScreenCapturer> fallback_capturer)
+    std::unique_ptr<ScreenCapturer> fallback_capturer)
     : fallback_capturer_(std::move(fallback_capturer)),
       fallback_capturer_started_(false),
       callback_(NULL),
@@ -81,6 +81,12 @@ void ScreenCapturerWinMagnifier::Start(Callback* callback) {
   InitializeMagnifier();
 }
 
+void ScreenCapturerWinMagnifier::SetSharedMemoryFactory(
+    rtc::scoped_ptr<SharedMemoryFactory> shared_memory_factory) {
+  shared_memory_factory_ =
+      rtc::ScopedToUnique(std::move(shared_memory_factory));
+}
+
 void ScreenCapturerWinMagnifier::Capture(const DesktopRegion& region) {
   TickTime capture_start_time = TickTime::Now();
 
@@ -96,7 +102,7 @@ void ScreenCapturerWinMagnifier::Capture(const DesktopRegion& region) {
   }
   // Switch to the desktop receiving user input if different from the current
   // one.
-  rtc::scoped_ptr<Desktop> input_desktop(Desktop::GetInputDesktop());
+  std::unique_ptr<Desktop> input_desktop(Desktop::GetInputDesktop());
   if (input_desktop.get() != NULL && !desktop_.IsSame(*input_desktop)) {
     // Release GDI resources otherwise SetThreadDesktop will fail.
     if (desktop_dc_) {
@@ -422,18 +428,12 @@ void ScreenCapturerWinMagnifier::CreateCurrentFrameIfNecessary(
   // Note that we can't reallocate other buffers at this point, since the caller
   // may still be reading from them.
   if (!queue_.current_frame() || !queue_.current_frame()->size().equals(size)) {
-    size_t buffer_size =
-        size.width() * size.height() * DesktopFrame::kBytesPerPixel;
-    SharedMemory* shared_memory = callback_->CreateSharedMemory(buffer_size);
-
-    rtc::scoped_ptr<DesktopFrame> buffer;
-    if (shared_memory) {
-      buffer.reset(new SharedMemoryDesktopFrame(
-          size, size.width() * DesktopFrame::kBytesPerPixel, shared_memory));
-    } else {
-      buffer.reset(new BasicDesktopFrame(size));
-    }
-    queue_.ReplaceCurrentFrame(buffer.release());
+    std::unique_ptr<DesktopFrame> frame =
+        shared_memory_factory_
+            ? SharedMemoryDesktopFrame::Create(size,
+                                               shared_memory_factory_.get())
+            : std::unique_ptr<DesktopFrame>(new BasicDesktopFrame(size));
+    queue_.ReplaceCurrentFrame(frame.release());
   }
 }
 

@@ -11,7 +11,6 @@
 #include "net/base/ip_endpoint.h"
 
 namespace net {
-namespace tools {
 
 class QuicPacketWriterWrapper;
 
@@ -28,6 +27,8 @@ class QuicDispatcherPeer {
                         QuicPacketWriterWrapper* writer);
 
   static QuicPacketWriter* GetWriter(QuicDispatcher* dispatcher);
+
+  static QuicCompressedCertsCache* GetCache(QuicDispatcher* dispatcher);
 
   static QuicConnectionHelperInterface* GetHelper(QuicDispatcher* dispatcher);
 
@@ -46,7 +47,6 @@ class QuicDispatcherPeer {
 };
 
 }  // namespace test
-}  // namespace tools
 }  // namespace net
 
 #endif  // NET_TOOLS_QUIC_TEST_TOOLS_QUIC_DISPATCHER_PEER_H_

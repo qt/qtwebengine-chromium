@@ -45,9 +45,28 @@ class SelectorChecker {
     STACK_ALLOCATED();
 public:
     enum VisitedMatchType { VisitedMatchDisabled, VisitedMatchEnabled };
-    enum Mode { ResolvingStyle = 0, CollectingStyleRules, CollectingCSSRules, QueryingRules, SharingRules };
+    enum Mode { ResolvingStyle, CollectingStyleRules, CollectingCSSRules, QueryingRules, SharingRules };
 
-    explicit SelectorChecker(Mode);
+    struct Init {
+        STACK_ALLOCATED();
+    public:
+        Mode mode = ResolvingStyle;
+        bool isUARule = false;
+        bool isQuerySelector = false;
+        ComputedStyle* elementStyle = nullptr;
+        Member<LayoutScrollbar> scrollbar = nullptr;
+        ScrollbarPart scrollbarPart = NoPart;
+    };
+
+    explicit SelectorChecker(const Init& init)
+        : m_mode(init.mode)
+        , m_isUARule(init.isUARule)
+        , m_isQuerySelector(init.isQuerySelector)
+        , m_elementStyle(init.elementStyle)
+        , m_scrollbar(init.scrollbar)
+        , m_scrollbarPart(init.scrollbarPart)
+    {
+    }
 
     struct SelectorCheckingContext {
         STACK_ALLOCATED();
@@ -59,48 +78,49 @@ public:
             , previousElement(nullptr)
             , scope(nullptr)
             , visitedMatchType(visitedMatchType)
-            , pseudoId(NOPSEUDO)
-            , elementStyle(nullptr)
-            , scrollbar(nullptr)
-            , scrollbarPart(NoPart)
+            , pseudoId(PseudoIdNone)
             , isSubSelector(false)
             , inRightmostCompound(true)
             , hasScrollbarPseudo(false)
             , hasSelectionPseudo(false)
-            , isUARule(false)
             , treatShadowHostAsNormalScope(false)
         {
         }
 
         const CSSSelector* selector;
-        RawPtrWillBeMember<Element> element;
-        RawPtrWillBeMember<Element> previousElement;
-        RawPtrWillBeMember<const ContainerNode> scope;
+        Member<Element> element;
+        Member<Element> previousElement;
+        Member<const ContainerNode> scope;
         VisitedMatchType visitedMatchType;
         PseudoId pseudoId;
-        ComputedStyle* elementStyle;
-        RawPtrWillBeMember<LayoutScrollbar> scrollbar;
-        ScrollbarPart scrollbarPart;
         bool isSubSelector;
         bool inRightmostCompound;
         bool hasScrollbarPseudo;
         bool hasSelectionPseudo;
-        bool isUARule;
         bool treatShadowHostAsNormalScope;
     };
 
     struct MatchResult {
         STACK_ALLOCATED();
         MatchResult()
-            : dynamicPseudo(NOPSEUDO)
+            : dynamicPseudo(PseudoIdNone)
             , specificity(0) { }
 
         PseudoId dynamicPseudo;
         unsigned specificity;
     };
 
-    bool match(const SelectorCheckingContext&, MatchResult&) const;
-    bool match(const SelectorCheckingContext&) const;
+    bool match(const SelectorCheckingContext& context, MatchResult& result) const
+    {
+        ASSERT(context.selector);
+        return matchSelector(context, result) == SelectorMatches;
+    }
+
+    bool match(const SelectorCheckingContext& context) const
+    {
+        MatchResult ignoreResult;
+        return match(context, ignoreResult);
+    }
 
     static bool matchesFocusPseudoClass(const Element&);
 
@@ -112,7 +132,7 @@ private:
     Match matchSelector(const SelectorCheckingContext&, MatchResult&) const;
     Match matchForSubSelector(const SelectorCheckingContext&, MatchResult&) const;
     Match matchForRelation(const SelectorCheckingContext&, MatchResult&) const;
-    Match matchForShadowDistributed(const SelectorCheckingContext&, const Element&, MatchResult&) const;
+    Match matchForPseudoContent(const SelectorCheckingContext&, const Element&, MatchResult&) const;
     Match matchForPseudoShadow(const SelectorCheckingContext&, const ContainerNode*, MatchResult&) const;
     bool checkPseudoClass(const SelectorCheckingContext&, MatchResult&) const;
     bool checkPseudoElement(const SelectorCheckingContext&, MatchResult&) const;
@@ -121,8 +141,13 @@ private:
     bool checkPseudoNot(const SelectorCheckingContext&, MatchResult&) const;
 
     Mode m_mode;
+    bool m_isUARule;
+    bool m_isQuerySelector;
+    ComputedStyle* m_elementStyle;
+    Member<LayoutScrollbar> m_scrollbar;
+    ScrollbarPart m_scrollbarPart;
 };
 
-}
+} // namespace blink
 
 #endif

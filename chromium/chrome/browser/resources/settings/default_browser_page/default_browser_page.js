@@ -14,9 +14,6 @@
  *     </settings-default-browser-page>
  *     ... other pages ...
  *   </iron-animated-pages>
- *
- * @group Chrome Settings Elements
- * @element settings-default-browser-page
  */
 Polymer({
   is: 'settings-default-browser-page',
@@ -35,6 +32,15 @@ Polymer({
      */
     message_: {
       type: String,
+    },
+
+    /**
+     * Indicates if the next updateDefaultBrowserState_ invocation is following
+     * a call to SettingsDefaultBrowser.setAsDefaultBrowser().
+     */
+    startedSetAsDefault_: {
+      type: Boolean,
+      value: false,
     },
 
     /**
@@ -73,14 +79,6 @@ Polymer({
   },
 
   /**
-   * @param {boolean} succeeded
-   * @private
-   */
-  setAsDefaultConcluded_: function(succeeded) {
-    this.showError_ = !succeeded;
-  },
-
-  /**
    * @param {boolean} isDefault Whether Chrome is currently the user's default
    *   browser.
    * @param {boolean} canBeDefault Whether Chrome can be the default browser on
@@ -88,18 +86,23 @@ Polymer({
    * @private
    */
   updateDefaultBrowserState_: function(isDefault, canBeDefault) {
-    this.showButton_ = !isDefault && canBeDefault;
-    if (canBeDefault) {
-      this.message_ = loadTimeData.getString(isDefault ?
-          'defaultBrowserDefault' :
-          'defaultBrowserNotDefault');
+    if (this.startedSetAsDefault_ && !isDefault) {
+      this.startedSetAsDefault_ = false;
+      this.showError_ = true;
     } else {
-      this.message_ = loadTimeData.getString('defaultBrowserUnknown');
+      this.showError_ = false;
+    }
+
+    this.showButton_ = !isDefault && canBeDefault;
+    if (!this.showButton) {
+      this.message_ = loadTimeData.getString(
+          canBeDefault ? 'defaultBrowserDefault' : 'defaultBrowserUnknown');
     }
   },
 
   /** @private */
   onSetDefaultBrowserTap_: function() {
+    this.startedSetAsDefault_ = true;
     chrome.send('SettingsDefaultBrowser.setAsDefaultBrowser');
   },
 });

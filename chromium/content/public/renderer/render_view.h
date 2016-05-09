@@ -21,6 +21,7 @@
 namespace blink {
 class WebElement;
 class WebFrame;
+class WebFrameWidget;
 class WebLocalFrame;
 class WebNode;
 class WebString;
@@ -38,6 +39,7 @@ class Size;
 namespace content {
 
 class RenderFrame;
+class RenderWidget;
 class RenderViewVisitor;
 struct SSLStatus;
 struct WebPreferences;
@@ -66,6 +68,9 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   static void ApplyWebPreferences(const WebPreferences& preferences,
                                   blink::WebView* web_view);
 
+  // Returns the RenderWidget for this RenderView.
+  virtual RenderWidget* GetWidget() const = 0;
+
   // Returns the main RenderFrame.
   virtual RenderFrame* GetMainRenderFrame() = 0;
 
@@ -87,6 +92,9 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Returns the associated WebView. May return NULL when the view is closing.
   virtual blink::WebView* GetWebView() = 0;
+
+  // Returns the associated WebFrameWidget.
+  virtual blink::WebFrameWidget* GetWebFrameWidget() = 0;
 
   // Returns true if we should display scrollbars for the given view size and
   // false if the scrollbars should be hidden.
@@ -132,7 +140,7 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 
   // Converts the |rect| from Viewport coordinates to Window coordinates.
   // See blink::WebWidgetClient::convertViewportToWindow for more details.
-  virtual void convertViewportToWindow(blink::WebRect* rect) = 0;
+  virtual void ConvertViewportToWindowViaWidget(blink::WebRect* rect) = 0;
 
   // Returns the bounds of |element| in Window coordinates. The bounds have been
   // adjusted to include any transformations, including page scale.

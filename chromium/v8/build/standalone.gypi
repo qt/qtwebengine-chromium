@@ -44,7 +44,7 @@
     'v8_deprecation_warnings': 1,
     'v8_imminent_deprecation_warnings': 1,
     'msvs_multi_core_compile%': '1',
-    'mac_deployment_target%': '10.5',
+    'mac_deployment_target%': '10.7',
     'release_extra_cflags%': '',
     'variables': {
       'variables': {
@@ -68,7 +68,9 @@
         'target_arch%': '<(host_arch)',
         'base_dir%': '<!(cd <(DEPTH) && python -c "import os; print os.getcwd()")',
 
-        # Instrument for code coverage with gcov.
+        # Instrument for code coverage and use coverage wrapper to exclude some
+        # files. Uses gcov if clang=0 is set explicitly. Otherwise,
+        # sanitizer_coverage must be set too.
         'coverage%': 0,
       },
       'base_dir%': '<(base_dir)',
@@ -110,6 +112,11 @@
       'use_goma%': 0,
       'gomadir%': '',
 
+      # Check if valgrind directories are present.
+      'has_valgrind%': '<!pymod_do_main(has_valgrind)',
+
+      'test_isolation_mode%': 'noop',
+
       'conditions': [
         # Set default gomadir.
         ['OS=="win"', {
@@ -117,8 +124,7 @@
         }, {
           'gomadir': '<!(/bin/echo -n ${HOME}/goma)',
         }],
-        ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le" and host_arch!="s390" and host_arch!="s390x" and \
-          coverage==0', {
+        ['host_arch!="ppc" and host_arch!="ppc64" and host_arch!="ppc64le" and host_arch!="s390" and host_arch!="s390x"', {
           'host_clang%': 1,
         }, {
           'host_clang%': 0,
@@ -132,14 +138,6 @@
           'linux_use_bundled_gold%': 1,
         }, {
           'linux_use_bundled_gold%': 0,
-        }],
-
-        # TODO(machenbach): Remove the conditions as more configurations are
-        # supported.
-        ['OS=="linux" or OS=="win"', {
-          'test_isolation_mode%': 'check',
-        }, {
-          'test_isolation_mode%': 'noop',
         }],
       ],
     },
@@ -166,6 +164,7 @@
     'test_isolation_mode%': '<(test_isolation_mode)',
     'fastbuild%': '<(fastbuild)',
     'coverage%': '<(coverage)',
+    'has_valgrind%': '<(has_valgrind)',
 
     # Add a simple extras solely for the purpose of the cctests
     'v8_extra_library_files': ['../test/cctest/test-extra.js'],
@@ -194,6 +193,9 @@
     # Embedders that don't use standalone.gypi will need to add
     # their own default value.
     'v8_use_external_startup_data%': 1,
+
+    # Use a separate ignition snapshot file in standalone builds.
+    'v8_separate_ignition_snapshot': 1,
 
     # Relative path to icu.gyp from this file.
     'icu_gyp_path': '../third_party/icu/icu.gyp',
@@ -227,7 +229,7 @@
         'v8_enable_gdbjit%': 0,
       }],
       ['(OS=="linux" or OS=="mac") and (target_arch=="ia32" or target_arch=="x64") and \
-        (v8_target_arch!="x87" and v8_target_arch!="x32") and coverage==0', {
+        (v8_target_arch!="x87" and v8_target_arch!="x32")', {
         'clang%': 1,
       }, {
         'clang%': 0,
@@ -313,9 +315,8 @@
           ['android_ndk_root==""', {
             'variables': {
               'android_sysroot': '<(android_toolchain)/sysroot/',
-              'android_stlport': '<(android_toolchain)/sources/cxx-stl/stlport/',
+              'android_stl': '<(android_toolchain)/sources/cxx-stl/',
             },
-            'android_include': '<(android_sysroot)/usr/include',
             'conditions': [
               ['target_arch=="x64"', {
                 'android_lib': '<(android_sysroot)/usr/lib64',
@@ -323,14 +324,16 @@
                 'android_lib': '<(android_sysroot)/usr/lib',
               }],
             ],
-            'android_stlport_include': '<(android_stlport)/stlport',
-            'android_stlport_libs': '<(android_stlport)/libs',
+            'android_libcpp_include': '<(android_stl)/llvm-libc++/libcxx/include',
+            'android_libcpp_abi_include': '<(android_stl)/llvm-libc++abi/libcxxabi/include',
+            'android_libcpp_libs': '<(android_stl)/llvm-libc++/libs',
+            'android_support_include': '<(android_toolchain)/sources/android/support/include',
+            'android_sysroot': '<(android_sysroot)',
           }, {
             'variables': {
               'android_sysroot': '<(android_ndk_root)/platforms/android-<(android_target_platform)/arch-<(android_target_arch)',
-              'android_stlport': '<(android_ndk_root)/sources/cxx-stl/stlport/',
+              'android_stl': '<(android_ndk_root)/sources/cxx-stl/',
             },
-            'android_include': '<(android_sysroot)/usr/include',
             'conditions': [
               ['target_arch=="x64"', {
                 'android_lib': '<(android_sysroot)/usr/lib64',
@@ -338,11 +341,14 @@
                 'android_lib': '<(android_sysroot)/usr/lib',
               }],
             ],
-            'android_stlport_include': '<(android_stlport)/stlport',
-            'android_stlport_libs': '<(android_stlport)/libs',
+            'android_libcpp_include': '<(android_stl)/llvm-libc++/libcxx/include',
+            'android_libcpp_abi_include': '<(android_stl)/llvm-libc++abi/libcxxabi/include',
+            'android_libcpp_libs': '<(android_stl)/llvm-libc++/libs',
+            'android_support_include': '<(android_ndk_root)/sources/android/support/include',
+            'android_sysroot': '<(android_sysroot)',
           }],
         ],
-        'android_stlport_library': 'stlport_static',
+        'android_libcpp_library': 'c++_static',
       }],  # OS=="android"
       ['host_clang==1', {
         'host_cc': '<(clang_dir)/bin/clang',
@@ -367,6 +373,9 @@
     # fpxx - compatibility mode, it chooses fp32 or fp64 depending on runtime
     #        detection
     'mips_fpu_mode%': 'fp32',
+
+    # Indicates if gcmole tools are downloaded by a hook.
+    'gcmole%': 0,
   },
   'target_defaults': {
     'variables': {
@@ -692,7 +701,7 @@
           '-Wnon-virtual-dtor',
           '-fno-exceptions',
           '-fno-rtti',
-          '-std=gnu++0x',
+          '-std=gnu++11',
         ],
         'ldflags': [ '-pthread', ],
         'conditions': [
@@ -719,9 +728,8 @@
           [ 'component=="shared_library"', {
             'cflags': [ '-fPIC', ],
           }],
-          [ 'coverage==1', {
-            'cflags!': [ '-O3', '-O2', '-O1', ],
-            'cflags': [ '-fprofile-arcs', '-ftest-coverage', '-O0'],
+          [ 'clang==0 and coverage==1', {
+            'cflags': [ '-fprofile-arcs', '-ftest-coverage'],
             'ldflags': [ '-fprofile-arcs'],
           }],
         ],
@@ -743,7 +751,7 @@
           '-Wnon-virtual-dtor',
           '-fno-exceptions',
           '-fno-rtti',
-          '-std=gnu++0x',
+          '-std=gnu++11',
         ],
         'conditions': [
           [ 'visibility=="hidden"', {
@@ -973,7 +981,7 @@
           ['clang==1', {
             'xcode_settings': {
               'GCC_VERSION': 'com.apple.compilers.llvm.clang.1_0',
-              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',  # -std=gnu++0x
+              'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',  # -std=c++11
             },
             'conditions': [
               ['v8_target_arch=="x64" or v8_target_arch=="arm64" \
@@ -1005,11 +1013,7 @@
         },  # configurations
         'cflags': [ '-Wno-abi', '-Wall', '-W', '-Wno-unused-parameter'],
         'cflags_cc': [ '-Wnon-virtual-dtor', '-fno-rtti', '-fno-exceptions',
-                       # Note: Using -std=c++0x will define __STRICT_ANSI__, which
-                       # in turn will leave out some template stuff for 'long
-                       # long'.  What we want is -std=c++11, but this is not
-                       # supported by GCC 4.6 or Xcode 4.2
-                       '-std=gnu++0x' ],
+                       '-std=gnu++11' ],
         'target_conditions': [
           ['_toolset=="target"', {
             'cflags!': [
@@ -1022,19 +1026,16 @@
               '-fno-short-enums',
               '-finline-limit=64',
               '-Wa,--noexecstack',
-              # Note: This include is in cflags to ensure that it comes after
-              # all of the includes.
-              '-I<(android_include)',
-              '-I<(android_stlport_include)',
+              '--sysroot=<(android_sysroot)',
             ],
             'cflags_cc': [
-              '-Wno-error=non-virtual-dtor',  # TODO(michaelbai): Fix warnings.
+              '-isystem<(android_libcpp_include)',
+              '-isystem<(android_libcpp_abi_include)',
+              '-isystem<(android_support_include)',
             ],
             'defines': [
               'ANDROID',
               #'__GNU_SOURCE=1',  # Necessary for clone()
-              'USE_STLPORT=1',
-              '_STLP_USE_PTR_SPECIALIZATIONS=1',
               'HAVE_OFF64_T',
               'HAVE_SYS_UIO_H',
               'ANDROID_BINSIZE_HACK', # Enable temporary hacks to reduce binsize.
@@ -1043,10 +1044,9 @@
               '-pthread',  # Not supported by Android toolchain.
             ],
             'ldflags': [
-              '-nostdlib',
               '-Wl,--no-undefined',
-              '-Wl,-rpath-link=<(android_lib)',
-              '-L<(android_lib)',
+              '--sysroot=<(android_sysroot)',
+              '-nostdlib',
             ],
             'libraries!': [
                 '-lrt',  # librt is built into Bionic.
@@ -1057,12 +1057,12 @@
                 '-lpthread', '-lnss3', '-lnssutil3', '-lsmime3', '-lplds4', '-lplc4', '-lnspr4',
               ],
               'libraries': [
-                '-l<(android_stlport_library)',
+                '-l<(android_libcpp_library)',
+                '-latomic',
                 # Manually link the libgcc.a that the cross compiler uses.
                 '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
                 '-lc',
                 '-ldl',
-                '-lstdc++',
                 '-lm',
             ],
             'conditions': [
@@ -1079,22 +1079,22 @@
                   '-mfpu=vfp3',
                 ],
                 'ldflags': [
-                  '-L<(android_stlport_libs)/armeabi-v7a',
+                  '-L<(android_libcpp_libs)/armeabi-v7a',
                 ],
               }],
               ['target_arch=="arm" and arm_version < 7', {
                 'ldflags': [
-                  '-L<(android_stlport_libs)/armeabi',
+                  '-L<(android_libcpp_libs)/armeabi',
                 ],
               }],
               ['target_arch=="x64"', {
                 'ldflags': [
-                  '-L<(android_stlport_libs)/x86_64',
+                  '-L<(android_libcpp_libs)/x86_64',
                 ],
               }],
               ['target_arch=="arm64"', {
                 'ldflags': [
-                  '-L<(android_stlport_libs)/arm64-v8a',
+                  '-L<(android_libcpp_libs)/arm64-v8a',
                 ],
               }],
               ['target_arch=="ia32" or target_arch=="x87"', {
@@ -1106,7 +1106,7 @@
                   '-fno-stack-protector',
                 ],
                 'ldflags': [
-                  '-L<(android_stlport_libs)/x86',
+                  '-L<(android_libcpp_libs)/x86',
                 ],
               }],
               ['target_arch=="mipsel"', {
@@ -1119,7 +1119,7 @@
                   '-fno-stack-protector',
                 ],
                 'ldflags': [
-                  '-L<(android_stlport_libs)/mips',
+                  '-L<(android_libcpp_libs)/mips',
                 ],
               }],
               ['(target_arch=="arm" or target_arch=="arm64" or target_arch=="x64" or target_arch=="ia32") and component!="shared_library"', {
@@ -1257,11 +1257,36 @@
     #  make generator doesn't support CC_wrapper without CC
     #  in make_global_settings yet.
     ['use_goma==1 and ("<(GENERATOR)"=="ninja" or clang==1)', {
-      'make_global_settings': [
-       ['CC_wrapper', '<(gomadir)/gomacc'],
-       ['CXX_wrapper', '<(gomadir)/gomacc'],
-       ['CC.host_wrapper', '<(gomadir)/gomacc'],
-       ['CXX.host_wrapper', '<(gomadir)/gomacc'],
+      'conditions': [
+        ['coverage==1', {
+          # Wrap goma with coverage wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py <(gomadir)/gomacc'],
+          ],
+        }, {
+          # Use only goma wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(gomadir)/gomacc'],
+            ['CXX_wrapper', '<(gomadir)/gomacc'],
+            ['CC.host_wrapper', '<(gomadir)/gomacc'],
+            ['CXX.host_wrapper', '<(gomadir)/gomacc'],
+          ],
+        }],
+      ],
+    }, {
+      'conditions': [
+        ['coverage==1', {
+          # Use only coverage wrapper.
+          'make_global_settings': [
+            ['CC_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CXX_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CC.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+            ['CXX.host_wrapper', '<(base_dir)/build/coverage_wrapper.py'],
+          ],
+        }],
       ],
     }],
     ['use_lto==1', {

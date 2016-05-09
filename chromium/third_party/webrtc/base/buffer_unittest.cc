@@ -64,23 +64,6 @@ TEST(BufferTest, TestConstructArray) {
   EXPECT_EQ(0, memcmp(buf.data(), kTestData, 16));
 }
 
-TEST(BufferTest, TestConstructCopy) {
-  Buffer buf1(kTestData), buf2(buf1);
-  EXPECT_EQ(buf2.size(), 16u);
-  EXPECT_EQ(buf2.capacity(), 16u);
-  EXPECT_EQ(0, memcmp(buf2.data(), kTestData, 16));
-  EXPECT_NE(buf1.data(), buf2.data());
-  EXPECT_EQ(buf1, buf2);
-}
-
-TEST(BufferTest, TestAssign) {
-  Buffer buf1, buf2(kTestData, sizeof(kTestData), 256);
-  EXPECT_NE(buf1, buf2);
-  buf1 = buf2;
-  EXPECT_EQ(buf1, buf2);
-  EXPECT_NE(buf1.data(), buf2.data());
-}
-
 TEST(BufferTest, TestSetData) {
   Buffer buf(kTestData + 4, 7);
   buf.SetData(kTestData, 9);
@@ -138,7 +121,7 @@ TEST(BufferTest, TestEnsureCapacityLarger) {
 TEST(BufferTest, TestMoveConstruct) {
   Buffer buf1(kTestData, 3, 40);
   const uint8_t* data = buf1.data();
-  Buffer buf2(buf1.DEPRECATED_Pass());
+  Buffer buf2(std::move(buf1));
   EXPECT_EQ(buf2.size(), 3u);
   EXPECT_EQ(buf2.capacity(), 40u);
   EXPECT_EQ(buf2.data(), data);
@@ -152,7 +135,7 @@ TEST(BufferTest, TestMoveAssign) {
   Buffer buf1(kTestData, 3, 40);
   const uint8_t* data = buf1.data();
   Buffer buf2(kTestData);
-  buf2 = buf1.DEPRECATED_Pass();
+  buf2 = std::move(buf1);
   EXPECT_EQ(buf2.size(), 3u);
   EXPECT_EQ(buf2.capacity(), 40u);
   EXPECT_EQ(buf2.data(), data);
@@ -175,6 +158,147 @@ TEST(BufferTest, TestSwap) {
   EXPECT_EQ(buf2.size(), 3u);
   EXPECT_EQ(buf2.capacity(), 3u);
   EXPECT_EQ(buf2.data(), data1);
+}
+
+TEST(BufferTest, TestClear) {
+  Buffer buf;
+  buf.SetData(kTestData, 15);
+  EXPECT_EQ(buf.size(), 15u);
+  EXPECT_EQ(buf.capacity(), 15u);
+  const char *data = buf.data<char>();
+  buf.Clear();
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.capacity(), 15u);  // Hasn't shrunk.
+  EXPECT_EQ(buf.data<char>(), data); // No reallocation.
+}
+
+TEST(BufferTest, TestLambdaSetAppend) {
+  auto setter = [] (rtc::ArrayView<uint8_t> av) {
+    for (int i = 0; i != 15; ++i)
+      av[i] = kTestData[i];
+    return 15;
+  };
+
+  Buffer buf1;
+  buf1.SetData(kTestData, 15);
+  buf1.AppendData(kTestData, 15);
+
+  Buffer buf2;
+  EXPECT_EQ(buf2.SetData(15, setter), 15u);
+  EXPECT_EQ(buf2.AppendData(15, setter), 15u);
+  EXPECT_EQ(buf1, buf2);
+  EXPECT_EQ(buf1.capacity(), buf2.capacity());
+}
+
+TEST(BufferTest, TestLambdaSetAppendSigned) {
+  auto setter = [] (rtc::ArrayView<int8_t> av) {
+    for (int i = 0; i != 15; ++i)
+      av[i] = kTestData[i];
+    return 15;
+  };
+
+  Buffer buf1;
+  buf1.SetData(kTestData, 15);
+  buf1.AppendData(kTestData, 15);
+
+  Buffer buf2;
+  EXPECT_EQ(buf2.SetData<int8_t>(15, setter), 15u);
+  EXPECT_EQ(buf2.AppendData<int8_t>(15, setter), 15u);
+  EXPECT_EQ(buf1, buf2);
+  EXPECT_EQ(buf1.capacity(), buf2.capacity());
+}
+
+TEST(BufferTest, TestLambdaAppendEmpty) {
+  auto setter = [] (rtc::ArrayView<uint8_t> av) {
+    for (int i = 0; i != 15; ++i)
+      av[i] = kTestData[i];
+    return 15;
+  };
+
+  Buffer buf1;
+  buf1.SetData(kTestData, 15);
+
+  Buffer buf2;
+  EXPECT_EQ(buf2.AppendData(15, setter), 15u);
+  EXPECT_EQ(buf1, buf2);
+  EXPECT_EQ(buf1.capacity(), buf2.capacity());
+}
+
+TEST(BufferTest, TestLambdaAppendPartial) {
+  auto setter = [] (rtc::ArrayView<uint8_t> av) {
+    for (int i = 0; i != 7; ++i)
+      av[i] = kTestData[i];
+    return 7;
+  };
+
+  Buffer buf;
+  EXPECT_EQ(buf.AppendData(15, setter), 7u);
+  EXPECT_EQ(buf.size(), 7u);            // Size is exactly what we wrote.
+  EXPECT_GE(buf.capacity(), 7u);        // Capacity is valid.
+  EXPECT_NE(buf.data<char>(), nullptr); // Data is actually stored.
+}
+
+TEST(BufferTest, TestMutableLambdaSetAppend) {
+  uint8_t magic_number = 17;
+  auto setter = [magic_number] (rtc::ArrayView<uint8_t> av) mutable {
+    for (int i = 0; i != 15; ++i) {
+      av[i] = magic_number;
+      ++magic_number;
+    }
+    return 15;
+  };
+
+  EXPECT_EQ(magic_number, 17);
+
+  Buffer buf;
+  EXPECT_EQ(buf.SetData(15, setter), 15u);
+  EXPECT_EQ(buf.AppendData(15, setter), 15u);
+  EXPECT_EQ(buf.size(), 30u);           // Size is exactly what we wrote.
+  EXPECT_GE(buf.capacity(), 30u);       // Capacity is valid.
+  EXPECT_NE(buf.data<char>(), nullptr); // Data is actually stored.
+
+  for (uint8_t i = 0; i != buf.size(); ++i) {
+    EXPECT_EQ(buf.data()[i], magic_number + i);
+  }
+}
+
+TEST(BufferTest, TestBracketRead) {
+  Buffer buf(kTestData, 7);
+  EXPECT_EQ(buf.size(), 7u);
+  EXPECT_EQ(buf.capacity(), 7u);
+  EXPECT_NE(buf.data(), nullptr);
+
+  for (size_t i = 0; i != 7u; ++i) {
+    EXPECT_EQ(buf[i], kTestData[i]);
+  }
+}
+
+TEST(BufferTest, TestBracketReadConst) {
+  Buffer buf(kTestData, 7);
+  EXPECT_EQ(buf.size(), 7u);
+  EXPECT_EQ(buf.capacity(), 7u);
+  EXPECT_NE(buf.data(), nullptr);
+
+  const Buffer& cbuf = buf;
+
+  for (size_t i = 0; i != 7u; ++i) {
+    EXPECT_EQ(cbuf[i], kTestData[i]);
+  }
+}
+
+TEST(BufferTest, TestBracketWrite) {
+  Buffer buf(7);
+  EXPECT_EQ(buf.size(), 7u);
+  EXPECT_EQ(buf.capacity(), 7u);
+  EXPECT_NE(buf.data(), nullptr);
+
+  for (size_t i = 0; i != 7u; ++i) {
+    buf[i] = kTestData[i];
+  }
+
+  for (size_t i = 0; i != 7u; ++i) {
+    EXPECT_EQ(buf[i], kTestData[i]);
+  }
 }
 
 }  // namespace rtc

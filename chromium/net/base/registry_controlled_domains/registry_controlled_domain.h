@@ -117,9 +117,14 @@
 
 #include <string>
 
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
 class GURL;
+
+namespace url {
+class Origin;
+};
 
 struct DomainRule;
 
@@ -179,17 +184,20 @@ NET_EXPORT std::string GetDomainAndRegistry(const GURL& gurl,
 
 // Like the GURL version, but takes a host (which is canonicalized internally)
 // instead of a full GURL.
-NET_EXPORT std::string GetDomainAndRegistry(const std::string& host,
+NET_EXPORT std::string GetDomainAndRegistry(base::StringPiece host,
                                             PrivateRegistryFilter filter);
 
-// This convenience function returns true if the two GURLs both have hosts
-// and one of the following is true:
+// These convenience functions return true if the two GURLs or Origins both have
+// hosts and one of the following is true:
 // * They each have a known domain and registry, and it is the same for both
 //   URLs.  Note that this means the trailing dot, if any, must match too.
 // * They don't have known domains/registries, but the hosts are identical.
 // Effectively, callers can use this function to check whether the input URLs
 // represent hosts "on the same site".
 NET_EXPORT bool SameDomainOrHost(const GURL& gurl1, const GURL& gurl2,
+                                 PrivateRegistryFilter filter);
+NET_EXPORT bool SameDomainOrHost(const url::Origin& origin1,
+                                 const url::Origin& origin2,
                                  PrivateRegistryFilter filter);
 
 // Finds the length in bytes of the registrar portion of the host in the
@@ -221,7 +229,7 @@ NET_EXPORT size_t GetRegistryLength(const GURL& gurl,
 
 // Like the GURL version, but takes a host (which is canonicalized internally)
 // instead of a full GURL.
-NET_EXPORT size_t GetRegistryLength(const std::string& host,
+NET_EXPORT size_t GetRegistryLength(base::StringPiece host,
                                     UnknownRegistryFilter unknown_filter,
                                     PrivateRegistryFilter private_filter);
 

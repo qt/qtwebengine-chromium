@@ -30,14 +30,14 @@ namespace blink {
 
 class CORE_EXPORT CSSQuadValue : public CSSValue {
 public:
-    enum SerializationType {
+    enum TypeForSerialization {
         SerializeAsRect,
         SerializeAsQuad
     };
 
-    static PassRefPtrWillBeRawPtr<CSSQuadValue> create(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> top, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> right, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> bottom, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> left, SerializationType serializationType)
+    static CSSQuadValue* create(CSSPrimitiveValue* top, CSSPrimitiveValue* right, CSSPrimitiveValue* bottom, CSSPrimitiveValue* left, TypeForSerialization serializationType)
     {
-        return adoptRefWillBeNoop(new CSSQuadValue(top, right, bottom, left, serializationType));
+        return new CSSQuadValue(top, right, bottom, left, serializationType);
     }
 
     CSSPrimitiveValue* top() const { return m_top.get(); }
@@ -45,7 +45,7 @@ public:
     CSSPrimitiveValue* bottom() const { return m_bottom.get(); }
     CSSPrimitiveValue* left() const { return m_left.get(); }
 
-    SerializationType serializationType() { return m_serializationType; }
+    TypeForSerialization serializationType() { return m_serializationType; }
 
     String customCSSText() const;
 
@@ -60,7 +60,7 @@ public:
     DECLARE_TRACE_AFTER_DISPATCH();
 
 protected:
-    CSSQuadValue(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> top, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> right, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> bottom, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> left, SerializationType serializationType)
+    CSSQuadValue(CSSPrimitiveValue* top, CSSPrimitiveValue* right, CSSPrimitiveValue* bottom, CSSPrimitiveValue* left, TypeForSerialization serializationType)
         : CSSValue(QuadClass)
         , m_serializationType(serializationType)
         , m_top(top)
@@ -69,11 +69,11 @@ protected:
         , m_left(left) { }
 
 private:
-    SerializationType m_serializationType;
-    RefPtrWillBeMember<CSSPrimitiveValue> m_top;
-    RefPtrWillBeMember<CSSPrimitiveValue> m_right;
-    RefPtrWillBeMember<CSSPrimitiveValue> m_bottom;
-    RefPtrWillBeMember<CSSPrimitiveValue> m_left;
+    TypeForSerialization m_serializationType;
+    Member<CSSPrimitiveValue> m_top;
+    Member<CSSPrimitiveValue> m_right;
+    Member<CSSPrimitiveValue> m_bottom;
+    Member<CSSPrimitiveValue> m_left;
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSQuadValue, isQuadValue());

@@ -12,7 +12,6 @@
 
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/channel.h"
 #include "webrtc/voice_engine/include/voe_errors.h"
@@ -924,7 +923,7 @@ int VoEAudioProcessingImpl::StartDebugRecording(const char* fileNameUTF8) {
     return -1;
   }
 
-  return _shared->audio_processing()->StartDebugRecording(fileNameUTF8);
+  return _shared->audio_processing()->StartDebugRecording(fileNameUTF8, -1);
 }
 
 int VoEAudioProcessingImpl::StartDebugRecording(FILE* file_handle) {
@@ -935,7 +934,7 @@ int VoEAudioProcessingImpl::StartDebugRecording(FILE* file_handle) {
     return -1;
   }
 
-  return _shared->audio_processing()->StartDebugRecording(file_handle);
+  return _shared->audio_processing()->StartDebugRecording(file_handle, -1);
 }
 
 int VoEAudioProcessingImpl::StopDebugRecording() {

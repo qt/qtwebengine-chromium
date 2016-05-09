@@ -31,6 +31,7 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "core/dom/DocumentType.h"
+#include "core/dom/StyleChangeReason.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
@@ -53,13 +54,17 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/api/LayoutViewItem.h"
 #include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/NavigationScheduler.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/paint/ObjectPainter.h"
+#include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -70,10 +75,13 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/StaticBitmapImage.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
+#include "platform/graphics/paint/TransformDisplayItem.h"
 #include "platform/text/TextStream.h"
+#include "public/platform/ServiceRegistry.h"
 #include "public/platform/WebFrameScheduler.h"
-#include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebScreenInfo.h"
 #include "public/platform/WebViewScheduler.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "wtf/PassOwnPtr.h"
@@ -85,27 +93,59 @@ using namespace HTMLNames;
 
 namespace {
 
-struct ScopedFramePaintingState {
+// Convenience class for initializing a GraphicsContext to build a DragImage from a specific
+// region specified by |bounds|. After painting the using context(), the DragImage returned from
+// createImage() will only contain the content in |bounds| with the appropriate device scale
+// factor included.
+class DragImageBuilder {
     STACK_ALLOCATED();
 public:
-    ScopedFramePaintingState(LocalFrame* frame, Node* node)
-        : frame(frame)
-        , node(node)
+    DragImageBuilder(const LocalFrame* localFrame, const FloatRect& bounds, Node* draggedNode, float opacity = 1)
+        : m_localFrame(localFrame)
+        , m_draggedNode(draggedNode)
+        , m_bounds(bounds)
+        , m_opacity(opacity)
     {
-        ASSERT(!node || node->layoutObject());
-        if (node)
-            node->layoutObject()->updateDragState(true);
+        if (m_draggedNode && m_draggedNode->layoutObject())
+            m_draggedNode->layoutObject()->updateDragState(true);
+
+        float deviceScaleFactor = m_localFrame->host()->deviceScaleFactor();
+        m_bounds.setWidth(m_bounds.width() * deviceScaleFactor);
+        m_bounds.setHeight(m_bounds.height() * deviceScaleFactor);
+        m_pictureBuilder = adoptPtr(new SkPictureBuilder(SkRect::MakeIWH(m_bounds.width(), m_bounds.height())));
+
+        AffineTransform transform;
+        transform.scale(deviceScaleFactor, deviceScaleFactor);
+        transform.translate(-m_bounds.x(), -m_bounds.y());
+        context().getPaintController().createAndAppend<BeginTransformDisplayItem>(*m_localFrame, transform);
     }
 
-    ~ScopedFramePaintingState()
+    GraphicsContext& context() { return m_pictureBuilder->context(); }
+
+    PassOwnPtr<DragImage> createImage()
     {
-        if (node && node->layoutObject())
-            node->layoutObject()->updateDragState(false);
-        frame->view()->setNodeToDraw(0);
+        if (m_draggedNode && m_draggedNode->layoutObject())
+            m_draggedNode->layoutObject()->updateDragState(false);
+        context().getPaintController().endItem<EndTransformDisplayItem>(*m_localFrame);
+        RefPtr<const SkPicture> recording = m_pictureBuilder->endRecording();
+        RefPtr<SkImage> skImage = adoptRef(SkImage::NewFromPicture(recording.get(),
+            SkISize::Make(m_bounds.width(), m_bounds.height()), nullptr, nullptr));
+        RefPtr<Image> image = StaticBitmapImage::create(skImage.release());
+        RespectImageOrientationEnum imageOrientation = DoNotRespectImageOrientation;
+        if (m_draggedNode && m_draggedNode->layoutObject())
+            imageOrientation = LayoutObject::shouldRespectImageOrientation(m_draggedNode->layoutObject());
+
+        float screenDeviceScaleFactor = m_localFrame->page()->chromeClient().screenInfo().deviceScaleFactor;
+
+        return DragImage::create(image.get(), imageOrientation, screenDeviceScaleFactor, InterpolationHigh, m_opacity);
     }
 
-    RawPtrWillBeMember<LocalFrame> frame;
-    RawPtrWillBeMember<Node> node;
+private:
+    Member<const LocalFrame> m_localFrame;
+    Member<Node> m_draggedNode;
+    FloatRect m_bounds;
+    float m_opacity;
+    OwnPtr<SkPictureBuilder> m_pictureBuilder;
 };
 
 inline float parentPageZoomFactor(LocalFrame* frame)
@@ -126,14 +166,14 @@ inline float parentTextZoomFactor(LocalFrame* frame)
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<LocalFrame> LocalFrame::create(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
+LocalFrame* LocalFrame::create(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner, ServiceRegistry* serviceRegistry)
 {
-    RefPtrWillBeRawPtr<LocalFrame> frame = adoptRefWillBeNoop(new LocalFrame(client, host, owner));
-    InspectorInstrumentation::frameAttachedToParent(frame.get());
-    return frame.release();
+    LocalFrame* frame = new LocalFrame(client, host, owner, serviceRegistry ? serviceRegistry : ServiceRegistry::getEmptyServiceRegistry());
+    InspectorInstrumentation::frameAttachedToParent(frame);
+    return frame;
 }
 
-void LocalFrame::setView(PassRefPtrWillBeRawPtr<FrameView> view)
+void LocalFrame::setView(FrameView* view)
 {
     ASSERT(!m_view || m_view != view);
     ASSERT(!document() || !document()->isActive());
@@ -157,7 +197,7 @@ void LocalFrame::createView(const IntSize& viewportSize, const Color& background
 
     setView(nullptr);
 
-    RefPtrWillBeRawPtr<FrameView> frameView = nullptr;
+    FrameView* frameView = nullptr;
     if (isLocalRoot) {
         frameView = FrameView::create(this, viewportSize);
 
@@ -196,17 +236,11 @@ LocalFrame::~LocalFrame()
     // Verify that the FrameView has been cleared as part of detaching
     // the frame owner.
     ASSERT(!m_view);
-#if !ENABLE(OILPAN)
-    // Oilpan: see setDOMWindow() comment why it is acceptable not to
-    // explicitly call setDOMWindow() here.
-    setDOMWindow(nullptr);
-#endif
 }
 
 DEFINE_TRACE(LocalFrame)
 {
     visitor->trace(m_instrumentingAgents);
-#if ENABLE(OILPAN)
     visitor->trace(m_loader);
     visitor->trace(m_navigationScheduler);
     visitor->trace(m_view);
@@ -219,10 +253,9 @@ DEFINE_TRACE(LocalFrame)
     visitor->trace(m_eventHandler);
     visitor->trace(m_console);
     visitor->trace(m_inputMethodController);
-    HeapSupplementable<LocalFrame>::trace(visitor);
-#endif
-    LocalFrameLifecycleNotifier::trace(visitor);
     Frame::trace(visitor);
+    LocalFrameLifecycleNotifier::trace(visitor);
+    Supplementable<LocalFrame>::trace(visitor);
 }
 
 DOMWindow* LocalFrame::domWindow() const
@@ -247,24 +280,22 @@ void LocalFrame::navigate(Document& originDocument, const KURL& url, bool replac
     if (isMainFrame() && !m_loader.stateMachine()->committedFirstRealDocumentLoad()) {
         FrameLoadRequest request(&originDocument, url);
         request.resourceRequest().setHasUserGesture(userGestureStatus == UserGestureStatus::Active);
-        m_loader.load(request);
+        navigate(request);
     } else {
-        m_navigationScheduler->scheduleLocationChange(&originDocument, url.string(), replaceCurrentItem);
+        m_navigationScheduler->scheduleLocationChange(&originDocument, url.getString(), replaceCurrentItem);
     }
 }
 
 void LocalFrame::navigate(const FrameLoadRequest& request)
 {
-    if (!isNavigationAllowed())
-        return;
     m_loader.load(request);
 }
 
 void LocalFrame::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedirectPolicy)
 {
-    ASSERT(loadType == FrameLoadTypeReload || loadType == FrameLoadTypeReloadFromOrigin);
-    ASSERT(clientRedirectPolicy == NotClientRedirect || loadType == FrameLoadTypeReload);
-    if (clientRedirectPolicy == NotClientRedirect) {
+    ASSERT(loadType == FrameLoadTypeReload || loadType == FrameLoadTypeReloadBypassingCache);
+    ASSERT(clientRedirectPolicy == ClientRedirectPolicy::NotClientRedirect || loadType == FrameLoadTypeReload);
+    if (clientRedirectPolicy == ClientRedirectPolicy::NotClientRedirect) {
         if (!m_loader.currentItem())
             return;
         FrameLoadRequest request = FrameLoadRequest(
@@ -279,9 +310,6 @@ void LocalFrame::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedir
 void LocalFrame::detach(FrameDetachType type)
 {
     PluginScriptForbiddenScope forbidPluginDestructorScripting;
-    // A lot of the following steps can result in the current frame being
-    // detached, so protect a reference to it.
-    RefPtrWillBeRawPtr<LocalFrame> protect(this);
     m_loader.stopAllLoaders();
     // Don't allow any new child frames to load in this frame: attaching a new
     // child frame during or after detaching children results in an attached
@@ -301,6 +329,10 @@ void LocalFrame::detach(FrameDetachType type)
     m_loader.stopAllLoaders();
     m_loader.detach();
     document()->detach();
+    // This is the earliest that scripting can be disabled:
+    // - FrameLoader::detach() can fire XHR abort events
+    // - Document::detach()'s deferred widget updates can run script.
+    ScriptForbiddenScope forbidScript;
     m_loader.clear();
     if (!client())
         return;
@@ -309,7 +341,6 @@ void LocalFrame::detach(FrameDetachType type)
     // Notify ScriptController that the frame is closing, since its cleanup ends up calling
     // back to FrameLoaderClient via WindowProxy.
     script().clearForClose();
-    ScriptForbiddenScope forbidScript;
     setView(nullptr);
     willDetachFrameHost();
     InspectorInstrumentation::frameDetachedFromParent(this);
@@ -318,28 +349,7 @@ void LocalFrame::detach(FrameDetachType type)
     // Signal frame destruction here rather than in the destructor.
     // Main motivation is to avoid being dependent on its exact timing (Oilpan.)
     LocalFrameLifecycleNotifier::notifyContextDestroyed();
-    // TODO(dcheng): Temporary, to debug https://crbug.com/531291.
-    // If this is true, we somehow re-entered LocalFrame::detach. But this is
-    // probably OK?
-    if (m_supplementStatus == SupplementStatus::Cleared)
-        RELEASE_ASSERT(m_supplements.isEmpty());
-    // If this is true, we somehow re-entered LocalFrame::detach in the middle
-    // of cleaning up supplements.
-    RELEASE_ASSERT(m_supplementStatus != SupplementStatus::Clearing);
-    RELEASE_ASSERT(m_supplementStatus == SupplementStatus::Uncleared);
-    m_supplementStatus = SupplementStatus::Clearing;
-
-    // TODO(haraken): Temporary code to debug https://crbug.com/531291.
-    // Check that m_supplements doesn't duplicate OwnPtrs.
-    HashSet<void*> supplementPointers;
-    for (auto& it : m_supplements) {
-        void* pointer = reinterpret_cast<void*>(it.value.get());
-        RELEASE_ASSERT(!supplementPointers.contains(pointer));
-        supplementPointers.add(pointer);
-    }
-
     m_supplements.clear();
-    m_supplementStatus = SupplementStatus::Cleared;
     WeakIdentifierMap<LocalFrame>::notifyObjectDestroyed(this);
 }
 
@@ -357,24 +367,15 @@ void LocalFrame::printNavigationErrorMessage(const Frame& targetFrame, const cha
 {
     // URLs aren't available for RemoteFrames, so the error message uses their
     // origin instead.
-    String targetFrameDescription = targetFrame.isLocalFrame() ? "with URL '" + toLocalFrame(targetFrame).document()->url().string() + "'" : "with origin '" + targetFrame.securityContext()->securityOrigin()->toString() + "'";
-    String message = "Unsafe JavaScript attempt to initiate navigation for frame " + targetFrameDescription + " from frame with URL '" + document()->url().string() + "'. " + reason + "\n";
+    String targetFrameDescription = targetFrame.isLocalFrame() ? "with URL '" + toLocalFrame(targetFrame).document()->url().getString() + "'" : "with origin '" + targetFrame.securityContext()->getSecurityOrigin()->toString() + "'";
+    String message = "Unsafe JavaScript attempt to initiate navigation for frame " + targetFrameDescription + " from frame with URL '" + document()->url().getString() + "'. " + reason + "\n";
 
     localDOMWindow()->printErrorMessage(message);
 }
 
-WindowProxyManager* LocalFrame::windowProxyManager() const
+WindowProxyManager* LocalFrame::getWindowProxyManager() const
 {
-    return m_script->windowProxyManager();
-}
-
-void LocalFrame::disconnectOwnerElement()
-{
-    if (owner()) {
-        if (Document* document = this->document())
-            document->topDocument().clearAXObjectCache();
-    }
-    Frame::disconnectOwnerElement();
+    return m_script->getWindowProxyManager();
 }
 
 bool LocalFrame::shouldClose()
@@ -393,13 +394,12 @@ void LocalFrame::willDetachFrameHost()
     // so page() could be null.
     if (page() && page()->focusController().focusedFrame() == this)
         page()->focusController().setFocusedFrame(nullptr);
-    script().clearScriptObjects();
 
     if (page() && page()->scrollingCoordinator() && m_view)
         page()->scrollingCoordinator()->willDestroyScrollableArea(m_view.get());
 }
 
-void LocalFrame::setDOMWindow(PassRefPtrWillBeRawPtr<LocalDOMWindow> domWindow)
+void LocalFrame::setDOMWindow(LocalDOMWindow* domWindow)
 {
     // Oilpan: setDOMWindow() cannot be used when finalizing. Which
     // is acceptable as its actions are either not needed or handled
@@ -440,12 +440,17 @@ LayoutView* LocalFrame::contentLayoutObject() const
     return document() ? document()->layoutView() : nullptr;
 }
 
+LayoutViewItem LocalFrame::contentLayoutItem() const
+{
+    return LayoutViewItem(contentLayoutObject());
+}
+
 void LocalFrame::didChangeVisibilityState()
 {
     if (document())
         document()->didChangeVisibilityState();
 
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> childFrames;
+    HeapVector<Member<LocalFrame>> childFrames;
     for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
             childFrames.append(toLocalFrame(child));
@@ -507,9 +512,9 @@ void LocalFrame::setPrinting(bool printing, const FloatSize& pageSize, const Flo
     }
 
     // Subframes of the one we're printing don't lay out to the page size.
-    for (RefPtrWillBeRawPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling()) {
+    for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
-            toLocalFrame(child.get())->setPrinting(printing, FloatSize(), FloatSize(), 0);
+            toLocalFrame(child)->setPrinting(printing, FloatSize(), FloatSize(), 0);
     }
 }
 
@@ -584,9 +589,9 @@ void LocalFrame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomF
     m_pageZoomFactor = pageZoomFactor;
     m_textZoomFactor = textZoomFactor;
 
-    for (RefPtrWillBeRawPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling()) {
+    for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
-            toLocalFrame(child.get())->setPageAndTextZoomFactors(m_pageZoomFactor, m_textZoomFactor);
+            toLocalFrame(child)->setPageAndTextZoomFactors(m_pageZoomFactor, m_textZoomFactor);
     }
 
     document->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Zoom));
@@ -596,9 +601,9 @@ void LocalFrame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomF
 void LocalFrame::deviceScaleFactorChanged()
 {
     document()->mediaQueryAffectingValueChanged();
-    for (RefPtrWillBeRawPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling()) {
+    for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
-            toLocalFrame(child.get())->deviceScaleFactorChanged();
+            toLocalFrame(child)->deviceScaleFactorChanged();
     }
 }
 
@@ -612,63 +617,27 @@ double LocalFrame::devicePixelRatio() const
     return ratio;
 }
 
-PassOwnPtr<DragImage> LocalFrame::paintIntoDragImage(
-    const DisplayItemClient& displayItemClient,
-    RespectImageOrientationEnum shouldRespectImageOrientation,
-    const GlobalPaintFlags globalPaintFlags, IntRect paintingRect, float opacity)
-{
-    ASSERT(document()->isActive());
-    // Not flattening compositing layers will result in a broken image being painted.
-    ASSERT(globalPaintFlags & GlobalPaintFlattenCompositingLayers);
-
-    float deviceScaleFactor = m_host->deviceScaleFactor();
-    paintingRect.setWidth(paintingRect.width() * deviceScaleFactor);
-    paintingRect.setHeight(paintingRect.height() * deviceScaleFactor);
-
-    // The content is shifted to origin, to fit within the image bounds - which are the same
-    // as the picture bounds.
-    SkRect pictureBounds = SkRect::MakeIWH(paintingRect.width(), paintingRect.height());
-    SkPictureBuilder pictureBuilder(pictureBounds);
-    {
-        GraphicsContext& paintContext = pictureBuilder.context();
-
-        AffineTransform transform;
-        transform.scale(deviceScaleFactor, deviceScaleFactor);
-        transform.translate(-paintingRect.x(), -paintingRect.y());
-        TransformRecorder transformRecorder(paintContext, displayItemClient, transform);
-
-        m_view->paintContents(paintContext, globalPaintFlags, paintingRect);
-
-    }
-    RefPtr<const SkPicture> recording = pictureBuilder.endRecording();
-    RefPtr<SkImage> skImage = adoptRef(SkImage::NewFromPicture(recording.get(),
-        SkISize::Make(paintingRect.width(), paintingRect.height()), nullptr, nullptr));
-    RefPtr<Image> image = StaticBitmapImage::create(skImage.release());
-
-    return DragImage::create(image.get(), shouldRespectImageOrientation, deviceScaleFactor,
-        InterpolationHigh, opacity);
-}
-
 PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
 {
-    if (!node.layoutObject())
-        return nullptr;
-
-    const ScopedFramePaintingState state(this, &node);
-
     m_view->updateAllLifecyclePhases();
-
-    m_view->setNodeToDraw(&node); // Enable special sub-tree drawing mode.
-
-    // Document::updateLayout may have blown away the original LayoutObject.
     LayoutObject* layoutObject = node.layoutObject();
     if (!layoutObject)
         return nullptr;
 
-    IntRect rect;
-
-    return paintIntoDragImage(*layoutObject, LayoutObject::shouldRespectImageOrientation(layoutObject),
-        GlobalPaintFlattenCompositingLayers, layoutObject->paintingRootRect(rect));
+    // Paint starting at the nearest self painting layer, clipped to the object itself.
+    // TODO(pdr): This will also paint the content behind the object if the object contains
+    // transparency but the layer is opaque. We could directly call layoutObject->paint(...)
+    // (see ObjectPainter::paintAllPhasesAtomically) but this would skip self-painting children.
+    PaintLayer* layer = layoutObject->enclosingLayer()->enclosingSelfPaintingLayer();
+    IntRect absoluteBoundingBox = layoutObject->absoluteBoundingBoxRectIncludingDescendants();
+    FloatRect boundingBox = layer->layoutObject()->absoluteToLocalQuad(FloatQuad(absoluteBoundingBox), UseTransforms).boundingBox();
+    DragImageBuilder dragImageBuilder(this, boundingBox, &node);
+    {
+        PaintLayerPaintingInfo paintingInfo(layer, LayoutRect(boundingBox), GlobalPaintFlattenCompositingLayers, LayoutSize(), 0);
+        PaintLayerFlags flags = PaintLayerHaveTransparency | PaintLayerAppliedTransform | PaintLayerUncachedClipRects;
+        PaintLayerPainter(*layer).paintLayer(dragImageBuilder.context(), paintingInfo, flags);
+    }
+    return dragImageBuilder.createImage();
 }
 
 PassOwnPtr<DragImage> LocalFrame::dragImageForSelection(float opacity)
@@ -676,12 +645,14 @@ PassOwnPtr<DragImage> LocalFrame::dragImageForSelection(float opacity)
     if (!selection().isRange())
         return nullptr;
 
-    const ScopedFramePaintingState state(this, 0);
     m_view->updateAllLifecyclePhases();
+    ASSERT(document()->isActive());
 
-    return paintIntoDragImage(*this, DoNotRespectImageOrientation,
-        GlobalPaintSelectionOnly | GlobalPaintFlattenCompositingLayers,
-        enclosingIntRect(selection().bounds()), opacity);
+    FloatRect paintingRect = FloatRect(selection().bounds());
+    DragImageBuilder dragImageBuilder(this, paintingRect, nullptr, opacity);
+    GlobalPaintFlags paintFlags = GlobalPaintSelectionOnly | GlobalPaintFlattenCompositingLayers;
+    m_view->paintContents(dragImageBuilder.context(), paintFlags, enclosingIntRect(paintingRect));
+    return dragImageBuilder.createImage();
 }
 
 String LocalFrame::selectedText() const
@@ -771,7 +742,12 @@ bool LocalFrame::isURLAllowed(const KURL& url) const
 
 bool LocalFrame::shouldReuseDefaultView(const KURL& url) const
 {
-    return loader().stateMachine()->isDisplayingInitialEmptyDocument() && document()->isSecureTransitionTo(url);
+    // Secure transitions can only happen when navigating from the initial empty
+    // document.
+    if (!loader().stateMachine()->isDisplayingInitialEmptyDocument())
+        return false;
+
+    return document()->isSecureTransitionTo(url);
 }
 
 void LocalFrame::removeSpellingMarkersUnderWords(const Vector<String>& words)
@@ -779,15 +755,7 @@ void LocalFrame::removeSpellingMarkersUnderWords(const Vector<String>& words)
     spellChecker().removeSpellingMarkersUnderWords(words);
 }
 
-static ScrollResult scrollAreaOnBothAxes(const FloatSize& delta, ScrollableArea& view)
-{
-    ScrollResultOneDimensional scrolledHorizontal = view.userScroll(ScrollLeft, ScrollByPrecisePixel, delta.width());
-    ScrollResultOneDimensional scrolledVertical = view.userScroll(ScrollUp, ScrollByPrecisePixel, delta.height());
-    return ScrollResult(scrolledHorizontal.didScroll, scrolledVertical.didScroll, scrolledHorizontal.unusedScrollDelta, scrolledVertical.unusedScrollDelta);
-}
-
-// Returns true if a scroll occurred.
-ScrollResult LocalFrame::applyScrollDelta(const FloatSize& delta, bool isScrollBegin)
+ScrollResult LocalFrame::applyScrollDelta(ScrollGranularity granularity, const FloatSize& delta, bool isScrollBegin)
 {
     if (isScrollBegin)
         host()->topControls().scrollBegin();
@@ -798,22 +766,25 @@ ScrollResult LocalFrame::applyScrollDelta(const FloatSize& delta, bool isScrollB
     FloatSize remainingDelta = delta;
 
     // If this is main frame, allow top controls to scroll first.
-    if (shouldScrollTopControls(delta))
+    if (shouldScrollTopControls(granularity, delta))
         remainingDelta = host()->topControls().scrollBy(remainingDelta);
 
     if (remainingDelta.isZero())
         return ScrollResult(delta.width(), delta.height(), 0.0f, 0.0f);
 
-    ScrollResult result = scrollAreaOnBothAxes(remainingDelta, *view()->scrollableArea());
+    ScrollResult result = view()->getScrollableArea()->userScroll(granularity, remainingDelta);
     result.didScrollX = result.didScrollX || (remainingDelta.width() != delta.width());
     result.didScrollY = result.didScrollY || (remainingDelta.height() != delta.height());
 
     return result;
 }
 
-bool LocalFrame::shouldScrollTopControls(const FloatSize& delta) const
+bool LocalFrame::shouldScrollTopControls(ScrollGranularity granularity, const FloatSize& delta) const
 {
     if (!isMainFrame())
+        return false;
+
+    if (granularity != ScrollByPixel && granularity != ScrollByPrecisePixel)
         return false;
 
     // Always give the delta to the top controls if the scroll is in
@@ -825,7 +796,7 @@ bool LocalFrame::shouldScrollTopControls(const FloatSize& delta) const
         toDoubleSize(view()->maximumScrollPositionDouble());
     DoublePoint scrollPosition = host()->visualViewport()
         .visibleRectInDocument().location();
-    return delta.height() > 0 || scrollPosition.y() < maximumScrollPosition.y();
+    return delta.height() < 0 || scrollPosition.y() < maximumScrollPosition.y();
 }
 
 String LocalFrame::localLayerTreeAsText(unsigned flags) const
@@ -841,7 +812,7 @@ bool LocalFrame::shouldThrottleRendering() const
     return view() && view()->shouldThrottleRendering();
 }
 
-inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
+inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner, ServiceRegistry* serviceRegistry)
     : Frame(client, host, owner)
     , m_loader(this)
     , m_navigationScheduler(NavigationScheduler::create(this))
@@ -849,13 +820,14 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
     , m_editor(Editor::create(*this))
     , m_spellChecker(SpellChecker::create(*this))
     , m_selection(FrameSelection::create(this))
-    , m_eventHandler(adoptPtrWillBeNoop(new EventHandler(this)))
+    , m_eventHandler(new EventHandler(this))
     , m_console(FrameConsole::create(*this))
     , m_inputMethodController(InputMethodController::create(*this))
     , m_navigationDisableCount(0)
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
     , m_inViewSourceMode(false)
+    , m_serviceRegistry(serviceRegistry)
 {
     if (isLocalRoot())
         m_instrumentingAgents = InstrumentingAgents::create();
@@ -866,7 +838,7 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
 WebFrameScheduler* LocalFrame::frameScheduler()
 {
     if (!m_frameScheduler.get())
-        m_frameScheduler = page()->chromeClient().createFrameScheduler();
+        m_frameScheduler = page()->chromeClient().createFrameScheduler(client()->frameBlameContext());
 
     ASSERT(m_frameScheduler.get());
     return m_frameScheduler.get();
@@ -877,12 +849,6 @@ void LocalFrame::scheduleVisualUpdateUnlessThrottled()
     if (shouldThrottleRendering())
         return;
     page()->animator().scheduleVisualUpdate(this);
-}
-
-void LocalFrame::updateSecurityOrigin(SecurityOrigin* origin)
-{
-    script().updateSecurityOrigin(origin);
-    frameScheduler()->setFrameOrigin(WebSecurityOrigin(origin));
 }
 
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);

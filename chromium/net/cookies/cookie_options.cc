@@ -10,8 +10,9 @@ namespace net {
 
 CookieOptions::CookieOptions()
     : exclude_httponly_(true),
-      include_first_party_only_cookies_(false),
+      same_site_cookie_mode_(SameSiteCookieMode::DO_NOT_INCLUDE),
       enforce_strict_secure_(false),
+      update_access_time_(true),
       server_time_() {}
 
 }  // namespace net

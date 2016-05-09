@@ -31,7 +31,6 @@ extern const char kAllowHttpScreenCapture[];
 extern const char kAllowInsecureLocalhost[];
 extern const char kAllowOutdatedPlugins[];
 extern const char kAllowRunningInsecureContent[];
-extern const char kAlternativeServiceProbabilityThreshold[];
 extern const char kAlwaysAuthorizePlugins[];
 extern const char kAppId[];
 extern const char kApp[];
@@ -42,6 +41,7 @@ extern const char kAppModeAuthCode[];
 extern const char kAppModeOAuth2Token[];
 extern const char kAuthExtensionPath[];
 extern const char kAuthServerWhitelist[];
+extern const char kAutoOpenDevToolsForTabs[];
 extern const char kAutoSelectDesktopCaptureSource[];
 extern const char kBypassAppBannerEngagementChecks[];
 extern const char kCertificateTransparencyLog[];
@@ -78,8 +78,7 @@ extern const char kDisableExtensionsFileAccessCheck[];
 extern const char kDisableExtensionsHttpThrottling[];
 extern const char kDisableExtensions[];
 extern const char kDisableFieldTrialTestingConfig[];
-extern const char kDisableJavaScriptHarmonyShipping[];
-extern const char kDisableMaterialDesignDownloads[];
+extern const char kDisableHttp2[];
 extern const char kDisableMinimizeOnSecondLauncherItemClick[];
 extern const char kDisableNewBookmarkApps[];
 extern const char kDisableNTPPopularSites[];
@@ -98,6 +97,7 @@ extern const char kDisableQuicPortSelection[];
 extern const char kDisableSessionCrashedBubble[];
 extern const char kDisableSiteEngagementService[];
 extern const char kDisableWebNotificationCustomLayouts[];
+extern const char kDisableWebUsbSecurity[];
 extern const char kDisableZeroBrowsersOpenForTests[];
 extern const char kDiskCacheDir[];
 extern const char kDiskCacheSize[];
@@ -120,9 +120,10 @@ extern const char kEnableExperimentalHotwordHardware[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
-extern const char kEnableMaterialDesignDownloads[];
+#if defined(GOOGLE_CHROME_BUILD)
+extern const char kEnableGoogleBrandedContextMenu[];
+#endif  // defined(GOOGLE_CHROME_BUILD)
 extern const char kEnableMaterialDesignExtensions[];
-extern const char kEnableMaterialDesignHistory[];
 extern const char kEnableMaterialDesignPolicyPage[];
 extern const char kEnableNaCl[];
 extern const char kEnableNativeNotifications[];
@@ -147,8 +148,6 @@ extern const char kEnableAlternativeServices[];
 extern const char kEnableSessionCrashedBubble[];
 extern const char kEnableSettingsWindow[];
 extern const char kDisableSettingsWindow[];
-extern const char kEnableSimplifiedFullscreenUI[];
-extern const char kDisableSimplifiedFullscreenUI[];
 extern const char kEnableSiteEngagementAppBanner[];
 extern const char kEnableSiteEngagementEvictionPolicy[];
 extern const char kEnableSiteEngagementService[];
@@ -182,7 +181,6 @@ extern const char kInstallSupervisedUserWhitelists[];
 extern const char kInstantProcess[];
 extern const char kInterestsURL[];
 extern const char kIpcDumpDirectory[];
-extern const char kJavaScriptHarmony[];
 extern const char kKeepAliveForTest[];
 extern const char kKioskMode[];
 extern const char kKioskModePrinting[];
@@ -192,8 +190,6 @@ extern const char kLoadExtension[];
 extern const char kLocalNtpReload[];
 #endif
 extern const char kMakeDefaultBrowser[];
-extern const char kManualEnhancedBookmarks[];
-extern const char kManualEnhancedBookmarksOptout[];
 extern const char kMediaCacheSize[];
 extern const char kMediaRouter[];
 extern const char kMessageLoopHistogrammer[];
@@ -267,8 +263,6 @@ extern const char kSpeculativeResourcePrefetchingLearning[];
 #if defined(OS_ANDROID)
 extern const char kEnableAndroidSpellChecker[];
 #endif
-extern const char kDisableMultilingualSpellChecker[];
-extern const char kEnableMultilingualSpellChecker[];
 extern const char kEnableSpellingFeedbackFieldTrial[];
 extern const char kSpellingServiceFeedbackUrl[];
 extern const char kSpellingServiceFeedbackIntervalSeconds[];
@@ -279,12 +273,10 @@ extern const char kSupervisedUserSafeSites[];
 extern const char kSupervisedUserSyncToken[];
 extern const char kSystemLogUploadFrequency[];
 extern const char kTestName[];
-extern const char kTrustedSpdyProxy[];
 extern const char kTryChromeAgain[];
 extern const char kUnlimitedStorage[];
 extern const char kUnsafelyTreatInsecureOriginAsSecure[];
 extern const char kUseSimpleCacheBackend[];
-extern const char kUseSpdy[];
 extern const char kUserAgent[];
 extern const char kUserDataDir[];
 extern const char kV8PacMojoInProcess[];
@@ -314,6 +306,12 @@ extern const char kForceShowUpdateMenuItemNewFeaturesSummary[];
 extern const char kForceShowUpdateMenuItemCustomSummary[];
 extern const char kForceShowUpdateMenuBadge[];
 extern const char kMarketUrlForTesting[];
+extern const char kTabManagementExperimentTypeDisabled[];
+extern const char kTabManagementExperimentTypeAnise[];
+extern const char kTabManagementExperimentTypeBasil[];
+extern const char kTabManagementExperimentTypeChive[];
+extern const char kTabManagementExperimentTypeDill[];
+extern const char kTabManagementExperimentTypeElderberry[];
 #endif  // defined(OS_ANDROID)
 
 #if defined(USE_ASH)
@@ -324,10 +322,6 @@ extern const char kOpenAsh[];
 extern const char kHelp[];
 extern const char kHelpShort[];
 extern const char kPasswordStore[];
-#endif
-
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-extern const char kMigrateDataDirForSxS[];
 #endif
 
 #if defined(OS_MACOSX)
@@ -353,20 +347,15 @@ extern const char kRelauncherProcessDMGDevice[];
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN)
-extern const char kCrashpadHandler[];
 extern const char kEnableCloudPrintXps[];
 extern const char kEnableProfileShortcutManager[];
-extern const char kForceDesktop[];
-extern const char kForceImmersive[];
 extern const char kHideIcons[];
 extern const char kNoNetworkProfileWarning[];
 extern const char kPrefetchArgumentBrowserBackground[];
 extern const char kPrefetchArgumentWatcher[];
-extern const char kRelaunchShortcut[];
 extern const char kShowIcons[];
 extern const char kUninstall[];
 extern const char kViewerLaunchViaAppId[];
-extern const char kWaitForMutex[];
 extern const char kWatcherProcess[];
 extern const char kWindows8Search[];
 #endif  // defined(OS_WIN)
@@ -405,7 +394,6 @@ extern const char kDisableInputImeAPI[];
 
 bool AboutInSettingsEnabled();
 bool MdExtensionsEnabled();
-bool MdHistoryEnabled();
 bool MdPolicyPageEnabled();
 bool PdfMaterialUIEnabled();
 bool SettingsWindowEnabled();

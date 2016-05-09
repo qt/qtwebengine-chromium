@@ -11,14 +11,11 @@
 #import <Foundation/Foundation.h>
 
 /**
- * Represents the state of the track. This exposes the same states in C++,
- * which include two more states than are in the W3C spec.
+ * Represents the state of the track. This exposes the same states in C++.
  */
 typedef NS_ENUM(NSInteger, RTCMediaStreamTrackState) {
-  RTCMediaStreamTrackStateInitializing,
   RTCMediaStreamTrackStateLive,
-  RTCMediaStreamTrackStateEnded,
-  RTCMediaStreamTrackStateFailed,
+  RTCMediaStreamTrackStateEnded
 };
 
 NS_ASSUME_NONNULL_BEGIN
@@ -35,7 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) NSString *trackId;
 
 /** The enabled state of the track. */
-@property(nonatomic) BOOL isEnabled;
+@property(nonatomic, assign) BOOL isEnabled;
 
 /** The state of the track. */
 @property(nonatomic, readonly) RTCMediaStreamTrackState readyState;

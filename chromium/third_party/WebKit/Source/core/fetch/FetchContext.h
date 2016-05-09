@@ -43,12 +43,14 @@
 namespace blink {
 
 class KURL;
+class MHTMLArchive;
 class ResourceError;
 class ResourceLoader;
 class ResourceResponse;
 class ResourceRequest;
 class ResourceTimingInfo;
 class WebTaskRunner;
+enum class WebCachePolicy;
 
 enum FetchResourceType {
     FetchMainResource,
@@ -70,20 +72,20 @@ public:
 
     virtual void addAdditionalRequestHeaders(ResourceRequest&, FetchResourceType);
     virtual void setFirstPartyForCookies(ResourceRequest&);
-    virtual CachePolicy cachePolicy() const;
-    virtual ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type) const;
+    virtual CachePolicy getCachePolicy() const;
+    virtual WebCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type, FetchRequest::DeferOption) const;
 
     virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority, int intraPriorityValue);
     virtual void dispatchWillSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo());
-    virtual void dispatchDidLoadResourceFromMemoryCache(const Resource*);
-    virtual void dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0);
+    virtual void dispatchDidLoadResourceFromMemoryCache(const Resource*, WebURLRequest::FrameType, WebURLRequest::RequestContext);
+    virtual void dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse&, WebURLRequest::FrameType, WebURLRequest::RequestContext, ResourceLoader* = 0);
     virtual void dispatchDidReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
     virtual void dispatchDidDownloadData(unsigned long identifier, int dataLength, int encodedDataLength);
     virtual void dispatchDidFinishLoading(unsigned long identifier, double finishTime, int64_t encodedDataLength);
     virtual void dispatchDidFail(unsigned long identifier, const ResourceError&, bool isInternalRequest);
 
     virtual bool shouldLoadNewResource(Resource::Type) const { return false; }
-    virtual void willStartLoadingResource(ResourceRequest&);
+    virtual void willStartLoadingResource(Resource*, ResourceRequest&);
     virtual void didLoadResource(Resource*);
 
     virtual void addResourceTiming(const ResourceTimingInfo&);
@@ -101,10 +103,12 @@ public:
     virtual bool updateTimingInfoForIFrameNavigation(ResourceTimingInfo*) { return false; }
     virtual void sendImagePing(const KURL&);
     virtual void addConsoleMessage(const String&) const;
-    virtual SecurityOrigin* securityOrigin() const { return nullptr; }
+    virtual SecurityOrigin* getSecurityOrigin() const { return nullptr; }
     virtual void upgradeInsecureRequest(FetchRequest&);
     virtual void addClientHintsIfNecessary(FetchRequest&);
     virtual void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&);
+
+    virtual MHTMLArchive* archive() const { return nullptr; }
 
     virtual ResourceLoadPriority modifyPriorityForExperiments(ResourceLoadPriority priority, Resource::Type, const FetchRequest&, ResourcePriority::VisibilityStatus) { return priority; }
 
@@ -114,6 +118,6 @@ protected:
     FetchContext() { }
 };
 
-}
+} // namespace blink
 
 #endif

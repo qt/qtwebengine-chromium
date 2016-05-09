@@ -34,9 +34,9 @@ class EditingStyle;
 
 class InsertParagraphSeparatorCommand final : public CompositeEditCommand {
 public:
-    static PassRefPtrWillBeRawPtr<InsertParagraphSeparatorCommand> create(Document& document, bool useDefaultParagraphElement = false, bool pasteBlockquoteIntoUnquotedArea = false)
+    static RawPtr<InsertParagraphSeparatorCommand> create(Document& document, bool useDefaultParagraphElement = false, bool pasteBlockquoteIntoUnquotedArea = false)
     {
-        return adoptRefWillBeNoop(new InsertParagraphSeparatorCommand(document, useDefaultParagraphElement, pasteBlockquoteIntoUnquotedArea));
+        return new InsertParagraphSeparatorCommand(document, useDefaultParagraphElement, pasteBlockquoteIntoUnquotedArea);
     }
 
     DECLARE_VIRTUAL_TRACE();
@@ -44,23 +44,23 @@ public:
 private:
     InsertParagraphSeparatorCommand(Document&, bool useDefaultParagraphElement, bool pasteBlockquoteIntoUnquotedArea);
 
-    void doApply() override;
+    void doApply(EditingState*) override;
 
     void calculateStyleBeforeInsertion(const Position&);
-    void applyStyleAfterInsertion(Element* originalEnclosingBlock);
-    void getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors);
-    PassRefPtrWillBeRawPtr<Element> cloneHierarchyUnderNewBlock(const WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors, PassRefPtrWillBeRawPtr<Element> blockToInsert);
+    void applyStyleAfterInsertion(Element* originalEnclosingBlock, EditingState*);
+    void getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, HeapVector<Member<Element>>& ancestors);
+    RawPtr<Element> cloneHierarchyUnderNewBlock(const HeapVector<Member<Element>>& ancestors, RawPtr<Element> blockToInsert, EditingState*);
 
     bool shouldUseDefaultParagraphElement(Element*) const;
 
     bool preservesTypingStyle() const override;
 
-    RefPtrWillBeMember<EditingStyle> m_style;
+    Member<EditingStyle> m_style;
 
     bool m_mustUseDefaultParagraphElement;
     bool m_pasteBlockquoteIntoUnquotedArea;
 };
 
-}
+} // namespace blink
 
 #endif

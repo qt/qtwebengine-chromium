@@ -3,17 +3,6 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'conditions': [
-      ['OS=="ios"', {
-        'exclude_nss_root_certs%': 0,
-        'exclude_nss_libpkix%': 0,
-      }, {
-        'exclude_nss_root_certs%': 1,
-        'exclude_nss_libpkix%': 1,
-      }],
-    ],
-  },
   'target_defaults': {
     'configurations': {
       'Debug': {
@@ -28,21 +17,6 @@
         ],
       },
     },
-    'conditions': [
-      ['OS=="win"', {
-        'configurations': {
-          'Common_Base': {
-            'msvs_configuration_attributes': {
-              # Do not compile NSPR and NSS with /D _UNICODE /D UNICODE.
-              'CharacterSet': '0'
-            }
-          }
-        },
-        'defines!': [
-          'WIN32_LEAN_AND_MEAN',
-        ],
-      }],
-    ],
   },
   'conditions': [
     # To ensure no dependency on NSS is accidentally added to a BoringSSL port,
@@ -136,10 +110,7 @@
             'nspr/pr/include/prtypes.h',
             'nspr/pr/include/prvrsion.h',
             'nspr/pr/include/prwin16.h',
-            'nspr/pr/src/io/prdir.c',
             'nspr/pr/src/io/prfdcach.c',
-            'nspr/pr/src/io/prfile.c',
-            'nspr/pr/src/io/prio.c',
             'nspr/pr/src/io/priometh.c',
             'nspr/pr/src/io/pripv6.c',
             'nspr/pr/src/io/prlayer.c',
@@ -150,7 +121,6 @@
             'nspr/pr/src/io/prpolevt.c',
             'nspr/pr/src/io/prprf.c',
             'nspr/pr/src/io/prscanf.c',
-            'nspr/pr/src/io/prsocket.c',
             'nspr/pr/src/io/prstdio.c',
             'nspr/pr/src/linking/prlink.c',
             'nspr/pr/src/malloc/prmalloc.c',
@@ -166,21 +136,6 @@
             'nspr/pr/src/md/unix/uxrng.c',
             'nspr/pr/src/md/unix/uxshm.c',
             'nspr/pr/src/md/unix/uxwrap.c',
-            'nspr/pr/src/md/windows/ntgc.c',
-            'nspr/pr/src/md/windows/ntinrval.c',
-            'nspr/pr/src/md/windows/ntmisc.c',
-            'nspr/pr/src/md/windows/ntsec.c',
-            'nspr/pr/src/md/windows/ntsem.c',
-            'nspr/pr/src/md/windows/w32ipcsem.c',
-            'nspr/pr/src/md/windows/w32poll.c',
-            'nspr/pr/src/md/windows/w32rng.c',
-            'nspr/pr/src/md/windows/w32shm.c',
-            'nspr/pr/src/md/windows/w95cv.c',
-            'nspr/pr/src/md/windows/w95dllmain.c',
-            'nspr/pr/src/md/windows/w95io.c',
-            'nspr/pr/src/md/windows/w95sock.c',
-            'nspr/pr/src/md/windows/w95thred.c',
-            'nspr/pr/src/md/windows/win32_errors.c',
             'nspr/pr/src/memory/prseg.c',
             'nspr/pr/src/memory/prshm.c',
             'nspr/pr/src/memory/prshma.c',
@@ -196,7 +151,6 @@
             'nspr/pr/src/misc/prinit.c',
             'nspr/pr/src/misc/prinrval.c',
             'nspr/pr/src/misc/pripc.c',
-            'nspr/pr/src/misc/pripcsem.c',
             'nspr/pr/src/misc/prlog2.c',
             'nspr/pr/src/misc/prlong.c',
             'nspr/pr/src/misc/prnetdb.c',
@@ -211,17 +165,8 @@
             'nspr/pr/src/pthreads/ptmisc.c',
             'nspr/pr/src/pthreads/ptsynch.c',
             'nspr/pr/src/pthreads/ptthread.c',
-            'nspr/pr/src/threads/combined/prucpu.c',
-            'nspr/pr/src/threads/combined/prucv.c',
-            'nspr/pr/src/threads/combined/prulock.c',
-            'nspr/pr/src/threads/combined/prustack.c',
-            'nspr/pr/src/threads/combined/pruthr.c',
             'nspr/pr/src/threads/prcmon.c',
-            'nspr/pr/src/threads/prcthr.c',
-            'nspr/pr/src/threads/prdump.c',
-            'nspr/pr/src/threads/prmon.c',
             'nspr/pr/src/threads/prrwlock.c',
-            'nspr/pr/src/threads/prsem.c',
             'nspr/pr/src/threads/prtpd.c',
           ],
           'defines': [
@@ -244,8 +189,6 @@
               'nspr/lib/libc/include',
             ],
           },
-          # TODO(wtc): suppress C4244 and C4554 in prdtoa.c.
-          'msvs_disabled_warnings': [4018, 4244, 4554, 4267,],
           'variables': {
             'clang_warning_flags': [
               # nspr passes "const char*" through "void*".
@@ -259,71 +202,23 @@
             ],
           },
           'conditions': [
-            ['OS=="mac" or OS=="ios"', {
+            ['OS=="ios"', {
               'defines': [
                 'XP_UNIX',
                 'DARWIN',
                 'XP_MACOSX',
                 '_PR_PTHREADS',
                 'HAVE_BSD_FLOCK',
-                'HAVE_CRT_EXTERNS_H',
                 'HAVE_DLADDR',
                 'HAVE_LCHOWN',
                 'HAVE_SOCKLEN_T',
                 'HAVE_STRERROR',
               ],
-              'sources/': [
-                ['exclude', '^nspr/pr/src/md/windows/'],
-                ['exclude', '^nspr/pr/src/threads/combined/'],
-              ],
               'sources!': [
-                'nspr/pr/src/io/prdir.c',
-                'nspr/pr/src/io/prfile.c',
-                'nspr/pr/src/io/prio.c',
-                'nspr/pr/src/io/prsocket.c',
-                # os_Darwin_x86.s and os_Darwin_x86_64.s are included by
-                # os_Darwin.s.
-                'nspr/pr/src/md/unix/os_Darwin_x86.s',
-                'nspr/pr/src/md/unix/os_Darwin_x86_64.s',
-                'nspr/pr/src/misc/pripcsem.c',
-                'nspr/pr/src/threads/prcthr.c',
-                'nspr/pr/src/threads/prdump.c',
-                'nspr/pr/src/threads/prmon.c',
-                'nspr/pr/src/threads/prsem.c',
-              ],
-            }],
-            ['OS=="mac"', {
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
-                  '$(SDKROOT)/System/Library/Frameworks/CoreServices.framework',
-                ],
-              },
-            }],
-            ['OS=="ios"', {
-              'defines!': [
-                'HAVE_CRT_EXTERNS_H',
-              ],
-            }],
-            ['OS=="win"', {
-              'defines': [
-                'XP_PC',
-                'WIN32',
-                'WIN95',
-                '_PR_GLOBAL_THREADS_ONLY',
-                '_CRT_SECURE_NO_WARNINGS',
-                '_CRT_NONSTDC_NO_WARNINGS',
-              ],
-              'sources/': [
-                ['exclude', '^nspr/pr/src/md/unix/'],
-                ['exclude', '^nspr/pr/src/pthreads/'],
-              ],
-              'conditions': [
-                ['target_arch=="ia32"', {
-                  'defines': [
-                    '_X86_',
-                  ],
-                }],
+                 # os_Darwin_x86.s and os_Darwin_x86_64.s are included by
+                 # os_Darwin.s.
+                 'nspr/pr/src/md/unix/os_Darwin_x86.s',
+                 'nspr/pr/src/md/unix/os_Darwin_x86_64.s',
               ],
             }],
             ['component == "static_library"', {
@@ -353,35 +248,17 @@
           'type': '<(component)',
           'dependencies': [
             'nss_static',
+            'nssckbi',
           ],
           'export_dependent_settings': [
             'nss_static',
+            'nssckbi',
           ],
           'sources': [
             # Ensure at least one object file is produced, so that MSVC does not
             # warn when creating the static/shared library. See the note for
             # the 'nssckbi' target for why the 'nss' target was split as such.
             'nss/lib/nss/nssver.c',
-          ],
-          'conditions': [
-            ['exclude_nss_root_certs==0', {
-              'dependencies': [
-                'nssckbi',
-              ],
-              'export_dependent_settings': [
-                'nssckbi',
-              ],
-            }],
-            ['OS == "mac" and component == "shared_library"', {
-              'xcode_settings': {
-                'OTHER_LDFLAGS': ['-all_load'],
-              },
-            }],
-            ['OS == "win" and component == "shared_library"', {
-              'sources': [
-                'nss/exports_win.def',
-              ],
-            }],
           ],
         },
         {
@@ -460,71 +337,6 @@
               'nss/lib/ckfw/builtins',
             ],
           },
-        },
-        {
-          # This target contains files compiled for AVX. The code calling the
-          # functions in this target has to check if the current CPU supports AVX.
-          'target_name': 'nss_static_avx',
-          'suppress_wildcard': 1,
-          'conditions': [
-            ['OS!="win" or target_arch!="ia32"', {
-              'type': 'none',
-            }, {
-              'type': 'static_library',
-              'sources': [
-                'nss/lib/freebl/intel-gcm-wrap.c',
-                'nss/lib/freebl/intel-gcm-x86-masm.asm',
-                'nss/lib/freebl/intel-gcm.h',
-              ],
-              'defines': [
-                'INTEL_GCM',
-                'NSS_X86_OR_X64',
-                'NSS_X86',
-                'MP_API_COMPATIBLE',
-                'MP_ASSEMBLY_DIV_2DX1D',
-                'MP_ASSEMBLY_MULTIPLY',
-                'MP_ASSEMBLY_SQUARE',
-                'MP_ASSEMBLY_DIV_2DX1D',
-                'MP_USE_UINT_DIGIT',
-                'MP_NO_MP_WORD',
-                'MP_USE_UINT_DIGIT',
-                'NSS_DISABLE_DBM',
-                'NSS_STATIC',
-                'NSS_USE_STATIC_LIBS',
-                'NSS_X86',
-                'NSS_X86_OR_X64',
-                'RIJNDAEL_INCLUDE_TABLES',
-                'SHLIB_PREFIX=\"\"',
-                'SHLIB_SUFFIX=\"dll\"',
-                'SHLIB_VERSION=\"3\"',
-                'SOFTOKEN_LIB_NAME=\"softokn3.dll\"',
-                'SOFTOKEN_SHLIB_VERSION=\"3\"',
-                'USE_HW_AES',
-                'USE_UTIL_DIRECTLY',
-                'WIN32',
-                'WIN95',
-                'XP_PC',
-                '_WINDOWS',
-                '_X86_',
-              ],
-              'include_dirs': [
-                'nspr/pr/include',
-                'nspr/lib/ds',
-                'nspr/lib/libc/include',
-                'nss/lib/freebl/ecl',
-                'nss/lib/util',
-              ],
-              'msvs_disabled_warnings': [4018],
-              'msvs_settings': {
-                'MASM': {
-                  'UseSafeExceptionHandlers': 'true',
-                },
-                'VCCLCompilerTool': {
-                  'EnableEnhancedInstructionSet': '3',  # Enable AVX.
-                },
-              },
-            }],
-          ],
         },
         {
           'target_name': 'nss_static',
@@ -614,9 +426,9 @@
             'nss/lib/freebl/blapit.h',
             'nss/lib/freebl/camellia.c',
             'nss/lib/freebl/camellia.h',
-            'nss/lib/freebl/chacha20/chacha20.c',
-            'nss/lib/freebl/chacha20/chacha20.h',
-            'nss/lib/freebl/chacha20/chacha20_vec.c',
+            'nss/lib/freebl/chacha20.c',
+            'nss/lib/freebl/chacha20.h',
+            'nss/lib/freebl/chacha20_vec.c',
             'nss/lib/freebl/chacha20poly1305.c',
             'nss/lib/freebl/chacha20poly1305.h',
             'nss/lib/freebl/ctr.c',
@@ -653,7 +465,6 @@
             'nss/lib/freebl/ecl/ec_naf.c',
             'nss/lib/freebl/gcm.c',
             'nss/lib/freebl/gcm.h',
-            'nss/lib/freebl/intel-aes-x86-masm.asm',
             'nss/lib/freebl/intel-aes.h',
             'nss/lib/freebl/hmacct.c',
             'nss/lib/freebl/hmacct.h',
@@ -666,10 +477,8 @@
             'nss/lib/freebl/mpi/mpi-priv.h',
             'nss/lib/freebl/mpi/mpi.c',
             'nss/lib/freebl/mpi/mpi.h',
-            'nss/lib/freebl/mpi/mpi_amd64.c',
             'nss/lib/freebl/mpi/mpi_arm.c',
             'nss/lib/freebl/mpi/mpi_arm_mac.c',
-            'nss/lib/freebl/mpi/mpi_x86_asm.c',
             'nss/lib/freebl/mpi/mplogic.c',
             'nss/lib/freebl/mpi/mplogic.h',
             'nss/lib/freebl/mpi/mpmontg.c',
@@ -680,9 +489,9 @@
             'nss/lib/freebl/mpi/mp_gf2m.h',
             'nss/lib/freebl/mpi/primes.c',
             'nss/lib/freebl/nss_build_config_mac.h',
-            'nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c',
-            'nss/lib/freebl/poly1305/poly1305.c',
-            'nss/lib/freebl/poly1305/poly1305.h',
+            'nss/lib/freebl/poly1305-donna-x64-sse2-incremental-source.c',
+            'nss/lib/freebl/poly1305.c',
+            'nss/lib/freebl/poly1305.h',
             'nss/lib/freebl/pqg.c',
             'nss/lib/freebl/pqg.h',
             'nss/lib/freebl/rawhash.c',
@@ -794,16 +603,6 @@
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.h',
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpdefaultclient.c',
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpdefaultclient.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.c',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.c',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.c',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.c',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapt.h',
-            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaptemplates.c',
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_nsscontext.c',
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_nsscontext.h',
             'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_pk11certstore.c',
@@ -1056,7 +855,6 @@
           ],
           'dependencies': [
             'nspr',
-            'nss_static_avx',
             '../sqlite/sqlite.gyp:sqlite',
           ],
           'export_dependent_settings': [
@@ -1071,6 +869,7 @@
             'SHLIB_VERSION=\"3\"',
             'SOFTOKEN_SHLIB_VERSION=\"3\"',
             'USE_UTIL_DIRECTLY',
+            'NSS_PKIX_NO_LDAP',
           ],
           'include_dirs': [
             'nss/lib/base',
@@ -1128,7 +927,6 @@
               'nss/lib/util',
             ],
           },
-          'msvs_disabled_warnings': [4018, 4101, 4267, ],
           'variables': {
             'clang_warning_flags': [
               # nss doesn't explicitly cast between different enum types.
@@ -1147,60 +945,18 @@
             ],
           },
           'conditions': [
-            ['exclude_nss_root_certs==1', {
-              'defines': [
-                'NSS_DISABLE_ROOT_CERTS',
-              ],
-            }],
-            ['exclude_nss_libpkix==1', {
-              'defines': [
-                'NSS_DISABLE_LIBPKIX',
-              ],
-              'sources/': [
-                ['exclude', '^nss/lib/libpkix/'],
-              ],
-              'sources!': [
-                'nss/lib/certhigh/certvfypkix.c',
-                'nss/lib/certhigh/certvfypkixprint.c',
-              ],
-              'include_dirs/': [
-                ['exclude', '^nss/lib/libpkix/'],
-              ],
-            }, { # else: exclude_nss_libpkix==0
-              # Disable the LDAP code in libpkix.
-              'defines': [
-                'NSS_PKIX_NO_LDAP',
-              ],
-              'sources!': [
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.c',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.h',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.c',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.h',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.c',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.h',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.c',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.h',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapt.h',
-                'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaptemplates.c',
-              ],
-            }],
-            ['target_arch=="ia32"', {
-              'sources!': [
-                'nss/lib/freebl/mpi/mpi_amd64.c',
-              ],
-            }],
             ['target_arch=="x64" and OS!="win"', {
               'sources!': [
-                'nss/lib/freebl/chacha20/chacha20.c',
-                'nss/lib/freebl/poly1305/poly1305.c',
+                'nss/lib/freebl/chacha20.c',
+                'nss/lib/freebl/poly1305.c',
                 ],
             }, { # else: target_arch!="x64" or OS=="win"
               'sources!': [
-                'nss/lib/freebl/chacha20/chacha20_vec.c',
-                'nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c',
+                'nss/lib/freebl/chacha20_vec.c',
+                'nss/lib/freebl/poly1305-donna-x64-sse2-incremental-source.c',
                 ],
             }],
-            ['OS=="mac" or OS=="ios"', {
+            ['OS=="ios"', {
               'defines': [
                 'XP_UNIX',
                 'DARWIN',
@@ -1209,9 +965,6 @@
                 'SHLIB_SUFFIX=\"dylib\"',
                 'SHLIB_PREFIX=\"lib\"',
                 'SOFTOKEN_LIB_NAME=\"libsoftokn3.dylib\"',
-              ],
-              'sources!': [
-                'nss/lib/freebl/mpi/mpi_amd64.c',
               ],
               'variables': {
                 'forced_include_file': 'nss_build_config_mac.h',
@@ -1228,69 +981,6 @@
                   '-include', '<(forced_include_file)',
                 ],
               },
-            }, { # else: OS!="mac" and OS!="ios"
-              'sources!': [
-                'nss/lib/freebl/mpi/mpi_arm_mac.c',
-              ],
-            }],
-            ['OS=="win"', {
-              'defines': [
-                'SHLIB_SUFFIX=\"dll\"',
-                'SHLIB_PREFIX=\"\"',
-                'SOFTOKEN_LIB_NAME=\"softokn3.dll\"',
-                'XP_PC',
-                'WIN32',
-                'WIN95',
-                '_WINDOWS',
-              ],
-              'direct_dependent_settings': {
-                'defines': [
-                  '_WINDOWS',
-                ],
-              },
-              'conditions': [
-                ['target_arch=="ia32"', {
-                  'defines': [
-                    'NSS_X86_OR_X64',
-                    'NSS_X86',
-                    '_X86_',
-                    'MP_ASSEMBLY_MULTIPLY',
-                    'MP_ASSEMBLY_SQUARE',
-                    'MP_ASSEMBLY_DIV_2DX1D',
-                    'MP_USE_UINT_DIGIT',
-                    'MP_NO_MP_WORD',
-                    'USE_HW_AES',
-                    'INTEL_GCM',
-                  ],
-                  'msvs_settings': {
-                    'MASM': {
-                      'UseSafeExceptionHandlers': 'true',
-                    },
-                  },
-                }],
-                ['target_arch=="x64"', {
-                  'defines': [
-                    'NSS_USE_64',
-                    'NSS_X86_OR_X64',
-                    'NSS_X64',
-                    '_AMD64_',
-                    'MP_CHAR_STORE_SLOW',
-                    'MP_IS_LITTLE_ENDIAN',
-                    'WIN64',
-                  ],
-                  'sources!': [
-                    'nss/lib/freebl/intel-aes-x86-masm.asm',
-                    'nss/lib/freebl/mpi/mpi_amd64.c',
-                    'nss/lib/freebl/mpi/mpi_x86_asm.c',
-                  ],
-                }],
-              ],
-            }, { # else: OS!="win"
-              'sources!': [
-                'nss/lib/freebl/intel-aes-x86-masm.asm',
-                # mpi_x86_asm.c contains MSVC inline assembly code.
-                'nss/lib/freebl/mpi/mpi_x86_asm.c',
-              ],
             }],
           ],
         },

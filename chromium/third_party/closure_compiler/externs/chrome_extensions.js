@@ -6,7 +6,7 @@
 // S:::::S                    T:::::T        O:::::O     O:::::O  P::::P     P:::::P
 //  S::::SSSS                                                     P::::PPPPPP:::::P
 //   SS::::::SSSSS       This file is generated. To update it,    P:::::::::::::PP
-//     SSS::::::::SS          run roll_compiler_version.          P::::PPPPPPPPP
+//     SSS::::::::SS          run roll_closure_compiler.          P::::PPPPPPPPP
 //        SSSSSS::::S                                             P::::P
 //             S:::::S        T:::::T        O:::::O     O:::::O  P::::P
 //             S:::::S        T:::::T        O::::::O   O::::::O  P::::P
@@ -180,9 +180,24 @@
  * bottom of this file.
  *
  * G. Enums
- * The Chrome extension APIs define many enums that define a set of acceptable
- * strings, however, they do not reify those enum types, therefore, enum
- * parameters should be defined as {@code string}.
+ * An enum's type name and the name of its members must be included in an
+ * externs file, but the values of its members are ignored by the compiler.
+ * To make it clear enums are not being *defined* in this file, we set
+ * string enum values to the empty string (at this time, there are no
+ * known enums of other types).
+ *
+ * As of Mar 2016, the chrome extension docs are incomplete wrt to enums
+ * as they don't list the member names, only their string values. This means
+ * extension authors will tend to use string literals. Therefore, whereever
+ * an enum type should be used, we support either the enum or a string. Once
+ * the docs are complete, new uses of enums will no longer need the "or string"
+ * portion of the type.
+ *
+ * Finally, most places in this file where enums should be used are using only
+ * string. This is historical and is no longer the recommended practice.
+ *
+ * See enum chrome.wallpaper.WallpaperLayout and chrome.wallpaper.setWallpaper's
+ * param for examples.
  *
  * @externs
  *
@@ -403,14 +418,14 @@ chrome.app.window.AppWindow.prototype.hide = function() {};
 
 
 /**
- * @return {!chrome.app.window.Bounds} The current window bounds.
+ * @return {!chrome.app.window.ContentBounds} The current window bounds.
  * @see http://developer.chrome.com/apps/app.window.html#type-AppWindow
  */
 chrome.app.window.AppWindow.prototype.getBounds = function() {};
 
 
 /**
- * @param {!chrome.app.window.Bounds} bounds The new window bounds.
+ * @param {!chrome.app.window.ContentBounds} bounds The new window bounds.
  * @see http://developer.chrome.com/apps/app.window.html#type-AppWindow
  */
 chrome.app.window.AppWindow.prototype.setBounds = function(bounds) {};
@@ -429,6 +444,24 @@ chrome.app.window.AppWindow.prototype.isAlwaysOnTop = function() {};
  * @see http://developer.chrome.com/apps/app.window.html#type-AppWindow
  */
 chrome.app.window.AppWindow.prototype.setAlwaysOnTop = function(alwaysOnTop) {};
+
+
+/**
+ * @param {boolean} alwaysVisible Set whether the window is visible on all
+ *     workspaces.
+ * @see http://developer.chrome.com/apps/app.window.html#type-AppWindow
+ */
+chrome.app.window.AppWindow.prototype.setVisibleOnAllWorkspaces =
+    function(alwaysVisible) {};
+
+
+/**
+ * @param {boolean} wantAllKeys Set whether the window should get all keyboard
+ *     events including system keys that are usually not sent.
+ * @see http://developer.chrome.com/apps/app.window.html#type-AppWindow
+ */
+chrome.app.window.AppWindow.prototype.setInterceptAllKeys =
+    function(wantAllKeys) {};
 
 
 /** @type {!ChromeEvent} */
@@ -457,6 +490,10 @@ chrome.app.window.AppWindow.prototype.onRestored;
 
 /** @type {!Window} */
 chrome.app.window.AppWindow.prototype.contentWindow;
+
+
+/** @type {string} */
+chrome.app.window.AppWindow.prototype.id;
 
 
 /** @type {!chrome.app.window.Bounds} */
@@ -2576,12 +2613,24 @@ chrome.tabs.remove = function(tabIds, opt_callback) {};
 
 
 /**
+ * @typedef {?{
+ *   frameId: (number|undefined)
+ * }}
+ */
+chrome.tabs.SendMessageOptions;
+
+
+/**
  * @param {number} tabId Tab id.
  * @param {*} request The request value of any type.
+ * @param {(!chrome.tabs.SendMessageOptions|function(*): void)=}
+ *     opt_optionsOrCallback The object with an optional "frameId" or the
+ *     callback function.
  * @param {function(*): void=} opt_callback The callback function which
  *     takes a JSON response object sent by the handler of the request.
  */
-chrome.tabs.sendMessage = function(tabId, request, opt_callback) {};
+chrome.tabs.sendMessage = function(tabId, request, opt_optionsOrCallback,
+    opt_callback) {};
 
 
 /**
@@ -9125,3 +9174,37 @@ chrome.inlineInstallPrivate = {};
  *     (2) an error code in case of error
  */
 chrome.inlineInstallPrivate.install = function(id, opt_callback) {};
+
+
+/**
+ * @const
+ * @see https://goo.gl/7dvJFW
+ */
+chrome.wallpaper = {};
+
+
+/**
+ * @enum {string}
+ * @see https://goo.gl/7dvJFW#type-WallpaperLayout
+ */
+chrome.wallpaper.WallpaperLayout = {
+  STRETCH: '',
+  CENTER: '',
+  CENTER_CROPPED: '',
+};
+
+
+/**
+ * Sets wallpaper to the image at url or wallpaperData with the specified
+ * layout.
+ * @param {{
+ *    data: (ArrayBuffer|undefined),
+ *    url: (string|undefined),
+ *    layout: (chrome.wallpaper.WallpaperLayout|string),
+ *    filename: string,
+ *    thumbnail: (boolean|undefined)
+ *  }} details
+ * @param {function(ArrayBuffer=)} callback
+ * @see https://goo.gl/7dvJFW#method-setWallpaper
+ */
+ chrome.wallpaper.setWallpaper = function(details, callback) {};

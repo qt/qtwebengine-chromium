@@ -144,11 +144,6 @@ class PreParserExpression {
                                IsUseStrictField::encode(true));
   }
 
-  static PreParserExpression UseStrongStringLiteral() {
-    return PreParserExpression(TypeField::encode(kStringLiteralExpression) |
-                               IsUseStrongField::encode(true));
-  }
-
   static PreParserExpression This() {
     return PreParserExpression(TypeField::encode(kExpression) |
                                ExpressionTypeField::encode(kThisExpression));
@@ -214,11 +209,6 @@ class PreParserExpression {
            IsUseStrictField::decode(code_);
   }
 
-  bool IsUseStrongLiteral() const {
-    return TypeField::decode(code_) == kStringLiteralExpression &&
-           IsUseStrongField::decode(code_);
-  }
-
   bool IsThis() const {
     return TypeField::decode(code_) == kExpression &&
            ExpressionTypeField::decode(code_) == kThisExpression;
@@ -279,12 +269,6 @@ class PreParserExpression {
   int position() const { return RelocInfo::kNoPosition; }
   void set_function_token_position(int position) {}
 
-  // Parenthesized expressions in the form `( Expression )`.
-  void set_is_parenthesized() {
-    code_ = ParenthesizedField::update(code_, true);
-  }
-  bool is_parenthesized() const { return ParenthesizedField::decode(code_); }
-
  private:
   enum Type {
     kExpression,
@@ -323,7 +307,6 @@ class PreParserExpression {
   // of the Type field, so they can share the storage.
   typedef BitField<ExpressionType, TypeField::kNext, 3> ExpressionTypeField;
   typedef BitField<bool, TypeField::kNext, 1> IsUseStrictField;
-  typedef BitField<bool, IsUseStrictField::kNext, 1> IsUseStrongField;
   typedef BitField<PreParserIdentifier::Type, TypeField::kNext, 10>
       IdentifierTypeField;
   typedef BitField<bool, TypeField::kNext, 1> HasCoverInitializedNameField;
@@ -372,9 +355,6 @@ class PreParserStatement {
     if (expression.IsUseStrictLiteral()) {
       return PreParserStatement(kUseStrictExpressionStatement);
     }
-    if (expression.IsUseStrongLiteral()) {
-      return PreParserStatement(kUseStrongExpressionStatement);
-    }
     if (expression.IsStringLiteral()) {
       return PreParserStatement(kStringLiteralExpressionStatement);
     }
@@ -382,14 +362,12 @@ class PreParserStatement {
   }
 
   bool IsStringLiteral() {
-    return code_ == kStringLiteralExpressionStatement;
+    return code_ == kStringLiteralExpressionStatement || IsUseStrictLiteral();
   }
 
   bool IsUseStrictLiteral() {
     return code_ == kUseStrictExpressionStatement;
   }
-
-  bool IsUseStrongLiteral() { return code_ == kUseStrongExpressionStatement; }
 
   bool IsFunctionDeclaration() {
     return code_ == kFunctionDeclaration;
@@ -405,7 +383,6 @@ class PreParserStatement {
     kJumpStatement,
     kStringLiteralExpressionStatement,
     kUseStrictExpressionStatement,
-    kUseStrongExpressionStatement,
     kFunctionDeclaration
   };
 
@@ -430,18 +407,17 @@ class PreParserFactory {
   }
   PreParserExpression NewRegExpLiteral(PreParserIdentifier js_pattern,
                                        int js_flags, int literal_index,
-                                       bool is_strong, int pos) {
+                                       int pos) {
     return PreParserExpression::Default();
   }
   PreParserExpression NewArrayLiteral(PreParserExpressionList values,
                                       int literal_index,
-                                      bool is_strong,
                                       int pos) {
     return PreParserExpression::ArrayLiteral();
   }
   PreParserExpression NewArrayLiteral(PreParserExpressionList values,
                                       int first_spread_index, int literal_index,
-                                      bool is_strong, int pos) {
+                                      int pos) {
     return PreParserExpression::ArrayLiteral();
   }
   PreParserExpression NewObjectLiteralProperty(PreParserExpression key,
@@ -460,8 +436,6 @@ class PreParserFactory {
   PreParserExpression NewObjectLiteral(PreParserExpressionList properties,
                                        int literal_index,
                                        int boilerplate_properties,
-                                       bool has_function,
-                                       bool is_strong,
                                        int pos) {
     return PreParserExpression::ObjectLiteral();
   }
@@ -491,8 +465,7 @@ class PreParserFactory {
                                           PreParserExpression right, int pos) {
     return PreParserExpression::Default();
   }
-  PreParserExpression NewRewritableAssignmentExpression(
-      PreParserExpression expression) {
+  PreParserExpression NewRewritableExpression(PreParserExpression expression) {
     return expression;
   }
   PreParserExpression NewAssignment(Token::Value op,
@@ -503,7 +476,6 @@ class PreParserFactory {
   }
   PreParserExpression NewYield(PreParserExpression generator_object,
                                PreParserExpression expression,
-                               Yield::Kind yield_kind,
                                int pos) {
     return PreParserExpression::Default();
   }
@@ -550,7 +522,8 @@ class PreParserFactory {
     return PreParserExpression::Default();
   }
 
-  PreParserExpression NewSpread(PreParserExpression expression, int pos) {
+  PreParserExpression NewSpread(PreParserExpression expression, int pos,
+                                int expr_pos) {
     return PreParserExpression::Spread(expression);
   }
 
@@ -591,6 +564,9 @@ class PreParserTraits {
     typedef void GeneratorVariable;
 
     typedef int AstProperties;
+
+    typedef v8::internal::ExpressionClassifier<PreParserTraits>
+        ExpressionClassifier;
 
     // Return types for traversing functions.
     typedef PreParserIdentifier Identifier;
@@ -686,9 +662,6 @@ class PreParserTraits {
     UNREACHABLE();
   }
 
-  static void CheckFunctionLiteralInsideTopLevelObjectLiteral(
-      Scope* scope, PreParserExpression property, bool* has_function) {}
-
   static void CheckAssigningFunctionLiteralToProperty(
       PreParserExpression left, PreParserExpression right) {}
 
@@ -713,6 +686,10 @@ class PreParserTraits {
     return PreParserExpression::Default();
   }
 
+  PreParserExpression BuildIteratorResult(PreParserExpression value,
+                                          bool done) {
+    return PreParserExpression::Default();
+  }
   PreParserExpression NewThrowReferenceError(MessageTemplate::Template message,
                                              int pos) {
     return PreParserExpression::Default();
@@ -797,8 +774,9 @@ class PreParserTraits {
     return PreParserExpression::Default();
   }
 
-  static PreParserExpression DefaultConstructor(bool call_super, Scope* scope,
-                                                int pos, int end_pos) {
+  static PreParserExpression FunctionSentExpression(Scope* scope,
+                                                    PreParserFactory* factory,
+                                                    int pos) {
     return PreParserExpression::Default();
   }
 
@@ -887,7 +865,7 @@ class PreParserTraits {
     ++parameters->arity;
   }
   void DeclareFormalParameter(Scope* scope, PreParserIdentifier parameter,
-                              ExpressionClassifier* classifier) {
+                              Type::ExpressionClassifier* classifier) {
     if (!classifier->is_simple_parameter_list()) {
       scope->SetHasNonSimpleParameters();
     }
@@ -902,13 +880,14 @@ class PreParserTraits {
       PreParserIdentifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_position, FunctionLiteral::FunctionType type,
-      FunctionLiteral::ArityRestriction arity_restriction,
       LanguageMode language_mode, bool* ok);
 
   PreParserExpression ParseClassLiteral(PreParserIdentifier name,
                                         Scanner::Location class_name_location,
                                         bool name_is_strict_reserved, int pos,
                                         bool* ok);
+
+  V8_INLINE void MarkTailPosition(PreParserExpression) {}
 
   PreParserExpressionList PrepareSpreadArguments(PreParserExpressionList list) {
     return list;
@@ -925,22 +904,35 @@ class PreParserTraits {
 
   inline void RewriteDestructuringAssignments() {}
 
+  inline PreParserExpression RewriteExponentiation(PreParserExpression left,
+                                                   PreParserExpression right,
+                                                   int pos) {
+    return left;
+  }
+  inline PreParserExpression RewriteAssignExponentiation(
+      PreParserExpression left, PreParserExpression right, int pos) {
+    return left;
+  }
+
   inline void QueueDestructuringAssignmentForRewriting(PreParserExpression) {}
+  inline void QueueNonPatternForRewriting(PreParserExpression) {}
 
   void SetFunctionNameFromPropertyName(PreParserExpression,
                                        PreParserIdentifier) {}
   void SetFunctionNameFromIdentifierRef(PreParserExpression,
                                         PreParserExpression) {}
 
-  inline PreParserExpression RewriteNonPattern(
-      PreParserExpression expr, const ExpressionClassifier* classifier,
-      bool* ok);
-  inline PreParserExpression RewriteNonPatternArguments(
-      PreParserExpression args, const ExpressionClassifier* classifier,
-      bool* ok);
-  inline PreParserExpression RewriteNonPatternObjectLiteralProperty(
-      PreParserExpression property, const ExpressionClassifier* classifier,
-      bool* ok);
+  inline void RewriteNonPattern(Type::ExpressionClassifier* classifier,
+                                bool* ok);
+
+  V8_INLINE Zone* zone() const;
+  V8_INLINE ZoneList<PreParserExpression>* GetNonPatternList() const;
+
+  inline PreParserExpression RewriteYieldStar(
+      PreParserExpression generator, PreParserExpression expr, int pos);
+  inline PreParserExpression RewriteInstanceof(PreParserExpression lhs,
+                                               PreParserExpression rhs,
+                                               int pos);
 
  private:
   PreParser* pre_parser_;
@@ -1029,8 +1021,11 @@ class PreParser : public ParserBase<PreParserTraits> {
   Statement ParseStatementListItem(bool* ok);
   void ParseStatementList(int end_token, bool* ok,
                           Scanner::BookmarkScope* bookmark = nullptr);
-  Statement ParseStatement(bool* ok);
-  Statement ParseSubStatement(bool* ok);
+  Statement ParseStatement(AllowLabelledFunctionStatement allow_function,
+                           bool* ok);
+  Statement ParseSubStatement(AllowLabelledFunctionStatement allow_function,
+                              bool* ok);
+  Statement ParseScopedStatement(bool legacy, bool* ok);
   Statement ParseFunctionDeclaration(bool* ok);
   Statement ParseClassDeclaration(bool* ok);
   Statement ParseBlock(bool* ok);
@@ -1042,7 +1037,8 @@ class PreParser : public ParserBase<PreParserTraits> {
                                       Scanner::Location* first_initializer_loc,
                                       Scanner::Location* bindings_loc,
                                       bool* ok);
-  Statement ParseExpressionOrLabelledStatement(bool* ok);
+  Statement ParseExpressionOrLabelledStatement(
+      AllowLabelledFunctionStatement allow_function, bool* ok);
   Statement ParseIfStatement(bool* ok);
   Statement ParseContinueStatement(bool* ok);
   Statement ParseBreakStatement(bool* ok);
@@ -1071,7 +1067,6 @@ class PreParser : public ParserBase<PreParserTraits> {
       Identifier name, Scanner::Location function_name_location,
       FunctionNameValidity function_name_validity, FunctionKind kind,
       int function_token_pos, FunctionLiteral::FunctionType function_type,
-      FunctionLiteral::ArityRestriction arity_restriction,
       LanguageMode language_mode, bool* ok);
   void ParseLazyFunctionLiteralBody(bool* ok,
                                     Scanner::BookmarkScope* bookmark = nullptr);
@@ -1123,29 +1118,32 @@ PreParserExpression PreParserTraits::ParseDoExpression(bool* ok) {
 }
 
 
-PreParserExpression PreParserTraits::RewriteNonPattern(
-    PreParserExpression expr, const ExpressionClassifier* classifier,
-    bool* ok) {
+void PreParserTraits::RewriteNonPattern(Type::ExpressionClassifier* classifier,
+                                        bool* ok) {
   pre_parser_->ValidateExpression(classifier, ok);
-  return expr;
 }
 
 
-PreParserExpression PreParserTraits::RewriteNonPatternArguments(
-    PreParserExpression args, const ExpressionClassifier* classifier,
-    bool* ok) {
-  pre_parser_->ValidateExpression(classifier, ok);
-  return args;
+Zone* PreParserTraits::zone() const {
+  return pre_parser_->function_state_->scope()->zone();
 }
 
 
-PreParserExpression PreParserTraits::RewriteNonPatternObjectLiteralProperty(
-    PreParserExpression property, const ExpressionClassifier* classifier,
-    bool* ok) {
-  pre_parser_->ValidateExpression(classifier, ok);
-  return property;
+ZoneList<PreParserExpression>* PreParserTraits::GetNonPatternList() const {
+  return pre_parser_->function_state_->non_patterns_to_rewrite();
 }
 
+
+PreParserExpression PreParserTraits::RewriteYieldStar(
+    PreParserExpression generator, PreParserExpression expression, int pos) {
+  return PreParserExpression::Default();
+}
+
+PreParserExpression PreParserTraits::RewriteInstanceof(PreParserExpression lhs,
+                                                       PreParserExpression rhs,
+                                                       int pos) {
+  return PreParserExpression::Default();
+}
 
 PreParserStatementList PreParser::ParseEagerFunctionBody(
     PreParserIdentifier function_name, int pos,

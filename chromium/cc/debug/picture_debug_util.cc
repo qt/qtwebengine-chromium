@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <limits>
 #include <vector>
 
 #include "base/base64.h"
@@ -72,8 +73,8 @@ void PictureDebugUtil::SerializeAsBase64(const SkPicture* picture,
   size_t serialized_size = stream.bytesWritten();
   scoped_ptr<char[]> serialized_picture(new char[serialized_size]);
   stream.copyTo(serialized_picture.get());
-  base::Base64Encode(std::string(serialized_picture.get(), serialized_size),
-                     output);
+  base::Base64Encode(
+      base::StringPiece(serialized_picture.get(), serialized_size), output);
 }
 
 }  // namespace cc

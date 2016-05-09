@@ -42,7 +42,6 @@ namespace corewm {
 class TooltipController;
 }
 class DesktopCaptureClient;
-class DesktopDispatcherClient;
 class DesktopEventClient;
 class DesktopNativeCursorManager;
 class DesktopWindowTreeHost;
@@ -149,7 +148,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   void SetFullscreen(bool fullscreen) override;
   bool IsFullscreen() const override;
   void SetOpacity(unsigned char opacity) override;
-  void SetUseDragFrame(bool use_drag_frame) override;
   void FlashFrame(bool flash_frame) override;
   void RunShellDrag(View* view,
                     const ui::OSExchangeData& data,
@@ -256,7 +254,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   internal::NativeWidgetDelegate* native_widget_delegate_;
 
   scoped_ptr<wm::FocusController> focus_client_;
-  scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<aura::client::ScreenPositionClient> position_client_;
   scoped_ptr<aura::client::DragDropClient> drag_drop_client_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;

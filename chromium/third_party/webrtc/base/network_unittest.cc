@@ -29,14 +29,21 @@ namespace {
 
 class FakeNetworkMonitor : public NetworkMonitorBase {
  public:
-  void Start() override {}
-  void Stop() override {}
+  void Start() override { started_ = true; }
+  void Stop() override { started_ = false; }
+  bool started() { return started_; }
+  AdapterType GetAdapterType(const std::string& if_name) override {
+    return ADAPTER_TYPE_UNKNOWN;
+  }
+
+ private:
+  bool started_ = false;
 };
 
 class FakeNetworkMonitorFactory : public NetworkMonitorFactory {
  public:
   FakeNetworkMonitorFactory() {}
-  NetworkMonitorInterface* CreateNetworkMonitor() {
+  NetworkMonitorInterface* CreateNetworkMonitor() override {
     return new FakeNetworkMonitor();
   }
 };
@@ -50,6 +57,16 @@ class NetworkTest : public testing::Test, public sigslot::has_slots<>  {
   void OnNetworksChanged() {
     callback_called_ = true;
   }
+
+  void listenToNetworkInactive(BasicNetworkManager& network_manager) {
+    BasicNetworkManager::NetworkList networks;
+    network_manager.GetNetworks(&networks);
+    for (Network* network : networks) {
+      network->SignalInactive.connect(this, &NetworkTest::OnNetworkInactive);
+    }
+  }
+
+  void OnNetworkInactive(const Network* network) { num_networks_inactive_++; }
 
   NetworkManager::Stats MergeNetworkList(
       BasicNetworkManager& network_manager,
@@ -72,9 +89,9 @@ class NetworkTest : public testing::Test, public sigslot::has_slots<>  {
     return list;
   }
 
-  NetworkMonitorInterface* GetNetworkMonitor(
-      BasicNetworkManager& network_manager) {
-    return network_manager.network_monitor_.get();
+  FakeNetworkMonitor* GetNetworkMonitor(BasicNetworkManager& network_manager) {
+    return static_cast<FakeNetworkMonitor*>(
+        network_manager.network_monitor_.get());
   }
   void ClearNetworks(BasicNetworkManager& network_manager) {
     for (const auto& kv : network_manager.networks_map_) {
@@ -140,6 +157,8 @@ class NetworkTest : public testing::Test, public sigslot::has_slots<>  {
 
  protected:
   bool callback_called_;
+  // Number of networks that become inactive.
+  int num_networks_inactive_ = 0;
 };
 
 class TestBasicNetworkManager : public BasicNetworkManager {
@@ -273,12 +292,15 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_TRUE(changed);
   EXPECT_EQ(stats.ipv6_network_count, 0);
   EXPECT_EQ(stats.ipv4_network_count, 1);
+  listenToNetworkInactive(manager);
   list.clear();
 
   manager.GetNetworks(&list);
   EXPECT_EQ(1U, list.size());
   EXPECT_EQ(ipv4_network1.ToString(), list[0]->ToString());
   Network* net1 = list[0];
+  uint16_t net_id1 = net1->id();
+  EXPECT_EQ(1, net_id1);
   list.clear();
 
   // Replace ipv4_network1 with ipv4_network2.
@@ -287,12 +309,17 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_TRUE(changed);
   EXPECT_EQ(stats.ipv6_network_count, 0);
   EXPECT_EQ(stats.ipv4_network_count, 1);
+  EXPECT_EQ(1, num_networks_inactive_);
   list.clear();
+  num_networks_inactive_ = 0;
 
   manager.GetNetworks(&list);
   EXPECT_EQ(1U, list.size());
   EXPECT_EQ(ipv4_network2.ToString(), list[0]->ToString());
   Network* net2 = list[0];
+  uint16_t net_id2 = net2->id();
+  // Network id will increase.
+  EXPECT_LT(net_id1, net_id2);
   list.clear();
 
   // Add Network2 back.
@@ -302,6 +329,7 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_TRUE(changed);
   EXPECT_EQ(stats.ipv6_network_count, 0);
   EXPECT_EQ(stats.ipv4_network_count, 2);
+  EXPECT_EQ(0, num_networks_inactive_);
   list.clear();
 
   // Verify that we get previous instances of Network objects.
@@ -309,6 +337,8 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_EQ(2U, list.size());
   EXPECT_TRUE((net1 == list[0] && net2 == list[1]) ||
               (net1 == list[1] && net2 == list[0]));
+  EXPECT_TRUE((net_id1 == list[0]->id() && net_id2 == list[1]->id()) ||
+              (net_id1 == list[1]->id() && net_id2 == list[0]->id()));
   list.clear();
 
   // Call MergeNetworkList() again and verify that we don't get update
@@ -319,6 +349,7 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_FALSE(changed);
   EXPECT_EQ(stats.ipv6_network_count, 0);
   EXPECT_EQ(stats.ipv4_network_count, 2);
+  EXPECT_EQ(0, num_networks_inactive_);
   list.clear();
 
   // Verify that we get previous instances of Network objects.
@@ -326,6 +357,8 @@ TEST_F(NetworkTest, TestBasicMergeNetworkList) {
   EXPECT_EQ(2U, list.size());
   EXPECT_TRUE((net1 == list[0] && net2 == list[1]) ||
               (net1 == list[1] && net2 == list[0]));
+  EXPECT_TRUE((net_id1 == list[0]->id() && net_id2 == list[1]->id()) ||
+              (net_id1 == list[1]->id() && net_id2 == list[0]->id()));
   list.clear();
 }
 
@@ -921,7 +954,8 @@ TEST_F(NetworkTest, TestNetworkMonitoring) {
   FakeNetworkMonitorFactory* factory = new FakeNetworkMonitorFactory();
   NetworkMonitorFactory::SetFactory(factory);
   manager.StartUpdating();
-  NetworkMonitorInterface* network_monitor = GetNetworkMonitor(manager);
+  FakeNetworkMonitor* network_monitor = GetNetworkMonitor(manager);
+  EXPECT_TRUE(network_monitor && network_monitor->started());
   EXPECT_TRUE_WAIT(callback_called_, 1000);
   callback_called_ = false;
 
@@ -932,30 +966,35 @@ TEST_F(NetworkTest, TestNetworkMonitoring) {
   network_monitor->OnNetworksChanged();
   EXPECT_TRUE_WAIT(callback_called_, 1000);
 
-  // Network manager is stopped; the network monitor is removed.
+  // Network manager is stopped.
   manager.StopUpdating();
-  EXPECT_TRUE(GetNetworkMonitor(manager) == nullptr);
+  EXPECT_FALSE(GetNetworkMonitor(manager)->started());
 
   NetworkMonitorFactory::ReleaseFactory(factory);
 }
 
 TEST_F(NetworkTest, DefaultLocalAddress) {
-  TestBasicNetworkManager manager;
-  manager.StartUpdating();
   IPAddress ip;
-
-  // GetDefaultLocalAddress should return false when not set.
-  EXPECT_FALSE(manager.GetDefaultLocalAddress(AF_INET, &ip));
-  EXPECT_FALSE(manager.GetDefaultLocalAddress(AF_INET6, &ip));
+  TestBasicNetworkManager manager;
+  manager.SignalNetworksChanged.connect(static_cast<NetworkTest*>(this),
+                                        &NetworkTest::OnNetworksChanged);
+  FakeNetworkMonitorFactory* factory = new FakeNetworkMonitorFactory();
+  NetworkMonitorFactory::SetFactory(factory);
+  manager.StartUpdating();
+  EXPECT_TRUE_WAIT(callback_called_, 1000);
 
   // Make sure we can query default local address when an address for such
   // address family exists.
   std::vector<Network*> networks;
   manager.GetNetworks(&networks);
+  EXPECT_TRUE(!networks.empty());
   for (auto& network : networks) {
     if (network->GetBestIP().family() == AF_INET) {
       EXPECT_TRUE(manager.QueryDefaultLocalAddress(AF_INET) != IPAddress());
-    } else if (network->GetBestIP().family() == AF_INET6) {
+    } else if (network->GetBestIP().family() == AF_INET6 &&
+               !IPIsLoopback(network->GetBestIP())) {
+      // Existence of an IPv6 loopback address doesn't mean it has IPv6 network
+      // enabled.
       EXPECT_TRUE(manager.QueryDefaultLocalAddress(AF_INET6) != IPAddress());
     }
   }

@@ -41,7 +41,7 @@ class TreeScope;
 class StyleSheetInvalidationAnalysis {
     STACK_ALLOCATED();
 public:
-    StyleSheetInvalidationAnalysis(const TreeScope&, const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>>&);
+    StyleSheetInvalidationAnalysis(const TreeScope&, const HeapVector<Member<StyleSheetContents>>&);
 
     bool dirtiesAllStyle() const { return m_dirtiesAllStyle; }
     void invalidateStyle();
@@ -50,13 +50,13 @@ private:
 
     void analyzeStyleSheet(StyleSheetContents*);
 
-    RawPtrWillBeMember<const TreeScope> m_treeScope;
+    Member<const TreeScope> m_treeScope;
     HashSet<StringImpl*> m_idScopes;
     HashSet<StringImpl*> m_classScopes;
 
     bool m_dirtiesAllStyle = false;
 };
 
-}
+} // namespace blink
 
 #endif

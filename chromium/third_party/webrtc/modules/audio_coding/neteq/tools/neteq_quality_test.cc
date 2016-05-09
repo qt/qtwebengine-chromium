@@ -220,7 +220,6 @@ NetEqQualityTest::NetEqQualityTest(int block_duration_ms,
       out_sampling_khz_(out_sampling_khz),
       in_size_samples_(
           static_cast<size_t>(in_sampling_khz_ * block_duration_ms_)),
-      out_size_samples_(static_cast<size_t>(out_sampling_khz_ * kOutputSizeMs)),
       payload_size_bytes_(0),
       max_payload_bytes_(0),
       in_file_(new ResampleInputAudioFile(FLAGS_in_filename,
@@ -249,8 +248,6 @@ NetEqQualityTest::NetEqQualityTest(int block_duration_ms,
   neteq_.reset(NetEq::Create(config));
   max_payload_bytes_ = in_size_samples_ * channels_ * sizeof(int16_t);
   in_data_.reset(new int16_t[in_size_samples_ * channels_]);
-  payload_.reset(new uint8_t[max_payload_bytes_]);
-  out_data_.reset(new int16_t[out_size_samples_ * channels_]);
 }
 
 NetEqQualityTest::~NetEqQualityTest() {
@@ -380,7 +377,7 @@ int NetEqQualityTest::Transmit() {
     if (!PacketLost()) {
       int ret = neteq_->InsertPacket(
           rtp_header_,
-          rtc::ArrayView<const uint8_t>(payload_.get(), payload_size_bytes_),
+          rtc::ArrayView<const uint8_t>(payload_.data(), payload_size_bytes_),
           packet_input_time_ms * in_sampling_khz_);
       if (ret != NetEq::kOK)
         return -1;
@@ -394,18 +391,18 @@ int NetEqQualityTest::Transmit() {
 }
 
 int NetEqQualityTest::DecodeBlock() {
-  size_t channels;
-  size_t samples;
-  int ret = neteq_->GetAudio(out_size_samples_ * channels_, &out_data_[0],
-                             &samples, &channels, NULL);
+  int ret = neteq_->GetAudio(&out_frame_);
 
   if (ret != NetEq::kOK) {
     return -1;
   } else {
-    assert(channels == channels_);
-    assert(samples == static_cast<size_t>(kOutputSizeMs * out_sampling_khz_));
-    RTC_CHECK(output_->WriteArray(out_data_.get(), samples * channels));
-    return static_cast<int>(samples);
+    RTC_DCHECK_EQ(out_frame_.num_channels_, channels_);
+    RTC_DCHECK_EQ(out_frame_.samples_per_channel_,
+                  static_cast<size_t>(kOutputSizeMs * out_sampling_khz_));
+    RTC_CHECK(output_->WriteArray(
+        out_frame_.data_,
+        out_frame_.samples_per_channel_ * out_frame_.num_channels_));
+    return static_cast<int>(out_frame_.samples_per_channel_);
   }
 }
 
@@ -416,8 +413,9 @@ void NetEqQualityTest::Simulate() {
     // Assume 10 packets in packets buffer.
     while (decodable_time_ms_ - 10 * block_duration_ms_ < decoded_time_ms_) {
       ASSERT_TRUE(in_file_->Read(in_size_samples_ * channels_, &in_data_[0]));
+      payload_.Clear();
       payload_size_bytes_ = EncodeBlock(&in_data_[0],
-                                        in_size_samples_, &payload_[0],
+                                        in_size_samples_, &payload_,
                                         max_payload_bytes_);
       total_payload_size_bytes_ += payload_size_bytes_;
       decodable_time_ms_ = Transmit() + block_duration_ms_;

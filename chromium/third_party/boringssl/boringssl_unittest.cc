@@ -161,6 +161,10 @@ TEST(BoringSSL, ByteString) {
   TestSimple("bytestring_test");
 }
 
+TEST(BoringSSL, ChaCha) {
+  TestSimple("chacha_test");
+}
+
 TEST(BoringSSL, Cipher) {
   base::FilePath data_file;
   ASSERT_TRUE(CryptoCipherTestPath(&data_file));
@@ -322,4 +326,8 @@ TEST(BoringSSL, V3NameTest) {
 
 TEST(BoringSSL, X25519) {
   TestSimple("x25519_test");
+}
+
+TEST(BoringSSL, X509) {
+  TestSimple("x509_test");
 }

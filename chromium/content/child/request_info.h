@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <string>
 
 #include "base/macros.h"
@@ -121,7 +122,11 @@ struct CONTENT_EXPORT RequestInfo {
   blink::WebURLRequest::ExtraData* extra_data;
 
   // Optional, the specific task queue to execute loading tasks on.
-  scoped_ptr<blink::WebTaskRunner> loading_web_task_runner;
+  std::unique_ptr<blink::WebTaskRunner> loading_web_task_runner;
+
+  // PlzNavigate: the stream URL to request during navigations to get access to
+  // the ResourceBody that has already been fetched by the browser process.
+  GURL resource_body_stream_url;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RequestInfo);

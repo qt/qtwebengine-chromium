@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
+#include "build/build_config.h"
 #include "media/base/media_log.h"
 #include "net/base/net_errors.h"
 
@@ -23,12 +24,15 @@ namespace {
 // of FFmpeg.
 const int kInitialReadBufferSize = 32768;
 
-// Number of cache misses or read failures we allow for a single Read() before
-// signaling an error.
-const int kLoaderRetries = 3;
-
 // The number of milliseconds to wait before retrying a failed load.
 const int kLoaderFailedRetryDelayMs = 250;
+
+// Each retry, add this many MS to the delay.
+// total delay is:
+// (kLoaderPartialRetryDelayMs +
+//  kAdditionalDelayPerRetryMs * (kMaxRetries - 1) / 2) * kLoaderRetries
+//  = 29250 ms
+const int kAdditionalDelayPerRetryMs = 50;
 
 }  // namespace
 
@@ -250,10 +254,12 @@ void BufferedDataSource::SetBitrate(int bitrate) {
                                     bitrate));
 }
 
-void BufferedDataSource::OnBufferingHaveEnough() {
+void BufferedDataSource::OnBufferingHaveEnough(bool always_cancel) {
   DCHECK(render_task_runner_->BelongsToCurrentThread());
-  if (loader_ && preload_ == METADATA && !media_has_played_ && !IsStreaming())
+  if (loader_ && (always_cancel || (preload_ == METADATA &&
+                                    !media_has_played_ && !IsStreaming()))) {
     loader_->CancelUponDeferral();
+  }
 }
 
 int64_t BufferedDataSource::GetMemoryUsage() const {
@@ -381,7 +387,19 @@ void BufferedDataSource::StartCallback(
     loader_->Stop();
     return;
   }
+
   response_original_url_ = loader_->response_original_url();
+#if defined(OS_ANDROID)
+  // The response original url is the URL of this resource after following
+  // redirects. Update |url_| to this so that we only follow redirects once.
+  // We do this on Android only to preserve the behavior we had before the
+  // unified media pipeline. This behavior will soon exist on all platforms
+  // as we switch to MultiBufferDataSource (http://crbug.com/514719).
+  // If the response URL is empty (which happens when it's from a Service
+  // Worker), keep the original one.
+  if (!response_original_url_.is_empty())
+    url_ = response_original_url_;
+#endif  // defined(OS_ANDROID)
 
   // All responses must be successful. Resources that are assumed to be fully
   // buffered must have a known content length.
@@ -491,7 +509,9 @@ void BufferedDataSource::ReadCallback(
             FROM_HERE, base::Bind(&BufferedDataSource::ReadCallback,
                                   weak_factory_.GetWeakPtr(),
                                   BufferedResourceLoader::kCacheMiss, 0),
-            base::TimeDelta::FromMilliseconds(kLoaderFailedRetryDelayMs));
+            base::TimeDelta::FromMilliseconds(kLoaderFailedRetryDelayMs +
+                                              read_op_->retries() *
+                                                  kAdditionalDelayPerRetryMs));
         return;
       }
 
@@ -541,7 +561,7 @@ void BufferedDataSource::LoadingStateChangedCallback(
   if (assume_fully_buffered())
     return;
 
-  bool is_downloading_data;
+  bool is_downloading_data = false;
   switch (state) {
     case BufferedResourceLoader::kLoading:
       is_downloading_data = true;

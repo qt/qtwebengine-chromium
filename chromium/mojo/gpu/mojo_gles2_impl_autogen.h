@@ -294,6 +294,7 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
                        GLsizei* length,
                        char* source) override;
   const GLubyte* GetString(GLenum name) override;
+  const GLubyte* GetStringi(GLenum name, GLuint index) override;
   void GetSynciv(GLsync sync,
                  GLenum pname,
                  GLsizei bufsize,
@@ -750,8 +751,6 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
                              GLsizei count,
                              const GLenum* attachments) override;
   void LoseContextCHROMIUM(GLenum current, GLenum other) override;
-  GLuint InsertSyncPointCHROMIUM() override;
-  void WaitSyncPointCHROMIUM(GLuint sync_point) override;
   GLuint64 InsertFenceSyncCHROMIUM() override;
   void GenSyncTokenCHROMIUM(GLuint64 fence_sync, GLbyte* sync_token) override;
   void GenUnverifiedSyncTokenCHROMIUM(GLuint64 fence_sync,
@@ -784,6 +783,7 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
   void CommitOverlayPlanesCHROMIUM() override;
   void SwapInterval(GLint interval) override;
   void FlushDriverCachesCHROMIUM() override;
+  GLuint GetLastFlushIdCHROMIUM() override;
   void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) override;
   void MatrixLoadIdentityCHROMIUM(GLenum matrixMode) override;
   GLuint GenPathsCHROMIUM(GLsizei range) override;
@@ -889,6 +889,10 @@ class MojoGLES2Impl : public gpu::gles2::GLES2Interface {
                                GLuint colorNumber,
                                const char* name) override;
   GLint GetFragDataIndexEXT(GLuint program, const char* name) override;
+  void UniformMatrix4fvStreamTextureMatrixCHROMIUM(
+      GLint location,
+      GLboolean transpose,
+      const GLfloat* default_value) override;
 
  private:
   MojoGLES2Context context_;

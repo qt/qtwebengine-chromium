@@ -17,7 +17,7 @@
          '<(DEPTH)/testing/gtest.gyp:gtest',
          '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
          '<(webrtc_root)/test/test.gyp:test_support_main',
-         '<(webrtc_root)/test/test.gyp:fake_video_frames',
+         '<(webrtc_root)/test/test.gyp:video_test_common',
       ],
       'sources': [
         'i420_buffer_pool_unittest.cc',
@@ -33,6 +33,11 @@
         ['OS=="android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+        ['OS=="ios"', {
+          'mac_bundle_resources': [
+            '<(DEPTH)/resources/foreman_cif.yuv',
           ],
         }],
       ],

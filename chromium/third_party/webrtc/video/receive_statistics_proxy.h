@@ -11,19 +11,19 @@
 #ifndef WEBRTC_VIDEO_RECEIVE_STATISTICS_PROXY_H_
 #define WEBRTC_VIDEO_RECEIVE_STATISTICS_PROXY_H_
 
+#include <map>
 #include <string>
 
 #include "webrtc/base/criticalsection.h"
+#include "webrtc/base/rate_statistics.h"
 #include "webrtc/base/ratetracker.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/frame_callback.h"
-#include "webrtc/modules/remote_bitrate_estimator/rate_statistics.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/video/report_block_stats.h"
 #include "webrtc/video/vie_channel.h"
 #include "webrtc/video_receive_stream.h"
-#include "webrtc/video_renderer.h"
 
 namespace webrtc {
 
@@ -37,12 +37,14 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
                                public RtcpPacketTypeCounterObserver,
                                public StreamDataCountersCallback {
  public:
-  ReceiveStatisticsProxy(uint32_t ssrc, Clock* clock);
+  ReceiveStatisticsProxy(const VideoReceiveStream::Config& config,
+                         Clock* clock);
   virtual ~ReceiveStatisticsProxy();
 
   VideoReceiveStream::Stats GetStats() const;
 
   void OnDecodedFrame();
+  void OnSyncOffsetUpdated(int64_t sync_offset_ms);
   void OnRenderedFrame(int width, int height);
   void OnIncomingPayloadType(int payload_type);
   void OnDecoderImplementationName(const char* implementation_name);
@@ -94,8 +96,9 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   void UpdateHistograms() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
   Clock* const clock_;
+  const VideoReceiveStream::Config config_;
 
-  mutable rtc::CriticalSection crit_;
+  rtc::CriticalSection crit_;
   VideoReceiveStream::Stats stats_ GUARDED_BY(crit_);
   RateStatistics decode_fps_estimator_ GUARDED_BY(crit_);
   RateStatistics renders_fps_estimator_ GUARDED_BY(crit_);
@@ -103,10 +106,12 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   rtc::RateTracker render_pixel_tracker_ GUARDED_BY(crit_);
   SampleCounter render_width_counter_ GUARDED_BY(crit_);
   SampleCounter render_height_counter_ GUARDED_BY(crit_);
+  SampleCounter sync_offset_counter_ GUARDED_BY(crit_);
   SampleCounter decode_time_counter_ GUARDED_BY(crit_);
   SampleCounter delay_counter_ GUARDED_BY(crit_);
   ReportBlockStats report_block_stats_ GUARDED_BY(crit_);
   QpCounters qp_counters_;  // Only accessed on the decoding thread.
+  std::map<uint32_t, StreamDataCounters> rtx_stats_ GUARDED_BY(crit_);
 };
 
 }  // namespace webrtc

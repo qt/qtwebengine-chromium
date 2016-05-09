@@ -9,15 +9,15 @@
 #include <stdint.h>
 
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "cc/base/unique_notifier.h"
-#include "cc/playback/display_list_raster_source.h"
+#include "cc/playback/raster_source.h"
 #include "cc/raster/tile_task_runner.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/resource_pool.h"
@@ -85,7 +85,7 @@ struct RasterTaskCompletionStats {
   size_t completed_count;
   size_t canceled_count;
 };
-scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+scoped_ptr<base::trace_event::ConvertableToTraceFormat>
 RasterTaskCompletionStatsAsValue(const RasterTaskCompletionStats& stats);
 
 // This class manages tiles, deciding which should get rasterized and which
@@ -117,6 +117,7 @@ class CC_EXPORT TileManager {
   // SetResources.
   void SetResources(ResourcePool* resource_pool,
                     TileTaskRunner* tile_task_runner,
+                    ImageDecodeController* image_decode_controller,
                     size_t scheduled_raster_task_limit,
                     bool use_gpu_rasterization);
 
@@ -132,7 +133,7 @@ class CC_EXPORT TileManager {
   bool IsReadyToActivate() const;
   bool IsReadyToDraw() const;
 
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat> BasicStateAsValue()
+  scoped_ptr<base::trace_event::ConvertableToTraceFormat> BasicStateAsValue()
       const;
   void BasicStateAsValueInto(base::trace_event::TracedValue* dict) const;
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
@@ -195,7 +196,7 @@ class CC_EXPORT TileManager {
 
  protected:
   TileManager(TileManagerClient* client,
-              const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+              scoped_refptr<base::SequencedTaskRunner> task_runner,
               size_t scheduled_raster_task_limit,
               bool use_partial_raster);
 
@@ -277,7 +278,7 @@ class CC_EXPORT TileManager {
   scoped_refptr<TileTask> CreateTaskSetFinishedTask(
       void (TileManager::*callback)());
 
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+  scoped_ptr<base::trace_event::ConvertableToTraceFormat>
   ScheduledTasksStateAsValue() const;
 
   TileManagerClient* client_;
@@ -289,7 +290,7 @@ class CC_EXPORT TileManager {
   const bool use_partial_raster_;
   bool use_gpu_rasterization_;
 
-  typedef base::hash_map<Tile::Id, Tile*> TileMap;
+  using TileMap = std::unordered_map<Tile::Id, Tile*>;
   TileMap tiles_;
 
   bool all_tiles_that_need_to_be_rasterized_are_scheduled_;
@@ -298,7 +299,7 @@ class CC_EXPORT TileManager {
   bool did_check_for_completed_tasks_since_last_schedule_tasks_;
   bool did_oom_on_last_assign_;
 
-  ImageDecodeController image_decode_controller_;
+  ImageDecodeController* image_decode_controller_;
 
   RasterTaskCompletionStats flush_stats_;
 
@@ -332,6 +333,8 @@ class CC_EXPORT TileManager {
 
   uint64_t prepare_tiles_count_;
   uint64_t next_tile_id_;
+
+  std::unordered_map<Tile::Id, std::vector<DrawImage>> scheduled_draw_images_;
 
   base::WeakPtrFactory<TileManager> task_set_finished_weak_ptr_factory_;
 

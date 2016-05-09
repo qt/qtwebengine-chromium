@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/values.h"
-#include "net/base/net_util.h"
 #include "net/base/sys_addrinfo.h"
 
 namespace net {
@@ -39,12 +38,6 @@ AddressList::~AddressList() {}
 
 AddressList::AddressList(const IPEndPoint& endpoint) {
   push_back(endpoint);
-}
-
-// static
-AddressList AddressList::CreateFromIPAddress(const IPAddressNumber& address,
-                                             uint16_t port) {
-  return AddressList(IPEndPoint(address, port));
 }
 
 // static

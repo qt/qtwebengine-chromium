@@ -102,7 +102,9 @@
           atTop: {
             type: Boolean,
             value: true,
-            readOnly: true
+            notify: true,
+            readOnly: true,
+            reflectToAttribute: true
           }
         },
 

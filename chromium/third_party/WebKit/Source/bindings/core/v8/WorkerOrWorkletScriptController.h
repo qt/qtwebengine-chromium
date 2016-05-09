@@ -36,6 +36,7 @@
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8CacheOptions.h"
 #include "core/CoreExport.h"
+#include "platform/text/CompressibleString.h"
 #include "wtf/Allocator.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -50,11 +51,10 @@ class ExceptionState;
 class ScriptSourceCode;
 class WorkerOrWorkletGlobalScope;
 
-class CORE_EXPORT WorkerOrWorkletScriptController : public NoBaseWillBeGarbageCollectedFinalized<WorkerOrWorkletScriptController> {
-    USING_FAST_MALLOC_WILL_BE_REMOVED(WorkerOrWorkletScriptController);
+class CORE_EXPORT WorkerOrWorkletScriptController : public GarbageCollectedFinalized<WorkerOrWorkletScriptController> {
     WTF_MAKE_NONCOPYABLE(WorkerOrWorkletScriptController);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerOrWorkletScriptController> create(WorkerOrWorkletGlobalScope*, v8::Isolate*);
+    static RawPtr<WorkerOrWorkletScriptController> create(WorkerOrWorkletGlobalScope*, v8::Isolate*);
     virtual ~WorkerOrWorkletScriptController();
     void dispose();
 
@@ -62,7 +62,7 @@ public:
     bool isExecutionTerminating() const;
 
     // Returns true if the evaluation completed with no uncaught exception.
-    bool evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = nullptr, CachedMetadataHandler* = nullptr, V8CacheOptions = V8CacheOptionsDefault);
+    bool evaluate(const ScriptSourceCode&, ErrorEvent** = nullptr, CachedMetadataHandler* = nullptr, V8CacheOptions = V8CacheOptionsDefault);
 
     // Prevents future JavaScript execution. See
     // willScheduleExecutionTermination, isExecutionForbidden.
@@ -78,16 +78,16 @@ public:
     void willScheduleExecutionTermination();
 
     // Used by WorkerGlobalScope:
-    void rethrowExceptionFromImportedScript(PassRefPtrWillBeRawPtr<ErrorEvent>, ExceptionState&);
+    void rethrowExceptionFromImportedScript(RawPtr<ErrorEvent>, ExceptionState&);
     void disableEval(const String&);
 
     // Used by Inspector agents:
-    ScriptState* scriptState() { return m_scriptState.get(); }
+    ScriptState* getScriptState() { return m_scriptState.get(); }
 
     // Used by V8 bindings:
     v8::Local<v8::Context> context() { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
 
-    RejectedPromises* rejectedPromises() const { return m_rejectedPromises.get(); }
+    RejectedPromises* getRejectedPromises() const { return m_rejectedPromises.get(); }
 
     DECLARE_TRACE();
 
@@ -98,9 +98,10 @@ private:
     class ExecutionState;
 
     // Evaluate a script file in the current execution environment.
-    ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, CachedMetadataHandler*, V8CacheOptions);
+    ScriptValue evaluate(const CompressibleString& script, const String& fileName, const TextPosition& scriptStartPosition, CachedMetadataHandler*, V8CacheOptions);
+    void disposeContextIfNeeded();
 
-    RawPtrWillBeMember<WorkerOrWorkletGlobalScope> m_globalScope;
+    Member<WorkerOrWorkletGlobalScope> m_globalScope;
 
     // The v8 isolate associated to the (worker or worklet) global scope. For
     // workers this should be the worker thread's isolate, while for worklets
@@ -114,7 +115,7 @@ private:
     bool m_executionScheduledToTerminate;
     mutable Mutex m_scheduledTerminationMutex;
 
-    RefPtrWillBeMember<RejectedPromises> m_rejectedPromises;
+    RefPtr<RejectedPromises> m_rejectedPromises;
 
     // |m_executionState| refers to a stack object that evaluate() allocates;
     // evaluate() ensuring that the pointer reference to it is removed upon

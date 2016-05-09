@@ -117,15 +117,26 @@ LinkResult ProgramGL::link(const gl::Data &data, gl::InfoLog &infoLog)
         GLint infoLogLength = 0;
         mFunctions->getProgramiv(mProgramID, GL_INFO_LOG_LENGTH, &infoLogLength);
 
-        std::vector<char> buf(infoLogLength);
-        mFunctions->getProgramInfoLog(mProgramID, infoLogLength, nullptr, &buf[0]);
+        std::string warning;
 
-        mFunctions->deleteProgram(mProgramID);
-        mProgramID = 0;
+        // Info log length includes the null terminator, so 1 means that the info log is an empty
+        // string.
+        if (infoLogLength > 1)
+        {
+            std::vector<char> buf(infoLogLength);
+            mFunctions->getProgramInfoLog(mProgramID, infoLogLength, nullptr, &buf[0]);
 
-        infoLog << buf.data();
+            mFunctions->deleteProgram(mProgramID);
+            mProgramID = 0;
 
-        std::string warning = FormatString("Program link failed unexpectedly: %s", buf.data());
+            infoLog << buf.data();
+
+            warning = FormatString("Program link failed unexpectedly: %s", buf.data());
+        }
+        else
+        {
+            warning = "Program link failed unexpectedly with no info log.";
+        }
         ANGLEPlatformCurrent()->logWarning(warning.c_str());
         TRACE("\n%s", warning.c_str());
 

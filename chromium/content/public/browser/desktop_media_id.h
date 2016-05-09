@@ -46,6 +46,9 @@ struct CONTENT_EXPORT DesktopMediaID {
   DesktopMediaID(Type type, Id id, WebContentsMediaCaptureId web_contents_id)
       : type(type), id(id), web_contents_id(web_contents_id) {}
 
+  DesktopMediaID(Type type, Id id, bool audio_share)
+      : type(type), id(id), audio_share(audio_share) {}
+
   // Operators so that DesktopMediaID can be used with STL containers.
   bool operator<(const DesktopMediaID& other) const;
   bool operator==(const DesktopMediaID& other) const;
@@ -66,6 +69,9 @@ struct CONTENT_EXPORT DesktopMediaID {
   // TODO(miu): Make this an int, after clean-up for http://crbug.com/513490.
   Id aura_id = kNullId;
 #endif
+
+  // This records whether the desktop share has sound or not.
+  bool audio_share = false;
 
   // This id contains information for WebContents capture.
   WebContentsMediaCaptureId web_contents_id;

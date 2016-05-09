@@ -165,7 +165,7 @@ void LayoutMenuList::styleDidChange(StyleDifference diff, const ComputedStyle* o
 void LayoutMenuList::updateOptionsWidth()
 {
     float maxOptionWidth = 0;
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& listItems = selectElement()->listItems();
+    const HeapVector<Member<HTMLElement>>& listItems = selectElement()->listItems();
     int size = listItems.size();
 
     for (int i = 0; i < size; ++i) {
@@ -179,7 +179,7 @@ void LayoutMenuList::updateOptionsWidth()
             // Add in the option's text indent.  We can't calculate percentage values for now.
             float optionWidth = 0;
             if (const ComputedStyle* optionStyle = element->computedStyle())
-                optionWidth += minimumValueForLength(optionStyle->textIndent(), 0);
+                optionWidth += minimumValueForLength(optionStyle->textIndent(), LayoutUnit());
             if (!text.isEmpty())
                 optionWidth += computeTextWidth(text);
             maxOptionWidth = std::max(maxOptionWidth, optionWidth);
@@ -220,7 +220,7 @@ void LayoutMenuList::updateText()
 void LayoutMenuList::setTextFromOption(int optionIndex)
 {
     HTMLSelectElement* select = selectElement();
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& listItems = select->listItems();
+    const HeapVector<Member<HTMLElement>>& listItems = select->listItems();
     const int size = listItems.size();
 
     String text = emptyString();
@@ -313,9 +313,9 @@ void LayoutMenuList::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, 
         minLogicalWidth = maxLogicalWidth;
 }
 
-void LayoutMenuList::didSetSelectedIndex(int listIndex)
+void LayoutMenuList::didSetSelectedIndex(int optionIndex)
 {
-    didUpdateActiveOption(selectElement()->listToOptionIndex(listIndex));
+    didUpdateActiveOption(optionIndex);
 }
 
 void LayoutMenuList::didUpdateActiveOption(int optionIndex)
@@ -355,7 +355,7 @@ LayoutUnit LayoutMenuList::clientPaddingRight() const
         // drop-down button. But leaving room for the button inside the popup menu itself
         // looks strange, so we return a small default padding to avoid having a large empty
         // space appear on the side of the popup menu.
-        return endOfLinePadding;
+        return LayoutUnit(endOfLinePadding);
     }
 
     // If the appearance isn't MenulistPart, then the select is styled (non-native), so

@@ -11,6 +11,8 @@
 #ifndef WEBRTC_MODULES_DESKTOP_CAPTURE_CROPPING_WINDOW_CAPTURER_H_
 #define WEBRTC_MODULES_DESKTOP_CAPTURE_CROPPING_WINDOW_CAPTURER_H_
 
+#include <memory>
+
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/screen_capturer.h"
@@ -29,6 +31,8 @@ class CroppingWindowCapturer : public WindowCapturer,
 
   // DesktopCapturer implementation.
   void Start(DesktopCapturer::Callback* callback) override;
+  void SetSharedMemoryFactory(
+      rtc::scoped_ptr<SharedMemoryFactory> shared_memory_factory) override;
   void Capture(const DesktopRegion& region) override;
   void SetExcludedWindow(WindowId window) override;
 
@@ -39,7 +43,6 @@ class CroppingWindowCapturer : public WindowCapturer,
 
   // DesktopCapturer::Callback implementation, passed to |screen_capturer_| to
   // intercept the capture result.
-  SharedMemory* CreateSharedMemory(size_t size) override;
   void OnCaptureCompleted(DesktopFrame* frame) override;
 
  protected:
@@ -62,8 +65,8 @@ class CroppingWindowCapturer : public WindowCapturer,
  private:
   DesktopCaptureOptions options_;
   DesktopCapturer::Callback* callback_;
-  rtc::scoped_ptr<WindowCapturer> window_capturer_;
-  rtc::scoped_ptr<ScreenCapturer> screen_capturer_;
+  std::unique_ptr<WindowCapturer> window_capturer_;
+  std::unique_ptr<ScreenCapturer> screen_capturer_;
   WindowId selected_window_;
   WindowId excluded_window_;
 };

@@ -100,7 +100,7 @@ static bool elementHasAriaRole(const Element* element)
 
 bool AXTable::isDataTable() const
 {
-    if (!m_layoutObject || !node())
+    if (!m_layoutObject || !getNode())
         return false;
 
     // Do not consider it a data table if it has an ARIA role.
@@ -110,7 +110,7 @@ bool AXTable::isDataTable() const
     // When a section of the document is contentEditable, all tables should be
     // treated as data tables, otherwise users may not be able to work with rich
     // text editors that allow creating and editing tables.
-    if (node() && node()->hasEditableStyle())
+    if (getNode() && getNode()->hasEditableStyle())
         return true;
 
     // This employs a heuristic to determine if this table should appear.
@@ -130,20 +130,20 @@ bool AXTable::isDataTable() const
     if (elementHasAriaRole(tableElement->tFoot()))
         return false;
 
-    RefPtrWillBeRawPtr<HTMLCollection> bodies = tableElement->tBodies();
+    HTMLCollection* bodies = tableElement->tBodies();
     for (unsigned bodyIndex = 0; bodyIndex < bodies->length(); ++bodyIndex) {
         Element* bodyElement = bodies->item(bodyIndex);
         if (elementHasAriaRole(bodyElement))
             return false;
     }
 
-    RefPtrWillBeRawPtr<HTMLTableRowsCollection> rows = tableElement->rows();
+    HTMLTableRowsCollection* rows = tableElement->rows();
     unsigned rowCount = rows->length();
     for (unsigned rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         HTMLTableRowElement* rowElement = rows->item(rowIndex);
         if (elementHasAriaRole(rowElement))
             return false;
-        RefPtrWillBeRawPtr<HTMLCollection> cells = rowElement->cells();
+        HTMLCollection* cells = rowElement->cells();
         for (unsigned cellIndex = 0; cellIndex < cells->length(); ++cellIndex) {
             if (elementHasAriaRole(cells->item(cellIndex)))
                 return false;
@@ -169,7 +169,7 @@ bool AXTable::isDataTable() const
     if (!firstBody)
         return false;
 
-    int numCols = firstBody->numColumns();
+    int numCols = firstBody->numEffectiveColumns();
     int numRows = firstBody->numRows();
 
     // If there's only one cell, it's not a good AXTable candidate.
@@ -241,7 +241,7 @@ bool AXTable::isDataTable() const
                 continue;
 
             // If the empty-cells style is set, we'll call it a data table.
-            if (computedStyle->emptyCells() == HIDE)
+            if (computedStyle->emptyCells() == EmptyCellsHide)
                 return true;
 
             // If a cell has matching bordered sides, call it a (fully) bordered cell.
@@ -422,7 +422,7 @@ void AXTable::addChildren()
     }
 
     // make the columns based on the number of columns in the first body
-    unsigned length = initialTableSection->numColumns();
+    unsigned length = initialTableSection->numEffectiveColumns();
     for (unsigned i = 0; i < length; ++i) {
         AXTableColumn* column = toAXTableColumn(axCache.getOrCreate(ColumnRole));
         column->setColumnIndex((int)i);

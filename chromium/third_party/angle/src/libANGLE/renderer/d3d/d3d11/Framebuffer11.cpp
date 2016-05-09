@@ -9,6 +9,7 @@
 #include "libANGLE/renderer/d3d/d3d11/Framebuffer11.h"
 
 #include "common/debug.h"
+#include "common/BitSetIterator.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Clear11.h"
 #include "libANGLE/renderer/d3d/d3d11/TextureStorage11.h"
@@ -24,18 +25,9 @@
 namespace rx
 {
 
-Framebuffer11::Framebuffer11(const gl::Framebuffer::Data &data, Renderer11 *renderer)
-    : FramebufferD3D(data),
-      mRenderer(renderer)
+namespace
 {
-    ASSERT(mRenderer != nullptr);
-}
-
-Framebuffer11::~Framebuffer11()
-{
-}
-
-static gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachment)
+gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachment)
 {
     if (attachment && attachment->type() == GL_TEXTURE)
     {
@@ -60,6 +52,67 @@ static gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *a
     }
 
     return gl::Error(GL_NO_ERROR);
+}
+
+void UpdateCachedRenderTarget(const gl::FramebufferAttachment *attachment,
+                              RenderTarget11 *&cachedRenderTarget,
+                              const NotificationCallback &callbackFunc)
+{
+    RenderTarget11 *newRenderTarget = nullptr;
+    if (attachment)
+    {
+        attachment->getRenderTarget(&newRenderTarget);
+    }
+    if (newRenderTarget != cachedRenderTarget)
+    {
+        if (cachedRenderTarget)
+        {
+            cachedRenderTarget->removeDirtyCallback(&callbackFunc);
+        }
+
+        if (newRenderTarget)
+        {
+            newRenderTarget->addDirtyCallback(&callbackFunc);
+        }
+
+        cachedRenderTarget = newRenderTarget;
+    }
+}
+}  // anonymous namespace
+
+Framebuffer11::Framebuffer11(const gl::Framebuffer::Data &data, Renderer11 *renderer)
+    : FramebufferD3D(data, renderer), mRenderer(renderer), mCachedDepthStencilRenderTarget(nullptr)
+{
+    ASSERT(mRenderer != nullptr);
+    mCachedColorRenderTargets.fill(nullptr);
+    for (size_t colorIndex = 0; colorIndex < data.getColorAttachments().size(); ++colorIndex)
+    {
+        auto callback = [this, colorIndex]()
+        {
+            this->markColorRenderTargetDirty(colorIndex);
+        };
+        mColorRenderTargetsDirty.push_back(callback);
+    }
+    mDepthStencilRenderTargetDirty = [this]()
+    {
+        this->markDepthStencilRenderTargetDirty();
+    };
+}
+
+Framebuffer11::~Framebuffer11()
+{
+    for (size_t colorIndex = 0; colorIndex < mCachedColorRenderTargets.size(); ++colorIndex)
+    {
+        auto *colorRenderTarget = mCachedColorRenderTargets[colorIndex];
+        if (colorRenderTarget)
+        {
+            colorRenderTarget->removeDirtyCallback(&mColorRenderTargetsDirty[colorIndex]);
+        }
+    }
+    if (mCachedDepthStencilRenderTarget)
+    {
+        mCachedDepthStencilRenderTarget->removeDirtyCallback(&mDepthStencilRenderTargetDirty);
+    }
 }
 
 gl::Error Framebuffer11::invalidateSwizzles() const
@@ -94,7 +147,27 @@ gl::Error Framebuffer11::invalidateSwizzles() const
 gl::Error Framebuffer11::clear(const gl::Data &data, const ClearParameters &clearParams)
 {
     Clear11 *clearer = mRenderer->getClearer();
-    gl::Error error = clearer->clearFramebuffer(clearParams, mData);
+    gl::Error error(GL_NO_ERROR);
+
+    const gl::FramebufferAttachment *colorAttachment = mData.getFirstColorAttachment();
+    if (clearParams.scissorEnabled == true && colorAttachment != nullptr &&
+        UsePresentPathFast(mRenderer, colorAttachment))
+    {
+        // If the current framebuffer is using the default colorbuffer, and present path fast is
+        // active, and the scissor rect is enabled, then we should invert the scissor rect
+        // vertically
+        ClearParameters presentPathFastClearParams = clearParams;
+        gl::Extents framebufferSize                = colorAttachment->getSize();
+        presentPathFastClearParams.scissor.y       = framebufferSize.height -
+                                               presentPathFastClearParams.scissor.y -
+                                               presentPathFastClearParams.scissor.height;
+        error = clearer->clearFramebuffer(presentPathFastClearParams, mData);
+    }
+    else
+    {
+        error = clearer->clearFramebuffer(clearParams, mData);
+    }
+
     if (error.isError())
     {
         return error;
@@ -104,32 +177,6 @@ gl::Error Framebuffer11::clear(const gl::Data &data, const ClearParameters &clea
     if (error.isError())
     {
         return error;
-    }
-
-    return gl::Error(GL_NO_ERROR);
-}
-
-static gl::Error getRenderTargetResource(const gl::FramebufferAttachment *colorbuffer, unsigned int *subresourceIndexOut,
-                                         ID3D11Texture2D **texture2DOut)
-{
-    ASSERT(colorbuffer);
-
-    RenderTarget11 *renderTarget = nullptr;
-    gl::Error error = colorbuffer->getRenderTarget(&renderTarget);
-    if (error.isError())
-    {
-        return error;
-    }
-
-    ID3D11Resource *renderTargetResource = renderTarget->getTexture();
-    ASSERT(renderTargetResource);
-
-    *subresourceIndexOut = renderTarget->getSubresourceIndex();
-    *texture2DOut = d3d11::DynamicCastComObject<ID3D11Texture2D>(renderTargetResource);
-
-    if (!(*texture2DOut))
-    {
-        return gl::Error(GL_OUT_OF_MEMORY, "Failed to query the ID3D11Texture2D from a RenderTarget");
     }
 
     return gl::Error(GL_NO_ERROR);
@@ -296,17 +343,8 @@ gl::Error Framebuffer11::readPixelsImpl(const gl::Rectangle &area,
                                         const gl::PixelPackState &pack,
                                         uint8_t *pixels) const
 {
-    ID3D11Texture2D *colorBufferTexture = nullptr;
-    unsigned int subresourceIndex = 0;
-
-    const gl::FramebufferAttachment *colorbuffer = mData.getReadAttachment();
-    ASSERT(colorbuffer);
-
-    gl::Error error = getRenderTargetResource(colorbuffer, &subresourceIndex, &colorBufferTexture);
-    if (error.isError())
-    {
-        return error;
-    }
+    const gl::FramebufferAttachment *readAttachment = mData.getReadAttachment();
+    ASSERT(readAttachment);
 
     gl::Buffer *packBuffer = pack.pixelBuffer.get();
     if (packBuffer != nullptr)
@@ -322,27 +360,11 @@ gl::Error Framebuffer11::readPixelsImpl(const gl::Rectangle &area,
         PackPixelsParams packParams(area, format, type, static_cast<GLuint>(outputPitch), pack,
                                     reinterpret_cast<ptrdiff_t>(pixels));
 
-        error = packBufferStorage->packPixels(colorBufferTexture, subresourceIndex, packParams);
-        if (error.isError())
-        {
-            SafeRelease(colorBufferTexture);
-            return error;
-        }
-    }
-    else
-    {
-        error = mRenderer->readTextureData(colorBufferTexture, subresourceIndex, area, format, type,
-                                           static_cast<GLuint>(outputPitch), pack, pixels);
-        if (error.isError())
-        {
-            SafeRelease(colorBufferTexture);
-            return error;
-        }
+        return packBufferStorage->packPixels(*readAttachment, packParams);
     }
 
-    SafeRelease(colorBufferTexture);
-
-    return gl::Error(GL_NO_ERROR);
+    return mRenderer->readFromAttachment(*readAttachment, area, format, type,
+                                         static_cast<GLuint>(outputPitch), pack, pixels);
 }
 
 gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectangle &destArea, const gl::Rectangle *scissor,
@@ -380,8 +402,27 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
                 }
                 ASSERT(drawRenderTarget);
 
-                error = mRenderer->blitRenderbufferRect(sourceArea, destArea, readRenderTarget, drawRenderTarget,
-                                                        filter, scissor, blitRenderTarget, false, false);
+                const bool invertColorSource   = UsePresentPathFast(mRenderer, readBuffer);
+                gl::Rectangle actualSourceArea = sourceArea;
+                if (invertColorSource)
+                {
+                    RenderTarget11 *readRenderTarget11 = GetAs<RenderTarget11>(readRenderTarget);
+                    actualSourceArea.y                 = readRenderTarget11->getHeight() - sourceArea.y;
+                    actualSourceArea.height            = -sourceArea.height;
+                }
+
+                const bool invertColorDest   = UsePresentPathFast(mRenderer, &drawBuffer);
+                gl::Rectangle actualDestArea = destArea;
+                if (invertColorDest)
+                {
+                    RenderTarget11 *drawRenderTarget11 = GetAs<RenderTarget11>(drawRenderTarget);
+                    actualDestArea.y                   = drawRenderTarget11->getHeight() - destArea.y;
+                    actualDestArea.height              = -destArea.height;
+                }
+
+                error = mRenderer->blitRenderbufferRect(actualSourceArea, actualDestArea,
+                                                        readRenderTarget, drawRenderTarget, filter,
+                                                        scissor, blitRenderTarget, false, false);
                 if (error.isError())
                 {
                     return error;
@@ -434,8 +475,80 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
 GLenum Framebuffer11::getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const
 {
     RenderTarget11 *renderTarget11 = GetAs<RenderTarget11>(renderTarget);
-    const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(renderTarget11->getDXGIFormat());
-    return dxgiFormatInfo.internalFormat;
+    return d3d11::GetANGLEFormatSet(renderTarget11->getANGLEFormat()).glInternalFormat;
 }
 
+void Framebuffer11::updateColorRenderTarget(size_t colorIndex)
+{
+    UpdateCachedRenderTarget(mData.getColorAttachment(colorIndex),
+                             mCachedColorRenderTargets[colorIndex],
+                             mColorRenderTargetsDirty[colorIndex]);
 }
+
+void Framebuffer11::updateDepthStencilRenderTarget()
+{
+    UpdateCachedRenderTarget(mData.getDepthOrStencilAttachment(), mCachedDepthStencilRenderTarget,
+                             mDepthStencilRenderTargetDirty);
+}
+
+void Framebuffer11::syncState(const gl::Framebuffer::DirtyBits &dirtyBits)
+{
+    mRenderer->getStateManager()->invalidateRenderTarget();
+
+    const auto &mergedDirtyBits = dirtyBits | mInternalDirtyBits;
+    mInternalDirtyBits.reset();
+
+    for (auto dirtyBit : angle::IterateBitSet(mergedDirtyBits))
+    {
+        switch (dirtyBit)
+        {
+            case gl::Framebuffer::DIRTY_BIT_DEPTH_ATTACHMENT:
+            case gl::Framebuffer::DIRTY_BIT_STENCIL_ATTACHMENT:
+                updateDepthStencilRenderTarget();
+                break;
+            case gl::Framebuffer::DIRTY_BIT_DRAW_BUFFERS:
+            case gl::Framebuffer::DIRTY_BIT_READ_BUFFER:
+                break;
+            default:
+            {
+                ASSERT(gl::Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_0 == 0 &&
+                       dirtyBit < gl::Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_MAX);
+                size_t colorIndex =
+                    static_cast<size_t>(dirtyBit - gl::Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_0);
+                updateColorRenderTarget(colorIndex);
+                break;
+            }
+        }
+    }
+
+    // We should not have dirtied any additional state during our sync.
+    ASSERT(!mInternalDirtyBits.any());
+
+    FramebufferD3D::syncState(dirtyBits);
+}
+
+void Framebuffer11::markColorRenderTargetDirty(size_t colorIndex)
+{
+    mInternalDirtyBits.set(gl::Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_0 + colorIndex);
+    mCachedColorRenderTargets[colorIndex] = nullptr;
+}
+
+void Framebuffer11::markDepthStencilRenderTargetDirty()
+{
+    // Stencil is redundant in this case.
+    mInternalDirtyBits.set(gl::Framebuffer::DIRTY_BIT_DEPTH_ATTACHMENT);
+    mCachedDepthStencilRenderTarget = nullptr;
+}
+
+bool Framebuffer11::hasAnyInternalDirtyBit() const
+{
+    return mInternalDirtyBits.any();
+}
+
+void Framebuffer11::syncInternalState() const
+{
+    // TODO(jmadill): Clean up this hack.
+    const_cast<Framebuffer11 *>(this)->syncState(gl::Framebuffer::DirtyBits());
+}
+
+}  // namespace rx

@@ -16,7 +16,7 @@
 namespace net {
 namespace test {
 
-class MockQuicDispatcher : public tools::QuicDispatcher {
+class MockQuicDispatcher : public QuicDispatcher {
  public:
   MockQuicDispatcher(const QuicConfig& config,
                      const QuicCryptoServerConfig* crypto_config,
@@ -27,7 +27,7 @@ class MockQuicDispatcher : public tools::QuicDispatcher {
   MOCK_METHOD3(ProcessPacket,
                void(const IPEndPoint& server_address,
                     const IPEndPoint& client_address,
-                    const QuicEncryptedPacket& packet));
+                    const QuicReceivedPacket& packet));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockQuicDispatcher);

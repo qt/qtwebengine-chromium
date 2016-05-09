@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 #include "base/sys_byteorder.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_util.h"
 #include "net/log/net_log.h"
 #include "net/socket/client_socket_handle.h"
 
@@ -141,14 +140,6 @@ void SOCKSClientSocket::SetOmniboxSpeculation() {
 
 bool SOCKSClientSocket::WasEverUsed() const {
   return was_ever_used_;
-}
-
-bool SOCKSClientSocket::UsingTCPFastOpen() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->UsingTCPFastOpen();
-  }
-  NOTREACHED();
-  return false;
 }
 
 bool SOCKSClientSocket::WasNpnNegotiated() const {
@@ -335,7 +326,8 @@ const std::string SOCKSClientSocket::BuildHandshakeWriteBuffer() const {
   //               failing the connect attempt.
   CHECK_EQ(ADDRESS_FAMILY_IPV4, endpoint.GetFamily());
   CHECK_LE(endpoint.address().size(), sizeof(request.ip));
-  memcpy(&request.ip, &endpoint.address()[0], endpoint.address().size());
+  memcpy(&request.ip, &endpoint.address().bytes()[0],
+         endpoint.address().size());
 
   DVLOG(1) << "Resolved Host is : " << endpoint.ToStringWithoutPort();
 

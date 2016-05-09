@@ -9,6 +9,7 @@
 
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
@@ -49,8 +50,7 @@ class CC_EXPORT DelayBasedTimeSource {
 
   base::TimeDelta Interval() const;
 
-  // Returns the time for the last missed tick.
-  base::TimeTicks SetActive(bool active);
+  void SetActive(bool active);
   bool Active() const;
 
   // Get the last and next tick times. NextTickTime() returns null when
@@ -69,8 +69,6 @@ class CC_EXPORT DelayBasedTimeSource {
   virtual std::string TypeString() const;
 
  private:
-  base::TimeTicks NextTickTarget(base::TimeTicks now) const;
-
   void PostNextTickTask(base::TimeTicks now);
   void ResetTickTask(base::TimeTicks now);
 

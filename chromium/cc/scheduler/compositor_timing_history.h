@@ -29,6 +29,7 @@ class CC_EXPORT CompositorTimingHistory {
   class UMAReporter;
 
   CompositorTimingHistory(
+      bool using_synchronous_renderer_compositor,
       UMACategory uma_category,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
   virtual ~CompositorTimingHistory();
@@ -49,12 +50,16 @@ class CC_EXPORT CompositorTimingHistory {
   virtual base::TimeDelta ActivateDurationEstimate() const;
   virtual base::TimeDelta DrawDurationEstimate() const;
 
+  // State that affects when events should be expected/recorded/reported.
   void SetRecordingEnabled(bool enabled);
+  void DidCreateAndInitializeOutputSurface();
 
+  // Events to be timed.
   void WillBeginImplFrame(bool new_active_tree_is_likely);
   void WillFinishImplFrame(bool needs_redraw);
   void BeginImplFrameNotExpectedSoon();
-  void WillBeginMainFrame(bool on_critical_path);
+  void WillBeginMainFrame(bool on_critical_path,
+                          base::TimeTicks main_frame_time);
   void BeginMainFrameStarted(base::TimeTicks main_thread_start_time);
   void BeginMainFrameAborted();
   void DidCommit();
@@ -63,11 +68,13 @@ class CC_EXPORT CompositorTimingHistory {
   void ReadyToActivate();
   void WillActivate();
   void DidActivate();
+  void DrawAborted();
   void WillDraw();
-  void DidDraw(bool used_new_active_tree);
+  void DidDraw(bool used_new_active_tree,
+               bool main_thread_missed_last_deadline,
+               base::TimeTicks impl_frame_time);
   void DidSwapBuffers();
   void DidSwapBuffersComplete();
-  void DidSwapBuffersReset();
 
  protected:
   void DidBeginMainFrame();
@@ -76,10 +83,16 @@ class CC_EXPORT CompositorTimingHistory {
   void SetBeginMainFrameCommittingContinuously(bool active);
   void SetCompositorDrawingContinuously(bool active);
 
+  bool ShouldReportUma() const;
+
   static scoped_ptr<UMAReporter> CreateUMAReporter(UMACategory category);
   virtual base::TimeTicks Now() const;
 
+  bool using_synchronous_renderer_compositor_;
   bool enabled_;
+
+  // Used to limit the recorded UMA data to once every N frames.
+  int draw_count_;
 
   // Used to calculate frame rates of Main and Impl threads.
   bool did_send_begin_main_frame_;
@@ -101,11 +114,14 @@ class CC_EXPORT CompositorTimingHistory {
   RollingTimeDeltaHistory draw_duration_history_;
 
   bool begin_main_frame_on_critical_path_;
+  base::TimeTicks begin_main_frame_frame_time_;
   base::TimeTicks begin_main_frame_sent_time_;
   base::TimeTicks begin_main_frame_start_time_;
   base::TimeTicks begin_main_frame_end_time_;
+  base::TimeTicks pending_tree_main_frame_time_;
   base::TimeTicks prepare_tiles_start_time_;
   base::TimeTicks activate_start_time_;
+  base::TimeTicks active_tree_main_frame_time_;
   base::TimeTicks draw_start_time_;
   base::TimeTicks swap_start_time_;
 

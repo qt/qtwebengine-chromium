@@ -14,6 +14,7 @@
 
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkRRect.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
@@ -22,8 +23,11 @@ class SkImageFilter;
 class SkMatrix44;
 class SkPicture;
 
+namespace cc {
+class FilterOperations;
+}
+
 namespace blink {
-class WebFilterOperations;
 
 // An ordered list of items representing content to be rendered (stored in
 // 'drawing' items) and operations to be performed when rendering this content
@@ -33,8 +37,7 @@ class WebDisplayItemList {
 public:
     virtual ~WebDisplayItemList() { }
 
-    // This grabs a ref on the passed-in SkPicture.
-    virtual void appendDrawingItem(const WebRect& visualRect, const SkPicture*) { }
+    virtual void appendDrawingItem(const WebRect& visualRect, sk_sp<const SkPicture>) { }
 
     virtual void appendClipItem(const WebRect& visualRect, const WebRect& clipRect, const WebVector<SkRRect>& roundedClipRects) { }
     virtual void appendEndClipItem(const WebRect& visualRect) { }
@@ -48,7 +51,8 @@ public:
         SkXfermode::Mode, SkRect* bounds, SkColorFilter*) { }
     virtual void appendEndCompositingItem(const WebRect& visualRect) { }
 
-    virtual void appendFilterItem(const WebRect& visualRect, const WebFilterOperations&, const WebFloatRect& bounds) { }
+    // TODO(loyso): This should use CompositorFilterOperation. crbug.com/584551
+    virtual void appendFilterItem(const WebRect& visualRect, const cc::FilterOperations&, const WebFloatRect& bounds) { }
     virtual void appendEndFilterItem(const WebRect& visualRect) { }
 
     // Scroll containers are identified by an opaque pointer.

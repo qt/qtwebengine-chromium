@@ -22,6 +22,7 @@
 #ifndef WTF_StringHasher_h
 #define WTF_StringHasher_h
 
+#include "wtf/Allocator.h"
 #include "wtf/text/Unicode.h"
 
 namespace WTF {
@@ -31,13 +32,14 @@ namespace WTF {
 
 // LChar data is interpreted as Latin-1-encoded (zero extended to 16 bits).
 
-// NOTE: The hash computation here must stay in sync with the create_hash_table script in
-// JavaScriptCore and the CodeGeneratorJS.pm script in WebCore.
+// NOTE: The hash computation here must stay in sync with
+// build/scripts/hasher.py.
 
 // Golden ratio. Arbitrary start value to avoid mapping all zeros to a hash value of zero.
 static const unsigned stringHashingStartValue = 0x9E3779B9U;
 
 class StringHasher {
+    DISALLOW_NEW();
 public:
     static const unsigned flagCount = 8; // Save 8 bits for StringImpl to use as flags.
 

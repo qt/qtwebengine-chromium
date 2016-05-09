@@ -112,6 +112,15 @@
 #include <openssl/ex_data.h>
 #include <openssl/thread.h>
 
+#if defined(_MSC_VER)
+#if !defined(__cplusplus) || _MSC_VER < 1900
+#define alignas(x) __declspec(align(x))
+#define alignof __alignof
+#endif
+#else
+#include <stdalign.h>
+#endif
+
 #if defined(OPENSSL_NO_THREADS)
 #elif defined(OPENSSL_WINDOWS)
 #pragma warning(push, 3)
@@ -126,48 +135,6 @@ extern "C" {
 #endif
 
 
-/* MSVC's C4701 warning about the use of *potentially*--as opposed to
- * *definitely*--uninitialized values sometimes has false positives. Usually
- * the false positives can and should be worked around by simplifying the
- * control flow. When that is not practical, annotate the function containing
- * the code that triggers the warning with
- * OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS after its parameters:
- *
- *    void f() OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS {
- *       ...
- *    }
- *
- * Note that MSVC's control flow analysis seems to operate on a whole-function
- * basis, so the annotation must be placed on the entire function, not just a
- * block within the function. */
-#if defined(_MSC_VER)
-#define OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS \
-        __pragma(warning(suppress:4701))
-#else
-#define OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS
-#endif
-
-/* MSVC will sometimes correctly detect unreachable code and issue a warning,
- * which breaks the build since we treat errors as warnings, in some rare cases
- * where we want to allow the dead code to continue to exist. In these
- * situations, annotate the function containing the unreachable code with
- * OPENSSL_SUPPRESS_UNREACHABLE_CODE_WARNINGS after its parameters:
- *
- *    void f() OPENSSL_SUPPRESS_UNREACHABLE_CODE_WARNINGS {
- *       ...
- *    }
- *
- * Note that MSVC's reachability analysis seems to operate on a whole-function
- * basis, so the annotation must be placed on the entire function, not just a
- * block within the function. */
-#if defined(_MSC_VER)
-#define OPENSSL_SUPPRESS_UNREACHABLE_CODE_WARNINGS \
-        __pragma(warning(suppress:4702))
-#else
-#define OPENSSL_SUPPRESS_UNREACHABLE_CODE_WARNINGS
-#endif
-
-
 #if defined(OPENSSL_X86) || defined(OPENSSL_X86_64) || defined(OPENSSL_ARM) || \
     defined(OPENSSL_AARCH64)
 /* OPENSSL_cpuid_setup initializes OPENSSL_ia32cap_P. */
@@ -176,6 +143,12 @@ void OPENSSL_cpuid_setup(void);
 
 #if !defined(inline)
 #define inline __inline
+#endif
+
+
+#if !defined(_MSC_VER) && defined(OPENSSL_64_BIT)
+typedef __int128_t int128_t;
+typedef __uint128_t uint128_t;
 #endif
 
 
@@ -325,7 +298,7 @@ static inline int constant_time_select_int(unsigned int mask, int a, int b) {
 typedef uint32_t CRYPTO_once_t;
 #define CRYPTO_ONCE_INIT 0
 #elif defined(OPENSSL_WINDOWS)
-typedef LONG CRYPTO_once_t;
+typedef volatile LONG CRYPTO_once_t;
 #define CRYPTO_ONCE_INIT 0
 #else
 typedef pthread_once_t CRYPTO_once_t;

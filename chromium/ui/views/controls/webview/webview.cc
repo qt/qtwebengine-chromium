@@ -294,7 +294,8 @@ void WebView::DidDestroyFullscreenWidget(int routing_id) {
     ReattachForFullscreenChange(false);
 }
 
-void WebView::DidToggleFullscreenModeForTab(bool entered_fullscreen) {
+void WebView::DidToggleFullscreenModeForTab(bool entered_fullscreen,
+                                            bool will_cause_resize) {
   if (embed_fullscreen_widget_mode_enabled_)
     ReattachForFullscreenChange(entered_fullscreen);
 }
@@ -338,24 +339,12 @@ void WebView::AttachWebContents() {
   if (focus_manager && focus_manager->GetFocusedView() == this)
     OnFocus();
 
-#if defined(OS_WIN)
-  if (!is_embedding_fullscreen_widget_) {
-    web_contents()->SetParentNativeViewAccessible(
-        parent()->GetNativeViewAccessible());
-  }
-#endif
-
   OnWebContentsAttached();
 }
 
 void WebView::DetachWebContents() {
-  if (web_contents()) {
+  if (web_contents())
     holder_->Detach();
-#if defined(OS_WIN)
-    if (!is_embedding_fullscreen_widget_)
-      web_contents()->SetParentNativeViewAccessible(NULL);
-#endif
-  }
 }
 
 void WebView::ReattachForFullscreenChange(bool enter_fullscreen) {

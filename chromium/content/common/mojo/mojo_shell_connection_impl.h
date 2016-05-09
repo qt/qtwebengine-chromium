@@ -11,13 +11,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/common/mojo_shell_connection.h"
 #include "mojo/public/cpp/system/message_pipe.h"
-#include "mojo/shell/public/cpp/application_delegate.h"
-
-namespace mojo {
-namespace runner {
-class RunnerConnection;
-}
-}
+#include "mojo/shell/public/cpp/shell.h"
+#include "mojo/shell/public/cpp/shell_client.h"
+#include "mojo/shell/public/cpp/shell_connection.h"
 
 namespace content {
 
@@ -25,8 +21,12 @@ namespace content {
 bool IsRunningInMojoShell();
 
 class MojoShellConnectionImpl : public MojoShellConnection,
-                                public mojo::ApplicationDelegate {
+                                public mojo::ShellClient {
  public:
+  // Creates the MojoShellConnection using MojoShellConnection::Factory. Returns
+  // true if a factory was set and the connection was created, false otherwise.
+  static bool CreateUsingFactory();
+
   // Creates an instance of this class and stuffs it in TLS on the calling
   // thread. Retrieve it using MojoShellConnection::Get().
   static void Create();
@@ -36,37 +36,33 @@ class MojoShellConnectionImpl : public MojoShellConnection,
   // Mojo shell).
   static MojoShellConnectionImpl* Get();
 
-  // Blocks the calling thread until calling GetApplication() will return an
-  // Initialized() application with a bound ShellPtr. This call is a no-op
-  // if the connection has already been initialized.
-  void BindToCommandLinePlatformChannel();
-
-  // Same as BindToCommandLinePlatformChannel(), but receives a |handle| instead
-  // of looking for one on the command line.
-  void BindToMessagePipe(mojo::ScopedMessagePipeHandle handle);
+  // Binds the shell connection to a ShellClientFactory request pipe from the
+  // command line. This must only be called once.
+  void BindToRequestFromCommandLine();
 
  private:
-  MojoShellConnectionImpl();
+  friend class MojoShellConnection;
+
+  explicit MojoShellConnectionImpl(bool external);
   ~MojoShellConnectionImpl() override;
 
-  // mojo::ApplicationDelegate:
-  void Initialize(mojo::ApplicationImpl* application) override;
-  bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) override;
+  void WaitForShellIfNecessary();
+
+  // mojo::ShellClient:
+  void Initialize(mojo::Connector* connector,
+                  const mojo::Identity& identity,
+                  uint32_t id) override;
+  bool AcceptConnection(mojo::Connection* connection) override;
 
   // MojoShellConnection:
-  mojo::ApplicationImpl* GetApplication() override;
+  mojo::Connector* GetConnector() override;
+  bool UsingExternalShell() const override;
+  void SetConnectionLostClosure(const base::Closure& closure) override;
   void AddListener(Listener* listener) override;
   void RemoveListener(Listener* listener) override;
 
-  // Blocks the calling thread until a connection to the spawning shell is
-  // established, an Application request from it is bound, and the Initialize()
-  // method on that application is called.
-  void WaitForShell(mojo::ScopedMessagePipeHandle handle);
-
-  bool initialized_;
-  scoped_ptr<mojo::runner::RunnerConnection> runner_connection_;
-  scoped_ptr<mojo::ApplicationImpl> application_impl_;
+  const bool external_;
+  scoped_ptr<mojo::ShellConnection> shell_connection_;
   std::vector<Listener*> listeners_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoShellConnectionImpl);

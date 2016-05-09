@@ -21,7 +21,7 @@
 @synthesize sdp = _sdp;
 
 - (instancetype)initWithSdp:(NSString *)sdp
-              sdpMLineIndex:(NSInteger)sdpMLineIndex
+              sdpMLineIndex:(int)sdpMLineIndex
                      sdpMid:(NSString *)sdpMid {
   NSParameterAssert(sdp.length);
   if (self = [super init]) {
@@ -33,16 +33,16 @@
 }
 
 - (NSString *)description {
-  return [NSString stringWithFormat:@"RTCIceCandidate:\n%@\n%ld\n%@",
+  return [NSString stringWithFormat:@"RTCIceCandidate:\n%@\n%d\n%@",
                                     _sdpMid,
-                                    (long)_sdpMLineIndex,
+                                    _sdpMLineIndex,
                                     _sdp];
 }
 
 #pragma mark - Private
 
 - (instancetype)initWithNativeCandidate:
-    (webrtc::IceCandidateInterface *)candidate {
+    (const webrtc::IceCandidateInterface *)candidate {
   NSParameterAssert(candidate);
   std::string sdp;
   candidate->ToString(&sdp);

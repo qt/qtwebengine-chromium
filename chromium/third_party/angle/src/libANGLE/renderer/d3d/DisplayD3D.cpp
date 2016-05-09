@@ -60,8 +60,8 @@ egl::Error CreateRendererD3D(egl::Display *display, RendererD3D **outRenderer)
         const auto &attribMap              = display->getAttributeMap();
         EGLNativeDisplayType nativeDisplay = display->getNativeDisplayId();
 
-        EGLint requestedDisplayType =
-            attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+        EGLint requestedDisplayType = static_cast<EGLint>(
+            attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE));
 
 #   if defined(ANGLE_ENABLE_D3D11)
         if (nativeDisplay == EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE ||
@@ -169,11 +169,12 @@ SurfaceImpl *DisplayD3D::createWindowSurface(const egl::Config *configuration,
 {
     ASSERT(mRenderer != nullptr);
 
-    EGLint width = attribs.get(EGL_WIDTH, 0);
-    EGLint height = attribs.get(EGL_HEIGHT, 0);
-    EGLint fixedSize = attribs.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE);
-    EGLint orientation = attribs.get(EGL_SURFACE_ORIENTATION_ANGLE, 0);
-    EGLint directComposition = attribs.get(EGL_DIRECT_COMPOSITION_ANGLE, EGL_FALSE);
+    EGLint width       = static_cast<EGLint>(attribs.get(EGL_WIDTH, 0));
+    EGLint height      = static_cast<EGLint>(attribs.get(EGL_HEIGHT, 0));
+    EGLint fixedSize   = static_cast<EGLint>(attribs.get(EGL_FIXED_SIZE_ANGLE, EGL_FALSE));
+    EGLint orientation = static_cast<EGLint>(attribs.get(EGL_SURFACE_ORIENTATION_ANGLE, 0));
+    EGLint directComposition =
+        static_cast<EGLint>(attribs.get(EGL_DIRECT_COMPOSITION_ANGLE, EGL_FALSE));
 
     if (!fixedSize)
     {
@@ -190,8 +191,8 @@ SurfaceImpl *DisplayD3D::createPbufferSurface(const egl::Config *configuration,
 {
     ASSERT(mRenderer != nullptr);
 
-    EGLint width = attribs.get(EGL_WIDTH, 0);
-    EGLint height = attribs.get(EGL_HEIGHT, 0);
+    EGLint width  = static_cast<EGLint>(attribs.get(EGL_WIDTH, 0));
+    EGLint height = static_cast<EGLint>(attribs.get(EGL_HEIGHT, 0));
 
     return SurfaceD3D::createOffscreen(mRenderer, mDisplay, configuration, nullptr, width, height);
 }
@@ -202,8 +203,8 @@ SurfaceImpl *DisplayD3D::createPbufferFromClientBuffer(const egl::Config *config
 {
     ASSERT(mRenderer != nullptr);
 
-    EGLint width = attribs.get(EGL_WIDTH, 0);
-    EGLint height = attribs.get(EGL_HEIGHT, 0);
+    EGLint width  = static_cast<EGLint>(attribs.get(EGL_WIDTH, 0));
+    EGLint height = static_cast<EGLint>(attribs.get(EGL_HEIGHT, 0));
 
     return SurfaceD3D::createOffscreen(
         mRenderer, mDisplay, configuration, shareHandle, width, height);
@@ -229,19 +230,18 @@ egl::Error DisplayD3D::getDevice(DeviceImpl **device)
     return mRenderer->getEGLDevice(device);
 }
 
-egl::Error DisplayD3D::createContext(const egl::Config *config, const gl::Context *shareContext, const egl::AttributeMap &attribs,
-                                     gl::Context **outContext)
+gl::Context *DisplayD3D::createContext(const egl::Config *config,
+                                       const gl::Context *shareContext,
+                                       const egl::AttributeMap &attribs)
 {
     ASSERT(mRenderer != nullptr);
+    return new gl::Context(config, shareContext, mRenderer, attribs);
+}
 
-    EGLint clientVersion = attribs.get(EGL_CONTEXT_CLIENT_VERSION, 1);
-    bool notifyResets = (attribs.get(EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT, EGL_NO_RESET_NOTIFICATION_EXT) == EGL_LOSE_CONTEXT_ON_RESET_EXT);
-    bool robustAccess = (attribs.get(EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT, EGL_FALSE) == EGL_TRUE);
-    bool debug           = (attribs.get(EGL_CONTEXT_OPENGL_DEBUG, EGL_FALSE) == EGL_TRUE);
-
-    *outContext = new gl::Context(config, clientVersion, shareContext, mRenderer, notifyResets,
-                                  robustAccess, debug);
-    return egl::Error(EGL_SUCCESS);
+StreamImpl *DisplayD3D::createStream(const egl::AttributeMap &attribs)
+{
+    ASSERT(mRenderer != nullptr);
+    return mRenderer->createStream(attribs);
 }
 
 egl::Error DisplayD3D::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context)
@@ -347,4 +347,17 @@ void DisplayD3D::generateCaps(egl::Caps *outCaps) const
     outCaps->textureNPOT = mRenderer->getRendererExtensions().textureNPOT;
 }
 
+egl::Error DisplayD3D::waitClient() const
+{
+    // Unimplemented as it is a noop on D3D
+    return egl::Error(EGL_SUCCESS);
+}
+
+egl::Error DisplayD3D::waitNative(EGLint engine,
+                                  egl::Surface *drawSurface,
+                                  egl::Surface *readSurface) const
+{
+    // Unimplemented as it is a noop on D3D
+    return egl::Error(EGL_SUCCESS);
+}
 }

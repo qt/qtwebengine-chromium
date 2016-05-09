@@ -74,6 +74,8 @@ class MockRtpRtcp : public RtpRtcp {
       int32_t(const CodecInst& voiceCodec));
   MOCK_METHOD1(RegisterSendPayload,
       int32_t(const VideoCodec& videoCodec));
+  MOCK_METHOD2(RegisterVideoSendPayload,
+               void(int payload_type, const char* payload_name));
   MOCK_METHOD1(DeRegisterSendPayload,
       int32_t(const int8_t payloadType));
   MOCK_METHOD2(RegisterSendRtpHeaderExtension,
@@ -210,14 +212,13 @@ class MockRtpRtcp : public RtpRtcp {
       int(uint8_t settings));
   MOCK_METHOD2(SendNACK,
       int32_t(const uint16_t* nackList, const uint16_t size));
+  MOCK_METHOD1(SendNack, void(const std::vector<uint16_t>& sequence_numbers));
   MOCK_METHOD2(SetStorePacketsStatus,
                void(const bool enable, const uint16_t numberToStore));
   MOCK_CONST_METHOD0(StorePackets, bool());
   MOCK_METHOD1(RegisterRtcpStatisticsCallback, void(RtcpStatisticsCallback*));
   MOCK_METHOD0(GetRtcpStatisticsCallback, RtcpStatisticsCallback*());
   MOCK_METHOD1(SendFeedbackPacket, bool(const rtcp::TransportFeedback& packet));
-  MOCK_METHOD1(RegisterAudioCallback,
-      int32_t(RtpAudioFeedback* messagesCallback));
   MOCK_METHOD1(SetAudioPacketSize,
       int32_t(const uint16_t packetSizeSamples));
   MOCK_METHOD3(SendTelephoneEventOutband,
@@ -249,7 +250,7 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD0(TimeUntilNextProcess,
         int64_t());
   MOCK_METHOD0(Process,
-        int32_t());
+        void());
   MOCK_METHOD1(RegisterSendFrameCountObserver,
       void(FrameCountObserver*));
   MOCK_CONST_METHOD0(GetSendFrameCountObserver,

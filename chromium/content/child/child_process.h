@@ -5,8 +5,9 @@
 #ifndef CONTENT_CHILD_CHILD_PROCESS_H_
 #define CONTENT_CHILD_CHILD_PROCESS_H_
 
+#include <memory>
+
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
@@ -33,6 +34,7 @@ class CONTENT_EXPORT ChildProcess {
   // Child processes should have an object that derives from this class.
   // Normally you would immediately call set_main_thread after construction.
   ChildProcess();
+  explicit ChildProcess(base::ThreadPriority io_thread_priority);
   virtual ~ChildProcess();
 
   // May be NULL if the main thread hasn't been set explicitly.
@@ -61,6 +63,9 @@ class CONTENT_EXPORT ChildProcess {
   // itself down when the ref count reaches 0.
   // For example, in the renderer process, generally each tab managed by this
   // process will hold a reference to the process, and release when closed.
+  // However for renderer processes specifically, there is also fast shutdown
+  // code path initiated by the browser process. The process refcount does
+  // not influence fast shutdown. See blink::Platform::suddenTerminationChanged.
   void AddRefProcess();
   void ReleaseProcess();
 
@@ -81,7 +86,7 @@ class CONTENT_EXPORT ChildProcess {
   // NOTE: make sure that main_thread_ is listed after shutdown_event_, since
   // it depends on it (indirectly through IPC::SyncChannel).  Same for
   // io_thread_.
-  scoped_ptr<ChildThreadImpl> main_thread_;
+  std::unique_ptr<ChildThreadImpl> main_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildProcess);
 };

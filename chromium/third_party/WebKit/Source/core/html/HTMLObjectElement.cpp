@@ -61,9 +61,9 @@ inline HTMLObjectElement::~HTMLObjectElement()
 #endif
 }
 
-PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+RawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeNoop(new HTMLObjectElement(document, form, createdByParser));
+    RawPtr<HTMLObjectElement> element = new HTMLObjectElement(document, form, createdByParser);
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -103,8 +103,8 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
-        // FIXME: What is the right thing to do here? Should we supress the
-        // reload stuff when a persistable widget-type is specified?
+        // TODO(schenney): crbug.com/572908 What is the right thing to do here? Should we
+        // suppress the reload stuff when a persistable widget-type is specified?
         reloadPluginOnAttributeChange(name);
         if (!layoutObject())
             requestPluginCreationWithoutLayoutObjectIfPossible();
@@ -144,7 +144,7 @@ static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramV
     }
 }
 
-// FIXME: This function should not deal with url or serviceType!
+// TODO(schenney): crbug.com/572908 This function should not deal with url or serviceType!
 void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues, String& url, String& serviceType)
 {
     HashSet<StringImpl*, CaseFoldingHash> uniqueParamNames;
@@ -161,10 +161,10 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
         paramNames.append(p->name());
         paramValues.append(p->value());
 
-        // FIXME: url adjustment does not belong in this function.
+        // TODO(schenney): crbug.com/572908 url adjustment does not belong in this function.
         if (url.isEmpty() && urlParameter.isEmpty() && (equalIgnoringCase(name, "src") || equalIgnoringCase(name, "movie") || equalIgnoringCase(name, "code") || equalIgnoringCase(name, "url")))
             urlParameter = stripLeadingAndTrailingHTMLSpaces(p->value());
-        // FIXME: serviceType calculation does not belong in this function.
+        // TODO(schenney): crbug.com/572908 serviceType calculation does not belong in this function.
         if (serviceType.isEmpty() && equalIgnoringCase(name, "type")) {
             serviceType = p->value();
             size_t pos = serviceType.find(";");
@@ -189,8 +189,8 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
     for (const Attribute& attribute : attributes) {
         const AtomicString& name = attribute.name().localName();
         if (!uniqueParamNames.contains(name.impl())) {
-            paramNames.append(name.string());
-            paramValues.append(attribute.value().string());
+            paramNames.append(name.getString());
+            paramValues.append(attribute.value().getString());
         }
     }
 
@@ -257,22 +257,21 @@ void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
         lazyReattachIfNeeded();
 }
 
-// FIXME: This should be unified with HTMLEmbedElement::updateWidget and
+// TODO(schenney): crbug.com/572908 This should be unified with HTMLEmbedElement::updateWidget and
 // moved down into HTMLPluginElement.cpp
 void HTMLObjectElement::updateWidgetInternal()
 {
-    ASSERT(!layoutEmbeddedObject()->showsUnavailablePluginIndicator());
+    ASSERT(!layoutEmbeddedItem().showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
-    // FIXME: This should ASSERT isFinishedParsingChildren() instead.
+    // TODO(schenney): crbug.com/572908 This should ASSERT isFinishedParsingChildren() instead.
     if (!isFinishedParsingChildren()) {
         dispatchErrorEvent();
         return;
     }
 
-    // FIXME: I'm not sure it's ever possible to get into updateWidget during a
-    // removal, but just in case we should avoid loading the frame to prevent
-    // security bugs.
+    // TODO(schenney): crbug.com/572908 I'm not sure it's ever possible to get into updateWidget during a
+    // removal, but just in case we should avoid loading the frame to prevent security bugs.
     if (!SubframeLoadingDisabler::canLoadFrame(*this)) {
         dispatchErrorEvent();
         return;
@@ -281,7 +280,7 @@ void HTMLObjectElement::updateWidgetInternal()
     String url = this->url();
     String serviceType = m_serviceType;
 
-    // FIXME: These should be joined into a PluginParameters class.
+    // TODO(schenney): crbug.com/572908 These should be joined into a PluginParameters class.
     Vector<String> paramNames;
     Vector<String> paramValues;
     parametersForPlugin(paramNames, paramValues, url, serviceType);
@@ -292,7 +291,8 @@ void HTMLObjectElement::updateWidgetInternal()
         return;
     }
 
-    // FIXME: Is it possible to get here without a layoutObject now that we don't have beforeload events?
+    // TODO(schenney): crbug.com/572908 Is it possible to get here without a layoutObject
+    // now that we don't have beforeload events?
     if (!layoutObject())
         return;
 
@@ -319,7 +319,7 @@ void HTMLObjectElement::removedFrom(ContainerNode* insertionPoint)
 
 void HTMLObjectElement::childrenChanged(const ChildrenChange& change)
 {
-    if (inDocument() && !useFallbackContent()) {
+    if (inShadowIncludingDocument() && !useFallbackContent()) {
         setNeedsWidgetUpdate(true);
         lazyReattachIfNeeded();
     }
@@ -348,7 +348,7 @@ const AtomicString HTMLObjectElement::imageSourceURL() const
     return getAttribute(dataAttr);
 }
 
-// FIXME: Remove this hack.
+// TODO(schenney): crbug.com/572908 Remove this hack.
 void HTMLObjectElement::reattachFallbackContent()
 {
     // This can happen inside of attach() in the middle of a recalcStyle so we need to
@@ -364,11 +364,11 @@ void HTMLObjectElement::renderFallbackContent()
     if (useFallbackContent())
         return;
 
-    if (!inDocument())
+    if (!inShadowIncludingDocument())
         return;
 
     // Before we give up and use fallback content, check to see if this is a MIME type issue.
-    if (m_imageLoader && m_imageLoader->image() && m_imageLoader->image()->status() != Resource::LoadError) {
+    if (m_imageLoader && m_imageLoader->image() && m_imageLoader->image()->getStatus() != Resource::LoadError) {
         m_serviceType = m_imageLoader->image()->response().mimeType();
         if (!isImageType()) {
             // If we don't think we have an image type anymore, then clear the image from the loader.
@@ -380,7 +380,7 @@ void HTMLObjectElement::renderFallbackContent()
 
     m_useFallbackContent = true;
 
-    // FIXME: Style gets recalculated which is suboptimal.
+    // TODO(schenney): crbug.com/572908 Style gets recalculated which is suboptimal.
     reattachFallbackContent();
 }
 
@@ -406,7 +406,7 @@ bool HTMLObjectElement::containsJavaApplet() const
     for (HTMLElement& child : Traversal<HTMLElement>::childrenOf(*this)) {
         if (isHTMLParamElement(child)
             && equalIgnoringCase(child.getNameAttribute(), "type")
-            && MIMETypeRegistry::isJavaAppletMIMEType(child.getAttribute(valueAttr).string()))
+            && MIMETypeRegistry::isJavaAppletMIMEType(child.getAttribute(valueAttr).getString()))
             return true;
         if (isHTMLObjectElement(child) && toHTMLObjectElement(child).containsJavaApplet())
             return true;
@@ -419,19 +419,6 @@ void HTMLObjectElement::didMoveToNewDocument(Document& oldDocument)
 {
     FormAssociatedElement::didMoveToNewDocument(oldDocument);
     HTMLPlugInElement::didMoveToNewDocument(oldDocument);
-}
-
-void HTMLObjectElement::appendToFormData(FormData& formData)
-{
-    if (name().isEmpty())
-        return;
-
-    Widget* widget = pluginWidget();
-    if (!widget || !widget->isPluginView())
-        return;
-    String value;
-    if (toPluginView(widget)->getFormValue(value))
-        formData.append(name(), value);
 }
 
 HTMLFormElement* HTMLObjectElement::formOwner() const
@@ -449,4 +436,4 @@ bool HTMLObjectElement::useFallbackContent() const
     return HTMLPlugInElement::useFallbackContent() || m_useFallbackContent;
 }
 
-}
+} // namespace blink

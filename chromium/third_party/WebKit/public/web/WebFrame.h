@@ -36,12 +36,14 @@
 #include "WebIconURL.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
+#include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebPrivateOwnPtr.h"
 #include "public/platform/WebReferrerPolicy.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/web/WebFrameLoadType.h"
 #include "public/web/WebTreeScopeType.h"
 
 struct NPObject;
@@ -99,14 +101,6 @@ template <typename T> class WebVector;
 // getting a frame's parent or its opener.
 class WebFrame {
 public:
-    // Control of layoutTreeAsText output
-    enum LayoutAsTextControl {
-        LayoutAsTextNormal = 0,
-        LayoutAsTextDebug = 1 << 0,
-        LayoutAsTextPrinting = 1 << 1,
-        LayoutAsTextWithLineTrees = 1 << 2
-    };
-    typedef unsigned LayoutAsTextControls;
 
     // FIXME: We already have blink::TextGranularity. For now we support only
     // a part of blink::TextGranularity.
@@ -167,7 +161,7 @@ public:
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
     // The security origin of this frame.
-    BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
+    BLINK_EXPORT WebSecurityOrigin getSecurityOrigin() const;
 
     // Updates the sandbox flags in the frame's FrameOwner.  This is used when
     // this frame's parent is in another process and it dynamically updates
@@ -211,7 +205,7 @@ public:
     BLINK_EXPORT WebFrame* opener() const;
 
     // Sets the frame that opened this one or 0 if there is none.
-    virtual void setOpener(WebFrame*);
+    BLINK_EXPORT void setOpener(WebFrame*);
 
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
@@ -225,7 +219,7 @@ public:
     BLINK_EXPORT void appendChild(WebFrame*);
 
     // Removes the given child from this frame.
-    virtual void removeChild(WebFrame*);
+    BLINK_EXPORT void removeChild(WebFrame*);
 
     // Returns the parent frame or 0 if this is a top-most frame.
     BLINK_EXPORT WebFrame* parent() const;
@@ -269,14 +263,6 @@ public:
 
     // Scripting ----------------------------------------------------------
 
-    // Returns a NPObject corresponding to this frame's DOMWindow.
-    virtual NPObject* windowObject() const = 0;
-
-    // Binds a NPObject as a property of this frame's DOMWindow.
-    virtual void bindToWindowObject(const WebString& name, NPObject*) = 0;
-    virtual void bindToWindowObject(
-        const WebString& name, NPObject*, void*) = 0;
-
     // Executes script in the context of the current page.
     virtual void executeScript(const WebScriptSource&) = 0;
 
@@ -316,10 +302,6 @@ public:
     // Calls window.gc() if it is defined.
     virtual void collectGarbage() = 0;
 
-    // Check if the scripting URL represents a mixed content condition relative
-    // to this frame.
-    virtual bool checkIfRunInsecureContent(const WebURL&) const = 0;
-
     // Executes script in the context of the current page and returns the value
     // that the script evaluated to.
     // DEPRECATED: Use WebLocalFrame::requestExecuteScriptAndReturnValue.
@@ -357,12 +339,12 @@ public:
     // Navigation ----------------------------------------------------------
 
     // Reload the current document.
-    // True |ignoreCache| explicitly bypasses caches.
-    // False |ignoreCache| revalidates any existing cache entries.
-    virtual void reload(bool ignoreCache = false) = 0;
+    // Note: reload() and reloadWithOverrideURL() will be deprecated.
+    // Do not use these APIs any more, but use loadRequest() instead.
+    virtual void reload(WebFrameLoadType = WebFrameLoadType::Reload) = 0;
 
     // This is used for situations where we want to reload a different URL because of a redirect.
-    virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache = false) = 0;
+    virtual void reloadWithOverrideURL(const WebURL& overrideUrl, WebFrameLoadType = WebFrameLoadType::Reload) = 0;
 
     // Load the given URL.
     virtual void loadRequest(const WebURLRequest&) = 0;
@@ -372,20 +354,8 @@ public:
     virtual void loadHistoryItem(
         const WebHistoryItem&,
         WebHistoryLoadType,
-        WebURLRequest::CachePolicy = WebURLRequest::UseProtocolCachePolicy) = 0;
-
-    // Loads the given data with specific mime type and optional text
-    // encoding.  For HTML data, baseURL indicates the security origin of
-    // the document and is used to resolve links.  If specified,
-    // unreachableURL is reported via WebDataSource::unreachableURL.  If
-    // replace is false, then this data will be loaded as a normal
-    // navigation.  Otherwise, the current history item will be replaced.
-    virtual void loadData(const WebData& data,
-                          const WebString& mimeType,
-                          const WebString& textEncoding,
-                          const WebURL& baseURL,
-                          const WebURL& unreachableURL = WebURL(),
-                          bool replace = false) = 0;
+        WebCachePolicy = WebCachePolicy::UseProtocolCachePolicy)
+        = 0;
 
     // This method is short-hand for calling LoadData, where mime_type is
     // "text/html" and text_encoding is "UTF-8".
@@ -508,12 +478,12 @@ public:
     virtual int printBegin(const WebPrintParams&, const WebNode& constrainToNode = WebNode()) = 0;
 
     // Returns the page shrinking factor calculated by webkit (usually
-    // between 1/1.25 and 1/2). Returns 0 if the page number is invalid or
+    // between 1/1.33 and 1/2). Returns 0 if the page number is invalid or
     // not in printing mode.
     virtual float getPrintPageShrink(int page) = 0;
 
     // Prints one page, and returns the calculated page shrinking factor
-    // (usually between 1/1.25 and 1/2).  Returns 0 if the page number is
+    // (usually between 1/1.33 and 1/2).  Returns 0 if the page number is
     // invalid or not in printing mode.
     virtual float printPage(int pageToPrint, WebCanvas*) = 0;
 
@@ -548,91 +518,6 @@ public:
     // printBegin must have been called before this method.
     virtual WebString pageProperty(const WebString& propertyName, int pageIndex) = 0;
 
-    // Find-in-page --------------------------------------------------------
-
-    // Searches a frame for a given string.
-    //
-    // If a match is found, this function will select it (scrolling down to
-    // make it visible if needed) and fill in selectionRect with the
-    // location of where the match was found (in window coordinates).
-    //
-    // If no match is found, this function clears all tickmarks and
-    // highlighting.
-    //
-    // Returns true if the search string was found, false otherwise.
-    virtual bool find(int identifier,
-                      const WebString& searchText,
-                      const WebFindOptions& options,
-                      bool wrapWithinFrame,
-                      WebRect* selectionRect) = 0;
-
-    // Notifies the frame that we are no longer interested in searching.
-    // This will abort any asynchronous scoping effort already under way
-    // (see the function scopeStringMatches for details) and erase all
-    // tick-marks and highlighting from the previous search.  If
-    // clearSelection is true, it will also make sure the end state for the
-    // find operation does not leave a selection.  This can occur when the
-    // user clears the search string but does not close the find box.
-    virtual void stopFinding(bool clearSelection) = 0;
-
-    // Counts how many times a particular string occurs within the frame.
-    // It also retrieves the location of the string and updates a vector in
-    // the frame so that tick-marks and highlighting can be drawn.  This
-    // function does its work asynchronously, by running for a certain
-    // time-slice and then scheduling itself (co-operative multitasking) to
-    // be invoked later (repeating the process until all matches have been
-    // found).  This allows multiple frames to be searched at the same time
-    // and provides a way to cancel at any time (see
-    // cancelPendingScopingEffort).  The parameter searchText specifies
-    // what to look for and |reset| signals whether this is a brand new
-    // request or a continuation of the last scoping effort.
-    virtual void scopeStringMatches(int identifier,
-                                    const WebString& searchText,
-                                    const WebFindOptions& options,
-                                    bool reset) = 0;
-
-    // Cancels any outstanding requests for scoping string matches on a frame.
-    virtual void cancelPendingScopingEffort() = 0;
-
-    // This function is called on the main frame during the scoping effort
-    // to keep a running tally of the accumulated total match-count for all
-    // frames.  After updating the count it will notify the WebViewClient
-    // about the new count.
-    virtual void increaseMatchCount(int count, int identifier) = 0;
-
-    // This function is called on the main frame to reset the total number
-    // of matches found during the scoping effort.
-    virtual void resetMatchCount() = 0;
-
-    // Returns a counter that is incremented when the find-in-page markers are
-    // changed on any frame. Switching the active marker doesn't change the
-    // current version. Should be called only on the main frame.
-    virtual int findMatchMarkersVersion() const = 0;
-
-    // Returns the bounding box of the active find-in-page match marker or an
-    // empty rect if no such marker exists. The rect is returned in find-in-page
-    // coordinates whatever frame the active marker is.
-    // Should be called only on the main frame.
-    virtual WebFloatRect activeFindMatchRect() = 0;
-
-    // Swaps the contents of the provided vector with the bounding boxes of the
-    // find-in-page match markers from all frames. The bounding boxes are returned
-    // in find-in-page coordinates. This method should be called only on the main frame.
-    virtual void findMatchRects(WebVector<WebFloatRect>&) = 0;
-
-    // Selects the find-in-page match in the appropriate frame closest to the
-    // provided point in find-in-page coordinates. Returns the ordinal of such
-    // match or -1 if none could be found. If not null, selectionRect is set to
-    // the bounding box of the selected match in window coordinates.
-    // This method should be called only on the main frame.
-    virtual int selectNearestFindMatch(const WebFloatPoint&,
-                                       WebRect* selectionRect) = 0;
-
-
-    // Set the tickmarks for the frame. This will override the default tickmarks
-    // generated by find results. If this is called with an empty array, the
-    // default behavior will be restored.
-    virtual void setTickmarks(const WebVector<WebRect>&) = 0;
 
     // Events --------------------------------------------------------------
 
@@ -643,27 +528,6 @@ public:
 
 
     // Utility -------------------------------------------------------------
-
-    // Returns the contents of this frame as a string.  If the text is
-    // longer than maxChars, it will be clipped to that length.  WARNING:
-    // This function may be slow depending on the number of characters
-    // retrieved and page complexity.  For a typically sized page, expect
-    // it to take on the order of milliseconds.
-    //
-    // If there is room, subframe text will be recursively appended. Each
-    // frame will be separated by an empty line.
-    virtual WebString contentAsText(size_t maxChars) const = 0;
-
-    // Returns HTML text for the contents of this frame.  This is generated
-    // from the DOM.
-    virtual WebString contentAsMarkup() const = 0;
-
-    // Returns a text representation of the render tree.  This method is used
-    // to support layout tests.
-    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const = 0;
-
-    // Calls markerTextForListItem() defined in core/layout/LayoutTreeAsText.h.
-    virtual WebString markerTextForListItem(const WebElement&) const = 0;
 
     // Prints all of the pages into the canvas, with page boundaries drawn as
     // one pixel wide blue lines. This method exists to support layout tests.

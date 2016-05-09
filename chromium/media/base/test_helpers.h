@@ -9,6 +9,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log.h"
 #include "media/base/pipeline_status.h"
@@ -90,7 +91,16 @@ class TestVideoConfig {
   static gfx::Size LargeCodedSize();
 
  private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(TestVideoConfig);
+  DISALLOW_COPY_AND_ASSIGN(TestVideoConfig);
+};
+
+// Provides pre-canned AudioParameters objects.
+class TestAudioParameters {
+ public:
+  static AudioParameters Normal();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestAudioParameters);
 };
 
 // Create an AudioBuffer containing |frames| frames of data, where each sample
@@ -132,19 +142,6 @@ scoped_refptr<DecoderBuffer> CreateFakeVideoBufferForTest(
 // Verify if a fake video DecoderBuffer is valid.
 bool VerifyFakeVideoBufferForTest(const scoped_refptr<DecoderBuffer>& buffer,
                                   const VideoDecoderConfig& config);
-
-// Used to verify that the each call to A() is followed by a call to B(),
-// before the next call to A(). There may be any number of pairs (including 0).
-class CallbackPairChecker {
- public:
-  CallbackPairChecker();
-  ~CallbackPairChecker();
-  void RecordACalled();
-  void RecordBCalled();
-
- private:
-  bool expecting_b_;
-};
 
 }  // namespace media
 

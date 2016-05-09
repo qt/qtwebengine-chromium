@@ -25,7 +25,6 @@
 #define KeyboardEvent_h
 
 #include "core/CoreExport.h"
-#include "core/events/EventDispatchMediator.h"
 #include "core/events/KeyboardEventInit.h"
 #include "core/events/UIEventWithKeyState.h"
 
@@ -44,24 +43,24 @@ public:
         DOM_KEY_LOCATION_NUMPAD     = 0x03
     };
 
-    static PassRefPtrWillBeRawPtr<KeyboardEvent> create()
+    static KeyboardEvent* create()
     {
-        return adoptRefWillBeNoop(new KeyboardEvent);
+        return new KeyboardEvent;
     }
 
-    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const PlatformKeyboardEvent& platformEvent, AbstractView* view)
+    static KeyboardEvent* create(const PlatformKeyboardEvent& platformEvent, AbstractView* view)
     {
-        return adoptRefWillBeNoop(new KeyboardEvent(platformEvent, view));
+        return new KeyboardEvent(platformEvent, view);
     }
 
-    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(ScriptState*, const AtomicString& type, const KeyboardEventInit&);
+    static KeyboardEvent* create(ScriptState*, const AtomicString& type, const KeyboardEventInit&);
 
-    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
+    static KeyboardEvent* create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
         const String& keyIdentifier, const String& code, const String& key, unsigned location,
         PlatformEvent::Modifiers modifiers, double platformTimeStamp)
     {
-        return adoptRefWillBeNoop(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, code, key, location,
-            modifiers, platformTimeStamp));
+        return new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, code, key, location,
+            modifiers, platformTimeStamp);
     }
 
     ~KeyboardEvent() override;
@@ -86,8 +85,6 @@ public:
     bool isKeyboardEvent() const override;
     int which() const override;
 
-    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
-
     DECLARE_VIRTUAL_TRACE();
 
 private:
@@ -105,14 +102,6 @@ private:
     String m_code;
     String m_key;
     unsigned m_location;
-};
-
-class KeyboardEventDispatchMediator : public EventDispatchMediator {
-public:
-    static PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> create(PassRefPtrWillBeRawPtr<KeyboardEvent>);
-private:
-    explicit KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent>);
-    bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(KeyboardEvent);

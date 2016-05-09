@@ -8,18 +8,17 @@
 
 #include "base/trace_event/trace_event.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
+#include "cc/proto/layer.pb.h"
 #include "cc/trees/layer_tree_host.h"
 
 namespace cc {
 
-scoped_refptr<HeadsUpDisplayLayer> HeadsUpDisplayLayer::Create(
-    const LayerSettings& settings) {
-  return make_scoped_refptr(new HeadsUpDisplayLayer(settings));
+scoped_refptr<HeadsUpDisplayLayer> HeadsUpDisplayLayer::Create() {
+  return make_scoped_refptr(new HeadsUpDisplayLayer());
 }
 
-HeadsUpDisplayLayer::HeadsUpDisplayLayer(const LayerSettings& settings)
-    : Layer(settings),
-      typeface_(skia::AdoptRef(
+HeadsUpDisplayLayer::HeadsUpDisplayLayer()
+    : typeface_(skia::AdoptRef(
           SkTypeface::CreateFromName("times new roman", SkTypeface::kNormal))) {
   if (!typeface_) {
     typeface_ = skia::AdoptRef(
@@ -66,6 +65,11 @@ bool HeadsUpDisplayLayer::HasDrawableContent() const {
 scoped_ptr<LayerImpl> HeadsUpDisplayLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
   return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_);
+}
+
+void HeadsUpDisplayLayer::SetTypeForProtoSerialization(
+    proto::LayerNode* proto) const {
+  proto->set_type(proto::LayerNode::HEADS_UP_DISPLAY_LAYER);
 }
 
 void HeadsUpDisplayLayer::PushPropertiesTo(LayerImpl* layer) {

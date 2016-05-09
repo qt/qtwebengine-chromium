@@ -21,6 +21,7 @@
 
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/ClientRectList.h"
+#include "core/dom/StyleChangeReason.h"
 #include "core/dom/VisitedLinkState.h"
 #include "core/editing/DragCaretController.h"
 #include "core/editing/commands/UndoStack.h"
@@ -50,6 +51,7 @@
 #include "core/paint/PaintLayer.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/plugins/PluginData.h"
+#include "platform/text/CompressibleString.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -70,7 +72,7 @@ Page::PageSet& Page::ordinaryPages()
 
 void Page::networkStateChanged(bool online)
 {
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> frames;
+    HeapVector<Member<LocalFrame>> frames;
 
     // Get all the frames of all the pages in all the page groups
     for (Page* page : allPages()) {
@@ -104,12 +106,12 @@ float deviceScaleFactor(LocalFrame* frame)
     return page->deviceScaleFactor();
 }
 
-PassOwnPtrWillBeRawPtr<Page> Page::createOrdinary(PageClients& pageClients)
+Page* Page::createOrdinary(PageClients& pageClients)
 {
-    OwnPtrWillBeRawPtr<Page> page = create(pageClients);
-    ordinaryPages().add(page.get());
-    page->memoryPurgeController().registerClient(page.get());
-    return page.release();
+    Page* page = create(pageClients);
+    ordinaryPages().add(page);
+    page->memoryPurgeController().registerClient(page);
+    return page;
 }
 
 Page::Page(PageClients& pageClients)
@@ -136,6 +138,7 @@ Page::Page(PageClients& pageClients)
     , m_isPainting(false)
 #endif
     , m_frameHost(FrameHost::create(*this))
+    , m_timerForCompressStrings(this, &Page::compressStrings)
 {
     ASSERT(m_editorClient);
 
@@ -208,7 +211,6 @@ void Page::setMainFrame(Frame* mainFrame)
 
 void Page::documentDetached(Document* document)
 {
-    m_multisamplingChangedObservers.clear();
     m_pointerLockController->documentDetached(document);
     m_contextMenuController->documentDetached(document);
     if (m_validationMessageClient)
@@ -239,19 +241,7 @@ void Page::setNeedsRecalcStyleInAllFrames()
 {
     for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->isLocalFrame())
-            toLocalFrame(frame)->document()->styleResolverChanged();
-    }
-}
-
-void Page::setNeedsLayoutInAllFrames()
-{
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (!frame->isLocalFrame())
-            continue;
-        if (FrameView* view = toLocalFrame(frame)->view()) {
-            view->setNeedsLayout();
-            view->scheduleRelayout();
-        }
+            toLocalFrame(frame)->document()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Settings));
     }
 }
 
@@ -292,7 +282,7 @@ void Page::unmarkAllTextMatches()
     } while (frame);
 }
 
-void Page::setValidationMessageClient(PassOwnPtrWillBeRawPtr<ValidationMessageClient> client)
+void Page::setValidationMessageClient(ValidationMessageClient* client)
 {
     m_validationMessageClient = client;
 }
@@ -325,7 +315,6 @@ void Page::setDeviceScaleFactor(float scaleFactor)
         return;
 
     m_deviceScaleFactor = scaleFactor;
-    setNeedsRecalcStyleInAllFrames();
 
     if (mainFrame() && mainFrame()->isLocalFrame())
         deprecatedLocalMainFrame()->deviceScaleFactorChanged();
@@ -363,6 +352,8 @@ void Page::visitedStateChanged(LinkHash linkHash)
 
 void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitialState)
 {
+    static const double waitingTimeBeforeCompressingString = 10;
+
     if (m_visibilityState == visibilityState)
         return;
     m_visibilityState = visibilityState;
@@ -372,6 +363,15 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
 
     if (!isInitialState && m_mainFrame && m_mainFrame->isLocalFrame())
         deprecatedLocalMainFrame()->didChangeVisibilityState();
+
+    // Compress CompressibleStrings when 10 seconds have passed since the page
+    // went to background.
+    if (m_visibilityState == PageVisibilityStateHidden) {
+        if (!m_timerForCompressStrings.isActive())
+            m_timerForCompressStrings.startOneShot(waitingTimeBeforeCompressingString, BLINK_FROM_HERE);
+    } else if (m_timerForCompressStrings.isActive()) {
+        m_timerForCompressStrings.stop();
+    }
 }
 
 PageVisibilityState Page::visibilityState() const
@@ -379,23 +379,15 @@ PageVisibilityState Page::visibilityState() const
     return m_visibilityState;
 }
 
+bool Page::isPageVisible() const
+{
+    return visibilityState() == PageVisibilityStateVisible;
+}
+
 bool Page::isCursorVisible() const
 {
     return m_isCursorVisible && settings().deviceSupportsMouse();
 }
-
-void Page::addMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
-{
-    m_multisamplingChangedObservers.add(observer);
-}
-
-// For Oilpan, unregistration is handled by the GC and weak references.
-#if !ENABLE(OILPAN)
-void Page::removeMultisamplingChangedObserver(MultisamplingChangedObserver* observer)
-{
-    m_multisamplingChangedObservers.remove(observer);
-}
-#endif
 
 void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
 {
@@ -413,11 +405,6 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
                 toLocalFrame(frame)->document()->initDNSPrefetch();
         }
         break;
-    case SettingsDelegate::MultisamplingChange: {
-        for (MultisamplingChangedObserver* observer : m_multisamplingChangedObservers)
-            observer->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
-        break;
-    }
     case SettingsDelegate::ImageLoadingChange:
         for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
             if (frame->isLocalFrame()) {
@@ -437,7 +424,6 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
             if (frame->isLocalFrame())
                 toLocalFrame(frame)->document()->styleEngine().updateGenericFontFamilySettings();
         }
-        setNeedsRecalcStyleInAllFrames();
         break;
     case SettingsDelegate::AcceleratedCompositingChange:
         updateAcceleratedCompositingSettings();
@@ -491,6 +477,7 @@ void Page::didCommitLoad(LocalFrame* frame)
     if (m_mainFrame == frame) {
         frame->console().clearMessages();
         useCounter().didCommitLoad();
+        deprecation().clearSuppression();
         frameHost().visualViewport().sendUMAMetrics();
         m_originsUsingFeatures.updateMeasurementsAndClear();
         UserGestureIndicator::clearProcessedUserGestureSinceLoad();
@@ -499,7 +486,7 @@ void Page::didCommitLoad(LocalFrame* frame)
 
 void Page::acceptLanguagesChanged()
 {
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> frames;
+    HeapVector<Member<LocalFrame>> frames;
 
     // Even though we don't fire an event from here, the LocalDOMWindow's will fire
     // an event so we keep the frames alive until we are done.
@@ -520,7 +507,6 @@ void Page::purgeMemory(DeviceKind deviceKind)
 
 DEFINE_TRACE(Page)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_animator);
     visitor->trace(m_autoscrollController);
     visitor->trace(m_chromeClient);
@@ -533,11 +519,9 @@ DEFINE_TRACE(Page)
     visitor->trace(m_undoStack);
     visitor->trace(m_mainFrame);
     visitor->trace(m_validationMessageClient);
-    visitor->trace(m_multisamplingChangedObservers);
     visitor->trace(m_frameHost);
     visitor->trace(m_memoryPurgeController);
-    HeapSupplementable<Page>::trace(visitor);
-#endif
+    Supplementable<Page>::trace(visitor);
     PageLifecycleNotifier::trace(visitor);
     MemoryPurgeClient::trace(visitor);
 }
@@ -561,7 +545,7 @@ void Page::willBeClosed()
 
 void Page::willBeDestroyed()
 {
-    RefPtrWillBeRawPtr<Frame> mainFrame = m_mainFrame;
+    Frame* mainFrame = m_mainFrame;
 
     mainFrame->detach(FrameDetachType::Remove);
 
@@ -584,6 +568,13 @@ void Page::willBeDestroyed()
     PageLifecycleNotifier::notifyContextDestroyed();
 }
 
+void Page::compressStrings(Timer<Page>* timer)
+{
+    ASSERT_UNUSED(timer, timer == &m_timerForCompressStrings);
+    if (m_visibilityState == PageVisibilityStateHidden)
+        CompressibleStringImpl::compressAll();
+}
+
 Page::PageClients::PageClients()
     : chromeClient(nullptr)
     , contextMenuClient(nullptr)
@@ -597,6 +588,6 @@ Page::PageClients::~PageClients()
 {
 }
 
-template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;
+template class CORE_TEMPLATE_EXPORT Supplement<Page>;
 
 } // namespace blink

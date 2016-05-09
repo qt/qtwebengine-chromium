@@ -95,6 +95,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/ct_ev_whitelist.h"
 #include "net/cert/ct_policy_enforcer.h"
+#include "net/cert/ct_policy_status.h"
 #include "net/cert/ct_verifier.h"
 #include "net/cert/ct_verify_result.h"
 #include "net/cert/scoped_nss_types.h"
@@ -519,6 +520,10 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   // This should only be called after the server's certificate has been
   // verified, and may not be called within an NSS callback.
   void CacheSessionIfNecessary();
+
+  crypto::ECPrivateKey* GetChannelIDKey() const {
+    return channel_id_key_.get();
+  }
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
@@ -964,9 +969,8 @@ int SSLClientSocketNSS::Core::Read(IOBuffer* buf, int buf_len,
 
     nss_waiting_read_ = true;
     bool posted = nss_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(IgnoreResult(&Core::Read), this, make_scoped_refptr(buf),
-                   buf_len, callback));
+        FROM_HERE, base::Bind(IgnoreResult(&Core::Read), this,
+                              base::RetainedRef(buf), buf_len, callback));
     if (!posted) {
       nss_is_closed_ = true;
       nss_waiting_read_ = false;
@@ -1021,9 +1025,8 @@ int SSLClientSocketNSS::Core::Write(IOBuffer* buf, int buf_len,
 
     nss_waiting_write_ = true;
     bool posted = nss_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(IgnoreResult(&Core::Write), this, make_scoped_refptr(buf),
-                   buf_len, callback));
+        FROM_HERE, base::Bind(IgnoreResult(&Core::Write), this,
+                              base::RetainedRef(buf), buf_len, callback));
     if (!posted) {
       nss_is_closed_ = true;
       nss_waiting_write_ = false;
@@ -1531,11 +1534,10 @@ int SSLClientSocketNSS::Core::DoPayloadRead() {
     pending_read_nss_error_ = 0;
 
     if (rv == 0) {
-      PostOrRunCallback(
-          FROM_HERE,
-          base::Bind(&LogByteTransferEvent, weak_net_log_,
-                     NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
-                     scoped_refptr<IOBuffer>(user_read_buf_)));
+      PostOrRunCallback(FROM_HERE,
+                        base::Bind(&LogByteTransferEvent, weak_net_log_,
+                                   NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
+                                   base::RetainedRef(user_read_buf_)));
     } else {
       PostOrRunCallback(
           FROM_HERE,
@@ -1616,11 +1618,10 @@ int SSLClientSocketNSS::Core::DoPayloadRead() {
   DCHECK_NE(ERR_IO_PENDING, pending_read_result_);
 
   if (rv >= 0) {
-    PostOrRunCallback(
-        FROM_HERE,
-        base::Bind(&LogByteTransferEvent, weak_net_log_,
-                   NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
-                   scoped_refptr<IOBuffer>(user_read_buf_)));
+    PostOrRunCallback(FROM_HERE,
+                      base::Bind(&LogByteTransferEvent, weak_net_log_,
+                                 NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
+                                 base::RetainedRef(user_read_buf_)));
   } else if (rv != ERR_IO_PENDING) {
     PostOrRunCallback(
         FROM_HERE,
@@ -1649,11 +1650,10 @@ int SSLClientSocketNSS::Core::DoPayloadWrite() {
         base::Bind(&Core::OnNSSBufferUpdated, this, new_amount_in_read_buffer));
   }
   if (rv >= 0) {
-    PostOrRunCallback(
-        FROM_HERE,
-        base::Bind(&LogByteTransferEvent, weak_net_log_,
-                   NetLog::TYPE_SSL_SOCKET_BYTES_SENT, rv,
-                   scoped_refptr<IOBuffer>(user_write_buf_)));
+    PostOrRunCallback(FROM_HERE,
+                      base::Bind(&LogByteTransferEvent, weak_net_log_,
+                                 NetLog::TYPE_SSL_SOCKET_BYTES_SENT, rv,
+                                 base::RetainedRef(user_write_buf_)));
     return rv;
   }
   PRErrorCode prerr = PR_GetError();
@@ -1720,9 +1720,8 @@ int SSLClientSocketNSS::Core::BufferRecv() {
       rv = DoBufferRecv(read_buffer.get(), nb);
     } else {
       bool posted = network_task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(IgnoreResult(&Core::DoBufferRecv), this, read_buffer,
-                     nb));
+          FROM_HERE, base::Bind(IgnoreResult(&Core::DoBufferRecv), this,
+                                base::RetainedRef(read_buffer), nb));
       rv = posted ? ERR_IO_PENDING : ERR_ABORTED;
     }
 
@@ -1770,9 +1769,8 @@ int SSLClientSocketNSS::Core::BufferSend() {
       rv = DoBufferSend(send_buffer.get(), len);
     } else {
       bool posted = network_task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(IgnoreResult(&Core::DoBufferSend), this, send_buffer,
-                     len));
+          FROM_HERE, base::Bind(IgnoreResult(&Core::DoBufferSend), this,
+                                base::RetainedRef(send_buffer), len));
       rv = posted ? ERR_IO_PENDING : ERR_ABORTED;
     }
 
@@ -1978,7 +1976,7 @@ void SSLClientSocketNSS::Core::UpdateServerCert() {
     // own a reference to the certificate.
     NetLog::ParametersCallback net_log_callback =
         base::Bind(&NetLogX509CertificateCallback,
-                   nss_handshake_state_.server_cert);
+                   base::RetainedRef(nss_handshake_state_.server_cert));
     PostOrRunCallback(
         FROM_HERE,
         base::Bind(&AddLogEventWithCallback, weak_net_log_,
@@ -2159,12 +2157,12 @@ int SSLClientSocketNSS::Core::DoBufferRecv(IOBuffer* read_buffer, int len) {
   int rv = transport_->socket()->Read(
       read_buffer, len,
       base::Bind(&Core::BufferRecvComplete, base::Unretained(this),
-                 scoped_refptr<IOBuffer>(read_buffer)));
+                 base::RetainedRef(read_buffer)));
 
   if (!OnNSSTaskRunner() && rv != ERR_IO_PENDING) {
-    nss_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&Core::BufferRecvComplete, this,
-                              scoped_refptr<IOBuffer>(read_buffer), rv));
+    nss_task_runner_->PostTask(FROM_HERE,
+                               base::Bind(&Core::BufferRecvComplete, this,
+                                          base::RetainedRef(read_buffer), rv));
     return rv;
   }
 
@@ -2301,7 +2299,7 @@ void SSLClientSocketNSS::Core::BufferRecvComplete(
 
     nss_task_runner_->PostTask(
         FROM_HERE, base::Bind(&Core::BufferRecvComplete, this,
-                              scoped_refptr<IOBuffer>(read_buffer), result));
+                              base::RetainedRef(read_buffer), result));
     return;
   }
 
@@ -2410,7 +2408,7 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->cert = server_cert_verify_result_.verified_cert;
   ssl_info->unverified_cert = core_->state().server_cert;
 
-  AddSCTInfoToSSLInfo(ssl_info);
+  AddCTInfoToSSLInfo(ssl_info);
 
   ssl_info->connection_status =
       core_->state().ssl_connection_status;
@@ -2477,22 +2475,6 @@ int SSLClientSocketNSS::ExportKeyingMaterial(const base::StringPiece& label,
     LogFailedNSSFunction(net_log_, "SSL_ExportKeyingMaterial", "");
     return MapNSSError(PORT_GetError());
   }
-  return OK;
-}
-
-int SSLClientSocketNSS::GetTLSUniqueChannelBinding(std::string* out) {
-  if (!IsConnected())
-    return ERR_SOCKET_NOT_CONNECTED;
-  unsigned char buf[64];
-  unsigned int len;
-  SECStatus result = SSL_GetChannelBinding(nss_fd_,
-                                           SSL_CHANNEL_BINDING_TLS_UNIQUE,
-                                           buf, &len, arraysize(buf));
-  if (result != SECSuccess) {
-    LogFailedNSSFunction(net_log_, "SSL_GetChannelBinding", "");
-    return MapNSSError(PORT_GetError());
-  }
-  out->assign(reinterpret_cast<char*>(buf), len);
   return OK;
 }
 
@@ -2631,14 +2613,6 @@ bool SSLClientSocketNSS::WasEverUsed() const {
   return core_->WasEverUsed();
 }
 
-bool SSLClientSocketNSS::UsingTCPFastOpen() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->UsingTCPFastOpen();
-  }
-  NOTREACHED();
-  return false;
-}
-
 int SSLClientSocketNSS::Read(IOBuffer* buf, int buf_len,
                              const CompletionCallback& callback) {
   DCHECK(core_.get());
@@ -2678,7 +2652,7 @@ int SSLClientSocketNSS::Init() {
   EnsureNSSSSLInit();
   if (!NSS_IsInitialized())
     return ERR_UNEXPECTED;
-#if defined(USE_NSS_CERTS) || defined(OS_IOS)
+#if defined(USE_NSS_VERIFIER)
   if (ssl_config_.cert_io_enabled) {
     // We must call EnsureNSSHttpIOInit() here, on the IO thread, to get the IO
     // loop by MessageLoopForIO::current().
@@ -3126,22 +3100,38 @@ void SSLClientSocketNSS::VerifyCT() {
   // TODO(ekasper): wipe stapled_ocsp_response and sct_list_from_tls_extension
   // from the state after verification is complete, to conserve memory.
 
-  if (policy_enforcer_ &&
-      (server_cert_verify_result_.cert_status & CERT_STATUS_IS_EV)) {
-    scoped_refptr<ct::EVCertsWhitelist> ev_whitelist =
-        SSLConfigService::GetEVCertsWhitelist();
-    if (!policy_enforcer_->DoesConformToCTEVPolicy(
-            server_cert_verify_result_.verified_cert.get(), ev_whitelist.get(),
-            ct_verify_result_, net_log_)) {
-      // TODO(eranm): Log via the BoundNetLog, see crbug.com/437766
-      VLOG(1) << "EV certificate for "
-              << server_cert_verify_result_.verified_cert->subject()
-                     .GetDisplayName()
-              << " does not conform to CT policy, removing EV status.";
-      server_cert_verify_result_.cert_status |=
-          CERT_STATUS_CT_COMPLIANCE_FAILED;
-      server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
+  ct_verify_result_.ct_policies_applied = (policy_enforcer_ != nullptr);
+  ct_verify_result_.ev_policy_compliance =
+      ct::EVPolicyCompliance::EV_POLICY_DOES_NOT_APPLY;
+  if (policy_enforcer_) {
+    if ((server_cert_verify_result_.cert_status & CERT_STATUS_IS_EV)) {
+      scoped_refptr<ct::EVCertsWhitelist> ev_whitelist =
+          SSLConfigService::GetEVCertsWhitelist();
+      ct::EVPolicyCompliance ev_policy_compliance =
+          policy_enforcer_->DoesConformToCTEVPolicy(
+              server_cert_verify_result_.verified_cert.get(),
+              ev_whitelist.get(), ct_verify_result_.verified_scts, net_log_);
+      ct_verify_result_.ev_policy_compliance = ev_policy_compliance;
+      if (ev_policy_compliance !=
+              ct::EVPolicyCompliance::EV_POLICY_DOES_NOT_APPLY &&
+          ev_policy_compliance !=
+              ct::EVPolicyCompliance::EV_POLICY_COMPLIES_VIA_WHITELIST &&
+          ev_policy_compliance !=
+              ct::EVPolicyCompliance::EV_POLICY_COMPLIES_VIA_SCTS) {
+        // TODO(eranm): Log via the BoundNetLog, see crbug.com/437766
+        VLOG(1) << "EV certificate for "
+                << server_cert_verify_result_.verified_cert->subject()
+                       .GetDisplayName()
+                << " does not conform to CT policy, removing EV status.";
+        server_cert_verify_result_.cert_status |=
+            CERT_STATUS_CT_COMPLIANCE_FAILED;
+        server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
+      }
     }
+    ct_verify_result_.cert_policy_compliance =
+        policy_enforcer_->DoesConformToCertPolicy(
+            server_cert_verify_result_.verified_cert.get(),
+            ct_verify_result_.verified_scts, net_log_);
   }
 }
 
@@ -3158,8 +3148,8 @@ bool SSLClientSocketNSS::CalledOnValidThread() const {
   return valid_thread_id_ == base::PlatformThread::CurrentId();
 }
 
-void SSLClientSocketNSS::AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const {
-  ssl_info->UpdateSignedCertificateTimestamps(ct_verify_result_);
+void SSLClientSocketNSS::AddCTInfoToSSLInfo(SSLInfo* ssl_info) const {
+  ssl_info->UpdateCertificateTransparencyInfo(ct_verify_result_);
 }
 
 // static
@@ -3177,6 +3167,17 @@ void SSLClientSocketNSS::ReorderNextProtos(NextProtoVector* next_protos) {
 
 ChannelIDService* SSLClientSocketNSS::GetChannelIDService() const {
   return channel_id_service_;
+}
+
+Error SSLClientSocketNSS::GetSignedEKMForTokenBinding(
+    crypto::ECPrivateKey* key,
+    std::vector<uint8_t>* out) {
+  NOTREACHED();
+  return ERR_NOT_IMPLEMENTED;
+}
+
+crypto::ECPrivateKey* SSLClientSocketNSS::GetChannelIDKey() const {
+  return core_->GetChannelIDKey();
 }
 
 SSLFailureState SSLClientSocketNSS::GetSSLFailureState() const {

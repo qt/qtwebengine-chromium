@@ -31,6 +31,7 @@
 #ifndef DOMFileSystem_h
 #define DOMFileSystem_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
@@ -44,13 +45,13 @@
 namespace blink {
 
 class DirectoryEntry;
-class FileCallback;
+class BlobCallback;
 class FileEntry;
 class FileWriterCallback;
 
-class MODULES_EXPORT DOMFileSystem final : public DOMFileSystemBase, public ScriptWrappable, public ActiveDOMObject {
+class MODULES_EXPORT DOMFileSystem final : public DOMFileSystemBase, public ScriptWrappable, public ActiveScriptWrappable, public ActiveDOMObject {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMFileSystem);
+    USING_GARBAGE_COLLECTED_MIXIN(DOMFileSystem);
 public:
     static DOMFileSystem* create(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 
@@ -64,11 +65,11 @@ public:
     void removePendingCallbacks() override;
     void reportError(ErrorCallback*, FileError*) override;
 
-    // ActiveDOMObject overrides.
-    bool hasPendingActivity() const override;
+    // ActiveScriptWrappable overrides.
+    bool hasPendingActivity() const final;
 
     void createWriter(const FileEntry*, FileWriterCallback*, ErrorCallback*);
-    void createFile(const FileEntry*, FileCallback*, ErrorCallback*);
+    void createFile(const FileEntry*, BlobCallback*, ErrorCallback*);
 
     // Schedule a callback. This should not cross threads (should be called on the same context thread).
     // FIXME: move this to a more generic place.
@@ -90,13 +91,13 @@ public:
     template <typename CB, typename CBArg>
     void scheduleCallback(CB* callback, CBArg* callbackArg)
     {
-        scheduleCallback(executionContext(), callback, callbackArg);
+        scheduleCallback(getExecutionContext(), callback, callbackArg);
     }
 
     template <typename CB, typename CBArg>
     void scheduleCallback(CB* callback, const CBArg& callbackArg)
     {
-        scheduleCallback(executionContext(), callback, callbackArg);
+        scheduleCallback(getExecutionContext(), callback, callbackArg);
     }
 
     DECLARE_VIRTUAL_TRACE();

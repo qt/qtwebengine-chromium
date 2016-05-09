@@ -50,6 +50,7 @@ def fake_sys(platform_str='darwin', windows_version_tuple=None):
 def fake_platform(mac_version_string='10.6.3', release_string='bar', linux_version='trusty'):
 
     class FakePlatformModule(object):
+
         def mac_ver(self):
             return tuple([mac_version_string, tuple(['', '', '']), 'i386'])
 
@@ -72,6 +73,7 @@ def fake_executive(output=None):
 
 
 class TestPlatformInfo(unittest.TestCase):
+
     def make_info(self, sys_module=None, platform_module=None, filesystem_module=None, executive=None):
         return PlatformInfo(sys_module or fake_sys(), platform_module or fake_platform(), filesystem_module or MockFileSystem(), executive or fake_executive())
 
@@ -137,12 +139,10 @@ class TestPlatformInfo(unittest.TestCase):
 
     def test_os_version(self):
         self.assertRaises(AssertionError, self.make_info, fake_sys('darwin'), fake_platform('10.4.3'))
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.6.1')).os_version, 'snowleopard')
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.7.1')).os_version, 'lion')
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.8.1')).os_version, 'mountainlion')
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.9.0')).os_version, 'mavericks')
+        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.9.0')).os_version, 'mac10.9')
         self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.10.0')).os_version, 'mac10.10')
-        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.11.0')).os_version, 'future')
+        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.11.0')).os_version, 'mac10.11')
+        self.assertEqual(self.make_info(fake_sys('darwin'), fake_platform('10.12.0')).os_version, 'future')
 
         self.assertEqual(self.make_info(fake_sys('linux2')).os_version, 'trusty')
         info = self.make_info(fake_sys('linux2'), fake_platform(linux_version='precise'))

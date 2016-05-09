@@ -7,17 +7,25 @@
 #include "bindings/core/v8/Dictionary.h"
 #include "core/events/Event.h"
 #include "core/fileapi/Blob.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "modules/EventTargetModules.h"
 #include "modules/mediarecorder/BlobEvent.h"
 #include "platform/ContentType.h"
-#include "platform/NotImplemented.h"
 #include "platform/blob/BlobData.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMediaStream.h"
+#include <algorithm>
 
 namespace blink {
 
 namespace {
+
+// Boundaries of Opus bitrate from https://www.opus-codec.org/.
+const int kSmallestPossibleOpusBitRate = 6000;
+const int kLargestAutoAllocatedOpusBitRate = 128000;
+
+// Smallest Vpx bitrate that can be requested.
+const int kSmallestPossibleVpxBitRate = 100000;
 
 String stateToString(MediaRecorder::State state)
 {
@@ -30,8 +38,78 @@ String stateToString(MediaRecorder::State state)
         return "paused";
     }
 
-    ASSERT_NOT_REACHED();
+    NOTREACHED();
     return String();
+}
+
+// Allocates the requested bit rates from |bitrateOptions| into the respective
+// |{audio,video}BitsPerSecond| (where a value of zero indicates Platform to use
+// whatever it sees fit). If |options.bitsPerSecond()| is specified, it
+// overrides any specific bitrate, and the UA is free to allocate as desired:
+// here a 90%/10% video/audio is used. In all cases where a value is explicited
+// or calculated, values are clamped in sane ranges.
+// This method throws NotSupportedError.
+void AllocateVideoAndAudioBitrates(ExceptionState& exceptionState, ExecutionContext* context, const MediaRecorderOptions& options, MediaStream* stream, int* audioBitsPerSecond, int* videoBitsPerSecond)
+{
+    const bool useVideo = !stream->getVideoTracks().isEmpty();
+    const bool useAudio = !stream->getAudioTracks().isEmpty();
+
+    // Clamp incoming values into a signed integer's range.
+    // TODO(mcasas): This section would no be needed if the bit rates are signed or double, see https://github.com/w3c/mediacapture-record/issues/48.
+    const unsigned kMaxIntAsUnsigned = std::numeric_limits<int>::max();
+
+    int overallBps = 0;
+    if (options.hasBitsPerSecond())
+        overallBps = std::min(options.bitsPerSecond(), kMaxIntAsUnsigned);
+    int videoBps = 0;
+    if (options.hasVideoBitsPerSecond() && useVideo)
+        videoBps = std::min(options.videoBitsPerSecond(), kMaxIntAsUnsigned);
+    int audioBps = 0;
+    if (options.hasAudioBitsPerSecond() && useAudio)
+        audioBps = std::min(options.audioBitsPerSecond(), kMaxIntAsUnsigned);
+
+    if (useAudio) {
+        // |overallBps| overrides the specific audio and video bit rates.
+        if (options.hasBitsPerSecond()) {
+            if (useVideo)
+                audioBps = overallBps / 10;
+            else
+                audioBps = overallBps;
+        }
+        // Limit audio bitrate values if set explicitly or calculated.
+        if (options.hasAudioBitsPerSecond() || options.hasBitsPerSecond()) {
+            if (audioBps > kLargestAutoAllocatedOpusBitRate) {
+                context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Clamping calculated audio bitrate (" + String::number(audioBps) + "bps) to the maximum (" + String::number(kLargestAutoAllocatedOpusBitRate) + "bps)"));
+                audioBps = kLargestAutoAllocatedOpusBitRate;
+            }
+
+            if (audioBps < kSmallestPossibleOpusBitRate) {
+                context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Clamping calculated audio bitrate (" + String::number(audioBps) + "bps) to the minimum (" + String::number(kSmallestPossibleOpusBitRate) + "bps)"));
+                audioBps = kSmallestPossibleOpusBitRate;
+            }
+        } else {
+            DCHECK(!audioBps);
+        }
+    }
+
+    if (useVideo) {
+        // Allocate the remaining |overallBps|, if any, to video.
+        if (options.hasBitsPerSecond())
+            videoBps = overallBps - audioBps;
+        // Clamp the video bit rate. Avoid clamping if the user has not set it explicitly.
+        if (options.hasVideoBitsPerSecond() || options.hasBitsPerSecond()) {
+            if (videoBps < kSmallestPossibleVpxBitRate) {
+                context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Clamping calculated video bitrate (" + String::number(videoBps) + "bps) to the minimum (" + String::number(kSmallestPossibleVpxBitRate) + "bps)"));
+                videoBps = kSmallestPossibleVpxBitRate;
+            }
+        } else {
+            DCHECK(!videoBps);
+        }
+    }
+
+    *videoBitsPerSecond = videoBps;
+    *audioBitsPerSecond = audioBps;
+    return;
 }
 
 } // namespace
@@ -53,28 +131,33 @@ MediaRecorder* MediaRecorder::create(ExecutionContext* context, MediaStream* str
 }
 
 MediaRecorder::MediaRecorder(ExecutionContext* context, MediaStream* stream, const MediaRecorderOptions& options, ExceptionState& exceptionState)
-    : ActiveDOMObject(context)
+    : ActiveScriptWrappable(this)
+    , ActiveDOMObject(context)
     , m_stream(stream)
     , m_streamAmountOfTracks(stream->getTracks().size())
     , m_mimeType(options.mimeType())
     , m_stopped(true)
     , m_ignoreMutedMedia(true)
+    , m_audioBitsPerSecond(0)
+    , m_videoBitsPerSecond(0)
     , m_state(State::Inactive)
     , m_dispatchScheduledEventRunner(AsyncMethodRunner<MediaRecorder>::create(this, &MediaRecorder::dispatchScheduledEvent))
 {
-    ASSERT(m_stream->getTracks().size());
+    DCHECK(m_stream->getTracks().size());
 
     m_recorderHandler = adoptPtr(Platform::current()->createMediaRecorderHandler());
-    ASSERT(m_recorderHandler);
+    DCHECK(m_recorderHandler);
 
-    // We deviate from the spec by not returning |UnsupportedOption|, see https://github.com/w3c/mediacapture-record/issues/18
     if (!m_recorderHandler) {
         exceptionState.throwDOMException(NotSupportedError, "No MediaRecorder handler can be created.");
         return;
     }
-    ContentType contentType(m_mimeType);
-    if (!m_recorderHandler->initialize(this, stream->descriptor(), contentType.type(), contentType.parameter("codecs"))) {
-        exceptionState.throwDOMException(NotSupportedError, "Failed to initialize native MediaRecorder, the type provided " + m_mimeType + "is unsupported." );
+
+    AllocateVideoAndAudioBitrates(exceptionState, context, options, stream, &m_audioBitsPerSecond, &m_videoBitsPerSecond);
+
+    const ContentType contentType(m_mimeType);
+    if (!m_recorderHandler->initialize(this, stream->descriptor(), contentType.type(), contentType.parameter("codecs"), m_audioBitsPerSecond, m_videoBitsPerSecond)) {
+        exceptionState.throwDOMException(NotSupportedError, "Failed to initialize native MediaRecorder the type provided (" + m_mimeType + ") is not supported.");
         return;
     }
     m_stopped = false;
@@ -157,7 +240,7 @@ void MediaRecorder::requestData(ExceptionState& exceptionState)
 
 bool MediaRecorder::isTypeSupported(const String& type)
 {
-    RawPtr<WebMediaRecorderHandler> handler = Platform::current()->createMediaRecorderHandler();
+    WebMediaRecorderHandler* handler = Platform::current()->createMediaRecorderHandler();
     if (!handler)
         return false;
 
@@ -175,9 +258,9 @@ const AtomicString& MediaRecorder::interfaceName() const
     return EventTargetNames::MediaRecorder;
 }
 
-ExecutionContext* MediaRecorder::executionContext() const
+ExecutionContext* MediaRecorder::getExecutionContext() const
 {
-    return ActiveDOMObject::executionContext();
+    return ActiveDOMObject::getExecutionContext();
 }
 
 void MediaRecorder::suspend()
@@ -240,7 +323,7 @@ void MediaRecorder::createBlobEvent(Blob* blob)
 
 void MediaRecorder::stopRecording()
 {
-    ASSERT(m_state != State::Inactive);
+    DCHECK(m_state != State::Inactive);
     m_state = State::Inactive;
 
     m_recorderHandler->stop();
@@ -249,7 +332,7 @@ void MediaRecorder::stopRecording()
     scheduleDispatchEvent(Event::create(EventTypeNames::stop));
 }
 
-void MediaRecorder::scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+void MediaRecorder::scheduleDispatchEvent(Event* event)
 {
     m_scheduledEvents.append(event);
 
@@ -258,7 +341,7 @@ void MediaRecorder::scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 
 void MediaRecorder::dispatchScheduledEvent()
 {
-    WillBeHeapVector<RefPtrWillBeMember<Event>> events;
+    HeapVector<Member<Event>> events;
     events.swap(m_scheduledEvents);
 
     for (const auto& event : events)

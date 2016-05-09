@@ -49,19 +49,6 @@ TEST(TimeTest, Comparison) {
   EXPECT_TRUE( TimeIsLater(ts_now,     ts_later));
   EXPECT_TRUE( TimeIsLater(ts_earlier, ts_later));
 
-  // Common comparisons
-  EXPECT_TRUE( TimeIsBetween(ts_earlier, ts_now,     ts_later));
-  EXPECT_FALSE(TimeIsBetween(ts_earlier, ts_later,   ts_now));
-  EXPECT_FALSE(TimeIsBetween(ts_now,     ts_earlier, ts_later));
-  EXPECT_TRUE( TimeIsBetween(ts_now,     ts_later,   ts_earlier));
-  EXPECT_TRUE( TimeIsBetween(ts_later,   ts_earlier, ts_now));
-  EXPECT_FALSE(TimeIsBetween(ts_later,   ts_now,     ts_earlier));
-
-  // Edge cases
-  EXPECT_TRUE( TimeIsBetween(ts_earlier, ts_earlier, ts_earlier));
-  EXPECT_TRUE( TimeIsBetween(ts_earlier, ts_earlier, ts_later));
-  EXPECT_TRUE( TimeIsBetween(ts_earlier, ts_later,   ts_later));
-
   // Earlier of two times
   EXPECT_EQ(ts_earlier, TimeMin(ts_earlier, ts_earlier));
   EXPECT_EQ(ts_earlier, TimeMin(ts_earlier, ts_now));
@@ -127,21 +114,12 @@ TEST(TimeTest, BoundaryComparison) {
   EXPECT_EQ(-100, TimeDiff(ts_earlier, ts_later));
 }
 
-TEST(TimeTest, DISABLED_CurrentTmTime) {
-  struct tm tm;
-  int microseconds;
-
-  time_t before = ::time(NULL);
-  CurrentTmTime(&tm, &microseconds);
-  time_t after = ::time(NULL);
-
-  // Assert that 'tm' represents a time between 'before' and 'after'.
-  // mktime() uses local time, so we have to compensate for that.
-  time_t local_delta = before - ::mktime(::gmtime(&before));  // NOLINT
-  time_t t = ::mktime(&tm) + local_delta;
-
-  EXPECT_TRUE(before <= t && t <= after);
-  EXPECT_TRUE(0 <= microseconds && microseconds < 1000000);
+TEST(TimeTest, TestTimeDiff64) {
+  int64_t ts_diff = 100;
+  int64_t ts_earlier = rtc::Time64();
+  int64_t ts_later = ts_earlier + ts_diff;
+  EXPECT_EQ(ts_diff, rtc::TimeDiff(ts_later, ts_earlier));
+  EXPECT_EQ(-ts_diff, rtc::TimeDiff(ts_earlier, ts_later));
 }
 
 class TimestampWrapAroundHandlerTest : public testing::Test {
@@ -153,18 +131,48 @@ class TimestampWrapAroundHandlerTest : public testing::Test {
 };
 
 TEST_F(TimestampWrapAroundHandlerTest, Unwrap) {
-  uint32_t ts = 0xfffffff2;
-  int64_t unwrapped_ts = ts;
-  EXPECT_EQ(ts, wraparound_handler_.Unwrap(ts));
+  // Start value.
+  int64_t ts = 2;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+
+  // Wrap backwards.
+  ts = -2;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+
+  // Forward to 2 again.
   ts = 2;
-  unwrapped_ts += 0x10;
-  EXPECT_EQ(unwrapped_ts, wraparound_handler_.Unwrap(ts));
-  ts = 0xfffffff2;
-  unwrapped_ts += 0xfffffff0;
-  EXPECT_EQ(unwrapped_ts, wraparound_handler_.Unwrap(ts));
-  ts = 0;
-  unwrapped_ts += 0xe;
-  EXPECT_EQ(unwrapped_ts, wraparound_handler_.Unwrap(ts));
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+
+  // Max positive skip ahead, until max value (0xffffffff).
+  for (uint32_t i = 0; i <= 0xf; ++i) {
+    ts = (i << 28) + 0x0fffffff;
+    EXPECT_EQ(
+        ts, wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+  }
+
+  // Wrap around.
+  ts += 2;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+
+  // Max wrap backward...
+  ts -= 0x0fffffff;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+
+  // ...and back again.
+  ts += 0x0fffffff;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
+}
+
+TEST_F(TimestampWrapAroundHandlerTest, NoNegativeStart) {
+  int64_t ts = 0xfffffff0;
+  EXPECT_EQ(ts,
+            wraparound_handler_.Unwrap(static_cast<uint32_t>(ts & 0xffffffff)));
 }
 
 class TmToSeconds : public testing::Test {

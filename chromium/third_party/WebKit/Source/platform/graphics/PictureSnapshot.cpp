@@ -42,6 +42,7 @@
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkStream.h"
+#include "wtf/CurrentTime.h"
 #include "wtf/HexNumber.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
@@ -70,21 +71,21 @@ static bool decodeBitmap(const void* data, size_t length, SkBitmap* result)
 PassRefPtr<PictureSnapshot> PictureSnapshot::load(const Vector<RefPtr<TilePictureStream>>& tiles)
 {
     ASSERT(!tiles.isEmpty());
-    Vector<RefPtr<SkPicture>> pictures;
+    Vector<sk_sp<SkPicture>> pictures;
     pictures.reserveCapacity(tiles.size());
     FloatRect unionRect;
     for (const auto& tileStream : tiles) {
         SkMemoryStream stream(tileStream->data.begin(), tileStream->data.size());
-        RefPtr<SkPicture> picture = adoptRef(SkPicture::CreateFromStream(&stream, decodeBitmap));
+        sk_sp<SkPicture> picture = SkPicture::MakeFromStream(&stream, decodeBitmap);
         if (!picture)
             return nullptr;
         FloatRect cullRect(picture->cullRect());
         cullRect.moveBy(tileStream->layerOffset);
         unionRect.unite(cullRect);
-        pictures.append(picture);
+        pictures.append(std::move(picture));
     }
     if (tiles.size() == 1)
-        return adoptRef(new PictureSnapshot(pictures[0]));
+        return adoptRef(new PictureSnapshot(fromSkSp(std::move(pictures[0]))));
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(unionRect.width(), unionRect.height(), 0, 0);
     for (size_t i = 0; i < pictures.size(); ++i) {
@@ -93,7 +94,7 @@ PassRefPtr<PictureSnapshot> PictureSnapshot::load(const Vector<RefPtr<TilePictur
         pictures[i]->playback(canvas, 0);
         canvas->restore();
     }
-    return adoptRef(new PictureSnapshot(adoptRef(recorder.endRecordingAsPicture())));
+    return adoptRef(new PictureSnapshot(fromSkSp(recorder.finishRecordingAsPicture())));
 }
 
 bool PictureSnapshot::isEmpty() const
@@ -111,6 +112,12 @@ PassOwnPtr<Vector<char>> PictureSnapshot::replay(unsigned fromStep, unsigned toS
     bitmap.eraseARGB(0, 0, 0, 0);
     {
         ReplayingCanvas canvas(bitmap, fromStep, toStep);
+        // Disable LCD text preemptively, because the picture opacity is unknown.
+        // The canonical API involves SkSurface props, but since we're not SkSurface-based
+        // at this point (see TODO above) we (ab)use saveLayer for this purpose.
+        SkAutoCanvasRestore autoRestore(&canvas, false);
+        canvas.saveLayer(nullptr, nullptr);
+
         canvas.scale(scale, scale);
         canvas.resetStepCount();
         m_picture->playback(&canvas, &canvas);
@@ -122,7 +129,7 @@ PassOwnPtr<Vector<char>> PictureSnapshot::replay(unsigned fromStep, unsigned toS
     if (!image)
         return nullptr;
 
-    ImagePixelLocker pixelLocker(image, kUnpremul_SkAlphaType);
+    ImagePixelLocker pixelLocker(image, kUnpremul_SkAlphaType, kRGBA_8888_SkColorType);
     ImageDataBuffer imageData(IntSize(image->width(), image->height()),
         static_cast<const unsigned char*>(pixelLocker.pixels()));
     if (!PNGImageEncoder::encode(imageData, reinterpret_cast<Vector<unsigned char>*>(&encodedImage)))

@@ -110,7 +110,8 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
     }
 #endif
 
-    EGLint deviceType = attribMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, EGL_NONE);
+    EGLint deviceType =
+        static_cast<EGLint>(attribMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, EGL_NONE));
     if (deviceType == EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE)
     {
         mSkipDrawCalls = true;
@@ -415,5 +416,24 @@ void RendererGL::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureC
 void RendererGL::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)
 {
     mStateManager->syncState(state, dirtyBits);
+}
+
+GLint RendererGL::getGPUDisjoint()
+{
+    // TODO(ewell): On GLES backends we should find a way to reliably query disjoint events
+    return 0;
+}
+
+GLint64 RendererGL::getTimestamp()
+{
+    GLint64 result = 0;
+    mFunctions->getInteger64v(GL_TIMESTAMP, &result);
+    return result;
+}
+
+void RendererGL::onMakeCurrent(const gl::Data &data)
+{
+    // Queries need to be paused/resumed on context switches
+    mStateManager->onMakeCurrent(data);
 }
 }

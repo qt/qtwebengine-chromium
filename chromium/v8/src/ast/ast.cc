@@ -5,6 +5,8 @@
 #include "src/ast/ast.h"
 
 #include <cmath>  // For isfinite.
+
+#include "src/ast/prettyprinter.h"
 #include "src/ast/scopes.h"
 #include "src/builtins.h"
 #include "src/code-stubs.h"
@@ -32,6 +34,19 @@ AST_NODE_LIST(DECL_ACCEPT)
 // ----------------------------------------------------------------------------
 // Implementation of other node functionality.
 
+#ifdef DEBUG
+
+void AstNode::Print(Isolate* isolate) {
+  AstPrinter::PrintOut(isolate, this);
+}
+
+
+void AstNode::PrettyPrint(Isolate* isolate) {
+  PrettyPrinter::PrintOut(isolate, this);
+}
+
+#endif  // DEBUG
+
 
 bool Expression::IsSmiLiteral() const {
   return IsLiteral() && AsLiteral()->value()->IsSmi();
@@ -47,8 +62,11 @@ bool Expression::IsNullLiteral() const {
   return IsLiteral() && AsLiteral()->value()->IsNull();
 }
 
+bool Expression::IsUndefinedLiteral() const {
+  if (IsLiteral() && AsLiteral()->value()->IsUndefined()) {
+    return true;
+  }
 
-bool Expression::IsUndefinedLiteral(Isolate* isolate) const {
   const VariableProxy* var_proxy = AsVariableProxy();
   if (var_proxy == NULL) return false;
   Variable* var = var_proxy->var();
@@ -133,15 +151,11 @@ static void AssignVectorSlots(Expression* expr, FeedbackVectorSpec* spec,
   }
 }
 
-
-void ForEachStatement::AssignFeedbackVectorSlots(
-    Isolate* isolate, FeedbackVectorSpec* spec,
-    FeedbackVectorSlotCache* cache) {
-  // TODO(adamk): for-of statements do not make use of this feedback slot.
-  // The each_slot_ should be specific to ForInStatement, and this work moved
-  // there.
-  if (IsForOfStatement()) return;
+void ForInStatement::AssignFeedbackVectorSlots(Isolate* isolate,
+                                               FeedbackVectorSpec* spec,
+                                               FeedbackVectorSlotCache* cache) {
   AssignVectorSlots(each(), spec, &each_slot_);
+  for_in_feedback_slot_ = spec->AddGeneralSlot();
 }
 
 
@@ -254,14 +268,21 @@ ObjectLiteralProperty::ObjectLiteralProperty(AstValueFactory* ast_value_factory,
   }
 }
 
+bool ObjectLiteralProperty::NeedsSetFunctionName() const {
+  return is_computed_name_ &&
+         (value_->IsAnonymousFunctionDefinition() ||
+          (value_->IsFunctionLiteral() &&
+           IsConciseMethod(value_->AsFunctionLiteral()->kind())));
+}
 
 void ClassLiteral::AssignFeedbackVectorSlots(Isolate* isolate,
                                              FeedbackVectorSpec* spec,
                                              FeedbackVectorSlotCache* cache) {
   // This logic that computes the number of slots needed for vector store
   // ICs must mirror FullCodeGenerator::VisitClassLiteral.
+  prototype_slot_ = spec->AddLoadICSlot();
   if (NeedsProxySlot()) {
-    slot_ = spec->AddStoreICSlot();
+    proxy_slot_ = spec->AddStoreICSlot();
   }
 
   for (int i = 0; i < properties()->length(); i++) {
@@ -447,18 +468,15 @@ void ObjectLiteral::BuildConstantProperties(Isolate* isolate) {
     // much larger than the number of elements, creating an object
     // literal with fast elements will be a waste of space.
     uint32_t element_index = 0;
-    if (key->IsString()
-        && Handle<String>::cast(key)->AsArrayIndex(&element_index)
-        && element_index > max_element_index) {
-      max_element_index = element_index;
+    if (key->IsString() && String::cast(*key)->AsArrayIndex(&element_index)) {
+      max_element_index = Max(element_index, max_element_index);
       elements++;
-    } else if (key->IsSmi()) {
-      int key_value = Smi::cast(*key)->value();
-      if (key_value > 0
-          && static_cast<uint32_t>(key_value) > max_element_index) {
-        max_element_index = key_value;
-      }
+      key = isolate->factory()->NewNumberFromUint(element_index);
+    } else if (key->ToArrayIndex(&element_index)) {
+      max_element_index = Max(element_index, max_element_index);
       elements++;
+    } else if (key->IsNumber()) {
+      key = isolate->factory()->NumberToString(key);
     }
 
     // Add name, value pair to the fixed array.
@@ -476,18 +494,19 @@ void ObjectLiteral::BuildConstantProperties(Isolate* isolate) {
 
 
 void ArrayLiteral::BuildConstantElements(Isolate* isolate) {
+  DCHECK_LT(first_spread_index_, 0);
+
   if (!constant_elements_.is_null()) return;
 
-  int constants_length =
-      first_spread_index_ >= 0 ? first_spread_index_ : values()->length();
+  int constants_length = values()->length();
 
   // Allocate a fixed array to hold all the object literals.
   Handle<JSArray> array = isolate->factory()->NewJSArray(
       FAST_HOLEY_SMI_ELEMENTS, constants_length, constants_length,
-      Strength::WEAK, INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
+      INITIALIZE_ARRAY_ELEMENTS_WITH_HOLE);
 
   // Fill in the literals.
-  bool is_simple = (first_spread_index_ < 0);
+  bool is_simple = true;
   int depth_acc = 1;
   bool is_holey = false;
   int array_index = 0;
@@ -553,7 +572,7 @@ void ArrayLiteral::AssignFeedbackVectorSlots(Isolate* isolate,
   int array_index = 0;
   for (; array_index < values()->length(); array_index++) {
     Expression* subexpr = values()->at(array_index);
-    if (subexpr->IsSpread()) break;
+    DCHECK(!subexpr->IsSpread());
     if (CompileTimeValue::IsCompileTimeValue(subexpr)) continue;
 
     // We'll reuse the same literal slot for all of the non-constant
@@ -649,24 +668,21 @@ static bool IsVoidOfLiteral(Expression* expr) {
 static bool MatchLiteralCompareUndefined(Expression* left,
                                          Token::Value op,
                                          Expression* right,
-                                         Expression** expr,
-                                         Isolate* isolate) {
+                                         Expression** expr) {
   if (IsVoidOfLiteral(left) && Token::IsEqualityOp(op)) {
     *expr = right;
     return true;
   }
-  if (left->IsUndefinedLiteral(isolate) && Token::IsEqualityOp(op)) {
+  if (left->IsUndefinedLiteral() && Token::IsEqualityOp(op)) {
     *expr = right;
     return true;
   }
   return false;
 }
 
-
-bool CompareOperation::IsLiteralCompareUndefined(
-    Expression** expr, Isolate* isolate) {
-  return MatchLiteralCompareUndefined(left_, op_, right_, expr, isolate) ||
-      MatchLiteralCompareUndefined(right_, op_, left_, expr, isolate);
+bool CompareOperation::IsLiteralCompareUndefined(Expression** expr) {
+  return MatchLiteralCompareUndefined(left_, op_, right_, expr) ||
+         MatchLiteralCompareUndefined(right_, op_, left_, expr);
 }
 
 
@@ -797,14 +813,12 @@ void AstVisitor::VisitExpressions(ZoneList<Expression*>* expressions) {
   }
 }
 
-
 CaseClause::CaseClause(Zone* zone, Expression* label,
                        ZoneList<Statement*>* statements, int pos)
     : Expression(zone, pos),
       label_(label),
       statements_(statements),
-      compare_type_(Type::None(zone)) {}
-
+      compare_type_(Type::None()) {}
 
 uint32_t Literal::Hash() {
   return raw_value()->IsString()

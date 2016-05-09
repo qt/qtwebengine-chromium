@@ -183,9 +183,6 @@
               'dependencies': [
                 '../third_party/webrtc/modules/modules.gyp:desktop_capture',
               ],
-              'sources': [
-                '<@(remoting_cast_sources)',
-              ],
             }],
             ['remoting_use_gcd==1', {
               'defines': [
@@ -330,13 +327,6 @@
             'host/setup/host_starter.cc',
             'host/setup/host_starter.h',
             'host/setup/start_host.cc',
-          ],
-          'conditions': [
-            ['OS=="linux" and use_allocator!="none"', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
           ],
         },  # end of target 'remoting_start_host'
         {
@@ -545,11 +535,6 @@
                 }],  # mac_breakpad==1
               ],  # conditions
             }],  # OS=mac
-            ['OS=="linux" and use_allocator!="none"', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],  # OS=linux
           ],  # end of 'conditions'
         },  # end of target 'remoting_me2me_host'
         {
@@ -575,11 +560,6 @@
             'host/setup/me2me_native_messaging_host_main.h',
           ],
           'conditions': [
-            ['OS=="linux" and use_allocator!="none"', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
             ['OS=="mac"', {
               'mac_bundle': 1,
               'variables': {
@@ -673,11 +653,6 @@
                   'dependencies': [
                     # Always use GTK on Linux, even for Aura builds.
                     '../build/linux/system.gyp:gtk2',
-                  ],
-                }],
-                ['OS=="linux" and use_allocator!="none"', {
-                  'dependencies': [
-                    '../base/allocator/allocator.gyp:allocator',
                   ],
                 }],
                 ['OS=="mac"', {

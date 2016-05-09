@@ -401,11 +401,11 @@ struct SFTKSSLMACInfoStr {
     unsigned int	keySize;
 };
 
-/* SFTKChaCha20Poly1305Info saves the key, tag length, nonce, and additional
- * data for a ChaCha20+Poly1305 AEAD operation. */
+/* SFTKChaCha20Poly1305Info saves the key, tag length, nonce,
+ * and additional data for a ChaCha20+Poly1305 AEAD operation. */
 struct SFTKChaCha20Poly1305InfoStr {
     ChaCha20Poly1305Context freeblCtx;
-    unsigned char nonce[8];
+    unsigned char nonce[12];
     unsigned char ad[16];
     unsigned char *adOverflow;
     unsigned int adLen;

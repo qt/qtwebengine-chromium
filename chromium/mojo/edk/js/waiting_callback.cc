@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "gin/per_context_data.h"
-#include "mojo/public/cpp/environment/environment.h"
 
 namespace mojo {
 namespace edk {
+namespace js {
 
 namespace {
 
@@ -28,33 +28,32 @@ gin::Handle<WaitingCallback> WaitingCallback::Create(
     v8::Isolate* isolate,
     v8::Handle<v8::Function> callback,
     gin::Handle<HandleWrapper> handle_wrapper,
-    MojoHandleSignals signals) {
+    MojoHandleSignals signals,
+    bool one_shot) {
   gin::Handle<WaitingCallback> waiting_callback = gin::CreateHandle(
-      isolate, new WaitingCallback(isolate, callback, handle_wrapper));
-  waiting_callback->wait_id_ = Environment::GetDefaultAsyncWaiter()->AsyncWait(
-      handle_wrapper->get().value(),
-      signals,
-      MOJO_DEADLINE_INDEFINITE,
-      &WaitingCallback::CallOnHandleReady,
-      waiting_callback.get());
+      isolate, new WaitingCallback(isolate, callback, one_shot));
+  MojoResult result = waiting_callback->watcher_.Start(
+      handle_wrapper->get(), signals,
+      base::Bind(&WaitingCallback::OnHandleReady,
+                 base::Unretained(waiting_callback.get())));
+
+  // The signals may already be unsatisfiable.
+  if (result == MOJO_RESULT_FAILED_PRECONDITION)
+    waiting_callback->OnHandleReady(MOJO_RESULT_FAILED_PRECONDITION);
+
   return waiting_callback;
 }
 
 void WaitingCallback::Cancel() {
-  if (!wait_id_)
-    return;
-
-  handle_wrapper_->RemoveCloseObserver(this);
-  handle_wrapper_ = NULL;
-  Environment::GetDefaultAsyncWaiter()->CancelWait(wait_id_);
-  wait_id_ = 0;
+  if (watcher_.IsWatching())
+    watcher_.Cancel();
 }
 
 WaitingCallback::WaitingCallback(v8::Isolate* isolate,
                                  v8::Handle<v8::Function> callback,
-                                 gin::Handle<HandleWrapper> handle_wrapper)
-    : wait_id_(0), handle_wrapper_(handle_wrapper.get()), weak_factory_(this) {
-  handle_wrapper_->AddCloseObserver(this);
+                                 bool one_shot)
+    : one_shot_(one_shot),
+      weak_factory_(this) {
   v8::Handle<v8::Context> context = isolate->GetCurrentContext();
   runner_ = gin::PerContextData::From(context)->runner()->GetWeakPtr();
   GetWrapper(isolate)
@@ -66,27 +65,7 @@ WaitingCallback::~WaitingCallback() {
   Cancel();
 }
 
-// static
-void WaitingCallback::CallOnHandleReady(void* closure, MojoResult result) {
-  static_cast<WaitingCallback*>(closure)->OnHandleReady(result);
-}
-
-void WaitingCallback::ClearWaitId() {
-  wait_id_ = 0;
-  handle_wrapper_->RemoveCloseObserver(this);
-  handle_wrapper_ = nullptr;
-}
-
 void WaitingCallback::OnHandleReady(MojoResult result) {
-  ClearWaitId();
-  CallCallback(result);
-}
-
-void WaitingCallback::CallCallback(MojoResult result) {
-  // ClearWaitId must already have been called.
-  DCHECK(!wait_id_);
-  DCHECK(!handle_wrapper_);
-
   if (!runner_)
     return;
 
@@ -103,19 +82,13 @@ void WaitingCallback::CallCallback(MojoResult result) {
 
   v8::Handle<v8::Value> args[] = { gin::ConvertToV8(isolate, result) };
   runner_->Call(callback, runner_->global(), 1, args);
+
+  if (one_shot_ || result == MOJO_RESULT_CANCELLED) {
+    runner_.reset();
+    Cancel();
+  }
 }
 
-void WaitingCallback::OnWillCloseHandle() {
-  Environment::GetDefaultAsyncWaiter()->CancelWait(wait_id_);
-
-  // This may be called from GC, so we can't execute Javascript now, call
-  // ClearWaitId explicitly, and CallCallback asynchronously.
-  ClearWaitId();
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&WaitingCallback::CallCallback, weak_factory_.GetWeakPtr(),
-                 MOJO_RESULT_INVALID_ARGUMENT));
-}
-
+}  // namespace js
 }  // namespace edk
 }  // namespace mojo

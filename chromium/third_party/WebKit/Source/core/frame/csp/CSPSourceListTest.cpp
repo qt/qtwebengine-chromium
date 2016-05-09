@@ -31,8 +31,8 @@ protected:
         csp->bindToExecutionContext(document.get());
     }
 
-    RefPtrWillBePersistent<ContentSecurityPolicy> csp;
-    RefPtrWillBePersistent<Document> document;
+    Persistent<ContentSecurityPolicy> csp;
+    Persistent<Document> document;
 };
 
 static void parseSourceList(CSPSourceList& sourceList, String& sources)
@@ -51,6 +51,15 @@ TEST_F(CSPSourceListTest, BasicMatchingNone)
 
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://example.com/")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example.test/")));
+}
+
+TEST_F(CSPSourceListTest, BasicMatchingUnsafeDynamic)
+{
+    String sources = "'unsafe-dynamic'";
+    CSPSourceList sourceList(csp.get(), "script-src");
+    parseSourceList(sourceList, sources);
+
+    EXPECT_TRUE(sourceList.allowDynamic());
 }
 
 TEST_F(CSPSourceListTest, BasicMatchingStar)
@@ -130,6 +139,7 @@ TEST_F(CSPSourceListTest, BasicMatching)
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://example1.com/")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "https://example1.com/foo")));
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://example1.com:9000/foo/")));
+    EXPECT_FALSE(sourceList.matches(KURL(base, "http://example1.com:8000/FOO/")));
 }
 
 TEST_F(CSPSourceListTest, WildcardMatching)
@@ -177,4 +187,4 @@ TEST_F(CSPSourceListTest, RedirectMatching)
     EXPECT_FALSE(sourceList.matches(KURL(base, "http://example3.com/foo/"), ContentSecurityPolicy::DidRedirect));
 }
 
-} // namespace
+} // namespace blink

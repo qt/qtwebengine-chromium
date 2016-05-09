@@ -6,9 +6,9 @@
 #define CC_SURFACES_SURFACE_FACTORY_H_
 
 #include <set>
+#include <unordered_map>
 
 #include "base/callback_forward.h"
-#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -49,9 +49,6 @@ class CC_SURFACES_EXPORT SurfaceFactory
   void Destroy(SurfaceId surface_id);
   void DestroyAll();
 
-  void SetBeginFrameSource(SurfaceId surface_id,
-                           BeginFrameSource* begin_frame_source);
-
   // A frame can only be submitted to a surface created by this factory,
   // although the frame may reference surfaces created by other factories.
   // The callback is called the first time this frame is used to draw, or if
@@ -85,8 +82,8 @@ class CC_SURFACES_EXPORT SurfaceFactory
 
   bool needs_sync_points_;
 
-  typedef base::ScopedPtrHashMap<SurfaceId, scoped_ptr<Surface>>
-      OwningSurfaceMap;
+  using OwningSurfaceMap =
+      std::unordered_map<SurfaceId, scoped_ptr<Surface>, SurfaceIdHash>;
   OwningSurfaceMap surface_map_;
 
   DISALLOW_COPY_AND_ASSIGN(SurfaceFactory);

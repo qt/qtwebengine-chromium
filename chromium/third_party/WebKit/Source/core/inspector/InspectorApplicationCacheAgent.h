@@ -26,7 +26,6 @@
 #define InspectorApplicationCacheAgent_h
 
 #include "core/CoreExport.h"
-#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "wtf/Noncopyable.h"
@@ -38,15 +37,12 @@ class LocalFrame;
 class InspectedFrames;
 class InspectorFrontend;
 
-typedef String ErrorString;
-
-class CORE_EXPORT InspectorApplicationCacheAgent final : public InspectorBaseAgent<InspectorApplicationCacheAgent, InspectorFrontend::ApplicationCache>, public InspectorBackendDispatcher::ApplicationCacheCommandHandler {
+class CORE_EXPORT InspectorApplicationCacheAgent final : public InspectorBaseAgent<InspectorApplicationCacheAgent, protocol::Frontend::ApplicationCache>, public protocol::Backend::ApplicationCache {
     WTF_MAKE_NONCOPYABLE(InspectorApplicationCacheAgent);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorApplicationCacheAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorApplicationCacheAgent> create(InspectedFrames* inspectedFrames)
+    static RawPtr<InspectorApplicationCacheAgent> create(InspectedFrames* inspectedFrames)
     {
-        return adoptPtrWillBeNoop(new InspectorApplicationCacheAgent(inspectedFrames));
+        return new InspectorApplicationCacheAgent(inspectedFrames);
     }
     ~InspectorApplicationCacheAgent() override { }
     DECLARE_VIRTUAL_TRACE();
@@ -60,21 +56,21 @@ public:
     void networkStateChanged(LocalFrame*, bool online);
 
     // ApplicationCache API for InspectorFrontend
+    void getFramesWithManifests(ErrorString*, OwnPtr<protocol::Array<protocol::ApplicationCache::FrameWithManifest>>* frameIds) override;
     void enable(ErrorString*) override;
-    void getFramesWithManifests(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::ApplicationCache::FrameWithManifest>>& result) override;
     void getManifestForFrame(ErrorString*, const String& frameId, String* manifestURL) override;
-    void getApplicationCacheForFrame(ErrorString*, const String& frameId, RefPtr<TypeBuilder::ApplicationCache::ApplicationCache>&) override;
+    void getApplicationCacheForFrame(ErrorString*, const String& frameId, OwnPtr<protocol::ApplicationCache::ApplicationCache>*) override;
 
 private:
     explicit InspectorApplicationCacheAgent(InspectedFrames*);
 
-    PassRefPtr<TypeBuilder::ApplicationCache::ApplicationCache> buildObjectForApplicationCache(const ApplicationCacheHost::ResourceInfoList&, const ApplicationCacheHost::CacheInfo&);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::ApplicationCache::ApplicationCacheResource> > buildArrayForApplicationCacheResources(const ApplicationCacheHost::ResourceInfoList&);
-    PassRefPtr<TypeBuilder::ApplicationCache::ApplicationCacheResource> buildObjectForApplicationCacheResource(const ApplicationCacheHost::ResourceInfo&);
+    PassOwnPtr<protocol::ApplicationCache::ApplicationCache> buildObjectForApplicationCache(const ApplicationCacheHost::ResourceInfoList&, const ApplicationCacheHost::CacheInfo&);
+    PassOwnPtr<protocol::Array<protocol::ApplicationCache::ApplicationCacheResource>> buildArrayForApplicationCacheResources(const ApplicationCacheHost::ResourceInfoList&);
+    PassOwnPtr<protocol::ApplicationCache::ApplicationCacheResource> buildObjectForApplicationCacheResource(const ApplicationCacheHost::ResourceInfo&);
 
     DocumentLoader* assertFrameWithDocumentLoader(ErrorString*, String frameId);
 
-    RawPtrWillBeMember<InspectedFrames> m_inspectedFrames;
+    Member<InspectedFrames> m_inspectedFrames;
 };
 
 } // namespace blink

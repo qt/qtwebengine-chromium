@@ -26,6 +26,7 @@ struct CONTENT_EXPORT WebPluginMimeType {
   WebPluginMimeType(const std::string& m,
                     const std::string& f,
                     const std::string& d);
+  WebPluginMimeType(const WebPluginMimeType& other);
   ~WebPluginMimeType();
 
   // The name of the mime type (e.g., "application/x-shockwave-flash").
@@ -45,7 +46,6 @@ struct CONTENT_EXPORT WebPluginMimeType {
 // Describes an available NPAPI or Pepper plugin.
 struct CONTENT_EXPORT WebPluginInfo {
   enum PluginType {
-    PLUGIN_TYPE_NPAPI,
     PLUGIN_TYPE_PEPPER_IN_PROCESS,
     PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS,
     PLUGIN_TYPE_BROWSER_PLUGIN

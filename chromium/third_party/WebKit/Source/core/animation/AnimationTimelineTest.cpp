@@ -32,6 +32,7 @@
 
 #include "core/animation/AnimationClock.h"
 #include "core/animation/AnimationEffect.h"
+#include "core/animation/CompositorPendingAnimations.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/dom/Document.h"
@@ -75,9 +76,7 @@ protected:
         document.release();
         element.release();
         timeline.release();
-#if ENABLE(OILPAN)
         Heap::collectAllGarbage();
-#endif
     }
 
     void updateClockAndService(double time)
@@ -89,8 +88,8 @@ protected:
     }
 
     OwnPtr<DummyPageHolder> pageHolder;
-    RefPtrWillBePersistent<Document> document;
-    RefPtrWillBePersistent<Element> element;
+    Persistent<Document> document;
+    Persistent<Element> element;
     Persistent<AnimationTimeline> timeline;
     Timing timing;
     Persistent<MockPlatformTiming> platformTiming;
@@ -312,8 +311,8 @@ TEST_F(AnimationAnimationTimelineTest, PauseForTesting)
     Animation* animation2 = timeline->play(anim2);
     timeline->pauseAnimationsForTesting(seekTime);
 
-    EXPECT_FLOAT_EQ(seekTime, animation1->currentTime() / 1000.0);
-    EXPECT_FLOAT_EQ(seekTime, animation2->currentTime() / 1000.0);
+    EXPECT_FLOAT_EQ(seekTime, animation1->currentTimeInternal());
+    EXPECT_FLOAT_EQ(seekTime, animation2->currentTimeInternal());
 }
 
 TEST_F(AnimationAnimationTimelineTest, DelayBeforeAnimationStart)
@@ -361,4 +360,4 @@ TEST_F(AnimationAnimationTimelineTest, UseAnimationAfterTimelineDeref)
     animation->setStartTime(0);
 }
 
-}
+} // namespace blink

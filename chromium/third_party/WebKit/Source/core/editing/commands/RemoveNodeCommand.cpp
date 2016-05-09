@@ -27,11 +27,12 @@
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Node.h"
+#include "core/editing/commands/EditingState.h"
 #include "wtf/Assertions.h"
 
 namespace blink {
 
-RemoveNodeCommand::RemoveNodeCommand(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
+RemoveNodeCommand::RemoveNodeCommand(RawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     : SimpleEditCommand(node->document())
     , m_node(node)
     , m_shouldAssumeContentIsAlwaysEditable(shouldAssumeContentIsAlwaysEditable)
@@ -40,7 +41,7 @@ RemoveNodeCommand::RemoveNodeCommand(PassRefPtrWillBeRawPtr<Node> node, ShouldAs
     ASSERT(m_node->parentNode());
 }
 
-void RemoveNodeCommand::doApply()
+void RemoveNodeCommand::doApply(EditingState* editingState)
 {
     ContainerNode* parent = m_node->parentNode();
     if (!parent || (m_shouldAssumeContentIsAlwaysEditable == DoNotAssumeContentIsAlwaysEditable
@@ -52,12 +53,17 @@ void RemoveNodeCommand::doApply()
     m_refChild = m_node->nextSibling();
 
     m_node->remove(IGNORE_EXCEPTION);
+    // Node::remove dispatch synchronous events such as IFRAME unload events,
+    // and event handlers may break the document. We check the document state
+    // here in order to prevent further processing in bad situation.
+    ABORT_EDITING_COMMAND_IF(!m_node->document().frame());
+    ABORT_EDITING_COMMAND_IF(!m_node->document().documentElement());
 }
 
 void RemoveNodeCommand::doUnapply()
 {
-    RefPtrWillBeRawPtr<ContainerNode> parent = m_parent.release();
-    RefPtrWillBeRawPtr<Node> refChild = m_refChild.release();
+    RawPtr<ContainerNode> parent = m_parent.release();
+    RawPtr<Node> refChild = m_refChild.release();
     if (!parent || !parent->hasEditableStyle())
         return;
 
@@ -72,4 +78,4 @@ DEFINE_TRACE(RemoveNodeCommand)
     SimpleEditCommand::trace(visitor);
 }
 
-}
+} // namespace blink

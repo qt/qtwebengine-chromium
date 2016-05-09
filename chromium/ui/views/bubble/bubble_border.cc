@@ -12,6 +12,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/painter.h"
@@ -144,8 +145,13 @@ BubbleBorder::BubbleBorder(Arrow arrow, Shadow shadow, SkColor color)
       shadow_(shadow),
       background_color_(color),
       use_theme_background_color_(false) {
-  DCHECK(shadow < SHADOW_COUNT);
-  images_ = GetBorderImages(shadow);
+#if defined(OS_MACOSX)
+  // On Mac, use the NO_ASSETS bubble border. WindowServer on Mac is able to
+  // generate drop shadows for dialogs, hence we don't use raster shadows.
+  shadow_ = NO_ASSETS;
+#endif  // OS_MACOSX
+  DCHECK(shadow_ < SHADOW_COUNT);
+  images_ = GetBorderImages(shadow_);
 }
 
 BubbleBorder::~BubbleBorder() {}
@@ -158,8 +164,14 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
   int h = anchor_rect.height();
   const gfx::Size size(GetSizeForContentsSize(contents_size));
   const int arrow_offset = GetArrowOffset(size);
-  const int arrow_size =
+  // |arrow_shift| is necessary to visually align the tip of the bubble arrow
+  // with the anchor point. This shift is an inverse of the shadow thickness.
+  int arrow_shift =
       images_->arrow_interior_thickness + kStroke - images_->arrow_thickness;
+  // When arrow is painted transparently the visible border of the bubble needs
+  // to be positioned at the same bounds as when the arrow is shown.
+  if (arrow_paint_type_ == PAINT_TRANSPARENT)
+    arrow_shift += images_->arrow_interior_thickness;
   const bool mid_anchor = alignment_ == ALIGN_ARROW_TO_MID_ANCHOR;
 
   // Calculate the bubble coordinates based on the border and arrow settings.
@@ -172,9 +184,11 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
       x += mid_anchor ? w / 2 + arrow_offset - size.width() :
                         w - size.width() + GetBorderThickness() - kStroke;
     }
-    y += is_arrow_on_top(arrow_) ? h + arrow_size : -arrow_size - size.height();
+    y += is_arrow_on_top(arrow_) ? h + arrow_shift
+                                 : -arrow_shift - size.height();
   } else if (has_arrow(arrow_)) {
-    x += is_arrow_on_left(arrow_) ? w + arrow_size : -arrow_size - size.width();
+    x += is_arrow_on_left(arrow_) ? w + arrow_shift
+                                  : -arrow_shift - size.width();
     if (is_arrow_on_top(arrow_)) {
       y += mid_anchor ? h / 2 - arrow_offset : kStroke - GetBorderThickness();
     } else if (is_arrow_at_center(arrow_)) {
@@ -211,6 +225,15 @@ int BubbleBorder::GetArrowOffset(const gfx::Size& border_size) const {
   return std::max(min, std::min(arrow_offset_, edge_length - min));
 }
 
+bool BubbleBorder::GetArrowPath(const gfx::Rect& view_bounds,
+                                gfx::Path* path) const {
+  if (!has_arrow(arrow_) || arrow_paint_type_ != PAINT_NORMAL)
+    return false;
+
+  GetArrowPathFromArrowBounds(GetArrowRect(view_bounds), path);
+  return true;
+}
+
 void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   gfx::Rect bounds(view.GetContentsBounds());
   bounds.Inset(-GetBorderThickness(), -GetBorderThickness());
@@ -238,8 +261,8 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
 gfx::Insets BubbleBorder::GetInsets() const {
   // The insets contain the stroke and shadow pixels outside the bubble fill.
   const int inset = GetBorderThickness();
-  if ((arrow_paint_type_ == PAINT_NONE) || !has_arrow(arrow_))
-    return gfx::Insets(inset, inset, inset, inset);
+  if (arrow_paint_type_ != PAINT_NORMAL || !has_arrow(arrow_))
+    return gfx::Insets(inset);
 
   int first_inset = inset;
   int second_inset = std::max(inset, images_->arrow_thickness);
@@ -264,14 +287,16 @@ gfx::Size BubbleBorder::GetSizeForContentsSize(
 
   // Ensure the bubble is large enough to not overlap border and arrow images.
   const int min = 2 * images_->border_thickness;
+  // Only take arrow image sizes into account when the bubble tip is shown.
+  if (arrow_paint_type_ != PAINT_NORMAL || !has_arrow(arrow_)) {
+    size.SetToMax(gfx::Size(min, min));
+    return size;
+  }
   const int min_with_arrow_width = min + images_->arrow_width;
   const int min_with_arrow_thickness = images_->border_thickness +
       std::max(images_->arrow_thickness + images_->border_interior_thickness,
                images_->border_thickness);
-  // Only take arrow image sizes into account when the bubble tip is shown.
-  if (arrow_paint_type_ == PAINT_NONE || !has_arrow(arrow_))
-    size.SetToMax(gfx::Size(min, min));
-  else if (is_arrow_on_horizontal(arrow_))
+  if (is_arrow_on_horizontal(arrow_))
     size.SetToMax(gfx::Size(min_with_arrow_width, min_with_arrow_thickness));
   else
     size.SetToMax(gfx::Size(min_with_arrow_thickness, min_with_arrow_width));
@@ -328,9 +353,8 @@ gfx::Rect BubbleBorder::GetArrowRect(const gfx::Rect& bounds) const {
   return gfx::Rect(origin, gfx::Size(width, height));
 }
 
-void BubbleBorder::DrawArrow(gfx::Canvas* canvas,
-                             const gfx::Rect& arrow_bounds) const {
-  canvas->DrawImageInt(*GetArrowImage(), arrow_bounds.x(), arrow_bounds.y());
+void BubbleBorder::GetArrowPathFromArrowBounds(const gfx::Rect& arrow_bounds,
+                                               SkPath* path) const {
   const bool horizontal = is_arrow_on_horizontal(arrow_);
   const int thickness = images_->arrow_interior_thickness;
   float tip_x = horizontal ? arrow_bounds.CenterPoint().x() :
@@ -344,16 +368,21 @@ void BubbleBorder::DrawArrow(gfx::Canvas* canvas,
   const int offset_to_next_vertex = positive_offset ?
       images_->arrow_interior_thickness : -images_->arrow_interior_thickness;
 
-  SkPath path;
-  path.incReserve(4);
-  path.moveTo(SkDoubleToScalar(tip_x), SkDoubleToScalar(tip_y));
-  path.lineTo(SkDoubleToScalar(tip_x + offset_to_next_vertex),
-              SkDoubleToScalar(tip_y + offset_to_next_vertex));
+  path->incReserve(4);
+  path->moveTo(SkDoubleToScalar(tip_x), SkDoubleToScalar(tip_y));
+  path->lineTo(SkDoubleToScalar(tip_x + offset_to_next_vertex),
+               SkDoubleToScalar(tip_y + offset_to_next_vertex));
   const int multiplier = horizontal ? 1 : -1;
-  path.lineTo(SkDoubleToScalar(tip_x - multiplier * offset_to_next_vertex),
-              SkDoubleToScalar(tip_y + multiplier * offset_to_next_vertex));
-  path.close();
+  path->lineTo(SkDoubleToScalar(tip_x - multiplier * offset_to_next_vertex),
+               SkDoubleToScalar(tip_y + multiplier * offset_to_next_vertex));
+  path->close();
+}
 
+void BubbleBorder::DrawArrow(gfx::Canvas* canvas,
+                             const gfx::Rect& arrow_bounds) const {
+  canvas->DrawImageInt(*GetArrowImage(), arrow_bounds.x(), arrow_bounds.y());
+  SkPath path;
+  GetArrowPathFromArrowBounds(arrow_bounds, &path);
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(background_color_);

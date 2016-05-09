@@ -16,12 +16,12 @@
 #include "webrtc/audio/audio_send_stream.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
-#include "webrtc/call/congestion_controller.h"
 #include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
+#include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/pacing/paced_sender.h"
+#include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h"
 #include "webrtc/test/mock_voe_channel_proxy.h"
 #include "webrtc/test/mock_voice_engine.h"
-#include "webrtc/video/call_stats.h"
 
 namespace webrtc {
 namespace test {
@@ -46,17 +46,16 @@ const CallStatistics kCallStats = {
 const CodecInst kCodecInst = {-121, "codec_name_send", 48000, -231, 0, -671};
 const ReportBlock kReportBlock = {456, 780, 123, 567, 890, 132, 143, 13354};
 const int kTelephoneEventPayloadType = 123;
-const uint8_t kTelephoneEventCode = 45;
-const uint32_t kTelephoneEventDuration = 6789;
+const int kTelephoneEventCode = 45;
+const int kTelephoneEventDuration = 6789;
 
 struct ConfigHelper {
   ConfigHelper()
-      : stream_config_(nullptr),
-        call_stats_(Clock::GetRealTimeClock()),
-        process_thread_(ProcessThread::Create("AudioTestThread")),
-        congestion_controller_(process_thread_.get(),
-                               &call_stats_,
-                               &bitrate_observer_) {
+      : simulated_clock_(123456),
+        stream_config_(nullptr),
+        congestion_controller_(&simulated_clock_,
+                               &bitrate_observer_,
+                               &remote_bitrate_observer_) {
     using testing::Invoke;
     using testing::StrEq;
 
@@ -83,13 +82,12 @@ struct ConfigHelper {
                                            kTransportSequenceNumberId))
               .Times(1);
           EXPECT_CALL(*channel_proxy_,
-                      SetCongestionControlObjects(
+                      RegisterSenderCongestionControlObjects(
                           congestion_controller_.pacer(),
                           congestion_controller_.GetTransportFeedbackObserver(),
                           congestion_controller_.packet_router()))
               .Times(1);
-          EXPECT_CALL(*channel_proxy_,
-                      SetCongestionControlObjects(nullptr, nullptr, nullptr))
+          EXPECT_CALL(*channel_proxy_, ResetCongestionControlObjects())
               .Times(1);
           return channel_proxy_;
         }));
@@ -154,13 +152,13 @@ struct ConfigHelper {
   }
 
  private:
+  SimulatedClock simulated_clock_;
   testing::StrictMock<MockVoiceEngine> voice_engine_;
   rtc::scoped_refptr<AudioState> audio_state_;
   AudioSendStream::Config stream_config_;
   testing::StrictMock<MockVoEChannelProxy>* channel_proxy_ = nullptr;
-  CallStats call_stats_;
   testing::NiceMock<MockBitrateObserver> bitrate_observer_;
-  rtc::scoped_ptr<ProcessThread> process_thread_;
+  testing::NiceMock<MockRemoteBitrateObserver> remote_bitrate_observer_;
   CongestionController congestion_controller_;
 };
 }  // namespace

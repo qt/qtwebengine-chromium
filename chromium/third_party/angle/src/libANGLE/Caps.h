@@ -191,6 +191,11 @@ struct Extensions
     // GL_ANGLE_timer_query
     bool timerQuery;
 
+    // GL_EXT_disjoint_timer_query
+    bool disjointTimerQuery;
+    GLuint queryCounterBitsTimeElapsed;
+    GLuint queryCounterBitsTimestamp;
+
     // GL_EXT_robustness
     bool robustness;
 
@@ -251,6 +256,9 @@ struct Extensions
     // GL_OES_EGL_image_external_essl3
     bool eglImageExternalEssl3;
 
+    // NV_EGL_stream_consumer_external
+    bool eglStreamConsumerExternal;
+
     // EXT_unpack_subimage
     bool unpackSubimage;
 
@@ -266,6 +274,12 @@ struct Extensions
     GLuint maxDebugLoggedMessages;
     GLuint maxDebugGroupStackDepth;
     GLuint maxLabelLength;
+
+    // KHR_no_error
+    bool noError;
+
+    // GL_ANGLE_lossy_etc_decode
+    bool lossyETCDecode;
 
     // ES3 Extension support
 
@@ -468,6 +482,18 @@ struct DisplayExtensions
 
     // EGL_ANGLE_direct_composition
     bool directComposition;
+
+    // KHR_create_context_no_error
+    bool createContextNoError;
+
+    // EGL_KHR_stream
+    bool stream;
+
+    // EGL_KHR_stream_consumer_gltexture
+    bool streamConsumerGLTexture;
+
+    // EGL_NV_stream_consumer_gltexture_yuv
+    bool streamConsumerGLTextureYUV;
 };
 
 struct DeviceExtensions
@@ -514,6 +540,9 @@ struct ClientExtensions
 
     // EGL_ANGLE_x11_visual
     bool x11Visual;
+
+    // EGL_ANGLE_experimental_present_path
+    bool experimentalPresentPath;
 
     // EGL_KHR_client_get_all_proc_addresses
     bool clientGetAllProcAddresses;

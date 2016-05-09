@@ -27,31 +27,31 @@
 
 #import "RTCI420Frame.h"
 
-#include "talk/media/base/videoframe.h"
-#include "webrtc/base/scoped_ptr.h"
+#include <memory>
+
+#include "webrtc/media/base/videoframe.h"
 
 @implementation RTCI420Frame {
-  rtc::scoped_ptr<cricket::VideoFrame> _videoFrame;
+  std::unique_ptr<cricket::VideoFrame> _videoFrame;
 }
 
 - (NSUInteger)width {
-  return _videoFrame->GetWidth();
+  return _videoFrame->width();
 }
 
 - (NSUInteger)height {
-  return _videoFrame->GetHeight();
+  return _videoFrame->height();
 }
 
+// TODO(nisse): chromaWidth and chromaHeight are used only in
+// RTCOpenGLVideoRenderer.mm. Update, and then delete these
+// properties.
 - (NSUInteger)chromaWidth {
-  return _videoFrame->GetChromaWidth();
+  return (self.width + 1) / 2;
 }
 
 - (NSUInteger)chromaHeight {
-  return _videoFrame->GetChromaHeight();
-}
-
-- (NSUInteger)chromaSize {
-  return _videoFrame->GetChromaSize();
+  return (self.height + 1) / 2;
 }
 
 - (const uint8_t*)yPlane {
@@ -79,10 +79,6 @@
 
 - (NSInteger)vPitch {
   return _videoFrame->GetVPitch();
-}
-
-- (BOOL)makeExclusive {
-  return _videoFrame->MakeExclusive();
 }
 
 @end

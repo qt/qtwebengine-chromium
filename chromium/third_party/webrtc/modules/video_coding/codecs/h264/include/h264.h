@@ -27,9 +27,16 @@
 
 namespace webrtc {
 
+// Set to disable the H.264 encoder/decoder implementations that are provided if
+// |rtc_use_h264| build flag is true (if false, this function does nothing).
+// This function should only be called before or during WebRTC initialization
+// and is not thread-safe.
+void DisableRtcUseH264();
+
 class H264Encoder : public VideoEncoder {
  public:
   static H264Encoder* Create();
+  // If H.264 is supported (any implementation).
   static bool IsSupported();
 
   ~H264Encoder() override {}

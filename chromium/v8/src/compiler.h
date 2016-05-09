@@ -9,79 +9,114 @@
 #include "src/ast/ast.h"
 #include "src/bailout-reason.h"
 #include "src/compilation-dependencies.h"
-#include "src/signature.h"
+#include "src/source-position.h"
 #include "src/zone.h"
 
 namespace v8 {
 namespace internal {
 
-class AstValueFactory;
-class HydrogenCodeStub;
+// Forward declarations.
+class CompilationInfo;
 class JavaScriptFrame;
+class OptimizedCompileJob;
 class ParseInfo;
 class ScriptData;
 
-
-// This class encapsulates encoding and decoding of sources positions from
-// which hydrogen values originated.
-// When FLAG_track_hydrogen_positions is set this object encodes the
-// identifier of the inlining and absolute offset from the start of the
-// inlined function.
-// When the flag is not set we simply track absolute offset from the
-// script start.
-class SourcePosition {
+// The V8 compiler API.
+//
+// This is the central hub for dispatching to the various compilers within V8.
+// Logic for which compiler to choose and how to wire compilation results into
+// the object heap should be kept inside this class.
+//
+// General strategy: Scripts are translated into anonymous functions w/o
+// parameters which then can be executed. If the source code contains other
+// functions, they might be compiled and allocated as part of the compilation
+// of the source code or deferred for lazy compilation at a later point.
+class Compiler : public AllStatic {
  public:
-  static SourcePosition Unknown() {
-    return SourcePosition::FromRaw(kNoPosition);
-  }
+  enum ClearExceptionFlag { KEEP_EXCEPTION, CLEAR_EXCEPTION };
+  enum ConcurrencyMode { NOT_CONCURRENT, CONCURRENT };
 
-  bool IsUnknown() const { return value_ == kNoPosition; }
+  // ===========================================================================
+  // The following family of methods ensures a given function is compiled. The
+  // general contract is that failures will be reported by returning {false},
+  // whereas successful compilation ensures the {is_compiled} predicate on the
+  // given function holds (except for live-edit, which compiles the world).
 
-  uint32_t position() const { return PositionField::decode(value_); }
-  void set_position(uint32_t position) {
-    if (FLAG_hydrogen_track_positions) {
-      value_ = static_cast<uint32_t>(PositionField::update(value_, position));
-    } else {
-      value_ = position;
-    }
-  }
+  static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag);
+  static bool CompileOptimized(Handle<JSFunction> function, ConcurrencyMode);
+  static bool CompileDebugCode(Handle<JSFunction> function);
+  static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
+  static void CompileForLiveEdit(Handle<Script> script);
 
-  uint32_t inlining_id() const { return InliningIdField::decode(value_); }
-  void set_inlining_id(uint32_t inlining_id) {
-    if (FLAG_hydrogen_track_positions) {
-      value_ =
-          static_cast<uint32_t>(InliningIdField::update(value_, inlining_id));
-    }
-  }
+  // Generate and install code from previously queued optimization job.
+  static void FinalizeOptimizedCompileJob(OptimizedCompileJob* job);
 
-  uint32_t raw() const { return value_; }
+  // Give the compiler a chance to perform low-latency initialization tasks of
+  // the given {function} on its instantiation. Note that only the runtime will
+  // offer this chance, optimized closure instantiation will not call this.
+  static void PostInstantiation(Handle<JSFunction> function, PretenureFlag);
 
- private:
-  static const uint32_t kNoPosition =
-      static_cast<uint32_t>(RelocInfo::kNoPosition);
-  typedef BitField<uint32_t, 0, 9> InliningIdField;
+  // Parser::Parse, then Compiler::Analyze.
+  static bool ParseAndAnalyze(ParseInfo* info);
+  // Rewrite, analyze scopes, and renumber.
+  static bool Analyze(ParseInfo* info);
+  // Adds deoptimization support, requires ParseAndAnalyze.
+  static bool EnsureDeoptimizationSupport(CompilationInfo* info);
 
-  // Offset from the start of the inlined function.
-  typedef BitField<uint32_t, 9, 23> PositionField;
+  // ===========================================================================
+  // The following family of methods instantiates new functions for scripts or
+  // function literals. The decision whether those functions will be compiled,
+  // is left to the discretion of the compiler.
+  //
+  // Please note this interface returns shared function infos.  This means you
+  // need to call Factory::NewFunctionFromSharedFunctionInfo before you have a
+  // real function with a context.
 
-  friend class HPositionInfo;
-  friend class Deoptimizer;
+  // Create a (bound) function for a String source within a context for eval.
+  MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionFromEval(
+      Handle<String> source, Handle<SharedFunctionInfo> outer_info,
+      Handle<Context> context, LanguageMode language_mode,
+      ParseRestriction restriction, int line_offset, int column_offset = 0,
+      Handle<Object> script_name = Handle<Object>(),
+      ScriptOriginOptions options = ScriptOriginOptions());
 
-  static SourcePosition FromRaw(uint32_t raw_position) {
-    SourcePosition position;
-    position.value_ = raw_position;
-    return position;
-  }
+  // Create a shared function info object for a String source within a context.
+  static Handle<SharedFunctionInfo> GetSharedFunctionInfoForScript(
+      Handle<String> source, Handle<Object> script_name, int line_offset,
+      int column_offset, ScriptOriginOptions resource_options,
+      Handle<Object> source_map_url, Handle<Context> context,
+      v8::Extension* extension, ScriptData** cached_data,
+      ScriptCompiler::CompileOptions compile_options,
+      NativesFlag is_natives_code, bool is_module);
 
-  // If FLAG_hydrogen_track_positions is set contains bitfields InliningIdField
-  // and PositionField.
-  // Otherwise contains absolute offset from the script start.
-  uint32_t value_;
+  // Create a shared function info object for a Script that has already been
+  // parsed while the script was being loaded from a streamed source.
+  static Handle<SharedFunctionInfo> GetSharedFunctionInfoForStreamedScript(
+      Handle<Script> script, ParseInfo* info, int source_length);
+
+  // Create a shared function info object (the code may be lazily compiled).
+  static Handle<SharedFunctionInfo> GetSharedFunctionInfo(
+      FunctionLiteral* node, Handle<Script> script, CompilationInfo* outer);
+
+  // Create a shared function info object for a native function literal.
+  static Handle<SharedFunctionInfo> GetSharedFunctionInfoForNative(
+      v8::Extension* extension, Handle<String> name);
+
+  // ===========================================================================
+  // The following family of methods provides support for OSR. Code generated
+  // for entry via OSR might not be suitable for normal entry, hence will be
+  // returned directly to the caller.
+  //
+  // Please note this interface is the only part dealing with {Code} objects
+  // directly. Other methods are agnostic to {Code} and can use an interpreter
+  // instead of generating JIT code for a function at all.
+
+  // Generate and return optimized code for OSR, or empty handle on failure.
+  MUST_USE_RESULT static MaybeHandle<Code> GetOptimizedCodeForOSR(
+      Handle<JSFunction> function, BailoutId osr_ast_id,
+      JavaScriptFrame* osr_frame);
 };
-
-
-std::ostream& operator<<(std::ostream& os, const SourcePosition& p);
-
 
 struct InlinedFunctionInfo {
   InlinedFunctionInfo(int parent_id, SourcePosition inline_position,
@@ -125,11 +160,12 @@ class CompilationInfo {
     kDeoptimizationEnabled = 1 << 16,
     kSourcePositionsEnabled = 1 << 17,
     kFirstCompile = 1 << 18,
+    kBailoutOnUninitialized = 1 << 19,
   };
 
   explicit CompilationInfo(ParseInfo* parse_info);
-  CompilationInfo(CodeStub* stub, Isolate* isolate, Zone* zone);
-  CompilationInfo(const char* debug_name, Isolate* isolate, Zone* zone);
+  CompilationInfo(const char* debug_name, Isolate* isolate, Zone* zone,
+                  Code::Flags code_flags = Code::ComputeFlags(Code::STUB));
   virtual ~CompilationInfo();
 
   ParseInfo* parse_info() const { return parse_info_; }
@@ -159,9 +195,8 @@ class CompilationInfo {
   Zone* zone() { return zone_; }
   bool is_osr() const { return !osr_ast_id_.IsNone(); }
   Handle<Code> code() const { return code_; }
-  CodeStub* code_stub() const { return code_stub_; }
+  Code::Flags code_flags() const { return code_flags_; }
   BailoutId osr_ast_id() const { return osr_ast_id_; }
-  Handle<Code> unoptimized_code() const { return unoptimized_code_; }
   int opt_count() const { return opt_count_; }
   int num_parameters() const;
   int num_parameters_including_this() const;
@@ -175,6 +210,11 @@ class CompilationInfo {
 
   bool has_bytecode_array() const { return !bytecode_array_.is_null(); }
   Handle<BytecodeArray> bytecode_array() const { return bytecode_array_; }
+
+  Handle<AbstractCode> abstract_code() const {
+    return has_bytecode_array() ? Handle<AbstractCode>::cast(bytecode_array())
+                                : Handle<AbstractCode>::cast(code());
+  }
 
   bool is_tracking_positions() const { return track_positions_; }
 
@@ -268,18 +308,20 @@ class CompilationInfo {
 
   bool is_first_compile() const { return GetFlag(kFirstCompile); }
 
+  void MarkAsBailoutOnUninitialized() { SetFlag(kBailoutOnUninitialized); }
+
+  bool is_bailout_on_uninitialized() const {
+    return GetFlag(kBailoutOnUninitialized);
+  }
+
   bool GeneratePreagedPrologue() const {
     // Generate a pre-aged prologue if we are optimizing for size, which
     // will make code flushing more aggressive. Only apply to Code::FUNCTION,
     // since StaticMarkingVisitor::IsFlushable only flushes proper functions.
-    return FLAG_optimize_for_size && FLAG_age_code && !will_serialize() &&
-           !is_debug() && output_code_kind_ == Code::FUNCTION;
+    return FLAG_optimize_for_size && FLAG_age_code && !is_debug() &&
+           output_code_kind() == Code::FUNCTION;
   }
 
-  void EnsureFeedbackVector();
-  Handle<TypeFeedbackVector> feedback_vector() const {
-    return feedback_vector_;
-  }
   void SetCode(Handle<Code> code) { code_ = code; }
 
   void SetBytecodeArray(Handle<BytecodeArray> bytecode_array) {
@@ -308,13 +350,16 @@ class CompilationInfo {
   // Accessors for the different compilation modes.
   bool IsOptimizing() const { return mode_ == OPTIMIZE; }
   bool IsStub() const { return mode_ == STUB; }
-  void SetOptimizing(BailoutId osr_ast_id, Handle<Code> unoptimized) {
+  void SetOptimizing() {
     DCHECK(has_shared_info());
     SetMode(OPTIMIZE);
-    osr_ast_id_ = osr_ast_id;
-    unoptimized_code_ = unoptimized;
     optimization_id_ = isolate()->NextOptimizationId();
-    set_output_code_kind(Code::OPTIMIZED_FUNCTION);
+    code_flags_ =
+        Code::KindField::update(code_flags_, Code::OPTIMIZED_FUNCTION);
+  }
+  void SetOptimizingForOsr(BailoutId osr_ast_id) {
+    SetOptimizing();
+    osr_ast_id_ = osr_ast_id;
   }
 
   // Deoptimization support.
@@ -338,7 +383,7 @@ class CompilationInfo {
   }
 
   void ReopenHandlesInNewHandleScope() {
-    unoptimized_code_ = Handle<Code>(*unoptimized_code_);
+    // Empty for now but will be needed once fields move from ParseInfo.
   }
 
   void AbortOptimization(BailoutReason reason) {
@@ -423,16 +468,30 @@ class CompilationInfo {
 
   base::SmartArrayPointer<char> GetDebugName() const;
 
-  Code::Kind output_code_kind() const { return output_code_kind_; }
+  Code::Kind output_code_kind() const {
+    return Code::ExtractKindFromFlags(code_flags_);
+  }
 
-  void set_output_code_kind(Code::Kind kind) { output_code_kind_ = kind; }
+  StackFrame::Type GetOutputStackFrameType() const;
 
  protected:
   ParseInfo* parse_info_;
 
   void DisableFutureOptimization() {
     if (GetFlag(kDisableFutureOptimization) && has_shared_info()) {
-      shared_info()->DisableOptimization(bailout_reason());
+      // If Crankshaft tried to optimize this function, bailed out, and
+      // doesn't want to try again, then use TurboFan next time.
+      if (!shared_info()->dont_crankshaft() &&
+          bailout_reason() != kOptimizedTooManyTimes) {
+        shared_info()->set_dont_crankshaft(true);
+        if (FLAG_trace_opt) {
+          PrintF("[disabled Crankshaft for ");
+          shared_info()->ShortPrint();
+          PrintF(", reason: %s]\n", GetBailoutReason(bailout_reason()));
+        }
+      } else {
+        shared_info()->DisableOptimization(bailout_reason());
+      }
     }
   }
 
@@ -446,8 +505,8 @@ class CompilationInfo {
     STUB
   };
 
-  CompilationInfo(ParseInfo* parse_info, CodeStub* code_stub,
-                  const char* debug_name, Mode mode, Isolate* isolate,
+  CompilationInfo(ParseInfo* parse_info, const char* debug_name,
+                  Code::Flags code_flags, Mode mode, Isolate* isolate,
                   Zone* zone);
 
   Isolate* isolate_;
@@ -466,23 +525,14 @@ class CompilationInfo {
 
   unsigned flags_;
 
-  Code::Kind output_code_kind_;
+  Code::Flags code_flags_;
 
-  // For compiled stubs, the stub object
-  CodeStub* code_stub_;
   // The compiled code.
   Handle<Code> code_;
-
-  // Used by codegen, ultimately kept rooted by the SharedFunctionInfo.
-  Handle<TypeFeedbackVector> feedback_vector_;
 
   // Compilation mode flag and whether deoptimization is allowed.
   Mode mode_;
   BailoutId osr_ast_id_;
-  // The unoptimized code we patched for OSR may not be the shared code
-  // afterwards, since we may need to compile it again to include deoptimization
-  // data.  Keep track which code we patched.
-  Handle<Code> unoptimized_code_;
 
   // Holds the bytecode array generated by the interpreter.
   // TODO(rmcilroy/mstarzinger): Temporary work-around until compiler.cc is
@@ -527,25 +577,7 @@ class CompilationInfo {
 };
 
 
-// A wrapper around a CompilationInfo that detaches the Handles from
-// the underlying DeferredHandleScope and stores them in info_ on
-// destruction.
-class CompilationHandleScope BASE_EMBEDDED {
- public:
-  explicit CompilationHandleScope(CompilationInfo* info)
-      : deferred_(info->isolate()), info_(info) {}
-  ~CompilationHandleScope() {
-    info_->set_deferred_handles(deferred_.Detach());
-  }
-
- private:
-  DeferredHandleScope deferred_;
-  CompilationInfo* info_;
-};
-
-
 class HGraph;
-class HOptimizedGraphBuilder;
 class LChunk;
 
 // A helper class that calls the three compilation phases in
@@ -557,12 +589,7 @@ class LChunk;
 class OptimizedCompileJob: public ZoneObject {
  public:
   explicit OptimizedCompileJob(CompilationInfo* info)
-      : info_(info),
-        graph_builder_(NULL),
-        graph_(NULL),
-        chunk_(NULL),
-        last_status_(FAILED),
-        awaiting_install_(false) { }
+      : info_(info), graph_(NULL), chunk_(NULL), last_status_(FAILED) {}
 
   enum Status {
     FAILED, BAILED_OUT, SUCCEEDED
@@ -586,23 +613,14 @@ class OptimizedCompileJob: public ZoneObject {
     return SetLastStatus(BAILED_OUT);
   }
 
-  void WaitForInstall() {
-    DCHECK(info_->is_osr());
-    awaiting_install_ = true;
-  }
-
-  bool IsWaitingForInstall() { return awaiting_install_; }
-
  private:
   CompilationInfo* info_;
-  HOptimizedGraphBuilder* graph_builder_;
   HGraph* graph_;
   LChunk* chunk_;
   base::TimeDelta time_taken_to_create_graph_;
   base::TimeDelta time_taken_to_optimize_;
   base::TimeDelta time_taken_to_codegen_;
   Status last_status_;
-  bool awaiting_install_;
 
   MUST_USE_RESULT Status SetLastStatus(Status status) {
     last_status_ = status;
@@ -625,101 +643,6 @@ class OptimizedCompileJob: public ZoneObject {
     base::ElapsedTimer timer_;
     base::TimeDelta* location_;
   };
-};
-
-
-// The V8 compiler
-//
-// General strategy: Source code is translated into an anonymous function w/o
-// parameters which then can be executed. If the source code contains other
-// functions, they will be compiled and allocated as part of the compilation
-// of the source code.
-
-// Please note this interface returns shared function infos.  This means you
-// need to call Factory::NewFunctionFromSharedFunctionInfo before you have a
-// real function with a context.
-
-class Compiler : public AllStatic {
- public:
-  MUST_USE_RESULT static MaybeHandle<Code> GetUnoptimizedCode(
-      Handle<JSFunction> function);
-  MUST_USE_RESULT static MaybeHandle<Code> GetLazyCode(
-      Handle<JSFunction> function);
-
-  static bool Compile(Handle<JSFunction> function, ClearExceptionFlag flag);
-  static bool CompileDebugCode(Handle<JSFunction> function);
-  static bool CompileDebugCode(Handle<SharedFunctionInfo> shared);
-  static void CompileForLiveEdit(Handle<Script> script);
-
-  // Parser::Parse, then Compiler::Analyze.
-  static bool ParseAndAnalyze(ParseInfo* info);
-  // Rewrite, analyze scopes, and renumber.
-  static bool Analyze(ParseInfo* info);
-  // Adds deoptimization support, requires ParseAndAnalyze.
-  static bool EnsureDeoptimizationSupport(CompilationInfo* info);
-
-  // Compile a String source within a context for eval.
-  MUST_USE_RESULT static MaybeHandle<JSFunction> GetFunctionFromEval(
-      Handle<String> source, Handle<SharedFunctionInfo> outer_info,
-      Handle<Context> context, LanguageMode language_mode,
-      ParseRestriction restriction, int line_offset, int column_offset = 0,
-      Handle<Object> script_name = Handle<Object>(),
-      ScriptOriginOptions options = ScriptOriginOptions());
-
-  // Compile a String source within a context.
-  static Handle<SharedFunctionInfo> CompileScript(
-      Handle<String> source, Handle<Object> script_name, int line_offset,
-      int column_offset, ScriptOriginOptions resource_options,
-      Handle<Object> source_map_url, Handle<Context> context,
-      v8::Extension* extension, ScriptData** cached_data,
-      ScriptCompiler::CompileOptions compile_options,
-      NativesFlag is_natives_code, bool is_module);
-
-  static Handle<SharedFunctionInfo> CompileStreamedScript(Handle<Script> script,
-                                                          ParseInfo* info,
-                                                          int source_length);
-
-  // Create a shared function info object (the code may be lazily compiled).
-  static Handle<SharedFunctionInfo> GetSharedFunctionInfo(
-      FunctionLiteral* node, Handle<Script> script, CompilationInfo* outer);
-
-  enum ConcurrencyMode { NOT_CONCURRENT, CONCURRENT };
-
-  // Generate and return optimized code or start a concurrent optimization job.
-  // In the latter case, return the InOptimizationQueue builtin.  On failure,
-  // return the empty handle.
-  MUST_USE_RESULT static MaybeHandle<Code> GetOptimizedCode(
-      Handle<JSFunction> function, Handle<Code> current_code,
-      ConcurrencyMode mode, BailoutId osr_ast_id = BailoutId::None(),
-      JavaScriptFrame* osr_frame = nullptr);
-
-  // Generate and return code from previously queued optimization job.
-  // On failure, return the empty handle.
-  static Handle<Code> GetConcurrentlyOptimizedCode(OptimizedCompileJob* job);
-};
-
-
-class CompilationPhase BASE_EMBEDDED {
- public:
-  CompilationPhase(const char* name, CompilationInfo* info);
-  ~CompilationPhase();
-
- protected:
-  bool ShouldProduceTraceOutput() const;
-
-  const char* name() const { return name_; }
-  CompilationInfo* info() const { return info_; }
-  Isolate* isolate() const { return info()->isolate(); }
-  Zone* zone() { return &zone_; }
-
- private:
-  const char* name_;
-  CompilationInfo* info_;
-  Zone zone_;
-  size_t info_zone_start_allocation_size_;
-  base::ElapsedTimer timer_;
-
-  DISALLOW_COPY_AND_ASSIGN(CompilationPhase);
 };
 
 }  // namespace internal

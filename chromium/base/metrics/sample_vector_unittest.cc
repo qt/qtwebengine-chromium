@@ -7,9 +7,9 @@
 #include <limits.h>
 #include <stddef.h>
 
+#include <memory>
 #include <vector>
 
-#include "base/memory/scoped_ptr.h"
 #include "base/metrics/bucket_ranges.h"
 #include "base/metrics/histogram.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,6 +40,33 @@ TEST(SampleVectorTest, AccumulateTest) {
   EXPECT_EQ(100, samples.GetCountAtIndex(1));
 
   EXPECT_EQ(100, samples.sum());
+  EXPECT_EQ(0, samples.redundant_count());
+  EXPECT_EQ(samples.TotalCount(), samples.redundant_count());
+}
+
+TEST(SampleVectorTest, Accumulate_LargeValuesDontOverflow) {
+  // Custom buckets: [1, 250000000) [250000000, 500000000)
+  BucketRanges ranges(3);
+  ranges.set_range(0, 1);
+  ranges.set_range(1, 250000000);
+  ranges.set_range(2, 500000000);
+  SampleVector samples(1, &ranges);
+
+  samples.Accumulate(240000000, 200);
+  samples.Accumulate(249999999, -300);
+  EXPECT_EQ(-100, samples.GetCountAtIndex(0));
+
+  samples.Accumulate(250000000, 200);
+  EXPECT_EQ(200, samples.GetCountAtIndex(1));
+
+  EXPECT_EQ(23000000300LL, samples.sum());
+  EXPECT_EQ(100, samples.redundant_count());
+  EXPECT_EQ(samples.TotalCount(), samples.redundant_count());
+
+  samples.Accumulate(250000000, -100);
+  EXPECT_EQ(100, samples.GetCountAtIndex(1));
+
+  EXPECT_EQ(-1999999700LL, samples.sum());
   EXPECT_EQ(0, samples.redundant_count());
   EXPECT_EQ(samples.TotalCount(), samples.redundant_count());
 }
@@ -217,7 +244,7 @@ TEST(SampleVectorIteratorTest, IterateTest) {
   samples.Accumulate(1, 1);
   samples.Accumulate(2, 2);
   samples.Accumulate(3, 3);
-  scoped_ptr<SampleCountIterator> it2 = samples.Iterator();
+  std::unique_ptr<SampleCountIterator> it2 = samples.Iterator();
 
   int i;
   for (i = 1; !it2->Done(); i++, it2->Next()) {
@@ -244,7 +271,7 @@ TEST(SampleVectorIteratorDeathTest, IterateDoneTest) {
   ranges.set_range(4, INT_MAX);
   SampleVector samples(1, &ranges);
 
-  scoped_ptr<SampleCountIterator> it = samples.Iterator();
+  std::unique_ptr<SampleCountIterator> it = samples.Iterator();
 
   EXPECT_TRUE(it->Done());
 

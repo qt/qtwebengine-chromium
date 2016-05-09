@@ -25,7 +25,7 @@
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_types.h"
-#include "media/cdm/cdm_buffer_impl.h"
+#include "media/cdm/cdm_allocator.h"
 #include "media/cdm/cdm_helpers.h"
 #include "media/cdm/cdm_wrapper.h"
 #include "ui/gfx/geometry/rect.h"
@@ -153,7 +153,14 @@ cdm::VideoDecoderConfig::VideoCodecProfile ToCdmVideoCodecProfile(
     VideoCodecProfile profile) {
   switch (profile) {
     case VP8PROFILE_ANY:
-    case VP9PROFILE_ANY:
+    // TODO(servolk): See crbug.com/592074. We'll need to update this code to
+    // handle different VP9 profiles properly after adding VP9 profiles in
+    // media/cdm/api/content_decryption_module.h in a separate CL.
+    // For now return kProfileNotNeeded to avoid breaking unit tests.
+    case VP9PROFILE_PROFILE0:
+    case VP9PROFILE_PROFILE1:
+    case VP9PROFILE_PROFILE2:
+    case VP9PROFILE_PROFILE3:
       return cdm::VideoDecoderConfig::kProfileNotNeeded;
     case H264PROFILE_BASELINE:
       return cdm::VideoDecoderConfig::kH264ProfileBaseline;
@@ -325,6 +332,7 @@ void CdmAdapter::Create(
     const std::string& key_system,
     const base::FilePath& cdm_path,
     const CdmConfig& cdm_config,
+    scoped_ptr<CdmAllocator> allocator,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const LegacySessionErrorCB& legacy_session_error_cb,
@@ -338,10 +346,10 @@ void CdmAdapter::Create(
   DCHECK(!session_keys_change_cb.is_null());
   DCHECK(!session_expiration_update_cb.is_null());
 
-  scoped_refptr<CdmAdapter> cdm =
-      new CdmAdapter(key_system, cdm_config, session_message_cb,
-                     session_closed_cb, legacy_session_error_cb,
-                     session_keys_change_cb, session_expiration_update_cb);
+  scoped_refptr<CdmAdapter> cdm = new CdmAdapter(
+      key_system, cdm_config, std::move(allocator), session_message_cb,
+      session_closed_cb, legacy_session_error_cb, session_keys_change_cb,
+      session_expiration_update_cb);
 
   // |cdm| ownership passed to the promise.
   scoped_ptr<CdmInitializedPromise> cdm_created_promise(
@@ -353,6 +361,7 @@ void CdmAdapter::Create(
 CdmAdapter::CdmAdapter(
     const std::string& key_system,
     const CdmConfig& cdm_config,
+    scoped_ptr<CdmAllocator> allocator,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const LegacySessionErrorCB& legacy_session_error_cb,
@@ -367,6 +376,7 @@ CdmAdapter::CdmAdapter(
       session_expiration_update_cb_(session_expiration_update_cb),
       audio_samples_per_second_(0),
       audio_channel_layout_(CHANNEL_LAYOUT_NONE),
+      allocator_(std::move(allocator)),
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       weak_factory_(this) {
   DCHECK(!key_system_.empty());
@@ -375,6 +385,7 @@ CdmAdapter::CdmAdapter(
   DCHECK(!legacy_session_error_cb_.is_null());
   DCHECK(!session_keys_change_cb_.is_null());
   DCHECK(!session_expiration_update_cb_.is_null());
+  DCHECK(allocator_);
 }
 
 CdmAdapter::~CdmAdapter() {}
@@ -663,7 +674,7 @@ void CdmAdapter::DecryptAndDecodeVideo(
 
   cdm::InputBuffer input_buffer;
   std::vector<cdm::SubsampleEntry> subsamples;
-  scoped_ptr<VideoFrameImpl> video_frame(new VideoFrameImpl());
+  scoped_ptr<VideoFrameImpl> video_frame = allocator_->CreateCdmVideoFrame();
 
   ToCdmInputBuffer(encrypted, &subsamples, &input_buffer);
   cdm::Status status =
@@ -675,17 +686,8 @@ void CdmAdapter::DecryptAndDecodeVideo(
     return;
   }
 
-  uint8_t* frame_data = video_frame->FrameBuffer()->Data();
-  gfx::Size frame_size(video_frame->Size().width, video_frame->Size().height);
-  scoped_refptr<VideoFrame> decoded_frame = VideoFrame::WrapExternalYuvData(
-      PIXEL_FORMAT_YV12, frame_size, gfx::Rect(frame_size), natural_size_,
-      video_frame->Stride(VideoFrameImpl::kYPlane),
-      video_frame->Stride(VideoFrameImpl::kUPlane),
-      video_frame->Stride(VideoFrameImpl::kVPlane),
-      frame_data + video_frame->PlaneOffset(VideoFrameImpl::kYPlane),
-      frame_data + video_frame->PlaneOffset(VideoFrameImpl::kUPlane),
-      frame_data + video_frame->PlaneOffset(VideoFrameImpl::kVPlane),
-      base::TimeDelta::FromMicroseconds(video_frame->Timestamp()));
+  scoped_refptr<VideoFrame> decoded_frame =
+      video_frame->TransformToVideoFrame(natural_size_);
   video_decode_cb.Run(Decryptor::kSuccess, decoded_frame);
 }
 
@@ -712,7 +714,7 @@ void CdmAdapter::DeinitializeDecoder(StreamType stream_type) {
 
 cdm::Buffer* CdmAdapter::Allocate(uint32_t capacity) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  return CdmBuffer::Create(capacity);
+  return allocator_->CreateCdmBuffer(capacity);
 }
 
 void CdmAdapter::SetTimer(int64_t delay_ms, void* context) {

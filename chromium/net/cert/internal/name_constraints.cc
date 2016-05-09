@@ -138,121 +138,96 @@ WARN_UNUSED_RESULT bool ParseGeneralName(
     const der::Input& input,
     ParseGeneralNameUnsupportedTypeBehavior unsupported_type_behavior,
     ParseGeneralNameIPAddressType ip_address_type,
-    NameConstraints::GeneralNames* subtrees) {
+    GeneralNames* subtrees) {
   der::Parser parser(input);
   der::Tag tag;
   der::Input value;
   if (!parser.ReadTagAndValue(&tag, &value))
     return false;
-  if (!der::IsContextSpecific(tag))
-    return false;
   GeneralNameTypes name_type = GENERAL_NAME_NONE;
-  // GeneralName ::= CHOICE {
-  switch (der::GetTagNumber(tag)) {
+  if (tag == der::ContextSpecificConstructed(0)) {
     // otherName                       [0]     OtherName,
-    case 0:
-      if (!der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_OTHER_NAME;
-      break;
+    name_type = GENERAL_NAME_OTHER_NAME;
+  } else if (tag == der::ContextSpecificPrimitive(1)) {
     // rfc822Name                      [1]     IA5String,
-    case 1:
-      if (der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_RFC822_NAME;
-      break;
+    name_type = GENERAL_NAME_RFC822_NAME;
+  } else if (tag == der::ContextSpecificPrimitive(2)) {
     // dNSName                         [2]     IA5String,
-    case 2: {
-      if (der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_DNS_NAME;
-      const std::string s = value.AsString();
-      if (!base::IsStringASCII(s))
-        return false;
-      subtrees->dns_names.push_back(s);
-      break;
-    }
-    // x400Address                     [3]     ORAddress,
-    case 3:
-      if (!der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_X400_ADDRESS;
-      break;
-    // directoryName                   [4]     Name,
-    case 4:
-      if (!der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_DIRECTORY_NAME;
-      subtrees->directory_names.push_back(std::vector<uint8_t>(
-          value.UnsafeData(), value.UnsafeData() + value.Length()));
-      break;
-    // ediPartyName                    [5]     EDIPartyName,
-    case 5:
-      if (!der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_EDI_PARTY_NAME;
-      break;
-    // uniformResourceIdentifier       [6]     IA5String,
-    case 6:
-      if (der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_UNIFORM_RESOURCE_IDENTIFIER;
-      break;
-    // iPAddress                       [7]     OCTET STRING,
-    case 7:
-      if (der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_IP_ADDRESS;
-      if (ip_address_type == IP_ADDRESS_ONLY) {
-        // RFC 5280 section 4.2.1.6:
-        // When the subjectAltName extension contains an iPAddress, the address
-        // MUST be stored in the octet string in "network byte order", as
-        // specified in [RFC791].  The least significant bit (LSB) of each octet
-        // is the LSB of the corresponding byte in the network address.  For IP
-        // version 4, as specified in [RFC791], the octet string MUST contain
-        // exactly four octets.  For IP version 6, as specified in [RFC2460],
-        // the octet string MUST contain exactly sixteen octets.
-        if ((value.Length() != kIPv4AddressSize &&
-             value.Length() != kIPv6AddressSize)) {
-          return false;
-        }
-        subtrees->ip_addresses.push_back(std::vector<uint8_t>(
-            value.UnsafeData(), value.UnsafeData() + value.Length()));
-      } else {
-        DCHECK_EQ(ip_address_type, IP_ADDRESS_AND_NETMASK);
-        // RFC 5280 section 4.2.1.10:
-        // The syntax of iPAddress MUST be as described in Section 4.2.1.6 with
-        // the following additions specifically for name constraints. For IPv4
-        // addresses, the iPAddress field of GeneralName MUST contain eight (8)
-        // octets, encoded in the style of RFC 4632 (CIDR) to represent an
-        // address range [RFC4632]. For IPv6 addresses, the iPAddress field
-        // MUST contain 32 octets similarly encoded. For example, a name
-        // constraint for "class C" subnet 192.0.2.0 is represented as the
-        // octets C0 00 02 00 FF FF FF 00, representing the CIDR notation
-        // 192.0.2.0/24 (mask 255.255.255.0).
-        if (value.Length() != kIPv4AddressSize * 2 &&
-            value.Length() != kIPv6AddressSize * 2) {
-          return false;
-        }
-        const std::vector<uint8_t> mask(value.UnsafeData() + value.Length() / 2,
-                                        value.UnsafeData() + value.Length());
-        const unsigned mask_prefix_length = MaskPrefixLength(mask);
-        if (!IsSuffixZero(mask, mask_prefix_length))
-          return false;
-        subtrees->ip_address_ranges.push_back(std::make_pair(
-            std::vector<uint8_t>(value.UnsafeData(),
-                                 value.UnsafeData() + value.Length() / 2),
-            mask_prefix_length));
-      }
-      break;
-    // registeredID                    [8]     OBJECT IDENTIFIER }
-    case 8:
-      if (der::IsConstructed(tag))
-        return false;
-      name_type = GENERAL_NAME_REGISTERED_ID;
-      break;
-    default:
+    name_type = GENERAL_NAME_DNS_NAME;
+    const std::string s = value.AsString();
+    if (!base::IsStringASCII(s))
       return false;
+    subtrees->dns_names.push_back(s);
+  } else if (tag == der::ContextSpecificConstructed(3)) {
+    // x400Address                     [3]     ORAddress,
+    name_type = GENERAL_NAME_X400_ADDRESS;
+  } else if (tag == der::ContextSpecificConstructed(4)) {
+    // directoryName                   [4]     Name,
+    name_type = GENERAL_NAME_DIRECTORY_NAME;
+    // Name is a CHOICE { rdnSequence  RDNSequence }, therefore the SEQUENCE
+    // tag is explicit. Remove it, since the name matching functions expect
+    // only the value portion.
+    der::Parser name_parser(value);
+    der::Input name_value;
+    if (!name_parser.ReadTag(der::kSequence, &name_value) || parser.HasMore())
+      return false;
+    subtrees->directory_names.push_back(
+        std::vector<uint8_t>(name_value.UnsafeData(),
+                             name_value.UnsafeData() + name_value.Length()));
+  } else if (tag == der::ContextSpecificConstructed(5)) {
+    // ediPartyName                    [5]     EDIPartyName,
+    name_type = GENERAL_NAME_EDI_PARTY_NAME;
+  } else if (tag == der::ContextSpecificPrimitive(6)) {
+    // uniformResourceIdentifier       [6]     IA5String,
+    name_type = GENERAL_NAME_UNIFORM_RESOURCE_IDENTIFIER;
+  } else if (tag == der::ContextSpecificPrimitive(7)) {
+    // iPAddress                       [7]     OCTET STRING,
+    name_type = GENERAL_NAME_IP_ADDRESS;
+    if (ip_address_type == IP_ADDRESS_ONLY) {
+      // RFC 5280 section 4.2.1.6:
+      // When the subjectAltName extension contains an iPAddress, the address
+      // MUST be stored in the octet string in "network byte order", as
+      // specified in [RFC791].  The least significant bit (LSB) of each octet
+      // is the LSB of the corresponding byte in the network address.  For IP
+      // version 4, as specified in [RFC791], the octet string MUST contain
+      // exactly four octets.  For IP version 6, as specified in [RFC2460],
+      // the octet string MUST contain exactly sixteen octets.
+      if ((value.Length() != IPAddress::kIPv4AddressSize &&
+           value.Length() != IPAddress::kIPv6AddressSize)) {
+        return false;
+      }
+      subtrees->ip_addresses.push_back(
+          IPAddress(value.UnsafeData(), value.Length()));
+    } else {
+      DCHECK_EQ(ip_address_type, IP_ADDRESS_AND_NETMASK);
+      // RFC 5280 section 4.2.1.10:
+      // The syntax of iPAddress MUST be as described in Section 4.2.1.6 with
+      // the following additions specifically for name constraints. For IPv4
+      // addresses, the iPAddress field of GeneralName MUST contain eight (8)
+      // octets, encoded in the style of RFC 4632 (CIDR) to represent an
+      // address range [RFC4632]. For IPv6 addresses, the iPAddress field
+      // MUST contain 32 octets similarly encoded. For example, a name
+      // constraint for "class C" subnet 192.0.2.0 is represented as the
+      // octets C0 00 02 00 FF FF FF 00, representing the CIDR notation
+      // 192.0.2.0/24 (mask 255.255.255.0).
+      if (value.Length() != IPAddress::kIPv4AddressSize * 2 &&
+          value.Length() != IPAddress::kIPv6AddressSize * 2) {
+        return false;
+      }
+      const IPAddress mask(value.UnsafeData() + value.Length() / 2,
+                           value.Length() / 2);
+      const unsigned mask_prefix_length = MaskPrefixLength(mask);
+      if (!IsSuffixZero(mask.bytes(), mask_prefix_length))
+        return false;
+      subtrees->ip_address_ranges.push_back(
+          std::make_pair(IPAddress(value.UnsafeData(), value.Length() / 2),
+                         mask_prefix_length));
+    }
+  } else if (tag == der::ContextSpecificPrimitive(8)) {
+    // registeredID                    [8]     OBJECT IDENTIFIER }
+    name_type = GENERAL_NAME_REGISTERED_ID;
+  } else {
+    return false;
   }
   DCHECK_NE(GENERAL_NAME_NONE, name_type);
   if ((name_type & kSupportedNameTypes) ||
@@ -265,11 +240,12 @@ WARN_UNUSED_RESULT bool ParseGeneralName(
 // Parses a GeneralSubtrees |value| and store the contents in |subtrees|.
 // The individual values stored into |subtrees| are not validated by this
 // function.
-// NOTE: |subtrees| will be modified regardless of the return.
-WARN_UNUSED_RESULT bool ParseGeneralSubtrees(
-    const der::Input& value,
-    bool is_critical,
-    NameConstraints::GeneralNames* subtrees) {
+// NOTE: |subtrees| is not pre-initialized by the function(it is expected to be
+// a default initialized object), and it will be modified regardless of the
+// return value.
+WARN_UNUSED_RESULT bool ParseGeneralSubtrees(const der::Input& value,
+                                             bool is_critical,
+                                             GeneralNames* subtrees) {
   // GeneralSubtrees ::= SEQUENCE SIZE (1..MAX) OF GeneralSubtree
   //
   // GeneralSubtree ::= SEQUENCE {
@@ -317,9 +293,39 @@ WARN_UNUSED_RESULT bool ParseGeneralSubtrees(
 
 }  // namespace
 
-NameConstraints::GeneralNames::GeneralNames() {}
+GeneralNames::GeneralNames() {}
 
-NameConstraints::GeneralNames::~GeneralNames() {}
+GeneralNames::~GeneralNames() {}
+
+// static
+scoped_ptr<GeneralNames> GeneralNames::CreateFromDer(
+    const der::Input& general_names_tlv) {
+  // RFC 5280 section 4.2.1.6:
+  // GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
+  scoped_ptr<GeneralNames> general_names(new GeneralNames());
+  der::Parser parser(general_names_tlv);
+  der::Parser sequence_parser;
+  if (!parser.ReadSequence(&sequence_parser))
+    return nullptr;
+  // Should not have trailing data after GeneralNames sequence.
+  if (parser.HasMore())
+    return nullptr;
+  // The GeneralNames sequence should have at least 1 element.
+  if (!sequence_parser.HasMore())
+    return nullptr;
+
+  while (sequence_parser.HasMore()) {
+    der::Input raw_general_name;
+    if (!sequence_parser.ReadRawTLV(&raw_general_name))
+      return nullptr;
+
+    if (!ParseGeneralName(raw_general_name, RECORD_UNSUPPORTED, IP_ADDRESS_ONLY,
+                          general_names.get()))
+      return nullptr;
+  }
+
+  return general_names;
+}
 
 NameConstraints::~NameConstraints() {}
 
@@ -387,7 +393,7 @@ bool NameConstraints::Parse(const der::Input& extension_value,
 
 bool NameConstraints::IsPermittedCert(
     const der::Input& subject_rdn_sequence,
-    const der::Input& subject_alt_name_extnvalue_tlv) const {
+    const GeneralNames* subject_alt_names) const {
   // Subject Alternative Name handling:
   //
   // RFC 5280 section 4.2.1.6:
@@ -397,34 +403,7 @@ bool NameConstraints::IsPermittedCert(
   //
   // GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
 
-  GeneralNames san_names;
-  if (subject_alt_name_extnvalue_tlv.Length()) {
-    der::Parser extnvalue_parser(subject_alt_name_extnvalue_tlv);
-    der::Input subject_alt_name_tlv;
-    if (!extnvalue_parser.ReadTag(der::kOctetString, &subject_alt_name_tlv))
-      return false;
-
-    der::Parser subject_alt_name_parser(subject_alt_name_tlv);
-    der::Parser san_sequence_parser;
-    if (!subject_alt_name_parser.ReadSequence(&san_sequence_parser))
-      return false;
-    // Should not have trailing data after subjectAltName sequence.
-    if (subject_alt_name_parser.HasMore())
-      return false;
-    // The subjectAltName sequence should have at least 1 element.
-    if (!san_sequence_parser.HasMore())
-      return false;
-
-    while (san_sequence_parser.HasMore()) {
-      der::Input raw_general_name;
-      if (!san_sequence_parser.ReadRawTLV(&raw_general_name))
-        return false;
-
-      if (!ParseGeneralName(raw_general_name, RECORD_UNSUPPORTED,
-                            IP_ADDRESS_ONLY, &san_names))
-        return false;
-    }
-
+  if (subject_alt_names) {
     // Check unsupported name types:
     // ConstrainedNameTypes for the unsupported types will only be true if that
     // type of name was present in a name constraint that was marked critical.
@@ -435,25 +414,25 @@ bool NameConstraints::IsPermittedCert(
     // that name form appears in the subject field or subjectAltName
     // extension of a subsequent certificate, then the application MUST
     // either process the constraint or reject the certificate.
-    if (ConstrainedNameTypes() & san_names.present_name_types &
+    if (ConstrainedNameTypes() & subject_alt_names->present_name_types &
         ~kSupportedNameTypes) {
       return false;
     }
 
     // Check supported name types:
-    for (const auto& dns_name : san_names.dns_names) {
+    for (const auto& dns_name : subject_alt_names->dns_names) {
       if (!IsPermittedDNSName(dns_name))
         return false;
     }
 
-    for (const auto& directory_name : san_names.directory_names) {
+    for (const auto& directory_name : subject_alt_names->directory_names) {
       if (!IsPermittedDirectoryName(
               der::Input(directory_name.data(), directory_name.size()))) {
         return false;
       }
     }
 
-    for (const auto& ip_address : san_names.ip_addresses) {
+    for (const auto& ip_address : subject_alt_names->ip_addresses) {
       if (!IsPermittedIP(ip_address))
         return false;
     }
@@ -468,7 +447,7 @@ bool NameConstraints::IsPermittedCert(
   // form, but the certificate does not include a subject alternative name, the
   // rfc822Name constraint MUST be applied to the attribute of type emailAddress
   // in the subject distinguished name.
-  if (!subject_alt_name_extnvalue_tlv.Length() &&
+  if (!subject_alt_names &&
       (ConstrainedNameTypes() & GENERAL_NAME_RFC822_NAME)) {
     bool contained_email_address = false;
     if (!NameContainsEmailAddress(subject_rdn_sequence,
@@ -487,19 +466,13 @@ bool NameConstraints::IsPermittedCert(
   // This code assumes that criticality condition is checked by the caller, and
   // therefore only needs to avoid the IsPermittedDirectoryName check against an
   // empty subject in such a case.
-  if (subject_alt_name_extnvalue_tlv.Length() &&
-      subject_rdn_sequence.Length() == 0) {
+  if (subject_alt_names && subject_rdn_sequence.Length() == 0)
     return true;
-  }
 
   return IsPermittedDirectoryName(subject_rdn_sequence);
 }
 
 bool NameConstraints::IsPermittedDNSName(const std::string& name) const {
-  // If there are no name constraints for DNS names, all names are accepted.
-  if (!(ConstrainedNameTypes() & GENERAL_NAME_DNS_NAME))
-    return true;
-
   for (const std::string& excluded_name : excluded_subtrees_.dns_names) {
     // When matching wildcard hosts against excluded subtrees, consider it a
     // match if the constraint would match any expansion of the wildcard. Eg,
@@ -507,6 +480,12 @@ bool NameConstraints::IsPermittedDNSName(const std::string& name) const {
     if (DNSNameMatches(name, excluded_name, WILDCARD_PARTIAL_MATCH))
       return false;
   }
+
+  // If permitted subtrees are not constrained, any name that is not excluded is
+  // allowed.
+  if (!(permitted_subtrees_.present_name_types & GENERAL_NAME_DNS_NAME))
+    return true;
+
   for (const std::string& permitted_name : permitted_subtrees_.dns_names) {
     // When matching wildcard hosts against permitted subtrees, consider it a
     // match only if the constraint would match all expansions of the wildcard.
@@ -520,11 +499,6 @@ bool NameConstraints::IsPermittedDNSName(const std::string& name) const {
 
 bool NameConstraints::IsPermittedDirectoryName(
     const der::Input& name_rdn_sequence) const {
-  // If there are no name constraints for directory names, all names are
-  // accepted.
-  if (!(ConstrainedNameTypes() & GENERAL_NAME_DIRECTORY_NAME))
-    return true;
-
   for (const auto& excluded_name : excluded_subtrees_.directory_names) {
     if (VerifyNameInSubtree(
             name_rdn_sequence,
@@ -532,6 +506,12 @@ bool NameConstraints::IsPermittedDirectoryName(
       return false;
     }
   }
+
+  // If permitted subtrees are not constrained, any name that is not excluded is
+  // allowed.
+  if (!(permitted_subtrees_.present_name_types & GENERAL_NAME_DIRECTORY_NAME))
+    return true;
+
   for (const auto& permitted_name : permitted_subtrees_.directory_names) {
     if (VerifyNameInSubtree(
             name_rdn_sequence,
@@ -543,18 +523,19 @@ bool NameConstraints::IsPermittedDirectoryName(
   return false;
 }
 
-bool NameConstraints::IsPermittedIP(const IPAddressNumber& ip) const {
-  // If there are no name constraints for IP Address names, all names are
-  // accepted.
-  if (!(ConstrainedNameTypes() & GENERAL_NAME_IP_ADDRESS))
-    return true;
-
+bool NameConstraints::IsPermittedIP(const IPAddress& ip) const {
   for (const auto& excluded_ip : excluded_subtrees_.ip_address_ranges) {
-    if (IPNumberMatchesPrefix(ip, excluded_ip.first, excluded_ip.second))
+    if (IPAddressMatchesPrefix(ip, excluded_ip.first, excluded_ip.second))
       return false;
   }
+
+  // If permitted subtrees are not constrained, any name that is not excluded is
+  // allowed.
+  if (!(permitted_subtrees_.present_name_types & GENERAL_NAME_IP_ADDRESS))
+    return true;
+
   for (const auto& permitted_ip : permitted_subtrees_.ip_address_ranges) {
-    if (IPNumberMatchesPrefix(ip, permitted_ip.first, permitted_ip.second))
+    if (IPAddressMatchesPrefix(ip, permitted_ip.first, permitted_ip.second))
       return true;
   }
 

@@ -84,7 +84,7 @@ public:
             releaseLineBreakIterator(m_iterator);
     }
 
-    String string() const { return m_string; }
+    String getString() const { return m_string; }
 
     UChar lastCharacter() const
     {
@@ -258,6 +258,6 @@ private:
 // counted as 1 grapheme cluster.
 PLATFORM_EXPORT unsigned numGraphemeClusters(const String&);
 
-}
+} // namespace blink
 
 #endif

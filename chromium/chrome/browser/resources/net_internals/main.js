@@ -187,10 +187,10 @@ var MainView = (function() {
       addTab(ImportView);
       addTab(ProxyView);
       addTab(EventsView);
-      addTab(WaterfallView);
       addTab(TimelineView);
       addTab(DnsView);
       addTab(SocketsView);
+      addTab(AltSvcView);
       addTab(SpdyView);
       addTab(QuicView);
       addTab(SdchView);

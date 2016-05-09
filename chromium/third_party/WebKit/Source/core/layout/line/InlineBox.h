@@ -21,8 +21,6 @@
 #ifndef InlineBox_h
 #define InlineBox_h
 
-#include "core/layout/LayoutBoxModelObject.h"
-#include "core/layout/LayoutObject.h"
 #include "core/layout/api/LineLayoutBoxModel.h"
 #include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/api/SelectionState.h"
@@ -33,6 +31,7 @@ namespace blink {
 
 class HitTestRequest;
 class HitTestResult;
+class LayoutObject;
 class RootInlineBox;
 
 enum MarkLineBoxes { MarkLineBoxesDirty, DontMarkLineBoxes };
@@ -42,11 +41,11 @@ enum MarkLineBoxes { MarkLineBoxesDirty, DontMarkLineBoxes };
 class InlineBox : public DisplayItemClient {
     WTF_MAKE_NONCOPYABLE(InlineBox);
 public:
-    InlineBox(LayoutObject& obj)
+    InlineBox(LineLayoutItem obj)
         : m_next(nullptr)
         , m_prev(nullptr)
         , m_parent(nullptr)
-        , m_layoutObject(obj)
+        , m_lineLayoutItem(obj)
         , m_logicalWidth()
 #if ENABLE(ASSERT)
         , m_hasBadParent(false)
@@ -54,12 +53,12 @@ public:
     {
     }
 
-    InlineBox(LayoutObject& obj, LayoutPoint topLeft, LayoutUnit logicalWidth, bool firstLine, bool constructed,
+    InlineBox(LineLayoutItem item, LayoutPoint topLeft, LayoutUnit logicalWidth, bool firstLine, bool constructed,
         bool dirty, bool extracted, bool isHorizontal, InlineBox* next, InlineBox* prev, InlineFlowBox* parent)
         : m_next(next)
         , m_prev(prev)
         , m_parent(parent)
-        , m_layoutObject(obj)
+        , m_lineLayoutItem(item)
         , m_topLeft(topLeft)
         , m_logicalWidth(logicalWidth)
         , m_bitfields(firstLine, constructed, dirty, extracted, isHorizontal)
@@ -106,7 +105,7 @@ public:
 
     // DisplayItemClient methods
     String debugName() const override;
-    IntRect visualRect() const override;
+    LayoutRect visualRect() const override;
 
     bool isText() const { return m_bitfields.isText(); }
     void setIsText(bool isText) { m_bitfields.setIsText(isText); }
@@ -171,9 +170,7 @@ public:
     InlineBox* nextLeafChildIgnoringLineBreak() const;
     InlineBox* prevLeafChildIgnoringLineBreak() const;
 
-    // TODO(pilgrim): This will be removed as part of the Line Layout API refactoring crbug.com/499321
-    LayoutObject& layoutObject() const { return m_layoutObject; }
-    LineLayoutItem lineLayoutItem() const { return LineLayoutItem(&m_layoutObject); }
+    LineLayoutItem getLineLayoutItem() const { return m_lineLayoutItem; }
 
     InlineFlowBox* parent() const
     {
@@ -258,7 +255,7 @@ public:
 
     virtual void dirtyLineBoxes();
 
-    virtual SelectionState selectionState() const;
+    virtual SelectionState getSelectionState() const;
 
     virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const;
     // visibleLeftEdge, visibleRightEdge are in the parent's coordinate system.
@@ -270,17 +267,17 @@ public:
 
     int expansion() const { return m_bitfields.expansion(); }
 
-    bool visibleToHitTestRequest(const HitTestRequest& request) const { return lineLayoutItem().visibleToHitTestRequest(request); }
+    bool visibleToHitTestRequest(const HitTestRequest& request) const { return getLineLayoutItem().visibleToHitTestRequest(request); }
 
     // Anonymous inline: https://drafts.csswg.org/css2/visuren.html#anonymous
-    bool isAnonymousInline() const { return lineLayoutItem().isText() && lineLayoutItem().parent() && lineLayoutItem().parent().isBox(); }
-    EVerticalAlign verticalAlign() const { return isAnonymousInline() ? ComputedStyle::initialVerticalAlign() : lineLayoutItem().style(m_bitfields.firstLine())->verticalAlign(); }
+    bool isAnonymousInline() const { return getLineLayoutItem().isText() && getLineLayoutItem().parent() && getLineLayoutItem().parent().isBox(); }
+    EVerticalAlign verticalAlign() const { return isAnonymousInline() ? ComputedStyle::initialVerticalAlign() : getLineLayoutItem().style(m_bitfields.firstLine())->verticalAlign(); }
 
     // Use with caution! The type is not checked!
     LineLayoutBoxModel boxModelObject() const
     {
-        if (!lineLayoutItem().isText())
-            return LineLayoutBoxModel(toLayoutBoxModelObject(&m_layoutObject));
+        if (!getLineLayoutItem().isText())
+            return LineLayoutBoxModel(m_lineLayoutItem);
         return LineLayoutBoxModel(nullptr);
     }
 
@@ -400,7 +397,7 @@ private:
     InlineBox* m_prev; // The previous element on the same line as us.
 
     InlineFlowBox* m_parent; // The box that contains us.
-    LayoutObject& m_layoutObject;
+    LineLayoutItem m_lineLayoutItem;
 
 protected:
     // For RootInlineBox

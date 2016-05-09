@@ -186,8 +186,8 @@ CALL_WITH_ARGUMENTS = {
     'ScriptState': 'scriptState',
     'ExecutionContext': 'executionContext',
     'ScriptArguments': 'scriptArguments.release()',
-    'ActiveWindow': 'callingDOMWindow(info.GetIsolate())',
-    'FirstWindow': 'enteredDOMWindow(info.GetIsolate())',
+    'CurrentWindow': 'currentDOMWindow(info.GetIsolate())',
+    'EnteredWindow': 'enteredDOMWindow(info.GetIsolate())',
     'Document': 'document',
     'ThisValue': 'ScriptValue(scriptState, info.This())',
 }
@@ -196,8 +196,8 @@ CALL_WITH_VALUES = [
     'ScriptState',
     'ExecutionContext',
     'ScriptArguments',
-    'ActiveWindow',
-    'FirstWindow',
+    'CurrentWindow',
+    'EnteredWindow',
     'Document',
     'ThisValue',
 ]
@@ -223,7 +223,7 @@ def deprecate_as(member):
     extended_attributes = member.extended_attributes
     if 'DeprecateAs' not in extended_attributes:
         return None
-    includes.add('core/frame/UseCounter.h')
+    includes.add('core/frame/Deprecation.h')
     return extended_attributes['DeprecateAs']
 
 
@@ -231,6 +231,7 @@ def deprecate_as(member):
 EXPOSED_EXECUTION_CONTEXT_METHOD = {
     'CompositorWorker': 'isCompositorWorkerGlobalScope',
     'DedicatedWorker': 'isDedicatedWorkerGlobalScope',
+    'PaintWorklet': 'isPaintWorkletGlobalScope',
     'ServiceWorker': 'isServiceWorkerGlobalScope',
     'SharedWorker': 'isSharedWorkerGlobalScope',
     'Window': 'isDocument',
@@ -323,13 +324,11 @@ def exposed(member, interface):
     return exposure_set.code()
 
 
-# [GarbageCollected], [WillBeGarbageCollected]
+# [GarbageCollected]
 def gc_type(definition):
     extended_attributes = definition.extended_attributes
     if 'GarbageCollected' in extended_attributes:
         return 'GarbageCollectedObject'
-    elif 'WillBeGarbageCollected' in extended_attributes:
-        return 'WillBeGarbageCollectedObject'
     return 'RefCountedObject'
 
 
@@ -367,27 +366,44 @@ def measure_as(definition_or_member, interface):
     return None
 
 
+# [OriginTrialEnabled]
+def origin_trial_enabled_function_name(definition_or_member, interface):
+    """Returns the name of the OriginTrials enabled function.
+
+    An exception is raised if both the OriginTrialEnabled and RuntimeEnabled
+    extended attributes are applied to the same IDL member. Only one of the
+    two attributes can be applied to any member - they are mutually exclusive.
+
+    The returned function checks if the IDL member should be enabled.
+    Given extended attribute OriginTrialEnabled=FeatureName, return:
+        OriginTrials::{featureName}Enabled
+
+    If the OriginTrialEnabled extended attribute is found, the includes are
+    also updated as a side-effect.
+    """
+    extended_attributes = definition_or_member.extended_attributes
+    is_origin_trial_enabled = 'OriginTrialEnabled' in extended_attributes
+
+    if (is_origin_trial_enabled and 'RuntimeEnabled' in extended_attributes):
+        raise Exception('[OriginTrialEnabled] and [RuntimeEnabled] must '
+                        'not be specified on the same definition: '
+                        '%s.%s' % (definition_or_member.idl_name, definition_or_member.name))
+
+    if is_origin_trial_enabled:
+        includes.add('core/inspector/ConsoleMessage.h')
+        includes.add('core/origin_trials/OriginTrials.h')
+
+        trial_name = extended_attributes['OriginTrialEnabled']
+        return 'OriginTrials::%sEnabled' % uncapitalize(trial_name)
+
+    return None
+
+
 def runtime_feature_name(definition_or_member):
     extended_attributes = definition_or_member.extended_attributes
     if 'RuntimeEnabled' not in extended_attributes:
         return None
     return extended_attributes['RuntimeEnabled']
-
-
-def is_api_experiment_enabled(definition_or_member):
-    return 'APIExperimentEnabled' in definition_or_member.extended_attributes
-
-
-def api_experiment_name(definition_or_member):
-    return definition_or_member.extended_attributes['APIExperimentEnabled'] if is_api_experiment_enabled(definition_or_member) else None
-
-
-def api_experiment_enabled_function(definition_or_member):
-    experiment_name = api_experiment_name(definition_or_member)
-    feature_name = runtime_feature_name(definition_or_member)
-    if not feature_name or not experiment_name:
-        return
-    return 'ExperimentalFeatures::%sEnabled' % uncapitalize(feature_name)
 
 
 # [RuntimeEnabled]
@@ -397,17 +413,16 @@ def runtime_enabled_function_name(definition_or_member):
     The returned function checks if a method/attribute is enabled.
     Given extended attribute RuntimeEnabled=FeatureName, return:
         RuntimeEnabledFeatures::{featureName}Enabled
+
+    If the RuntimeEnabled extended attribute is found, the includes
+    are also updated as a side-effect.
     """
     feature_name = runtime_feature_name(definition_or_member)
 
-    # If an API experiment is on the method/attribute, it overrides the runtime
-    # enabled status. For now, we are unconditionally installing experimental
-    # attributes/methods, so we are acting as though the runtime enabled
-    # function doesn't exist. (It is checked in the generated
-    # ExperimentalFeatures function, instead)
-    experiment_name = api_experiment_name(definition_or_member)
-    if not feature_name or experiment_name:
+    if not feature_name:
         return
+
+    includes.add('platform/RuntimeEnabledFeatures.h')
     return 'RuntimeEnabledFeatures::%sEnabled' % uncapitalize(feature_name)
 
 

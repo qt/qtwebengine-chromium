@@ -13,12 +13,15 @@
 #include "base/strings/string_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/public/platform/FilePathConversion.h"
+#include "third_party/WebKit/public/platform/WebCachePolicy.h"
 #include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 
+using blink::WebCachePolicy;
 using blink::WebHTTPBody;
 using blink::WebString;
 using blink::WebURLRequest;
@@ -33,7 +36,7 @@ const char kThrottledErrorDescription[] =
 
 class HeaderFlattener : public blink::WebHTTPHeaderVisitor {
  public:
-  HeaderFlattener() : has_accept_header_(false) {}
+  HeaderFlattener() {}
 
   void visitHeader(const WebString& name, const WebString& value) override {
     // Headers are latin1.
@@ -45,47 +48,35 @@ class HeaderFlattener : public blink::WebHTTPHeaderVisitor {
     if (base::LowerCaseEqualsASCII(name_latin1, "referer"))
       return;
 
-    if (base::LowerCaseEqualsASCII(name_latin1, "accept"))
-      has_accept_header_ = true;
-
     if (!buffer_.empty())
       buffer_.append("\r\n");
     buffer_.append(name_latin1 + ": " + value_latin1);
   }
 
   const std::string& GetBuffer() {
-    // In some cases, WebKit doesn't add an Accept header, but not having the
-    // header confuses some web servers.  See bug 808613.
-    if (!has_accept_header_) {
-      if (!buffer_.empty())
-        buffer_.append("\r\n");
-      buffer_.append("Accept: */*");
-      has_accept_header_ = true;
-    }
     return buffer_;
   }
 
  private:
   std::string buffer_;
-  bool has_accept_header_;
 };
 
 }  // namespace
 
 ResourceType WebURLRequestToResourceType(const WebURLRequest& request) {
-  WebURLRequest::RequestContext requestContext = request.requestContext();
-  if (request.frameType() != WebURLRequest::FrameTypeNone) {
+  WebURLRequest::RequestContext requestContext = request.getRequestContext();
+  if (request.getFrameType() != WebURLRequest::FrameTypeNone) {
     DCHECK(requestContext == WebURLRequest::RequestContextForm ||
            requestContext == WebURLRequest::RequestContextFrame ||
            requestContext == WebURLRequest::RequestContextHyperlink ||
            requestContext == WebURLRequest::RequestContextIframe ||
            requestContext == WebURLRequest::RequestContextInternal ||
            requestContext == WebURLRequest::RequestContextLocation);
-    if (request.frameType() == WebURLRequest::FrameTypeTopLevel ||
-        request.frameType() == WebURLRequest::FrameTypeAuxiliary) {
+    if (request.getFrameType() == WebURLRequest::FrameTypeTopLevel ||
+        request.getFrameType() == WebURLRequest::FrameTypeAuxiliary) {
       return RESOURCE_TYPE_MAIN_FRAME;
     }
-    if (request.frameType() == WebURLRequest::FrameTypeNested)
+    if (request.getFrameType() == WebURLRequest::FrameTypeNested)
       return RESOURCE_TYPE_SUB_FRAME;
     NOTREACHED();
     return RESOURCE_TYPE_SUB_RESOURCE;
@@ -196,21 +187,20 @@ std::string GetWebURLRequestHeaders(const blink::WebURLRequest& request) {
 int GetLoadFlagsForWebURLRequest(const blink::WebURLRequest& request) {
   int load_flags = net::LOAD_NORMAL;
   GURL url = request.url();
-  switch (request.cachePolicy()) {
-    case WebURLRequest::ReloadIgnoringCacheData:
-      // Required by LayoutTests/http/tests/misc/refresh-headers.php
+  switch (request.getCachePolicy()) {
+    case WebCachePolicy::ValidatingCacheData:
       load_flags |= net::LOAD_VALIDATE_CACHE;
       break;
-    case WebURLRequest::ReloadBypassingCache:
+    case WebCachePolicy::BypassingCache:
       load_flags |= net::LOAD_BYPASS_CACHE;
       break;
-    case WebURLRequest::ReturnCacheDataElseLoad:
+    case WebCachePolicy::ReturnCacheDataElseLoad:
       load_flags |= net::LOAD_PREFERRING_CACHE;
       break;
-    case WebURLRequest::ReturnCacheDataDontLoad:
+    case WebCachePolicy::ReturnCacheDataDontLoad:
       load_flags |= net::LOAD_ONLY_FROM_CACHE;
       break;
-    case WebURLRequest::UseProtocolCachePolicy:
+    case WebCachePolicy::UseProtocolCachePolicy:
       break;
     default:
       NOTREACHED();
@@ -256,11 +246,11 @@ scoped_refptr<ResourceRequestBody> GetRequestBodyForWebURLRequest(
       case WebHTTPBody::Element::TypeFile:
         if (element.fileLength == -1) {
           request_body->AppendFileRange(
-              base::FilePath::FromUTF16Unsafe(element.filePath), 0,
+              blink::WebStringToFilePath(element.filePath), 0,
               std::numeric_limits<uint64_t>::max(), base::Time());
         } else {
           request_body->AppendFileRange(
-              base::FilePath::FromUTF16Unsafe(element.filePath),
+              blink::WebStringToFilePath(element.filePath),
               static_cast<uint64_t>(element.fileStart),
               static_cast<uint64_t>(element.fileLength),
               base::Time::FromDoubleT(element.modificationTime));
@@ -286,138 +276,138 @@ scoped_refptr<ResourceRequestBody> GetRequestBodyForWebURLRequest(
   return request_body;
 }
 
-#define STATIC_ASSERT_MATCHING_ENUMS(content_name, blink_name)       \
-  static_assert(                                                     \
-      static_cast<int>(content_name) == static_cast<int>(blink_name), \
-      "mismatching enums: " #content_name)
+#define STATIC_ASSERT_ENUM(a, b)                            \
+  static_assert(static_cast<int>(a) == static_cast<int>(b), \
+                "mismatching enums: " #a)
 
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_SAME_ORIGIN,
-                             WebURLRequest::FetchRequestModeSameOrigin);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_NO_CORS,
-                             WebURLRequest::FetchRequestModeNoCORS);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_CORS,
-                             WebURLRequest::FetchRequestModeCORS);
-STATIC_ASSERT_MATCHING_ENUMS(
-    FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT,
-    WebURLRequest::FetchRequestModeCORSWithForcedPreflight);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_NAVIGATE,
-                             WebURLRequest::FetchRequestModeNavigate);
+STATIC_ASSERT_ENUM(FETCH_REQUEST_MODE_SAME_ORIGIN,
+                   WebURLRequest::FetchRequestModeSameOrigin);
+STATIC_ASSERT_ENUM(FETCH_REQUEST_MODE_NO_CORS,
+                   WebURLRequest::FetchRequestModeNoCORS);
+STATIC_ASSERT_ENUM(FETCH_REQUEST_MODE_CORS,
+                   WebURLRequest::FetchRequestModeCORS);
+STATIC_ASSERT_ENUM(FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT,
+                   WebURLRequest::FetchRequestModeCORSWithForcedPreflight);
+STATIC_ASSERT_ENUM(FETCH_REQUEST_MODE_NAVIGATE,
+                   WebURLRequest::FetchRequestModeNavigate);
 
 FetchRequestMode GetFetchRequestModeForWebURLRequest(
     const blink::WebURLRequest& request) {
-  return static_cast<FetchRequestMode>(request.fetchRequestMode());
+  return static_cast<FetchRequestMode>(request.getFetchRequestMode());
 }
 
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_OMIT,
-                             WebURLRequest::FetchCredentialsModeOmit);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_SAME_ORIGIN,
-                             WebURLRequest::FetchCredentialsModeSameOrigin);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_INCLUDE,
-                             WebURLRequest::FetchCredentialsModeInclude);
+STATIC_ASSERT_ENUM(FETCH_CREDENTIALS_MODE_OMIT,
+                   WebURLRequest::FetchCredentialsModeOmit);
+STATIC_ASSERT_ENUM(FETCH_CREDENTIALS_MODE_SAME_ORIGIN,
+                   WebURLRequest::FetchCredentialsModeSameOrigin);
+STATIC_ASSERT_ENUM(FETCH_CREDENTIALS_MODE_INCLUDE,
+                   WebURLRequest::FetchCredentialsModeInclude);
+STATIC_ASSERT_ENUM(FETCH_CREDENTIALS_MODE_PASSWORD,
+                   WebURLRequest::FetchCredentialsModePassword);
 
 FetchCredentialsMode GetFetchCredentialsModeForWebURLRequest(
     const blink::WebURLRequest& request) {
-  return static_cast<FetchCredentialsMode>(request.fetchCredentialsMode());
+  return static_cast<FetchCredentialsMode>(request.getFetchCredentialsMode());
 }
 
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::FOLLOW_MODE,
-                             WebURLRequest::FetchRedirectModeFollow);
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::ERROR_MODE,
-                             WebURLRequest::FetchRedirectModeError);
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::MANUAL_MODE,
-                             WebURLRequest::FetchRedirectModeManual);
+STATIC_ASSERT_ENUM(FetchRedirectMode::FOLLOW_MODE,
+                   WebURLRequest::FetchRedirectModeFollow);
+STATIC_ASSERT_ENUM(FetchRedirectMode::ERROR_MODE,
+                   WebURLRequest::FetchRedirectModeError);
+STATIC_ASSERT_ENUM(FetchRedirectMode::MANUAL_MODE,
+                   WebURLRequest::FetchRedirectModeManual);
 
 FetchRedirectMode GetFetchRedirectModeForWebURLRequest(
     const blink::WebURLRequest& request) {
-  return static_cast<FetchRedirectMode>(request.fetchRedirectMode());
+  return static_cast<FetchRedirectMode>(request.getFetchRedirectMode());
 }
 
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_AUXILIARY,
-                             WebURLRequest::FrameTypeAuxiliary);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_NESTED,
-                             WebURLRequest::FrameTypeNested);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_NONE,
-                             WebURLRequest::FrameTypeNone);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
-                             WebURLRequest::FrameTypeTopLevel);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_FRAME_TYPE_AUXILIARY,
+                   WebURLRequest::FrameTypeAuxiliary);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_FRAME_TYPE_NESTED,
+                   WebURLRequest::FrameTypeNested);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_FRAME_TYPE_NONE,
+                   WebURLRequest::FrameTypeNone);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
+                   WebURLRequest::FrameTypeTopLevel);
 
 RequestContextFrameType GetRequestContextFrameTypeForWebURLRequest(
     const blink::WebURLRequest& request) {
-  return static_cast<RequestContextFrameType>(request.frameType());
+  return static_cast<RequestContextFrameType>(request.getFrameType());
 }
 
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_UNSPECIFIED,
-                             WebURLRequest::RequestContextUnspecified);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_AUDIO,
-                             WebURLRequest::RequestContextAudio);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_BEACON,
-                             WebURLRequest::RequestContextBeacon);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_CSP_REPORT,
-                             WebURLRequest::RequestContextCSPReport);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_DOWNLOAD,
-                             WebURLRequest::RequestContextDownload);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_EMBED,
-                             WebURLRequest::RequestContextEmbed);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_EVENT_SOURCE,
-                             WebURLRequest::RequestContextEventSource);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FAVICON,
-                             WebURLRequest::RequestContextFavicon);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FETCH,
-                             WebURLRequest::RequestContextFetch);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FONT,
-                             WebURLRequest::RequestContextFont);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FORM,
-                             WebURLRequest::RequestContextForm);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FRAME,
-                             WebURLRequest::RequestContextFrame);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_HYPERLINK,
-                             WebURLRequest::RequestContextHyperlink);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IFRAME,
-                             WebURLRequest::RequestContextIframe);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMAGE,
-                             WebURLRequest::RequestContextImage);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMAGE_SET,
-                             WebURLRequest::RequestContextImageSet);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMPORT,
-                             WebURLRequest::RequestContextImport);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_INTERNAL,
-                             WebURLRequest::RequestContextInternal);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_LOCATION,
-                             WebURLRequest::RequestContextLocation);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_MANIFEST,
-                             WebURLRequest::RequestContextManifest);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_OBJECT,
-                             WebURLRequest::RequestContextObject);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PING,
-                             WebURLRequest::RequestContextPing);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PLUGIN,
-                             WebURLRequest::RequestContextPlugin);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PREFETCH,
-                             WebURLRequest::RequestContextPrefetch);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SCRIPT,
-                             WebURLRequest::RequestContextScript);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SERVICE_WORKER,
-                             WebURLRequest::RequestContextServiceWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SHARED_WORKER,
-                             WebURLRequest::RequestContextSharedWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SUBRESOURCE,
-                             WebURLRequest::RequestContextSubresource);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_STYLE,
-                             WebURLRequest::RequestContextStyle);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_TRACK,
-                             WebURLRequest::RequestContextTrack);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_VIDEO,
-                             WebURLRequest::RequestContextVideo);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_WORKER,
-                             WebURLRequest::RequestContextWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_XML_HTTP_REQUEST,
-                             WebURLRequest::RequestContextXMLHttpRequest);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_XSLT,
-                             WebURLRequest::RequestContextXSLT);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_UNSPECIFIED,
+                   WebURLRequest::RequestContextUnspecified);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_AUDIO,
+                   WebURLRequest::RequestContextAudio);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_BEACON,
+                   WebURLRequest::RequestContextBeacon);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_CSP_REPORT,
+                   WebURLRequest::RequestContextCSPReport);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_DOWNLOAD,
+                   WebURLRequest::RequestContextDownload);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_EMBED,
+                   WebURLRequest::RequestContextEmbed);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_EVENT_SOURCE,
+                   WebURLRequest::RequestContextEventSource);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_FAVICON,
+                   WebURLRequest::RequestContextFavicon);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_FETCH,
+                   WebURLRequest::RequestContextFetch);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_FONT,
+                   WebURLRequest::RequestContextFont);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_FORM,
+                   WebURLRequest::RequestContextForm);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_FRAME,
+                   WebURLRequest::RequestContextFrame);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_HYPERLINK,
+                   WebURLRequest::RequestContextHyperlink);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_IFRAME,
+                   WebURLRequest::RequestContextIframe);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_IMAGE,
+                   WebURLRequest::RequestContextImage);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_IMAGE_SET,
+                   WebURLRequest::RequestContextImageSet);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_IMPORT,
+                   WebURLRequest::RequestContextImport);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_INTERNAL,
+                   WebURLRequest::RequestContextInternal);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_LOCATION,
+                   WebURLRequest::RequestContextLocation);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_MANIFEST,
+                   WebURLRequest::RequestContextManifest);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_OBJECT,
+                   WebURLRequest::RequestContextObject);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_PING,
+                   WebURLRequest::RequestContextPing);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_PLUGIN,
+                   WebURLRequest::RequestContextPlugin);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_PREFETCH,
+                   WebURLRequest::RequestContextPrefetch);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_SCRIPT,
+                   WebURLRequest::RequestContextScript);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_SERVICE_WORKER,
+                   WebURLRequest::RequestContextServiceWorker);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_SHARED_WORKER,
+                   WebURLRequest::RequestContextSharedWorker);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_SUBRESOURCE,
+                   WebURLRequest::RequestContextSubresource);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_STYLE,
+                   WebURLRequest::RequestContextStyle);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_TRACK,
+                   WebURLRequest::RequestContextTrack);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_VIDEO,
+                   WebURLRequest::RequestContextVideo);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_WORKER,
+                   WebURLRequest::RequestContextWorker);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_XML_HTTP_REQUEST,
+                   WebURLRequest::RequestContextXMLHttpRequest);
+STATIC_ASSERT_ENUM(REQUEST_CONTEXT_TYPE_XSLT,
+                   WebURLRequest::RequestContextXSLT);
 
 RequestContextType GetRequestContextTypeForWebURLRequest(
     const blink::WebURLRequest& request) {
-  return static_cast<RequestContextType>(request.requestContext());
+  return static_cast<RequestContextType>(request.getRequestContext());
 }
 
 blink::WebURLError CreateWebURLError(const blink::WebURL& unreachable_url,

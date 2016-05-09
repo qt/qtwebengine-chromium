@@ -29,7 +29,7 @@ class PresentationConnection final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<PresentationConnection>
     , public DOMWindowProperty {
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(PresentationConnection);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PresentationConnection);
+    USING_GARBAGE_COLLECTED_MIXIN(PresentationConnection);
     DEFINE_WRAPPERTYPEINFO();
 public:
     // For CallbackPromiseAdapter.
@@ -41,7 +41,7 @@ public:
 
     // EventTarget implementation.
     const AtomicString& interfaceName() const override;
-    ExecutionContext* executionContext() const override;
+    ExecutionContext* getExecutionContext() const override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -59,7 +59,9 @@ public:
     void setBinaryType(const String&);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(terminate);
 
     // Returns true if and only if the WebPresentationConnectionClient represents this connection.
     bool matches(WebPresentationConnectionClient*) const;
@@ -67,13 +69,16 @@ public:
     // Notifies the connection about its state change.
     void didChangeState(WebPresentationConnectionState);
 
+    // Notifies the connection about its state change to 'closed'.
+    void didClose(WebPresentationConnectionCloseReason, const String& message);
+
     // Notifies the presentation about new message.
     void didReceiveTextMessage(const String& message);
     void didReceiveBinaryMessage(const uint8_t* data, size_t length);
 
 protected:
     // EventTarget implementation.
-    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+    bool addEventListenerInternal(const AtomicString& eventType, EventListener*, const EventListenerOptions&) override;
 
 private:
     class BlobLoader;

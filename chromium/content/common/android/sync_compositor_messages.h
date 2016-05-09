@@ -14,6 +14,7 @@
 #include "content/common/input/input_event_ack_state.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/scroll_offset.h"
 
 #ifndef CONTENT_COMMON_ANDROID_SYNC_COMPOSITOR_MESSAGES_H_
@@ -25,7 +26,8 @@ struct SyncCompositorCommonBrowserParams {
   SyncCompositorCommonBrowserParams();
   ~SyncCompositorCommonBrowserParams();
 
-  size_t bytes_limit;
+  uint32_t bytes_limit;
+  uint32_t output_surface_id_for_returned_resources;
   cc::CompositorFrameAck ack;
   gfx::ScrollOffset root_scroll_offset;
   bool update_root_scroll_offset;
@@ -54,7 +56,7 @@ struct SyncCompositorDemandDrawHwParams {
 struct SyncCompositorSetSharedMemoryParams {
   SyncCompositorSetSharedMemoryParams();
 
-  size_t buffer_size;
+  uint32_t buffer_size;
   base::SharedMemoryHandle shm_handle;
 };
 
@@ -79,9 +81,9 @@ struct SyncCompositorCommonRendererParams {
   float min_page_scale_factor;
   float max_page_scale_factor;
   bool need_animate_scroll;
-  bool need_invalidate;
+  uint32_t need_invalidate_count;
   bool need_begin_frame;
-  bool did_activate_pending_tree;
+  uint32_t did_activate_pending_tree_count;
 };
 
 }  // namespace content
@@ -96,6 +98,7 @@ struct SyncCompositorCommonRendererParams {
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyncCompositorCommonBrowserParams)
   IPC_STRUCT_TRAITS_MEMBER(bytes_limit)
+  IPC_STRUCT_TRAITS_MEMBER(output_surface_id_for_returned_resources)
   IPC_STRUCT_TRAITS_MEMBER(ack)
   IPC_STRUCT_TRAITS_MEMBER(root_scroll_offset)
   IPC_STRUCT_TRAITS_MEMBER(update_root_scroll_offset)
@@ -131,12 +134,14 @@ IPC_STRUCT_TRAITS_BEGIN(content::SyncCompositorCommonRendererParams)
   IPC_STRUCT_TRAITS_MEMBER(min_page_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(max_page_scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(need_animate_scroll)
-  IPC_STRUCT_TRAITS_MEMBER(need_invalidate)
+  IPC_STRUCT_TRAITS_MEMBER(need_invalidate_count)
   IPC_STRUCT_TRAITS_MEMBER(need_begin_frame)
-  IPC_STRUCT_TRAITS_MEMBER(did_activate_pending_tree)
+  IPC_STRUCT_TRAITS_MEMBER(did_activate_pending_tree_count)
 IPC_STRUCT_TRAITS_END()
 
 // Messages sent from the browser to the renderer.
+// Synchronous IPCs are allowed here to the renderer compositor thread. See
+// design doc https://goo.gl/Tn81FW and crbug.com/526842 for details.
 
 IPC_SYNC_MESSAGE_ROUTED2_2(SyncCompositorMsg_HandleInputEvent,
                            content::SyncCompositorCommonBrowserParams,
@@ -149,15 +154,15 @@ IPC_SYNC_MESSAGE_ROUTED2_1(SyncCompositorMsg_BeginFrame,
                            cc::BeginFrameArgs,
                            content::SyncCompositorCommonRendererParams)
 
-IPC_SYNC_MESSAGE_ROUTED2_1(SyncCompositorMsg_ComputeScroll,
-                           content::SyncCompositorCommonBrowserParams,
-                           base::TimeTicks,
-                           content::SyncCompositorCommonRendererParams)
+IPC_MESSAGE_ROUTED2(SyncCompositorMsg_ComputeScroll,
+                    content::SyncCompositorCommonBrowserParams,
+                    base::TimeTicks);
 
-IPC_SYNC_MESSAGE_ROUTED2_2(SyncCompositorMsg_DemandDrawHw,
+IPC_SYNC_MESSAGE_ROUTED2_3(SyncCompositorMsg_DemandDrawHw,
                            content::SyncCompositorCommonBrowserParams,
                            content::SyncCompositorDemandDrawHwParams,
                            content::SyncCompositorCommonRendererParams,
+                           uint32_t /* output_surface_id */,
                            cc::CompositorFrame)
 
 IPC_SYNC_MESSAGE_ROUTED2_2(SyncCompositorMsg_SetSharedMemory,
@@ -177,6 +182,12 @@ IPC_SYNC_MESSAGE_ROUTED2_3(SyncCompositorMsg_DemandDrawSw,
 
 IPC_MESSAGE_ROUTED1(SyncCompositorMsg_UpdateState,
                     content::SyncCompositorCommonBrowserParams)
+
+IPC_SYNC_MESSAGE_ROUTED3_1(SyncCompositorMsg_ZoomBy,
+                           content::SyncCompositorCommonBrowserParams,
+                           float /* delta */,
+                           gfx::Point /* anchor */,
+                           content::SyncCompositorCommonRendererParams)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.

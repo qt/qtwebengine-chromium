@@ -145,7 +145,7 @@ void NavigatorVibration::timerStopFired(Timer<NavigatorVibration>* timer)
 
 void NavigatorVibration::pageVisibilityChanged()
 {
-    if (page()->visibilityState() != PageVisibilityStateVisible)
+    if (!page()->isPageVisible())
         cancelVibration();
 }
 
@@ -176,7 +176,7 @@ bool NavigatorVibration::vibrate(Navigator& navigator, const VibrationPattern& p
     if (!page)
         return false;
 
-    if (page->visibilityState() != PageVisibilityStateVisible)
+    if (!page->isPageVisible())
         return false;
 
     return NavigatorVibration::from(*page).vibrate(pattern);
@@ -184,10 +184,10 @@ bool NavigatorVibration::vibrate(Navigator& navigator, const VibrationPattern& p
 
 NavigatorVibration& NavigatorVibration::from(Page& page)
 {
-    NavigatorVibration* navigatorVibration = static_cast<NavigatorVibration*>(WillBeHeapSupplement<Page>::from(page, supplementName()));
+    NavigatorVibration* navigatorVibration = static_cast<NavigatorVibration*>(Supplement<Page>::from(page, supplementName()));
     if (!navigatorVibration) {
         navigatorVibration = new NavigatorVibration(page);
-        WillBeHeapSupplement<Page>::provideTo(page, supplementName(), adoptPtrWillBeNoop(navigatorVibration));
+        Supplement<Page>::provideTo(page, supplementName(), navigatorVibration);
     }
     return *navigatorVibration;
 }
@@ -199,7 +199,7 @@ const char* NavigatorVibration::supplementName()
 
 DEFINE_TRACE(NavigatorVibration)
 {
-    WillBeHeapSupplement<Page>::trace(visitor);
+    Supplement<Page>::trace(visitor);
     PageLifecycleObserver::trace(visitor);
 }
 

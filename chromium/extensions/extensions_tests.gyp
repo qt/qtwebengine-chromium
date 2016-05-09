@@ -27,13 +27,12 @@
         '../device/serial/serial.gyp:device_serial',
         '../device/serial/serial.gyp:device_serial_test_util',
         '../mojo/mojo_base.gyp:mojo_application_bindings',
-        '../mojo/mojo_base.gyp:mojo_environment_chromium',
+        '../mojo/mojo_edk.gyp:mojo_js_lib',
+        '../mojo/mojo_edk.gyp:mojo_system_impl',
+        '../mojo/mojo_public.gyp:mojo_cpp_bindings',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
-        '../third_party/mojo/mojo_edk.gyp:mojo_js_lib',
-        '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
-        '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
         'common/api/api.gyp:cast_channel_proto',
         'extensions.gyp:extensions_browser',
         'extensions.gyp:extensions_common',
@@ -54,17 +53,17 @@
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
-        ['OS=="win" and win_use_allocator_shim==1', {
-          'dependencies': [
-            '../base/allocator/allocator.gyp:allocator',
-          ],
-        }],
         ['chromeos==1', {
           'dependencies': [
             '<(DEPTH)/chromeos/chromeos.gyp:chromeos_test_support',
           ],
           'sources': [
             'browser/api/webcam_private/visca_webcam_unittest.cc',
+          ],
+        }],
+        ['enable_wifi_display==1', {
+          'sources': [
+            '<@(extensions_unittests_sources_wifi_display)',
           ],
         }],
       ],
@@ -82,6 +81,7 @@
         '<(DEPTH)/components/components.gyp:guest_view_renderer',
         '<(DEPTH)/components/components.gyp:guest_view_test_support',
         '<(DEPTH)/content/content.gyp:content_app_both',
+        '<(DEPTH)/content/content_shell_and_tests.gyp:content_browser_test_base',
         '<(DEPTH)/content/content_shell_and_tests.gyp:content_browser_test_support',
         '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
         '<(DEPTH)/device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
@@ -98,11 +98,6 @@
         '<@(extensions_browsertests_sources)',
       ],
       'conditions': [
-        ['OS=="win" and win_use_allocator_shim==1', {
-          'dependencies': [
-            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
-          ],
-        }],
         ['OS=="mac"', {
           'dependencies': [
             'shell/app_shell.gyp:app_shell',  # Needed for App Shell.app's Helper.

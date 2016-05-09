@@ -30,6 +30,7 @@
 
 #include "core/inspector/InspectorInstrumentation.h"
 
+#include "bindings/core/v8/ScriptCallStack.h"
 #include "core/events/EventTarget.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/frame/FrameHost.h"
@@ -39,26 +40,47 @@
 #include "core/inspector/InspectorProfilerAgent.h"
 #include "core/inspector/InspectorResourceAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include "core/inspector/ScriptAsyncCallStack.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/page/Page.h"
+#include "core/workers/MainThreadWorkletGlobalScope.h"
 #include "core/workers/WorkerGlobalScope.h"
 
 namespace blink {
 
 namespace {
 
-WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<InstrumentingAgents>>& instrumentingAgentsSet()
+PersistentHeapHashSet<WeakMember<InstrumentingAgents>>& instrumentingAgentsSet()
 {
-    DEFINE_STATIC_LOCAL(WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<InstrumentingAgents>>, instrumentingAgentsSet, ());
+    DEFINE_STATIC_LOCAL(PersistentHeapHashSet<WeakMember<InstrumentingAgents>>, instrumentingAgentsSet, ());
     return instrumentingAgentsSet;
 }
 
 }
 
 namespace InspectorInstrumentation {
+
+AsyncTask::AsyncTask(ExecutionContext* context, void* task) : AsyncTask(context, task, true)
+{
+}
+
+AsyncTask::AsyncTask(ExecutionContext* context, void* task, bool enabled)
+    : m_instrumentingAgents(enabled ? instrumentingAgentsFor(context) : nullptr)
+    , m_task(task)
+{
+    if (m_instrumentingAgents && m_instrumentingAgents->inspectorDebuggerAgent())
+        m_instrumentingAgents->inspectorDebuggerAgent()->asyncTaskStarted(m_task);
+}
+
+AsyncTask::~AsyncTask()
+{
+    if (m_instrumentingAgents && m_instrumentingAgents->inspectorDebuggerAgent())
+        m_instrumentingAgents->inspectorDebuggerAgent()->asyncTaskFinished(m_task);
+}
+
 int FrontendCounter::s_frontendCounter = 0;
+
+// Keep in sync with kDevToolsRequestInitiator defined in devtools_network_controller.cc
+const char kInspectorEmulateNetworkConditionsClientId[] = "X-DevTools-Emulate-Network-Conditions-Client-Id";
 }
 
 InspectorInstrumentationCookie::InspectorInstrumentationCookie()
@@ -111,12 +133,12 @@ void continueWithPolicyIgnoreImpl(LocalFrame* frame, DocumentLoader* loader, uns
     didReceiveResourceResponseButCanceledImpl(frame, loader, identifier, r);
 }
 
-void willDestroyResourceImpl(Resource* cachedResource)
+void removedResourceFromMemoryCacheImpl(Resource* cachedResource)
 {
     ASSERT(isMainThread());
     for (InstrumentingAgents* instrumentingAgents: instrumentingAgentsSet()) {
         if (InspectorResourceAgent* inspectorResourceAgent = instrumentingAgents->inspectorResourceAgent())
-            inspectorResourceAgent->willDestroyResource(cachedResource);
+            inspectorResourceAgent->removedResourceFromMemoryCache(cachedResource);
     }
 }
 
@@ -124,15 +146,6 @@ bool collectingHTMLParseErrorsImpl(InstrumentingAgents* instrumentingAgents)
 {
     ASSERT(isMainThread());
     return instrumentingAgentsSet().contains(instrumentingAgents);
-}
-
-void appendAsyncCallStack(ExecutionContext* executionContext, ScriptCallStack* callStack)
-{
-    InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(executionContext);
-    if (!instrumentingAgents)
-        return;
-    if (InspectorDebuggerAgent* debuggerAgent = instrumentingAgents->inspectorDebuggerAgent())
-        callStack->setAsyncCallStack(debuggerAgent->currentAsyncStackTraceForConsole());
 }
 
 bool consoleAgentEnabled(ExecutionContext* executionContext)
@@ -164,7 +177,7 @@ InstrumentingAgents* instrumentingAgentsFor(EventTarget* eventTarget)
 {
     if (!eventTarget)
         return 0;
-    return instrumentingAgentsFor(eventTarget->executionContext());
+    return instrumentingAgentsFor(eventTarget->getExecutionContext());
 }
 
 InstrumentingAgents* instrumentingAgentsFor(LayoutObject* layoutObject)
@@ -183,6 +196,13 @@ InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ExecutionContext* 
 {
     if (context->isWorkerGlobalScope())
         return instrumentationForWorkerGlobalScope(toWorkerGlobalScope(context));
+
+    if (context->isWorkletGlobalScope()) {
+        LocalFrame* frame = toMainThreadWorkletGlobalScope(context)->frame();
+        if (frame)
+            return instrumentingAgentsFor(frame);
+    }
+
     return 0;
 }
 

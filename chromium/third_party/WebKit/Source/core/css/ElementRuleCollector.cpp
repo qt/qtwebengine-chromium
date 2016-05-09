@@ -39,6 +39,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/style/StyleInheritedData.h"
 #include <algorithm>
@@ -50,7 +51,7 @@ ElementRuleCollector::ElementRuleCollector(const ElementResolveContext& context,
     : m_context(context)
     , m_selectorFilter(filter)
     , m_style(style)
-    , m_pseudoStyleRequest(NOPSEUDO)
+    , m_pseudoStyleRequest(PseudoIdNone)
     , m_mode(SelectorChecker::ResolvingStyle)
     , m_canUseFastReject(m_selectorFilter.parentStackIsConsistent(context.parentNode()))
     , m_sameOriginOnly(false)
@@ -67,13 +68,13 @@ const MatchResult& ElementRuleCollector::matchedResult() const
     return m_result;
 }
 
-PassRefPtrWillBeRawPtr<StyleRuleList> ElementRuleCollector::matchedStyleRuleList()
+StyleRuleList* ElementRuleCollector::matchedStyleRuleList()
 {
     ASSERT(m_mode == SelectorChecker::CollectingStyleRules);
     return m_styleRuleList.release();
 }
 
-PassRefPtrWillBeRawPtr<CSSRuleList> ElementRuleCollector::matchedCSSRuleList()
+CSSRuleList* ElementRuleCollector::matchedCSSRuleList()
 {
     ASSERT(m_mode == SelectorChecker::CollectingCSSRules);
     return m_cssRuleList.release();
@@ -125,14 +126,16 @@ void ElementRuleCollector::collectMatchingRulesForList(const RuleDataListType* r
     if (!rules)
         return;
 
-    SelectorChecker checker(m_mode);
-    SelectorChecker::SelectorCheckingContext checkerContext(m_context.element(), SelectorChecker::VisitedMatchEnabled);
-    checkerContext.elementStyle = m_style.get();
-    checkerContext.scope = matchRequest.scope;
-    checkerContext.pseudoId = m_pseudoStyleRequest.pseudoId;
-    checkerContext.scrollbar = m_pseudoStyleRequest.scrollbar;
-    checkerContext.scrollbarPart = m_pseudoStyleRequest.scrollbarPart;
-    checkerContext.isUARule = m_matchingUARules;
+    SelectorChecker::Init init;
+    init.mode = m_mode;
+    init.isUARule = m_matchingUARules;
+    init.elementStyle = m_style.get();
+    init.scrollbar = m_pseudoStyleRequest.scrollbar;
+    init.scrollbarPart = m_pseudoStyleRequest.scrollbarPart;
+    SelectorChecker checker(init);
+    SelectorChecker::SelectorCheckingContext context(m_context.element(), SelectorChecker::VisitedMatchEnabled);
+    context.scope = matchRequest.scope;
+    context.pseudoId = m_pseudoStyleRequest.pseudoId;
 
     unsigned rejected = 0;
     unsigned fastRejected = 0;
@@ -156,12 +159,12 @@ void ElementRuleCollector::collectMatchingRulesForList(const RuleDataListType* r
             continue;
 
         SelectorChecker::MatchResult result;
-        checkerContext.selector = &ruleData.selector();
-        if (!checker.match(checkerContext, result)) {
+        context.selector = &ruleData.selector();
+        if (!checker.match(context, result)) {
             rejected++;
             continue;
         }
-        if (m_pseudoStyleRequest.pseudoId != NOPSEUDO && m_pseudoStyleRequest.pseudoId != result.dynamicPseudo) {
+        if (m_pseudoStyleRequest.pseudoId != PseudoIdNone && m_pseudoStyleRequest.pseudoId != result.dynamicPseudo) {
             rejected++;
             continue;
         }
@@ -170,11 +173,13 @@ void ElementRuleCollector::collectMatchingRulesForList(const RuleDataListType* r
         didMatchRule(ruleData, result, cascadeOrder, matchRequest);
     }
 
-    if (StyleResolver* resolver = m_context.element()->document().styleResolver()) {
-        INCREMENT_STYLE_STATS_COUNTER(*resolver, rulesRejected, rejected);
-        INCREMENT_STYLE_STATS_COUNTER(*resolver, rulesFastRejected, fastRejected);
-        INCREMENT_STYLE_STATS_COUNTER(*resolver, rulesMatched, matched);
-    }
+    StyleEngine& styleEngine = m_context.element()->document().styleEngine();
+    if (!styleEngine.stats())
+        return;
+
+    INCREMENT_STYLE_STATS_COUNTER(styleEngine, rulesRejected, rejected);
+    INCREMENT_STYLE_STATS_COUNTER(styleEngine, rulesFastRejected, fastRejected);
+    INCREMENT_STYLE_STATS_COUNTER(styleEngine, rulesMatched, matched);
 }
 
 void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest, CascadeOrder cascadeOrder, bool matchingTreeBoundaryRules)
@@ -249,7 +254,7 @@ void ElementRuleCollector::appendCSSOMWrapperForRule(CSSStyleSheet* parentStyleS
     // |parentStyleSheet| is 0 if and only if the |rule| is coming from User Agent. In this case,
     // it is safe to create CSSOM wrappers without parentStyleSheets as they will be used only
     // by inspector which will not try to edit them.
-    RefPtrWillBeRawPtr<CSSRule> cssRule = nullptr;
+    CSSRule* cssRule = nullptr;
     if (parentStyleSheet)
         cssRule = findStyleRule(parentStyleSheet, rule);
     else
@@ -280,7 +285,7 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
     // Now transfer the set of matched rules over to our list of declarations.
     for (unsigned i = 0; i < m_matchedRules.size(); i++) {
         const RuleData* ruleData = m_matchedRules[i].ruleData();
-        m_result.addMatchedProperties(&ruleData->rule()->properties(), ruleData->linkMatchType(), ruleData->propertyWhitelistType(m_matchingUARules));
+        m_result.addMatchedProperties(&ruleData->rule()->properties(), ruleData->linkMatchType(), ruleData->propertyWhitelist(m_matchingUARules));
     }
 }
 
@@ -289,13 +294,13 @@ void ElementRuleCollector::didMatchRule(const RuleData& ruleData, const Selector
     PseudoId dynamicPseudo = result.dynamicPseudo;
     // If we're matching normal rules, set a pseudo bit if
     // we really just matched a pseudo-element.
-    if (dynamicPseudo != NOPSEUDO && m_pseudoStyleRequest.pseudoId == NOPSEUDO) {
+    if (dynamicPseudo != PseudoIdNone && m_pseudoStyleRequest.pseudoId == PseudoIdNone) {
         if (m_mode == SelectorChecker::CollectingCSSRules || m_mode == SelectorChecker::CollectingStyleRules)
             return;
         // FIXME: Matching should not modify the style directly.
-        if (!m_style || dynamicPseudo >= FIRST_INTERNAL_PSEUDOID)
+        if (!m_style || dynamicPseudo >= FirstInternalPseudoId)
             return;
-        if ((dynamicPseudo == BEFORE || dynamicPseudo == AFTER) && !ruleData.rule()->properties().hasProperty(CSSPropertyContent))
+        if ((dynamicPseudo == PseudoIdBefore || dynamicPseudo == PseudoIdAfter) && !ruleData.rule()->properties().hasProperty(CSSPropertyContent))
             return;
         m_style->setHasPseudoStyle(dynamicPseudo);
     } else {

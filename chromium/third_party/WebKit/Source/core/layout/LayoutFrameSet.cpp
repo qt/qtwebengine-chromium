@@ -66,8 +66,8 @@ void LayoutFrameSet::paint(const PaintInfo& paintInfo, const LayoutPoint& paintO
 
 void LayoutFrameSet::computePreferredLogicalWidths()
 {
-    m_minPreferredLogicalWidth = 0;
-    m_maxPreferredLogicalWidth = 0;
+    m_minPreferredLogicalWidth = LayoutUnit();
+    m_maxPreferredLogicalWidth = LayoutUnit();
     clearPreferredLogicalWidthsDirty();
 }
 
@@ -105,13 +105,15 @@ void LayoutFrameSet::layOutAxis(GridAxis& axis, const Vector<HTMLDimension>& gri
     int countFixed = 0;
     int countPercent = 0;
 
+    float effectiveZoom = style()->effectiveZoom();
+
     // First we need to investigate how many columns of each type we have and
     // how much space these columns are going to require.
     for (int i = 0; i < gridLen; ++i) {
         // Count the total length of all of the fixed columns/rows -> totalFixed
         // Count the number of columns/rows which are fixed -> countFixed
         if (grid[i].isAbsolute()) {
-            gridLayout[i] = max<int>(grid[i].value(), 0);
+            gridLayout[i] = max<int>(grid[i].value() * effectiveZoom, 0);
             totalFixed += gridLayout[i];
             countFixed++;
         }
@@ -360,8 +362,8 @@ void LayoutFrameSet::layout()
     ASSERT(needsLayout());
 
     if (!parent()->isFrameSet() && !document().printing()) {
-        setWidth(view()->viewWidth());
-        setHeight(view()->viewHeight());
+        setWidth(LayoutUnit(view()->viewWidth()));
+        setHeight(LayoutUnit(view()->viewHeight()));
     }
 
     unsigned cols = frameSet()->totalCols();
@@ -372,7 +374,7 @@ void LayoutFrameSet::layout()
         m_cols.resize(cols);
     }
 
-    LayoutUnit borderThickness = frameSet()->border();
+    LayoutUnit borderThickness(frameSet()->border());
     layOutAxis(m_rows, frameSet()->rowLengths(), size().height() - (rows - 1) * borderThickness);
     layOutAxis(m_cols, frameSet()->colLengths(), size().width() - (cols - 1) * borderThickness);
 
@@ -390,8 +392,8 @@ void LayoutFrameSet::layout()
 static void clearNeedsLayoutOnHiddenFrames(LayoutBox* frame)
 {
     for (; frame; frame = frame->nextSiblingBox()) {
-        frame->setWidth(0);
-        frame->setHeight(0);
+        frame->setWidth(LayoutUnit());
+        frame->setHeight(LayoutUnit());
         frame->clearNeedsLayout();
         clearNeedsLayoutOnHiddenFrames(frame->firstChildBox());
     }
@@ -410,14 +412,17 @@ void LayoutFrameSet::positionFrames()
     LayoutSize size;
     LayoutPoint position;
     for (int r = 0; r < rows; r++) {
-        position.setX(0);
-        size.setHeight(m_rows.m_sizes[r]);
+        position.setX(LayoutUnit());
+        size.setHeight(LayoutUnit(m_rows.m_sizes[r]));
         for (int c = 0; c < cols; c++) {
             child->setLocation(position);
-            size.setWidth(m_cols.m_sizes[c]);
+            size.setWidth(LayoutUnit(m_cols.m_sizes[c]));
 
-            // has to be resized and itself resize its contents
-            if (size != child->size()) {
+            // If we have a new size, we need to resize and layout the child. If the size is 0x0 we
+            // also need to lay out, since this may mean that we're dealing with a child frameset
+            // that wasn't previously initialized properly, because it was previously hidden, but
+            // no longer is, because rows * cols may have increased.
+            if (size != child->size() || size.isEmpty()) {
                 child->setSize(size);
                 child->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
                 child->layout();

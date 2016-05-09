@@ -5,6 +5,7 @@
 #ifndef CSSVariableData_h
 #define CSSVariableData_h
 
+#include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "wtf/RefCounted.h"
@@ -23,9 +24,9 @@ public:
         return adoptRef(new CSSVariableData(range, needsVariableResolution));
     }
 
-    static PassRefPtr<CSSVariableData> createResolved(const Vector<CSSParserToken>& resolvedTokens, PassRefPtr<CSSVariableData> unresolvedData)
+    static PassRefPtr<CSSVariableData> createResolved(const Vector<CSSParserToken>& resolvedTokens, const CSSVariableData& unresolvedData)
     {
-        return adoptRef(new CSSVariableData(resolvedTokens, unresolvedData->m_backingString));
+        return adoptRef(new CSSVariableData(resolvedTokens, unresolvedData.m_backingString));
     }
 
     CSSParserTokenRange tokenRange() { return m_tokens; }
@@ -35,6 +36,9 @@ public:
     bool operator==(const CSSVariableData& other) const;
 
     bool needsVariableResolution() const { return m_needsVariableResolution; }
+
+    StylePropertySet* propertySet();
+
 private:
     CSSVariableData(const CSSParserTokenRange&, bool needsVariableResolution);
 
@@ -46,6 +50,7 @@ private:
         : m_backingString(backingString)
         , m_tokens(resolvedTokens)
         , m_needsVariableResolution(false)
+        , m_cachedPropertySet(false)
     { }
 
     void consumeAndUpdateTokens(const CSSParserTokenRange&);
@@ -54,6 +59,10 @@ private:
     String m_backingString;
     Vector<CSSParserToken> m_tokens;
     const bool m_needsVariableResolution;
+
+    // Parsed representation for @apply
+    bool m_cachedPropertySet;
+    Persistent<StylePropertySet> m_propertySet;
 };
 
 } // namespace blink

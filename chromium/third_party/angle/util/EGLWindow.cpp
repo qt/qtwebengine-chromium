@@ -16,7 +16,8 @@ EGLPlatformParameters::EGLPlatformParameters()
     : renderer(EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE),
       majorVersion(EGL_DONT_CARE),
       minorVersion(EGL_DONT_CARE),
-      deviceType(EGL_DONT_CARE)
+      deviceType(EGL_DONT_CARE),
+      presentPath(EGL_DONT_CARE)
 {
 }
 
@@ -24,7 +25,8 @@ EGLPlatformParameters::EGLPlatformParameters(EGLint renderer)
     : renderer(renderer),
       majorVersion(EGL_DONT_CARE),
       minorVersion(EGL_DONT_CARE),
-      deviceType(EGL_DONT_CARE)
+      deviceType(EGL_DONT_CARE),
+      presentPath(EGL_DONT_CARE)
 {
     if (renderer == EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE ||
         renderer == EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE)
@@ -33,11 +35,28 @@ EGLPlatformParameters::EGLPlatformParameters(EGLint renderer)
     }
 }
 
-EGLPlatformParameters::EGLPlatformParameters(EGLint renderer, EGLint majorVersion, EGLint minorVersion, EGLint useWarp)
+EGLPlatformParameters::EGLPlatformParameters(EGLint renderer,
+                                             EGLint majorVersion,
+                                             EGLint minorVersion,
+                                             EGLint useWarp)
     : renderer(renderer),
       majorVersion(majorVersion),
       minorVersion(minorVersion),
-      deviceType(useWarp)
+      deviceType(useWarp),
+      presentPath(EGL_DONT_CARE)
+{
+}
+
+EGLPlatformParameters::EGLPlatformParameters(EGLint renderer,
+                                             EGLint majorVersion,
+                                             EGLint minorVersion,
+                                             EGLint useWarp,
+                                             EGLint presentPath)
+    : renderer(renderer),
+      majorVersion(majorVersion),
+      minorVersion(minorVersion),
+      deviceType(useWarp),
+      presentPath(presentPath)
 {
 }
 
@@ -58,15 +77,19 @@ bool operator<(const EGLPlatformParameters &a, const EGLPlatformParameters &b)
         return a.minorVersion < b.minorVersion;
     }
 
-    return a.deviceType < b.deviceType;
+    if (a.deviceType != b.deviceType)
+    {
+        return a.deviceType < b.deviceType;
+    }
+
+    return a.presentPath < b.presentPath;
 }
 
 bool operator==(const EGLPlatformParameters &a, const EGLPlatformParameters &b)
 {
-    return (a.renderer == b.renderer) &&
-           (a.majorVersion == b.majorVersion) &&
-           (a.minorVersion == b.minorVersion) &&
-           (a.deviceType == b.deviceType);
+    return (a.renderer == b.renderer) && (a.majorVersion == b.majorVersion) &&
+           (a.minorVersion == b.minorVersion) && (a.deviceType == b.deviceType) &&
+           (a.presentPath == b.presentPath);
 }
 
 EGLWindow::EGLWindow(EGLint glesMajorVersion,
@@ -86,6 +109,7 @@ EGLWindow::EGLWindow(EGLint glesMajorVersion,
       mStencilBits(-1),
       mMultisample(false),
       mDebug(false),
+      mNoError(false),
       mSwapInterval(-1)
 {
 }
@@ -141,9 +165,25 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
         displayAttributes.push_back(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE);
         displayAttributes.push_back(mPlatform.deviceType);
     }
+
+    if (mPlatform.presentPath != EGL_DONT_CARE)
+    {
+        const char *extensionString =
+            static_cast<const char *>(eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS));
+        if (strstr(extensionString, "EGL_ANGLE_experimental_present_path") == nullptr)
+        {
+            destroyGL();
+            return false;
+        }
+
+        displayAttributes.push_back(EGL_EXPERIMENTAL_PRESENT_PATH_ANGLE);
+        displayAttributes.push_back(mPlatform.presentPath);
+    }
     displayAttributes.push_back(EGL_NONE);
 
-    mDisplay = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, osWindow->getNativeDisplay(), &displayAttributes[0]);
+    mDisplay = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
+                                        reinterpret_cast<void *>(osWindow->getNativeDisplay()),
+                                        &displayAttributes[0]);
     if (mDisplay == EGL_NO_DISPLAY)
     {
         destroyGL();
@@ -228,6 +268,13 @@ bool EGLWindow::initializeGL(OSWindow *osWindow)
 
         contextAttributes.push_back(EGL_CONTEXT_OPENGL_DEBUG);
         contextAttributes.push_back(mDebug ? EGL_TRUE : EGL_FALSE);
+
+        // TODO(jmadill): Check for the extension string.
+        // bool hasKHRCreateContextNoError = strstr(displayExtensions,
+        // "EGL_KHR_create_context_no_error") != nullptr;
+
+        contextAttributes.push_back(EGL_CONTEXT_OPENGL_NO_ERROR_KHR);
+        contextAttributes.push_back(mNoError ? EGL_TRUE : EGL_FALSE);
     }
     contextAttributes.push_back(EGL_NONE);
 

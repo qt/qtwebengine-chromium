@@ -44,8 +44,8 @@ private:
     PassOwnPtr<CSSParserSelector> consumePseudo(CSSParserTokenRange&);
     PassOwnPtr<CSSParserSelector> consumeAttribute(CSSParserTokenRange&);
 
-    CSSSelector::Relation consumeCombinator(CSSParserTokenRange&);
-    CSSSelector::Match consumeAttributeMatch(CSSParserTokenRange&);
+    CSSSelector::RelationType consumeCombinator(CSSParserTokenRange&);
+    CSSSelector::MatchType consumeAttributeMatch(CSSParserTokenRange&);
     CSSSelector::AttributeMatchType consumeAttributeFlags(CSSParserTokenRange&);
 
     const AtomicString& defaultNamespace() const;
@@ -55,7 +55,7 @@ private:
     static PassOwnPtr<CSSParserSelector> splitCompoundAtImplicitShadowCrossingCombinator(PassOwnPtr<CSSParserSelector> compoundSelector);
 
     const CSSParserContext& m_context;
-    RawPtrWillBeMember<StyleSheetContents> m_styleSheet; // FIXME: Should be const
+    Member<StyleSheetContents> m_styleSheet; // FIXME: Should be const
 
     bool m_failedParsing = false;
     bool m_disallowPseudoElements = false;
@@ -81,6 +81,6 @@ private:
     };
 };
 
-} // namespace
+} // namespace blink
 
 #endif // CSSSelectorParser_h

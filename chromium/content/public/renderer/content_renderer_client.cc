@@ -98,7 +98,7 @@ bool ContentRendererClient::AllowPopup() {
   return false;
 }
 
-#ifdef OS_ANDROID
+#if defined(OS_ANDROID)
 bool ContentRendererClient::HandleNavigation(
     RenderFrame* render_frame,
     bool is_content_initiated,
@@ -108,6 +108,10 @@ bool ContentRendererClient::HandleNavigation(
     blink::WebNavigationType type,
     blink::WebNavigationPolicy default_policy,
     bool is_redirect) {
+  return false;
+}
+
+bool ContentRendererClient::ShouldUseMediaPlayerForURL(const GURL& url) {
   return false;
 }
 #endif
@@ -150,11 +154,6 @@ bool ContentRendererClient::ShouldOverridePageVisibilityState(
   return false;
 }
 
-const void* ContentRendererClient::CreatePPAPIInterface(
-    const std::string& interface_name) {
-  return nullptr;
-}
-
 bool ContentRendererClient::IsExternalPepperPlugin(
     const std::string& module_name) {
   return false;
@@ -178,6 +177,11 @@ ContentRendererClient::CreateMediaRendererFactory(
 
 scoped_ptr<MediaStreamRendererFactory>
 ContentRendererClient::CreateMediaStreamRendererFactory() {
+  return nullptr;
+}
+
+cc::ImageSerializationProcessor*
+ContentRendererClient::GetImageSerializationProcessor() {
   return nullptr;
 }
 

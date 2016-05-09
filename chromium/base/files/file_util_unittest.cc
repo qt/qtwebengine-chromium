@@ -33,6 +33,7 @@
 #include <shlobj.h>
 #include <tchar.h>
 #include <winioctl.h>
+#include "base/environment.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #endif
@@ -1664,6 +1665,63 @@ TEST_F(FileUtilTest, GetTempDirTest) {
     ::_tputenv_s(kTmpKey, _T(""));
   }
 }
+
+TEST_F(FileUtilTest, IsOnNetworkDrive) {
+  struct LocalTestData {
+    const FilePath::CharType* input;
+    bool expected;
+  };
+
+  const LocalTestData local_cases[] = {
+    { FPL(""),                               false },
+    { FPL("c:\\"),                           false },
+    { FPL("c:"),                             false },
+    { FPL("c:\\windows\\notepad.exe"),       false }
+  };
+
+  for (const auto& test_case : local_cases) {
+    FilePath input(test_case.input);
+    bool observed = IsOnNetworkDrive(input);
+    EXPECT_EQ(test_case.expected, observed) << " input: " << input.value();
+  }
+
+  Environment* env = Environment::Create();
+  ASSERT_TRUE(!!env);
+
+  // To test IsOnNetworkDrive() for remote cases, set up a file server
+  // and place a file called file.txt on the server e.g.
+  // \\DC01\TESTSHARE\file.txt
+  // then set the two environment variables:
+  // set BASE_TEST_FILE_SERVER=DC01
+  // set BASE_TEST_FILE_SHARE=TESTSHARE
+  if (!env->HasVar("BASE_TEST_FILE_SERVER") ||
+      !env->HasVar("BASE_TEST_FILE_SHARE")) {
+    return;
+  }
+
+  struct NetworkTestData {
+    const wchar_t* input;
+    bool expected;
+  };
+
+  const NetworkTestData network_cases[] = {
+    { L"\\\\%BASE_TEST_FILE_SERVER%",                                   false },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\",                                 false },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\file.txt",                         false },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\%BASE_TEST_FILE_SHARE%",           true },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\%BASE_TEST_FILE_SHARE%\\",         true },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\%BASE_TEST_FILE_SHARE%\\file.txt", true },
+    { L"\\\\%BASE_TEST_FILE_SERVER%\\%BASE_TEST_FILE_SHARE%\\no.txt",   false }
+  };
+
+  for (const auto& test_case : network_cases) {
+    wchar_t path[MAX_PATH] = {0};
+    ::ExpandEnvironmentStringsW(test_case.input, path, arraysize(path));
+    FilePath input(path);
+    EXPECT_EQ(test_case.expected, IsOnNetworkDrive(input)) << " input : "
+                                                           << input.value();
+  }
+}
 #endif  // OS_WIN
 
 TEST_F(FileUtilTest, CreateTemporaryFileTest) {
@@ -2066,26 +2124,26 @@ TEST_F(FileUtilTest, ReadFileToString) {
   EXPECT_EQ(kTestData, data);
 
   data = "temp";
-  EXPECT_FALSE(ReadFileToString(file_path, &data, 0));
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 0));
   EXPECT_EQ(0u, data.length());
 
   data = "temp";
-  EXPECT_FALSE(ReadFileToString(file_path, &data, 2));
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 2));
   EXPECT_EQ("01", data);
 
   data.clear();
-  EXPECT_FALSE(ReadFileToString(file_path, &data, 3));
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 3));
   EXPECT_EQ("012", data);
 
   data.clear();
-  EXPECT_TRUE(ReadFileToString(file_path, &data, 4));
+  EXPECT_TRUE(ReadFileToStringWithMaxSize(file_path, &data, 4));
   EXPECT_EQ("0123", data);
 
   data.clear();
-  EXPECT_TRUE(ReadFileToString(file_path, &data, 6));
+  EXPECT_TRUE(ReadFileToStringWithMaxSize(file_path, &data, 6));
   EXPECT_EQ("0123", data);
 
-  EXPECT_TRUE(ReadFileToString(file_path, NULL, 6));
+  EXPECT_TRUE(ReadFileToStringWithMaxSize(file_path, NULL, 6));
 
   EXPECT_TRUE(ReadFileToString(file_path, NULL));
 
@@ -2101,7 +2159,7 @@ TEST_F(FileUtilTest, ReadFileToString) {
   EXPECT_EQ(0u, data.length());
 
   data = "temp";
-  EXPECT_FALSE(ReadFileToString(file_path, &data, 6));
+  EXPECT_FALSE(ReadFileToStringWithMaxSize(file_path, &data, 6));
   EXPECT_EQ(0u, data.length());
 }
 

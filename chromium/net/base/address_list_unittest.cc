@@ -6,6 +6,7 @@
 
 #include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
+#include "net/base/ip_address.h"
 #include "net/base/sockaddr_storage.h"
 #include "net/base/sys_addrinfo.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -70,7 +71,7 @@ TEST(AddressListTest, CreateFromAddrinfo) {
   for (size_t i = 0; i < list.size(); ++i) {
     EXPECT_EQ(ADDRESS_FAMILY_IPV4, list[i].GetFamily());
     // Only check the first byte of the address.
-    EXPECT_EQ(i, list[i].address()[0]);
+    EXPECT_EQ(i, list[i].address().bytes()[0]);
     EXPECT_EQ(static_cast<int>(i << 2), list[i].port());
   }
 
@@ -82,7 +83,7 @@ TEST(AddressListTest, CreateFromAddrinfo) {
   // Check if copy is independent.
   copy[1] = IPEndPoint(copy[2].address(), 0xBEEF);
   // Original should be unchanged.
-  EXPECT_EQ(1u, list[1].address()[0]);
+  EXPECT_EQ(1u, list[1].address().bytes()[0]);
   EXPECT_EQ(1 << 2, list[1].port());
 }
 
@@ -122,9 +123,9 @@ TEST(AddressListTest, CreateFromIPAddressList) {
   // Construct a list of ip addresses.
   IPAddressList ip_list;
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    IPAddressNumber ip_number;
-    ASSERT_TRUE(ParseIPLiteralToNumber(tests[i].ip_address, &ip_number));
-    ip_list.push_back(ip_number);
+    IPAddress ip_address;
+    ASSERT_TRUE(ip_address.AssignFromIPLiteral(tests[i].ip_address));
+    ip_list.push_back(ip_address);
   }
 
   AddressList test_list = AddressList::CreateFromIPAddressList(ip_list,

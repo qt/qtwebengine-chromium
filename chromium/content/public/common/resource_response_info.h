@@ -27,6 +27,7 @@ namespace content {
 // in resource_response.cc.
 struct ResourceResponseInfo {
   CONTENT_EXPORT ResourceResponseInfo();
+  CONTENT_EXPORT ResourceResponseInfo(const ResourceResponseInfo& other);
   CONTENT_EXPORT ~ResourceResponseInfo();
 
   // The time at which the request was made that resulted in this response.
@@ -133,6 +134,14 @@ struct ResourceResponseInfo {
   // If the response is not provided by the ServiceWorker, kept empty.
   // TODO(ksakamoto): Move this to net::LoadTimingInfo.
   base::TimeTicks service_worker_ready_time;
+
+  // True when the response is served from the CacheStorage via the
+  // ServiceWorker.
+  bool is_in_cache_storage = false;
+
+  // The cache name of the CacheStorage from where the response is served via
+  // the ServiceWorker. Empty if the response isn't from the CacheStorage.
+  std::string cache_storage_cache_name;
 
   // Whether or not the request was for a LoFi version of the resource.
   bool is_using_lofi;

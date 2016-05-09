@@ -20,7 +20,7 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
   size_t i = 0;
   if (size < 4)
     return;
-  FecProtectionParams params = {data[i++] % 128, data[i++] % 1,
+  FecProtectionParams params = {data[i++] % 128, data[i++] % 2 == 1,
                                 static_cast<int>(data[i++] % 10),
                                 kFecMaskBursty};
   producer.SetFecParameters(&params, 0);
@@ -40,20 +40,18 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
     const int kRedPayloadType = 98;
     rtc::scoped_ptr<RedPacket> red_packet(producer.BuildRedPacket(
         packet.get(), payload_size, rtp_header_length, kRedPayloadType));
-    bool protect = static_cast<bool>(data[i++] % 2);
+    const bool protect = data[i++] % 2 == 1;
     if (protect) {
       producer.AddRtpPacketAndGenerateFec(packet.get(), payload_size,
                                           rtp_header_length);
     }
-    uint16_t num_fec_packets = producer.NumAvailableFecPackets();
-    std::vector<RedPacket*> fec_packets;
+    const size_t num_fec_packets = producer.NumAvailableFecPackets();
     if (num_fec_packets > 0) {
-      fec_packets =
+      std::vector<RedPacket*> fec_packets =
           producer.GetFecPackets(kRedPayloadType, 99, 100, rtp_header_length);
       RTC_CHECK_EQ(num_fec_packets, fec_packets.size());
-    }
-    for (RedPacket* fec_packet : fec_packets) {
-      delete fec_packet;
+      for (RedPacket* fec_packet : fec_packets)
+        delete fec_packet;
     }
   }
 }

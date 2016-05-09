@@ -9,7 +9,6 @@
 {
   'variables': {
     'libyuv_disable_jpeg%': 0,
-    'libyuv_enable_svn%': 0,
   },
   'targets': [
     {
@@ -27,14 +26,6 @@
       },
       'export_dependent_settings': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
-      ],
-      'defines': [
-        # Enable the following 3 macros to turn off assembly for specified CPU.
-        # 'LIBYUV_DISABLE_X86',
-        # 'LIBYUV_DISABLE_NEON',
-        # 'LIBYUV_DISABLE_MIPS',
-        # Enable the following macro to build libyuv as a shared library (dll).
-        # 'LIBYUV_USING_SHARED_LIBRARY',
       ],
       'sources': [
         # headers
@@ -54,14 +45,8 @@
         'unit_test/scale_test.cc',
         'unit_test/unit_test.cc',
         'unit_test/video_common_test.cc',
-        'unit_test/version_test.cc',
       ],
       'conditions': [
-        [ 'libyuv_enable_svn == 1', {
-          'defines': [
-            'LIBYUV_SVNREVISION="<!(svnversion -n)"',
-          ],
-        }],
         ['OS=="linux"', {
           'cflags': [
             '-fexceptions',
@@ -76,7 +61,15 @@
           'xcode_settings': {
             'DEBUGGING_SYMBOLS': 'YES',
             'DEBUG_INFORMATION_FORMAT' : 'dwarf-with-dsym',
+            # Work around compile issue with isosim.mm, see
+            # https://code.google.com/p/libyuv/issues/detail?id=548 for details.
+            'WARNING_CFLAGS': [
+              '-Wno-sometimes-uninitialized',
+            ],
           },
+          'cflags': [
+            '-Wno-sometimes-uninitialized',
+          ],
         }],
         [ 'OS != "ios" and libyuv_disable_jpeg != 1', {
           'defines': [
@@ -97,10 +90,24 @@
           'defines': [
             'LIBYUV_NEON'
           ],
-       }],
+        }],
+        # MemorySanitizer does not support assembly code yet.
+        # http://crbug.com/344505
+        [ 'msan == 1', {
+          'defines': [
+            'LIBYUV_DISABLE_X86',
+          ],
+        }],
       ], # conditions
+      'defines': [
+        # Enable the following 3 macros to turn off assembly for specified CPU.
+        # 'LIBYUV_DISABLE_X86',
+        # 'LIBYUV_DISABLE_NEON',
+        # 'LIBYUV_DISABLE_MIPS',
+        # Enable the following macro to build libyuv as a shared library (dll).
+        # 'LIBYUV_USING_SHARED_LIBRARY',
+      ],
     },
-
     {
       'target_name': 'compare',
       'type': 'executable',

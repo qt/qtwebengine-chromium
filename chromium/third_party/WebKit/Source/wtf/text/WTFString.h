@@ -28,7 +28,6 @@
 #include "wtf/Allocator.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
-#include "wtf/testing/WTFUnitTestHelpersExport.h"
 #include "wtf/text/ASCIIFastPath.h"
 #include "wtf/text/StringImpl.h"
 #include "wtf/text/StringView.h"
@@ -70,6 +69,8 @@ WTF_EXPORT uint64_t charactersToUInt64(const UChar*, size_t, bool* ok = 0); // i
 // consistent with the above functions instead.
 WTF_EXPORT double charactersToDouble(const LChar*, size_t, bool* ok = 0);
 WTF_EXPORT double charactersToDouble(const UChar*, size_t, bool* ok = 0);
+WTF_EXPORT double charactersToDouble(const LChar*, size_t, size_t& parsedLength);
+WTF_EXPORT double charactersToDouble(const UChar*, size_t, size_t& parsedLength);
 WTF_EXPORT float charactersToFloat(const LChar*, size_t, bool* ok = 0);
 WTF_EXPORT float charactersToFloat(const UChar*, size_t, bool* ok = 0);
 WTF_EXPORT float charactersToFloat(const LChar*, size_t, size_t& parsedLength);
@@ -319,12 +320,11 @@ public:
         return *this;
     }
 
-    template<unsigned charactersCount>
-    ALWAYS_INLINE String& replaceWithLiteral(UChar a, const char (&characters)[charactersCount])
+    ALWAYS_INLINE String& replace(UChar a, const char* characters)
     {
+        ASSERT(characters);
         if (m_impl)
-            m_impl = m_impl->replace(a, characters, charactersCount - 1);
-
+            m_impl = m_impl->replace(a, characters, strlen(characters));
         return *this;
     }
 
@@ -502,6 +502,8 @@ inline bool equalIgnoringCase(const String& a, const char* b) { return equalIgno
 inline bool equalIgnoringCase(const LChar* a, const String& b) { return equalIgnoringCase(a, b.impl()); }
 inline bool equalIgnoringCase(const char* a, const String& b) { return equalIgnoringCase(reinterpret_cast<const LChar*>(a), b.impl()); }
 
+inline bool equalIgnoringASCIICase(const String& a, const String& b) { return equalIgnoringASCIICase(a.impl(), b.impl()); }
+
 inline bool equalPossiblyIgnoringCase(const String& a, const String& b, bool ignoreCase)
 {
     return ignoreCase ? equalIgnoringCase(a, b) : (a == b);
@@ -674,8 +676,8 @@ WTF_EXPORT const String& emptyString();
 WTF_EXPORT const String& emptyString16Bit();
 WTF_EXPORT extern const String& xmlnsWithColon;
 
-// Pretty printer for gtest. Declared here to avoid ODR violations.
-WTF_UNITTEST_HELPERS_EXPORT std::ostream& operator<<(std::ostream&, const String&);
+// Pretty printer for gtest and base/logging.*.
+WTF_EXPORT std::ostream& operator<<(std::ostream&, const String&);
 
 } // namespace WTF
 

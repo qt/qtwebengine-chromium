@@ -57,9 +57,7 @@ VideoCaptureDevice::Name::Name(const std::string& name,
     : device_name_(name),
       unique_id_(id),
       capture_api_class_(api_type),
-      transport_type_(OTHER_TRANSPORT),
-      is_blacklisted_(false) {
-}
+      transport_type_(OTHER_TRANSPORT) {}
 
 VideoCaptureDevice::Name::Name(const std::string& name,
                                const std::string& id,
@@ -68,9 +66,7 @@ VideoCaptureDevice::Name::Name(const std::string& name,
     : device_name_(name),
       unique_id_(id),
       capture_api_class_(api_type),
-      transport_type_(transport_type),
-      is_blacklisted_(false) {
-}
+      transport_type_(transport_type) {}
 #elif defined(ANDROID)
 VideoCaptureDevice::Name::Name(const std::string& name,
                                const std::string& id,
@@ -87,8 +83,6 @@ const char* VideoCaptureDevice::Name::GetCaptureApiTypeString() const {
   switch (capture_api_type()) {
     case V4L2_SINGLE_PLANE:
       return "V4L2 SPLANE";
-    case V4L2_MULTI_PLANE:
-      return "V4L2 MPLANE";
     default:
       NOTREACHED() << "Unknown Video Capture API type!";
       return "Unknown API";
@@ -111,8 +105,6 @@ const char* VideoCaptureDevice::Name::GetCaptureApiTypeString() const {
   switch (capture_api_type()) {
     case AVFOUNDATION:
       return "AV Foundation";
-    case QTKIT:
-      return "QTKit";
     case DECKLINK:
       return "DeckLink";
     default:

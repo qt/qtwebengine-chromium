@@ -11,16 +11,17 @@
 #include <stddef.h>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 #include "base/atomic_ref_count.h"
 #include "base/base_export.h"
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/template_util.h"
 
 namespace base {
 namespace internal {
+template <CopyMode copy_mode>
 class CallbackBase;
 
 // BindStateBase is used to provide an opaque handle that the Callback
@@ -42,6 +43,7 @@ class BindStateBase {
 
  private:
   friend class scoped_refptr<BindStateBase>;
+  template <CopyMode copy_mode>
   friend class CallbackBase;
 
   void AddRef();
@@ -57,10 +59,13 @@ class BindStateBase {
 
 // Holds the Callback methods that don't require specialization to reduce
 // template bloat.
-class BASE_EXPORT CallbackBase {
+// CallbackBase<MoveOnly> is a direct base class of MoveOnly callbacks, and
+// CallbackBase<Copyable> uses CallbackBase<MoveOnly> for its implementation.
+template <>
+class BASE_EXPORT CallbackBase<CopyMode::MoveOnly> {
  public:
-  CallbackBase(const CallbackBase& c);
-  CallbackBase& operator=(const CallbackBase& c);
+  CallbackBase(CallbackBase&& c);
+  CallbackBase& operator=(CallbackBase&& c);
 
   // Returns true if Callback is null (doesn't refer to anything).
   bool is_null() const { return bind_state_.get() == NULL; }
@@ -76,7 +81,7 @@ class BASE_EXPORT CallbackBase {
   using InvokeFuncStorage = void(*)();
 
   // Returns true if this callback equals |other|. |other| may be null.
-  bool Equals(const CallbackBase& other) const;
+  bool EqualsInternal(const CallbackBase& other) const;
 
   // Allow initializing of |bind_state_| via the constructor to avoid default
   // initialization of the scoped_refptr.  We do not also initialize
@@ -90,8 +95,26 @@ class BASE_EXPORT CallbackBase {
   ~CallbackBase();
 
   scoped_refptr<BindStateBase> bind_state_;
-  InvokeFuncStorage polymorphic_invoke_;
+  InvokeFuncStorage polymorphic_invoke_ = nullptr;
 };
+
+// CallbackBase<Copyable> is a direct base class of Copyable Callbacks.
+template <>
+class BASE_EXPORT CallbackBase<CopyMode::Copyable>
+    : public CallbackBase<CopyMode::MoveOnly> {
+ public:
+  CallbackBase(const CallbackBase& c);
+  CallbackBase(CallbackBase&& c);
+  CallbackBase& operator=(const CallbackBase& c);
+  CallbackBase& operator=(CallbackBase&& c);
+ protected:
+  explicit CallbackBase(BindStateBase* bind_state)
+      : CallbackBase<CopyMode::MoveOnly>(bind_state) {}
+  ~CallbackBase() {}
+};
+
+extern template class CallbackBase<CopyMode::MoveOnly>;
+extern template class CallbackBase<CopyMode::Copyable>;
 
 // A helper template to determine if given type is non-const move-only-type,
 // i.e. if a value of the given type should be passed via std::move() in a
@@ -102,7 +125,13 @@ class BASE_EXPORT CallbackBase {
 // confuses template deduction in VS2013 with certain types such as
 // std::unique_ptr.
 // TODO(dcheng): Revisit this when Windows switches to VS2015 by default.
+
 template <typename T> struct IsMoveOnlyType {
+  // Types YesType and NoType are guaranteed such that sizeof(YesType) <
+  // sizeof(NoType).
+  using YesType = char;
+  struct NoType { YesType dummy[2]; };
+
   template <typename U>
   static YesType Test(const typename U::MoveOnlyTypeForCPP03*);
 
@@ -110,13 +139,19 @@ template <typename T> struct IsMoveOnlyType {
   static NoType Test(...);
 
   static const bool value = sizeof((Test<T>(0))) == sizeof(YesType) &&
-                            !is_const<T>::value;
+                            !std::is_const<T>::value;
 };
 
 // Specialization of IsMoveOnlyType so that std::unique_ptr is still considered
 // move-only, even without the sentinel member.
-template <typename T>
-struct IsMoveOnlyType<std::unique_ptr<T>> : std::true_type {};
+template <typename T, typename D>
+struct IsMoveOnlyType<std::unique_ptr<T, D>> : std::true_type {};
+
+// Specialization of std::vector, so that it's considered move-only if the
+// element type is move-only. Allocator is explicitly ignored when determining
+// move-only status of the std::vector.
+template <typename T, typename Allocator>
+struct IsMoveOnlyType<std::vector<T, Allocator>> : IsMoveOnlyType<T> {};
 
 template <typename>
 struct CallbackParamTraitsForMoveOnlyType;
@@ -129,16 +164,7 @@ struct CallbackParamTraitsForNonMoveOnlyType;
 // http://connect.microsoft.com/VisualStudio/feedbackdetail/view/957801/compilation-error-with-variadic-templates
 //
 // This is a typetraits object that's used to take an argument type, and
-// extract a suitable type for storing and forwarding arguments.
-//
-// In particular, it strips off references, and converts arrays to
-// pointers for storage; and it avoids accidentally trying to create a
-// "reference of a reference" if the argument is a reference type.
-//
-// This array type becomes an issue for storage because we are passing bound
-// parameters by const reference. In this case, we end up passing an actual
-// array type in the initializer list which C++ does not allow.  This will
-// break passing of C-string literals.
+// extract a suitable type for forwarding arguments.
 template <typename T>
 struct CallbackParamTraits
     : std::conditional<IsMoveOnlyType<T>::value,
@@ -149,18 +175,6 @@ struct CallbackParamTraits
 template <typename T>
 struct CallbackParamTraitsForNonMoveOnlyType {
   using ForwardType = const T&;
-  using StorageType = T;
-};
-
-// The Storage should almost be impossible to trigger unless someone manually
-// specifies type of the bind parameters.  However, in case they do,
-// this will guard against us accidentally storing a reference parameter.
-//
-// The ForwardType should only be used for unbound arguments.
-template <typename T>
-struct CallbackParamTraitsForNonMoveOnlyType<T&> {
-  using ForwardType = T&;
-  using StorageType = T;
 };
 
 // Note that for array types, we implicitly add a const in the conversion. This
@@ -171,14 +185,12 @@ struct CallbackParamTraitsForNonMoveOnlyType<T&> {
 template <typename T, size_t n>
 struct CallbackParamTraitsForNonMoveOnlyType<T[n]> {
   using ForwardType = const T*;
-  using StorageType = const T*;
 };
 
 // See comment for CallbackParamTraits<T[n]>.
 template <typename T>
 struct CallbackParamTraitsForNonMoveOnlyType<T[]> {
   using ForwardType = const T*;
-  using StorageType = const T*;
 };
 
 // Parameter traits for movable-but-not-copyable scopers.
@@ -197,7 +209,6 @@ struct CallbackParamTraitsForNonMoveOnlyType<T[]> {
 template <typename T>
 struct CallbackParamTraitsForMoveOnlyType {
   using ForwardType = T;
-  using StorageType = T;
 };
 
 // CallbackForward() is a very limited simulation of C++11's std::forward()

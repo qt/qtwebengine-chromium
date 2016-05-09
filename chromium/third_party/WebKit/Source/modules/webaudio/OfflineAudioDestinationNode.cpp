@@ -28,7 +28,6 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/OfflineAudioContext.h"
-#include "platform/Task.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/DenormalDisabler.h"
 #include "platform/audio/HRTFDatabaseLoader.h"
@@ -104,14 +103,14 @@ void OfflineAudioDestinationHandler::startRendering()
     // Rendering was not started. Starting now.
     if (!m_isRenderingStarted) {
         m_isRenderingStarted = true;
-        m_renderThread->taskRunner()->postTask(BLINK_FROM_HERE,
-            new Task(threadSafeBind(&OfflineAudioDestinationHandler::startOfflineRendering, this)));
+        m_renderThread->getWebTaskRunner()->postTask(BLINK_FROM_HERE,
+            threadSafeBind(&OfflineAudioDestinationHandler::startOfflineRendering, this));
         return;
     }
 
     // Rendering is already started, which implicitly means we resume the
     // rendering by calling |doOfflineRendering| on the render thread.
-    m_renderThread->taskRunner()->postTask(BLINK_FROM_HERE,
+    m_renderThread->getWebTaskRunner()->postTask(BLINK_FROM_HERE,
         threadSafeBind(&OfflineAudioDestinationHandler::doOfflineRendering, this));
 }
 
@@ -201,8 +200,8 @@ void OfflineAudioDestinationHandler::suspendOfflineRendering()
     ASSERT(!isMainThread());
 
     // The actual rendering has been suspended. Notify the context.
-    if (context()->executionContext()) {
-        context()->executionContext()->postTask(BLINK_FROM_HERE,
+    if (context()->getExecutionContext()) {
+        context()->getExecutionContext()->postTask(BLINK_FROM_HERE,
             createCrossThreadTask(&OfflineAudioDestinationHandler::notifySuspend, this));
     }
 }
@@ -212,8 +211,8 @@ void OfflineAudioDestinationHandler::finishOfflineRendering()
     ASSERT(!isMainThread());
 
     // The actual rendering has been completed. Notify the context.
-    if (context()->executionContext()) {
-        context()->executionContext()->postTask(BLINK_FROM_HERE,
+    if (context()->getExecutionContext()) {
+        context()->getExecutionContext()->postTask(BLINK_FROM_HERE,
             createCrossThreadTask(&OfflineAudioDestinationHandler::notifyComplete, this));
     }
 }
@@ -238,9 +237,22 @@ bool OfflineAudioDestinationHandler::renderIfNotSuspended(AudioBus* sourceBus, A
     // This will take care of all AudioNodes because they all process within this scope.
     DenormalDisabler denormalDisabler;
 
+    // Need to check if the context actually alive. Otherwise the subsequent
+    // steps will fail. If the context is not alive somehow, return immediately
+    // and do nothing.
+    //
+    // TODO(hongchan): because the context can go away while rendering, so this
+    // check cannot guarantee the safe execution of the following steps.
+    ASSERT(context());
+    if (!context())
+        return false;
+
     context()->deferredTaskHandler().setAudioThread(currentThread());
 
-    if (!context()->isDestinationInitialized()) {
+    // If the destination node is not initialized, pass the silence to the final
+    // audio destination (one step before the FIFO). This check is for the case
+    // where the destination is in the middle of tearing down process.
+    if (!isInitialized()) {
         destinationBus->zero();
         return false;
     }
@@ -300,4 +312,3 @@ OfflineAudioDestinationNode* OfflineAudioDestinationNode::create(AbstractAudioCo
 }
 
 } // namespace blink
-

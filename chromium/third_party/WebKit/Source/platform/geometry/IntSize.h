@@ -30,6 +30,7 @@
 #include "platform/PlatformExport.h"
 #include "public/platform/WebCommon.h"
 #include "wtf/Allocator.h"
+#include "wtf/Forward.h"
 
 #if OS(MACOSX)
 typedef struct CGSize CGSize;
@@ -38,6 +39,10 @@ typedef struct CGSize CGSize;
 #import <Foundation/Foundation.h>
 #endif
 #endif
+
+namespace gfx {
+class Size;
+}
 
 namespace blink {
 
@@ -124,6 +129,12 @@ public:
     explicit IntSize(const NSSize &); // don't do this implicitly since it's lossy
     operator NSSize() const;
 #endif
+#endif
+
+    operator gfx::Size() const;
+
+#ifndef NDEBUG
+    String toString() const;
 #endif
 
 private:

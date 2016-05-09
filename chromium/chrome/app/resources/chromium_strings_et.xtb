@@ -21,7 +21,6 @@
 <translation id="1699664235656412242">Sulgege kõik Chromiumi aknad (ka Windows 8 režiimis) ja proovige uuesti.</translation>
 <translation id="1708666629004767631">Saadaval on Chromiumi uus, turvalisem versioon.</translation>
 <translation id="1725059042853530269">Fail <ph name="FILE_NAME" /> võib teie kasutuskogemust sirvimisel kahjustada, seetõttu on Chromium selle blokeerinud.</translation>
-<translation id="1745962126679160932">Chromium salvestab turvaliselt teie teabe, nii et te ei pea seda uuesti sisestama, kuid peate ka tulevaste maksete puhul kinnitama oma kaardi turvakoodi.</translation>
 <translation id="1774152462503052664">Luba Chromiumil taustal töötada</translation>
 <translation id="1779356040007214683">Chromiumi turvalisemaks muutmiseks keelasime mõned laiendused, mida ei leidu veebipoes <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> ja mille lisamisest te ei pruugi teadlik olla.</translation>
 <translation id="1808667845054772817">Installi Chromium uuesti</translation>
@@ -31,6 +30,7 @@
 <translation id="1929939181775079593">Chromium ei reageeri. Kas soovite kohe taaskäivitada?</translation>
 <translation id="1967743265616885482">Samanimeline moodul põhjustab teadaolevalt Chromiumiga vastuolusid.</translation>
 <translation id="2077129598763517140">Kasuta võimaluse korral riistvarakiirendust</translation>
+<translation id="2103655854491303969">Lõpetame Chromiumi rakenduste käivitaja toe pakkumise.</translation>
 <translation id="2117181891440368863">Chromium kinnitas, et selle veebisaidi sertifikaadi andis välja väljaandja <ph name="ISSUER" />. Server esitas sertifikaadi läbipaistvuse teabe, aga see oli kehtetu.</translation>
 <translation id="2119636228670142020">Teave &amp;Chromium OS-i kohta</translation>
 <translation id="2158734852934720349">Chromium OS-i avatud lähtekoodi litsentsid</translation>
@@ -46,6 +46,7 @@
 <translation id="2535480412977113886">Chromium OS ei saanud andmeid sünkroonida, sest teie konto sisselogimisandmed on aegunud.</translation>
 <translation id="2558641060352364164">See sait kasutab pistikprogrammi Chromium Frame, mille tugi peagi lõpeb. Desinstallige see ja täiendage moodsale brauserile.</translation>
 <translation id="2572494885440352020">Chromiumi abiline</translation>
+<translation id="2595977381794111014">Oma rakendustele pääsete edaspidi juurde Chromiumi järjehoidjate ribal oleva otsetee <ph name="APPS_ICON_IMAGE" /> kaudu.</translation>
 <translation id="2602806952220118310">Chromium – märguanded</translation>
 <translation id="2636877269779209383">Chromiumil on vaja kaamerale juurdepääsu selle jagamiseks saidiga.</translation>
 <translation id="2648074677641340862">Installimisel ilmnes operatsioonisüsteemi viga. Laadige Chromium uuesti alla.</translation>
@@ -100,19 +101,18 @@
 <translation id="4330585738697551178">See moodul põhjustab teadaolevalt Chromiumiga vastuolusid.</translation>
 <translation id="4423735387467980091">Chromiumi kohandamine ja juhtimine</translation>
 <translation id="4458285410772214805">Muudatuse jõustamiseks logige välja ja uuesti sisse.</translation>
-<translation id="4488676065623537541">Teie arvelduse detailid on salvestatud Chromiumi.</translation>
 <translation id="4549794359424059447">Chromiumi tulevased versioonid ei toeta enam Windows XP-d ega Windows Vistat.</translation>
 <translation id="4567424176335768812">Olete sisse logitud aadressiga <ph name="USER_EMAIL_ADDRESS" />. Nüüd on teil juurdepääs oma järjehoidjatele, ajaloole ja muudele seadetele kõigis seadmetes, kuhu olete sisse logitud.</translation>
 <translation id="457845228957001925">Oluline teave teie Chromiumi andmete kohta</translation>
 <translation id="459535195905078186">Chromiumi rakendused</translation>
 <translation id="4677944499843243528">Näib, et profiili kasutab Chromiumi muu protsess (<ph name="PROCESS_ID" />) mingis muus arvutis (<ph name="HOST_NAME" />). Chromium on profiili lukustanud, et seda ei saaks rikkuda. Kui olete kindel, et ükski muu protsess seda profiili ei kasuta, saate profiili avada ja Chromiumi taaskäivitada.</translation>
-<translation id="473775607612524610">Värskenda</translation>
 <translation id="4743926867934016338">Nõustun, otsi</translation>
 <translation id="4888717733111232871">Sissetuleku reegel Chromiumile mDNS-liikluse lubamiseks.</translation>
 <translation id="4943838377383847465">Chromium on taustarežiimis.</translation>
 <translation id="4987820182225656817">Külastajad saavad kasutada Chromiumi jälgi jätmata.</translation>
 <translation id="4994636714258228724">Lisa Chromiumi</translation>
 <translation id="5032989939245619637">Salvesta üksikasjad Chromiumi</translation>
+<translation id="5116586539350239523">Chromium salvestab turvaliselt teie isiklikud andmed, et te ei peaks neid uuesti sisestama.</translation>
 <translation id="5358375970380395591">Logite sisse hallatud kontoga ja annate selle administraatorile üle Chromiumi profiili juhtimise. Teie Chromiumi andmed, näiteks rakendused, järjehoidjad, ajalugu, paroolid ja muud seaded seotakse jäädavalt kasutajaga <ph name="USER_NAME" />. Saate need andmed kustutada Google'i kontode juhtpaneeli kaudu, kuid te ei saa neid seostada teise kontoga. <ph name="LEARN_MORE" /></translation>
 <translation id="5398878173008909840">Chromiumi uus versioon on saadaval.</translation>
 <translation id="5427571867875391349">Määra Chromium vaikebrauseriks</translation>
@@ -128,7 +128,6 @@
 <translation id="5859963531214966875">Chromiumi tulevased versioonid ei toeta enam seda Linuxi süsteemi.</translation>
 <translation id="5862307444128926510">Tere tulemast Chromiumi</translation>
 <translation id="5877064549588274448">Kanal on muutunud. Muudatuste rakendamiseks taaskäivitage oma seade.</translation>
-<translation id="5909170354645388250">Seda ei kasutata Chromiumis. See on kohatäide, mis sünkroonib ressursikaarte. See eeldab üht argumenti: $1.</translation>
 <translation id="5942225298871134766">Chromium salvestab selle funktsiooniga <ph name="SAVED_PASSWORD_LINK" /> ja peab seda meeles, kui seda järgmine kord vajate.</translation>
 <translation id="5942520288919337908"><ph name="EXTENSION_NAME" /> on Chromiumi lisatud.</translation>
 <translation id="59625444380784159">Kontaktide üksikasjad aitavad Chromiumis kiiremini vorme täita.</translation>
@@ -140,7 +139,6 @@
 <translation id="6334986366598267305">Nüüd on Chromiumi lihtsam kasutada Google'i kontoga ja jagatud arvutistes.</translation>
 <translation id="6373523479360886564">Kas soovite kindlasti Chromiumi desinstallida?</translation>
 <translation id="6403826409255603130">Chromium on veebibrauser, mis avab veebilehti ja rakendusi välgukiirusel. See on kiire, stabiilne ja hõlpsasti kasutatav. Sirvige veebi turvalisemalt tänu Chromiumi sisseehitatud pahavara- ja andmepüügikaitsele.</translation>
-<translation id="6424492062988593837">Chromium muutus just veelgi paremaks! Saadaval on uus versioon.</translation>
 <translation id="6475912303565314141">Lisaks juhib see seda, mis leht kuvatakse Chromiumi käivitamisel.</translation>
 <translation id="6485906693002546646">Kasutate Chromiumi kraami sünkroonimiseks kontot <ph name="PROFILE_EMAIL" />. Sünkroonimiseelistuste värskendamiseks või Chromiumi kasutamiseks ilma Google'i kontota avage <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6510925080656968729">Desinstalli Chromium</translation>
@@ -209,7 +207,6 @@ Chromium ei saa teie seadeid taastada.</translation>
 <translation id="8586442755830160949">Autoriõigus <ph name="YEAR" /> The Chromium Authors. Kõik õigused on kaitstud.</translation>
 <translation id="8621669128220841554">Installimine ebaõnnestus tundmatu vea tõttu. Laadige Chromium uuesti alla.</translation>
 <translation id="8628626585870903697">Chromium ei sisalda PDF-vaaturit, mida on printimise eelvaate jaoks vaja.</translation>
-<translation id="8684913864886094367">Chromium ei sulgunud õigesti.</translation>
 <translation id="8697124171261953979">Lisaks juhib see seda, mis leht kuvatakse Chromiumi käivitamisel või omnikastikeses otsingu tegemisel.</translation>
 <translation id="8704119203788522458">See on teie Chromium</translation>
 <translation id="872034308864968620">Luba Chromiumil taustal töötada</translation>

@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REQUEST_HANDLER_H_
 
 #include "base/macros.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "base/time/time.h"
@@ -30,6 +31,7 @@ class BlobStorageContext;
 namespace content {
 
 class ResourceContext;
+class ResourceMessageFilter;
 class ResourceRequestBody;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
@@ -108,6 +110,10 @@ class CONTENT_EXPORT ServiceWorkerRequestHandler
                                  int new_provider_id);
   void MaybeCompleteCrossSiteTransferInOldProcess(
       int old_process_id);
+
+  // Useful for detecting storage partition mismatches in the context of cross
+  // site transfer navigations.
+  bool SanityCheckIsSameContext(ServiceWorkerContextWrapper* wrapper);
 
  protected:
   ServiceWorkerRequestHandler(

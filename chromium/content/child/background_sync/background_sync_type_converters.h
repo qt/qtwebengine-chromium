@@ -5,7 +5,8 @@
 #ifndef CONTENT_CHILD_BACKGROUND_SYNC_BACKGROUND_SYNC_TYPE_CONVERTERS_H_
 #define CONTENT_CHILD_BACKGROUND_SYNC_BACKGROUND_SYNC_TYPE_CONVERTERS_H_
 
-#include "base/memory/scoped_ptr.h"
+#include <memory>
+
 #include "content/common/background_sync_service.mojom.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/type_converter.h"
@@ -15,90 +16,57 @@
 
 namespace mojo {
 
-// blink::WebSyngRegistration::Periodicity <=>
-//    content::BackgroundSyncPeriodicity
-
-template <>
-struct CONTENT_EXPORT TypeConverter<blink::WebSyncRegistration::Periodicity,
-                     content::BackgroundSyncPeriodicity> {
-  static blink::WebSyncRegistration::Periodicity Convert(
-      content::BackgroundSyncPeriodicity input);
-};
-
-template <>
-struct CONTENT_EXPORT TypeConverter<content::BackgroundSyncPeriodicity,
-                     blink::WebSyncRegistration::Periodicity> {
-  static content::BackgroundSyncPeriodicity Convert(
-      blink::WebSyncRegistration::Periodicity input);
-};
-
 // blink::WebSyncRegistration::NetworkState <=>
-//     content::BackgroundSyncNetworkState
+//     content::mojom::BackgroundSyncNetworkState
 
 template <>
-struct CONTENT_EXPORT TypeConverter<blink::WebSyncRegistration::NetworkState,
-                     content::BackgroundSyncNetworkState> {
+struct CONTENT_EXPORT
+    TypeConverter<blink::WebSyncRegistration::NetworkState,
+                  content::mojom::BackgroundSyncNetworkState> {
   static blink::WebSyncRegistration::NetworkState Convert(
-      content::BackgroundSyncNetworkState input);
+      content::mojom::BackgroundSyncNetworkState input);
 };
 
 template <>
-struct CONTENT_EXPORT TypeConverter<content::BackgroundSyncNetworkState,
-                     blink::WebSyncRegistration::NetworkState> {
-  static content::BackgroundSyncNetworkState Convert(
+struct CONTENT_EXPORT TypeConverter<content::mojom::BackgroundSyncNetworkState,
+                                    blink::WebSyncRegistration::NetworkState> {
+  static content::mojom::BackgroundSyncNetworkState Convert(
       blink::WebSyncRegistration::NetworkState input);
 };
 
-// blink::WebSyncRegistration::PowerState <=>
-//     content::BackgroundSyncPowerState
-
-template <>
-struct CONTENT_EXPORT TypeConverter<blink::WebSyncRegistration::PowerState,
-                     content::BackgroundSyncPowerState> {
-  static blink::WebSyncRegistration::PowerState Convert(
-      content::BackgroundSyncPowerState input);
-};
-
-template <>
-struct CONTENT_EXPORT TypeConverter<content::BackgroundSyncPowerState,
-                     blink::WebSyncRegistration::PowerState> {
-  static content::BackgroundSyncPowerState Convert(
-      blink::WebSyncRegistration::PowerState input);
-};
-
 // blink::WebSyncRegistration <=>
-//     content::SyncRegistration
+//     content::mojom::SyncRegistration
 
 template <>
-struct CONTENT_EXPORT TypeConverter<scoped_ptr<blink::WebSyncRegistration>,
-                     content::SyncRegistrationPtr> {
-  static scoped_ptr<blink::WebSyncRegistration> Convert(
-      const content::SyncRegistrationPtr& input);
+struct CONTENT_EXPORT TypeConverter<std::unique_ptr<blink::WebSyncRegistration>,
+                                    content::mojom::SyncRegistrationPtr> {
+  static std::unique_ptr<blink::WebSyncRegistration> Convert(
+      const content::mojom::SyncRegistrationPtr& input);
 };
 
 template <>
-struct CONTENT_EXPORT TypeConverter<content::SyncRegistrationPtr,
-                     blink::WebSyncRegistration> {
-  static content::SyncRegistrationPtr Convert(
+struct CONTENT_EXPORT TypeConverter<content::mojom::SyncRegistrationPtr,
+                                    blink::WebSyncRegistration> {
+  static content::mojom::SyncRegistrationPtr Convert(
       const blink::WebSyncRegistration& input);
 };
 
 // blink::WebServiceWorkerContextProxy::LastChanceOption <=>
-//    content::BackgroundSyncEventLastChance
+//    content::mojom::BackgroundSyncEventLastChance
 
 template <>
 struct CONTENT_EXPORT
     TypeConverter<blink::WebServiceWorkerContextProxy::LastChanceOption,
-                  content::BackgroundSyncEventLastChance> {
+                  content::mojom::BackgroundSyncEventLastChance> {
   static blink::WebServiceWorkerContextProxy::LastChanceOption Convert(
-      content::BackgroundSyncEventLastChance input);
+      content::mojom::BackgroundSyncEventLastChance input);
 };
 
 template <>
 struct CONTENT_EXPORT
-    TypeConverter<content::BackgroundSyncEventLastChance,
+    TypeConverter<content::mojom::BackgroundSyncEventLastChance,
                   blink::WebServiceWorkerContextProxy::LastChanceOption> {
-  static content::BackgroundSyncEventLastChance Convert(
+  static content::mojom::BackgroundSyncEventLastChance Convert(
       blink::WebServiceWorkerContextProxy::LastChanceOption input);
 };
 

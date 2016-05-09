@@ -1,9 +1,4 @@
 {
-    "AsyncSetAsDefault": [
-        {
-            "group_name": "Enabled"
-        }
-    ],
     "AutofillClassifier": [
         {
             "group_name": "Enabled"
@@ -20,6 +15,9 @@
             "params": {
                 "limit": "3"
             }
+        },
+        {
+            "group_name": "Enabled"
         }
     ],
     "AutomaticTabDiscarding": [
@@ -27,7 +25,10 @@
             "enable_features": [
                 "AutomaticTabDiscarding"
             ],
-            "group_name": "Enabled_Once"
+            "group_name": "Enabled_Once_10-gen2",
+            "params": {
+                "MinimumProtectionTime": "600"
+            }
         }
     ],
     "BrowserBlacklist": [
@@ -58,12 +59,12 @@
             "group_name": "Enabled"
         }
     ],
-    "DataReductionProxyConfigService": [
+    "DocumentWriteEvaluator": [
         {
-            "group_name": "Enabled",
-            "params": {
-                "minimum_refresh_interval_on_success_msec": "21600000"
-            }
+            "enable_features": [
+                "DocumentWriteEvaluator"
+            ],
+            "group_name": "Enabled"
         }
     ],
     "EnableGoogleCachedCopyTextExperiment": [
@@ -111,6 +112,11 @@
             "group_name": "Enabled"
         }
     ],
+    "LocalNTPSuggestionsService": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "MaterialDesignDownloads": [
         {
             "group_name": "Enabled"
@@ -145,6 +151,16 @@
             "group_name": "Enabled"
         }
     ],
+    "OfferUploadCreditCards": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
+    "PageRevisitInstrumentation": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "PasswordBranding": [
         {
             "group_name": "SmartLockBrandingSavePromptOnly"
@@ -155,16 +171,29 @@
             "group_name": "Disabled"
         }
     ],
+    "PreRead": [
+        {
+            "group_name": "NoPrefetchArgument",
+            "params": {
+                "NoPrefetchArgument": "true"
+            }
+        }
+    ],
     "QUIC": [
         {
-            "group_name": "Enabled",
-            "params": {
-                "alternate_protocol_probability_threshold": "0.01"
-            }
+            "group_name": "Enabled"
         }
     ],
     "RefreshTokenDeviceId": [
         {
+            "group_name": "Enabled"
+        }
+    ],
+    "RenderingPipelineThrottling": [
+        {
+            "enable_features": [
+                "RenderingPipelineThrottling"
+            ],
             "group_name": "Enabled"
         }
     ],
@@ -197,9 +226,22 @@
             "group_name": "DontShowAndDontSend"
         }
     ],
+    "ResourcePriorities": [
+        {
+            "group_name": "AllExceptAsyncScripts_11011_1_1_10"
+        },
+        {
+            "group_name": "Control"
+        }
+    ],
     "SRTPromptFieldTrial": [
         {
             "group_name": "On"
+        }
+    ],
+    "SSLCommonNameMismatchHandling": [
+        {
+            "group_name": "Enabled"
         }
     ],
     "SafeBrowsingReportPhishingErrorLink": [
@@ -215,9 +257,11 @@
     ],
     "SafeBrowsingUnverifiedDownloads": [
         {
-            "group_name": "DisableByParameterExe",
+            "group_name": "DisableByParameterMostSbTypes2",
             "params": {
-                "blacklist": ".exe"
+                "blacklist": ".exe-,.zip-",
+                "block_sb_types": "true",
+                "whitelist": ".rar,.svg,.url,.xml,.zip"
             }
         }
     ],
@@ -229,6 +273,11 @@
             }
         }
     ],
+    "SchedulerExpensiveTaskBlocking": [
+        {
+            "group_name": "Enabled"
+        }
+    ],
     "SdchPersistence": [
         {
             "group_name": "Enabled"
@@ -237,11 +286,6 @@
     "SettingsEnforcement": [
         {
             "group_name": "enforce_always_with_extensions_and_dse"
-        }
-    ],
-    "SpdyEnableDependencies": [
-        {
-            "group_name": "Enable"
         }
     ],
     "StrictSecureCookies": [
@@ -262,9 +306,26 @@
             "group_name": "Enabled"
         }
     ],
+    "TokenBinding": [
+        {
+            "enable_features": [
+                "token-binding"
+            ],
+            "group_name": "TokenBinding"
+        }
+    ],
     "TriggeredResetFieldTrial": [
         {
             "group_name": "On"
+        }
+    ],
+    "V8SerializeOptions": [
+        {
+            "enable_features": [
+                "V8_Serialize_Eager",
+                "V8_Serialize_Age_Code"
+            ],
+            "group_name": "SerializeEagerAndAgeCode"
         }
     ],
     "VarationsServiceControl": [
@@ -280,6 +341,14 @@
             "group_name": "Enabled"
         }
     ],
+    "WebRTC-H264WithOpenH264FFmpeg": [
+        {
+            "enable_features": [
+                "WebRTC-H264WithOpenH264FFmpeg"
+            ],
+            "group_name": "Enabled"
+        }
+    ],
     "WebRTC-LocalIPPermissionCheck": [
         {
             "group_name": "Enabled"
@@ -287,6 +356,14 @@
     ],
     "WebRTC-PeerConnectionDTLS1.2": [
         {
+            "group_name": "Enabled"
+        }
+    ],
+    "use-new-media-cache": [
+        {
+            "enable_features": [
+                "use-new-media-cache"
+            ],
             "group_name": "Enabled"
         }
     ]

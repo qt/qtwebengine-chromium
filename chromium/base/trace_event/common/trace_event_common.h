@@ -156,7 +156,7 @@
 //   };
 //
 //   TRACE_EVENT1("foo", "bar", "data",
-//                scoped_refptr<ConvertableToTraceFormat>(new MyData()));
+//                std::unique_ptr<ConvertableToTraceFormat>(new MyData()));
 //
 // The trace framework will take ownership if the passed pointer and it will
 // be free'd when the trace buffer is flushed.
@@ -926,6 +926,20 @@
                                    name, id, TRACE_EVENT_FLAG_COPY, arg1_name, \
                                    arg1_val, arg2_name, arg2_val)
 
+// Special trace event macro to trace task execution with the location where it
+// was posted from.
+#define TRACE_TASK_EXECUTION(run_function, task)                        \
+  TRACE_EVENT2("toplevel", run_function, "src_file",                    \
+               (task).posted_from.file_name(), "src_func",              \
+               (task).posted_from.function_name());                     \
+  TRACE_EVENT_API_SCOPED_TASK_EXECUTION_EVENT INTERNAL_TRACE_EVENT_UID( \
+      task_event)((task).posted_from.file_name());
+
+// TRACE_EVENT_METADATA* events are information related to other
+// injected events, not events in their own right.
+#define TRACE_EVENT_METADATA1(category_group, name, arg1_name, arg1_val) \
+  INTERNAL_TRACE_EVENT_METADATA_ADD(category_group, name, arg1_name, arg1_val)
+
 // Records a clock sync event.
 #define TRACE_EVENT_CLOCK_SYNC_RECEIVER(sync_id)                               \
   INTERNAL_TRACE_EVENT_ADD(                                                    \
@@ -961,6 +975,21 @@
   INTERNAL_TRACE_EVENT_ADD_WITH_ID(                                  \
       TRACE_EVENT_PHASE_DELETE_OBJECT, category_group, name,         \
       TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
+
+// Records entering and leaving trace event contexts. |category_group| and
+// |name| specify the context category and type. |context| is a
+// snapshotted context object id.
+#define TRACE_EVENT_ENTER_CONTEXT(category_group, name, context) \
+  INTERNAL_TRACE_EVENT_ADD_WITH_ID(                              \
+      TRACE_EVENT_PHASE_ENTER_CONTEXT, category_group, name,     \
+      TRACE_ID_DONT_MANGLE(context), TRACE_EVENT_FLAG_NONE)
+#define TRACE_EVENT_LEAVE_CONTEXT(category_group, name, context) \
+  INTERNAL_TRACE_EVENT_ADD_WITH_ID(                              \
+      TRACE_EVENT_PHASE_LEAVE_CONTEXT, category_group, name,     \
+      TRACE_ID_DONT_MANGLE(context), TRACE_EVENT_FLAG_NONE)
+#define TRACE_EVENT_SCOPED_CONTEXT(category_group, name, context) \
+  INTERNAL_TRACE_EVENT_SCOPED_CONTEXT(category_group, name,       \
+                                      TRACE_ID_DONT_MANGLE(context))
 
 // Macro to efficiently determine if a given category group is enabled.
 #define TRACE_EVENT_CATEGORY_GROUP_ENABLED(category_group, ret)             \
@@ -1025,6 +1054,8 @@
 #define TRACE_EVENT_PHASE_MEMORY_DUMP ('v')
 #define TRACE_EVENT_PHASE_MARK ('R')
 #define TRACE_EVENT_PHASE_CLOCK_SYNC ('c')
+#define TRACE_EVENT_PHASE_ENTER_CONTEXT ('(')
+#define TRACE_EVENT_PHASE_LEAVE_CONTEXT (')')
 
 // Flags for changing the behavior of TRACE_EVENT_API_ADD_TRACE_EVENT.
 #define TRACE_EVENT_FLAG_NONE (static_cast<unsigned int>(0))

@@ -66,9 +66,8 @@ ResourceContext::SaltCallback GetMockSaltCallback() {
   return base::Bind(&ReturnMockSalt);
 }
 
-// This class mocks the audio manager and overrides the
-// GetAudioInputDeviceNames() method to ensure that we can run our tests on
-// the buildbots. media::AudioManagerBase
+// This class mocks the audio manager and overrides some methods to ensure that
+// we can run our tests on the buildbots.
 class MockAudioManager : public AudioManagerPlatform {
  public:
   MockAudioManager()
@@ -101,6 +100,17 @@ class MockAudioManager : public AudioManagerPlatform {
           std::string("fake_device_name_") + base::SizeTToString(i),
           std::string("fake_device_id_") + base::SizeTToString(i)));
     }
+  }
+
+  media::AudioParameters GetDefaultOutputStreamParameters() override {
+    return media::AudioParameters(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                  media::CHANNEL_LAYOUT_STEREO, 48000, 16, 128);
+  }
+
+  media::AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) override {
+    return media::AudioParameters(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                                  media::CHANNEL_LAYOUT_STEREO, 48000, 16, 128);
   }
 
   void SetNumAudioOutputDevices(size_t num_devices) {
@@ -180,7 +190,7 @@ class MediaStreamManagerTest : public ::testing::Test {
   MOCK_METHOD1(Response, void(int index));
   void ResponseCallback(int index,
                         const MediaStreamDevices& devices,
-                        scoped_ptr<MediaStreamUIProxy> ui_proxy) {
+                        std::unique_ptr<MediaStreamUIProxy> ui_proxy) {
     Response(index);
     task_runner_->PostTask(FROM_HERE, run_loop_.QuitClosure());
   }
@@ -200,8 +210,8 @@ class MediaStreamManagerTest : public ::testing::Test {
         security_origin, callback);
   }
 
-  scoped_ptr<MockAudioManager> audio_manager_;
-  scoped_ptr<MediaStreamManager> media_stream_manager_;
+  std::unique_ptr<MockAudioManager> audio_manager_;
+  std::unique_ptr<MediaStreamManager> media_stream_manager_;
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   base::RunLoop run_loop_;

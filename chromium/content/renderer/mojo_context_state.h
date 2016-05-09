@@ -33,7 +33,9 @@ class MojoMainRunner;
 // by way of gin. Non-builtin modules are downloaded by way of ResourceFetchers.
 class MojoContextState : public gin::ModuleRegistryObserver {
  public:
-  MojoContextState(blink::WebFrame* frame, v8::Local<v8::Context> context);
+  MojoContextState(blink::WebFrame* frame,
+                   v8::Local<v8::Context> context,
+                   bool for_layout_tests);
   ~MojoContextState() override;
 
   void Run();
@@ -53,6 +55,7 @@ class MojoContextState : public gin::ModuleRegistryObserver {
 
   // Callback once a module has finished downloading. Passes data to |runner_|.
   void OnFetchModuleComplete(ResourceFetcher* fetcher,
+                             const std::string& id,
                              const blink::WebURLResponse& response,
                              const std::string& data);
 

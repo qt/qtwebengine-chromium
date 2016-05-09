@@ -20,6 +20,8 @@
 
 #include "core/svg/SVGPathElement.h"
 
+#include "core/css/CSSValuePool.h"
+#include "core/dom/StyleChangeReason.h"
 #include "core/layout/svg/LayoutSVGPath.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGPathQuery.h"
@@ -30,16 +32,16 @@ namespace blink {
 
 class SVGAnimatedPathLength final : public SVGAnimatedNumber {
 public:
-    static PassRefPtrWillBeRawPtr<SVGAnimatedPathLength> create(SVGPathElement* contextElement)
+    static SVGAnimatedPathLength* create(SVGPathElement* contextElement)
     {
-        return adoptRefWillBeNoop(new SVGAnimatedPathLength(contextElement));
+        return new SVGAnimatedPathLength(contextElement);
     }
 
     SVGParsingError setBaseValueAsString(const String& value) override
     {
         SVGParsingError parseStatus = SVGAnimatedNumber::setBaseValueAsString(value);
-        if (parseStatus == NoError && baseValue()->value() < 0)
-            parseStatus = NegativeValueForbiddenError;
+        if (parseStatus == SVGParseStatus::NoError && baseValue()->value() < 0)
+            parseStatus = SVGParseStatus::NegativeValue;
         return parseStatus;
     }
 
@@ -68,24 +70,35 @@ DEFINE_TRACE(SVGPathElement)
 
 DEFINE_NODE_FACTORY(SVGPathElement)
 
-Path SVGPathElement::asPath() const
+const StylePath* SVGPathElement::stylePath() const
 {
-    if (layoutObject()) {
-        const SVGComputedStyle& svgStyle = layoutObject()->styleRef().svgStyle();
-        return svgStyle.d()->path();
+    if (LayoutObject* layoutObject = this->layoutObject()) {
+        const StylePath* stylePath = layoutObject->styleRef().svgStyle().d();
+        if (stylePath)
+            return stylePath;
+        return StylePath::emptyPath();
     }
-
-    return m_path->currentValue()->pathValue()->cachedPath()->path();
+    return m_path->currentValue()->stylePath();
 }
 
-const SVGPathByteStream& SVGPathElement::pathByteStream() const
+float SVGPathElement::pathLengthScaleFactor() const
 {
-    if (layoutObject()) {
-        const SVGComputedStyle& svgStyle = layoutObject()->styleRef().svgStyle();
-        return svgStyle.d()->byteStream();
-    }
+    if (!pathLength()->isSpecified())
+        return 1;
+    float authorPathLength = pathLength()->currentValue()->value();
+    if (authorPathLength < 0)
+        return 1;
+    if (!authorPathLength)
+        return 0;
+    float computedPathLength = stylePath()->length();
+    if (!computedPathLength)
+        return 1;
+    return computedPathLength / authorPathLength;
+}
 
-    return m_path->currentValue()->byteStream();
+Path SVGPathElement::asPath() const
+{
+    return stylePath()->path();
 }
 
 float SVGPathElement::getTotalLength()
@@ -94,7 +107,7 @@ float SVGPathElement::getTotalLength()
     return SVGPathQuery(pathByteStream()).getTotalLength();
 }
 
-PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGPathElement::getPointAtLength(float length)
+SVGPointTearOff* SVGPathElement::getPointAtLength(float length)
 {
     document().updateLayoutIgnorePendingStylesheets();
     FloatPoint point = SVGPathQuery(pathByteStream()).getPointAtLength(length);
@@ -157,7 +170,13 @@ void SVGPathElement::collectStyleForPresentationAttribute(const QualifiedName& n
         // If this is a <use> instance, return the referenced path to maximize geometry sharing.
         if (const SVGElement* element = correspondingElement())
             path = toSVGPathElement(element)->path();
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyD, path->currentValue()->pathValue());
+
+        CSSPathValue* pathValue = path->currentValue()->pathValue();
+        if (pathValue->stylePath()->byteStream().isEmpty()) {
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyD, cssValuePool().createIdentifierValue(CSSValueNone));
+            return;
+        }
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyD, pathValue);
         return;
     }
     SVGGeometryElement::collectStyleForPresentationAttribute(name, value, style);

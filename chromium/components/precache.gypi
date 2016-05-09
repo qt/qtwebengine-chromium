@@ -5,26 +5,6 @@
 {
   'targets': [
     {
-      # GN Version: //components/precache/content
-      'target_name': 'precache_content',
-      'type': 'static_library',
-      'dependencies': [
-        'precache_core',
-        '../base/base.gyp:base',
-        '../components/components.gyp:sync_driver',
-        '../content/content.gyp:content_browser',
-        '../url/url.gyp:url_lib',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        # Note: sources list duplicated in GN build.
-        'precache/content/precache_manager.cc',
-        'precache/content/precache_manager.h',
-      ],
-    },
-    {
       # GN version: //components/precache/core
       'target_name': 'precache_core',
       'type': 'static_library',
@@ -38,6 +18,7 @@
         '..',
       ],
       'sources': [
+        'precache/core/fetcher_pool.h',
         'precache/core/precache_database.cc',
         'precache/core/precache_database.h',
         'precache/core/precache_fetcher.cc',
@@ -69,6 +50,31 @@
     },
   ],
   'conditions': [
+    ['OS!="ios"', {
+      'targets': [
+        {
+          # GN Version: //components/precache/content
+          'target_name': 'precache_content',
+          'type': 'static_library',
+          'dependencies': [
+            'precache_core',
+            'precache_core_proto',
+            '../base/base.gyp:base',
+            '../components/components.gyp:sync_driver',
+            '../content/content.gyp:content_browser',
+            '../url/url.gyp:url_lib',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            # Note: sources list duplicated in GN build.
+            'precache/content/precache_manager.cc',
+            'precache/content/precache_manager.h',
+          ],
+        },
+      ],
+    }],
     ['OS=="android"', {
       'targets': [{
         'target_name': 'precache_java',

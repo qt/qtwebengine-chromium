@@ -5,10 +5,11 @@
 #ifndef CONTENT_RENDERER_MEDIA_AUDIO_TRACK_RECORDER_H_
 #define CONTENT_RENDERER_MEDIA_AUDIO_TRACK_RECORDER_H_
 
+#include <memory>
+
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
@@ -17,6 +18,7 @@
 
 namespace media {
 class AudioBus;
+class AudioParameters;
 }  // namespace media
 
 namespace content {
@@ -33,11 +35,12 @@ class CONTENT_EXPORT AudioTrackRecorder
  public:
   using OnEncodedAudioCB =
       base::Callback<void(const media::AudioParameters& params,
-                          scoped_ptr<std::string> encoded_data,
+                          std::unique_ptr<std::string> encoded_data,
                           base::TimeTicks capture_time)>;
 
   AudioTrackRecorder(const blink::WebMediaStreamTrack& track,
-                     const OnEncodedAudioCB& on_encoded_audio_cb);
+                     const OnEncodedAudioCB& on_encoded_audio_cb,
+                     int32_t bits_per_second);
   ~AudioTrackRecorder() override;
 
   // Implement MediaStreamAudioSink.
@@ -45,17 +48,13 @@ class CONTENT_EXPORT AudioTrackRecorder
   void OnData(const media::AudioBus& audio_bus,
               base::TimeTicks capture_time) override;
 
- private:
-  friend class AudioTrackRecorderTest;
-  class AudioParameters;
+  void Pause();
+  void Resume();
 
+ private:
   // Forward declaration of nested class for handling encoding.
   // See the implementation file for details.
   class AudioEncoder;
-
-  // Returns the Opus buffer duration in milliseconds, or zero if none will work
-  // for the given |sample_rate|.
-  static int GetOpusBufferDuration(int sample_rate);
 
   // Used to check that we are destroyed on the same thread we were created on.
   base::ThreadChecker main_render_thread_checker_;

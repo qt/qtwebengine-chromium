@@ -5,10 +5,10 @@
 #ifndef CHROMECAST_MEDIA_CMA_BACKEND_ALSA_MOCK_ALSA_WRAPPER_H_
 #define CHROMECAST_MEDIA_CMA_BACKEND_ALSA_MOCK_ALSA_WRAPPER_H_
 
+#include <memory>
 #include <vector>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "chromecast/media/cma/backend/alsa/alsa_wrapper.h"
 #include "media/audio/alsa/alsa_wrapper.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -112,7 +112,7 @@ class MockAlsaWrapper : public AlsaWrapper {
                int(snd_pcm_t* handle,
                    snd_pcm_hw_params_t* params,
                    snd_pcm_format_t format));
-  MOCK_METHOD4(PcmHwParamsTestRateNear,
+  MOCK_METHOD4(PcmHwParamsTestRate,
                int(snd_pcm_t* handle,
                    snd_pcm_hw_params_t* params,
                    unsigned int rate,
@@ -148,7 +148,7 @@ class MockAlsaWrapper : public AlsaWrapper {
   class FakeAlsaWrapper;
 
   // Certain calls will be delegated to this class.
-  scoped_ptr<FakeAlsaWrapper> fake_;
+  std::unique_ptr<FakeAlsaWrapper> fake_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAlsaWrapper);
 };

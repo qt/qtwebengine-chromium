@@ -81,7 +81,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // AudioRenderer implementation.
   void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& init_cb,
-                  const SetCdmReadyCB& set_cdm_ready_cb,
+                  CdmContext* cdm_context,
                   const StatisticsCB& statistics_cb,
                   const BufferingStateCB& buffering_state_cb,
                   const base::Closure& ended_cb,
@@ -128,9 +128,9 @@ class MEDIA_EXPORT AudioRendererImpl
   // Returns true if more buffers are needed.
   bool HandleSplicerBuffer_Locked(const scoped_refptr<AudioBuffer>& buffer);
 
-  // Helper functions for AudioDecoder::Status values passed to
+  // Helper functions for DecodeStatus values passed to
   // DecodedAudioReady().
-  void HandleAbortedReadOrDecodeError(bool is_decode_error);
+  void HandleAbortedReadOrDecodeError(PipelineStatus status);
 
   void StartRendering_Locked();
   void StopRendering_Locked();
@@ -155,7 +155,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // this case |audio_delay_milliseconds| should be used to indicate when in the
   // future should the filled buffer be played.
   int Render(AudioBus* audio_bus,
-             uint32_t audio_delay_milliseconds,
+             uint32_t frames_delayed,
              uint32_t frames_skipped) override;
   void OnRenderError() override;
 
@@ -232,6 +232,10 @@ class MEDIA_EXPORT AudioRendererImpl
   // HandleSplicerBuffer_Locked() call.
   int64_t last_audio_memory_usage_;
 
+  // Sample rate of the last decoded audio buffer. Allows for detection of
+  // sample rate changes due to implicit AAC configuration change.
+  int last_decoded_sample_rate_;
+
   // After Initialize() has completed, all variables below must be accessed
   // under |lock_|. ------------------------------------------------------------
   base::Lock lock_;
@@ -279,6 +283,10 @@ class MEDIA_EXPORT AudioRendererImpl
   // Set upon receipt of the first decoded buffer after a StartPlayingFrom().
   // Used to determine how long to delay playback.
   base::TimeDelta first_packet_timestamp_;
+
+  // Set by CurrentMediaTime(), used to prevent the current media time value as
+  // reported to JavaScript from going backwards in time.
+  base::TimeDelta last_media_timestamp_;
 
   // End variables which must be accessed under |lock_|. ----------------------
 

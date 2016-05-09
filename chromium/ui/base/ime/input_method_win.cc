@@ -6,9 +6,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <cwctype>
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "ui/base/ime/ime_bridge.h"
+#include "ui/base/ime/ime_engine_handler_interface.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/base/ui_base_switches.h"
@@ -18,6 +21,16 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
+
+namespace {
+
+ui::IMEEngineHandlerInterface* GetEngine() {
+  if (ui::IMEBridge::Get())
+    return ui::IMEBridge::Get()->GetCurrentEngineHandler();
+  return nullptr;
+}
+
+}  // namespace
 
 namespace ui {
 namespace {
@@ -35,25 +48,12 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
       accept_carriage_return_(false),
       enabled_(false),
       is_candidate_popup_open_(false),
-      composing_window_handle_(NULL) {
+      composing_window_handle_(NULL),
+      weak_ptr_factory_(this) {
   SetDelegate(delegate);
 }
 
-void InputMethodWin::OnFocus() {
-  InputMethodBase::OnFocus();
-  if (GetTextInputClient())
-    UpdateIMEState();
-}
-
-void InputMethodWin::OnBlur() {
-  ConfirmCompositionText();
-  // Gets the focused text input client before calling parent's OnBlur() because
-  // it will cause GetTextInputClient() returns NULL.
-  ui::TextInputClient* client = GetTextInputClient();
-  InputMethodBase::OnBlur();
-  if (client)
-    UpdateIMEState();
-}
+InputMethodWin::~InputMethodWin() {}
 
 bool InputMethodWin::OnUntranslatedIMEMessage(
     const base::NativeEvent& event,
@@ -167,8 +167,35 @@ void InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
   }
 
   // If only 1 WM_CHAR per the key event, set it as the character of it.
-  if (char_msgs.size() == 1)
+  if (char_msgs.size() == 1 &&
+      !std::iswcntrl(static_cast<wint_t>(char_msgs[0].wParam)))
     event->set_character(static_cast<base::char16>(char_msgs[0].wParam));
+
+  // Dispatches the key events to the Chrome IME extension which is listening to
+  // key events on the following two situations:
+  // 1) |char_msgs| is empty when the event is non-character key.
+  // 2) |char_msgs|.size() == 1 when the event is character key and the WM_CHAR
+  // messages have been combined in the event processing flow.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableMergeKeyCharEvents) &&
+      char_msgs.size() <= 1 && GetEngine() &&
+      GetEngine()->IsInterestedInKeyEvent()) {
+    ui::IMEEngineHandlerInterface::KeyEventDoneCallback callback = base::Bind(
+        &InputMethodWin::ProcessKeyEventDone, weak_ptr_factory_.GetWeakPtr(),
+        base::Owned(new ui::KeyEvent(*event)),
+        base::Owned(new std::vector<MSG>(char_msgs)));
+    GetEngine()->ProcessKeyEvent(*event, callback);
+  } else {
+    ProcessKeyEventDone(event, &char_msgs, false);
+  }
+}
+
+void InputMethodWin::ProcessKeyEventDone(ui::KeyEvent* event,
+                                         const std::vector<MSG>* char_msgs,
+                                         bool is_handled) {
+  DCHECK(event);
+  if (is_handled)
+    return;
 
   ui::EventDispatchDetails details = DispatchKeyEventPostIME(event);
   if (details.dispatcher_destroyed || details.target_destroyed ||
@@ -176,10 +203,9 @@ void InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
     return;
   }
 
-  for (size_t i = 0; i < char_msgs.size(); ++i) {
-    MSG msg = char_msgs[i];
+  BOOL handled;
+  for (const auto& msg : (*char_msgs))
     OnChar(msg.hwnd, msg.message, msg.wParam, msg.lParam, msg, &handled);
-  }
 }
 
 void InputMethodWin::OnTextInputTypeChanged(const TextInputClient* client) {
@@ -190,10 +216,19 @@ void InputMethodWin::OnTextInputTypeChanged(const TextInputClient* client) {
 }
 
 void InputMethodWin::OnCaretBoundsChanged(const TextInputClient* client) {
-  if (!enabled_ || !IsTextInputClientFocused(client) ||
-      !IsWindowFocused(client)) {
+  if (!IsTextInputClientFocused(client) || !IsWindowFocused(client))
     return;
+  TextInputType text_input_type = GetTextInputType();
+  if (client == GetTextInputClient() &&
+      text_input_type != TEXT_INPUT_TYPE_NONE &&
+      text_input_type != TEXT_INPUT_TYPE_PASSWORD && GetEngine()) {
+    // |enabled_| == false could be faked, and the engine should rely on the
+    // real type from GetTextInputType().
+    GetEngine()->SetCompositionBounds(GetCompositionBounds(client));
   }
+  if (!enabled_)
+    return;
+
   // The current text input type should not be NONE if |client| is focused.
   DCHECK(!IsTextInputTypeNone());
   // Tentatively assume that the returned value is DIP (Density Independent
@@ -214,8 +249,18 @@ void InputMethodWin::OnCaretBoundsChanged(const TextInputClient* client) {
 }
 
 void InputMethodWin::CancelComposition(const TextInputClient* client) {
-  if (enabled_ && IsTextInputClientFocused(client))
-    imm32_manager_.CancelIME(toplevel_window_handle_);
+  if (IsTextInputClientFocused(client)) {
+    // |enabled_| == false could be faked, and the engine should rely on the
+    // real type get from GetTextInputType().
+    TextInputType text_input_type = GetTextInputType();
+    if (text_input_type != TEXT_INPUT_TYPE_NONE &&
+        text_input_type != TEXT_INPUT_TYPE_PASSWORD && GetEngine()) {
+      GetEngine()->Reset();
+    }
+
+    if (enabled_)
+      imm32_manager_.CancelIME(toplevel_window_handle_);
+  }
 }
 
 void InputMethodWin::OnInputLocaleChanged() {
@@ -591,27 +636,30 @@ bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
 }
 
 void InputMethodWin::DispatchFabricatedKeyEvent(ui::KeyEvent* event) {
-  if (event->is_char()) {
-    if (GetTextInputClient()) {
-      ui::KeyEvent ch_event(*event);
-      ch_event.set_character(static_cast<base::char16>(event->key_code()));
-      GetTextInputClient()->InsertChar(ch_event);
-      return;
-    }
+  // The key event if from calling input.ime.sendKeyEvent or test.
+  ui::EventDispatchDetails details = DispatchKeyEventPostIME(event);
+  if (details.dispatcher_destroyed || details.target_destroyed ||
+      event->stopped_propagation()) {
+    return;
   }
-  ignore_result(DispatchKeyEventPostIME(event));
+
+  if ((event->is_char() || event->GetDomKey().IsCharacter()) &&
+      event->type() == ui::ET_KEY_PRESSED && GetTextInputClient())
+    GetTextInputClient()->InsertChar(*event);
 }
 
 void InputMethodWin::ConfirmCompositionText() {
   if (composing_window_handle_)
     imm32_manager_.CleanupComposition(composing_window_handle_);
 
-  if (!IsTextInputTypeNone()) {
-    // Though above line should confirm the client's composition text by sending
-    // a result text to us, in case the input method and the client are in
-    // inconsistent states, we check the client's composition state again.
-    if (GetTextInputClient()->HasCompositionText())
-      GetTextInputClient()->ConfirmCompositionText();
+  // Though above line should confirm the client's composition text by sending a
+  // result text to us, in case the input method and the client are in
+  // inconsistent states, we check the client's composition state again.
+  if (!IsTextInputTypeNone() && GetTextInputClient()->HasCompositionText()) {
+    GetTextInputClient()->ConfirmCompositionText();
+
+    if (GetEngine())
+      GetEngine()->Reset();
   }
 }
 
@@ -619,7 +667,10 @@ void InputMethodWin::UpdateIMEState() {
   // Use switch here in case we are going to add more text input types.
   // We disable input method in password field.
   const HWND window_handle = toplevel_window_handle_;
-  const TextInputType text_input_type = GetTextInputType();
+  const TextInputType text_input_type =
+      (GetEngine() && GetEngine()->IsInterestedInKeyEvent())
+          ? TEXT_INPUT_TYPE_NONE
+          : GetTextInputType();
   const TextInputMode text_input_mode = GetTextInputMode();
   switch (text_input_type) {
     case ui::TEXT_INPUT_TYPE_NONE:
@@ -636,6 +687,23 @@ void InputMethodWin::UpdateIMEState() {
   imm32_manager_.SetTextInputMode(window_handle, text_input_mode);
   tsf_inputscope::SetInputScopeForTsfUnawareWindow(
       window_handle, text_input_type, text_input_mode);
+
+  if (!ui::IMEBridge::Get())  // IMEBridge could be null for tests.
+    return;
+
+  const TextInputType old_text_input_type =
+      ui::IMEBridge::Get()->GetCurrentInputContext().type;
+  ui::IMEEngineHandlerInterface::InputContext context(
+      GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
+  ui::IMEBridge::Get()->SetCurrentInputContext(context);
+
+  ui::IMEEngineHandlerInterface* engine = GetEngine();
+  if (engine) {
+    if (old_text_input_type != ui::TEXT_INPUT_TYPE_NONE)
+      engine->FocusOut();
+    if (GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE)
+      engine->FocusIn(context);
+  }
 }
 
 }  // namespace ui

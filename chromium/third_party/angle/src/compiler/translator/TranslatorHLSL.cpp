@@ -47,7 +47,7 @@ void TranslatorHLSL::translate(TIntermNode *root, int compileOptions)
 
     // Work around D3D9 bug that would manifest in vertex shaders with selection blocks which
     // use a vertex attribute as a condition, and some related computation in the else block.
-    if (getOutputType() == SH_HLSL9_OUTPUT && getShaderType() == GL_VERTEX_SHADER)
+    if (getOutputType() == SH_HLSL_3_0_OUTPUT && getShaderType() == GL_VERTEX_SHADER)
     {
         sh::RewriteElseBlocks(root, getTemporaryIndex());
     }
@@ -72,13 +72,7 @@ unsigned int TranslatorHLSL::getInterfaceBlockRegister(const std::string &interf
     return mInterfaceBlockRegisterMap.find(interfaceBlockName)->second;
 }
 
-bool TranslatorHLSL::hasUniform(const std::string &uniformName) const
+const std::map<std::string, unsigned int> *TranslatorHLSL::getUniformRegisterMap() const
 {
-    return (mUniformRegisterMap.count(uniformName) > 0);
-}
-
-unsigned int TranslatorHLSL::getUniformRegister(const std::string &uniformName) const
-{
-    ASSERT(hasUniform(uniformName));
-    return mUniformRegisterMap.find(uniformName)->second;
+    return &mUniformRegisterMap;
 }

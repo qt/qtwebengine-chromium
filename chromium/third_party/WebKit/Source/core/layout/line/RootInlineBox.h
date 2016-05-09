@@ -30,14 +30,14 @@ namespace blink {
 
 class EllipsisBox;
 class HitTestResult;
-class LayoutBlockFlow;
+class LineLayoutBlockFlow;
 
 struct BidiStatus;
 struct GapRects;
 
 class RootInlineBox : public InlineFlowBox {
 public:
-    explicit RootInlineBox(LayoutBlockFlow&);
+    explicit RootInlineBox(LineLayoutItem);
 
     void destroy() final;
 
@@ -61,10 +61,7 @@ public:
 
     LayoutUnit selectionTop() const;
     LayoutUnit selectionBottom() const;
-    LayoutUnit selectionHeight() const { return max<LayoutUnit>(0, selectionBottom() - selectionTop()); }
-
-    LayoutUnit selectionTopAdjustedForPrecedingBlock() const;
-    LayoutUnit selectionHeightAdjustedForPrecedingBlock() const { return max<LayoutUnit>(0, selectionBottom() - selectionTopAdjustedForPrecedingBlock()); }
+    LayoutUnit selectionHeight() const { return (selectionBottom() - selectionTop()).clampNegativeToZero(); }
 
     LayoutUnit blockDirectionPointInLine() const;
 
@@ -112,13 +109,11 @@ public:
     using InlineBox::hasSelectedChildren;
     using InlineBox::setHasSelectedChildren;
 
-    SelectionState selectionState() const final;
+    SelectionState getSelectionState() const final;
     InlineBox* firstSelectedBox() const;
     InlineBox* lastSelectedBox() const;
 
-    GapRects lineSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*) const;
-
-    LayoutBlockFlow& block() const;
+    LineLayoutBlockFlow block() const;
 
     InlineBox* closestLeafChildForPoint(const LayoutPoint&, bool onlyEditableLeaves);
     InlineBox* closestLeafChildForLogicalLeftPosition(LayoutUnit, bool onlyEditableLeaves = false);

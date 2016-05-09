@@ -25,17 +25,20 @@ namespace blink {
 
 GraphicsLayerDebugInfo::GraphicsLayerDebugInfo()
     : m_compositingReasons(CompositingReasonNone)
+    , m_squashingDisallowedReasons(SquashingDisallowedReasonsNone)
     , m_ownerNodeId(0)
 {
 }
 
 GraphicsLayerDebugInfo::~GraphicsLayerDebugInfo() { }
 
-scoped_refptr<base::trace_event::TracedValue> GraphicsLayerDebugInfo::asTracedValue() const
+std::unique_ptr<base::trace_event::TracedValue> GraphicsLayerDebugInfo::asTracedValue() const
 {
-    scoped_refptr<base::trace_event::TracedValue> tracedValue = new base::trace_event::TracedValue;
+    std::unique_ptr<base::trace_event::TracedValue> tracedValue(
+        new base::trace_event::TracedValue());
     appendAnnotatedInvalidateRects(tracedValue.get());
     appendCompositingReasons(tracedValue.get());
+    appendSquashingDisallowedReasons(tracedValue.get());
     appendOwnerNodeId(tracedValue.get());
     return tracedValue;
 }
@@ -65,6 +68,17 @@ void GraphicsLayerDebugInfo::appendCompositingReasons(base::trace_event::TracedV
         if (!(m_compositingReasons & kCompositingReasonStringMap[i].reason))
             continue;
         tracedValue->AppendString(kCompositingReasonStringMap[i].description);
+    }
+    tracedValue->EndArray();
+}
+
+void GraphicsLayerDebugInfo::appendSquashingDisallowedReasons(base::trace_event::TracedValue* tracedValue) const
+{
+    tracedValue->BeginArray("squashing_disallowed_reasons");
+    for (size_t i = 0; i < kNumberOfSquashingDisallowedReasons; ++i) {
+        if (!(m_compositingReasons & kSquashingDisallowedReasonStringMap[i].reason))
+            continue;
+        tracedValue->AppendString(kSquashingDisallowedReasonStringMap[i].description);
     }
     tracedValue->EndArray();
 }

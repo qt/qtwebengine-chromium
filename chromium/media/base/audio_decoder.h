@@ -11,8 +11,8 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/audio_decoder_config.h"
-#include "media/base/cdm_context.h"
 #include "media/base/channel_layout.h"
+#include "media/base/decode_status.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
@@ -20,19 +20,11 @@
 namespace media {
 
 class AudioBuffer;
+class CdmContext;
 class DemuxerStream;
 
 class MEDIA_EXPORT AudioDecoder {
  public:
-  // Status codes for decode operations.
-  // TODO(rileya): Now that both AudioDecoder and VideoDecoder Status enums
-  // match, break them into a decoder_status.h.
-  enum Status {
-    kOk,          // We're all good.
-    kAborted,     // We aborted as a result of Reset() or destruction.
-    kDecodeError  // A decoding error occurred.
-  };
-
   // Callback for VideoDecoder initialization.
   typedef base::Callback<void(bool success)> InitCB;
 
@@ -40,10 +32,9 @@ class MEDIA_EXPORT AudioDecoder {
   // available. Only non-EOS frames should be returned via this callback.
   typedef base::Callback<void(const scoped_refptr<AudioBuffer>&)> OutputCB;
 
-  // Callback for Decode(). Called after the decoder has completed decoding
-  // corresponding DecoderBuffer, indicating that it's ready to accept another
-  // buffer to decode.
-  typedef base::Callback<void(Status)> DecodeCB;
+  // Callback for Decode(). Called after the decoder has accepted corresponding
+  // DecoderBuffer, indicating that the pipeline can send next buffer to decode.
+  typedef base::Callback<void(DecodeStatus)> DecodeCB;
 
   AudioDecoder();
 
@@ -56,17 +47,15 @@ class MEDIA_EXPORT AudioDecoder {
   // Returns the name of the decoder for logging purpose.
   virtual std::string GetDisplayName() const = 0;
 
-  // Initializes an AudioDecoder with the given DemuxerStream, executing the
-  // callback upon completion.
+  // Initializes an AudioDecoder with |config|, executing the |init_cb| upon
+  // completion.
   //
-  // |set_cdm_ready_cb| can be used to set/cancel a CdmReadyCB with which the
-  // decoder can be notified when a CDM is ready. The decoder can use the CDM to
-  // handle encrypted video stream.
-  //
-  //  |init_cb| is used to return initialization status.
-  //  |output_cb| is called for decoded audio buffers (see Decode()).
+  // |cdm_context| can be used to handle encrypted buffers. May be null if the
+  // stream is not encrypted.
+  // |init_cb| is used to return initialization status.
+  // |output_cb| is called for decoded audio buffers (see Decode()).
   virtual void Initialize(const AudioDecoderConfig& config,
-                          const SetCdmReadyCB& set_cdm_ready_cb,
+                          CdmContext* cdm_context,
                           const InitCB& init_cb,
                           const OutputCB& output_cb) = 0;
 
@@ -87,6 +76,9 @@ class MEDIA_EXPORT AudioDecoder {
   // Resets decoder state. All pending Decode() requests will be finished or
   // aborted before |closure| is called.
   virtual void Reset(const base::Closure& closure) = 0;
+
+  // Returns true if the decoder needs bitstream conversion before decoding.
+  virtual bool NeedsBitstreamConversion() const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioDecoder);

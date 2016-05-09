@@ -55,12 +55,14 @@ class DumpAccessibilityTreeTest : public DumpAccessibilityTestBase {
   void AddDefaultFilters(std::vector<Filter>* filters) override {
     filters->push_back(Filter(base::ASCIIToUTF16("FOCUSABLE"), Filter::ALLOW));
     filters->push_back(Filter(base::ASCIIToUTF16("READONLY"), Filter::ALLOW));
-    filters->push_back(Filter(base::ASCIIToUTF16("name*"), Filter::ALLOW));
+    filters->push_back(Filter(base::ASCIIToUTF16("name=*"), Filter::ALLOW));
+    filters->push_back(Filter(base::ASCIIToUTF16("roleDescription=*"),
+                              Filter::ALLOW));
     filters->push_back(Filter(base::ASCIIToUTF16("*=''"), Filter::DENY));
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    ContentBrowserTest::SetUpCommandLine(command_line);
+    DumpAccessibilityTestBase::SetUpCommandLine(command_line);
     // Enable <dialog>, which is used in some tests.
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableExperimentalWebPlatformFeatures);
@@ -75,6 +77,17 @@ class DumpAccessibilityTreeTest : public DumpAccessibilityTestBase {
 
     base::FilePath aria_file = test_path.Append(base::FilePath(file_path));
     RunTest(aria_file, "accessibility/aria");
+  }
+
+  void RunCSSTest(const base::FilePath::CharType* file_path) {
+    base::FilePath dir_test_data;
+    ASSERT_TRUE(PathService::Get(DIR_TEST_DATA, &dir_test_data));
+    base::FilePath test_path(
+        dir_test_data.AppendASCII("accessibility").AppendASCII("css"));
+    ASSERT_TRUE(base::PathExists(test_path)) << test_path.LossyDisplayName();
+
+    base::FilePath css_file = test_path.Append(base::FilePath(file_path));
+    RunTest(css_file, "accessibility/css");
   }
 
   void RunHtmlTest(const base::FilePath::CharType* file_path) {
@@ -105,12 +118,28 @@ class DumpAccessibilityTreeTest : public DumpAccessibilityTestBase {
   }
 };
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityCSSColor) {
+  RunCSSTest(FILE_PATH_LITERAL("color.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityCSSFontStyle) {
+  RunCSSTest(FILE_PATH_LITERAL("font-style.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityCSSLanguage) {
+  RunCSSTest(FILE_PATH_LITERAL("language.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityA) {
   RunHtmlTest(FILE_PATH_LITERAL("a.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAbbr) {
   RunHtmlTest(FILE_PATH_LITERAL("abbr.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityActionVerbs) {
+  RunHtmlTest(FILE_PATH_LITERAL("action-verbs.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAddress) {
@@ -554,7 +583,12 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaTextbox) {
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-    AccessibilityAriaTextboxWithSelection) {
+                       AccessibilityAriaTextboxWithRichText) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-textbox-with-rich-text.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaTextboxWithSelection) {
   RunAriaTest(FILE_PATH_LITERAL("aria-textbox-with-selection.html"));
 }
 
@@ -826,10 +860,19 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityIframe) {
   RunHtmlTest(FILE_PATH_LITERAL("iframe.html"));
 }
 
-// Flaky. See http://crbug.com/224659.
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       DISABLED_AccessibilityIframeCoordinates) {
+                       AccessibilityIframeCrossProcess) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-cross-process.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeCoordinates) {
   RunHtmlTest(FILE_PATH_LITERAL("iframe-coordinates.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeCoordinatesCrossProcess) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-coordinates-cross-process.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
@@ -837,8 +880,37 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("iframe-presentational.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeTransform) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-transform.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeTransformCrossProcess) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-transform-cross-process.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeTransformNested) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-transform-nested.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeTransformNestedCrossProcess) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-transform-nested-cross-process.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityIframeTransformScrolled) {
+  RunHtmlTest(FILE_PATH_LITERAL("iframe-transform-scrolled.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityImg) {
   RunHtmlTest(FILE_PATH_LITERAL("img.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityImgEmptyAlt) {
+  RunHtmlTest(FILE_PATH_LITERAL("img-empty-alt.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputButton) {
@@ -1074,13 +1146,29 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-opened.html"));
 }
 
+// Flaky on Windows and Mac: crbug.com/593846
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_AccessibilityModalDialogInIframeClosed \
+    DISABLED_AccessibilityModalDialogInIframeClosed
+#else
+#define MAYBE_AccessibilityModalDialogInIframeClosed \
+    AccessibilityModalDialogInIframeClosed
+#endif
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       AccessibilityModalDialogInIframeClosed) {
+                       MAYBE_AccessibilityModalDialogInIframeClosed) {
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-closed.html"));
 }
 
+// Flaky on Windows and Mac: crbug.com/593846
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_AccessibilityModalDialogInIframeOpened \
+    DISABLED_AccessibilityModalDialogInIframeOpened
+#else
+#define MAYBE_AccessibilityModalDialogInIframeOpened \
+    AccessibilityModalDialogInIframeOpened
+#endif
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
-                       AccessibilityModalDialogInIframeOpened) {
+                       MAYBE_AccessibilityModalDialogInIframeOpened) {
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-opened.html"));
 }
 

@@ -27,7 +27,8 @@ ServiceWorkerFetchRequest::ServiceWorkerFetchRequest()
       blob_size(0),
       credentials_mode(FETCH_CREDENTIALS_MODE_OMIT),
       redirect_mode(FetchRedirectMode::FOLLOW_MODE),
-      is_reload(false) {}
+      is_reload(false),
+      fetch_type(ServiceWorkerFetchType::FETCH) {}
 
 ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
     const GURL& url,
@@ -46,7 +47,11 @@ ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
       referrer(referrer),
       credentials_mode(FETCH_CREDENTIALS_MODE_OMIT),
       redirect_mode(FetchRedirectMode::FOLLOW_MODE),
-      is_reload(is_reload) {}
+      is_reload(is_reload),
+      fetch_type(ServiceWorkerFetchType::FETCH) {}
+
+ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
+    const ServiceWorkerFetchRequest& other) = default;
 
 ServiceWorkerFetchRequest::~ServiceWorkerFetchRequest() {}
 
@@ -54,8 +59,7 @@ ServiceWorkerResponse::ServiceWorkerResponse()
     : status_code(0),
       response_type(blink::WebServiceWorkerResponseTypeOpaque),
       blob_size(0),
-      error(blink::WebServiceWorkerResponseErrorUnknown) {
-}
+      error(blink::WebServiceWorkerResponseErrorUnknown) {}
 
 ServiceWorkerResponse::ServiceWorkerResponse(
     const GURL& url,
@@ -66,7 +70,10 @@ ServiceWorkerResponse::ServiceWorkerResponse(
     const std::string& blob_uuid,
     uint64_t blob_size,
     const GURL& stream_url,
-    blink::WebServiceWorkerResponseError error)
+    blink::WebServiceWorkerResponseError error,
+    base::Time response_time,
+    bool is_in_cache_storage,
+    const std::string& cache_storage_cache_name)
     : url(url),
       status_code(status_code),
       status_text(status_text),
@@ -75,7 +82,13 @@ ServiceWorkerResponse::ServiceWorkerResponse(
       blob_uuid(blob_uuid),
       blob_size(blob_size),
       stream_url(stream_url),
-      error(error) {}
+      error(error),
+      response_time(response_time),
+      is_in_cache_storage(is_in_cache_storage),
+      cache_storage_cache_name(cache_storage_cache_name) {}
+
+ServiceWorkerResponse::ServiceWorkerResponse(
+    const ServiceWorkerResponse& other) = default;
 
 ServiceWorkerResponse::~ServiceWorkerResponse() {}
 
@@ -83,6 +96,11 @@ ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
     : handle_id(kInvalidServiceWorkerHandleId),
       state(blink::WebServiceWorkerStateUnknown),
       version_id(kInvalidServiceWorkerVersionId) {}
+
+bool ServiceWorkerObjectInfo::IsValid() const {
+  return handle_id != kInvalidServiceWorkerHandleId &&
+         version_id != kInvalidServiceWorkerVersionId;
+}
 
 ServiceWorkerRegistrationObjectInfo::ServiceWorkerRegistrationObjectInfo()
     : handle_id(kInvalidServiceWorkerRegistrationHandleId),
@@ -93,5 +111,15 @@ ServiceWorkerClientQueryOptions::ServiceWorkerClientQueryOptions()
     : client_type(blink::WebServiceWorkerClientTypeWindow),
       include_uncontrolled(false) {
 }
+
+ExtendableMessageEventSource::ExtendableMessageEventSource() {}
+
+ExtendableMessageEventSource::ExtendableMessageEventSource(
+    const ServiceWorkerClientInfo& client_info)
+    : client_info(client_info) {}
+
+ExtendableMessageEventSource::ExtendableMessageEventSource(
+    const ServiceWorkerObjectInfo& service_worker_info)
+    : service_worker_info(service_worker_info) {}
 
 }  // namespace content

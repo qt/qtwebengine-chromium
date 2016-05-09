@@ -5,7 +5,7 @@
 # If you would like to add a new extended attribute or value, please:
 #     (1) add the extended attribute or value to this file
 #     (2) add an explanation to the Blink IDL extended attributes document:
-#         http://www.chromium.org/blink/webidl/blink-idl-extended-attributes
+#         IDLExtendedAttributes.md (in this directory)
 #     (3) add appropriate test cases to run-bindings-tests
 #
 # The syntax of this file is as follows:
@@ -31,10 +31,9 @@
 #       arbitrary, but that "X" is standard, e.g. [Attr=X], [Attr=Foo].
 #
 
-APIExperimentEnabled=*
-ActiveDOMObject
+ActiveScriptWrappable
 CachedAttribute=*
-CallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
+CallWith=ExecutionContext|ScriptState|ScriptArguments|CurrentWindow|EnteredWindow|ThisValue
 CheckSecurity=Receiver|ReturnValue
 Clamp
 Constructor
@@ -49,7 +48,6 @@ DependentLifetime
 DeprecateAs=*
 DoNotCheckConstants
 DoNotCheckSecurity=|Setter
-DoNotCheckSignature
 EnforceRange
 Exposed=*
 FlexibleArrayBufferView
@@ -71,6 +69,7 @@ NoImplHeader
 NoInterfaceObject
 NotEnumerable
 OnlyExposedToPrivateScript
+OriginTrialEnabled=*
 OverrideBuiltins
 PartialInterfaceImplementedAs=*
 PermissiveDictionaryConversion
@@ -91,11 +90,9 @@ RuntimeEnabled=*
 SameObject
 SetWrapperReferenceFrom=*
 SetWrapperReferenceTo=*
-SetterCallWith=ExecutionContext|ScriptArguments|ActiveWindow|FirstWindow
+SetterCallWith=ExecutionContext|ScriptArguments|CurrentWindow|EnteredWindow
 TreatNullAs=NullString|EmptyString
-TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=NullString
 URL
 Unforgeable
 Unscopeable
-WillBeGarbageCollected

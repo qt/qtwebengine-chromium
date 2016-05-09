@@ -42,10 +42,10 @@ class Document;
 class PagePopup;
 class PagePopupClient;
 
-class PagePopupController final : public RefCountedWillBeGarbageCollected<PagePopupController>, public ScriptWrappable {
+class PagePopupController final : public GarbageCollected<PagePopupController>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<PagePopupController> create(PagePopup&, PagePopupClient*);
+    static PagePopupController* create(PagePopup&, PagePopupClient*);
     void setValueAndClosePopup(int numValue, const String& stringValue);
     void setValue(const String&);
     void closePopup();
@@ -55,7 +55,6 @@ public:
     String formatShortMonth(int year, int zeroBaseMonth);
     String formatWeek(int year, int weekNumber, const String& localizedStartDate);
     void clearPagePopupClient();
-    void histogramEnumeration(const String& name, int sample, int boundaryValue);
     void setWindowRect(int x, int y, int width, int height);
 
     DEFINE_INLINE_TRACE() { }

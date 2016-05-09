@@ -54,8 +54,6 @@ public:
     virtual bool isLayoutMultiColumnFlowThread() const { return false; }
     virtual bool isLayoutPagedFlowThread() const { return false; }
 
-    bool supportsPaintInvalidationStateCachedOffsets() const override { return false; }
-
     static LayoutFlowThread* locateFlowThreadContainingBlockOf(const LayoutObject&);
 
     void layout() override;
@@ -82,12 +80,13 @@ public:
     void invalidateColumnSets();
     bool hasValidColumnSetInfo() const { return !m_columnSetsInvalidated && !m_multiColumnSetList.isEmpty(); }
 
-    void mapToVisibleRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, const PaintInvalidationState*) const override;
+    bool mapToVisualRectInAncestorSpace(const LayoutBoxModelObject* ancestor, LayoutRect&, VisualRectFlags = DefaultVisualRectFlags) const override;
 
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule);
 
-    virtual void contentWasLaidOut(LayoutUnit logicalTopInFlowThreadAfterPagination) = 0;
+    virtual void contentWasLaidOut(LayoutUnit logicalBottomInFlowThreadAfterPagination) = 0;
+    virtual bool canSkipLayout(const LayoutBox&) const = 0;
 
     // Find and return the next logical top after |flowThreadOffset| that can fit unbreakable
     // content as tall as |contentLogicalHeight|. |flowThreadOffset| is expected to be at the exact
@@ -155,7 +154,7 @@ DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutFlowThread, isLayoutFlowThread());
 // These structures are used by PODIntervalTree for debugging.
 #ifndef NDEBUG
 template <> struct ValueToString<LayoutMultiColumnSet*> {
-    static String string(const LayoutMultiColumnSet* value) { return String::format("%p", value); }
+    static String toString(const LayoutMultiColumnSet* value) { return String::format("%p", value); }
 };
 #endif
 

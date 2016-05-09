@@ -5,9 +5,9 @@
 #ifndef CC_ANIMATION_LAYER_ANIMATION_CONTROLLER_H_
 #define CC_ANIMATION_LAYER_ANIMATION_CONTROLLER_H_
 
+#include <bitset>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/layer_animation_event_observer.h"
+#include "cc/animation/target_property.h"
 #include "cc/base/cc_export.h"
 #include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/transform.h"
@@ -46,16 +47,14 @@ class CC_EXPORT LayerAnimationController
   void AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, base::TimeDelta time_offset);
   void RemoveAnimation(int animation_id);
-  void RemoveAnimation(int animation_id,
-                       Animation::TargetProperty target_property);
   void AbortAnimation(int animation_id);
-  void AbortAnimations(Animation::TargetProperty target_property);
+  void AbortAnimations(TargetProperty::Type target_property,
+                       bool needs_completion = false);
 
   // Ensures that the list of active animations on the main thread and the impl
   // thread are kept in sync. This function does not take ownership of the impl
-  // thread controller. This method is virtual for testing.
-  virtual void PushAnimationUpdatesTo(
-      LayerAnimationController* controller_impl);
+  // thread controller.
+  void PushAnimationUpdatesTo(LayerAnimationController* controller_impl);
 
   void Animate(base::TimeTicks monotonic_time);
   void AccumulatePropertyUpdates(base::TimeTicks monotonic_time,
@@ -70,7 +69,7 @@ class CC_EXPORT LayerAnimationController
 
   // Returns the active animation animating the given property that is either
   // running, or is next to run, if such an animation exists.
-  Animation* GetAnimation(Animation::TargetProperty target_property) const;
+  Animation* GetAnimation(TargetProperty::Type target_property) const;
 
   // Returns the active animation for the given unique animation id.
   Animation* GetAnimationById(int animation_id) const;
@@ -85,12 +84,12 @@ class CC_EXPORT LayerAnimationController
   // Returns true if there is an animation that is either currently animating
   // the given property or scheduled to animate this property in the future, and
   // that affects the given observer type.
-  bool IsPotentiallyAnimatingProperty(Animation::TargetProperty target_property,
+  bool IsPotentiallyAnimatingProperty(TargetProperty::Type target_property,
                                       ObserverType observer_type) const;
 
   // Returns true if there is an animation that is currently animating the given
   // property and that affects the given observer type.
-  bool IsCurrentlyAnimatingProperty(Animation::TargetProperty target_property,
+  bool IsCurrentlyAnimatingProperty(TargetProperty::Type target_property,
                                     ObserverType observer_type) const;
 
   void SetAnimationRegistrar(AnimationRegistrar* registrar);
@@ -100,6 +99,7 @@ class CC_EXPORT LayerAnimationController
   void NotifyAnimationFinished(const AnimationEvent& event);
   void NotifyAnimationAborted(const AnimationEvent& event);
   void NotifyAnimationPropertyUpdate(const AnimationEvent& event);
+  void NotifyAnimationTakeover(const AnimationEvent& event);
 
   void AddValueObserver(LayerAnimationValueObserver* observer);
   void RemoveValueObserver(LayerAnimationValueObserver* observer);
@@ -170,14 +170,15 @@ class CC_EXPORT LayerAnimationController
     return needs_to_start_animations_;
   }
 
- protected:
+ private:
   friend class base::RefCounted<LayerAnimationController>;
 
   explicit LayerAnimationController(int id);
-  virtual ~LayerAnimationController();
+  ~LayerAnimationController();
 
- private:
-  typedef base::hash_set<int> TargetProperties;
+  // A set of target properties. TargetProperty must be 0-based enum.
+  using TargetProperties =
+      std::bitset<TargetProperty::LAST_TARGET_PROPERTY + 1>;
 
   void PushNewAnimationsToImplThread(
       LayerAnimationController* controller_impl) const;

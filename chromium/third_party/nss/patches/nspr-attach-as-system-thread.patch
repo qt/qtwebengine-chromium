@@ -1,8 +1,8 @@
-diff --git a/pr/src/md/windows/w95thred.c b/pr/src/md/windows/w95thred.c
-index f5c7703..b2cebae 100644
---- a/pr/src/md/windows/w95thred.c
-+++ b/pr/src/md/windows/w95thred.c
-@@ -313,7 +313,7 @@ PRThread *thread;
+diff --git a/nspr/pr/src/md/windows/w95thred.c b/nspr/pr/src/md/windows/w95thred.c
+index 52bfb02..2741d94 100644
+--- a/nspr/pr/src/md/windows/w95thred.c
++++ b/nspr/pr/src/md/windows/w95thred.c
+@@ -318,7 +318,7 @@ PRThread *thread;
  
     	if (NULL == thread) {
  		thread = _PRI_AttachThread(

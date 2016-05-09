@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -16,6 +17,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/service_worker_context.h"
+#include "net/url_request/url_request_context_getter_observer.h"
 
 namespace base {
 class FilePath;
@@ -42,6 +44,7 @@ class StoragePartitionImpl;
 // is what is used internally in the service worker lib.
 class CONTENT_EXPORT ServiceWorkerContextWrapper
     : NON_EXPORTED_BASE(public ServiceWorkerContext),
+      public net::URLRequestContextGetterObserver,
       public base::RefCountedThreadSafe<ServiceWorkerContextWrapper> {
  public:
   using StatusCallback = base::Callback<void(ServiceWorkerStatusCode)>;
@@ -63,6 +66,14 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
             storage::SpecialStoragePolicy* special_storage_policy);
   void Shutdown();
 
+  // Must be called on the IO thread.
+  void InitializeResourceContext(
+      ResourceContext* resource_context,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter);
+
+  // For net::URLRequestContextGetterObserver
+  void OnContextShuttingDown() override;
+
   // Deletes all files on disk and restarts the system asynchronously. This
   // leaves the system in a disabled state until it's done. This should be
   // called on the IO thread.
@@ -78,8 +89,6 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   // be accessed on the IO thread, and can be null during initialization and
   // shutdown.
   ResourceContext* resource_context();
-
-  void set_resource_context(ResourceContext* resource_context);
 
   // The process manager can be used on either UI or IO.
   ServiceWorkerProcessManager* process_manager() {
@@ -102,11 +111,13 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   void StopAllServiceWorkersForOrigin(const GURL& origin) override;
   void ClearAllServiceWorkersForTest(const base::Closure& callback) override;
 
+  // These methods must only be called from the IO thread.
   ServiceWorkerRegistration* GetLiveRegistration(int64_t registration_id);
   ServiceWorkerVersion* GetLiveVersion(int64_t version_id);
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
+  // Must be called from the IO thread.
   void HasMainFrameProviderHost(const GURL& origin,
                                 const BoolCallback& callback) const;
 
@@ -119,6 +130,8 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   //  - If the registration does not have the active version but has the waiting
   //    version, activates the waiting version and runs |callback| when it is
   //    activated.
+  //
+  // Must be called from the IO thread.
   void FindReadyRegistrationForDocument(
       const GURL& document_url,
       const FindRegistrationCallback& callback);
@@ -132,10 +145,13 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   //  - If the registration does not have the active version but has the waiting
   //    version, activates the waiting version and runs |callback| when it is
   //    activated.
+  //
+  // Must be called from the IO thread.
   void FindReadyRegistrationForId(int64_t registration_id,
                                   const GURL& origin,
                                   const FindRegistrationCallback& callback);
 
+  // All these methods must be called from the IO thread.
   void GetAllRegistrations(const GetRegistrationsInfosCallback& callback);
   void GetRegistrationUserData(int64_t registration_id,
                                const std::string& key,
@@ -152,15 +168,19 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       const std::string& key,
       const GetUserDataForAllRegistrationsCallback& callback);
 
+  // This function can be called from any thread, but the callback will always
+  // be called on the UI thread.
   void StartServiceWorker(const GURL& pattern, const StatusCallback& callback);
+
+  // These methods can be called from any thread.
   void UpdateRegistration(const GURL& pattern);
-  void SetForceUpdateOnPageLoad(int64_t registration_id,
-                                bool force_update_on_page_load);
+  void SetForceUpdateOnPageLoad(bool force_update_on_page_load);
   void AddObserver(ServiceWorkerContextObserver* observer);
   void RemoveObserver(ServiceWorkerContextObserver* observer);
 
   bool is_incognito() const { return is_incognito_; }
 
+  // Must be called from the IO thread.
   bool OriginHasForeignFetchRegistrations(const GURL& origin);
 
  private:
@@ -198,6 +218,7 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
   void DidGetAllRegistrationsForGetAllOrigins(
       const GetUsageInfoCallback& callback,
+      ServiceWorkerStatusCode status,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
   void DidCheckHasServiceWorker(const CheckHasServiceWorkerCallback& callback,
@@ -215,7 +236,7 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   const scoped_refptr<base::ObserverListThreadSafe<
       ServiceWorkerContextObserver>> observer_list_;
   const scoped_ptr<ServiceWorkerProcessManager> process_manager_;
-  // Cleared in Shutdown():
+  // Cleared in ShutdownOnIO():
   scoped_ptr<ServiceWorkerContextCore> context_core_;
 
   // Initialized in Init(); true if the user data directory is empty.
@@ -226,6 +247,8 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
   // The ResourceContext associated with this context.
   ResourceContext* resource_context_;
+
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerContextWrapper);
 };

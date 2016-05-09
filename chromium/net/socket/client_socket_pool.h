@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/template_util.h"
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
@@ -61,11 +60,14 @@ class NET_EXPORT LowerLayeredPool {
 // A ClientSocketPool is used to restrict the number of sockets open at a time.
 // It also maintains a list of idle persistent sockets.
 //
+// Subclasses must also have an inner class SocketParams which is
+// the type for the |params| argument in RequestSocket() and
+// RequestSockets() below.
 class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
  public:
-  // Subclasses must also have an inner class SocketParams which is
-  // the type for the |params| argument in RequestSocket() and
-  // RequestSockets() below.
+  // Indicates whether or not a request for a socket should respect the
+  // SocketPool's global and per-group socket limits.
+  enum class RespectLimits { DISABLED, ENABLED };
 
   // Requests a connected socket for a group_name.
   //
@@ -96,9 +98,12 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
   // client of completion.
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
+  //
+  // If |respect_limits| is DISABLED, priority must be HIGHEST.
   virtual int RequestSocket(const std::string& group_name,
                             const void* params,
                             RequestPriority priority,
+                            RespectLimits respect_limits,
                             ClientSocketHandle* handle,
                             const CompletionCallback& callback,
                             const BoundNetLog& net_log) = 0;

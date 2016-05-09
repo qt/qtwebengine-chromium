@@ -35,8 +35,7 @@
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
-#include "core/fetch/MockImageResourceClient.h"
-#include "core/fetch/ResourcePtr.h"
+#include "core/fetch/MockResourceClients.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLVideoElement.h"
@@ -54,11 +53,11 @@ class ImageBitmapTest : public ::testing::Test {
 protected:
     virtual void SetUp()
     {
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(10, 10));
+        sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(10, 10);
         surface->getCanvas()->clear(0xFFFFFFFF);
         m_image = adoptRef(surface->newImageSnapshot());
 
-        RefPtr<SkSurface> surface2 = adoptRef(SkSurface::NewRasterN32Premul(5, 5));
+        sk_sp<SkSurface> surface2 = SkSurface::MakeRasterN32Premul(5, 5);
         surface2->getCanvas()->clear(0xAAAAAAAA);
         m_image2 = adoptRef(surface2->newImageSnapshot());
 
@@ -81,147 +80,68 @@ protected:
 
 TEST_F(ImageBitmapTest, ImageResourceConsistency)
 {
-    RefPtrWillBeRawPtr<HTMLImageElement> imageElement = HTMLImageElement::create(*Document::create().get());
-    imageElement->setImageResource(new ImageResource(StaticBitmapImage::create(m_image).get()));
+    const ImageBitmapOptions defaultOptions;
+    HTMLImageElement* imageElement = HTMLImageElement::create(*Document::create().get());
+    ImageResource* image = ImageResource::create(StaticBitmapImage::create(m_image).get());
+    imageElement->setImageResource(image);
 
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapNoCrop = ImageBitmap::create(imageElement.get(),
+    ImageBitmap* imageBitmapNoCrop = ImageBitmap::create(imageElement,
         IntRect(0, 0, m_image->width(), m_image->height()),
-        &(imageElement->document()));
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapInteriorCrop = ImageBitmap::create(imageElement.get(),
+        &(imageElement->document()), defaultOptions);
+    ImageBitmap* imageBitmapInteriorCrop = ImageBitmap::create(imageElement,
         IntRect(m_image->width() / 2, m_image->height() / 2, m_image->width() / 2, m_image->height() / 2),
-        &(imageElement->document()));
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapExteriorCrop = ImageBitmap::create(imageElement.get(),
+        &(imageElement->document()), defaultOptions);
+    ImageBitmap* imageBitmapExteriorCrop = ImageBitmap::create(imageElement,
         IntRect(-m_image->width() / 2, -m_image->height() / 2, m_image->width(), m_image->height()),
-        &(imageElement->document()));
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmapOutsideCrop = ImageBitmap::create(imageElement.get(),
+        &(imageElement->document()), defaultOptions);
+    ImageBitmap* imageBitmapOutsideCrop = ImageBitmap::create(imageElement,
         IntRect(-m_image->width(), -m_image->height(), m_image->width(), m_image->height()),
-        &(imageElement->document()));
+        &(imageElement->document()), defaultOptions);
 
-    ASSERT_EQ(imageBitmapNoCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->image()->imageForCurrentFrame());
-    ASSERT_NE(imageBitmapInteriorCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->image()->imageForCurrentFrame());
-    ASSERT_NE(imageBitmapExteriorCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->image()->imageForCurrentFrame());
+    ASSERT_EQ(imageBitmapNoCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->getImage()->imageForCurrentFrame());
+    ASSERT_NE(imageBitmapInteriorCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->getImage()->imageForCurrentFrame());
+    ASSERT_NE(imageBitmapExteriorCrop->bitmapImage()->imageForCurrentFrame(), imageElement->cachedImage()->getImage()->imageForCurrentFrame());
 
     StaticBitmapImage* emptyImage = imageBitmapOutsideCrop->bitmapImage();
-    ASSERT_NE(emptyImage->imageForCurrentFrame(), imageElement->cachedImage()->image()->imageForCurrentFrame());
-}
-
-// Verifies that HTMLImageElements are given an elevated CacheLiveResourcePriority when used to construct an ImageBitmap.
-// ImageBitmaps that have crop rects outside of the bounds of the HTMLImageElement do not have elevated CacheLiveResourcePriority.
-TEST_F(ImageBitmapTest, ImageBitmapLiveResourcePriority)
-{
-    RefPtrWillBePersistent<HTMLImageElement> imageNoCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageNoCrop = new ImageResource(ResourceRequest("http://foo.com/1"),
-        StaticBitmapImage::create(m_image).get());
-    imageNoCrop->setImageResource(cachedImageNoCrop.get());
-
-    RefPtrWillBePersistent<HTMLImageElement> imageInteriorCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageInteriorCrop = new ImageResource(ResourceRequest("http://foo.com/2"),
-        StaticBitmapImage::create(m_image).get());
-    imageInteriorCrop->setImageResource(cachedImageInteriorCrop.get());
-
-    RefPtrWillBePersistent<HTMLImageElement> imageExteriorCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageExteriorCrop = new ImageResource(ResourceRequest("http://foo.com/3"),
-        StaticBitmapImage::create(m_image).get());
-    imageExteriorCrop->setImageResource(cachedImageExteriorCrop.get());
-
-    RefPtrWillBePersistent<HTMLImageElement> imageOutsideCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageOutsideCrop = new ImageResource(ResourceRequest("http://foo.com/4"),
-        StaticBitmapImage::create(m_image).get());
-    imageOutsideCrop->setImageResource(cachedImageOutsideCrop.get());
-
-    MockImageResourceClient mockClient1(cachedImageNoCrop);
-    MockImageResourceClient mockClient2(cachedImageInteriorCrop);
-    MockImageResourceClient mockClient3(cachedImageExteriorCrop);
-    MockImageResourceClient mockClient4(cachedImageOutsideCrop);
-
-    memoryCache()->add(cachedImageNoCrop.get());
-    memoryCache()->add(cachedImageInteriorCrop.get());
-    memoryCache()->add(cachedImageExteriorCrop.get());
-    memoryCache()->add(cachedImageOutsideCrop.get());
-    memoryCache()->updateDecodedResource(cachedImageNoCrop.get(), UpdateForPropertyChange);
-    memoryCache()->updateDecodedResource(cachedImageInteriorCrop.get(), UpdateForPropertyChange);
-    memoryCache()->updateDecodedResource(cachedImageExteriorCrop.get(), UpdateForPropertyChange);
-    memoryCache()->updateDecodedResource(cachedImageOutsideCrop.get(), UpdateForPropertyChange);
-
-    // HTMLImageElements should default to CacheLiveResourcePriorityLow.
-    ASSERT_EQ(memoryCache()->priority(imageNoCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    ASSERT_EQ(memoryCache()->priority(imageInteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    ASSERT_EQ(memoryCache()->priority(imageExteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    ASSERT_EQ(memoryCache()->priority(imageOutsideCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-
-    RefPtrWillBePersistent<ImageBitmap> imageBitmapInteriorCrop = ImageBitmap::create(imageInteriorCrop.get(),
-        IntRect(m_image->width() / 2, m_image->height() / 2, m_image->width(), m_image->height()),
-        &(imageInteriorCrop->document()));
-    {
-        RefPtrWillBePersistent<ImageBitmap> imageBitmapNoCrop = ImageBitmap::create(imageNoCrop.get(),
-            IntRect(0, 0, m_image->width(), m_image->height()),
-            &(imageNoCrop->document()));
-        RefPtrWillBePersistent<ImageBitmap> imageBitmapInteriorCrop2 = ImageBitmap::create(imageInteriorCrop.get(),
-            IntRect(m_image->width() / 2, m_image->height() / 2, m_image->width(), m_image->height()),
-            &(imageInteriorCrop->document()));
-        RefPtrWillBePersistent<ImageBitmap> imageBitmapExteriorCrop = ImageBitmap::create(imageExteriorCrop.get(),
-            IntRect(-m_image->width() / 2, -m_image->height() / 2, m_image->width(), m_image->height()),
-            &(imageExteriorCrop->document()));
-        RefPtrWillBePersistent<ImageBitmap> imageBitmapOutsideCrop = ImageBitmap::create(imageOutsideCrop.get(),
-            IntRect(-m_image->width(), -m_image->height(), m_image->width(), m_image->height()),
-            &(imageOutsideCrop->document()));
-
-        // Images are not referenced by ImageBitmap anymore, so always CacheLiveResourcePriorityLow
-        ASSERT_EQ(memoryCache()->priority(imageNoCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-        ASSERT_EQ(memoryCache()->priority(imageInteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-        ASSERT_EQ(memoryCache()->priority(imageExteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-
-        // ImageBitmaps that do not contain any of the source image do not elevate CacheLiveResourcePriority.
-        ASSERT_EQ(memoryCache()->priority(imageOutsideCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    }
-    // Force a garbage collection to sweep out the local ImageBitmaps.
-    Heap::collectGarbage(BlinkGC::NoHeapPointersOnStack, BlinkGC::GCWithSweep, BlinkGC::ForcedGC);
-
-    // CacheLiveResourcePriroity should return to CacheLiveResourcePriorityLow when no ImageBitmaps reference the image.
-    ASSERT_EQ(memoryCache()->priority(imageNoCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    ASSERT_EQ(memoryCache()->priority(imageExteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    ASSERT_EQ(memoryCache()->priority(imageOutsideCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-
-    // There is still an ImageBitmap that references this image.
-    ASSERT_EQ(memoryCache()->priority(imageInteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
-    imageBitmapInteriorCrop = nullptr;
+    ASSERT_NE(emptyImage->imageForCurrentFrame(), imageElement->cachedImage()->getImage()->imageForCurrentFrame());
 }
 
 // Verifies that ImageBitmaps constructed from HTMLImageElements hold a reference to the original Image if the HTMLImageElement src is changed.
 TEST_F(ImageBitmapTest, ImageBitmapSourceChanged)
 {
-    RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> originalImageResource = new ImageResource(
+    HTMLImageElement* image = HTMLImageElement::create(*Document::create().get());
+    ImageResource* originalImageResource = ImageResource::create(
         StaticBitmapImage::create(m_image).get());
-    image->setImageResource(originalImageResource.get());
+    image->setImageResource(originalImageResource);
 
-    RefPtrWillBeRawPtr<ImageBitmap> imageBitmap = ImageBitmap::create(image.get(),
+    const ImageBitmapOptions defaultOptions;
+    ImageBitmap* imageBitmap = ImageBitmap::create(image,
         IntRect(0, 0, m_image->width(), m_image->height()),
-        &(image->document()));
-    ASSERT_EQ(imageBitmap->bitmapImage()->imageForCurrentFrame(), originalImageResource->image()->imageForCurrentFrame());
+        &(image->document()), defaultOptions);
+    ASSERT_EQ(imageBitmap->bitmapImage()->imageForCurrentFrame(), originalImageResource->getImage()->imageForCurrentFrame());
 
-    ResourcePtr<ImageResource> newImageResource = new ImageResource(
+    ImageResource* newImageResource = ImageResource::create(
         StaticBitmapImage::create(m_image2).get());
-    image->setImageResource(newImageResource.get());
+    image->setImageResource(newImageResource);
 
     // The ImageBitmap should contain the same data as the original cached image
     {
-        ASSERT_EQ(imageBitmap->bitmapImage()->imageForCurrentFrame(), originalImageResource->image()->imageForCurrentFrame());
+        ASSERT_EQ(imageBitmap->bitmapImage()->imageForCurrentFrame(), originalImageResource->getImage()->imageForCurrentFrame());
         SkImage* image1 = imageBitmap->bitmapImage()->imageForCurrentFrame().get();
         ASSERT_NE(image1, nullptr);
-        SkImage* image2 = originalImageResource->image()->imageForCurrentFrame().get();
+        SkImage* image2 = originalImageResource->getImage()->imageForCurrentFrame().get();
         ASSERT_NE(image2, nullptr);
         ASSERT_EQ(image1, image2);
     }
 
     {
-        ASSERT_NE(imageBitmap->bitmapImage()->imageForCurrentFrame(), newImageResource->image()->imageForCurrentFrame());
+        ASSERT_NE(imageBitmap->bitmapImage()->imageForCurrentFrame(), newImageResource->getImage()->imageForCurrentFrame());
         SkImage* image1 = imageBitmap->bitmapImage()->imageForCurrentFrame().get();
         ASSERT_NE(image1, nullptr);
-        SkImage* image2 = newImageResource->image()->imageForCurrentFrame().get();
+        SkImage* image2 = newImageResource->getImage()->imageForCurrentFrame().get();
         ASSERT_NE(image2, nullptr);
         ASSERT_NE(image1, image2);
     }
 }
 
-} // namespace
+} // namespace blink

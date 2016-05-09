@@ -47,19 +47,20 @@ class CORE_EXPORT ScopedEventQueue {
 public:
     ~ScopedEventQueue();
 
-    void enqueueEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator>);
+    void enqueueEventDispatchMediator(EventDispatchMediator*);
     void dispatchAllEvents();
     static ScopedEventQueue* instance();
 
     void incrementScopingLevel();
     void decrementScopingLevel();
+    bool shouldQueueEvents() const { return m_scopingLevel > 0; }
 
 private:
     ScopedEventQueue();
     static void initialize();
-    void dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator>) const;
+    void dispatchEvent(EventDispatchMediator*) const;
 
-    WillBePersistentHeapVector<RefPtrWillBeMember<EventDispatchMediator>> m_queuedEventDispatchMediators;
+    PersistentHeapVector<Member<EventDispatchMediator>> m_queuedEventDispatchMediators;
     unsigned m_scopingLevel;
 
     static ScopedEventQueue* s_instance;
@@ -73,6 +74,6 @@ public:
     ~EventQueueScope() { ScopedEventQueue::instance()->decrementScopingLevel(); }
 };
 
-}
+} // namespace blink
 
 #endif // ScopedEventQueue_h

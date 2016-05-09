@@ -464,7 +464,7 @@ TEST_P(AudioRendererMixerBehavioralTest, OnRenderErrorPausedInput) {
 // not call RemoveMixer().
 TEST_P(AudioRendererMixerBehavioralTest, NoInitialize) {
   EXPECT_CALL(*this, RemoveMixer(testing::_, testing::_, testing::_)).Times(0);
-  scoped_refptr<AudioRendererMixerInput> audio_renderer_mixer =
+  scoped_refptr<AudioRendererMixerInput> audio_renderer_mixer_input =
       new AudioRendererMixerInput(
           base::Bind(&AudioRendererMixerTest::GetMixer, base::Unretained(this)),
           base::Bind(&AudioRendererMixerTest::RemoveMixer,

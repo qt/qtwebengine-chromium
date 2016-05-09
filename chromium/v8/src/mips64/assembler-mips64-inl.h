@@ -102,6 +102,10 @@ Address RelocInfo::target_address() {
   return Assembler::target_address_at(pc_, host_);
 }
 
+Address RelocInfo::wasm_memory_reference() {
+  DCHECK(IsWasmMemoryReference(rmode_));
+  return Assembler::target_address_at(pc_, host_);
+}
 
 Address RelocInfo::target_address_address() {
   DCHECK(IsCodeTarget(rmode_) ||
@@ -154,6 +158,18 @@ void RelocInfo::set_target_address(Address target,
   }
 }
 
+void RelocInfo::update_wasm_memory_reference(
+    Address old_base, Address new_base, size_t old_size, size_t new_size,
+    ICacheFlushMode icache_flush_mode) {
+  DCHECK(IsWasmMemoryReference(rmode_));
+  DCHECK(old_base <= wasm_memory_reference() &&
+         wasm_memory_reference() < old_base + old_size);
+  Address updated_reference = new_base + (wasm_memory_reference() - old_base);
+  DCHECK(new_base <= updated_reference &&
+         updated_reference < new_base + new_size);
+  Assembler::set_target_address_at(isolate_, pc_, host_, updated_reference,
+                                   icache_flush_mode);
+}
 
 Address Assembler::target_address_from_return_address(Address pc) {
   return pc - kCallTargetAddressOffset;
@@ -213,8 +229,8 @@ void RelocInfo::set_target_object(Object* target,
   if (write_barrier_mode == UPDATE_WRITE_BARRIER &&
       host() != NULL &&
       target->IsHeapObject()) {
-    host()->GetHeap()->incremental_marking()->RecordWrite(
-        host(), &Memory::Object_at(pc_), HeapObject::cast(target));
+    host()->GetHeap()->incremental_marking()->RecordWriteIntoCode(
+        host(), this, HeapObject::cast(target));
   }
 }
 
@@ -282,10 +298,8 @@ void RelocInfo::set_target_cell(Cell* cell,
   Address address = cell->address() + Cell::kValueOffset;
   Memory::Address_at(pc_) = address;
   if (write_barrier_mode == UPDATE_WRITE_BARRIER && host() != NULL) {
-    // TODO(1550) We are passing NULL as a slot because cell can never be on
-    // evacuation candidate.
-    host()->GetHeap()->incremental_marking()->RecordWrite(
-        host(), NULL, cell);
+    host()->GetHeap()->incremental_marking()->RecordWriteIntoCode(host(), this,
+                                                                  cell);
   }
 }
 
@@ -346,28 +360,6 @@ void RelocInfo::WipeOut() {
   } else {
     Assembler::set_target_address_at(isolate_, pc_, host_, NULL);
   }
-}
-
-
-bool RelocInfo::IsPatchedReturnSequence() {
-  Instr instr0 = Assembler::instr_at(pc_);  // lui.
-  Instr instr1 = Assembler::instr_at(pc_ + 1 * Assembler::kInstrSize);  // ori.
-  Instr instr2 = Assembler::instr_at(pc_ + 2 * Assembler::kInstrSize);  // dsll.
-  Instr instr3 = Assembler::instr_at(pc_ + 3 * Assembler::kInstrSize);  // ori.
-  Instr instr4 = Assembler::instr_at(pc_ + 4 * Assembler::kInstrSize);  // jalr.
-
-  bool patched_return = ((instr0 & kOpcodeMask) == LUI &&
-                         (instr1 & kOpcodeMask) == ORI &&
-                         (instr2 & kFunctionFieldMask) == DSLL &&
-                         (instr3 & kOpcodeMask) == ORI &&
-                         (instr4 & kFunctionFieldMask) == JALR);
-  return patched_return;
-}
-
-
-bool RelocInfo::IsPatchedDebugBreakSlotSequence() {
-  Instr current_instr = Assembler::instr_at(pc_);
-  return !Assembler::IsNop(current_instr, Assembler::DEBUG_BREAK_NOP);
 }
 
 

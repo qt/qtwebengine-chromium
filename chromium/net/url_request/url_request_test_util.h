@@ -69,6 +69,12 @@ class TestURLRequestContext : public URLRequestContext {
     client_socket_factory_ = factory;
   }
 
+  ProxyDelegate* proxy_delegate() { return proxy_delegate_; }
+
+  void set_proxy_delegate(ProxyDelegate* proxy_delegate) {
+    proxy_delegate_ = proxy_delegate;
+  }
+
   void set_http_network_session_params(
       scoped_ptr<HttpNetworkSession::Params> params) {
     http_network_session_params_ = std::move(params);
@@ -76,6 +82,11 @@ class TestURLRequestContext : public URLRequestContext {
 
   void SetSdchManager(scoped_ptr<SdchManager> sdch_manager) {
     context_storage_.set_sdch_manager(std::move(sdch_manager));
+  }
+
+  CTPolicyEnforcer* ct_policy_enforcer() { return ct_policy_enforcer_; }
+  void set_ct_policy_enforcer(CTPolicyEnforcer* ct_policy_enforcer) {
+    ct_policy_enforcer_ = ct_policy_enforcer;
   }
 
  private:
@@ -88,6 +99,10 @@ class TestURLRequestContext : public URLRequestContext {
 
   // Not owned:
   ClientSocketFactory* client_socket_factory_;
+
+  ProxyDelegate* proxy_delegate_;
+
+  CTPolicyEnforcer* ct_policy_enforcer_;
 
  protected:
   URLRequestContextStorage context_storage_;

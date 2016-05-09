@@ -12,9 +12,10 @@ enum PermissionState {
 };
 
 [
-    ActiveDOMObject,
-    GarbageCollected,
+    ActiveScriptWrappable,
+    DependentLifetime,
     Exposed=(Window,Worker),
+    GarbageCollected,
     RuntimeEnabled=Permissions,
 ] interface PermissionStatus : EventTarget {
     readonly attribute PermissionState state;

@@ -41,7 +41,6 @@
 #include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebTraceLocation.h"
 #include "wtf/Functional.h"
-#include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 
 // Forward declare Mac SPIs.
@@ -53,10 +52,12 @@
 
 namespace blink {
 
+const char* kColorEmojiFontMac = "Apple Color Emoji";
+
 static void invalidateFontCache()
 {
     if (!isMainThread()) {
-        Platform::current()->mainThread()->taskRunner()->postTask(BLINK_FROM_HERE, bind(&invalidateFontCache));
+        Platform::current()->mainThread()->getWebTaskRunner()->postTask(BLINK_FROM_HERE, bind(&invalidateFontCache));
         return;
     }
     FontCache::fontCache()->invalidate();
@@ -87,8 +88,19 @@ static inline bool isAppKitFontWeightBold(NSInteger appKitFontWeight)
     return appKitFontWeight >= 7;
 }
 
-PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 character, const SimpleFontData* fontDataToSubstitute)
+PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(
+    const FontDescription& fontDescription,
+    UChar32 character,
+    const SimpleFontData* fontDataToSubstitute,
+    FontFallbackPriority fallbackPriority)
 {
+
+    if (fallbackPriority == FontFallbackPriority::EmojiEmoji) {
+        RefPtr<SimpleFontData> emojiFont = getFontData(fontDescription, AtomicString(kColorEmojiFontMac));
+        if (emojiFont)
+            return emojiFont;
+    }
+
     // FIXME: We should fix getFallbackFamily to take a UChar32
     // and remove this split-to-UChar16 code.
     UChar codeUnits[2];
@@ -158,8 +170,14 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     substituteFontTraits = [fontManager traitsOfFont:substituteFont];
     substituteFontWeight = [fontManager weightOfFont:substituteFont];
 
+    // TODO(eae): Remove once skia supports bold emoji. See https://bugs.chromium.org/p/skia/issues/detail?id=4904
+    // Bold emoji look the same as normal emoji, so syntheticBold isn't needed.
+    bool syntheticBold = isAppKitFontWeightBold(weight) &&
+        !isAppKitFontWeightBold(substituteFontWeight) &&
+        ![substituteFont.familyName isEqual:@"Apple Color Emoji"];
+
     FontPlatformData alternateFont(substituteFont, platformData.size(),
-        isAppKitFontWeightBold(weight) && !isAppKitFontWeightBold(substituteFontWeight),
+        syntheticBold,
         (traits & NSFontItalicTrait) && !(substituteFontTraits & NSFontItalicTrait),
         platformData.orientation());
 
@@ -168,7 +186,7 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
 
 PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescription& fontDescription, ShouldRetain shouldRetain)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, timesStr, ("Times", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, timesStr, ("Times"));
 
     // FIXME: Would be even better to somehow get the user's default font here.  For now we'll pick
     // the default that the user would get without changing any prefs.
@@ -180,7 +198,7 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     // the user doesn't have it, we fall back on Lucida Grande because that's
     // guaranteed to be there, according to Nathan Taylor. This is good enough
     // to avoid a crash at least.
-    DEFINE_STATIC_LOCAL(AtomicString, lucidaGrandeStr, ("Lucida Grande", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, lucidaGrandeStr, ("Lucida Grande"));
     return getFontData(fontDescription, lucidaGrandeStr, false, shouldRetain);
 }
 
@@ -202,7 +220,12 @@ PassOwnPtr<FontPlatformData> FontCache::createFontPlatformData(const FontDescrip
 
     NSFont *platformFont = useHinting() ? [nsFont screenFont] : [nsFont printerFont];
     NSInteger appKitWeight = toAppKitFontWeight(fontDescription.weight());
-    bool syntheticBold = (isAppKitFontWeightBold(appKitWeight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
+
+    // TODO(eae): Remove once skia supports bold emoji. See https://bugs.chromium.org/p/skia/issues/detail?id=4904
+    // Bold emoji look the same as normal emoji, so syntheticBold isn't needed.
+    bool syntheticBold = [platformFont.familyName isEqual:@"Apple Color Emoji"] ? false :
+        (isAppKitFontWeightBold(appKitWeight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
+
     bool syntheticItalic = ((traits & NSFontItalicTrait) && !(actualTraits & NSFontItalicTrait)) || fontDescription.isSyntheticItalic();
 
     // FontPlatformData::typeface() is null in the case of Chromium out-of-process font loading failing.

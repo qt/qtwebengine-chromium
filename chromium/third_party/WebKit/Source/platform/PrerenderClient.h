@@ -33,10 +33,11 @@
 #define PrerenderClient_h
 
 #include "platform/PlatformExport.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class PLATFORM_EXPORT PrerenderClient {
+class PLATFORM_EXPORT PrerenderClient : public GarbageCollectedMixin {
 public:
     virtual ~PrerenderClient() { }
 
@@ -44,9 +45,10 @@ public:
     virtual void didStopPrerender() = 0;
     virtual void didSendLoadForPrerender() = 0;
     virtual void didSendDOMContentLoadedForPrerender() = 0;
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
-}
-
+} // namespace blink
 
 #endif

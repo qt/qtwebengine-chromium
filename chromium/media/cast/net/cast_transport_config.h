@@ -11,6 +11,7 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "media/cast/common/rtp_time.h"
 #include "media/cast/net/cast_transport_defines.h"
@@ -126,7 +127,7 @@ typedef base::Callback<void(scoped_ptr<Packet> packet)> PacketReceiverCallback;
 typedef base::Callback<bool(scoped_ptr<Packet> packet)>
     PacketReceiverCallbackWithStatus;
 
-class PacketSender {
+class PacketTransport {
  public:
   // Send a packet to the network. Returns false if the network is blocked
   // and we should wait for |cb| to be called. It is not allowed to called
@@ -138,7 +139,14 @@ class PacketSender {
   // Returns the number of bytes ever sent.
   virtual int64_t GetBytesSent() = 0;
 
-  virtual ~PacketSender() {}
+  // Start receiving packets. Pakets are submitted to |packet_receiver|.
+  virtual void StartReceiving(
+      const PacketReceiverCallbackWithStatus& packet_receiver) = 0;
+
+  // Stop receiving packets.
+  virtual void StopReceiving() = 0;
+
+  virtual ~PacketTransport() {}
 };
 
 struct RtcpSenderInfo {

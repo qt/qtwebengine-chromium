@@ -116,12 +116,10 @@
 
 #include <openssl/ssl.h>
 
-#include <stdio.h>
 #include <string.h>
 
 #include <openssl/bytestring.h>
 #include <openssl/err.h>
-#include <openssl/obj.h>
 
 #include "internal.h"
 
@@ -212,7 +210,7 @@ STACK_OF(SRTP_PROTECTION_PROFILE) *SSL_get_srtp_profiles(SSL *ssl) {
     return ssl->srtp_profiles;
   }
 
-  if (ssl->ctx != NULL && ssl->ctx->srtp_profiles != NULL) {
+  if (ssl->ctx->srtp_profiles != NULL) {
     return ssl->ctx->srtp_profiles;
   }
 

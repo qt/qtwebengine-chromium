@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// http://reillyeon.github.io/webusb/#configurations
+// http://wicg.github.io/webusb/#configurations
 
 [
     Constructor(USBDevice device, octet configurationValue),
     RaisesException=Constructor,
     GarbageCollected,
-    RuntimeEnabled=WebUSB,
+    OriginTrialEnabled=WebUSB,
 ] interface USBConfiguration {
     readonly attribute octet configurationValue;
     readonly attribute DOMString? configurationName;

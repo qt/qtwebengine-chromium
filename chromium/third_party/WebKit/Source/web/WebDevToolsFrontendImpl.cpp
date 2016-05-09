@@ -32,6 +32,7 @@
 
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8DevToolsHost.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/DevToolsHost.h"
 #include "public/platform/WebSecurityOrigin.h"
@@ -56,6 +57,7 @@ WebDevToolsFrontendImpl::WebDevToolsFrontendImpl(
     , m_client(client)
 {
     m_webFrame->setDevToolsFrontend(this);
+    m_webFrame->frame()->host()->setDefaultPageScaleLimits(1.f, 1.f);
 }
 
 WebDevToolsFrontendImpl::~WebDevToolsFrontendImpl()
@@ -69,7 +71,7 @@ void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)
     if (m_webFrame == frame) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
         ScriptState* scriptState = ScriptState::forMainWorld(m_webFrame->frame());
-        ASSERT(scriptState);
+        DCHECK(scriptState);
         ScriptState::Scope scope(scriptState);
 
         if (m_devtoolsHost)
@@ -77,14 +79,14 @@ void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)
         m_devtoolsHost = DevToolsHost::create(this, m_webFrame->frame());
         v8::Local<v8::Object> global = scriptState->context()->Global();
         v8::Local<v8::Value> devtoolsHostObj = toV8(m_devtoolsHost.get(), global, scriptState->isolate());
-        ASSERT(!devtoolsHostObj.IsEmpty());
+        DCHECK(!devtoolsHostObj.IsEmpty());
         global->Set(v8AtomicString(isolate, "DevToolsHost"), devtoolsHostObj);
     }
 
     if (m_injectedScriptForOrigin.isEmpty())
         return;
 
-    String origin = frame->securityOrigin().toString();
+    String origin = frame->getSecurityOrigin().toString();
     String script = m_injectedScriptForOrigin.get(origin);
     if (script.isEmpty())
         return;
@@ -108,7 +110,7 @@ bool WebDevToolsFrontendImpl::isUnderTest()
     return m_client ? m_client->isUnderTest() : false;
 }
 
-void WebDevToolsFrontendImpl::showContextMenu(LocalFrame* targetFrame, float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider> menuProvider)
+void WebDevToolsFrontendImpl::showContextMenu(LocalFrame* targetFrame, float x, float y, RawPtr<ContextMenuProvider> menuProvider)
 {
     WebLocalFrameImpl::fromFrame(targetFrame)->viewImpl()->showContextMenuAtPoint(x, y, menuProvider);
 }

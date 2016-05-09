@@ -66,17 +66,13 @@ public:
     {
         {% if gc_type == 'GarbageCollectedObject' %}
         visitor->trace(scriptWrappable->toImpl<{{cpp_class}}>());
-        {% elif gc_type == 'WillBeGarbageCollectedObject' %}
-#if ENABLE(OILPAN)
-        visitor->trace(scriptWrappable->toImpl<{{cpp_class}}>());
-#endif
         {% endif %}
     }
     {% if has_visit_dom_wrapper %}
     static void visitDOMWrapper(v8::Isolate*, ScriptWrappable*, const v8::Persistent<v8::Object>&);
     {% endif %}
-    {% if is_active_dom_object %}
-    static ActiveDOMObject* toActiveDOMObject(v8::Local<v8::Object>);
+    {% if active_scriptwrappable %}
+    static ActiveScriptWrappable* toActiveScriptWrappable(v8::Local<v8::Object>);
     {% endif %}
     {% for method in methods %}
     {% if method.is_custom %}
@@ -157,7 +153,7 @@ public:
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + {{custom_internal_field_counter}};
     {# End custom internal fields #}
     {% if interface_name == 'Window' %}
-    static bool securityCheckCustom(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject);
+    static bool securityCheckCustom(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject, v8::Local<v8::Value> value);
     {% endif %}
     static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*){% if has_conditional_attributes %};
     {% else %} { }

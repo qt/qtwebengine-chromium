@@ -21,7 +21,6 @@
 
 #include "core/svg/SVGPatternElement.h"
 
-#include "core/XLinkNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/layout/svg/LayoutSVGResourcePattern.h"
 #include "core/svg/PatternAttributes.h"
@@ -151,7 +150,7 @@ static void setPatternAttributes(const SVGPatternElement* element, PatternAttrib
 
 void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) const
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<const SVGPatternElement>> processedPatterns;
+    HeapHashSet<Member<const SVGPatternElement>> processedPatterns;
     const SVGPatternElement* current = this;
 
     while (true) {

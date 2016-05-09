@@ -49,6 +49,18 @@ void AXMenuListOption::detach()
     AXMockObject::detach();
 }
 
+AccessibilityRole AXMenuListOption::roleValue() const
+{
+    const AtomicString& ariaRole = getAttribute(roleAttr);
+    if (ariaRole.isEmpty())
+        return MenuListOptionRole;
+
+    AccessibilityRole role = ariaRoleToWebCoreRole(ariaRole);
+    if (role)
+        return role;
+    return MenuListOptionRole;
+}
+
 Element* AXMenuListOption::actionElement() const
 {
     return m_element;
@@ -124,7 +136,7 @@ String AXMenuListOption::textAlternative(bool recursive, bool inAriaLabelledByTr
     if (nameSources)
         ASSERT(relatedObjects);
 
-    if (!node())
+    if (!getNode())
         return String();
 
     bool foundTextAlternative = false;

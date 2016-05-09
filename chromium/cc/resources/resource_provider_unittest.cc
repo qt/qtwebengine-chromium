@@ -11,10 +11,10 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #include "base/bind.h"
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "cc/output/output_surface.h"
@@ -121,7 +121,8 @@ class TextureStateTrackingContext : public TestWebGraphicsContext3D {
 
   void genSyncToken(GLuint64 fence_sync, GLbyte* sync_token) override {
     gpu::SyncToken sync_token_data(gpu::CommandBufferNamespace::GPU_IO, 0,
-                                   0x123, fence_sync);
+                                   gpu::CommandBufferId::FromUnsafeValue(0x123),
+                                   fence_sync);
     sync_token_data.SetVerifyFlush();
     memcpy(sync_token, &sync_token_data, sizeof(sync_token_data));
   }
@@ -181,9 +182,9 @@ class ContextSharedData {
 
   uint64_t next_fence_sync_;
   unsigned next_mailbox_;
-  typedef base::hash_map<unsigned, scoped_refptr<TestTexture>> TextureMap;
+  using TextureMap = std::unordered_map<unsigned, scoped_refptr<TestTexture>>;
   TextureMap textures_;
-  base::hash_map<unsigned, uint32_t> sync_point_for_mailbox_;
+  std::unordered_map<unsigned, uint32_t> sync_point_for_mailbox_;
 };
 
 class ResourceProviderContext : public TestWebGraphicsContext3D {
@@ -193,29 +194,14 @@ class ResourceProviderContext : public TestWebGraphicsContext3D {
     return make_scoped_ptr(new ResourceProviderContext(shared_data));
   }
 
-  GLuint insertSyncPoint() override {
-    const uint32_t sync_point =
-        static_cast<uint32_t>(shared_data_->InsertFenceSync());
-    gpu::SyncToken sync_token_data(sync_point);
-
-    // Commit the produceTextureCHROMIUM calls at this point, so that
-    // they're associated with the sync point.
-    for (const scoped_ptr<PendingProduceTexture>& pending_texture :
-         pending_produce_textures_) {
-      shared_data_->ProduceTexture(pending_texture->mailbox, sync_token_data,
-                                   pending_texture->texture);
-    }
-    pending_produce_textures_.clear();
-    return sync_point;
-  }
-
   GLuint64 insertFenceSync() override {
     return shared_data_->InsertFenceSync();
   }
 
   void genSyncToken(GLuint64 fence_sync, GLbyte* sync_token) override {
     gpu::SyncToken sync_token_data(gpu::CommandBufferNamespace::GPU_IO, 0,
-                                   0x123, fence_sync);
+                                   gpu::CommandBufferId::FromUnsafeValue(0x123),
+                                   fence_sync);
     sync_token_data.SetVerifyFlush();
     // Commit the produceTextureCHROMIUM calls at this point, so that
     // they're associated with the sync point.
@@ -686,6 +672,10 @@ TEST_P(ResourceProviderTest, TransferGLResources) {
     resource_ids_to_transfer.push_back(id2);
     resource_ids_to_transfer.push_back(id3);
     resource_ids_to_transfer.push_back(id4);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -946,6 +936,8 @@ TEST_P(ResourceProviderTestNoSyncToken, TransferGLResources) {
     resource_ids_to_transfer.push_back(id2);
     resource_ids_to_transfer.push_back(id3);
     TransferableResourceArray list;
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
     ASSERT_EQ(3u, list.size());
@@ -1019,6 +1011,10 @@ TEST_P(ResourceProviderTest, ReadLockCountStopsReturnToChildOrDelete) {
     // Transfer some resources to the parent.
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1084,6 +1080,10 @@ TEST_P(ResourceProviderTest, ReadLockFenceStopsReturnToChildOrDelete) {
   // Transfer some resources to the parent.
   ResourceProvider::ResourceIdArray resource_ids_to_transfer;
   resource_ids_to_transfer.push_back(id1);
+
+  child_resource_provider_->GenerateSyncTokenForResources(
+      resource_ids_to_transfer);
+
   TransferableResourceArray list;
   child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                 &list);
@@ -1143,6 +1143,10 @@ TEST_P(ResourceProviderTest, ReadLockFenceDestroyChild) {
   ResourceProvider::ResourceIdArray resource_ids_to_transfer;
   resource_ids_to_transfer.push_back(id1);
   resource_ids_to_transfer.push_back(id2);
+
+  child_resource_provider_->GenerateSyncTokenForResources(
+      resource_ids_to_transfer);
+
   TransferableResourceArray list;
   child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                 &list);
@@ -1205,6 +1209,10 @@ TEST_P(ResourceProviderTest, ReadLockFenceContextLost) {
   ResourceProvider::ResourceIdArray resource_ids_to_transfer;
   resource_ids_to_transfer.push_back(id1);
   resource_ids_to_transfer.push_back(id2);
+
+  child_resource_provider_->GenerateSyncTokenForResources(
+      resource_ids_to_transfer);
+
   TransferableResourceArray list;
   child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                 &list);
@@ -1272,6 +1280,10 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
     resource_ids_to_transfer.push_back(id1);
     resource_ids_to_transfer.push_back(id2);
     resource_ids_to_transfer.push_back(id3);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1319,6 +1331,10 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
     resource_ids_to_transfer.push_back(id2);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1385,6 +1401,10 @@ TEST_P(ResourceProviderTest, TransferSoftwareResources) {
     resource_ids_to_transfer.push_back(id1);
     resource_ids_to_transfer.push_back(id2);
     resource_ids_to_transfer.push_back(id3);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1453,6 +1473,7 @@ TEST_P(ResourceProviderTest, TransferGLToSoftware) {
       size, ResourceProvider::TEXTURE_HINT_IMMUTABLE, format);
   uint8_t data1[4] = { 1, 2, 3, 4 };
   child_resource_provider->CopyToResource(id1, data1, size);
+  child_resource_provider->GenerateSyncTokenForResource(id1);
 
   ReturnedResourceArray returned_to_child;
   int child_id =
@@ -1460,6 +1481,7 @@ TEST_P(ResourceProviderTest, TransferGLToSoftware) {
   {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
+
     TransferableResourceArray list;
     child_resource_provider->PrepareSendToParent(resource_ids_to_transfer,
                                                  &list);
@@ -1506,6 +1528,10 @@ TEST_P(ResourceProviderTest, TransferInvalidSoftware) {
   {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1560,6 +1586,10 @@ TEST_P(ResourceProviderTest, DeleteExportedResources) {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
     resource_ids_to_transfer.push_back(id2);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1593,6 +1623,10 @@ TEST_P(ResourceProviderTest, DeleteExportedResources) {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(mapped_id1);
     resource_ids_to_transfer.push_back(mapped_id2);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer, &list);
 
@@ -1656,6 +1690,10 @@ TEST_P(ResourceProviderTest, DestroyChildWithExportedResources) {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id1);
     resource_ids_to_transfer.push_back(id2);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1689,6 +1727,10 @@ TEST_P(ResourceProviderTest, DestroyChildWithExportedResources) {
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(mapped_id1);
     resource_ids_to_transfer.push_back(mapped_id2);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     resource_provider_->PrepareSendToParent(resource_ids_to_transfer, &list);
 
@@ -1763,6 +1805,10 @@ TEST_P(ResourceProviderTest, DeleteTransferredResources) {
     // Transfer some resource to the parent.
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -1816,6 +1862,10 @@ TEST_P(ResourceProviderTest, UnuseTransferredResources) {
     // Transfer some resource to the parent.
     ResourceProvider::ResourceIdArray resource_ids_to_transfer;
     resource_ids_to_transfer.push_back(id);
+
+    child_resource_provider_->GenerateSyncTokenForResources(
+        resource_ids_to_transfer);
+
     TransferableResourceArray list;
     child_resource_provider_->PrepareSendToParent(resource_ids_to_transfer,
                                                   &list);
@@ -2001,6 +2051,9 @@ class ResourceProviderTestTextureFilters : public ResourceProviderTest {
 
       EXPECT_CALL(*child_context,
                   produceTextureDirectCHROMIUM(_, GL_TEXTURE_2D, _));
+
+      child_resource_provider->GenerateSyncTokenForResources(
+          resource_ids_to_transfer);
       child_resource_provider->PrepareSendToParent(resource_ids_to_transfer,
                                                    &list);
       Mock::VerifyAndClearExpectations(child_context);
@@ -2518,7 +2571,6 @@ TEST_P(ResourceProviderTest, ShutdownWithExportedResource) {
   child_resource_provider_ = nullptr;
 
   // Since the resource is in the parent, the child considers it lost.
-  EXPECT_FALSE(release_sync_token.HasData());
   EXPECT_TRUE(lost_resource);
 }
 
@@ -2852,7 +2904,8 @@ class ResourceProviderTestTextureMailboxGLFilters
         use_image_texture_targets_));
 
     unsigned texture_id = 1;
-    gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0, 0x12,
+    gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0,
+                              gpu::CommandBufferId::FromUnsafeValue(0x12),
                               0x34);
     unsigned target = GL_TEXTURE_2D;
     const GLuint64 current_fence_sync = context->GetNextFenceSync();
@@ -2995,7 +3048,8 @@ TEST_P(ResourceProviderTest, TextureMailbox_GLTextureExternalOES) {
       gpu_memory_buffer_manager_.get(), NULL, 0, 1,
       use_gpu_memory_buffer_resources_, use_image_texture_targets_));
 
-  gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0, 0x12, 0x34);
+  gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0,
+                            gpu::CommandBufferId::FromUnsafeValue(0x12), 0x34);
   const GLuint64 current_fence_sync = context->GetNextFenceSync();
   unsigned target = GL_TEXTURE_EXTERNAL_OES;
 
@@ -3064,7 +3118,8 @@ TEST_P(ResourceProviderTest,
       gpu_memory_buffer_manager_.get(), NULL, 0, 1,
       use_gpu_memory_buffer_resources_, use_image_texture_targets_));
 
-  gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0, 0x12, 0x34);
+  gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0,
+                            gpu::CommandBufferId::FromUnsafeValue(0x12), 0x34);
   const GLuint64 current_fence_sync = context->GetNextFenceSync();
   unsigned target = GL_TEXTURE_2D;
 

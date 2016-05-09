@@ -38,8 +38,6 @@ class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
 class ProxyInfo;
-class ProxyServer;
-class ProxyService;
 class URLRequest;
 
 class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
@@ -64,12 +62,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   int NotifyBeforeURLRequest(URLRequest* request,
                              const CompletionCallback& callback,
                              GURL* new_url);
-  void NotifyResolveProxy(const GURL& url,
-                          int load_flags,
-                          const ProxyService& proxy_service,
-                          ProxyInfo* result);
-  void NotifyProxyFallback(const ProxyServer& bad_proxy,
-                           int net_error);
   int NotifyBeforeSendHeaders(URLRequest* request,
                               const CompletionCallback& callback,
                               HttpRequestHeaders* headers);
@@ -106,12 +98,10 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   bool CanEnablePrivacyMode(const GURL& url,
                             const GURL& first_party_for_cookies) const;
 
-  // TODO(mkwst): Remove this once we decide whether or not we wish to ship
-  // first-party cookies and setting secure cookies require
-  // secure scheme. https://crbug.com/459154, https://crbug.com/541511,
-  // https://crbug.com/546820
   bool AreExperimentalCookieFeaturesEnabled() const;
-  // TODO(jww): Remove this once we ship strict secure cookies.
+
+  // TODO(jww): Remove this once we ship strict secure cookies:
+  // https://crbug.com/546820
   bool AreStrictSecureCookiesEnabled() const;
 
   bool CancelURLRequestWithPolicyViolatingReferrerHeader(
@@ -139,20 +129,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual int OnBeforeURLRequest(URLRequest* request,
                                  const CompletionCallback& callback,
                                  GURL* new_url) = 0;
-
-  // Called as the proxy is being resolved for |url|. Allows the delegate to
-  // override the proxy resolution decision made by ProxyService. The delegate
-  // may override the decision by modifying the ProxyInfo |result|.
-  virtual void OnResolveProxy(const GURL& url,
-                              int load_flags,
-                              const ProxyService& proxy_service,
-                              ProxyInfo* result) = 0;
-
-  // Called when use of |bad_proxy| fails due to |net_error|. |net_error| is
-  // the network error encountered, if any, and OK if the fallback was
-  // for a reason other than a network error (e.g. the proxy service was
-  // explicitly directed to skip a proxy).
-  virtual void OnProxyFallback(const ProxyServer& bad_proxy, int net_error) = 0;
 
   // Called right before the HTTP headers are sent. Allows the delegate to
   // read/write |headers| before they get sent out. |callback| and |headers| are
@@ -290,17 +266,13 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
 
   // Returns true if the embedder has enabled the experimental features, and
   // false otherwise.
-  //
-  // TODO(mkwst): Remove this once we decide whether or not we wish to ship
-  // first-party cookies, cookie prefixes, and setting secure cookies require
-  // secure scheme. https://crbug.com/459154, https://crbug.com/541511,
-  // https://crbug.com/546820
   virtual bool OnAreExperimentalCookieFeaturesEnabled() const = 0;
 
   // Returns true if the embedder has enabled experimental features or
   // specifically strict secure cookies, and false otherwise.
   //
-  // TODO(jww): Remove this once we ship strict secure cookies.
+  // TODO(jww): Remove this once we ship strict secure cookies:
+  // https://crbug.com/546820.
   virtual bool OnAreStrictSecureCookiesEnabled() const = 0;
 
   // Called when the |referrer_url| for requesting |target_url| during handling

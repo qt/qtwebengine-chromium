@@ -202,6 +202,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       DiscoverySessionCallback;
   typedef std::vector<BluetoothDevice*> DeviceList;
   typedef std::vector<const BluetoothDevice*> ConstDeviceList;
+  typedef std::vector<BluetoothUUID> UUIDList;
   typedef base::Callback<void(scoped_refptr<BluetoothSocket>)>
       CreateServiceCallback;
   typedef base::Callback<void(const std::string& message)>
@@ -328,6 +329,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   virtual BluetoothDevice* GetDevice(const std::string& address);
   virtual const BluetoothDevice* GetDevice(const std::string& address) const;
 
+  // Returns a list of UUIDs for services registered on this adapter.
+  // This may include UUIDs from standard profiles (e.g. A2DP) as well
+  // as those created by CreateRfcommService and CreateL2capService.
+  virtual UUIDList GetUUIDs() const = 0;
+
   // Possible priorities for AddPairingDelegate(), low is intended for
   // permanent UI and high is intended for interactive UI or applications.
   enum PairingDelegatePriority {
@@ -397,6 +403,25 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       scoped_ptr<BluetoothAdvertisement::Data> advertisement_data,
       const CreateAdvertisementCallback& callback,
       const CreateAdvertisementErrorCallback& error_callback) = 0;
+
+  // The following methods are used to send various events to observers.
+  void NotifyAdapterStateChanged(bool powered);
+  void NotifyGattServiceAdded(BluetoothGattService* service);
+  void NotifyGattServiceRemoved(BluetoothGattService* service);
+  void NotifyGattServiceChanged(BluetoothGattService* service);
+  void NotifyGattServicesDiscovered(BluetoothDevice* device);
+  void NotifyGattDiscoveryComplete(BluetoothGattService* service);
+  void NotifyGattCharacteristicAdded(
+      BluetoothGattCharacteristic* characteristic);
+  void NotifyGattCharacteristicRemoved(
+      BluetoothGattCharacteristic* characteristic);
+  void NotifyGattDescriptorAdded(BluetoothGattDescriptor* descriptor);
+  void NotifyGattDescriptorRemoved(BluetoothGattDescriptor* descriptor);
+  void NotifyGattCharacteristicValueChanged(
+      BluetoothGattCharacteristic* characteristic,
+      const std::vector<uint8_t>& value);
+  void NotifyGattDescriptorValueChanged(BluetoothGattDescriptor* descriptor,
+                                        const std::vector<uint8_t>& value);
 
  protected:
   friend class base::RefCounted<BluetoothAdapter>;

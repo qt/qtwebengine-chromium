@@ -30,7 +30,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
 #include "content/public/browser/android/download_controller_android.h"
-#include "content/public/browser/download_item.h"
 #include "net/cookies/cookie_monster.h"
 #include "url/gurl.h"
 
@@ -44,8 +43,7 @@ class DeferredDownloadObserver;
 class RenderViewHost;
 class WebContents;
 
-class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
-                                      public DownloadItem::Observer {
+class DownloadControllerAndroidImpl : public DownloadControllerAndroid {
  public:
   static DownloadControllerAndroidImpl* GetInstance();
 
@@ -61,6 +59,7 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   void AcquireFileAccessPermission(
       WebContents* web_contents,
       const AcquireFileAccessPermissionCallback& callback) override;
+  void SetDefaultDownloadFileName(const std::string& file_name) override;
 
  private:
   // Used to store all the information about an Android download.
@@ -96,14 +95,15 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   // DownloadControllerAndroid implementation.
   void CreateGETDownload(int render_process_id,
                          int render_view_id,
-                         int request_id) override;
+                         int request_id,
+                         bool must_download) override;
   void OnDownloadStarted(DownloadItem* download_item) override;
   void StartContextMenuDownload(const ContextMenuParams& params,
                                 WebContents* web_contents,
                                 bool is_link,
                                 const std::string& extra_headers) override;
   void DangerousDownloadValidated(WebContents* web_contents,
-                                  int download_id,
+                                  const std::string& download_guid,
                                   bool accept) override;
 
   // DownloadItem::Observer interface.
@@ -127,9 +127,11 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
                                const DownloadInfoAndroid& info);
   void StartAndroidDownload(int render_process_id,
                             int render_view_id,
+                            bool must_download,
                             const DownloadInfoAndroid& info);
   void StartAndroidDownloadInternal(int render_process_id,
                                     int render_view_id,
+                                    bool must_download,
                                     const DownloadInfoAndroid& info,
                                     bool allowed);
 
@@ -143,6 +145,8 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   JavaObject* GetJavaObject();
 
   JavaObject* java_object_;
+
+  std::string default_file_name_;
 
   ScopedVector<DeferredDownloadObserver> deferred_downloads_;
 

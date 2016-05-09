@@ -69,19 +69,19 @@ static bool throwExceptionIfClosedOrUpdating(bool isOpen, bool isUpdating, Excep
 
 const AtomicString& MediaSource::openKeyword()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, open, ("open", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, open, ("open"));
     return open;
 }
 
 const AtomicString& MediaSource::closedKeyword()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, closed, ("closed", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, closed, ("closed"));
     return closed;
 }
 
 const AtomicString& MediaSource::endedKeyword()
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, ended, ("ended", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, ended, ("ended"));
     return ended;
 }
 
@@ -93,12 +93,13 @@ MediaSource* MediaSource::create(ExecutionContext* context)
 }
 
 MediaSource::MediaSource(ExecutionContext* context)
-    : ActiveDOMObject(context)
+    : ActiveScriptWrappable(this)
+    , ActiveDOMObject(context)
     , m_readyState(closedKeyword())
     , m_asyncEventQueue(GenericEventQueue::create(this))
     , m_attachedElement(nullptr)
-    , m_sourceBuffers(SourceBufferList::create(executionContext(), m_asyncEventQueue.get()))
-    , m_activeSourceBuffers(SourceBufferList::create(executionContext(), m_asyncEventQueue.get()))
+    , m_sourceBuffers(SourceBufferList::create(getExecutionContext(), m_asyncEventQueue.get()))
+    , m_activeSourceBuffers(SourceBufferList::create(getExecutionContext(), m_asyncEventQueue.get()))
     , m_isAddedToRegistry(false)
 {
     WTF_LOG(Media, "MediaSource::MediaSource %p", this);
@@ -251,7 +252,7 @@ bool MediaSource::isTypeSupported(const String& type)
 
     // Note: MediaSource.isTypeSupported() returning true implies that HTMLMediaElement.canPlayType() will return "maybe" or "probably"
     // since it does not make sense for a MediaSource to support a type the HTMLMediaElement knows it cannot play.
-    if (HTMLMediaElement::supportsType(contentType, String()) == WebMimeRegistry::IsNotSupported) {
+    if (HTMLMediaElement::supportsType(contentType) == WebMimeRegistry::IsNotSupported) {
         WTF_LOG(Media, "MediaSource::isTypeSupported(%s) -> false (not supported by HTMLMediaElement)", type.ascii().data());
         return false;
     }
@@ -270,9 +271,9 @@ const AtomicString& MediaSource::interfaceName() const
     return EventTargetNames::MediaSource;
 }
 
-ExecutionContext* MediaSource::executionContext() const
+ExecutionContext* MediaSource::getExecutionContext() const
 {
-    return ActiveDOMObject::executionContext();
+    return ActiveDOMObject::getExecutionContext();
 }
 
 DEFINE_TRACE(MediaSource)
@@ -464,8 +465,8 @@ void MediaSource::setReadyState(const AtomicString& state)
 
 void MediaSource::endOfStream(const AtomicString& error, ExceptionState& exceptionState)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, network, ("network", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, decode, ("decode", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, network, ("network"));
+    DEFINE_STATIC_LOCAL(const AtomicString, decode, ("decode"));
 
     if (error == network) {
         endOfStreamInternal(WebMediaSource::EndOfStreamStatusNetworkError, exceptionState);
@@ -610,10 +611,10 @@ void MediaSource::scheduleEvent(const AtomicString& eventName)
 {
     ASSERT(m_asyncEventQueue);
 
-    RefPtrWillBeRawPtr<Event> event = Event::create(eventName);
+    Event* event = Event::create(eventName);
     event->setTarget(this);
 
-    m_asyncEventQueue->enqueueEvent(event.release());
+    m_asyncEventQueue->enqueueEvent(event);
 }
 
 URLRegistry& MediaSource::registry() const

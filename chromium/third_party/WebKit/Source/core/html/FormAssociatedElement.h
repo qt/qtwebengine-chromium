@@ -40,7 +40,7 @@ class HTMLFormElement;
 class Node;
 class ValidityState;
 
-class CORE_EXPORT FormAssociatedElement : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT FormAssociatedElement : public GarbageCollectedMixin {
 public:
     virtual ~FormAssociatedElement();
 
@@ -86,12 +86,13 @@ public:
     virtual bool typeMismatch() const;
     virtual bool valueMissing() const;
     virtual String validationMessage() const;
+    virtual String validationSubMessage() const;
     bool valid() const;
     virtual void setCustomValidity(const String&);
 
     void formAttributeTargetChanged();
 
-    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement>> List;
+    typedef HeapVector<Member<FormAssociatedElement>> List;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -122,12 +123,12 @@ private:
     virtual void derefFormAssociatedElement() = 0;
 #endif
 
-    void setFormAttributeTargetObserver(PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver>);
+    void setFormAttributeTargetObserver(RawPtr<FormAttributeTargetObserver>);
     void resetFormAttributeTargetObserver();
 
-    OwnPtrWillBeMember<FormAttributeTargetObserver> m_formAttributeTargetObserver;
-    WeakPtrWillBeMember<HTMLFormElement> m_form;
-    OwnPtrWillBeMember<ValidityState> m_validityState;
+    Member<FormAttributeTargetObserver> m_formAttributeTargetObserver;
+    Member<HTMLFormElement> m_form;
+    Member<ValidityState> m_validityState;
     String m_customValidationMessage;
     // Non-Oilpan: Even if m_formWasSetByParser is true, m_form can be null
     // because parentNode is not a strong reference and |this| and m_form don't
@@ -136,11 +137,11 @@ private:
     bool m_formWasSetByParser;
 };
 
-HTMLElement* toHTMLElement(FormAssociatedElement*);
-HTMLElement& toHTMLElement(FormAssociatedElement&);
-const HTMLElement* toHTMLElement(const FormAssociatedElement*);
-const HTMLElement& toHTMLElement(const FormAssociatedElement&);
+CORE_EXPORT HTMLElement* toHTMLElement(FormAssociatedElement*);
+CORE_EXPORT HTMLElement& toHTMLElement(FormAssociatedElement&);
+CORE_EXPORT const HTMLElement* toHTMLElement(const FormAssociatedElement*);
+CORE_EXPORT const HTMLElement& toHTMLElement(const FormAssociatedElement&);
 
-} // namespace
+} // namespace blink
 
 #endif // FormAssociatedElement_h

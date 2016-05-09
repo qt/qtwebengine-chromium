@@ -16,7 +16,6 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_processing/test/protobuf_utils.h"
 
-using rtc::scoped_ptr;
 using rtc::CheckedDivExact;
 using std::vector;
 using webrtc::audioproc::Event;
@@ -41,16 +40,41 @@ ChannelBuffer<float> GetChannelBuffer(const WavFile& file) {
 
 }  // namespace
 
-WavFileProcessor::WavFileProcessor(scoped_ptr<AudioProcessing> ap,
-                                   scoped_ptr<WavReader> in_file,
-                                   scoped_ptr<WavWriter> out_file)
+WavFileProcessor::WavFileProcessor(std::unique_ptr<AudioProcessing> ap,
+                                   std::unique_ptr<WavReader> in_file,
+                                   std::unique_ptr<WavWriter> out_file,
+                                   std::unique_ptr<WavReader> reverse_in_file,
+                                   std::unique_ptr<WavWriter> reverse_out_file)
     : ap_(std::move(ap)),
       in_buf_(GetChannelBuffer(*in_file)),
       out_buf_(GetChannelBuffer(*out_file)),
       input_config_(GetStreamConfig(*in_file)),
       output_config_(GetStreamConfig(*out_file)),
       buffer_reader_(std::move(in_file)),
-      buffer_writer_(std::move(out_file)) {}
+      buffer_writer_(std::move(out_file)) {
+  if (reverse_in_file) {
+    const WavFile* reverse_out_config;
+    if (reverse_out_file) {
+      reverse_out_config = reverse_out_file.get();
+    } else {
+      reverse_out_config = reverse_in_file.get();
+    }
+    reverse_in_buf_.reset(
+        new ChannelBuffer<float>(GetChannelBuffer(*reverse_in_file)));
+    reverse_out_buf_.reset(
+        new ChannelBuffer<float>(GetChannelBuffer(*reverse_out_config)));
+    reverse_input_config_.reset(
+        new StreamConfig(GetStreamConfig(*reverse_in_file)));
+    reverse_output_config_.reset(
+        new StreamConfig(GetStreamConfig(*reverse_out_config)));
+    reverse_buffer_reader_.reset(
+        new ChannelBufferWavReader(std::move(reverse_in_file)));
+    if (reverse_out_file) {
+      reverse_buffer_writer_.reset(
+          new ChannelBufferWavWriter(std::move(reverse_out_file)));
+    }
+  }
+}
 
 bool WavFileProcessor::ProcessChunk() {
   if (!buffer_reader_.Read(&in_buf_)) {
@@ -63,12 +87,28 @@ bool WavFileProcessor::ProcessChunk() {
                                     output_config_, out_buf_.channels()));
   }
   buffer_writer_.Write(out_buf_);
+  if (reverse_buffer_reader_) {
+    if (!reverse_buffer_reader_->Read(reverse_in_buf_.get())) {
+      return false;
+    }
+    {
+      const auto st = ScopedTimer(mutable_proc_time());
+      RTC_CHECK_EQ(kNoErr,
+                   ap_->ProcessReverseStream(reverse_in_buf_->channels(),
+                                             *reverse_input_config_.get(),
+                                             *reverse_output_config_.get(),
+                                             reverse_out_buf_->channels()));
+    }
+    if (reverse_buffer_writer_) {
+      reverse_buffer_writer_->Write(*reverse_out_buf_.get());
+    }
+  }
   return true;
 }
 
-AecDumpFileProcessor::AecDumpFileProcessor(scoped_ptr<AudioProcessing> ap,
+AecDumpFileProcessor::AecDumpFileProcessor(std::unique_ptr<AudioProcessing> ap,
                                            FILE* dump_file,
-                                           scoped_ptr<WavWriter> out_file)
+                                           std::unique_ptr<WavWriter> out_file)
     : ap_(std::move(ap)),
       dump_file_(dump_file),
       out_buf_(GetChannelBuffer(*out_file)),

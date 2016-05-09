@@ -32,41 +32,6 @@
 
 namespace blink {
 
-TestingDiscardableMemory::TestingDiscardableMemory(size_t size) : m_data(size), m_isLocked(true)
-{
-}
-
-TestingDiscardableMemory::~TestingDiscardableMemory()
-{
-}
-
-bool TestingDiscardableMemory::lock()
-{
-    ASSERT(!m_isLocked);
-    m_isLocked = true;
-    return false;
-}
-
-void* TestingDiscardableMemory::data()
-{
-    ASSERT(m_isLocked);
-    return m_data.data();
-}
-
-void TestingDiscardableMemory::unlock()
-{
-    ASSERT(m_isLocked);
-    m_isLocked = false;
-    // Force eviction to catch clients not correctly checking the return value of lock().
-    memset(m_data.data(), 0, m_data.size());
-}
-
-WebMemoryAllocatorDump* TestingDiscardableMemory::createMemoryAllocatorDump(const WebString& name, WebProcessMemoryDump* dump) const
-{
-    ASSERT_NOT_REACHED();
-    return nullptr;
-}
-
 TestingPlatformSupport::TestingPlatformSupport()
     : TestingPlatformSupport(TestingPlatformSupport::Config())
 {
@@ -76,23 +41,13 @@ TestingPlatformSupport::TestingPlatformSupport(const Config& config)
     : m_config(config)
     , m_oldPlatform(Platform::current())
 {
-    Platform::initialize(this);
+    ASSERT(m_oldPlatform);
+    Platform::setCurrentPlatformForTesting(this);
 }
 
 TestingPlatformSupport::~TestingPlatformSupport()
 {
-    Platform::initialize(m_oldPlatform);
-}
-
-WebDiscardableMemory* TestingPlatformSupport::allocateAndLockDiscardableMemory(size_t bytes)
-{
-    return !m_config.hasDiscardableMemorySupport ? 0 : new TestingDiscardableMemory(bytes);
-}
-
-const unsigned char* TestingPlatformSupport::getTraceCategoryEnabledFlag(const char* categoryName)
-{
-    static const unsigned char tracingIsDisabled = 0;
-    return &tracingIsDisabled;
+    Platform::setCurrentPlatformForTesting(m_oldPlatform);
 }
 
 WebString TestingPlatformSupport::defaultLocale()
@@ -103,11 +58,6 @@ WebString TestingPlatformSupport::defaultLocale()
 WebCompositorSupport* TestingPlatformSupport::compositorSupport()
 {
     return m_config.compositorSupport;
-}
-
-WebUnitTestSupport* TestingPlatformSupport::unitTestSupport()
-{
-    return m_oldPlatform ? m_oldPlatform->unitTestSupport() : nullptr;
 }
 
 WebThread* TestingPlatformSupport::currentThread()
@@ -133,8 +83,19 @@ public:
 
     WebTaskRunner* clone() override
     {
+        return new TestingPlatformMockWebTaskRunner(m_tasks);
+    }
+
+    double virtualTimeSeconds() const override
+    {
         ASSERT_NOT_REACHED();
-        return nullptr;
+        return 0.0;
+    }
+
+    double monotonicallyIncreasingVirtualTimeSeconds() const override
+    {
+        ASSERT_NOT_REACHED();
+        return 0.0;
     }
 
 private:
@@ -177,7 +138,7 @@ public:
     TestingPlatformMockWebThread() : m_mockWebScheduler(adoptPtr(new TestingPlatformMockScheduler)) { }
     ~TestingPlatformMockWebThread() override { }
 
-    WebTaskRunner* taskRunner() override
+    WebTaskRunner* getWebTaskRunner() override
     {
         return m_mockWebScheduler->timerTaskRunner();
     }

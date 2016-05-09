@@ -39,9 +39,9 @@
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
+RawPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
 {
-    return adoptPtrWillBeNoop(new LinkImport(owner));
+    return new LinkImport(owner);
 }
 
 LinkImport::LinkImport(HTMLLinkElement* owner)
@@ -62,7 +62,7 @@ LinkImport::~LinkImport()
 
 Document* LinkImport::importedDocument() const
 {
-    if (!m_child || !m_owner || !m_owner->inDocument())
+    if (!m_child || !m_owner || !m_owner->inShadowIncludingDocument())
         return nullptr;
     if (m_child->loader()->hasError())
         return nullptr;
@@ -92,7 +92,7 @@ void LinkImport::process()
     HTMLImportsController* controller = m_owner->document().importsController();
     HTMLImportLoader* loader = m_owner->document().importLoader();
     HTMLImport* parent = loader ? static_cast<HTMLImport*>(loader->firstImport()) : static_cast<HTMLImport*>(controller->root());
-    m_child = controller->load(parent, this, builder.build(true));
+    m_child = controller->load(parent, this, builder.build(false));
     if (!m_child) {
         didFinish();
         return;
@@ -101,7 +101,7 @@ void LinkImport::process()
 
 void LinkImport::didFinish()
 {
-    if (!m_owner || !m_owner->inDocument())
+    if (!m_owner || !m_owner->inShadowIncludingDocument())
         return;
     m_owner->scheduleEvent();
 }

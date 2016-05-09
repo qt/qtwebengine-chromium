@@ -13,6 +13,7 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/common/content_export.h"
+#include "content/common/navigation_params.h"
 #include "url/gurl.h"
 
 class GURL;
@@ -23,9 +24,6 @@ class NavigationControllerImpl;
 class NavigatorDelegate;
 class NavigatorTest;
 struct LoadCommittedDetails;
-struct CommitNavigationParams;
-struct CommonNavigationParams;
-struct RequestNavigationParams;
 
 // This class is an implementation of Navigator, responsible for managing
 // navigations in regular browser tabs.
@@ -33,6 +31,10 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
  public:
   NavigatorImpl(NavigationControllerImpl* navigation_controller,
                 NavigatorDelegate* delegate);
+
+  static void CheckWebUIRendererDoesNotDisplayNormalURL(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& url);
 
   // Navigator implementation.
   NavigatorDelegate* GetDelegate() override;
@@ -68,6 +70,7 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
                       bool user_gesture) override;
   void RequestTransferURL(RenderFrameHostImpl* render_frame_host,
                           const GURL& url,
+                          SiteInstance* source_site_instance,
                           const std::vector<GURL>& redirect_chain,
                           const Referrer& referrer,
                           ui::PageTransition page_transition,
@@ -78,9 +81,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
                          const CommonNavigationParams& common_params,
                          const BeginNavigationParams& begin_params,
                          scoped_refptr<ResourceRequestBody> body) override;
-  void CommitNavigation(FrameTreeNode* frame_tree_node,
-                        ResourceResponse* response,
-                        scoped_ptr<StreamHandle> body) override;
   void FailedNavigation(FrameTreeNode* frame_tree_node,
                         bool has_stale_copy_in_cache,
                         int error_code) override;
@@ -110,10 +110,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
 
   bool ShouldAssignSiteForURL(const GURL& url);
 
-  void CheckWebUIRendererDoesNotDisplayNormalURL(
-    RenderFrameHostImpl* render_frame_host,
-    const GURL& url);
-
   // PlzNavigate: if needed, sends a BeforeUnload IPC to the renderer to ask it
   // to execute the beforeUnload event. Otherwise, the navigation request will
   // be started.
@@ -123,6 +119,7 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
                          const FrameNavigationEntry& frame_entry,
                          const NavigationEntryImpl& entry,
                          NavigationController::ReloadType reload_type,
+                         LoFiState lofi_state,
                          bool is_same_document_history_load,
                          base::TimeTicks navigation_start);
 
@@ -135,7 +132,12 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   // NavigationEntry if the controller does not currently have a
   // browser-initiated one.
   void DidStartMainFrameNavigation(const GURL& url,
-                                   SiteInstanceImpl* site_instance);
+                                   SiteInstanceImpl* site_instance,
+                                   NavigationHandleImpl* navigation_handle);
+
+  // Called when a navigation has failed to discard the pending entry in order
+  // to avoid url spoofs.
+  void DiscardPendingEntryOnFailureIfNeeded(NavigationHandleImpl* handle);
 
   // The NavigationController that will keep track of session history for all
   // RenderFrameHost objects using this NavigatorImpl.

@@ -18,8 +18,8 @@ HoleFrameFactory::HoleFrameFactory(
     ::media::GpuVideoAcceleratorFactories* gpu_factories)
     : gpu_factories_(gpu_factories), texture_(0), image_id_(0) {
   if (gpu_factories_) {
-    scoped_ptr<::media::GpuVideoAcceleratorFactories::ScopedGLContextLock> lock(
-        gpu_factories_->GetGLContextLock());
+    std::unique_ptr<::media::GpuVideoAcceleratorFactories::ScopedGLContextLock>
+        lock(gpu_factories_->GetGLContextLock());
     CHECK(lock);
     gpu::gles2::GLES2Interface* gl = lock->ContextGL();
 
@@ -41,8 +41,8 @@ HoleFrameFactory::HoleFrameFactory(
 
 HoleFrameFactory::~HoleFrameFactory() {
   if (texture_) {
-    scoped_ptr<::media::GpuVideoAcceleratorFactories::ScopedGLContextLock> lock(
-        gpu_factories_->GetGLContextLock());
+    std::unique_ptr<::media::GpuVideoAcceleratorFactories::ScopedGLContextLock>
+        lock(gpu_factories_->GetGLContextLock());
     CHECK(lock);
     gpu::gles2::GLES2Interface* gl = lock->ContextGL();
     gl->BindTexture(GL_TEXTURE_2D, texture_);
@@ -54,24 +54,28 @@ HoleFrameFactory::~HoleFrameFactory() {
 
 scoped_refptr<::media::VideoFrame> HoleFrameFactory::CreateHoleFrame(
     const gfx::Size& size) {
-  if (texture_) {
-    scoped_refptr<::media::VideoFrame> frame =
-        ::media::VideoFrame::WrapNativeTexture(
-            ::media::PIXEL_FORMAT_XRGB,
-            gpu::MailboxHolder(mailbox_, sync_token_, GL_TEXTURE_2D),
-            ::media::VideoFrame::ReleaseMailboxCB(),
-            size,                // coded_size
-            gfx::Rect(size),     // visible rect
-            size,                // natural size
-            base::TimeDelta());  // timestamp
-    CHECK(frame);
-    frame->metadata()->SetBoolean(::media::VideoFrameMetadata::ALLOW_OVERLAY,
-                                  true);
-    return frame;
-  } else {
-    // This case is needed for audio-only devices.
+  // No texture => audio device.  size empty => video has one dimension = 0.
+  // Dimension 0 case triggers a DCHECK later on in TextureMailbox if we push
+  // through the overlay path.
+  if (!texture_ || size.IsEmpty()) {
+    LOG(INFO) << "Create black frame " << size.width() << "x" << size.height();
     return ::media::VideoFrame::CreateBlackFrame(gfx::Size(1, 1));
   }
+
+  LOG(INFO) << "Create hole frame " << size.width() << "x" << size.height();
+  scoped_refptr<::media::VideoFrame> frame =
+      ::media::VideoFrame::WrapNativeTexture(
+          ::media::PIXEL_FORMAT_XRGB,
+          gpu::MailboxHolder(mailbox_, sync_token_, GL_TEXTURE_2D),
+          ::media::VideoFrame::ReleaseMailboxCB(),
+          size,                // coded_size
+          gfx::Rect(size),     // visible rect
+          size,                // natural size
+          base::TimeDelta());  // timestamp
+  CHECK(frame);
+  frame->metadata()->SetBoolean(::media::VideoFrameMetadata::ALLOW_OVERLAY,
+                                true);
+  return frame;
 }
 
 }  // namespace media

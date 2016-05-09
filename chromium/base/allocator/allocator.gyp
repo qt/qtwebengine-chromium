@@ -22,15 +22,22 @@
     'disable_debugallocation%': 0,
   },
   'targets': [
-    # Only executables and not libraries should depend on the
-    # allocator target; only the application (the final executable)
-    # knows what allocator makes sense.
+    # The only targets that should depend on allocator are 'base' and
+    # executables that don't depend, directly or indirectly, on base (a few).
+    # All the other targets get a transitive dependency on this target via base.
     {
       'target_name': 'allocator',
-      # TODO(primiano): This should be type: none for the noop cases (an empty
-      # static lib can confuse some gyp generators). Fix it once the refactoring
-      # (crbug.com/564618) bring this file to a saner state (fewer conditions).
-      'type': 'static_library',
+      'variables': {
+        'conditions': [
+          ['use_allocator!="none" or (OS=="win" and win_use_allocator_shim==1)', {
+            'allocator_target_type%': 'static_library',
+          }, {
+            'allocator_target_type%': 'none',
+          }],
+        ],
+      },
+      'type': '<(allocator_target_type)',
+      'toolsets': ['host', 'target'],
       'conditions': [
         ['OS=="win" and win_use_allocator_shim==1', {
           'msvs_settings': {
@@ -42,34 +49,18 @@
               'AdditionalOptions': ['/ignore:4006'],
             },
           },
-          'dependencies': [
-            'libcmt',
-          ],
           'include_dirs': [
             '../..',
           ],
           'sources': [
             'allocator_shim_win.cc',
+            'allocator_shim_win.h',
           ],
           'configurations': {
             'Debug_Base': {
               'msvs_settings': {
                 'VCCLCompilerTool': {
                   'RuntimeLibrary': '0',
-                },
-              },
-            },
-          },
-          'direct_dependent_settings': {
-            'configurations': {
-              'Common_Base': {
-                'msvs_settings': {
-                  'VCLinkerTool': {
-                    'IgnoreDefaultLibraryNames': ['libcmtd.lib', 'libcmt.lib'],
-                    'AdditionalDependencies': [
-                      '<(SHARED_INTERMEDIATE_DIR)/allocator/libcmt.lib'
-                    ],
-                  },
                 },
               },
             },
@@ -337,6 +328,11 @@
                 '<(tcmalloc_dir)/src/profiler.cc',
               ],
             }],
+            ['use_experimental_allocator_shim==1', {
+              'defines': [
+                'TCMALLOC_DONT_REPLACE_SYSTEM_ALLOC',
+              ],
+            }]
           ],
           'configurations': {
             'Debug_Base': {
@@ -370,33 +366,54 @@
         }],
       ],  # conditions of 'allocator' target.
     },  # 'allocator' target.
+    {
+      # GN: //base/allocator:features
+      # When referenced from a target that might be compiled in the host
+      # toolchain, always refer to 'allocator_features#target'.
+      'target_name': 'allocator_features',
+      'includes': [ '../../build/buildflag_header.gypi' ],
+      'variables': {
+        'buildflag_header_path': 'base/allocator/features.h',
+        'buildflag_flags': [
+          'USE_EXPERIMENTAL_ALLOCATOR_SHIM=<(use_experimental_allocator_shim)',
+        ],
+      },
+    },  # 'allocator_features' target.
   ],  # targets.
   'conditions': [
-    ['OS=="win" and component!="shared_library"', {
+    ['use_experimental_allocator_shim==1', {
       'targets': [
         {
-          'target_name': 'libcmt',
-          'type': 'none',
-          'actions': [
-            {
-              'action_name': 'libcmt',
-              'inputs': [
-                'prep_libc.py',
-              ],
-              'outputs': [
-                '<(SHARED_INTERMEDIATE_DIR)/allocator/libcmt.lib',
-              ],
-              'action': [
-                'python',
-                'prep_libc.py',
-                '$(VCInstallDir)lib',
-                '<(SHARED_INTERMEDIATE_DIR)/allocator',
-                '<(target_arch)',
-              ],
-            },
+          # GN: //base/allocator:unified_allocator_shim
+          'target_name': 'unified_allocator_shim',
+          'toolsets': ['host', 'target'],
+          'type': 'static_library',
+          'defines': [ 'BASE_IMPLEMENTATION' ],
+          'sources': [
+            'allocator_shim.cc',
+            'allocator_shim.h',
+            'allocator_shim_internals.h',
+            'allocator_shim_override_cpp_symbols.h',
+            'allocator_shim_override_libc_symbols.h',
           ],
-        },
+          'include_dirs': [
+            '../..',
+          ],
+          'conditions': [
+            ['OS=="linux" and use_allocator=="tcmalloc"', {
+              'sources': [
+                'allocator_shim_default_dispatch_to_tcmalloc.cc',
+                'allocator_shim_override_glibc_weak_symbols.h',
+              ],
+            }],
+            ['OS=="linux" and use_allocator=="none"', {
+              'sources': [
+                'allocator_shim_default_dispatch_to_glibc.cc',
+              ],
+            }],
+          ]
+        },  # 'unified_allocator_shim' target.
       ],
-    }],
+    }]
   ],
 }

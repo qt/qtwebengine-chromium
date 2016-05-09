@@ -8,6 +8,8 @@
 #include "core/paint/LayerClipRecorder.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/graphics/CompositorFactory.h"
+#include "platform/graphics/CompositorFilterOperations.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/filters/FilterEffect.h"
@@ -16,7 +18,6 @@
 #include "platform/graphics/paint/PaintController.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
-#include "public/platform/WebFilterOperations.h"
 
 namespace blink {
 
@@ -29,7 +30,7 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext& context, const 
     if (!layer.paintsWithFilters())
         return;
 
-    RefPtrWillBeRawPtr<FilterEffect> lastEffect = layer.lastFilterEffect();
+    FilterEffect* lastEffect = layer.lastFilterEffect();
     if (!lastEffect)
         return;
 
@@ -37,7 +38,7 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext& context, const 
 
     SkiaImageFilterBuilder builder;
     lastEffect->determineFilterPrimitiveSubregion(MapRectForward);
-    RefPtr<SkImageFilter> imageFilter = builder.build(lastEffect.get(), ColorSpaceDeviceRGB);
+    RefPtr<SkImageFilter> imageFilter = builder.build(lastEffect, ColorSpaceDeviceRGB);
     if (!imageFilter)
         return;
 
@@ -59,15 +60,15 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext& context, const 
     }
 
     ASSERT(m_layoutObject);
-    if (!context.paintController().displayItemConstructionIsDisabled()) {
+    if (!context.getPaintController().displayItemConstructionIsDisabled()) {
         FilterOperations filterOperations(layer.computeFilterOperations(m_layoutObject->styleRef()));
-        OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-        builder.buildFilterOperations(filterOperations, webFilterOperations.get());
-        // FIXME: It's possible to have empty WebFilterOperations here even
+        OwnPtr<CompositorFilterOperations> compositorFilterOperations = adoptPtr(CompositorFactory::current().createFilterOperations());
+        builder.buildFilterOperations(filterOperations, compositorFilterOperations.get());
+        // FIXME: It's possible to have empty CompositorFilterOperations here even
         // though the SkImageFilter produced above is non-null, since the
         // layer's FilterEffectBuilder can have a stale representation of
         // the layer's filter. See crbug.com/502026.
-        if (webFilterOperations->isEmpty())
+        if (compositorFilterOperations->isEmpty())
             return;
         LayoutRect visualBounds(rootRelativeBounds);
         if (layer.enclosingPaginationLayer()) {
@@ -75,7 +76,7 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext& context, const 
             visualBounds.moveBy(-offsetFromRoot);
             layer.convertFromFlowThreadToVisualBoundingBoxInAncestor(paintingInfo.rootLayer, visualBounds);
         }
-        context.paintController().createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(visualBounds), webFilterOperations.release());
+        context.getPaintController().createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(visualBounds), compositorFilterOperations.release());
     }
 
     m_filterInProgress = true;
@@ -86,7 +87,7 @@ FilterPainter::~FilterPainter()
     if (!m_filterInProgress)
         return;
 
-    m_context.paintController().endItem<EndFilterDisplayItem>(*m_layoutObject);
+    m_context.getPaintController().endItem<EndFilterDisplayItem>(*m_layoutObject);
 }
 
 } // namespace blink

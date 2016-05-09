@@ -25,6 +25,8 @@
  * SOFTWARE.
  */
 
+#include "config.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -34,8 +36,17 @@
 #include <expat.h>
 #include <getopt.h>
 #include <limits.h>
+#include <unistd.h>
+
+#if HAVE_LIBXML
+#include <libxml/parser.h>
+#endif
 
 #include "wayland-util.h"
+
+/* Embedded wayland.dtd file, see dtddata.S */
+extern char DTD_DATA_begin;
+extern int DTD_DATA_len;
 
 enum side {
 	CLIENT,
@@ -57,6 +68,57 @@ usage(int ret)
 	                "                                 that is e.g. wayland-client-core.h instead\n"
 	                "                                 of wayland-client.h.\n");
 	exit(ret);
+}
+
+static bool
+is_dtd_valid(FILE *input)
+{
+	bool rc = true;
+#if HAVE_LIBXML
+	xmlParserCtxtPtr ctx = NULL;
+	xmlDocPtr doc = NULL;
+	xmlDtdPtr dtd = NULL;
+	xmlValidCtxtPtr	dtdctx;
+	xmlParserInputBufferPtr	buffer;
+	int fd = fileno(input);
+
+	dtdctx = xmlNewValidCtxt();
+	ctx = xmlNewParserCtxt();
+	if (!ctx || !dtdctx)
+		abort();
+
+	buffer = xmlParserInputBufferCreateMem(&DTD_DATA_begin,
+					       DTD_DATA_len,
+					       XML_CHAR_ENCODING_UTF8);
+	if (!buffer) {
+		fprintf(stderr, "Failed to init buffer for DTD.\n");
+		abort();
+	}
+
+	dtd = xmlIOParseDTD(NULL, buffer, XML_CHAR_ENCODING_UTF8);
+	if (!dtd) {
+		fprintf(stderr, "Failed to parse DTD.\n");
+		abort();
+	}
+
+	doc = xmlCtxtReadFd(ctx, fd, "protocol", NULL, 0);
+	if (!doc) {
+		fprintf(stderr, "Failed to read XML\n");
+		abort();
+	}
+
+	rc = xmlValidateDtd(dtdctx, doc, dtd);
+	xmlFreeDoc(doc);
+	xmlFreeParserCtxt(ctx);
+	xmlFreeValidCtxt(dtdctx);
+	/* xmlIOParseDTD consumes buffer */
+
+	if (lseek(fd, 0, SEEK_SET) != 0) {
+		fprintf(stderr, "Failed to reset fd, output would be garbage.\n");
+		abort();
+	}
+#endif
+	return rc;
 }
 
 #define XML_BUFFER_SIZE 4096
@@ -128,6 +190,7 @@ struct arg {
 	char *interface_name;
 	struct wl_list link;
 	char *summary;
+	char *enumeration_name;
 };
 
 struct enumeration {
@@ -136,6 +199,7 @@ struct enumeration {
 	struct wl_list entry_list;
 	struct wl_list link;
 	struct description *description;
+	bool bitfield;
 };
 
 struct entry {
@@ -540,16 +604,19 @@ start_element(void *data, const char *element_name, const char **atts)
 	const char *summary = NULL;
 	const char *since = NULL;
 	const char *allow_null = NULL;
+	const char *enumeration_name = NULL;
+	const char *bitfield = NULL;
 	int i, version = 0;
 
 	ctx->loc.line_number = XML_GetCurrentLineNumber(ctx->parser);
 	for (i = 0; atts[i]; i += 2) {
 		if (strcmp(atts[i], "name") == 0)
 			name = atts[i + 1];
-		if (strcmp(atts[i], "version") == 0)
+		if (strcmp(atts[i], "version") == 0) {
 			version = strtouint(atts[i + 1]);
 			if (version == -1)
 				fail(&ctx->loc, "wrong version (%s)", atts[i + 1]);
+		}
 		if (strcmp(atts[i], "type") == 0)
 			type = atts[i + 1];
 		if (strcmp(atts[i], "value") == 0)
@@ -562,6 +629,10 @@ start_element(void *data, const char *element_name, const char **atts)
 			since = atts[i + 1];
 		if (strcmp(atts[i], "allow-null") == 0)
 			allow_null = atts[i + 1];
+		if (strcmp(atts[i], "enum") == 0)
+			enumeration_name = atts[i + 1];
+		if (strcmp(atts[i], "bitfield") == 0)
+			bitfield = atts[i + 1];
 	}
 
 	ctx->character_data_length = 0;
@@ -603,8 +674,12 @@ start_element(void *data, const char *element_name, const char **atts)
 
 		if (since != NULL) {
 			version = strtouint(since);
-			if (version == -1)
+			if (version == -1) {
 				fail(&ctx->loc, "invalid integer (%s)\n", since);
+			} else if (version > ctx->interface->version) {
+				fail(&ctx->loc, "since (%u) larger than version (%u)\n",
+				     version, ctx->interface->version);
+			}
 		} else {
 			version = 1;
 		}
@@ -655,6 +730,11 @@ start_element(void *data, const char *element_name, const char **atts)
 				     "allow-null is only valid for objects, strings, and arrays");
 		}
 
+		if (enumeration_name == NULL || strcmp(enumeration_name, "") == 0)
+			arg->enumeration_name = NULL;
+		else
+			arg->enumeration_name = xstrdup(enumeration_name);
+
 		if (summary)
 			arg->summary = xstrdup(summary);
 
@@ -665,6 +745,16 @@ start_element(void *data, const char *element_name, const char **atts)
 			fail(&ctx->loc, "no enum name given");
 
 		enumeration = create_enumeration(name);
+
+		if (bitfield == NULL || strcmp(bitfield, "false") == 0)
+			enumeration->bitfield = false;
+		else if (strcmp(bitfield, "true") == 0)
+			enumeration->bitfield = true;
+		else
+			fail(&ctx->loc,
+                             "invalid value (%s) for bitfield attribute (only true/false are accepted)",
+                             bitfield);
+
 		wl_list_insert(ctx->interface->enumeration_list.prev,
 			       &enumeration->link);
 
@@ -701,6 +791,46 @@ start_element(void *data, const char *element_name, const char **atts)
 }
 
 static void
+verify_arguments(struct parse_context *ctx, struct wl_list *messages, struct wl_list *enumerations)
+{
+	struct message *m;
+	wl_list_for_each(m, messages, link) {
+		struct arg *a;
+		wl_list_for_each(a, &m->arg_list, link) {
+			struct enumeration *e, *f;
+
+			if (!a->enumeration_name)
+				continue;
+
+			f = NULL;
+			wl_list_for_each(e, enumerations, link) {
+				if(strcmp(e->name, a->enumeration_name) == 0)
+					f = e;
+			}
+
+			if (f == NULL)
+				fail(&ctx->loc,
+				     "could not find enumeration %s",
+				     a->enumeration_name);
+
+			switch (a->type) {
+			case INT:
+				if (f->bitfield)
+					fail(&ctx->loc,
+					     "bitfield-style enum must only be referenced by uint");
+				break;
+			case UNSIGNED:
+				break;
+			default:
+				fail(&ctx->loc,
+				     "enumeration-style argument has wrong type");
+			}
+		}
+	}
+
+}
+
+static void
 end_element(void *data, const XML_Char *name)
 {
 	struct parse_context *ctx = data;
@@ -723,6 +853,12 @@ end_element(void *data, const XML_Char *name)
 			     ctx->enumeration->name);
 		}
 		ctx->enumeration = NULL;
+	} else if (strcmp(name, "interface") == 0) {
+		struct interface *i = ctx->interface;
+
+		verify_arguments(ctx, &i->request_list, &i->enumeration_list);
+		verify_arguments(ctx, &i->event_list, &i->enumeration_list);
+
 	}
 }
 
@@ -820,6 +956,14 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 	       interface->name, interface->name, interface->name,
 	       interface->name);
 
+	printf("static inline uint32_t\n"
+	       "%s_get_version(struct %s *%s)\n"
+	       "{\n"
+	       "\treturn wl_proxy_get_version((struct wl_proxy *) %s);\n"
+	       "}\n\n",
+	       interface->name, interface->name, interface->name,
+	       interface->name);
+
 	has_destructor = 0;
 	has_destroy = 0;
 	wl_list_for_each(m, message_list, link) {
@@ -891,21 +1035,31 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 
 		printf(")\n"
 		       "{\n");
-		if (ret) {
+		if (ret && ret->interface_name == NULL) {
+			/* an arg has type ="new_id" but interface is not
+			 * provided, such as in wl_registry.bind */
 			printf("\tstruct wl_proxy *%s;\n\n"
-			       "\t%s = wl_proxy_marshal_constructor("
+			       "\t%s = wl_proxy_marshal_constructor_versioned("
 			       "(struct wl_proxy *) %s,\n"
-			       "\t\t\t %s_%s, ",
+			       "\t\t\t %s_%s, interface, version",
 			       ret->name, ret->name,
 			       interface->name,
 			       interface->uppercase_name,
 			       m->uppercase_name);
-
-			if (ret->interface_name == NULL)
-				printf("interface");
-			else
-				printf("&%s_interface", ret->interface_name);
+		} else if (ret) {
+			/* Normal factory case, an arg has type="new_id" and
+			 * an interface is provided */
+			printf("\tstruct wl_proxy *%s;\n\n"
+			       "\t%s = wl_proxy_marshal_constructor("
+			       "(struct wl_proxy *) %s,\n"
+			       "\t\t\t %s_%s, &%s_interface",
+			       ret->name, ret->name,
+			       interface->name,
+			       interface->uppercase_name,
+			       m->uppercase_name,
+			       ret->interface_name);
 		} else {
+			/* No args have type="new_id" */
 			printf("\twl_proxy_marshal((struct wl_proxy *) %s,\n"
 			       "\t\t\t %s_%s",
 			       interface->name,
@@ -1141,8 +1295,9 @@ format_copyright(const char *copyright)
 		}
 
 		if (copyright[i] == '\n' || copyright[i] == '\0') {
-			printf("%s %.*s\n",
+			printf("%s%s%.*s\n",
 			       i == 0 ? "/*" : " *",
+			       i > start ? " " : "",
 			       i - start, copyright + start);
 			bol = 1;
 		}
@@ -1270,6 +1425,7 @@ emit_header(struct protocol *protocol, enum side side)
 		} else {
 			emit_structs(&i->event_list, i, side);
 			emit_opcodes(&i->request_list, i);
+			emit_opcode_versions(&i->request_list, i);
 			emit_stubs(&i->request_list, i);
 		}
 
@@ -1531,6 +1687,7 @@ int main(int argc, char *argv[])
 		if (freopen(argv[2], "w", stdout) == NULL) {
 			fprintf(stderr, "Could not open output file: %s\n",
 				strerror(errno));
+			fclose(input);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -1545,11 +1702,21 @@ int main(int argc, char *argv[])
 	ctx.protocol = &protocol;
 	ctx.loc.filename = "<stdin>";
 
+	if (!is_dtd_valid(input)) {
+		fprintf(stderr,
+		"*******************************************************\n"
+		"*                                                     *\n"
+		"* WARNING: XML failed validation against built-in DTD *\n"
+		"*                                                     *\n"
+		"*******************************************************\n");
+	}
+
 	/* create XML parser */
 	ctx.parser = XML_ParserCreate(NULL);
 	XML_SetUserData(ctx.parser, &ctx);
 	if (ctx.parser == NULL) {
 		fprintf(stderr, "failed to create parser\n");
+		fclose(input);
 		exit(EXIT_FAILURE);
 	}
 
@@ -1561,6 +1728,7 @@ int main(int argc, char *argv[])
 		len = fread(buf, 1, XML_BUFFER_SIZE, input);
 		if (len < 0) {
 			fprintf(stderr, "fread: %m\n");
+			fclose(input);
 			exit(EXIT_FAILURE);
 		}
 		if (XML_ParseBuffer(ctx.parser, len, len == 0) == 0) {
@@ -1569,6 +1737,7 @@ int main(int argc, char *argv[])
 				XML_GetCurrentLineNumber(ctx.parser),
 				XML_GetCurrentColumnNumber(ctx.parser),
 				XML_ErrorString(XML_GetErrorCode(ctx.parser)));
+			fclose(input);
 			exit(EXIT_FAILURE);
 		}
 	} while (len > 0);
@@ -1588,6 +1757,7 @@ int main(int argc, char *argv[])
 	}
 
 	free_protocol(&protocol);
+	fclose(input);
 
 	return 0;
 }

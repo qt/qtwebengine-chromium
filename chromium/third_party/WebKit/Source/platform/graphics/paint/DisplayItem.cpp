@@ -73,6 +73,7 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(Caret);
         DEBUG_STRING_CASE(ColumnRules);
         DEBUG_STRING_CASE(DebugRedFill);
+        DEBUG_STRING_CASE(DocumentBackground);
         DEBUG_STRING_CASE(DragImage);
         DEBUG_STRING_CASE(SVGImage);
         DEBUG_STRING_CASE(LinkHighlight);
@@ -97,12 +98,10 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ScrollbarForwardButtonEnd);
         DEBUG_STRING_CASE(ScrollbarForwardButtonStart);
         DEBUG_STRING_CASE(ScrollbarForwardTrack);
-        DEBUG_STRING_CASE(ScrollbarHorizontal);
         DEBUG_STRING_CASE(ScrollbarThumb);
         DEBUG_STRING_CASE(ScrollbarTickmarks);
         DEBUG_STRING_CASE(ScrollbarTrackBackground);
-        DEBUG_STRING_CASE(ScrollbarVertical);
-        DEBUG_STRING_CASE(SelectionGap);
+        DEBUG_STRING_CASE(ScrollbarCompositedScrollbar);
         DEBUG_STRING_CASE(SelectionTint);
         DEBUG_STRING_CASE(TableCellBackgroundFromColumnGroup);
         DEBUG_STRING_CASE(TableCellBackgroundFromColumn);
@@ -120,6 +119,14 @@ static WTF::String drawingTypeAsDebugString(DisplayItem::Type type)
 {
     PAINT_PHASE_BASED_DEBUG_STRINGS(Drawing);
     return "Drawing" + specialDrawingTypeAsDebugString(type);
+}
+
+static String foreignLayerTypeAsDebugString(DisplayItem::Type type)
+{
+    switch (type) {
+        DEBUG_STRING_CASE(ForeignLayerPlugin);
+        DEFAULT_CASE;
+    }
 }
 
 static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
@@ -148,6 +155,15 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
     }
 }
 
+static String scrollTypeAsDebugString(DisplayItem::Type type)
+{
+    PAINT_PHASE_BASED_DEBUG_STRINGS(Scroll);
+    switch (type) {
+        DEBUG_STRING_CASE(ScrollOverflowControls);
+        DEFAULT_CASE;
+    }
+}
+
 static String transform3DTypeAsDebugString(DisplayItem::Type type)
 {
     switch (type) {
@@ -162,6 +178,10 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
         return drawingTypeAsDebugString(type);
     if (isCachedDrawingType(type))
         return "Cached" + drawingTypeAsDebugString(cachedDrawingTypeToDrawingType(type));
+
+    if (isForeignLayerType(type))
+        return foreignLayerTypeAsDebugString(type);
+
     if (isClipType(type))
         return clipTypeAsDebugString(type);
     if (isEndClipType(type))
@@ -174,9 +194,10 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndFloatClipType(type))
         return "End" + typeAsDebugString(endFloatClipTypeToFloatClipType(type));
 
-    PAINT_PHASE_BASED_DEBUG_STRINGS(Scroll);
+    if (isScrollType(type))
+        return scrollTypeAsDebugString(type);
     if (isEndScrollType(type))
-        return "End" + typeAsDebugString(endScrollTypeToScrollType(type));
+        return "End" + scrollTypeAsDebugString(endScrollTypeToScrollType(type));
 
     if (isTransform3DType(type))
         return transform3DTypeAsDebugString(type);
@@ -192,10 +213,6 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
         DEBUG_STRING_CASE(EndTransform);
         DEBUG_STRING_CASE(BeginClipPath);
         DEBUG_STRING_CASE(EndClipPath);
-        DEBUG_STRING_CASE(BeginFixedPosition);
-        DEBUG_STRING_CASE(EndFixedPosition);
-        DEBUG_STRING_CASE(BeginFixedPositionContainer);
-        DEBUG_STRING_CASE(EndFixedPositionContainer);
         DEBUG_STRING_CASE(Subsequence);
         DEBUG_STRING_CASE(EndSubsequence);
         DEBUG_STRING_CASE(CachedSubsequence);
@@ -228,7 +245,7 @@ void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder)
         stringBuilder.append(clientDebugString());
     }
     stringBuilder.append("\", type: \"");
-    stringBuilder.append(typeAsDebugString(type()));
+    stringBuilder.append(typeAsDebugString(getType()));
     stringBuilder.append('"');
     if (m_skippedCache)
         stringBuilder.append(", skippedCache: true");

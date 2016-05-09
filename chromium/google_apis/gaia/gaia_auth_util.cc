@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 
+#include <memory>
+
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
@@ -46,6 +48,8 @@ std::string CanonicalizeEmailImpl(const std::string& email_address,
 
 
 ListedAccount::ListedAccount() {}
+
+ListedAccount::ListedAccount(const ListedAccount& other) = default;
 
 ListedAccount::~ListedAccount() {}
 
@@ -117,7 +121,7 @@ bool ParseListAccountsData(
   accounts->clear();
 
   // Parse returned data and make sure we have data.
-  scoped_ptr<base::Value> value = base::JSONReader::Read(data);
+  std::unique_ptr<base::Value> value = base::JSONReader::Read(data);
   if (!value)
     return false;
 

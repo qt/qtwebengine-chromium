@@ -15,9 +15,11 @@
 
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
+#include "base/hash.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "media/base/data_buffer.h"
 #include "media/blink/interval_map.h"
@@ -43,15 +45,7 @@ namespace BASE_HASH_NAMESPACE {
 template <>
 struct hash<media::MultiBufferGlobalBlockId> {
   std::size_t operator()(const media::MultiBufferGlobalBlockId& key) const {
-// It would be nice if we could use intptr_t instead of int64_t here, but
-// on some platforms, int64_t is declared as "long" which doesn't match
-// any of the HashPair() functions. This leads to a compile error since
-// the compiler can't decide which HashPair() function to call.
-#if defined(ARCH_CPU_64_BITS)
-    return base::HashPair(reinterpret_cast<int64_t>(key.first), key.second);
-#else
-    return base::HashPair(reinterpret_cast<int32_t>(key.first), key.second);
-#endif
+    return base::HashInts(reinterpret_cast<uintptr_t>(key.first), key.second);
   }
 };
 
@@ -137,14 +131,26 @@ class MEDIA_BLINK_EXPORT MultiBuffer {
   class MEDIA_BLINK_EXPORT GlobalLRU : public base::RefCounted<GlobalLRU> {
    public:
     typedef MultiBufferGlobalBlockId GlobalBlockId;
-    GlobalLRU();
+    explicit GlobalLRU(
+        const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
     // Free elements from cache if needed and possible.
     // Don't free more than |max_to_free| blocks.
     // Virtual for testing purposes.
     void Prune(int64_t max_to_free);
 
+    // Returns true if there are prunable blocks.
+    bool Pruneable() const;
+
+    // Incremnt the amount of data used by all multibuffers.
     void IncrementDataSize(int64_t blocks);
+
+    // Each multibuffer is allowed a certain amount of memory,
+    // that memory is registered by calling this function.
+    // The memory is actually shared by all multibuffers.
+    // When the total amount of memory used by all multibuffers
+    // is greater than what has been registered here, we use the
+    // LRU to decide what blocks to free first.
     void IncrementMaxSize(int64_t blocks);
 
     // LRU operations.
@@ -158,15 +164,29 @@ class MEDIA_BLINK_EXPORT MultiBuffer {
     friend class base::RefCounted<GlobalLRU>;
     ~GlobalLRU();
 
+    // Schedule background pruning, if needed.
+    void SchedulePrune();
+
+    // Perform background pruning.
+    void PruneTask();
+
     // Max number of blocks.
     int64_t max_size_;
 
     // Sum of all multibuffer::data_.size().
     int64_t data_size_;
 
+    // True if there is a call to the background pruning outstanding.
+    bool background_pruning_pending_;
+
     // The LRU should contain all blocks which are not pinned from
     // all multibuffers.
     LRU<GlobalBlockId> lru_;
+
+    // Where we run our tasks.
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
+    DISALLOW_COPY_AND_ASSIGN(GlobalLRU);
   };
 
   MultiBuffer(int32_t block_size_shift,

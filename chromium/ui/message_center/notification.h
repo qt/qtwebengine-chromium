@@ -53,7 +53,13 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   std::vector<ButtonInfo> buttons;
   bool should_make_spoken_feedback_for_popup_updates;
   bool clickable;
+#if defined(OS_CHROMEOS)
+  // Flag if the notification is pinned. If true, the notification is pinned
+  // and user can't remove it.
+  bool pinned;
+#endif  // defined(OS_CHROMEOS)
   std::vector<int> vibration_pattern;
+  bool renotify;
   bool silent;
 };
 
@@ -123,6 +129,13 @@ class MESSAGE_CENTER_EXPORT Notification {
     optional_fields_.vibration_pattern = vibration_pattern;
   }
 
+  // This property currently only works in platforms that support native
+  // notifications.
+  // It determines whether the sound and vibration effects should signal
+  // if the notification is replacing another notification.
+  bool renotify() const { return optional_fields_.renotify; }
+  void set_renotify(bool renotify) { optional_fields_.renotify = renotify; }
+
   // This property currently has no effect on non-Android platforms.
   bool silent() const { return optional_fields_.silent; }
   void set_silent(bool silent) { optional_fields_.silent = silent; }
@@ -158,12 +171,10 @@ class MESSAGE_CENTER_EXPORT Notification {
   const gfx::Image& icon() const { return icon_; }
   void set_icon(const gfx::Image& icon) { icon_ = icon; }
 
-  // Gets and sets whether to adjust the icon before displaying. The adjustment
-  // is designed to accomodate legacy HTML icons but isn't necessary for
-  // Chrome's hardcoded notifications. NB: this is currently ignored outside of
-  // Views.
-  bool adjust_icon() const { return adjust_icon_; }
-  void set_adjust_icon(bool adjust) { adjust_icon_ = adjust; }
+  // Gets and sets whether to draw a solid background colour behind the
+  // notification's icon. Only applies to the Views implementation.
+  bool draw_icon_background() const { return draw_icon_background_; }
+  void set_draw_icon_background(bool draw) { draw_icon_background_ = draw; }
 
   const gfx::Image& image() const { return optional_fields_.image; }
   void set_image(const gfx::Image& image) { optional_fields_.image = image; }
@@ -206,6 +217,17 @@ class MESSAGE_CENTER_EXPORT Notification {
     optional_fields_.clickable = clickable;
   }
 
+  bool pinned() const {
+#if defined(OS_CHROMEOS)
+    return optional_fields_.pinned;
+#else
+    return false;
+#endif  // defined(OS_CHROMEOS)
+  }
+#if defined(OS_CHROMEOS)
+  void set_pinned(bool pinned) { optional_fields_.pinned = pinned; }
+#endif  // defined(OS_CHROMEOS)
+
   NotificationDelegate* delegate() const { return delegate_.get(); }
 
   const RichNotificationData& rich_notification_data() const {
@@ -246,9 +268,9 @@ class MESSAGE_CENTER_EXPORT Notification {
   // Image data for the associated icon, used by Ash when available.
   gfx::Image icon_;
 
-  // True by default; controls whether to apply adjustments such as BG color and
-  // size scaling to |icon_|.
-  bool adjust_icon_;
+  // True by default; controls whether to draw a solid background colour behind
+  // the |icon_|. Only applies to the Views implementation.
+  bool draw_icon_background_;
 
   // The display string for the source of the notification.  Could be
   // the same as origin_url_, or the name of an extension.

@@ -12,7 +12,6 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/ozone/ozone_export.h"
 
 namespace ui {
 
@@ -21,7 +20,7 @@ class ScanoutBuffer;
 struct OverlayPlane;
 typedef std::vector<OverlayPlane> OverlayPlaneList;
 
-struct OZONE_EXPORT OverlayPlane {
+struct OverlayPlane {
   // Simpler constructor for the primary plane.
   explicit OverlayPlane(const scoped_refptr<ScanoutBuffer>& buffer);
 
@@ -30,6 +29,7 @@ struct OZONE_EXPORT OverlayPlane {
                gfx::OverlayTransform plane_transform,
                const gfx::Rect& display_bounds,
                const gfx::RectF& crop_rect);
+  OverlayPlane(const OverlayPlane& other);
 
   // This represents a callback function which can handle post processing
   // operations like scaling, format conversion etc of the buffer bound to this

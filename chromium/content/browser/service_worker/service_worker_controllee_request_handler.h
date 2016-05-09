@@ -100,14 +100,15 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
       const GURL& original_url_via_service_worker,
       blink::WebServiceWorkerResponseType response_type_via_service_worker,
       base::TimeTicks worker_start_time,
-      base::TimeTicks service_worker_ready_time) override;
+      base::TimeTicks service_worker_ready_time,
+      bool response_is_in_cache_storage,
+      const std::string& response_cache_storage_cache_name) override;
 
   ServiceWorkerVersion* GetServiceWorkerVersion(
       ServiceWorkerMetrics::URLRequestJobResult* result) override;
   bool RequestStillValid(
       ServiceWorkerMetrics::URLRequestJobResult* result) override;
   void MainResourceLoadFailed() override;
-  GURL GetRequestingOrigin() override;
 
   // Sets |job_| to nullptr, and clears all extra response info associated with
   // that job, except for timing information.
@@ -137,6 +138,8 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   blink::WebServiceWorkerResponseType response_type_via_service_worker_;
   base::TimeTicks service_worker_start_time_;
   base::TimeTicks service_worker_ready_time_;
+  bool response_is_in_cache_storage_ = false;
+  std::string response_cache_storage_cache_name_;
 
   base::WeakPtrFactory<ServiceWorkerControlleeRequestHandler> weak_factory_;
 

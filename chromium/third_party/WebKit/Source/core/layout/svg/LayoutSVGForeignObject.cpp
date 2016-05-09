@@ -51,9 +51,9 @@ void LayoutSVGForeignObject::paint(const PaintInfo& paintInfo, const LayoutPoint
     SVGForeignObjectPainter(*this).paint(paintInfo);
 }
 
-const AffineTransform& LayoutSVGForeignObject::localToParentTransform() const
+const AffineTransform& LayoutSVGForeignObject::localToSVGParentTransform() const
 {
-    m_localToParentTransform = localTransform();
+    m_localToParentTransform = localSVGTransform();
     m_localToParentTransform.translate(m_viewport.x(), m_viewport.y());
     return m_localToParentTransform;
 }
@@ -62,7 +62,7 @@ void LayoutSVGForeignObject::updateLogicalWidth()
 {
     // FIXME: Investigate in size rounding issues
     // FIXME: Remove unnecessary rounding when layout is off ints: webkit.org/b/63656
-    setWidth(static_cast<int>(roundf(m_viewport.width())));
+    setWidth(LayoutUnit(static_cast<int>(roundf(m_viewport.width()))));
 }
 
 void LayoutSVGForeignObject::computeLogicalHeight(LayoutUnit, LayoutUnit logicalTop, LogicalExtentComputedValues& computedValues) const
@@ -70,7 +70,7 @@ void LayoutSVGForeignObject::computeLogicalHeight(LayoutUnit, LayoutUnit logical
     // FIXME: Investigate in size rounding issues
     // FIXME: Remove unnecessary rounding when layout is off ints: webkit.org/b/63656
     // FIXME: Is this correct for vertical writing mode?
-    computedValues.m_extent = static_cast<int>(roundf(m_viewport.height()));
+    computedValues.m_extent = LayoutUnit(static_cast<int>(roundf(m_viewport.height())));
     computedValues.m_position = logicalTop;
 }
 
@@ -126,7 +126,7 @@ bool LayoutSVGForeignObject::nodeAtFloatPoint(HitTestResult& result, const Float
     if (hitTestAction != HitTestForeground)
         return false;
 
-    AffineTransform localTransform = this->localTransform();
+    AffineTransform localTransform = this->localSVGTransform();
     if (!localTransform.isInvertible())
         return false;
 
@@ -137,10 +137,10 @@ bool LayoutSVGForeignObject::nodeAtFloatPoint(HitTestResult& result, const Float
         return false;
 
     // FOs establish a stacking context, so we need to hit-test all layers.
-    HitTestLocation hitTestLocation(roundedLayoutPoint(localPoint));
+    HitTestLocation hitTestLocation(localPoint);
     return LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestForeground)
         || LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestFloat)
         || LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestChildBlockBackgrounds);
 }
 
-}
+} // namespace blink

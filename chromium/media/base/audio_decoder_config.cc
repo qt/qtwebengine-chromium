@@ -9,46 +9,6 @@
 
 namespace media {
 
-// These names come from src/third_party/ffmpeg/libavcodec/codec_desc.c
-std::string GetCodecName(AudioCodec codec) {
-  switch (codec) {
-    case kUnknownAudioCodec:
-      return "unknown";
-    case kCodecAAC:
-      return "aac";
-    case kCodecMP3:
-      return "mp3";
-    case kCodecPCM:
-    case kCodecPCM_S16BE:
-    case kCodecPCM_S24BE:
-      return "pcm";
-    case kCodecVorbis:
-      return "vorbis";
-    case kCodecFLAC:
-      return "flac";
-    case kCodecAMR_NB:
-      return "amr_nb";
-    case kCodecAMR_WB:
-      return "amr_wb";
-    case kCodecPCM_MULAW:
-      return "pcm_mulaw";
-    case kCodecGSM_MS:
-      return "gsm_ms";
-    case kCodecOpus:
-      return "opus";
-    case kCodecPCM_ALAW:
-      return "pcm_alaw";
-    case kCodecEAC3:
-      return "eac3";
-    case kCodecALAC:
-      return "alac";
-    case kCodecAC3:
-      return "ac3";
-  }
-  NOTREACHED();
-  return "";
-}
-
 AudioDecoderConfig::AudioDecoderConfig()
     : codec_(kUnknownAudioCodec),
       sample_format_(kUnknownSampleFormat),
@@ -56,26 +16,28 @@ AudioDecoderConfig::AudioDecoderConfig()
       channel_layout_(CHANNEL_LAYOUT_UNSUPPORTED),
       samples_per_second_(0),
       bytes_per_frame_(0),
-      is_encrypted_(false),
-      codec_delay_(0) {
+      codec_delay_(0) {}
+
+AudioDecoderConfig::AudioDecoderConfig(
+    AudioCodec codec,
+    SampleFormat sample_format,
+    ChannelLayout channel_layout,
+    int samples_per_second,
+    const std::vector<uint8_t>& extra_data,
+    const EncryptionScheme& encryption_scheme) {
+  Initialize(codec, sample_format, channel_layout, samples_per_second,
+             extra_data, encryption_scheme, base::TimeDelta(), 0);
 }
 
-AudioDecoderConfig::AudioDecoderConfig(AudioCodec codec,
-                                       SampleFormat sample_format,
-                                       ChannelLayout channel_layout,
-                                       int samples_per_second,
-                                       const std::vector<uint8_t>& extra_data,
-                                       bool is_encrypted) {
-  Initialize(codec, sample_format, channel_layout, samples_per_second,
-             extra_data, is_encrypted, base::TimeDelta(), 0);
-}
+AudioDecoderConfig::AudioDecoderConfig(const AudioDecoderConfig& other) =
+    default;
 
 void AudioDecoderConfig::Initialize(AudioCodec codec,
                                     SampleFormat sample_format,
                                     ChannelLayout channel_layout,
                                     int samples_per_second,
                                     const std::vector<uint8_t>& extra_data,
-                                    bool is_encrypted,
+                                    const EncryptionScheme& encryption_scheme,
                                     base::TimeDelta seek_preroll,
                                     int codec_delay) {
   codec_ = codec;
@@ -84,7 +46,7 @@ void AudioDecoderConfig::Initialize(AudioCodec codec,
   sample_format_ = sample_format;
   bytes_per_channel_ = SampleFormatToBytesPerChannel(sample_format);
   extra_data_ = extra_data;
-  is_encrypted_ = is_encrypted;
+  encryption_scheme_ = encryption_scheme;
   seek_preroll_ = seek_preroll;
   codec_delay_ = codec_delay;
 
@@ -112,7 +74,7 @@ bool AudioDecoderConfig::Matches(const AudioDecoderConfig& config) const {
           (channel_layout() == config.channel_layout()) &&
           (samples_per_second() == config.samples_per_second()) &&
           (extra_data() == config.extra_data()) &&
-          (is_encrypted() == config.is_encrypted()) &&
+          (encryption_scheme().Matches(config.encryption_scheme())) &&
           (sample_format() == config.sample_format()) &&
           (seek_preroll() == config.seek_preroll()) &&
           (codec_delay() == config.codec_delay()));

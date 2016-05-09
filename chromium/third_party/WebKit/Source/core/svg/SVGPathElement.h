@@ -29,6 +29,8 @@
 
 namespace blink {
 
+class StylePath;
+
 class SVGPathElement final : public SVGGeometryElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
@@ -37,13 +39,13 @@ public:
     Path asPath() const override;
 
     float getTotalLength();
-    PassRefPtrWillBeRawPtr<SVGPointTearOff> getPointAtLength(float distance);
+    SVGPointTearOff* getPointAtLength(float distance);
     unsigned getPathSegAtLength(float distance);
 
     SVGAnimatedPath* path() const { return m_path.get(); }
     SVGAnimatedNumber* pathLength() const { return m_pathLength.get(); }
-
-    const SVGPathByteStream& pathByteStream() const;
+    float pathLengthScaleFactor() const;
+    const SVGPathByteStream& pathByteStream() const { return stylePath()->byteStream(); }
 
     bool isPresentationAttribute(const QualifiedName&) const override;
     bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
@@ -52,6 +54,8 @@ public:
 
 private:
     explicit SVGPathElement(Document&);
+
+    const StylePath* stylePath() const;
 
     void svgAttributeChanged(const QualifiedName&) override;
 
@@ -62,8 +66,8 @@ private:
 
     void invalidateMPathDependencies();
 
-    RefPtrWillBeMember<SVGAnimatedNumber> m_pathLength;
-    RefPtrWillBeMember<SVGAnimatedPath> m_path;
+    Member<SVGAnimatedNumber> m_pathLength;
+    Member<SVGAnimatedPath> m_path;
 };
 
 } // namespace blink

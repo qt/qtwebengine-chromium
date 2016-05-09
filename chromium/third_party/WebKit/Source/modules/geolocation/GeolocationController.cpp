@@ -73,9 +73,9 @@ GeolocationController::~GeolocationController()
 #endif
 }
 
-PassOwnPtrWillBeRawPtr<GeolocationController> GeolocationController::create(LocalFrame& frame, GeolocationClient* client)
+GeolocationController* GeolocationController::create(LocalFrame& frame, GeolocationClient* client)
 {
-    return adoptPtrWillBeNoop(new GeolocationController(frame, client));
+    return new GeolocationController(frame, client);
 }
 
 void GeolocationController::addObserver(Geolocation* observer, bool enableHighAccuracy)
@@ -90,7 +90,7 @@ void GeolocationController::addObserver(Geolocation* observer, bool enableHighAc
     if (m_client) {
         if (enableHighAccuracy)
             m_client->setEnableHighAccuracy(true);
-        if (wasEmpty && page() && page()->visibilityState() == PageVisibilityStateVisible)
+        if (wasEmpty && page() && page()->isPageVisible())
             startUpdatingIfNeeded();
     }
 }
@@ -170,7 +170,7 @@ void GeolocationController::pageVisibilityChanged()
     if (m_observers.isEmpty() || !m_client)
         return;
 
-    if (page() && page()->visibilityState() == PageVisibilityStateVisible)
+    if (page() && page()->isPageVisible())
         startUpdatingIfNeeded();
     else
         stopUpdatingIfNeeded();
@@ -187,13 +187,13 @@ DEFINE_TRACE(GeolocationController)
     visitor->trace(m_lastPosition);
     visitor->trace(m_observers);
     visitor->trace(m_highAccuracyObservers);
-    WillBeHeapSupplement<LocalFrame>::trace(visitor);
+    Supplement<LocalFrame>::trace(visitor);
     PageLifecycleObserver::trace(visitor);
 }
 
 void provideGeolocationTo(LocalFrame& frame, GeolocationClient* client)
 {
-    WillBeHeapSupplement<LocalFrame>::provideTo(frame, GeolocationController::supplementName(), GeolocationController::create(frame, client));
+    Supplement<LocalFrame>::provideTo(frame, GeolocationController::supplementName(), GeolocationController::create(frame, client));
 }
 
 } // namespace blink

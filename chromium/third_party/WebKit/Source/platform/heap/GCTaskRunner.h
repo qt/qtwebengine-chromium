@@ -31,6 +31,7 @@
 #ifndef GCTaskRunner_h
 #define GCTaskRunner_h
 
+#include "platform/ThreadSafeFunctional.h"
 #include "platform/heap/ThreadState.h"
 #include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
@@ -47,28 +48,24 @@ public:
         // GCTask has an empty run() method. Its only purpose is to guarantee
         // that MessageLoop will have a task to process which will result
         // in GCTaskRunner::didProcessTask being executed.
-        m_taskRunner->postTask(BLINK_FROM_HERE, new GCTask);
+        m_taskRunner->postTask(BLINK_FROM_HERE, threadSafeBind(&runGCTask));
     }
 
 private:
-    class GCTask : public WebTaskRunner::Task {
-    public:
-        virtual ~GCTask() { }
-
-        void run() override
-        {
-            // Don't do anything here because we don't know if this is
-            // a nested event loop or not. GCTaskRunner::didProcessTask
-            // will enter correct safepoint for us.
-            // We are not calling onInterrupted() because that always
-            // conservatively enters safepoint with pointers on stack.
-        }
-    };
+    static void runGCTask()
+    {
+        // Don't do anything here because we don't know if this is
+        // a nested event loop or not. GCTaskRunner::didProcessTask
+        // will enter correct safepoint for us.
+        // We are not calling onInterrupted() because that always
+        // conservatively enters safepoint with pointers on stack.
+    }
 
     WebTaskRunner* m_taskRunner;
 };
 
 class GCTaskObserver final : public WebThread::TaskObserver {
+    USING_FAST_MALLOC(GCTaskObserver);
 public:
     GCTaskObserver() : m_nesting(0) { }
 
@@ -100,13 +97,14 @@ private:
 };
 
 class GCTaskRunner final {
+    USING_FAST_MALLOC(GCTaskRunner);
 public:
     explicit GCTaskRunner(WebThread* thread)
         : m_gcTaskObserver(adoptPtr(new GCTaskObserver))
         , m_thread(thread)
     {
         m_thread->addTaskObserver(m_gcTaskObserver.get());
-        ThreadState::current()->addInterruptor(adoptPtr(new MessageLoopInterruptor(thread->taskRunner())));
+        ThreadState::current()->addInterruptor(adoptPtr(new MessageLoopInterruptor(thread->getWebTaskRunner())));
     }
 
     ~GCTaskRunner()

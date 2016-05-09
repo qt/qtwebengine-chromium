@@ -21,6 +21,9 @@
 #include "gpu/gpu_export.h"
 
 namespace gpu {
+
+struct GpuPreferences;
+
 namespace gles2 {
 
 class FeatureInfo;
@@ -28,7 +31,6 @@ class ProgramCache;
 class ProgramManager;
 class Shader;
 class ShaderManager;
-class FeatureInfo;
 
 // This is used to track which attributes a particular program needs
 // so we can verify at glDrawXXX time that every attribute is either disabled
@@ -86,6 +88,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   struct UniformInfo {
     UniformInfo();
+    UniformInfo(const UniformInfo& other);
     UniformInfo(const std::string& client_name,
                 GLint client_location_base,
                 GLenum _type,
@@ -255,10 +258,11 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   GLint GetFragDataIndex(const std::string& original_name) const;
 
   // Sets the sampler values for a uniform.
-  // This is safe to call for any location. If the location is not
-  // a sampler uniform nothing will happen.
-  // Returns false if fake_location is a sampler and any value
-  // is >= num_texture_units. Returns true otherwise.
+  // This should be called only for valid fake location pointing to
+  // an active uniform.
+  // If the location is not a sampler uniform nothing will happen.
+  // Returns false if fake_location is a sampler and any value is >=
+  // num_texture_units. Returns true otherwise.
   bool SetSamplers(
       GLint num_texture_units, GLint fake_location,
       GLsizei count, const GLint* value);
@@ -422,18 +426,6 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // Updates the program log info from GL
   void UpdateLogInfo();
 
-  template <typename VarT>
-  void GetUniformBlockMembers(
-      Shader* shader, const std::vector<VarT>& fields,
-      const std::string& prefix);
-
-  // Get UniformBlock from InterfaceBlock
-  void GetUniformBlockFromInterfaceBlock(
-      Shader* shader, const sh::InterfaceBlock& interface_block);
-
-  // Get UniformBlocks info
-  void GatherInterfaceBlockInfo();
-
   // Clears all the uniforms.
   void ClearUniforms(std::vector<uint8_t>* zero_buffer);
 
@@ -541,10 +533,11 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 // need to be shared by multiple GLES2Decoders.
 class GPU_EXPORT ProgramManager {
  public:
-  explicit ProgramManager(ProgramCache* program_cache,
-                          uint32_t max_varying_vectors,
-                          uint32_t max_dual_source_draw_buffers,
-                          FeatureInfo* feature_info);
+  ProgramManager(ProgramCache* program_cache,
+                 uint32_t max_varying_vectors,
+                 uint32_t max_dual_source_draw_buffers,
+                 const GpuPreferences& gpu_preferences,
+                 FeatureInfo* feature_info);
   ~ProgramManager();
 
   // Must call before destruction.
@@ -617,6 +610,7 @@ class GPU_EXPORT ProgramManager {
   uint32_t max_varying_vectors_;
   uint32_t max_dual_source_draw_buffers_;
 
+  const GpuPreferences& gpu_preferences_;
   scoped_refptr<FeatureInfo> feature_info_;
 
   DISALLOW_COPY_AND_ASSIGN(ProgramManager);

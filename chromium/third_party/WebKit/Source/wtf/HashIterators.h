@@ -26,6 +26,8 @@
 #ifndef WTF_HashIterators_h
 #define WTF_HashIterators_h
 
+#include "wtf/Allocator.h"
+
 namespace WTF {
 
 template <typename HashTableType, typename KeyType, typename MappedType> struct HashTableConstKeysIterator;
@@ -35,11 +37,12 @@ template <typename HashTableType, typename KeyType, typename MappedType> struct 
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableConstIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> {
+    STACK_ALLOCATED();
 private:
     typedef KeyValuePair<KeyType, MappedType> ValueType;
 public:
-    typedef HashTableConstKeysIterator<HashTableType, KeyType, MappedType> Keys;
-    typedef HashTableConstValuesIterator<HashTableType, KeyType, MappedType> Values;
+    typedef HashTableConstKeysIterator<HashTableType, KeyType, MappedType> KeysIterator;
+    typedef HashTableConstValuesIterator<HashTableType, KeyType, MappedType> ValuesIterator;
 
     HashTableConstIteratorAdapter() {}
     HashTableConstIteratorAdapter(const typename HashTableType::const_iterator& impl) : m_impl(impl) {}
@@ -51,19 +54,20 @@ public:
     HashTableConstIteratorAdapter& operator++() { ++m_impl; return *this; }
     // postfix ++ intentionally omitted
 
-    Keys keys() { return Keys(*this); }
-    Values values() { return Values(*this); }
+    KeysIterator keys() { return KeysIterator(*this); }
+    ValuesIterator values() { return ValuesIterator(*this); }
 
     typename HashTableType::const_iterator m_impl;
 };
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> {
+    STACK_ALLOCATED();
 private:
     typedef KeyValuePair<KeyType, MappedType> ValueType;
 public:
-    typedef HashTableKeysIterator<HashTableType, KeyType, MappedType> Keys;
-    typedef HashTableValuesIterator<HashTableType, KeyType, MappedType> Values;
+    typedef HashTableKeysIterator<HashTableType, KeyType, MappedType> KeysIterator;
+    typedef HashTableValuesIterator<HashTableType, KeyType, MappedType> ValuesIterator;
 
     HashTableIteratorAdapter() {}
     HashTableIteratorAdapter(const typename HashTableType::iterator& impl) : m_impl(impl) {}
@@ -81,14 +85,15 @@ public:
         return i;
     }
 
-    Keys keys() { return Keys(*this); }
-    Values values() { return Values(*this); }
+    KeysIterator keys() { return KeysIterator(*this); }
+    ValuesIterator values() { return ValuesIterator(*this); }
 
     typename HashTableType::iterator m_impl;
 };
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableConstKeysIterator {
+    STACK_ALLOCATED();
 private:
     typedef HashTableConstIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> ConstIterator;
 
@@ -107,6 +112,7 @@ public:
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableConstValuesIterator {
+    STACK_ALLOCATED();
 private:
     typedef HashTableConstIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> ConstIterator;
 
@@ -125,6 +131,7 @@ public:
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableKeysIterator {
+    STACK_ALLOCATED();
 private:
     typedef HashTableIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> Iterator;
     typedef HashTableConstIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> ConstIterator;
@@ -150,6 +157,7 @@ public:
 
 template <typename HashTableType, typename KeyType, typename MappedType>
 struct HashTableValuesIterator {
+    STACK_ALLOCATED();
 private:
     typedef HashTableIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> Iterator;
     typedef HashTableConstIteratorAdapter<HashTableType, KeyValuePair<KeyType, MappedType>> ConstIterator;

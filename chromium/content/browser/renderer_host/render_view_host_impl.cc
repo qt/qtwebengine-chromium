@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
@@ -35,10 +36,10 @@
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
-#include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
+#include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_switches_internal.h"
@@ -46,6 +47,7 @@
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
@@ -74,7 +76,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/filename_util.h"
-#include "net/base/net_util.h"
+#include "net/base/url_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "storage/browser/fileapi/isolated_context.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -220,7 +222,6 @@ RenderViewHostImpl::RenderViewHostImpl(SiteInstance* instance,
       enabled_bindings_(0),
       page_id_(-1),
       is_active_(!swapped_out),
-      is_pending_deletion_(false),
       is_swapped_out_(swapped_out),
       main_frame_routing_id_(main_frame_routing_id),
       is_waiting_for_close_ack_(false),
@@ -240,21 +241,11 @@ RenderViewHostImpl::RenderViewHostImpl(SiteInstance* instance,
   GetProcess()->EnableSendQueue();
 
   if (ResourceDispatcherHostImpl::Get()) {
-    bool has_active_audio = false;
-    if (has_initialized_audio_host) {
-      scoped_refptr<AudioRendererHost> arh =
-          static_cast<RenderProcessHostImpl*>(GetProcess())
-              ->audio_renderer_host();
-      if (arh.get())
-        has_active_audio =
-            arh->RenderFrameHasActiveAudio(main_frame_routing_id_);
-    }
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ResourceDispatcherHostImpl::OnRenderViewHostCreated,
                    base::Unretained(ResourceDispatcherHostImpl::Get()),
-                   GetProcess()->GetID(), GetRoutingID(),
-                   !GetWidget()->is_hidden(), has_active_audio));
+                   GetProcess()->GetID(), GetRoutingID()));
   }
 }
 
@@ -299,6 +290,14 @@ bool RenderViewHostImpl::CreateRenderView(
   DCHECK(GetProcess()->GetBrowserContext());
   CHECK(main_frame_routing_id_ != MSG_ROUTING_NONE ||
         proxy_route_id != MSG_ROUTING_NONE);
+
+  // We should not set both main_frame_routing_id_ and proxy_route_id.  Log
+  // cases that this happens (without crashing) to track down
+  // https://crbug.com/574245.
+  // TODO(creis): Remove this once we've found the cause.
+  if (main_frame_routing_id_ != MSG_ROUTING_NONE &&
+      proxy_route_id != MSG_ROUTING_NONE)
+    base::debug::DumpWithoutCrashing();
 
   GetWidget()->set_renderer_initialized(true);
 
@@ -365,7 +364,7 @@ bool RenderViewHostImpl::CreateRenderView(
     RenderFrameHostImpl::FromID(GetProcess()->GetID(), main_frame_routing_id_)
         ->SetRenderFrameCreated(true);
   }
-  GetWidget()->SendScreenRects();
+  GetWidget()->delegate()->SendScreenRects();
   PostRenderViewReady();
 
   return true;
@@ -403,11 +402,6 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
       !command_line.HasSwitch(switches::kDisableLocalStorage);
   prefs.databases_enabled =
       !command_line.HasSwitch(switches::kDisableDatabases);
-#if defined(OS_ANDROID)
-  // WebAudio is enabled by default on x86 and ARM.
-  prefs.webaudio_enabled =
-      !command_line.HasSwitch(switches::kDisableWebAudio);
-#endif
 
   prefs.experimental_webgl_enabled =
       GpuProcessHost::gpu_enabled() &&
@@ -482,8 +476,9 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
 
   prefs.enable_scroll_animator =
-      !command_line.HasSwitch(switches::kDisableSmoothScrolling) &&
-      gfx::Animation::ShouldRenderRichAnimation();
+      command_line.HasSwitch(switches::kEnableSmoothScrolling) ||
+      (!command_line.HasSwitch(switches::kDisableSmoothScrolling) &&
+      gfx::Animation::ScrollAnimationsEnabledBySystem());
 
   // Certain GPU features might have been blacklisted.
   GpuDataManagerImpl::GetInstance()->UpdateRendererWebPrefs(&prefs);
@@ -530,12 +525,11 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   prefs.v8_cache_options = GetV8CacheOptions();
 
+  prefs.user_gesture_required_for_presentation = !command_line.HasSwitch(
+      switches::kDisableGestureRequirementForPresentation);
+
   GetContentClient()->browser()->OverrideWebkitPrefs(this, &prefs);
   return prefs;
-}
-
-void RenderViewHostImpl::SuppressDialogsUntilSwapOut() {
-  Send(new ViewMsg_SuppressDialogsUntilSwapOut(GetRoutingID()));
 }
 
 void RenderViewHostImpl::ClosePage() {
@@ -571,19 +565,6 @@ void RenderViewHostImpl::ClosePageIgnoringUnloadEvents() {
   sudden_termination_allowed_ = true;
   delegate_->Close(this);
 }
-
-#if defined(OS_ANDROID)
-void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
-                                                   float x,
-                                                   float y) {
-  Send(new InputMsg_ActivateNearestFindResult(GetRoutingID(),
-                                              request_id, x, y));
-}
-
-void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
-  Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
-}
-#endif
 
 void RenderViewHostImpl::RenderProcessReady(RenderProcessHost* host) {
   if (render_view_ready_on_process_launch_) {
@@ -886,9 +867,6 @@ bool RenderViewHostImpl::SuddenTerminationAllowed() const {
 // RenderViewHostImpl, IPC message handlers:
 
 bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
-  if (!BrowserMessageFilter::CheckCanDispatchOnUI(msg, GetWidget()))
-    return true;
-
   // Filter out most IPC messages if this renderer is swapped out.
   // We still want to handle certain ACKs to keep our state consistent.
   if (is_swapped_out_) {
@@ -959,26 +937,6 @@ void RenderViewHostImpl::ShutdownAndDestroy() {
   delete this;
 }
 
-void RenderViewHostImpl::RenderWidgetWillBeHidden() {
-  if (ResourceDispatcherHostImpl::Get()) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&ResourceDispatcherHostImpl::OnRenderViewHostWasHidden,
-                   base::Unretained(ResourceDispatcherHostImpl::Get()),
-                   GetProcess()->GetID(), GetRoutingID()));
-  }
-}
-
-void RenderViewHostImpl::RenderWidgetWillBeShown() {
-  if (ResourceDispatcherHostImpl::Get()) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&ResourceDispatcherHostImpl::OnRenderViewHostWasShown,
-                   base::Unretained(ResourceDispatcherHostImpl::Get()),
-                   GetProcess()->GetID(), GetRoutingID()));
-  }
-}
-
 void RenderViewHostImpl::CreateNewWindow(
     int32_t route_id,
     int32_t main_frame_route_id,
@@ -1015,8 +973,7 @@ void RenderViewHostImpl::OnShowView(int route_id,
 
 void RenderViewHostImpl::OnShowWidget(int route_id,
                                       const gfx::Rect& initial_rect) {
-  if (is_active_)
-    delegate_->ShowCreatedWidget(route_id, initial_rect);
+  delegate_->ShowCreatedWidget(route_id, initial_rect);
   Send(new ViewMsg_Move_ACK(route_id));
 }
 

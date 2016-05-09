@@ -6,28 +6,29 @@
 
 #include <stddef.h>
 
+#include <memory>
+#include <utility>
+
 #include "base/lazy_instance.h"
+#include "base/memory/ptr_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/thread_task_runner_handle.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/bluetooth/bluetooth_messages.h"
 #include "device/bluetooth/bluetooth_uuid.h"
-#include "third_party/WebKit/public/platform/WebPassOwnPtr.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothDevice.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothError.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTCharacteristic.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTCharacteristicInit.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTRemoteServer.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTService.h"
+#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothRemoteGATTCharacteristic.h"
+#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothRemoteGATTCharacteristicInit.h"
+#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothRemoteGATTService.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebRequestDeviceOptions.h"
 
-using blink::WebBluetoothConnectGATTCallbacks;
 using blink::WebBluetoothDevice;
 using blink::WebBluetoothError;
-using blink::WebBluetoothGATTCharacteristicInit;
-using blink::WebBluetoothGATTRemoteServer;
-using blink::WebBluetoothGATTService;
+using blink::WebBluetoothRemoteGATTCharacteristicInit;
+using blink::WebBluetoothRemoteGATTServerConnectCallbacks;
+using blink::WebBluetoothRemoteGATTService;
 using blink::WebBluetoothReadValueCallbacks;
 using blink::WebBluetoothRequestDeviceCallbacks;
 using blink::WebBluetoothScanFilter;
@@ -67,12 +68,23 @@ struct BluetoothCharacteristicRequest {
   scoped_ptr<blink::WebBluetoothGetCharacteristicCallbacks> callbacks;
 };
 
+struct BluetoothCharacteristicsRequest {
+  BluetoothCharacteristicsRequest(
+      blink::WebString service_instance_id,
+      blink::WebBluetoothGetCharacteristicsCallbacks* callbacks)
+      : service_instance_id(service_instance_id), callbacks(callbacks) {}
+  ~BluetoothCharacteristicsRequest() {}
+
+  blink::WebString service_instance_id;
+  scoped_ptr<blink::WebBluetoothGetCharacteristicsCallbacks> callbacks;
+};
+
 // Struct that holds a pending Start/StopNotifications request.
 struct BluetoothNotificationsRequest {
   BluetoothNotificationsRequest(
       int frame_routing_id,
       const std::string characteristic_instance_id,
-      blink::WebBluetoothGATTCharacteristic* characteristic,
+      blink::WebBluetoothRemoteGATTCharacteristic* characteristic,
       blink::WebBluetoothNotificationsCallbacks* callbacks,
       NotificationsRequestType type)
       : frame_routing_id(frame_routing_id),
@@ -90,7 +102,7 @@ struct BluetoothNotificationsRequest {
   // destroyed, which in turn calls characteristicObjectRemoved.
   // characteristicObjectRemoved will null any pointers to the object
   // and queue a stop notifications request if necessary.
-  blink::WebBluetoothGATTCharacteristic* characteristic;
+  blink::WebBluetoothRemoteGATTCharacteristic* characteristic;
   scoped_ptr<blink::WebBluetoothNotificationsCallbacks> callbacks;
   NotificationsRequestType type;
 };
@@ -158,8 +170,10 @@ void BluetoothDispatcher::OnMessageReceived(const IPC::Message& msg) {
   IPC_MESSAGE_HANDLER(BluetoothMsg_RequestDeviceSuccess,
                       OnRequestDeviceSuccess);
   IPC_MESSAGE_HANDLER(BluetoothMsg_RequestDeviceError, OnRequestDeviceError);
-  IPC_MESSAGE_HANDLER(BluetoothMsg_ConnectGATTSuccess, OnConnectGATTSuccess);
-  IPC_MESSAGE_HANDLER(BluetoothMsg_ConnectGATTError, OnConnectGATTError);
+  IPC_MESSAGE_HANDLER(BluetoothMsg_GATTServerConnectSuccess,
+                      OnGATTServerConnectSuccess);
+  IPC_MESSAGE_HANDLER(BluetoothMsg_GATTServerConnectError,
+                      OnGATTServerConnectError);
   IPC_MESSAGE_HANDLER(BluetoothMsg_GetPrimaryServiceSuccess,
                       OnGetPrimaryServiceSuccess);
   IPC_MESSAGE_HANDLER(BluetoothMsg_GetPrimaryServiceError,
@@ -168,14 +182,14 @@ void BluetoothDispatcher::OnMessageReceived(const IPC::Message& msg) {
                       OnGetCharacteristicSuccess);
   IPC_MESSAGE_HANDLER(BluetoothMsg_GetCharacteristicError,
                       OnGetCharacteristicError);
+  IPC_MESSAGE_HANDLER(BluetoothMsg_GetCharacteristicsSuccess,
+                      OnGetCharacteristicsSuccess);
+  IPC_MESSAGE_HANDLER(BluetoothMsg_GetCharacteristicsError,
+                      OnGetCharacteristicsError);
   IPC_MESSAGE_HANDLER(BluetoothMsg_ReadCharacteristicValueSuccess,
                       OnReadValueSuccess);
   IPC_MESSAGE_HANDLER(BluetoothMsg_ReadCharacteristicValueError,
                       OnReadValueError);
-  IPC_MESSAGE_HANDLER(BluetoothMsg_WriteCharacteristicValueSuccess,
-                      OnWriteValueSuccess);
-  IPC_MESSAGE_HANDLER(BluetoothMsg_WriteCharacteristicValueError,
-                      OnWriteValueError);
   IPC_MESSAGE_HANDLER(BluetoothMsg_StartNotificationsSuccess,
                       OnStartNotificationsSuccess)
   IPC_MESSAGE_HANDLER(BluetoothMsg_StartNotificationsError,
@@ -218,13 +232,19 @@ void BluetoothDispatcher::requestDevice(
                                           optional_services));
 }
 
-void BluetoothDispatcher::connectGATT(
+void BluetoothDispatcher::connect(
     int frame_routing_id,
     const blink::WebString& device_id,
-    blink::WebBluetoothConnectGATTCallbacks* callbacks) {
+    blink::WebBluetoothRemoteGATTServerConnectCallbacks* callbacks) {
   int request_id = pending_connect_requests_.Add(callbacks);
-  Send(new BluetoothHostMsg_ConnectGATT(CurrentWorkerId(), request_id,
-                                        frame_routing_id, device_id.utf8()));
+  Send(new BluetoothHostMsg_GATTServerConnect(
+      CurrentWorkerId(), request_id, frame_routing_id, device_id.utf8()));
+}
+
+void BluetoothDispatcher::disconnect(int frame_routing_id,
+                                     const blink::WebString& device_id) {
+  Send(new BluetoothHostMsg_GATTServerDisconnect(
+      CurrentWorkerId(), frame_routing_id, device_id.utf8()));
 }
 
 void BluetoothDispatcher::getPrimaryService(
@@ -252,6 +272,18 @@ void BluetoothDispatcher::getCharacteristic(
       service_instance_id.utf8(), characteristic_uuid.utf8()));
 }
 
+void BluetoothDispatcher::getCharacteristics(
+    int frame_routing_id,
+    const blink::WebString& service_instance_id,
+    const blink::WebString& characteristics_uuid,
+    blink::WebBluetoothGetCharacteristicsCallbacks* callbacks) {
+  int request_id = pending_characteristics_requests_.Add(
+      new BluetoothCharacteristicsRequest(service_instance_id, callbacks));
+  Send(new BluetoothHostMsg_GetCharacteristics(
+      CurrentWorkerId(), request_id, frame_routing_id,
+      service_instance_id.utf8(), characteristics_uuid.utf8()));
+}
+
 void BluetoothDispatcher::readValue(
     int frame_routing_id,
     const blink::WebString& characteristic_instance_id,
@@ -262,23 +294,10 @@ void BluetoothDispatcher::readValue(
                                       characteristic_instance_id.utf8()));
 }
 
-void BluetoothDispatcher::writeValue(
-    int frame_routing_id,
-    const blink::WebString& characteristic_instance_id,
-    const blink::WebVector<uint8_t>& value,
-    blink::WebBluetoothWriteValueCallbacks* callbacks) {
-  int request_id = pending_write_value_requests_.Add(callbacks);
-
-  Send(new BluetoothHostMsg_WriteValue(
-      CurrentWorkerId(), request_id, frame_routing_id,
-      characteristic_instance_id.utf8(),
-      std::vector<uint8_t>(value.begin(), value.end())));
-}
-
 void BluetoothDispatcher::startNotifications(
     int frame_routing_id,
     const blink::WebString& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic,
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic,
     blink::WebBluetoothNotificationsCallbacks* callbacks) {
   int request_id = QueueNotificationRequest(
       frame_routing_id, characteristic_instance_id.utf8(), characteristic,
@@ -297,7 +316,7 @@ void BluetoothDispatcher::startNotifications(
 void BluetoothDispatcher::stopNotifications(
     int frame_routing_id,
     const blink::WebString& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic,
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic,
     blink::WebBluetoothNotificationsCallbacks* callbacks) {
   int request_id = QueueNotificationRequest(
       frame_routing_id, characteristic_instance_id.utf8(), characteristic,
@@ -313,7 +332,7 @@ void BluetoothDispatcher::stopNotifications(
 void BluetoothDispatcher::characteristicObjectRemoved(
     int frame_routing_id,
     const blink::WebString& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic) {
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic) {
   // We need to remove references to the object from the following:
   //  1) The set of active characteristics
   //  2) The queue waiting for a response
@@ -377,7 +396,7 @@ void BluetoothDispatcher::characteristicObjectRemoved(
 void BluetoothDispatcher::registerCharacteristicObject(
     int frame_routing_id,
     const blink::WebString& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic) {
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic) {
   // TODO(ortuno): After the Object manager is implemented, there will
   // only be one object per characteristic. But for now we remove
   // the previous object.
@@ -398,7 +417,7 @@ void BluetoothDispatcher::WillStopCurrentWorkerThread() {
 int BluetoothDispatcher::QueueNotificationRequest(
     int frame_routing_id,
     const std::string& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic,
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic,
     blink::WebBluetoothNotificationsCallbacks* callbacks,
     NotificationsRequestType type) {
   int request_id =
@@ -461,14 +480,14 @@ bool BluetoothDispatcher::HasActiveNotificationSubscription(
 
 void BluetoothDispatcher::AddToActiveNotificationSubscriptions(
     const std::string& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic) {
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic) {
   active_notification_subscriptions_[characteristic_instance_id].insert(
       characteristic);
 }
 
 bool BluetoothDispatcher::RemoveFromActiveNotificationSubscriptions(
     const std::string& characteristic_instance_id,
-    blink::WebBluetoothGATTCharacteristic* characteristic) {
+    blink::WebBluetoothRemoteGATTCharacteristic* characteristic) {
   auto active_map =
       active_notification_subscriptions_.find(characteristic_instance_id);
 
@@ -493,7 +512,7 @@ void BluetoothDispatcher::ResolveOrSendStartNotificationRequest(
   const int frame_routing_id = request->frame_routing_id;
   const std::string& characteristic_instance_id =
       request->characteristic_instance_id;
-  blink::WebBluetoothGATTCharacteristic* characteristic =
+  blink::WebBluetoothRemoteGATTCharacteristic* characteristic =
       request->characteristic;
   blink::WebBluetoothNotificationsCallbacks* callbacks =
       request->callbacks.get();
@@ -527,7 +546,7 @@ void BluetoothDispatcher::ResolveOrSendStopNotificationsRequest(
   const int frame_routing_id = request->frame_routing_id;
   const std::string& characteristic_instance_id =
       request->characteristic_instance_id;
-  blink::WebBluetoothGATTCharacteristic* characteristic =
+  blink::WebBluetoothRemoteGATTCharacteristic* characteristic =
       request->characteristic;
   blink::WebBluetoothNotificationsCallbacks* callbacks =
       request->callbacks.get();
@@ -575,7 +594,7 @@ void BluetoothDispatcher::OnRequestDeviceSuccess(
     uuids[i] = WebString::fromUTF8(device.uuids[i].c_str());
 
   pending_requests_.Lookup(request_id)
-      ->onSuccess(blink::adoptWebPtr(new WebBluetoothDevice(
+      ->onSuccess(base::WrapUnique(new WebBluetoothDevice(
           WebString::fromUTF8(device.id), WebString(device.name),
           device.tx_power, device.rssi, device.device_class,
           GetWebVendorIdSource(device.vendor_id_source), device.vendor_id,
@@ -591,19 +610,16 @@ void BluetoothDispatcher::OnRequestDeviceError(int thread_id,
   pending_requests_.Remove(request_id);
 }
 
-void BluetoothDispatcher::OnConnectGATTSuccess(int thread_id,
-                                               int request_id,
-                                               const std::string& device_id) {
+void BluetoothDispatcher::OnGATTServerConnectSuccess(int thread_id,
+                                                     int request_id) {
   DCHECK(pending_connect_requests_.Lookup(request_id)) << request_id;
-  pending_connect_requests_.Lookup(request_id)
-      ->onSuccess(blink::adoptWebPtr(new WebBluetoothGATTRemoteServer(
-          WebString::fromUTF8(device_id), true /* connected */)));
+  pending_connect_requests_.Lookup(request_id)->onSuccess();
   pending_connect_requests_.Remove(request_id);
 }
 
-void BluetoothDispatcher::OnConnectGATTError(int thread_id,
-                                             int request_id,
-                                             WebBluetoothError error) {
+void BluetoothDispatcher::OnGATTServerConnectError(int thread_id,
+                                                   int request_id,
+                                                   WebBluetoothError error) {
   DCHECK(pending_connect_requests_.Lookup(request_id)) << request_id;
   pending_connect_requests_.Lookup(request_id)
       ->onError(WebBluetoothError(error));
@@ -617,9 +633,10 @@ void BluetoothDispatcher::OnGetPrimaryServiceSuccess(
   DCHECK(pending_primary_service_requests_.Lookup(request_id)) << request_id;
   BluetoothPrimaryServiceRequest* request =
       pending_primary_service_requests_.Lookup(request_id);
-  request->callbacks->onSuccess(blink::adoptWebPtr(new WebBluetoothGATTService(
-      WebString::fromUTF8(service_instance_id), request->service_uuid,
-      true /* isPrimary */, request->device_id)));
+  request->callbacks->onSuccess(
+      base::WrapUnique(new WebBluetoothRemoteGATTService(
+          WebString::fromUTF8(service_instance_id), request->service_uuid,
+          true /* isPrimary */, request->device_id)));
   pending_primary_service_requests_.Remove(request_id);
 }
 
@@ -643,10 +660,10 @@ void BluetoothDispatcher::OnGetCharacteristicSuccess(
   BluetoothCharacteristicRequest* request =
       pending_characteristic_requests_.Lookup(request_id);
   request->callbacks->onSuccess(
-      blink::adoptWebPtr(new WebBluetoothGATTCharacteristicInit(
+      base::WrapUnique(new WebBluetoothRemoteGATTCharacteristicInit(
+          request->service_instance_id,
           WebString::fromUTF8(characteristic_instance_id),
-          request->service_instance_id, request->characteristic_uuid,
-          characteristic_properties)));
+          request->characteristic_uuid, characteristic_properties)));
 
   pending_characteristic_requests_.Remove(request_id);
 }
@@ -660,6 +677,46 @@ void BluetoothDispatcher::OnGetCharacteristicError(int thread_id,
       ->callbacks->onError(WebBluetoothError(error));
 
   pending_characteristic_requests_.Remove(request_id);
+}
+
+void BluetoothDispatcher::OnGetCharacteristicsSuccess(
+    int thread_id,
+    int request_id,
+    const std::vector<std::string>& characteristics_instance_ids,
+    const std::vector<std::string>& characteristics_uuids,
+    const std::vector<uint32_t>& characteristics_properties) {
+  DCHECK(pending_characteristics_requests_.Lookup(request_id)) << request_id;
+
+  BluetoothCharacteristicsRequest* request =
+      pending_characteristics_requests_.Lookup(request_id);
+
+  // TODO(dcheng): This WebVector should use smart pointers.
+  std::unique_ptr<WebVector<blink::WebBluetoothRemoteGATTCharacteristicInit*>>
+  characteristics(new WebVector<WebBluetoothRemoteGATTCharacteristicInit*>(
+      characteristics_instance_ids.size()));
+
+  for (size_t i = 0; i < characteristics_instance_ids.size(); i++) {
+    (*characteristics)[i] = new WebBluetoothRemoteGATTCharacteristicInit(
+        request->service_instance_id,
+        WebString::fromUTF8(characteristics_instance_ids[i]),
+        WebString::fromUTF8(characteristics_uuids[i]),
+        characteristics_properties[i]);
+  }
+
+  request->callbacks->onSuccess(std::move(characteristics));
+
+  pending_characteristics_requests_.Remove(request_id);
+}
+
+void BluetoothDispatcher::OnGetCharacteristicsError(int thread_id,
+                                                    int request_id,
+                                                    WebBluetoothError error) {
+  DCHECK(pending_characteristics_requests_.Lookup(request_id)) << request_id;
+
+  pending_characteristics_requests_.Lookup(request_id)
+      ->callbacks->onError(WebBluetoothError(error));
+
+  pending_characteristics_requests_.Remove(request_id);
 }
 
 void BluetoothDispatcher::OnReadValueSuccess(
@@ -684,25 +741,6 @@ void BluetoothDispatcher::OnReadValueError(int thread_id,
       ->onError(WebBluetoothError(error));
 
   pending_read_value_requests_.Remove(request_id);
-}
-
-void BluetoothDispatcher::OnWriteValueSuccess(int thread_id, int request_id) {
-  DCHECK(pending_write_value_requests_.Lookup(request_id)) << request_id;
-
-  pending_write_value_requests_.Lookup(request_id)->onSuccess();
-
-  pending_write_value_requests_.Remove(request_id);
-}
-
-void BluetoothDispatcher::OnWriteValueError(int thread_id,
-                                            int request_id,
-                                            WebBluetoothError error) {
-  DCHECK(pending_write_value_requests_.Lookup(request_id)) << request_id;
-
-  pending_write_value_requests_.Lookup(request_id)
-      ->onError(WebBluetoothError(error));
-
-  pending_write_value_requests_.Remove(request_id);
 }
 
 void BluetoothDispatcher::OnStartNotificationsSuccess(int thread_id,

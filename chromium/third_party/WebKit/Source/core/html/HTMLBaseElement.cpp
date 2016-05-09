@@ -50,7 +50,7 @@ void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicStri
 Node::InsertionNotificationRequest HTMLBaseElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument())
+    if (insertionPoint->inShadowIncludingDocument())
         document().processBaseElement();
     return InsertionDone;
 }
@@ -58,7 +58,7 @@ Node::InsertionNotificationRequest HTMLBaseElement::insertedInto(ContainerNode* 
 void HTMLBaseElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement::removedFrom(insertionPoint);
-    if (insertionPoint->inDocument())
+    if (insertionPoint->inShadowIncludingDocument())
         document().processBaseElement();
 }
 
@@ -92,4 +92,4 @@ void HTMLBaseElement::setHref(const AtomicString& value)
     setAttribute(hrefAttr, value);
 }
 
-}
+} // namespace blink

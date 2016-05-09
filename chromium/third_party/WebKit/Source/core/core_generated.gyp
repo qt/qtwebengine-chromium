@@ -369,6 +369,26 @@
           ],
         },
         {
+          'action_name': 'CSSOMTypes',
+          'inputs': [
+            '<@(css_properties_files)',
+            '../build/scripts/make_cssom_types.py',
+            '../build/scripts/templates/CSSOMKeywords.cpp.tmpl',
+            '../build/scripts/templates/CSSOMTypes.cpp.tmpl',
+          ],
+          'outputs': [
+            '<(blink_core_output_dir)/CSSOMKeywords.cpp',
+            '<(blink_core_output_dir)/CSSOMTypes.cpp',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_cssom_types.py',
+            'css/CSSProperties.in',
+            '--output_dir',
+            '<(blink_core_output_dir)',
+          ],
+        },
+        {
           'action_name': 'CSSPropertyMetadata',
           'inputs': [
             '<@(css_properties_files)',
@@ -731,24 +751,24 @@
           ],
         },
         {
-          'action_name': 'ExperimentalFeatures',
+          'action_name': 'OriginTrials',
           'inputs': [
             '<@(scripts_for_in_files)',
-            '../build/scripts/make_experimental_features.py',
+            '../build/scripts/make_origin_trials.py',
             '../platform/RuntimeEnabledFeatures.in',
-            '../build/scripts/templates/ExperimentalFeatures.cpp.tmpl',
-            '../build/scripts/templates/ExperimentalFeatures.h.tmpl',
+            '../build/scripts/templates/OriginTrials.cpp.tmpl',
+            '../build/scripts/templates/OriginTrials.h.tmpl',
           ],
           'outputs': [
-            '<(blink_core_output_dir)/experiments/ExperimentalFeatures.cpp',
-            '<(blink_core_output_dir)/experiments/ExperimentalFeatures.h',
+            '<(blink_core_output_dir)/origin_trials/OriginTrials.cpp',
+            '<(blink_core_output_dir)/origin_trials/OriginTrials.h',
           ],
           'action': [
             'python',
-            '../build/scripts/make_experimental_features.py',
+            '../build/scripts/make_origin_trials.py',
             '../platform/RuntimeEnabledFeatures.in',
             '--output_dir',
-            '<(blink_core_output_dir)/experiments',
+            '<(blink_core_output_dir)/origin_trials',
           ],
         },
       ],

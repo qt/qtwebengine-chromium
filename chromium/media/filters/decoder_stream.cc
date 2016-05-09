@@ -13,6 +13,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
@@ -92,7 +93,7 @@ template <DemuxerStream::Type StreamType>
 void DecoderStream<StreamType>::Initialize(
     DemuxerStream* stream,
     const InitCB& init_cb,
-    const SetCdmReadyCB& set_cdm_ready_cb,
+    CdmContext* cdm_context,
     const StatisticsCB& statistics_cb,
     const base::Closure& waiting_for_decryption_key_cb) {
   FUNCTION_DVLOG(2);
@@ -107,7 +108,7 @@ void DecoderStream<StreamType>::Initialize(
   stream_ = stream;
 
   state_ = STATE_INITIALIZING;
-  SelectDecoder(set_cdm_ready_cb);
+  SelectDecoder(cdm_context);
 }
 
 template <DemuxerStream::Type StreamType>
@@ -224,10 +225,9 @@ base::TimeDelta DecoderStream<StreamType>::AverageDuration() const {
 }
 
 template <DemuxerStream::Type StreamType>
-void DecoderStream<StreamType>::SelectDecoder(
-    const SetCdmReadyCB& set_cdm_ready_cb) {
+void DecoderStream<StreamType>::SelectDecoder(CdmContext* cdm_context) {
   decoder_selector_->SelectDecoder(
-      stream_, set_cdm_ready_cb,
+      stream_, cdm_context,
       base::Bind(&DecoderStream<StreamType>::OnDecoderSelected,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&DecoderStream<StreamType>::OnDecodeOutputReady,
@@ -274,7 +274,7 @@ void DecoderStream<StreamType>::OnDecoderSelected(
   }
 
   media_log_->SetBooleanProperty(GetStreamTypeString() + "_dds",
-                                 decrypting_demuxer_stream_);
+                                 !!decrypting_demuxer_stream_);
   media_log_->SetStringProperty(GetStreamTypeString() + "_decoder",
                                 decoder_->GetDisplayName());
 
@@ -335,7 +335,7 @@ void DecoderStream<StreamType>::FlushDecoder() {
 template <DemuxerStream::Type StreamType>
 void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
                                              bool end_of_stream,
-                                             typename Decoder::Status status) {
+                                             DecodeStatus status) {
   FUNCTION_DVLOG(2) << ": " << status;
   DCHECK(state_ == STATE_NORMAL || state_ == STATE_FLUSHING_DECODER ||
          state_ == STATE_PENDING_DEMUXER_READ || state_ == STATE_ERROR)
@@ -362,7 +362,7 @@ void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
     return;
 
   switch (status) {
-    case Decoder::kDecodeError:
+    case DecodeStatus::DECODE_ERROR:
       state_ = STATE_ERROR;
       MEDIA_LOG(ERROR, media_log_) << GetStreamTypeString() << " decode error";
       ready_outputs_.clear();
@@ -370,11 +370,12 @@ void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
         SatisfyRead(DECODE_ERROR, NULL);
       return;
 
-    case Decoder::kAborted:
-      // Decoder can return kAborted during Reset() or during destruction.
+    case DecodeStatus::ABORTED:
+      // Decoder can return DecodeStatus::ABORTED during Reset() or during
+      // destruction.
       return;
 
-    case Decoder::kOk:
+    case DecodeStatus::OK:
       // Any successful decode counts!
       if (buffer_size > 0)
         StreamTraits::ReportStatistics(statistics_cb_, buffer_size);
@@ -528,9 +529,9 @@ void DecoderStream<StreamType>::ReinitializeDecoder() {
   DCHECK_EQ(pending_decode_requests_, 0);
 
   state_ = STATE_REINITIALIZING_DECODER;
-  // Decoders should not need CDMs during reinitialization.
+  // Decoders should not need a new CDM during reinitialization.
   DecoderStreamTraits<StreamType>::InitializeDecoder(
-      decoder_.get(), stream_, SetCdmReadyCB(),
+      decoder_.get(), stream_, nullptr,
       base::Bind(&DecoderStream<StreamType>::OnDecoderReinitialized,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&DecoderStream<StreamType>::OnDecodeOutputReady,
@@ -554,8 +555,8 @@ void DecoderStream<StreamType>::OnDecoderReinitialized(bool success) {
     // decoders. This will consume at least one decoder so doing it more than
     // once is safe.
     // For simplicity, don't attempt to fall back to a decrypting decoder.
-    // Calling this with a null callback ensures that one won't be selected.
-    SelectDecoder(SetCdmReadyCB());
+    // Calling this with a null CdmContext ensures that one won't be selected.
+    SelectDecoder(nullptr);
   } else {
     CompleteDecoderReinitialization(true);
   }

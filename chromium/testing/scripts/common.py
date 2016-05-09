@@ -72,16 +72,15 @@ def run_runtest(cmd_args, runtest_args):
       sys.executable,
       os.path.join(
           cmd_args.paths['checkout'], 'infra', 'scripts', 'runtest_wrapper.py'),
-      '--path-build', cmd_args.paths['build'],
       '--',
     ]
   else:
     cmd = [
       sys.executable,
-      os.path.join(cmd_args.paths['build'], 'scripts', 'tools', 'runit.py'),
+      cmd_args.paths['runit.py'],
       '--show-path',
       sys.executable,
-      os.path.join(cmd_args.paths['build'], 'scripts', 'slave', 'runtest.py'),
+      cmd_args.paths['runtest.py'],
     ]
   return run_command(cmd + [
       '--target', cmd_args.build_config_fs,
@@ -155,17 +154,15 @@ def parse_common_test_results(json_results, test_separator='/'):
   return results
 
 
-def parse_gtest_test_results(json_results):
-  failures = set()
-  for cur_iteration_data in json_results.get('per_iteration_data', []):
-    for test_fullname, results in cur_iteration_data.iteritems():
-      # Results is a list with one entry per test try. Last one is the final
-      # result, the only we care about here.
-      last_result = results[-1]
+def run_integration_test(script_to_run, extra_args, log_file, output):
+  integration_test_res = subprocess.call(
+      [sys.executable, script_to_run] + extra_args)
 
-      if last_result['status'] != 'SUCCESS':
-        failures.add(test_fullname)
+  with open(log_file) as f:
+    failures = json.load(f)
+  json.dump({
+      'valid': integration_test_res == 0,
+      'failures': failures,
+  }, output)
 
-  return {
-    'failures': sorted(failures),
-  }
+  return integration_test_res

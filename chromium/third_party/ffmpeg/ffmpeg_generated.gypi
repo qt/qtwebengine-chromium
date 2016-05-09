@@ -428,6 +428,7 @@
           'libavcodec/x86/fft.asm',
           'libavcodec/x86/vorbisdsp.asm',
           'libavutil/x86/cpuid.asm',
+          'libavutil/x86/fixed_dsp.asm',
           'libavutil/x86/float_dsp.asm',
           'libavutil/x86/lls.asm',
         ],
@@ -439,6 +440,7 @@
           'libavcodec/x86/fft_init.c',
           'libavutil/x86/autorename_libavutil_x86_cpu.c',
           'libavutil/x86/autorename_libavutil_x86_float_dsp_init.c',
+          'libavutil/x86/fixed_dsp_init.c',
           'libavutil/x86/lls_init.c',
         ],
       }],  # (OS == "android" and target_arch == "ia32" and ffmpeg_branding == "Chrome") or (OS == "android" and target_arch == "ia32" and ffmpeg_branding == "Chromium") or (OS == "android" and target_arch == "x64" and ffmpeg_branding == "Chrome") or (OS == "android" and target_arch == "x64" and ffmpeg_branding == "Chromium") or (OS == "linux" and target_arch == "ia32" and ffmpeg_branding == "Chrome") or (OS == "linux" and target_arch == "ia32" and ffmpeg_branding == "ChromeOS") or (OS == "linux" and target_arch == "ia32" and ffmpeg_branding == "Chromium") or (OS == "linux" and target_arch == "ia32" and ffmpeg_branding == "ChromiumOS") or (OS == "linux" and target_arch == "x64" and ffmpeg_branding == "Chrome") or (OS == "linux" and target_arch == "x64" and ffmpeg_branding == "ChromeOS") or (OS == "linux" and target_arch == "x64" and ffmpeg_branding == "Chromium") or (OS == "linux" and target_arch == "x64" and ffmpeg_branding == "ChromiumOS") or (OS == "mac" and target_arch == "x64" and ffmpeg_branding == "Chrome") or (OS == "mac" and target_arch == "x64" and ffmpeg_branding == "Chromium") or (OS == "win" and target_arch == "ia32" and ffmpeg_branding == "Chrome") or (OS == "win" and target_arch == "ia32" and ffmpeg_branding == "Chromium") or (OS == "win" and target_arch == "x64" and ffmpeg_branding == "Chrome") or (OS == "win" and target_arch == "x64" and ffmpeg_branding == "Chromium")
@@ -611,6 +613,7 @@
           'libavutil/lfg.c',
           'libavutil/log.c',
           'libavutil/log2_tab.c',
+          'libavutil/mastering_display_metadata.c',
           'libavutil/mathematics.c',
           'libavutil/md5.c',
           'libavutil/mem.c',

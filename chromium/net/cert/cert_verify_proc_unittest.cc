@@ -107,6 +107,22 @@ bool SupportsDetectingKnownRoots() {
   return true;
 }
 
+// Template helper to load a series of certificate files into a CertificateList.
+// Like CertTestUtil's CreateCertificateListFromFile, except it can load a
+// series of individual certificates (to make the tests clearer).
+template <size_t N>
+void LoadCertificateFiles(const char* const (&cert_files)[N],
+                          CertificateList* certs) {
+  certs->clear();
+  for (size_t i = 0; i < N; ++i) {
+    SCOPED_TRACE(cert_files[i]);
+    scoped_refptr<X509Certificate> cert = CreateCertificateChainFromFile(
+        GetTestCertsDirectory(), cert_files[i], X509Certificate::FORMAT_AUTO);
+    ASSERT_TRUE(cert);
+    certs->push_back(cert);
+  }
+}
+
 }  // namespace
 
 class CertVerifyProcTest : public testing::Test {
@@ -119,6 +135,19 @@ class CertVerifyProcTest : public testing::Test {
  protected:
   bool SupportsAdditionalTrustAnchors() {
     return verify_proc_->SupportsAdditionalTrustAnchors();
+  }
+
+  // Returns true if the underlying CertVerifyProc supports integrating CRLSets
+  // into path building logic, such as allowing the selection of alternatively
+  // valid paths when one or more are revoked. As the goal is to integrate this
+  // into all platforms, this is a temporary, test-only flag to centralize the
+  // conditionals in tests.
+  bool SupportsCRLSetsInPathBuilding() {
+#if defined(OS_WIN) || defined(USE_NSS_CERTS)
+    return true;
+#else
+    return false;
+#endif
   }
 
   int Verify(X509Certificate* cert,
@@ -134,30 +163,6 @@ class CertVerifyProcTest : public testing::Test {
   const CertificateList empty_cert_list_;
   scoped_refptr<CertVerifyProc> verify_proc_;
 };
-
-TEST_F(CertVerifyProcTest, DISABLED_WithoutRevocationChecking) {
-  // Check that verification without revocation checking works.
-  CertificateList certs = CreateCertificateListFromFile(
-      GetTestCertsDirectory(),
-      "googlenew.chain.pem",
-      X509Certificate::FORMAT_PEM_CERT_SEQUENCE);
-
-  X509Certificate::OSCertHandles intermediates;
-  intermediates.push_back(certs[1]->os_cert_handle());
-
-  scoped_refptr<X509Certificate> google_full_chain =
-      X509Certificate::CreateFromHandle(certs[0]->os_cert_handle(),
-                                        intermediates);
-
-  CertVerifyResult verify_result;
-  EXPECT_EQ(OK,
-            Verify(google_full_chain.get(),
-                   "www.google.com",
-                   0 /* flags */,
-                   NULL,
-                   empty_cert_list_,
-                   &verify_result));
-}
 
 #if defined(OS_ANDROID) || defined(USE_OPENSSL_CERTS)
 // TODO(jnd): http://crbug.com/117478 - EV verification is not yet supported.
@@ -216,7 +221,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
                      NULL,
                      empty_cert_list_,
                      &verify_result);
-#if defined(USE_NSS_CERTS) || defined(OS_IOS) || defined(OS_ANDROID)
+#if defined(USE_NSS_VERIFIER) || defined(OS_ANDROID)
   EXPECT_EQ(ERR_CERT_COMMON_NAME_INVALID, error);
 #else
   // TOOD(bulach): investigate why macosx and win aren't returning
@@ -226,7 +231,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
   // Either the system crypto library should correctly report a certificate
   // name mismatch, or our certificate blacklist should cause us to report an
   // invalid certificate.
-#if defined(USE_NSS_CERTS) || defined(OS_WIN) || defined(OS_IOS)
+#if defined(USE_NSS_VERIFIER) || defined(OS_WIN)
   EXPECT_TRUE(verify_result.cert_status &
               (CERT_STATUS_COMMON_NAME_INVALID | CERT_STATUS_INVALID));
 #endif
@@ -270,47 +275,6 @@ TEST_F(CertVerifyProcTest, MAYBE_IntermediateCARequireExplicitPolicy) {
                      &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0u, verify_result.cert_status);
-}
-
-// Test for bug 58437.
-// This certificate will expire on 2011-12-21. The test will still
-// pass if error == ERR_CERT_DATE_INVALID.
-// This test is DISABLED because it appears that we cannot do
-// certificate revocation checking when running all of the net unit tests.
-// This test passes when run individually, but when run with all of the net
-// unit tests, the call to PKIXVerifyCert returns the NSS error -8180, which is
-// SEC_ERROR_REVOKED_CERTIFICATE. This indicates a lack of revocation
-// status, i.e. that the revocation check is failing for some reason.
-TEST_F(CertVerifyProcTest, DISABLED_GlobalSignR3EVTest) {
-  base::FilePath certs_dir = GetTestCertsDirectory();
-
-  scoped_refptr<X509Certificate> server_cert =
-      ImportCertFromFile(certs_dir, "2029_globalsign_com_cert.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert.get());
-
-  scoped_refptr<X509Certificate> intermediate_cert =
-      ImportCertFromFile(certs_dir, "globalsign_ev_sha256_ca_cert.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert.get());
-
-  X509Certificate::OSCertHandles intermediates;
-  intermediates.push_back(intermediate_cert->os_cert_handle());
-  scoped_refptr<X509Certificate> cert_chain =
-      X509Certificate::CreateFromHandle(server_cert->os_cert_handle(),
-                                        intermediates);
-
-  CertVerifyResult verify_result;
-  int flags = CertVerifier::VERIFY_REV_CHECKING_ENABLED |
-              CertVerifier::VERIFY_EV_CERT;
-  int error = Verify(cert_chain.get(),
-                     "2029.globalsign.com",
-                     flags,
-                     NULL,
-                     empty_cert_list_,
-                     &verify_result);
-  if (error == OK)
-    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_EV);
-  else
-    EXPECT_EQ(ERR_CERT_DATE_INVALID, error);
 }
 
 // Test that verifying an ECDSA certificate doesn't crash on XP. (See
@@ -516,6 +480,18 @@ TEST_F(CertVerifyProcTest, GoogleDigiNotarTest) {
   EXPECT_NE(OK, error);
 }
 
+// Ensures the CertVerifyProc blacklist remains in sorted order, so that it
+// can be binary-searched.
+TEST_F(CertVerifyProcTest, BlacklistIsSorted) {
+// Defines kBlacklistedSPKIs.
+#include "net/cert/cert_verify_proc_blacklist.inc"
+  for (size_t i = 0; i < arraysize(kBlacklistedSPKIs) - 1; ++i) {
+    EXPECT_GT(0, memcmp(kBlacklistedSPKIs[i], kBlacklistedSPKIs[i + 1],
+                        crypto::kSHA256Length))
+        << " at index " << i;
+  }
+}
+
 TEST_F(CertVerifyProcTest, DigiNotarCerts) {
   static const char* const kDigiNotarFilenames[] = {
     "diginotar_root_ca.pem",
@@ -538,12 +514,12 @@ TEST_F(CertVerifyProcTest, DigiNotarCerts) {
     base::StringPiece spki;
     ASSERT_TRUE(asn1::ExtractSPKIFromDERCert(der_bytes, &spki));
 
-    std::string spki_sha1 = base::SHA1HashString(spki.as_string());
+    std::string spki_sha256 = crypto::SHA256HashString(spki.as_string());
 
     HashValueVector public_keys;
-    HashValue hash(HASH_VALUE_SHA1);
-    ASSERT_EQ(hash.size(), spki_sha1.size());
-    memcpy(hash.data(), spki_sha1.data(), spki_sha1.size());
+    HashValue hash(HASH_VALUE_SHA256);
+    ASSERT_EQ(hash.size(), spki_sha256.size());
+    memcpy(hash.data(), spki_sha256.data(), spki_sha256.size());
     public_keys.push_back(hash);
 
     EXPECT_TRUE(CertVerifyProc::IsPublicKeyBlacklisted(public_keys)) <<
@@ -1237,6 +1213,120 @@ TEST_F(CertVerifyProcTest, CRLSetLeafSerial) {
                  &verify_result);
   EXPECT_EQ(ERR_CERT_REVOKED, error);
 }
+
+// Tests that CRLSets participate in path building functions, and that as
+// long as a valid path exists within the verification graph, verification
+// succeeds.
+//
+// In this test, there are two roots (D and E), and three possible paths
+// to validate a leaf (A):
+// 1. A(B) -> B(C) -> C(D) -> D(D)
+// 2. A(B) -> B(C) -> C(E) -> E(E)
+// 3. A(B) -> B(F) -> F(E) -> E(E)
+//
+// Each permutation of revocation is tried:
+// 1. Revoking E by SPKI, so that only Path 1 is valid (as E is in Paths 2 & 3)
+// 2. Revoking C(D) and F(E) by serial, so that only Path 2 is valid.
+// 3. Revoking C by SPKI, so that only Path 3 is valid (as C is in Paths 1 & 2)
+TEST_F(CertVerifyProcTest, CRLSetDuringPathBuilding) {
+  if (!SupportsCRLSetsInPathBuilding()) {
+    LOG(INFO) << "Skipping this test on this platform.";
+    return;
+  }
+
+  const char* const kPath1Files[] = {
+      "multi-root-A-by-B.pem", "multi-root-B-by-C.pem", "multi-root-C-by-D.pem",
+      "multi-root-D-by-D.pem"};
+  const char* const kPath2Files[] = {
+      "multi-root-A-by-B.pem", "multi-root-B-by-C.pem", "multi-root-C-by-E.pem",
+      "multi-root-E-by-E.pem"};
+  const char* const kPath3Files[] = {
+      "multi-root-A-by-B.pem", "multi-root-B-by-F.pem", "multi-root-F-by-E.pem",
+      "multi-root-E-by-E.pem"};
+
+  CertificateList path_1_certs;
+  ASSERT_NO_FATAL_FAILURE(LoadCertificateFiles(kPath1Files, &path_1_certs));
+
+  CertificateList path_2_certs;
+  ASSERT_NO_FATAL_FAILURE(LoadCertificateFiles(kPath2Files, &path_2_certs));
+
+  CertificateList path_3_certs;
+  ASSERT_NO_FATAL_FAILURE(LoadCertificateFiles(kPath3Files, &path_3_certs));
+
+  // Add D and E as trust anchors.
+  ScopedTestRoot test_root_D(path_1_certs[3].get());  // D-by-D
+  ScopedTestRoot test_root_E(path_2_certs[3].get());  // E-by-E
+
+  // Create a chain that contains all the certificate paths possible.
+  // CertVerifyProcTest.VerifyReturnChainFiltersUnrelatedCerts already
+  // ensures that it's safe to send additional certificates as inputs, and
+  // that they're ignored if not necessary.
+  // This is to avoid relying on AIA or internal object caches when
+  // interacting with the underlying library.
+  X509Certificate::OSCertHandles intermediates;
+  intermediates.push_back(path_1_certs[1]->os_cert_handle());  // B-by-C
+  intermediates.push_back(path_1_certs[2]->os_cert_handle());  // C-by-D
+  intermediates.push_back(path_2_certs[2]->os_cert_handle());  // C-by-E
+  intermediates.push_back(path_3_certs[1]->os_cert_handle());  // B-by-F
+  intermediates.push_back(path_3_certs[2]->os_cert_handle());  // F-by-E
+  scoped_refptr<X509Certificate> cert = X509Certificate::CreateFromHandle(
+      path_1_certs[0]->os_cert_handle(), intermediates);
+  ASSERT_TRUE(cert);
+
+  struct TestPermutations {
+    const char* crlset;
+    bool expect_valid;
+    scoped_refptr<X509Certificate> expected_intermediate;
+  } kTests[] = {
+      {"multi-root-crlset-D-and-E.raw", false, nullptr},
+      {"multi-root-crlset-E.raw", true, path_1_certs[2].get()},
+      {"multi-root-crlset-CD-and-FE.raw", true, path_2_certs[2].get()},
+      {"multi-root-crlset-C.raw", true, path_3_certs[2].get()},
+      {"multi-root-crlset-unrelated.raw", true, nullptr}};
+
+  for (const auto& testcase : kTests) {
+    SCOPED_TRACE(testcase.crlset);
+    scoped_refptr<CRLSet> crl_set;
+    std::string crl_set_bytes;
+    EXPECT_TRUE(base::ReadFileToString(
+        GetTestCertsDirectory().AppendASCII(testcase.crlset), &crl_set_bytes));
+    ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
+
+    int flags = 0;
+    CertVerifyResult verify_result;
+    int error = Verify(cert.get(), "127.0.0.1", flags, crl_set.get(),
+                       empty_cert_list_, &verify_result);
+
+    if (!testcase.expect_valid) {
+      EXPECT_NE(OK, error);
+      EXPECT_NE(0U, verify_result.cert_status);
+      continue;
+    }
+
+    ASSERT_EQ(OK, error);
+    ASSERT_EQ(0U, verify_result.cert_status);
+    ASSERT_TRUE(verify_result.verified_cert.get());
+
+    if (!testcase.expected_intermediate)
+      continue;
+
+    const X509Certificate::OSCertHandles& verified_intermediates =
+        verify_result.verified_cert->GetIntermediateCertificates();
+    ASSERT_EQ(3U, verified_intermediates.size());
+
+    scoped_refptr<X509Certificate> intermediate =
+        X509Certificate::CreateFromHandle(verified_intermediates[1],
+                                          X509Certificate::OSCertHandles());
+    ASSERT_TRUE(intermediate);
+
+    EXPECT_TRUE(testcase.expected_intermediate->Equals(intermediate.get()))
+        << "Expected: " << testcase.expected_intermediate->subject().common_name
+        << " issued by " << testcase.expected_intermediate->issuer().common_name
+        << "; Got: " << intermediate->subject().common_name << " issued by "
+        << intermediate->issuer().common_name;
+  }
+}
+
 #endif
 
 enum ExpectedAlgorithms {

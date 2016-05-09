@@ -42,8 +42,10 @@
     'dependencies': [
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
+      '<(DEPTH)/base/base.gyp:base',
       # FIXME: Can we remove the dependency on Skia?
       '<(DEPTH)/skia/skia.gyp:skia',
+      '<(DEPTH)/url/url.gyp:url_lib',
     ],
     'all_dependent_settings': {
       'include_dirs': [
@@ -61,9 +63,10 @@
       '<(SHARED_INTERMEDIATE_DIR)/blink',
     ],
     'sources': [
+      'exported/FilePathConversion.cpp',
+      'exported/URLConversion.cpp',
       'exported/WebCString.cpp',
       'exported/WebString.cpp',
-      'exported/WebCommon.cpp',
     ],
   },
   {
@@ -119,6 +122,8 @@
   {
     'target_name': 'blink_platform',
     'type': '<(component)',
+    # Because of transitive dependency on make_platform_generated.
+    'hard_dependency': 1,
     'dependencies': [
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
@@ -128,7 +133,12 @@
       '<(DEPTH)/base/base.gyp:base',
       '<(DEPTH)/cc/cc.gyp:cc',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
+      '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
+      '<(DEPTH)/mojo/mojo_edk.gyp:mojo_system_impl',
+      '<(DEPTH)/mojo/mojo_public.gyp:mojo_cpp_bindings',
+      '<(DEPTH)/mojo/mojo_public.gyp:mojo_cpp_bindings_wtf_support',
       '<(DEPTH)/skia/skia.gyp:skia',
+      '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
       '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
@@ -143,6 +153,7 @@
       '<(libjpeg_gyp_path):libjpeg',
     ],
     'export_dependent_settings': [
+      'platform_generated.gyp:make_platform_generated',
       '<(DEPTH)/base/base.gyp:base',
       '<(DEPTH)/cc/cc.gyp:cc',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
@@ -174,16 +185,26 @@
       '<@(platform_heap_files)',
 
       # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
+      '<(blink_platform_output_dir)/CharacterPropertyData.cpp',
       '<(blink_platform_output_dir)/ColorData.cpp',
       '<(blink_platform_output_dir)/FontFamilyNames.cpp',
       '<(blink_platform_output_dir)/HTTPNames.cpp',
       '<(blink_platform_output_dir)/RuntimeEnabledFeatures.cpp',
       '<(blink_platform_output_dir)/RuntimeEnabledFeatures.h',
+
+      # Additional .cpp files from the protocol_sources list.
+      '<(blink_platform_output_dir)/inspector_protocol/Frontend.cpp',
+      '<(blink_platform_output_dir)/inspector_protocol/Dispatcher.cpp',
+      '<(blink_platform_output_dir)/inspector_protocol/TypeBuilder.cpp',
+
+      # Additional .cpp files from the v8_inspector.
+      '<(blink_platform_output_dir)/v8_inspector/DebuggerScript.h',
+      '<(blink_platform_output_dir)/v8_inspector/InjectedScriptSource.h',
     ],
     'sources/': [
       # Exclude all platform specific things, reinclude them below on a per-platform basis
       # FIXME: Figure out how to store these patterns in a variable.
-      ['exclude', '(cf|cg|mac|opentype|win)/'],
+      ['exclude', '(cf|cg|mac|win)/'],
       ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
 
       # *NEON.cpp files need special compile options.
@@ -201,17 +222,6 @@
           ['include', 'graphics/cpu/x86/WebGLImageConversionSSE\\.h$'],
         ],
       }],
-      ['OS=="linux" or OS=="android" or OS=="win"', {
-        'sources/': [
-          # Cherry-pick files excluded by the broader regular expressions above.
-          ['include', 'fonts/opentype/OpenTypeTypes\\.h$'],
-          ['include', 'fonts/opentype/OpenTypeVerticalData\\.(cpp|h)$'],
-        ],
-        'dependencies': [
-          '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
-        ],
-      },
-      ],
       ['OS=="linux" or OS=="android"', {
         'sources/': [
           ['include', 'fonts/linux/FontPlatformDataLinux\\.cpp$'],
@@ -222,9 +232,6 @@
         ]
       }],
       ['OS=="mac"', {
-        'dependencies': [
-          '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
-        ],
         'link_settings': {
           'libraries': [
             '$(SDKROOT)/System/Library/Frameworks/Accelerate.framework',
@@ -247,10 +254,6 @@
           # Use native Mac font code from core.
           ['include', '(fonts/)?mac/[^/]*Font[^/]*\\.(cpp|mm?)$'],
 
-          # TODO(dro): Merge the opentype vertical data files inclusion across all platforms.
-          ['include', 'fonts/opentype/OpenTypeTypes\\.h$'],
-          ['include', 'fonts/opentype/OpenTypeVerticalData\\.(cpp|h)$'],
-
           # Cherry-pick some files that can't be included by broader regexps.
           # Some of these are used instead of Chromium platform files, see
           # the specific exclusions in the "exclude" list below.
@@ -268,9 +271,10 @@
           ['include', 'mac/VersionUtilMac\\.mm$'],
           ['include', 'mac/WebCoreNSCellExtras\\.h$'],
           ['include', 'mac/WebCoreNSCellExtras\\.mm$'],
+          ['include', 'scroll/ScrollbarThemeMac\\.h$'],
+          ['include', 'scroll/ScrollbarThemeMac\\.mm$'],
 
           # Mac uses only ScrollAnimatorMac.
-          ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
           ['exclude', 'scroll/ScrollAnimator\\.cpp$'],
           ['exclude', 'scroll/ScrollAnimator\\.h$'],
 
@@ -310,7 +314,6 @@
 
           ['include', 'clipboard/ClipboardUtilitiesWin\\.(cpp|h)$'],
 
-          ['include', 'fonts/opentype/'],
           ['include', 'fonts/win/FontCacheSkiaWin\\.cpp$'],
           ['include', 'fonts/win/FontFallbackWin\\.(cpp|h)$'],
           ['include', 'fonts/win/FontPlatformDataWin\\.cpp$'],
@@ -323,7 +326,6 @@
           ['exclude', 'win/'],
           ['exclude', 'Win\\.cpp$'],
           ['exclude', '/(Windows)[^/]*\\.cpp$'],
-          ['include', 'fonts/opentype/OpenTypeSanitizer\\.cpp$'],
         ],
       }],
       ['OS=="win" and chromium_win_pch==1', {
@@ -338,14 +340,6 @@
       }, { # OS!="android"
         'sources/': [
           ['exclude', 'Android\\.cpp$'],
-        ],
-      }],
-      ['OS=="linux"', {
-        'dependencies': [
-          '<(DEPTH)/build/linux/system.gyp:fontconfig',
-        ],
-        'export_dependent_settings': [
-          '<(DEPTH)/build/linux/system.gyp:fontconfig',
         ],
       }],
       ['use_default_render_theme==0', {

@@ -53,6 +53,15 @@
     };
 
     /**
+     * KeyboardEvent.key is mostly represented by printable character made by
+     * the keyboard, with unprintable keys labeled nicely.
+     *
+     * However, on OS X, Alt+char can make a Unicode character that follows an
+     * Apple-specific mapping. In this case, we fall back to .keyCode.
+     */
+    var KEY_CHAR = /[a-z0-9*]/;
+
+    /**
      * Matches a keyIdentifier string.
      */
     var IDENT_CHAR = /U\+/;
@@ -68,14 +77,31 @@
      */
     var SPACE_KEY = /^space(bar)?/;
 
-    function transformKey(key) {
+    /**
+     * Matches ESC key.
+     *
+     * Value from: http://w3c.github.io/uievents-key/#key-Escape
+     */
+    var ESC_KEY = /^escape$/;
+
+    /**
+     * Transforms the key.
+     * @param {string} key The KeyBoardEvent.key
+     * @param {Boolean} [noSpecialChars] Limits the transformation to
+     * alpha-numeric characters.
+     */
+    function transformKey(key, noSpecialChars) {
       var validKey = '';
       if (key) {
         var lKey = key.toLowerCase();
         if (lKey === ' ' || SPACE_KEY.test(lKey)) {
           validKey = 'space';
+        } else if (ESC_KEY.test(lKey)) {
+          validKey = 'esc';
         } else if (lKey.length == 1) {
-          validKey = lKey;
+          if (!noSpecialChars || KEY_CHAR.test(lKey)) {
+            validKey = lKey;
+          }
         } else if (ARROW_KEY.test(lKey)) {
           validKey = lKey.replace('arrow', '');
         } else if (lKey == 'multiply') {
@@ -115,10 +141,10 @@
           validKey = 'f' + (keyCode - 112);
         } else if (keyCode >= 48 && keyCode <= 57) {
           // top 0-9 keys
-          validKey = String(48 - keyCode);
+          validKey = String(keyCode - 48);
         } else if (keyCode >= 96 && keyCode <= 105) {
           // num pad 0-9
-          validKey = String(96 - keyCode);
+          validKey = String(keyCode - 96);
         } else {
           validKey = KEY_CODE[keyCode];
         }
@@ -126,17 +152,29 @@
       return validKey;
     }
 
-    function normalizedKeyForEvent(keyEvent) {
-      // fall back from .key, to .keyIdentifier, to .keyCode, and then to
-      // .detail.key to support artificial keyboard events
-      return transformKey(keyEvent.key) ||
+    /**
+      * Calculates the normalized key for a KeyboardEvent.
+      * @param {KeyboardEvent} keyEvent
+      * @param {Boolean} [noSpecialChars] Set to true to limit keyEvent.key
+      * transformation to alpha-numeric chars. This is useful with key
+      * combinations like shift + 2, which on FF for MacOS produces
+      * keyEvent.key = @
+      * To get 2 returned, set noSpecialChars = true
+      * To get @ returned, set noSpecialChars = false
+     */
+    function normalizedKeyForEvent(keyEvent, noSpecialChars) {
+      // Fall back from .key, to .keyIdentifier, to .keyCode, and then to
+      // .detail.key to support artificial keyboard events.
+      return transformKey(keyEvent.key, noSpecialChars) ||
         transformKeyIdentifier(keyEvent.keyIdentifier) ||
         transformKeyCode(keyEvent.keyCode) ||
-        transformKey(keyEvent.detail.key) || '';
+        transformKey(keyEvent.detail.key, noSpecialChars) || '';
     }
 
-    function keyComboMatchesEvent(keyCombo, event, eventKey) {
-      return eventKey === keyCombo.key &&
+    function keyComboMatchesEvent(keyCombo, event) {
+      // For combos with modifiers we support only alpha-numeric keys
+      var keyEvent = normalizedKeyForEvent(event, keyCombo.hasModifiers);
+      return keyEvent === keyCombo.key &&
         (!keyCombo.hasModifiers || (
           !!event.shiftKey === !!keyCombo.shiftKey &&
           !!event.ctrlKey === !!keyCombo.ctrlKey &&
@@ -271,11 +309,17 @@
         this._resetKeyEventListeners();
       },
 
+      /**
+       * Returns true if a keyboard event matches `eventString`.
+       *
+       * @param {KeyboardEvent} event
+       * @param {string} eventString
+       * @return {boolean}
+       */
       keyboardEventMatchesKeys: function(event, eventString) {
         var keyCombos = parseEventString(eventString);
-        var eventKey = normalizedKeyForEvent(event);
         for (var i = 0; i < keyCombos.length; ++i) {
-          if (keyComboMatchesEvent(keyCombos[i], event, eventKey)) {
+          if (keyComboMatchesEvent(keyCombos[i], event)) {
             return true;
           }
         }
@@ -375,11 +419,10 @@
           return;
         }
 
-        var eventKey = normalizedKeyForEvent(event);
         for (var i = 0; i < keyBindings.length; i++) {
           var keyCombo = keyBindings[i][0];
           var handlerName = keyBindings[i][1];
-          if (keyComboMatchesEvent(keyCombo, event, eventKey)) {
+          if (keyComboMatchesEvent(keyCombo, event)) {
             this._triggerKeyHandler(keyCombo, handlerName, event);
             // exit the loop if eventDefault was prevented
             if (event.defaultPrevented) {

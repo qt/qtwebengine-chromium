@@ -16,9 +16,9 @@
 #endif
 
 #include <algorithm>
+#include <memory>
 
 #include "webrtc/base/format_macros.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/audio_processing/test/protobuf_utils.h"
@@ -33,7 +33,7 @@
 #include "external/webrtc/webrtc/modules/audio_processing/debug.pb.h"
 #else
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/audio_processing/debug.pb.h"
+#include "webrtc/modules/audio_processing/debug.pb.h"
 #endif
 
 namespace webrtc {
@@ -81,6 +81,8 @@ void usage() {
   printf("  --aec_suppression_level LEVEL  [0 - 2]\n");
   printf("  --extended_filter\n");
   printf("  --no_reported_delay\n");
+  printf("  --aec3\n");
+  printf("  --refined_adaptive_filter\n");
   printf("\n  -aecm    Echo control mobile\n");
   printf("  --aecm_echo_path_in_file FILE\n");
   printf("  --aecm_echo_path_out_file FILE\n");
@@ -146,7 +148,7 @@ void void_main(int argc, char* argv[]) {
     printf("Try `process_test --help' for more information.\n\n");
   }
 
-  rtc::scoped_ptr<AudioProcessing> apm(AudioProcessing::Create());
+  std::unique_ptr<AudioProcessing> apm(AudioProcessing::Create());
   ASSERT_TRUE(apm.get() != NULL);
 
   const char* pb_filename = NULL;
@@ -266,6 +268,12 @@ void void_main(int argc, char* argv[]) {
 
     } else if (strcmp(argv[i], "--delay_agnostic") == 0) {
       config.Set<DelayAgnostic>(new DelayAgnostic(true));
+
+    } else if (strcmp(argv[i], "--aec3") == 0) {
+      config.Set<EchoCanceller3>(new EchoCanceller3(true));
+
+    } else if (strcmp(argv[i], "--refined_adaptive_filter") == 0) {
+      config.Set<RefinedAdaptiveFilter>(new RefinedAdaptiveFilter(true));
 
     } else if (strcmp(argv[i], "-aecm") == 0) {
       ASSERT_EQ(apm->kNoError, apm->echo_control_mobile()->Enable(true));
@@ -435,7 +443,7 @@ void void_main(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--debug_file") == 0) {
       i++;
       ASSERT_LT(i, argc) << "Specify filename after --debug_file";
-      ASSERT_EQ(apm->kNoError, apm->StartDebugRecording(argv[i]));
+      ASSERT_EQ(apm->kNoError, apm->StartDebugRecording(argv[i], -1));
     } else {
       FAIL() << "Unrecognized argument " << argv[i];
     }
@@ -491,8 +499,8 @@ void void_main(int argc, char* argv[]) {
   FILE* aecm_echo_path_in_file = NULL;
   FILE* aecm_echo_path_out_file = NULL;
 
-  rtc::scoped_ptr<WavWriter> output_wav_file;
-  rtc::scoped_ptr<RawFile> output_raw_file;
+  std::unique_ptr<WavWriter> output_wav_file;
+  std::unique_ptr<RawFile> output_raw_file;
 
   if (pb_filename) {
     pb_file = OpenFile(pb_filename, "rb");
@@ -534,7 +542,7 @@ void void_main(int argc, char* argv[]) {
 
     const size_t path_size =
         apm->echo_control_mobile()->echo_path_size_bytes();
-    rtc::scoped_ptr<char[]> echo_path(new char[path_size]);
+    std::unique_ptr<char[]> echo_path(new char[path_size]);
     ASSERT_EQ(path_size, fread(echo_path.get(),
                                sizeof(char),
                                path_size,
@@ -576,8 +584,8 @@ void void_main(int argc, char* argv[]) {
   //            but for now we want to share the variables.
   if (pb_file) {
     Event event_msg;
-    rtc::scoped_ptr<ChannelBuffer<float> > reverse_cb;
-    rtc::scoped_ptr<ChannelBuffer<float> > primary_cb;
+    std::unique_ptr<ChannelBuffer<float> > reverse_cb;
+    std::unique_ptr<ChannelBuffer<float> > primary_cb;
     int output_sample_rate = 32000;
     AudioProcessing::ChannelLayout output_layout = AudioProcessing::kMono;
     while (ReadMessageFromFile(pb_file, &event_msg)) {
@@ -673,7 +681,7 @@ void void_main(int argc, char* argv[]) {
 
         if (msg.has_data()) {
           ASSERT_EQ(apm->kNoError,
-                    apm->AnalyzeReverseStream(&far_frame));
+                    apm->ProcessReverseStream(&far_frame));
         } else {
           ASSERT_EQ(apm->kNoError,
                     apm->AnalyzeReverseStream(
@@ -840,11 +848,7 @@ void void_main(int argc, char* argv[]) {
         if (far_file == NULL) {
           event = kCaptureEvent;
         } else {
-          if (event == kRenderEvent) {
-            event = kCaptureEvent;
-          } else {
-            event = kRenderEvent;
-          }
+          event = (event == kCaptureEvent) ? kRenderEvent : kCaptureEvent;
         }
       } else {
         read_count = fread(&event, sizeof(event), 1, event_file);
@@ -925,7 +929,7 @@ void void_main(int argc, char* argv[]) {
         }
 
         ASSERT_EQ(apm->kNoError,
-                  apm->AnalyzeReverseStream(&far_frame));
+                  apm->ProcessReverseStream(&far_frame));
 
         if (perf_testing) {
           t1 = TickTime::Now();
@@ -1061,7 +1065,7 @@ void void_main(int argc, char* argv[]) {
   if (aecm_echo_path_out_file != NULL) {
     const size_t path_size =
         apm->echo_control_mobile()->echo_path_size_bytes();
-    rtc::scoped_ptr<char[]> echo_path(new char[path_size]);
+    std::unique_ptr<char[]> echo_path(new char[path_size]);
     apm->echo_control_mobile()->GetEchoPath(echo_path.get(), path_size);
     ASSERT_EQ(path_size, fwrite(echo_path.get(),
                                 sizeof(char),

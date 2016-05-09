@@ -40,7 +40,6 @@
 #include "core/events/EventListener.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectedFrames.h"
-#include "core/inspector/InspectorState.h"
 #include "modules/IndexedDBNames.h"
 #include "modules/indexeddb/DOMWindowIndexedDatabase.h"
 #include "modules/indexeddb/IDBCursor.h"
@@ -56,26 +55,27 @@
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBTransaction.h"
-#include "platform/JSONValues.h"
+#include "platform/inspector_protocol/Values.h"
+#include "platform/v8_inspector/public/V8ToProtocolValue.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/modules/indexeddb/WebIDBCursor.h"
 #include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/Vector.h"
 
-using blink::TypeBuilder::Array;
-using blink::TypeBuilder::IndexedDB::DatabaseWithObjectStores;
-using blink::TypeBuilder::IndexedDB::DataEntry;
-using blink::TypeBuilder::IndexedDB::Key;
-using blink::TypeBuilder::IndexedDB::KeyPath;
-using blink::TypeBuilder::IndexedDB::KeyRange;
-using blink::TypeBuilder::IndexedDB::ObjectStore;
-using blink::TypeBuilder::IndexedDB::ObjectStoreIndex;
+using blink::protocol::Array;
+using blink::protocol::IndexedDB::DatabaseWithObjectStores;
+using blink::protocol::IndexedDB::DataEntry;
+using blink::protocol::IndexedDB::Key;
+using blink::protocol::IndexedDB::KeyPath;
+using blink::protocol::IndexedDB::KeyRange;
+using blink::protocol::IndexedDB::ObjectStore;
+using blink::protocol::IndexedDB::ObjectStoreIndex;
 
-typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseNamesCallback RequestDatabaseNamesCallback;
-typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDatabaseCallback RequestDatabaseCallback;
-typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::RequestDataCallback RequestDataCallback;
-typedef blink::InspectorBackendDispatcher::CallbackBase RequestCallback;
-typedef blink::InspectorBackendDispatcher::IndexedDBCommandHandler::ClearObjectStoreCallback ClearObjectStoreCallback;
+typedef blink::protocol::Backend::CallbackBase RequestCallback;
+typedef blink::protocol::Backend::IndexedDB::RequestDatabaseNamesCallback RequestDatabaseNamesCallback;
+typedef blink::protocol::Backend::IndexedDB::RequestDatabaseCallback RequestDatabaseCallback;
+typedef blink::protocol::Backend::IndexedDB::RequestDataCallback RequestDataCallback;
+typedef blink::protocol::Backend::IndexedDB::ClearObjectStoreCallback ClearObjectStoreCallback;
 
 namespace blink {
 
@@ -88,9 +88,9 @@ namespace {
 class GetDatabaseNamesCallback final : public EventListener {
     WTF_MAKE_NONCOPYABLE(GetDatabaseNamesCallback);
 public:
-    static PassRefPtrWillBeRawPtr<GetDatabaseNamesCallback> create(PassRefPtrWillBeRawPtr<RequestDatabaseNamesCallback> requestCallback, const String& securityOrigin)
+    static GetDatabaseNamesCallback* create(PassOwnPtr<RequestDatabaseNamesCallback> requestCallback, const String& securityOrigin)
     {
-        return adoptRefWillBeNoop(new GetDatabaseNamesCallback(requestCallback, securityOrigin));
+        return new GetDatabaseNamesCallback(requestCallback, securityOrigin);
     }
 
     ~GetDatabaseNamesCallback() override { }
@@ -102,8 +102,6 @@ public:
 
     void handleEvent(ExecutionContext*, Event* event) override
     {
-        if (!m_requestCallback->isActive())
-            return;
         if (event->type() != EventTypeNames::success) {
             m_requestCallback->sendFailure("Unexpected event type.");
             return;
@@ -111,13 +109,13 @@ public:
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
         IDBAny* requestResult = idbRequest->resultAsAny();
-        if (requestResult->type() != IDBAny::DOMStringListType) {
+        if (requestResult->getType() != IDBAny::DOMStringListType) {
             m_requestCallback->sendFailure("Unexpected result type.");
             return;
         }
 
-        RefPtrWillBeRawPtr<DOMStringList> databaseNamesList = requestResult->domStringList();
-        RefPtr<TypeBuilder::Array<String>> databaseNames = TypeBuilder::Array<String>::create();
+        DOMStringList* databaseNamesList = requestResult->domStringList();
+        OwnPtr<protocol::Array<String>> databaseNames = protocol::Array<String>::create();
         for (size_t i = 0; i < databaseNamesList->length(); ++i)
             databaseNames->addItem(databaseNamesList->anonymousIndexedGetter(i));
         m_requestCallback->sendSuccess(databaseNames.release());
@@ -125,16 +123,15 @@ public:
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
-        visitor->trace(m_requestCallback);
         EventListener::trace(visitor);
     }
 
 private:
-    GetDatabaseNamesCallback(PassRefPtrWillBeRawPtr<RequestDatabaseNamesCallback> requestCallback, const String& securityOrigin)
+    GetDatabaseNamesCallback(PassOwnPtr<RequestDatabaseNamesCallback> requestCallback, const String& securityOrigin)
         : EventListener(EventListener::CPPEventListenerType)
         , m_requestCallback(requestCallback)
         , m_securityOrigin(securityOrigin) { }
-    RefPtrWillBeMember<RequestDatabaseNamesCallback> m_requestCallback;
+    OwnPtr<RequestDatabaseNamesCallback> m_requestCallback;
     String m_securityOrigin;
 };
 
@@ -145,18 +142,18 @@ public:
     virtual ~ExecutableWithDatabase() { }
     void start(IDBFactory*, SecurityOrigin*, const String& databaseName);
     virtual void execute(IDBDatabase*) = 0;
-    virtual RequestCallback* requestCallback() = 0;
-    ExecutionContext* context() const { return m_scriptState->executionContext(); }
-    ScriptState* scriptState() const { return m_scriptState.get(); }
+    virtual RequestCallback* getRequestCallback() = 0;
+    ExecutionContext* context() const { return m_scriptState->getExecutionContext(); }
+    ScriptState* getScriptState() const { return m_scriptState.get(); }
 private:
     RefPtr<ScriptState> m_scriptState;
 };
 
 class OpenDatabaseCallback final : public EventListener {
 public:
-    static PassRefPtrWillBeRawPtr<OpenDatabaseCallback> create(ExecutableWithDatabase* executableWithDatabase)
+    static OpenDatabaseCallback* create(ExecutableWithDatabase* executableWithDatabase)
     {
-        return adoptRefWillBeNoop(new OpenDatabaseCallback(executableWithDatabase));
+        return new OpenDatabaseCallback(executableWithDatabase);
     }
 
     ~OpenDatabaseCallback() override { }
@@ -169,20 +166,20 @@ public:
     void handleEvent(ExecutionContext* context, Event* event) override
     {
         if (event->type() != EventTypeNames::success) {
-            m_executableWithDatabase->requestCallback()->sendFailure("Unexpected event type.");
+            m_executableWithDatabase->getRequestCallback()->sendFailure("Unexpected event type.");
             return;
         }
 
         IDBOpenDBRequest* idbOpenDBRequest = static_cast<IDBOpenDBRequest*>(event->target());
         IDBAny* requestResult = idbOpenDBRequest->resultAsAny();
-        if (requestResult->type() != IDBAny::IDBDatabaseType) {
-            m_executableWithDatabase->requestCallback()->sendFailure("Unexpected result type.");
+        if (requestResult->getType() != IDBAny::IDBDatabaseType) {
+            m_executableWithDatabase->getRequestCallback()->sendFailure("Unexpected result type.");
             return;
         }
 
         IDBDatabase* idbDatabase = requestResult->idbDatabase();
         m_executableWithDatabase->execute(idbDatabase);
-        V8PerIsolateData::from(m_executableWithDatabase->scriptState()->isolate())->runEndOfScopeTasks();
+        V8PerIsolateData::from(m_executableWithDatabase->getScriptState()->isolate())->runEndOfScopeTasks();
         idbDatabase->close();
     }
 
@@ -195,9 +192,9 @@ private:
 
 class UpgradeDatabaseCallback final : public EventListener {
 public:
-    static PassRefPtrWillBeRawPtr<UpgradeDatabaseCallback> create(ExecutableWithDatabase* executableWithDatabase)
+    static UpgradeDatabaseCallback* create(ExecutableWithDatabase* executableWithDatabase)
     {
-        return adoptRefWillBeNoop(new UpgradeDatabaseCallback(executableWithDatabase));
+        return new UpgradeDatabaseCallback(executableWithDatabase);
     }
 
     ~UpgradeDatabaseCallback() override { }
@@ -210,7 +207,7 @@ public:
     void handleEvent(ExecutionContext* context, Event* event) override
     {
         if (event->type() != EventTypeNames::upgradeneeded) {
-            m_executableWithDatabase->requestCallback()->sendFailure("Unexpected event type.");
+            m_executableWithDatabase->getRequestCallback()->sendFailure("Unexpected event type.");
             return;
         }
 
@@ -220,7 +217,7 @@ public:
         IDBOpenDBRequest* idbOpenDBRequest = static_cast<IDBOpenDBRequest*>(event->target());
         NonThrowableExceptionState exceptionState;
         idbOpenDBRequest->transaction()->abort(exceptionState);
-        m_executableWithDatabase->requestCallback()->sendFailure("Aborted upgrade.");
+        m_executableWithDatabase->getRequestCallback()->sendFailure("Aborted upgrade.");
     }
 
 private:
@@ -232,12 +229,12 @@ private:
 
 void ExecutableWithDatabase::start(IDBFactory* idbFactory, SecurityOrigin*, const String& databaseName)
 {
-    RefPtrWillBeRawPtr<OpenDatabaseCallback> openCallback = OpenDatabaseCallback::create(this);
-    RefPtrWillBeRawPtr<UpgradeDatabaseCallback> upgradeCallback = UpgradeDatabaseCallback::create(this);
+    OpenDatabaseCallback* openCallback = OpenDatabaseCallback::create(this);
+    UpgradeDatabaseCallback* upgradeCallback = UpgradeDatabaseCallback::create(this);
     TrackExceptionState exceptionState;
-    IDBOpenDBRequest* idbOpenDBRequest = idbFactory->open(scriptState(), databaseName, exceptionState);
+    IDBOpenDBRequest* idbOpenDBRequest = idbFactory->open(getScriptState(), databaseName, exceptionState);
     if (exceptionState.hadException()) {
-        requestCallback()->sendFailure("Could not open database.");
+        getRequestCallback()->sendFailure("Could not open database.");
         return;
     }
     idbOpenDBRequest->addEventListener(EventTypeNames::upgradeneeded, upgradeCallback, false);
@@ -273,24 +270,23 @@ static IDBIndex* indexForObjectStore(IDBObjectStore* idbObjectStore, const Strin
     return idbIndex;
 }
 
-static PassRefPtr<KeyPath> keyPathFromIDBKeyPath(const IDBKeyPath& idbKeyPath)
+static PassOwnPtr<KeyPath> keyPathFromIDBKeyPath(const IDBKeyPath& idbKeyPath)
 {
-    RefPtr<KeyPath> keyPath;
-    switch (idbKeyPath.type()) {
+    OwnPtr<KeyPath> keyPath;
+    switch (idbKeyPath.getType()) {
     case IDBKeyPath::NullType:
-        keyPath = KeyPath::create().setType(KeyPath::Type::Null);
+        keyPath = KeyPath::create().setType(KeyPath::TypeEnum::Null).build();
         break;
     case IDBKeyPath::StringType:
-        keyPath = KeyPath::create().setType(KeyPath::Type::String);
-        keyPath->setString(idbKeyPath.string());
+        keyPath = KeyPath::create().setType(KeyPath::TypeEnum::String).setString(idbKeyPath.string()).build();
         break;
     case IDBKeyPath::ArrayType: {
-        keyPath = KeyPath::create().setType(KeyPath::Type::Array);
-        RefPtr<TypeBuilder::Array<String>> array = TypeBuilder::Array<String>::create();
+        keyPath = KeyPath::create().setType(KeyPath::TypeEnum::Array).build();
+        OwnPtr<protocol::Array<String>> array = protocol::Array<String>::create();
         const Vector<String>& stringArray = idbKeyPath.array();
         for (size_t i = 0; i < stringArray.size(); ++i)
             array->addItem(stringArray[i]);
-        keyPath->setArray(array);
+        keyPath->setArray(array.release());
         break;
     }
     default:
@@ -302,7 +298,7 @@ static PassRefPtr<KeyPath> keyPathFromIDBKeyPath(const IDBKeyPath& idbKeyPath)
 
 class DatabaseLoader final : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<DatabaseLoader> create(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDatabaseCallback> requestCallback)
+    static PassRefPtr<DatabaseLoader> create(ScriptState* scriptState, PassOwnPtr<RequestDatabaseCallback> requestCallback)
     {
         return adoptRef(new DatabaseLoader(scriptState, requestCallback));
     }
@@ -311,60 +307,56 @@ public:
 
     void execute(IDBDatabase* idbDatabase) override
     {
-        if (!requestCallback()->isActive())
-            return;
-
         const IDBDatabaseMetadata databaseMetadata = idbDatabase->metadata();
 
-        RefPtr<TypeBuilder::Array<TypeBuilder::IndexedDB::ObjectStore>> objectStores = TypeBuilder::Array<TypeBuilder::IndexedDB::ObjectStore>::create();
+        OwnPtr<protocol::Array<protocol::IndexedDB::ObjectStore>> objectStores = protocol::Array<protocol::IndexedDB::ObjectStore>::create();
 
         for (const auto& storeMapEntry : databaseMetadata.objectStores) {
             const IDBObjectStoreMetadata& objectStoreMetadata = storeMapEntry.value;
 
-            RefPtr<TypeBuilder::Array<TypeBuilder::IndexedDB::ObjectStoreIndex>> indexes = TypeBuilder::Array<TypeBuilder::IndexedDB::ObjectStoreIndex>::create();
+            OwnPtr<protocol::Array<protocol::IndexedDB::ObjectStoreIndex>> indexes = protocol::Array<protocol::IndexedDB::ObjectStoreIndex>::create();
 
             for (const auto& metadataMapEntry : objectStoreMetadata.indexes) {
                 const IDBIndexMetadata& indexMetadata = metadataMapEntry.value;
 
-                RefPtr<ObjectStoreIndex> objectStoreIndex = ObjectStoreIndex::create()
+                OwnPtr<ObjectStoreIndex> objectStoreIndex = ObjectStoreIndex::create()
                     .setName(indexMetadata.name)
                     .setKeyPath(keyPathFromIDBKeyPath(indexMetadata.keyPath))
                     .setUnique(indexMetadata.unique)
-                    .setMultiEntry(indexMetadata.multiEntry);
-                indexes->addItem(objectStoreIndex);
+                    .setMultiEntry(indexMetadata.multiEntry).build();
+                indexes->addItem(objectStoreIndex.release());
             }
 
-            RefPtr<ObjectStore> objectStore = ObjectStore::create()
+            OwnPtr<ObjectStore> objectStore = ObjectStore::create()
                 .setName(objectStoreMetadata.name)
                 .setKeyPath(keyPathFromIDBKeyPath(objectStoreMetadata.keyPath))
                 .setAutoIncrement(objectStoreMetadata.autoIncrement)
-                .setIndexes(indexes);
-            objectStores->addItem(objectStore);
+                .setIndexes(indexes.release()).build();
+            objectStores->addItem(objectStore.release());
         }
-        RefPtr<DatabaseWithObjectStores> result = DatabaseWithObjectStores::create()
+        OwnPtr<DatabaseWithObjectStores> result = DatabaseWithObjectStores::create()
             .setName(databaseMetadata.name)
-            .setIntVersion(databaseMetadata.intVersion)
             .setVersion(databaseMetadata.version)
-            .setObjectStores(objectStores);
+            .setObjectStores(objectStores.release()).build();
 
-        m_requestCallback->sendSuccess(result);
+        m_requestCallback->sendSuccess(result.release());
     }
 
-    RequestCallback* requestCallback() override { return m_requestCallback.get(); }
+    RequestCallback* getRequestCallback() override { return m_requestCallback.get(); }
 private:
-    DatabaseLoader(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDatabaseCallback> requestCallback)
+    DatabaseLoader(ScriptState* scriptState, PassOwnPtr<RequestDatabaseCallback> requestCallback)
         : ExecutableWithDatabase(scriptState)
         , m_requestCallback(requestCallback) { }
-    RefPtrWillBePersistent<RequestDatabaseCallback> m_requestCallback;
+    OwnPtr<RequestDatabaseCallback> m_requestCallback;
 };
 
-static IDBKey* idbKeyFromInspectorObject(JSONObject* key)
+static IDBKey* idbKeyFromInspectorObject(protocol::IndexedDB::Key* key)
 {
     IDBKey* idbKey;
 
-    String type;
-    if (!key->getString("type", &type))
+    if (!key)
         return nullptr;
+    String type = key->getType();
 
     DEFINE_STATIC_LOCAL(String, s_number, ("number"));
     DEFINE_STATIC_LOCAL(String, s_string, ("string"));
@@ -372,30 +364,22 @@ static IDBKey* idbKeyFromInspectorObject(JSONObject* key)
     DEFINE_STATIC_LOCAL(String, s_array, ("array"));
 
     if (type == s_number) {
-        double number;
-        if (!key->getNumber("number", &number))
+        if (!key->hasNumber())
             return nullptr;
-        idbKey = IDBKey::createNumber(number);
+        idbKey = IDBKey::createNumber(key->getNumber(0));
     } else if (type == s_string) {
-        String string;
-        if (!key->getString("string", &string))
+        if (!key->hasString())
             return nullptr;
-        idbKey = IDBKey::createString(string);
+        idbKey = IDBKey::createString(key->getString(String()));
     } else if (type == s_date) {
-        double date;
-        if (!key->getNumber("date", &date))
+        if (!key->hasDate())
             return nullptr;
-        idbKey = IDBKey::createDate(date);
+        idbKey = IDBKey::createDate(key->getDate(0));
     } else if (type == s_array) {
         IDBKey::KeyArray keyArray;
-        RefPtr<JSONArray> array = key->getArray("array");
-        for (size_t i = 0; i < array->length(); ++i) {
-            RefPtr<JSONValue> value = array->get(i);
-            RefPtr<JSONObject> object;
-            if (!value->asObject(&object))
-                return nullptr;
-            keyArray.append(idbKeyFromInspectorObject(object.get()));
-        }
+        auto array = key->getArray(nullptr);
+        for (size_t i = 0; array && i < array->length(); ++i)
+            keyArray.append(idbKeyFromInspectorObject(array->get(i)));
         idbKey = IDBKey::createArray(keyArray);
     } else {
         return nullptr;
@@ -404,28 +388,18 @@ static IDBKey* idbKeyFromInspectorObject(JSONObject* key)
     return idbKey;
 }
 
-static IDBKeyRange* idbKeyRangeFromKeyRange(JSONObject* keyRange)
+static IDBKeyRange* idbKeyRangeFromKeyRange(protocol::IndexedDB::KeyRange* keyRange)
 {
-    RefPtr<JSONObject> lower = keyRange->getObject("lower");
-    IDBKey* idbLower = lower ? idbKeyFromInspectorObject(lower.get()) : nullptr;
-    if (lower && !idbLower)
+    IDBKey* idbLower = idbKeyFromInspectorObject(keyRange->getLower(nullptr));
+    if (keyRange->hasLower() && !idbLower)
         return nullptr;
 
-    RefPtr<JSONObject> upper = keyRange->getObject("upper");
-    IDBKey* idbUpper = upper ? idbKeyFromInspectorObject(upper.get()) : nullptr;
-    if (upper && !idbUpper)
+    IDBKey* idbUpper = idbKeyFromInspectorObject(keyRange->getUpper(nullptr));
+    if (keyRange->hasUpper() && !idbUpper)
         return nullptr;
 
-    bool lowerOpen;
-    if (!keyRange->getBoolean("lowerOpen", &lowerOpen))
-        return nullptr;
-    IDBKeyRange::LowerBoundType lowerBoundType = lowerOpen ? IDBKeyRange::LowerBoundOpen : IDBKeyRange::LowerBoundClosed;
-
-    bool upperOpen;
-    if (!keyRange->getBoolean("upperOpen", &upperOpen))
-        return nullptr;
-    IDBKeyRange::UpperBoundType upperBoundType = upperOpen ? IDBKeyRange::UpperBoundOpen : IDBKeyRange::UpperBoundClosed;
-
+    IDBKeyRange::LowerBoundType lowerBoundType = keyRange->getLowerOpen() ? IDBKeyRange::LowerBoundOpen : IDBKeyRange::LowerBoundClosed;
+    IDBKeyRange::UpperBoundType upperBoundType = keyRange->getUpperOpen() ? IDBKeyRange::UpperBoundOpen : IDBKeyRange::UpperBoundClosed;
     return IDBKeyRange::create(idbLower, idbUpper, lowerBoundType, upperBoundType);
 }
 
@@ -433,9 +407,9 @@ class DataLoader;
 
 class OpenCursorCallback final : public EventListener {
 public:
-    static PassRefPtrWillBeRawPtr<OpenCursorCallback> create(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDataCallback> requestCallback, int skipCount, unsigned pageSize)
+    static OpenCursorCallback* create(ScriptState* scriptState, PassOwnPtr<RequestDataCallback> requestCallback, int skipCount, unsigned pageSize)
     {
-        return adoptRefWillBeNoop(new OpenCursorCallback(scriptState, requestCallback, skipCount, pageSize));
+        return new OpenCursorCallback(scriptState, requestCallback, skipCount, pageSize);
     }
 
     ~OpenCursorCallback() override { }
@@ -454,11 +428,11 @@ public:
 
         IDBRequest* idbRequest = static_cast<IDBRequest*>(event->target());
         IDBAny* requestResult = idbRequest->resultAsAny();
-        if (requestResult->type() == IDBAny::IDBValueType) {
+        if (requestResult->getType() == IDBAny::IDBValueType) {
             end(false);
             return;
         }
-        if (requestResult->type() != IDBAny::IDBCursorWithValueType) {
+        if (requestResult->getType() != IDBAny::IDBCursorWithValueType) {
             m_requestCallback->sendFailure("Unexpected result type.");
             return;
         }
@@ -487,44 +461,39 @@ public:
             return;
         }
 
-        Document* document = toDocument(m_scriptState->executionContext());
+        Document* document = toDocument(m_scriptState->getExecutionContext());
         if (!document)
             return;
         // FIXME: There are no tests for this error showing when a recursive
         // object is inspected.
-        const String errorMessage("\"Inspection error. Maximum depth reached?\"");
+        const String16 errorMessage("\"Inspection error. Maximum depth reached?\"");
         ScriptState* scriptState = m_scriptState.get();
-        v8::Isolate* isolate = scriptState->isolate();
         ScriptState::Scope scope(scriptState);
-        RefPtr<JSONValue> keyJsonValue = ScriptValue::to<JSONValuePtr>(isolate, idbCursor->key(scriptState), exceptionState);
-        RefPtr<JSONValue> primaryKeyJsonValue = ScriptValue::to<JSONValuePtr>(isolate, idbCursor->primaryKey(scriptState), exceptionState);
-        RefPtr<JSONValue> valueJsonValue = ScriptValue::to<JSONValuePtr>(isolate, idbCursor->value(scriptState), exceptionState);
-        String key = keyJsonValue ? keyJsonValue->toJSONString() : errorMessage;
-        String value = valueJsonValue ? valueJsonValue->toJSONString() : errorMessage;
+        OwnPtr<protocol::Value> keyJsonValue = toProtocolValue(scriptState->context(), idbCursor->key(scriptState).v8Value());
+        OwnPtr<protocol::Value> primaryKeyJsonValue = toProtocolValue(scriptState->context(), idbCursor->primaryKey(scriptState).v8Value());
+        OwnPtr<protocol::Value> valueJsonValue = toProtocolValue(scriptState->context(), idbCursor->value(scriptState).v8Value());
+        String16 key = keyJsonValue ? keyJsonValue->toJSONString() : errorMessage;
+        String16 value = valueJsonValue ? valueJsonValue->toJSONString() : errorMessage;
         String primaryKey = primaryKeyJsonValue ? primaryKeyJsonValue->toJSONString() : errorMessage;
-        RefPtr<DataEntry> dataEntry = DataEntry::create()
+        OwnPtr<DataEntry> dataEntry = DataEntry::create()
             .setKey(key)
             .setPrimaryKey(primaryKey)
-            .setValue(value);
-        m_result->addItem(dataEntry);
-
+            .setValue(value).build();
+        m_result->addItem(dataEntry.release());
     }
 
     void end(bool hasMore)
     {
-        if (!m_requestCallback->isActive())
-            return;
         m_requestCallback->sendSuccess(m_result.release(), hasMore);
     }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
-        visitor->trace(m_requestCallback);
         EventListener::trace(visitor);
     }
 
 private:
-    OpenCursorCallback(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDataCallback> requestCallback, int skipCount, unsigned pageSize)
+    OpenCursorCallback(ScriptState* scriptState, PassOwnPtr<RequestDataCallback> requestCallback, int skipCount, unsigned pageSize)
         : EventListener(EventListener::CPPEventListenerType)
         , m_scriptState(scriptState)
         , m_requestCallback(requestCallback)
@@ -535,15 +504,15 @@ private:
     }
 
     RefPtr<ScriptState> m_scriptState;
-    RefPtrWillBeMember<RequestDataCallback> m_requestCallback;
+    OwnPtr<RequestDataCallback> m_requestCallback;
     int m_skipCount;
     unsigned m_pageSize;
-    RefPtr<Array<DataEntry>> m_result;
+    OwnPtr<Array<DataEntry>> m_result;
 };
 
 class DataLoader final : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<DataLoader> create(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDataCallback> requestCallback, const String& objectStoreName, const String& indexName, IDBKeyRange* idbKeyRange, int skipCount, unsigned pageSize)
+    static PassRefPtr<DataLoader> create(ScriptState* scriptState, PassOwnPtr<RequestDataCallback> requestCallback, const String& objectStoreName, const String& indexName, IDBKeyRange* idbKeyRange, int skipCount, unsigned pageSize)
     {
         return adoptRef(new DataLoader(scriptState, requestCallback, objectStoreName, indexName, idbKeyRange, skipCount, pageSize));
     }
@@ -552,9 +521,7 @@ public:
 
     void execute(IDBDatabase* idbDatabase) override
     {
-        if (!requestCallback()->isActive())
-            return;
-        IDBTransaction* idbTransaction = transactionForDatabase(scriptState(), idbDatabase, m_objectStoreName);
+        IDBTransaction* idbTransaction = transactionForDatabase(getScriptState(), idbDatabase, m_objectStoreName);
         if (!idbTransaction) {
             m_requestCallback->sendFailure("Could not get transaction");
             return;
@@ -565,8 +532,6 @@ public:
             return;
         }
 
-        RefPtrWillBeRawPtr<OpenCursorCallback> openCursorCallback = OpenCursorCallback::create(scriptState(), m_requestCallback, m_skipCount, m_pageSize);
-
         IDBRequest* idbRequest;
         if (!m_indexName.isEmpty()) {
             IDBIndex* idbIndex = indexForObjectStore(idbObjectStore, m_indexName);
@@ -575,15 +540,16 @@ public:
                 return;
             }
 
-            idbRequest = idbIndex->openCursor(scriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
+            idbRequest = idbIndex->openCursor(getScriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
         } else {
-            idbRequest = idbObjectStore->openCursor(scriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
+            idbRequest = idbObjectStore->openCursor(getScriptState(), m_idbKeyRange.get(), WebIDBCursorDirectionNext);
         }
+        OpenCursorCallback* openCursorCallback = OpenCursorCallback::create(getScriptState(), m_requestCallback.release(), m_skipCount, m_pageSize);
         idbRequest->addEventListener(EventTypeNames::success, openCursorCallback, false);
     }
 
-    RequestCallback* requestCallback() override { return m_requestCallback.get(); }
-    DataLoader(ScriptState* scriptState, PassRefPtrWillBeRawPtr<RequestDataCallback> requestCallback, const String& objectStoreName, const String& indexName, IDBKeyRange* idbKeyRange, int skipCount, unsigned pageSize)
+    RequestCallback* getRequestCallback() override { return m_requestCallback.get(); }
+    DataLoader(ScriptState* scriptState, PassOwnPtr<RequestDataCallback> requestCallback, const String& objectStoreName, const String& indexName, IDBKeyRange* idbKeyRange, int skipCount, unsigned pageSize)
         : ExecutableWithDatabase(scriptState)
         , m_requestCallback(requestCallback)
         , m_objectStoreName(objectStoreName)
@@ -594,7 +560,7 @@ public:
     {
     }
 
-    RefPtrWillBePersistent<RequestDataCallback> m_requestCallback;
+    OwnPtr<RequestDataCallback> m_requestCallback;
     String m_objectStoreName;
     String m_indexName;
     Persistent<IDBKeyRange> m_idbKeyRange;
@@ -605,13 +571,13 @@ public:
 } // namespace
 
 // static
-PassOwnPtrWillBeRawPtr<InspectorIndexedDBAgent> InspectorIndexedDBAgent::create(InspectedFrames* inspectedFrames)
+InspectorIndexedDBAgent* InspectorIndexedDBAgent::create(InspectedFrames* inspectedFrames)
 {
-    return adoptPtrWillBeNoop(new InspectorIndexedDBAgent(inspectedFrames));
+    return new InspectorIndexedDBAgent(inspectedFrames);
 }
 
 InspectorIndexedDBAgent::InspectorIndexedDBAgent(InspectedFrames* inspectedFrames)
-    : InspectorBaseAgent<InspectorIndexedDBAgent, InspectorFrontend::IndexedDB>("IndexedDB")
+    : InspectorBaseAgent<InspectorIndexedDBAgent, protocol::Frontend::IndexedDB>("IndexedDB")
     , m_inspectedFrames(inspectedFrames)
 {
 }
@@ -622,7 +588,7 @@ InspectorIndexedDBAgent::~InspectorIndexedDBAgent()
 
 void InspectorIndexedDBAgent::restore()
 {
-    if (m_state->getBoolean(IndexedDBAgentState::indexedDBAgentEnabled)) {
+    if (m_state->booleanProperty(IndexedDBAgentState::indexedDBAgentEnabled, false)) {
         ErrorString error;
         enable(&error);
     }
@@ -663,7 +629,7 @@ static IDBFactory* assertIDBFactory(ErrorString* errorString, Document* document
     return idbFactory;
 }
 
-void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, const String& securityOrigin, PassRefPtrWillBeRawPtr<RequestDatabaseNamesCallback> requestCallback)
+void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, const String& securityOrigin, PassOwnPtr<RequestDatabaseNamesCallback> requestCallback)
 {
     LocalFrame* frame = m_inspectedFrames->frameWithSecurityOrigin(securityOrigin);
     Document* document = assertDocument(errorString, frame);
@@ -683,10 +649,10 @@ void InspectorIndexedDBAgent::requestDatabaseNames(ErrorString* errorString, con
         requestCallback->sendFailure("Could not obtain database names.");
         return;
     }
-    idbRequest->addEventListener(EventTypeNames::success, GetDatabaseNamesCallback::create(requestCallback, document->securityOrigin()->toRawString()), false);
+    idbRequest->addEventListener(EventTypeNames::success, GetDatabaseNamesCallback::create(requestCallback, document->getSecurityOrigin()->toRawString()), false);
 }
 
-void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const String& securityOrigin, const String& databaseName, PassRefPtrWillBeRawPtr<RequestDatabaseCallback> requestCallback)
+void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const String& securityOrigin, const String& databaseName, PassOwnPtr<RequestDatabaseCallback> requestCallback)
 {
     LocalFrame* frame = m_inspectedFrames->frameWithSecurityOrigin(securityOrigin);
     Document* document = assertDocument(errorString, frame);
@@ -701,10 +667,18 @@ void InspectorIndexedDBAgent::requestDatabase(ErrorString* errorString, const St
         return;
     ScriptState::Scope scope(scriptState);
     RefPtr<DatabaseLoader> databaseLoader = DatabaseLoader::create(scriptState, requestCallback);
-    databaseLoader->start(idbFactory, document->securityOrigin(), databaseName);
+    databaseLoader->start(idbFactory, document->getSecurityOrigin(), databaseName);
 }
 
-void InspectorIndexedDBAgent::requestData(ErrorString* errorString, const String& securityOrigin, const String& databaseName, const String& objectStoreName, const String& indexName, int skipCount, int pageSize, const RefPtr<JSONObject>* keyRange, const PassRefPtrWillBeRawPtr<RequestDataCallback> requestCallback)
+void InspectorIndexedDBAgent::requestData(ErrorString* errorString,
+    const String& securityOrigin,
+    const String& databaseName,
+    const String& objectStoreName,
+    const String& indexName,
+    int skipCount,
+    int pageSize,
+    const Maybe<protocol::IndexedDB::KeyRange>& keyRange,
+    const PassOwnPtr<RequestDataCallback> requestCallback)
 {
     LocalFrame* frame = m_inspectedFrames->frameWithSecurityOrigin(securityOrigin);
     Document* document = assertDocument(errorString, frame);
@@ -714,8 +688,8 @@ void InspectorIndexedDBAgent::requestData(ErrorString* errorString, const String
     if (!idbFactory)
         return;
 
-    IDBKeyRange* idbKeyRange = keyRange ? idbKeyRangeFromKeyRange(keyRange->get()) : nullptr;
-    if (keyRange && !idbKeyRange) {
+    IDBKeyRange* idbKeyRange = keyRange.isJust() ? idbKeyRangeFromKeyRange(keyRange.fromJust()) : nullptr;
+    if (keyRange.isJust() && !idbKeyRange) {
         *errorString = "Can not parse key range.";
         return;
     }
@@ -725,15 +699,15 @@ void InspectorIndexedDBAgent::requestData(ErrorString* errorString, const String
         return;
     ScriptState::Scope scope(scriptState);
     RefPtr<DataLoader> dataLoader = DataLoader::create(scriptState, requestCallback, objectStoreName, indexName, idbKeyRange, skipCount, pageSize);
-    dataLoader->start(idbFactory, document->securityOrigin(), databaseName);
+    dataLoader->start(idbFactory, document->getSecurityOrigin(), databaseName);
 }
 
 class ClearObjectStoreListener final : public EventListener {
     WTF_MAKE_NONCOPYABLE(ClearObjectStoreListener);
 public:
-    static PassRefPtrWillBeRawPtr<ClearObjectStoreListener> create(PassRefPtrWillBeRawPtr<ClearObjectStoreCallback> requestCallback)
+    static ClearObjectStoreListener* create(PassOwnPtr<ClearObjectStoreCallback> requestCallback)
     {
-        return adoptRefWillBeNoop(new ClearObjectStoreListener(requestCallback));
+        return new ClearObjectStoreListener(requestCallback);
     }
 
     ~ClearObjectStoreListener() override { }
@@ -745,8 +719,6 @@ public:
 
     void handleEvent(ExecutionContext*, Event* event) override
     {
-        if (!m_requestCallback->isActive())
-            return;
         if (event->type() != EventTypeNames::complete) {
             m_requestCallback->sendFailure("Unexpected event type.");
             return;
@@ -757,29 +729,28 @@ public:
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
-        visitor->trace(m_requestCallback);
         EventListener::trace(visitor);
     }
 
 private:
-    ClearObjectStoreListener(PassRefPtrWillBeRawPtr<ClearObjectStoreCallback> requestCallback)
+    ClearObjectStoreListener(PassOwnPtr<ClearObjectStoreCallback> requestCallback)
         : EventListener(EventListener::CPPEventListenerType)
         , m_requestCallback(requestCallback)
     {
     }
 
-    RefPtrWillBeMember<ClearObjectStoreCallback> m_requestCallback;
+    OwnPtr<ClearObjectStoreCallback> m_requestCallback;
 };
 
 
 class ClearObjectStore final : public ExecutableWithDatabase {
 public:
-    static PassRefPtr<ClearObjectStore> create(ScriptState* scriptState, const String& objectStoreName, PassRefPtrWillBeRawPtr<ClearObjectStoreCallback> requestCallback)
+    static PassRefPtr<ClearObjectStore> create(ScriptState* scriptState, const String& objectStoreName, PassOwnPtr<ClearObjectStoreCallback> requestCallback)
     {
         return adoptRef(new ClearObjectStore(scriptState, objectStoreName, requestCallback));
     }
 
-    ClearObjectStore(ScriptState* scriptState, const String& objectStoreName, PassRefPtrWillBeRawPtr<ClearObjectStoreCallback> requestCallback)
+    ClearObjectStore(ScriptState* scriptState, const String& objectStoreName, PassOwnPtr<ClearObjectStoreCallback> requestCallback)
         : ExecutableWithDatabase(scriptState)
         , m_objectStoreName(objectStoreName)
         , m_requestCallback(requestCallback)
@@ -788,9 +759,7 @@ public:
 
     void execute(IDBDatabase* idbDatabase) override
     {
-        if (!requestCallback()->isActive())
-            return;
-        IDBTransaction* idbTransaction = transactionForDatabase(scriptState(), idbDatabase, m_objectStoreName, IndexedDBNames::readwrite);
+        IDBTransaction* idbTransaction = transactionForDatabase(getScriptState(), idbDatabase, m_objectStoreName, IndexedDBNames::readwrite);
         if (!idbTransaction) {
             m_requestCallback->sendFailure("Could not get transaction");
             return;
@@ -802,23 +771,23 @@ public:
         }
 
         TrackExceptionState exceptionState;
-        idbObjectStore->clear(scriptState(), exceptionState);
+        idbObjectStore->clear(getScriptState(), exceptionState);
         ASSERT(!exceptionState.hadException());
         if (exceptionState.hadException()) {
             ExceptionCode ec = exceptionState.code();
             m_requestCallback->sendFailure(String::format("Could not clear object store '%s': %d", m_objectStoreName.utf8().data(), ec));
             return;
         }
-        idbTransaction->addEventListener(EventTypeNames::complete, ClearObjectStoreListener::create(m_requestCallback), false);
+        idbTransaction->addEventListener(EventTypeNames::complete, ClearObjectStoreListener::create(m_requestCallback.release()), false);
     }
 
-    RequestCallback* requestCallback() override { return m_requestCallback.get(); }
+    RequestCallback* getRequestCallback() override { return m_requestCallback.get(); }
 private:
     const String m_objectStoreName;
-    RefPtrWillBePersistent<ClearObjectStoreCallback> m_requestCallback;
+    OwnPtr<ClearObjectStoreCallback> m_requestCallback;
 };
 
-void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const String& securityOrigin, const String& databaseName, const String& objectStoreName, PassRefPtrWillBeRawPtr<ClearObjectStoreCallback> requestCallback)
+void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const String& securityOrigin, const String& databaseName, const String& objectStoreName, PassOwnPtr<ClearObjectStoreCallback> requestCallback)
 {
     LocalFrame* frame = m_inspectedFrames->frameWithSecurityOrigin(securityOrigin);
     Document* document = assertDocument(errorString, frame);
@@ -833,7 +802,7 @@ void InspectorIndexedDBAgent::clearObjectStore(ErrorString* errorString, const S
         return;
     ScriptState::Scope scope(scriptState);
     RefPtr<ClearObjectStore> clearObjectStore = ClearObjectStore::create(scriptState, objectStoreName, requestCallback);
-    clearObjectStore->start(idbFactory, document->securityOrigin(), databaseName);
+    clearObjectStore->start(idbFactory, document->getSecurityOrigin(), databaseName);
 }
 
 DEFINE_TRACE(InspectorIndexedDBAgent)

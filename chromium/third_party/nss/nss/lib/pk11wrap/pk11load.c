@@ -498,7 +498,7 @@ library_loaded:
 
 #ifdef DEBUG_MODULE
     if (PR_TRUE) {
-	modToDBG = PR_GetEnv("NSS_DEBUG_PKCS11_MODULE");
+	modToDBG = PR_GetEnvSecure("NSS_DEBUG_PKCS11_MODULE");
 	if (modToDBG && strcmp(mod->commonName, modToDBG) == 0) {
 	    mod->functionList = (void *)nss_InsertDeviceLog(
 	                           (CK_FUNCTION_LIST_PTR)mod->functionList);
@@ -590,7 +590,7 @@ fail2:
     }
 fail:
     mod->functionList = NULL;
-    disableUnload = PR_GetEnv("NSS_DISABLE_UNLOAD");
+    disableUnload = PR_GetEnvSecure("NSS_DISABLE_UNLOAD");
     if (library && !disableUnload) {
         PR_UnloadLibrary(library);
     }
@@ -620,7 +620,7 @@ SECMOD_UnloadModule(SECMODModule *mod) {
 #ifndef NSS_STATIC
         if (0 == PR_ATOMIC_DECREMENT(&softokenLoadCount)) {
           if (softokenLib) {
-              disableUnload = PR_GetEnv("NSS_DISABLE_UNLOAD");
+              disableUnload = PR_GetEnvSecure("NSS_DISABLE_UNLOAD");
               if (!disableUnload) {
 #ifdef DEBUG
                   PRStatus status = PR_UnloadLibrary(softokenLib);
@@ -648,7 +648,7 @@ SECMOD_UnloadModule(SECMODModule *mod) {
 	return SECFailure;
     }
 
-    disableUnload = PR_GetEnv("NSS_DISABLE_UNLOAD");
+    disableUnload = PR_GetEnvSecure("NSS_DISABLE_UNLOAD");
     if (!disableUnload) {
         PR_UnloadLibrary(library);
     }

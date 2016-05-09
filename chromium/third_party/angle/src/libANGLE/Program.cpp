@@ -859,9 +859,8 @@ void Program::getAttachedShaders(GLsizei maxCount, GLsizei *count, GLuint *shade
         if (total < maxCount)
         {
             shaders[total] = mData.mAttachedVertexShader->getHandle();
+            total++;
         }
-
-        total++;
     }
 
     if (mData.mAttachedFragmentShader)
@@ -869,9 +868,8 @@ void Program::getAttachedShaders(GLsizei maxCount, GLsizei *count, GLuint *shade
         if (total < maxCount)
         {
             shaders[total] = mData.mAttachedFragmentShader->getHandle();
+            total++;
         }
-
-        total++;
     }
 
     if (count)
@@ -2377,7 +2375,7 @@ void Program::defineUniformBlock(const sh::InterfaceBlock &interfaceBlock, GLenu
     // Track the first and last uniform index to determine the range of active uniforms in the
     // block.
     size_t firstBlockUniformIndex = mData.mUniforms.size();
-    defineUniformBlockMembers(interfaceBlock.fields, "", blockIndex);
+    defineUniformBlockMembers(interfaceBlock.fields, interfaceBlock.fieldPrefix(), blockIndex);
     size_t lastBlockUniformIndex = mData.mUniforms.size();
 
     std::vector<unsigned int> blockUniformIndexes;

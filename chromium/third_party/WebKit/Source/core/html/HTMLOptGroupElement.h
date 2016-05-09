@@ -36,9 +36,10 @@ class HTMLDivElement;
 class CORE_EXPORT HTMLOptGroupElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<HTMLOptGroupElement> create(Document&);
+    static RawPtr<HTMLOptGroupElement> create(Document&);
 
     bool isDisabledFormControl() const override;
+    String defaultToolTip() const override;
     HTMLSelectElement* ownerSelectElement() const;
 
     String groupLabelText() const;

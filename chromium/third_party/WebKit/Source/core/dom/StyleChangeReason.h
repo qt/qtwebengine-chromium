@@ -6,7 +6,6 @@
 #define StyleChangeReason_h
 
 #include "core/dom/QualifiedName.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
@@ -18,9 +17,11 @@ namespace StyleChangeReason {
 extern const char ActiveStylesheetsUpdate[];
 extern const char Animation[];
 extern const char Attribute[];
+extern const char CleanupPlaceholderStyles[];
 extern const char CompositorProxy[];
 extern const char ControlValue[];
 extern const char Control[];
+extern const char DeclarativeContent[];
 extern const char DesignMode[];
 extern const char Drag[];
 extern const char FontSizeChange[];
@@ -37,6 +38,7 @@ extern const char PseudoClass[];
 extern const char SVGContainerSizeChange[];
 extern const char SVGCursor[];
 extern const char SVGFilterLayerUpdate[];
+extern const char Settings[];
 extern const char Shadow[];
 extern const char SiblingSelector[];
 extern const char StyleInvalidator[];
@@ -47,7 +49,7 @@ extern const char VisitedLink[];
 extern const char VisuallyOrdered[];
 extern const char WritingModeChange[];
 extern const char Zoom[];
-}
+} // namespace StyleChangeReason
 typedef const char StyleChangeReasonString[];
 
 namespace StyleChangeExtraData {
@@ -85,7 +87,7 @@ public:
     }
 
     String reasonString() const { return String(m_reason); }
-    const AtomicString& extraData() const { return m_extraData; }
+    const AtomicString& getExtraData() const { return m_extraData; }
 
 private:
     StyleChangeReasonForTracing(StyleChangeReasonString reasonString, const AtomicString& extraData)

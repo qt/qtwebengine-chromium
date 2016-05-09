@@ -13,6 +13,7 @@
 
 #include "webrtc/modules/video_coding/include/video_coding.h"
 
+#include <memory>
 #include <vector>
 
 #include "webrtc/base/thread_annotations.h"
@@ -30,8 +31,6 @@
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 
 namespace webrtc {
-
-class EncodedFrameObserver;
 
 namespace vcm {
 
@@ -95,23 +94,22 @@ class VideoSender {
   bool VideoSuspended() const;
 
   int64_t TimeUntilNextProcess();
-  int32_t Process();
+  void Process();
 
  private:
   void SetEncoderParameters(EncoderParameters params)
-      EXCLUSIVE_LOCKS_REQUIRED(send_crit_);
+      EXCLUSIVE_LOCKS_REQUIRED(encoder_crit_);
 
   Clock* const clock_;
 
-  rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
-  mutable rtc::CriticalSection send_crit_;
+  std::unique_ptr<CriticalSectionWrapper> process_crit_sect_;
+  rtc::CriticalSection encoder_crit_;
   VCMGenericEncoder* _encoder;
-  VCMEncodedFrameCallback _encodedFrameCallback;
-  std::vector<FrameType> _nextFrameTypes;
+  VCMEncodedFrameCallback _encodedFrameCallback GUARDED_BY(encoder_crit_);
   media_optimization::MediaOptimization _mediaOpt;
   VCMSendStatisticsCallback* _sendStatsCallback GUARDED_BY(process_crit_sect_);
-  VCMCodecDataBase _codecDataBase GUARDED_BY(send_crit_);
-  bool frame_dropper_enabled_ GUARDED_BY(send_crit_);
+  VCMCodecDataBase _codecDataBase GUARDED_BY(encoder_crit_);
+  bool frame_dropper_enabled_ GUARDED_BY(encoder_crit_);
   VCMProcessTimer _sendStatsTimer;
 
   // Must be accessed on the construction thread of VideoSender.
@@ -121,15 +119,20 @@ class VideoSender {
   VCMQMSettingsCallback* const qm_settings_callback_;
   VCMProtectionCallback* protection_callback_;
 
-  rtc::CriticalSection params_lock_;
-  EncoderParameters encoder_params_ GUARDED_BY(params_lock_);
+  rtc::CriticalSection params_crit_;
+  EncoderParameters encoder_params_ GUARDED_BY(params_crit_);
+  bool encoder_has_internal_source_ GUARDED_BY(params_crit_);
+  std::vector<FrameType> next_frame_types_ GUARDED_BY(params_crit_);
 };
 
 class VideoReceiver {
  public:
   typedef VideoCodingModule::ReceiverRobustness ReceiverRobustness;
 
-  VideoReceiver(Clock* clock, EventFactory* event_factory);
+  VideoReceiver(Clock* clock,
+                EventFactory* event_factory,
+                NackSender* nack_sender = nullptr,
+                KeyFrameRequestSender* keyframe_request_sender = nullptr);
   ~VideoReceiver();
 
   int32_t RegisterReceiveCodec(const VideoCodec* receiveCodec,
@@ -148,7 +151,6 @@ class VideoReceiver {
   int RegisterRenderBufferSizeCallback(VCMRenderBufferSizeCallback* callback);
 
   int32_t Decode(uint16_t maxWaitTimeMs);
-  int32_t ResetDecoder();
 
   int32_t ReceiveCodec(VideoCodec* currentReceiveCodec) const;
   VideoCodecType ReceiveCodec() const;
@@ -174,7 +176,7 @@ class VideoReceiver {
   int32_t SetVideoProtection(VCMVideoProtection videoProtection, bool enable);
 
   int64_t TimeUntilNextProcess();
-  int32_t Process();
+  void Process();
 
   void RegisterPreDecodeImageCallback(EncodedImageCallback* observer);
   void TriggerDecoderShutdown();
@@ -187,7 +189,7 @@ class VideoReceiver {
 
  private:
   Clock* const clock_;
-  rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
+  std::unique_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _receiveCritSect;
   VCMTiming _timing;
   VCMReceiver _receiver;
@@ -207,10 +209,12 @@ class VideoReceiver {
 #endif
   VCMFrameBuffer _frameFromFile;
   bool _scheduleKeyRequest GUARDED_BY(process_crit_sect_);
+  bool drop_frames_until_keyframe_ GUARDED_BY(process_crit_sect_);
   size_t max_nack_list_size_ GUARDED_BY(process_crit_sect_);
-  EncodedImageCallback* pre_decode_image_callback_ GUARDED_BY(_receiveCritSect);
 
   VCMCodecDataBase _codecDataBase GUARDED_BY(_receiveCritSect);
+  EncodedImageCallback* pre_decode_image_callback_ GUARDED_BY(_receiveCritSect);
+
   VCMProcessTimer _receiveStatsTimer;
   VCMProcessTimer _retransmissionTimer;
   VCMProcessTimer _keyRequestTimer;

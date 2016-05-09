@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/net_util.h"
+#include "net/base/url_util.h"
 #include "storage/browser/database/database_util.h"
 
 using storage::QuotaClient;
@@ -90,10 +90,9 @@ void IndexedDBQuotaClient::GetOriginUsage(const GURL& origin_url,
   }
 
   base::PostTaskAndReplyWithResult(
-      indexed_db_context_->TaskRunner(),
-      FROM_HERE,
-      base::Bind(
-          &GetOriginUsageOnIndexedDBThread, indexed_db_context_, origin_url),
+      indexed_db_context_->TaskRunner(), FROM_HERE,
+      base::Bind(&GetOriginUsageOnIndexedDBThread,
+                 base::RetainedRef(indexed_db_context_), origin_url),
       callback);
 }
 
@@ -117,10 +116,9 @@ void IndexedDBQuotaClient::GetOriginsForType(
 
   std::set<GURL>* origins_to_return = new std::set<GURL>();
   indexed_db_context_->TaskRunner()->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&GetAllOriginsOnIndexedDBThread,
-                 indexed_db_context_,
-                 base::Unretained(origins_to_return)),
+      FROM_HERE, base::Bind(&GetAllOriginsOnIndexedDBThread,
+                            base::RetainedRef(indexed_db_context_),
+                            base::Unretained(origins_to_return)),
       base::Bind(&DidGetOrigins, callback, base::Owned(origins_to_return)));
 }
 
@@ -145,11 +143,9 @@ void IndexedDBQuotaClient::GetOriginsForHost(
 
   std::set<GURL>* origins_to_return = new std::set<GURL>();
   indexed_db_context_->TaskRunner()->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&GetOriginsForHostOnIndexedDBThread,
-                 indexed_db_context_,
-                 host,
-                 base::Unretained(origins_to_return)),
+      FROM_HERE, base::Bind(&GetOriginsForHostOnIndexedDBThread,
+                            base::RetainedRef(indexed_db_context_), host,
+                            base::Unretained(origins_to_return)),
       base::Bind(&DidGetOrigins, callback, base::Owned(origins_to_return)));
 }
 
@@ -168,10 +164,9 @@ void IndexedDBQuotaClient::DeleteOriginData(const GURL& origin,
   }
 
   base::PostTaskAndReplyWithResult(
-      indexed_db_context_->TaskRunner(),
-      FROM_HERE,
-      base::Bind(
-          &DeleteOriginDataOnIndexedDBThread, indexed_db_context_, origin),
+      indexed_db_context_->TaskRunner(), FROM_HERE,
+      base::Bind(&DeleteOriginDataOnIndexedDBThread,
+                 base::RetainedRef(indexed_db_context_), origin),
       callback);
 }
 

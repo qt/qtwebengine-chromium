@@ -20,6 +20,12 @@ MUS_DEFINE_LOCAL_WINDOW_PROPERTY_KEY(Shadow*, kLocalShadowProperty, nullptr);
 
 }  // namespace
 
+void SetWindowShowState(mus::Window* window, mus::mojom::ShowState show_state) {
+  window->SetSharedProperty<int32_t>(
+      mus::mojom::WindowManager::kShowState_Property,
+      static_cast<uint32_t>(show_state));
+}
+
 mus::mojom::ShowState GetWindowShowState(const mus::Window* window) {
   if (window->HasSharedProperty(
           mus::mojom::WindowManager::kShowState_Property)) {
@@ -27,7 +33,7 @@ mus::mojom::ShowState GetWindowShowState(const mus::Window* window) {
         window->GetSharedProperty<int32_t>(
             mus::mojom::WindowManager::kShowState_Property));
   }
-  return mus::mojom::SHOW_STATE_RESTORED;
+  return mus::mojom::ShowState::RESTORED;
 }
 
 void SetWindowUserSetBounds(mus::Window* window, const gfx::Rect& bounds) {
@@ -68,17 +74,16 @@ mojom::Container GetRequestedContainer(const mus::Window* window) {
     return static_cast<mojom::Container>(
         window->GetSharedProperty<int32_t>(mojom::kWindowContainer_Property));
   }
-  return mojom::CONTAINER_USER_WINDOWS;
+  return mojom::Container::USER_WINDOWS;
 }
 
-mus::mojom::ResizeBehavior GetResizeBehavior(const mus::Window* window) {
+int32_t GetResizeBehavior(const mus::Window* window) {
   if (window->HasSharedProperty(
           mus::mojom::WindowManager::kResizeBehavior_Property)) {
-    return static_cast<mus::mojom::ResizeBehavior>(
-        window->GetSharedProperty<int32_t>(
-            mus::mojom::WindowManager::kResizeBehavior_Property));
+    return window->GetSharedProperty<int32_t>(
+        mus::mojom::WindowManager::kResizeBehavior_Property);
   }
-  return mus::mojom::RESIZE_BEHAVIOR_NONE;
+  return mus::mojom::kResizeBehaviorNone;
 }
 
 void SetRestoreBounds(mus::Window* window, const gfx::Rect& bounds) {
@@ -99,12 +104,18 @@ void SetShadow(mus::Window* window, Shadow* shadow) {
   window->SetLocalProperty(kLocalShadowProperty, shadow);
 }
 
-Shadow* GetShadow(mus::Window* window) {
+Shadow* GetShadow(const mus::Window* window) {
   return window->GetLocalProperty(kLocalShadowProperty);
 }
 
-mus::mojom::WindowType GetWindowType(mus::Window* window) {
-  return GetWindowType(window->shared_properties());
+mus::mojom::WindowType GetWindowType(const mus::Window* window) {
+  if (window->HasSharedProperty(
+          mus::mojom::WindowManager::kWindowType_Property)) {
+    return static_cast<mus::mojom::WindowType>(
+        window->GetSharedProperty<int32_t>(
+            mus::mojom::WindowManager::kWindowType_Property));
+  }
+  return mus::mojom::WindowType::POPUP;
 }
 
 mus::mojom::WindowType GetWindowType(
@@ -113,10 +124,19 @@ mus::mojom::WindowType GetWindowType(
       properties.find(mus::mojom::WindowManager::kWindowType_Property);
   if (iter != properties.end()) {
     return static_cast<mus::mojom::WindowType>(
-        mojo::TypeConverter<int32_t, const std::vector<uint8_t>>::Convert(
-            iter->second));
+        mojo::ConvertTo<int32_t>(iter->second));
   }
-  return mus::mojom::WINDOW_TYPE_POPUP;
+  return mus::mojom::WindowType::POPUP;
+}
+
+base::string16 GetWindowTitle(const mus::Window* window) {
+  if (!window->HasSharedProperty(
+          mus::mojom::WindowManager::kWindowTitle_Property)) {
+    return base::string16();
+  }
+
+  return window->GetSharedProperty<base::string16>(
+      mus::mojom::WindowManager::kWindowTitle_Property);
 }
 
 }  // namespace wm

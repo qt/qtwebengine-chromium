@@ -250,7 +250,7 @@ void TouchEmulator::HandleEmulatedTouchEvent(blink::WebTouchEvent event) {
   if (is_sequence_start)
     emulated_stream_active_sequence_count_++;
 
-  event.causesScrollingIfUncanceled = result.did_generate_scroll;
+  event.movedBeyondSlopRegion = result.moved_beyond_slop_region;
   client_->ForwardEmulatedTouchEvent(event);
 }
 
@@ -449,6 +449,7 @@ void TouchEmulator::FillTouchEventAndPoint(const WebMouseEvent& mouse_event) {
   point.screenPosition.y = mouse_event.globalY;
   point.tiltX = 0;
   point.tiltY = 0;
+  point.pointerType = blink::WebPointerProperties::PointerType::Touch;
 }
 
 bool TouchEmulator::InPinchGestureMode() const {

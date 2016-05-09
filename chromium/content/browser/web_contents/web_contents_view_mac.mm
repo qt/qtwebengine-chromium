@@ -8,6 +8,7 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #import "base/mac/mac_util.h"
 #import "base/mac/scoped_sending_event.h"
 #include "base/mac/sdk_forward_declarations.h"
@@ -23,6 +24,7 @@
 #include "content/common/view_messages.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view_delegate.h"
+#include "content/public/common/content_switches.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 #include "ui/base/clipboard/custom_data_helper.h"
@@ -43,16 +45,17 @@ using content::WebContentsViewMac;
 
 // Ensure that the blink::WebDragOperation enum values stay in sync with
 // NSDragOperation constants, since the code below static_casts between 'em.
-#define STATIC_ASSERT_MATCHING_ENUM(name) \
-  static_assert(int(NS##name) == int(blink::Web##name), "enum mismatch: " #name)
-STATIC_ASSERT_MATCHING_ENUM(DragOperationNone);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationCopy);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationLink);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationGeneric);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationPrivate);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationMove);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationDelete);
-STATIC_ASSERT_MATCHING_ENUM(DragOperationEvery);
+#define STATIC_ASSERT_ENUM(a, b)                            \
+  static_assert(static_cast<int>(a) == static_cast<int>(b), \
+                "enum mismatch: " #a)
+STATIC_ASSERT_ENUM(NSDragOperationNone, blink::WebDragOperationNone);
+STATIC_ASSERT_ENUM(NSDragOperationCopy, blink::WebDragOperationCopy);
+STATIC_ASSERT_ENUM(NSDragOperationLink, blink::WebDragOperationLink);
+STATIC_ASSERT_ENUM(NSDragOperationGeneric, blink::WebDragOperationGeneric);
+STATIC_ASSERT_ENUM(NSDragOperationPrivate, blink::WebDragOperationPrivate);
+STATIC_ASSERT_ENUM(NSDragOperationMove, blink::WebDragOperationMove);
+STATIC_ASSERT_ENUM(NSDragOperationDelete, blink::WebDragOperationDelete);
+STATIC_ASSERT_ENUM(NSDragOperationEvery, blink::WebDragOperationEvery);
 
 @interface WebContentsViewCocoa (Private)
 - (id)initWithWebContentsViewMac:(WebContentsViewMac*)w;
@@ -66,6 +69,7 @@ STATIC_ASSERT_MATCHING_ENUM(DragOperationEvery);
 - (void)cancelDeferredClose;
 - (void)clearWebContentsView;
 - (void)closeTabAfterEvent;
+- (void)updateWebContentsVisibility;
 - (void)viewDidBecomeFirstResponder:(NSNotification*)notification;
 - (content::WebContentsImpl*)webContents;
 @end
@@ -114,13 +118,15 @@ gfx::NativeWindow WebContentsViewMac::GetTopLevelNativeWindow() const {
 }
 
 void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
-  // Convert bounds to window coordinate space.
-  NSRect bounds =
-      [cocoa_view_.get() convertRect:[cocoa_view_.get() bounds] toView:nil];
-
-  // Convert bounds to screen coordinate space.
   NSWindow* window = [cocoa_view_.get() window];
-  bounds.origin = [window convertBaseToScreen:bounds.origin];
+  NSRect bounds = [cocoa_view_.get() bounds];
+  if (window)  {
+    // Convert bounds to window coordinate space.
+    bounds = [cocoa_view_.get() convertRect:bounds toView:nil];
+
+    // Convert bounds to screen coordinate space.
+    bounds = [window convertRectToScreen:bounds];
+  }
 
   // Flip y to account for screen flip.
   NSScreen* screen = [[NSScreen screens] firstObject];
@@ -519,8 +525,6 @@ void WebContentsViewMac::CloseTab() {
 
 // NSDraggingSource methods
 
-// Returns what kind of drag operations are available. This is a required
-// method for NSDraggingSource.
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
   if (dragSource_)
     return [dragSource_ draggingSourceOperationMaskForLocal:isLocal];
@@ -610,6 +614,15 @@ void WebContentsViewMac::CloseTab() {
       FocusThroughTabTraversal(direction == NSSelectingPrevious);
 }
 
+- (void)updateWebContentsVisibility {
+  WebContentsImpl* webContents = [self webContents];
+  if (!webContents || webContents->IsBeingDestroyed())
+    return;
+
+  const bool viewVisible = [self window] && ![self isHiddenOrHasHiddenAncestor];
+  webContents->UpdateWebContentsVisibility(viewVisible);
+}
+
 // When the subviews require a layout, their size should be reset to the size
 // of this view. (It is possible for the size to get out of sync as an
 // optimization in preparation for an upcoming WebContentsView resize.
@@ -625,10 +638,12 @@ void WebContentsViewMac::CloseTab() {
   NSNotificationCenter* notificationCenter =
       [NSNotificationCenter defaultCenter];
 
-  // Occlusion notification APIs are new in Mavericks.
-  bool supportsOcclusionAPIs = base::mac::IsOSMavericksOrLater();
+  // Occlusion is highly undesirable for browser tests, since it will
+  // flakily change test behavior.
+  static bool isDisabled = base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableBackgroundingOccludedWindowsForTesting);
 
-  if (supportsOcclusionAPIs) {
+  if (!isDisabled) {
     if (oldWindow) {
       [notificationCenter
           removeObserver:self
@@ -656,6 +671,18 @@ void WebContentsViewMac::CloseTab() {
       webContents->WasOccluded();
     }
   }
+}
+
+- (void)viewDidMoveToWindow {
+  [self updateWebContentsVisibility];
+}
+
+- (void)viewDidHide {
+  [self updateWebContentsVisibility];
+}
+
+- (void)viewDidUnhide {
+  [self updateWebContentsVisibility];
 }
 
 @end

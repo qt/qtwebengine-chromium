@@ -36,7 +36,7 @@
 
 namespace blink {
 
-SVGRectTearOff::SVGRectTearOff(PassRefPtrWillBeRawPtr<SVGRect> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
+SVGRectTearOff::SVGRectTearOff(SVGRect* target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGRect>(target, contextElement, propertyIsAnimVal, attributeName)
 {
 }
@@ -85,4 +85,4 @@ void SVGRectTearOff::setHeight(float f, ExceptionState& exceptionState)
     commitChange();
 }
 
-}
+} // namespace blink

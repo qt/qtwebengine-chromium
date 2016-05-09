@@ -68,6 +68,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   gfx::NativeViewId GetNativeViewId() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   gfx::Rect GetViewBounds() const override;
+  gfx::Rect GetBoundsInRootWindow() override;
   gfx::Size GetPhysicalBackingSize() const override;
   base::string16 GetSelectedText() const override;
 
@@ -75,7 +76,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& bounds) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
-  void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
   void TextInputStateChanged(
@@ -103,8 +103,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #endif
   void ProcessTouchEvent(const blink::WebTouchEvent& event,
                          const ui::LatencyInfo& latency) override;
-  void RegisterSurfaceNamespaceId();
-  void UnregisterSurfaceNamespaceId();
 
   bool LockMouse() override;
   void UnlockMouse() override;
@@ -114,17 +112,11 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #if defined(OS_MACOSX)
   // RenderWidgetHostView implementation.
   void SetActive(bool active) override;
-  void SetWindowVisibility(bool visible) override;
-  void WindowFrameChanged() override;
   void ShowDefinitionForSelection() override;
   bool SupportsSpeech() const override;
   void SpeakSelection() override;
   bool IsSpeaking() const override;
   void StopSpeaking() override;
-
-  // RenderWidgetHostViewBase implementation.
-  bool PostProcessEventForPluginIme(
-      const NativeWebKeyboardEvent& event) override;
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID) || defined(USE_AURA)
@@ -135,12 +127,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
   void LockCompositingSurface() override;
   void UnlockCompositingSurface() override;
-
-#if defined(OS_WIN)
-  void SetParentNativeViewAccessible(
-      gfx::NativeViewAccessible accessible_parent) override;
-  gfx::NativeViewId GetParentForWindowlessPlugin() const override;
-#endif
 
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      InputEventAckState ack_result) override;
@@ -155,17 +141,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // Destroys this view without calling |Destroy| on |platform_view_|.
   void DestroyGuestView();
 
-  // Builds and forwards a WebKitGestureEvent to the renderer.
-  bool ForwardGestureEventToRenderer(ui::GestureEvent* gesture);
-
-  // Process all of the given gestures (passes them on to renderer)
-  void ProcessGestures(ui::GestureRecognizer::Gestures* gestures);
-
   RenderWidgetHostViewBase* GetOwnerRenderWidgetHostView() const;
 
   void OnHandleInputEvent(RenderWidgetHostImpl* embedder,
                           int browser_plugin_instance_id,
-                          const gfx::Rect& guest_window_rect,
                           const blink::WebInputEvent* event);
 
   // BrowserPluginGuest and RenderWidgetHostViewGuest's lifetimes are not tied

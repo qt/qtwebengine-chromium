@@ -13,6 +13,7 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
@@ -63,7 +64,13 @@ class CC_EXPORT VideoFrameExternalResources {
   std::vector<unsigned> software_resources;
   ReleaseCallbackImpl software_release_callback;
 
+  // Used by hardware textures which do not return values in the 0-1 range.
+  // After a lookup, subtract offset and multiply by multiplier.
+  float offset;
+  float multiplier;
+
   VideoFrameExternalResources();
+  VideoFrameExternalResources(const VideoFrameExternalResources& other);
   ~VideoFrameExternalResources();
 };
 
@@ -77,7 +84,7 @@ class CC_EXPORT VideoResourceUpdater
   ~VideoResourceUpdater();
 
   VideoFrameExternalResources CreateExternalResourcesFromVideoFrame(
-      const scoped_refptr<media::VideoFrame>& video_frame);
+      scoped_refptr<media::VideoFrame> video_frame);
 
  private:
   struct PlaneResource {
@@ -93,6 +100,14 @@ class CC_EXPORT VideoResourceUpdater
     // frame pointer will only be used for pointer comparison, i.e. the
     // underlying data will not be accessed.
     const void* frame_ptr;
+#if DCHECK_IS_ON()
+    // This is marked true when the orginal VideoFrame is destructed. It is
+    // used to detect clients that are not setting the VideoFrame's timestamp
+    // field correctly, as required. The memory allocator can and will re-use
+    // the same pointer for new VideoFrame instances, so a destruction observer
+    // is used to detect that.
+    bool destructed;
+#endif
     size_t plane_index;
     base::TimeDelta timestamp;
 
@@ -100,6 +115,7 @@ class CC_EXPORT VideoResourceUpdater
                   const gfx::Size& resource_size,
                   ResourceFormat resource_format,
                   gpu::Mailbox mailbox);
+    PlaneResource(const PlaneResource& other);
   };
 
   static bool PlaneResourceMatchesUniqueID(const PlaneResource& plane_resource,
@@ -115,16 +131,16 @@ class CC_EXPORT VideoResourceUpdater
   typedef std::list<PlaneResource> ResourceList;
   ResourceList::iterator AllocateResource(const gfx::Size& plane_size,
                                           ResourceFormat format,
-                                          bool has_mailbox);
+                                          bool has_mailbox,
+                                          bool immutable_hint);
   void DeleteResource(ResourceList::iterator resource_it);
-  bool VerifyFrame(const scoped_refptr<media::VideoFrame>& video_frame);
-  void CopyPlaneTexture(const scoped_refptr<media::VideoFrame>& video_frame,
+  void CopyPlaneTexture(media::VideoFrame* video_frame,
                         const gpu::MailboxHolder& mailbox_holder,
                         VideoFrameExternalResources* external_resources);
   VideoFrameExternalResources CreateForHardwarePlanes(
-      const scoped_refptr<media::VideoFrame>& video_frame);
+      scoped_refptr<media::VideoFrame> video_frame);
   VideoFrameExternalResources CreateForSoftwarePlanes(
-      const scoped_refptr<media::VideoFrame>& video_frame);
+      scoped_refptr<media::VideoFrame> video_frame);
 
   static void RecycleResource(base::WeakPtr<VideoResourceUpdater> updater,
                               unsigned resource_id,
@@ -136,6 +152,12 @@ class CC_EXPORT VideoResourceUpdater
                             const gpu::SyncToken& sync_token,
                             bool lost_resource,
                             BlockingTaskRunner* main_thread_task_runner);
+#if DCHECK_IS_ON()
+  // Mark the |destructed| as true when the orginal VideoFrame is destructed.
+  static void MarkOldResource(base::WeakPtr<VideoResourceUpdater> updater,
+                              const media::VideoFrame* video_frame_ptr,
+                              base::TimeDelta timestamp);
+#endif
 
   ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;

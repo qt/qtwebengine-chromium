@@ -25,10 +25,9 @@
 
 namespace media {
 
-class AudioDecoderConfig;
+class MediaTracks;
 class StreamParserBuffer;
 class TextTrackConfig;
-class VideoDecoderConfig;
 
 // Abstract interface for parsing media byte streams.
 class MEDIA_EXPORT StreamParser {
@@ -53,7 +52,7 @@ class MEDIA_EXPORT StreamParser {
   typedef std::map<TrackId, const BufferQueue> TextBufferQueueMap;
 
   // Stream parameters passed in InitCB.
-  struct InitParameters {
+  struct MEDIA_EXPORT InitParameters {
     InitParameters(base::TimeDelta duration);
 
     // Stream duration.
@@ -69,6 +68,12 @@ class MEDIA_EXPORT StreamParser {
 
     // Indicates live stream.
     DemuxerStream::Liveness liveness;
+
+    // Counts of tracks detected by type within this stream. Not all of these
+    // tracks may be selected for use by the parser.
+    int detected_audio_track_count;
+    int detected_video_track_count;
+    int detected_text_track_count;
   };
 
   // Indicates completion of parser initialization.
@@ -76,18 +81,17 @@ class MEDIA_EXPORT StreamParser {
   typedef base::Callback<void(const InitParameters& params)> InitCB;
 
   // Indicates when new stream configurations have been parsed.
-  // First parameter - The new audio configuration. If the config is not valid
-  //                   then it means that there isn't an audio stream.
-  // Second parameter - The new video configuration. If the config is not valid
-  //                    then it means that there isn't an audio stream.
-  // Third parameter - The new text tracks configuration.  If the map is empty,
-  //                   then no text tracks were parsed from the stream.
+  // First parameter - An object containing information about media tracks as
+  //                   well as audio/video decoder configs associated with each
+  //                   track the parser will use from the stream.
+  // Second parameter - The new text tracks configuration.  If the map is empty,
+  //                    then no text tracks were parsed for use from the stream.
   // Return value - True if the new configurations are accepted.
   //                False if the new configurations are not supported
   //                and indicates that a parsing error should be signalled.
-  typedef base::Callback<bool(const AudioDecoderConfig&,
-                              const VideoDecoderConfig&,
-                              const TextTrackConfigMap&)> NewConfigCB;
+  typedef base::Callback<bool(scoped_ptr<MediaTracks>,
+                              const TextTrackConfigMap&)>
+      NewConfigCB;
 
   // New stream buffers have been parsed.
   // First parameter - A queue of newly parsed audio buffers.
@@ -105,6 +109,9 @@ class MEDIA_EXPORT StreamParser {
 
   // Signals the beginning of a new media segment.
   typedef base::Callback<void()> NewMediaSegmentCB;
+
+  // Signals the end of a media segment.
+  typedef base::Callback<void()> EndMediaSegmentCB;
 
   // A new potentially encrypted stream has been parsed.
   // First parameter - The type of the initialization data associated with the
@@ -128,12 +135,13 @@ class MEDIA_EXPORT StreamParser {
       bool ignore_text_track,
       const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
       const NewMediaSegmentCB& new_segment_cb,
-      const base::Closure& end_of_segment_cb,
+      const EndMediaSegmentCB& end_of_segment_cb,
       const scoped_refptr<MediaLog>& media_log) = 0;
 
-  // Called when a seek occurs. This flushes the current parser state
-  // and puts the parser in a state where it can receive data for the new seek
-  // point.
+  // Called during the reset parser state algorithm.  This flushes the current
+  // parser and puts the parser in a state where it can receive data.  This
+  // method does not need to invoke the EndMediaSegmentCB since the parser reset
+  // algorithm already resets the segment parsing state.
   virtual void Flush() = 0;
 
   // Called when there is new data to parse.

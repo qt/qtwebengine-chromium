@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//testing/test.gni")
+import("//third_party/WebKit/Source/config.gni")
 
 # The list of files is kept in the .gypi.
 gypi_values = exec_script("//build/gypi_to_gn.py",
@@ -10,7 +11,10 @@ gypi_values = exec_script("//build/gypi_to_gn.py",
                           "scope",
                           [ "wtf.gypi" ])
 
-visibility = [ "//third_party/WebKit/*" ]
+visibility = [
+  "//mojo/public/cpp/bindings/*",
+  "//third_party/WebKit/*",
+]
 
 config("wtf_config") {
   if (is_win) {
@@ -93,15 +97,11 @@ component("wtf") {
       "text/StringImplCF.cpp",
     ]
   }
-}
 
-# TODO(GYP): Delete this after we've converted everything to GN.
-# The _run targets exist only for compatibility w/ GYP.
-group("wtf_unittests_run") {
-  testonly = true
-  deps = [
-    ":wtf_unittests",
-  ]
+  if (remove_webcore_debug_symbols) {
+    configs -= [ "//build/config/compiler:default_symbols" ]
+    configs += [ "//build/config/compiler:no_symbols" ]
+  }
 }
 
 test("wtf_unittests") {
@@ -122,31 +122,10 @@ test("wtf_unittests") {
   configs += [ "//third_party/WebKit/Source:config" ]
 
   deps = [
-    ":test_support",
     ":wtf",
     "//base",
-    "//base/allocator",
     "//base/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
-  ]
-}
-
-component("test_support") {
-  output_name = "wtf_test_support"
-  sources = gypi_values.wtf_unittest_helper_files
-  defines = [ "WTF_UNITTEST_HELPERS_IMPLEMENTATION=1" ]
-
-  configs += [
-    ":wtf_config",
-
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    "//build/config/compiler:no_size_t_to_int_warning",
-    "//third_party/WebKit/Source:config",
-    "//third_party/WebKit/Source:non_test_config",
-  ]
-
-  deps = [
-    ":wtf",
   ]
 }

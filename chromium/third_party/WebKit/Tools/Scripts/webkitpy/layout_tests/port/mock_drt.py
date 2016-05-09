@@ -51,6 +51,7 @@ if script_dir not in sys.path:
 
 from webkitpy.common import read_checksum_from_png
 from webkitpy.common.system.systemhost import SystemHost
+from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port.driver import DriverInput, DriverOutput
 from webkitpy.layout_tests.port.factory import PortFactory
 
@@ -73,10 +74,10 @@ class MockDRTPort(object):
         return getattr(self.__delegate, name)
 
     def check_build(self, needs_http, printer):
-        return True
+        return test_run_results.OK_EXIT_STATUS
 
     def check_sys_deps(self, needs_http):
-        return True
+        return test_run_results.OK_EXIT_STATUS
 
     def _driver_class(self, delegate):
         return self._mocked_driver_maker
@@ -163,8 +164,8 @@ def parse_options(argv):
         return None
 
     options = optparse.Values({
-        'actual_directory':        get_arg('--actual-directory'),
-        'platform':                get_arg('--platform'),
+        'actual_directory': get_arg('--actual-directory'),
+        'platform': get_arg('--platform'),
         'virtual_test_suite_base': get_arg('--virtual-test-suite-base'),
         'virtual_test_suite_name': get_arg('--virtual-test-suite-name'),
     })
@@ -172,6 +173,7 @@ def parse_options(argv):
 
 
 class MockDRT(object):
+
     def __init__(self, options, args, host, stdin, stdout, stderr):
         self._options = options
         self._args = args
@@ -187,6 +189,8 @@ class MockDRT(object):
         self._driver = self._port.create_driver(0)
 
     def run(self):
+        self._stdout.write("#READY\n")
+        self._stdout.flush()
         while True:
             line = self._stdin.readline()
             if not line:
@@ -221,7 +225,8 @@ class MockDRT(object):
     def output_for_test(self, test_input, is_reftest):
         port = self._port
         if self._options.virtual_test_suite_name:
-            test_input.test_name = test_input.test_name.replace(self._options.virtual_test_suite_base, self._options.virtual_test_suite_name)
+            test_input.test_name = test_input.test_name.replace(
+                self._options.virtual_test_suite_base, self._options.virtual_test_suite_name)
         actual_text = port.expected_text(test_input.test_name)
         actual_audio = port.expected_audio(test_input.test_name)
         actual_image = None

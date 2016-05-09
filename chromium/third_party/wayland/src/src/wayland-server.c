@@ -42,7 +42,6 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
-#include <ffi.h>
 
 #include "wayland-private.h"
 #include "wayland-server.h"
@@ -314,7 +313,6 @@ wl_client_connection_data(int fd, uint32_t mask, void *data)
 
 		closure = wl_connection_demarshal(client->connection, size,
 						  &client->objects, message);
-		len -= size;
 
 		if (closure == NULL && errno == ENOMEM) {
 			wl_resource_post_no_memory(resource);
@@ -347,6 +345,8 @@ wl_client_connection_data(int fd, uint32_t mask, void *data)
 
 		if (client->error)
 			break;
+
+		len = wl_connection_pending_input(connection);
 	}
 
 	if (client->error)
@@ -416,11 +416,10 @@ wl_client_create(struct wl_display *display, int fd)
 	struct wl_client *client;
 	socklen_t len;
 
-	client = malloc(sizeof *client);
+	client = zalloc(sizeof *client);
 	if (client == NULL)
 		return NULL;
 
-	memset(client, 0, sizeof *client);
 	client->display = display;
 	client->source = wl_event_loop_add_fd(display->loop, fd,
 					      WL_EVENT_READABLE,
@@ -780,7 +779,8 @@ bind_display(struct wl_client *client, struct wl_display *display)
 	client->display_resource =
 		wl_resource_create(client, &wl_display_interface, 1, 1);
 	if (client->display_resource == NULL) {
-		wl_client_post_no_memory(client);
+		/* DON'T send no-memory error to client - it has no
+		 * resource to which it could post the event */
 		return -1;
 	}
 
@@ -855,11 +855,10 @@ wl_socket_alloc(void)
 {
 	struct wl_socket *s;
 
-	s = malloc(sizeof *s);
+	s = zalloc(sizeof *s);
 	if (!s)
 		return NULL;
 
-	memset(s, 0, sizeof *s);
 	s->fd = -1;
 	s->fd_lock = -1;
 
@@ -909,9 +908,17 @@ wl_global_create(struct wl_display *display,
 	struct wl_global *global;
 	struct wl_resource *resource;
 
-	if (interface->version < version) {
-		wl_log("wl_global_create: implemented version higher "
-		       "than interface version%m\n");
+	if (version < 1) {
+		wl_log("wl_global_create: failing to create interface "
+		       "'%s' with version %d because it is less than 1\n",
+			interface->name, version);
+		return NULL;
+	}
+
+	if (version > interface->version) {
+		wl_log("wl_global_create: implemented version for '%s' "
+		       "higher than interface version (%d > %d)\n",
+		       interface->name, version, interface->version);
 		return NULL;
 	}
 
@@ -1197,6 +1204,49 @@ wl_display_add_socket_auto(struct wl_display *display)
 	wl_socket_destroy(s);
 	errno = EINVAL;
 	return NULL;
+}
+
+/**  Add a socket with an existing fd to Wayland display for the clients to connect.
+ *
+ * \param display Wayland display to which the socket should be added.
+ * \param sock_fd The existing socket file descriptor to be used
+ * \return 0 if success. -1 if failed.
+ *
+ * The existing socket fd must already be created, opened, and locked.
+ * The fd must be properly set to CLOEXEC and bound to a socket file
+ * with both bind() and listen() already called.
+ *
+ * \memberof wl_display
+ */
+WL_EXPORT int
+wl_display_add_socket_fd(struct wl_display *display, int sock_fd)
+{
+	struct wl_socket *s;
+	struct stat buf;
+
+	/* Require a valid fd or fail */
+	if (sock_fd < 0 || fstat(sock_fd, &buf) < 0 || !S_ISSOCK(buf.st_mode)) {
+		return -1;
+	}
+
+	s = wl_socket_alloc();
+	if (s == NULL)
+		return -1;
+
+	/* Reuse the existing fd */
+	s->fd = sock_fd;
+
+	s->source = wl_event_loop_add_fd(display->loop, s->fd,
+					 WL_EVENT_READABLE,
+					 socket_data, display);
+	if (s->source == NULL) {
+		wl_log("failed to establish event source\n");
+		return -1;
+	}
+
+	wl_list_insert(display->socket_list.prev, &s->link);
+
+	return 0;
 }
 
 /** Add a socket to Wayland display for the clients to connect.

@@ -7,6 +7,7 @@
 #include <stack>
 
 #include "base/containers/hash_tables.h"
+#include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "ipc/ipc_message.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
@@ -44,18 +45,18 @@ struct StackEntry {
 // |visited_map| keeps track of RawVarDatas that have already been created.
 size_t GetOrCreateRawVarData(const PP_Var& var,
                              base::hash_map<int64_t, size_t>* visited_map,
-                             ScopedVector<RawVarData>* data) {
+                             std::vector<std::unique_ptr<RawVarData>>* data) {
   if (VarTracker::IsVarTypeRefcounted(var.type)) {
     base::hash_map<int64_t, size_t>::iterator it = visited_map->find(
         var.value.as_id);
     if (it != visited_map->end()) {
       return it->second;
     } else {
-      data->push_back(RawVarData::Create(var.type));
+      data->push_back(base::WrapUnique(RawVarData::Create(var.type)));
       (*visited_map)[var.value.as_id] = data->size() - 1;
     }
   } else {
-    data->push_back(RawVarData::Create(var.type));
+    data->push_back(base::WrapUnique(RawVarData::Create(var.type)));
   }
   return data->size() - 1;
 }
@@ -83,9 +84,9 @@ RawVarDataGraph::~RawVarDataGraph() {
 // node at the top of the stack has already been visited, then we pop it off the
 // stack and erase it from |parent_ids|.
 // static
-scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
-                                                    PP_Instance instance) {
-  scoped_ptr<RawVarDataGraph> graph(new RawVarDataGraph);
+std::unique_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
+                                                         PP_Instance instance) {
+  std::unique_ptr<RawVarDataGraph> graph(new RawVarDataGraph);
   // Map of |var.value.as_id| to a RawVarData index in RawVarDataGraph.
   base::hash_map<int64_t, size_t> visited_map;
   base::hash_set<int64_t> parent_ids;
@@ -96,7 +97,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
 
   while (!stack.empty()) {
     PP_Var current_var = stack.top().var;
-    RawVarData* current_var_data = graph->data_[stack.top().data_index];
+    RawVarData* current_var_data = graph->data_[stack.top().data_index].get();
 
     if (current_var_data->initialized()) {
       stack.pop();
@@ -109,7 +110,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
       parent_ids.insert(current_var.value.as_id);
     if (!current_var_data->Init(current_var, instance)) {
       NOTREACHED();
-      return scoped_ptr<RawVarDataGraph>();
+      return nullptr;
     }
 
     // Add child nodes to the stack.
@@ -117,7 +118,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
       ArrayVar* array_var = ArrayVar::FromPPVar(current_var);
       if (!array_var) {
         NOTREACHED();
-        return scoped_ptr<RawVarDataGraph>();
+        return nullptr;
       }
       for (ArrayVar::ElementVector::const_iterator iter =
                array_var->elements().begin();
@@ -127,7 +128,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
         // If a child of this node is already in parent_ids, we have a cycle so
         // we just return null.
         if (CanHaveChildren(child) && parent_ids.count(child.value.as_id) != 0)
-          return scoped_ptr<RawVarDataGraph>();
+          return nullptr;
         size_t child_id = GetOrCreateRawVarData(child, &visited_map,
                                                 &graph->data_);
         static_cast<ArrayRawVarData*>(current_var_data)->AddChild(child_id);
@@ -138,7 +139,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
       DictionaryVar* dict_var = DictionaryVar::FromPPVar(current_var);
       if (!dict_var) {
         NOTREACHED();
-        return scoped_ptr<RawVarDataGraph>();
+        return nullptr;
       }
       for (DictionaryVar::KeyValueMap::const_iterator iter =
                dict_var->key_value_map().begin();
@@ -146,7 +147,7 @@ scoped_ptr<RawVarDataGraph> RawVarDataGraph::Create(const PP_Var& var,
            ++iter) {
         const PP_Var& child = iter->second.get();
         if (CanHaveChildren(child) && parent_ids.count(child.value.as_id) != 0)
-          return scoped_ptr<RawVarDataGraph>();
+          return nullptr;
         size_t child_id = GetOrCreateRawVarData(child, &visited_map,
                                                 &graph->data_);
         static_cast<DictionaryRawVarData*>(
@@ -173,7 +174,7 @@ PP_Var RawVarDataGraph::CreatePPVar(PP_Instance instance) {
   return graph[0];
 }
 
-void RawVarDataGraph::Write(IPC::Message* m,
+void RawVarDataGraph::Write(base::Pickle* m,
                             const HandleWriter& handle_writer) {
   // Write the size, followed by each node in the graph.
   m->WriteUInt32(static_cast<uint32_t>(data_.size()));
@@ -184,20 +185,21 @@ void RawVarDataGraph::Write(IPC::Message* m,
 }
 
 // static
-scoped_ptr<RawVarDataGraph> RawVarDataGraph::Read(const IPC::Message* m,
-                                                  base::PickleIterator* iter) {
-  scoped_ptr<RawVarDataGraph> result(new RawVarDataGraph);
+std::unique_ptr<RawVarDataGraph> RawVarDataGraph::Read(
+    const base::Pickle* m,
+    base::PickleIterator* iter) {
+  std::unique_ptr<RawVarDataGraph> result(new RawVarDataGraph);
   uint32_t size = 0;
   if (!iter->ReadUInt32(&size))
-    return scoped_ptr<RawVarDataGraph>();
+    return nullptr;
   for (uint32_t i = 0; i < size; ++i) {
     int32_t type;
     if (!iter->ReadInt(&type))
-      return scoped_ptr<RawVarDataGraph>();
+      return nullptr;
     PP_VarType var_type = static_cast<PP_VarType>(type);
-    result->data_.push_back(RawVarData::Create(var_type));
+    result->data_.push_back(base::WrapUnique(RawVarData::Create(var_type)));
     if (!result->data_.back()->Read(var_type, m, iter))
-      return scoped_ptr<RawVarDataGraph>();
+      return nullptr;
   }
   return result;
 }
@@ -283,9 +285,8 @@ void BasicRawVarData::PopulatePPVar(const PP_Var& var,
                                     const std::vector<PP_Var>& graph) {
 }
 
-void BasicRawVarData::Write(
-    IPC::Message* m,
-    const HandleWriter& handle_writer) {
+void BasicRawVarData::Write(base::Pickle* m,
+                            const HandleWriter& handle_writer) {
   switch (var_.type) {
     case PP_VARTYPE_UNDEFINED:
     case PP_VARTYPE_NULL:
@@ -311,7 +312,7 @@ void BasicRawVarData::Write(
 }
 
 bool BasicRawVarData::Read(PP_VarType type,
-                           const IPC::Message* m,
+                           const base::Pickle* m,
                            base::PickleIterator* iter) {
   PP_Var result;
   result.type = type;
@@ -377,13 +378,13 @@ void StringRawVarData::PopulatePPVar(const PP_Var& var,
                                      const std::vector<PP_Var>& graph) {
 }
 
-void StringRawVarData::Write(IPC::Message* m,
+void StringRawVarData::Write(base::Pickle* m,
                              const HandleWriter& handle_writer) {
   m->WriteString(data_);
 }
 
 bool StringRawVarData::Read(PP_VarType type,
-                            const IPC::Message* m,
+                            const base::Pickle* m,
                             base::PickleIterator* iter) {
   if (!iter->ReadString(&data_))
     return false;
@@ -482,9 +483,8 @@ void ArrayBufferRawVarData::PopulatePPVar(const PP_Var& var,
                                           const std::vector<PP_Var>& graph) {
 }
 
-void ArrayBufferRawVarData::Write(
-    IPC::Message* m,
-    const HandleWriter& handle_writer) {
+void ArrayBufferRawVarData::Write(base::Pickle* m,
+                                  const HandleWriter& handle_writer) {
   m->WriteInt(type_);
   switch (type_) {
     case ARRAY_BUFFER_SHMEM_HOST:
@@ -500,7 +500,7 @@ void ArrayBufferRawVarData::Write(
 }
 
 bool ArrayBufferRawVarData::Read(PP_VarType type,
-                                 const IPC::Message* m,
+                                 const base::Pickle* m,
                                  base::PickleIterator* iter) {
   int shmem_type;
   if (!iter->ReadInt(&shmem_type))
@@ -572,7 +572,7 @@ void ArrayRawVarData::PopulatePPVar(const PP_Var& var,
     array_var->elements().push_back(ScopedPPVar(graph[children_[i]]));
 }
 
-void ArrayRawVarData::Write(IPC::Message* m,
+void ArrayRawVarData::Write(base::Pickle* m,
                             const HandleWriter& handle_writer) {
   m->WriteUInt32(static_cast<uint32_t>(children_.size()));
   for (size_t i = 0; i < children_.size(); ++i)
@@ -580,7 +580,7 @@ void ArrayRawVarData::Write(IPC::Message* m,
 }
 
 bool ArrayRawVarData::Read(PP_VarType type,
-                           const IPC::Message* m,
+                           const base::Pickle* m,
                            base::PickleIterator* iter) {
   uint32_t size;
   if (!iter->ReadUInt32(&size))
@@ -635,9 +635,8 @@ void DictionaryRawVarData::PopulatePPVar(const PP_Var& var,
   }
 }
 
-void DictionaryRawVarData::Write(
-    IPC::Message* m,
-    const HandleWriter& handle_writer) {
+void DictionaryRawVarData::Write(base::Pickle* m,
+                                 const HandleWriter& handle_writer) {
   m->WriteUInt32(static_cast<uint32_t>(children_.size()));
   for (size_t i = 0; i < children_.size(); ++i) {
     m->WriteString(children_[i].first);
@@ -646,7 +645,7 @@ void DictionaryRawVarData::Write(
 }
 
 bool DictionaryRawVarData::Read(PP_VarType type,
-                                const IPC::Message* m,
+                                const base::Pickle* m,
                                 base::PickleIterator* iter) {
   uint32_t size;
   if (!iter->ReadUInt32(&size))
@@ -712,18 +711,18 @@ void ResourceRawVarData::PopulatePPVar(const PP_Var& var,
                                        const std::vector<PP_Var>& graph) {
 }
 
-void ResourceRawVarData::Write(IPC::Message* m,
+void ResourceRawVarData::Write(base::Pickle* m,
                                const HandleWriter& handle_writer) {
   m->WriteInt(static_cast<int>(pp_resource_));
   m->WriteInt(pending_renderer_host_id_);
   m->WriteInt(pending_browser_host_id_);
-  m->WriteBool(creation_message_);
+  m->WriteBool(!!creation_message_);
   if (creation_message_)
     IPC::WriteParam(m, *creation_message_);
 }
 
 bool ResourceRawVarData::Read(PP_VarType type,
-                              const IPC::Message* m,
+                              const base::Pickle* m,
                               base::PickleIterator* iter) {
   int value;
   if (!iter->ReadInt(&value))

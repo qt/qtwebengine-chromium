@@ -11,11 +11,12 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_ACM2_AUDIO_CODING_MODULE_IMPL_H_
 #define WEBRTC_MODULES_AUDIO_CODING_ACM2_AUDIO_CODING_MODULE_IMPL_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "webrtc/base/buffer.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/criticalsection.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/engine_configurations.h"
@@ -25,10 +26,11 @@
 
 namespace webrtc {
 
-class CriticalSectionWrapper;
 class AudioCodingImpl;
 
 namespace acm2 {
+
+struct EncoderFactory;
 
 class AudioCodingModuleImpl final : public AudioCodingModule {
  public:
@@ -46,6 +48,9 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   void RegisterExternalSendCodec(
       AudioEncoder* external_speech_encoder) override;
+
+  void ModifyEncoder(
+      FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) override;
 
   // Get current send codec.
   rtc::Optional<CodecInst> SendCodec() const override;
@@ -117,9 +122,10 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // Get current playout frequency.
   int PlayoutFrequency() const override;
 
-  // Register possible receive codecs, can be called multiple times,
-  // for codecs, CNG, DTMF, RED.
   int RegisterReceiveCodec(const CodecInst& receive_codec) override;
+  int RegisterReceiveCodec(
+      const CodecInst& receive_codec,
+      FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory) override;
 
   int RegisterExternalReceiveCodec(int rtp_payload_type,
                                    AudioDecoder* external_decoder,
@@ -151,8 +157,9 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // Smallest latency NetEq will maintain.
   int LeastRequiredDelayMs() const override;
 
-  // Get playout timestamp.
-  int PlayoutTimestamp(uint32_t* timestamp) override;
+  RTC_DEPRECATED int32_t PlayoutTimestamp(uint32_t* timestamp) override;
+
+  rtc::Optional<uint32_t> PlayoutTimestamp() override;
 
   // Get 10 milliseconds of raw audio data to play out, and
   // automatic resample to the requested frequency if > 0.
@@ -211,6 +218,11 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
     const std::string histogram_name_;
   };
 
+  int RegisterReceiveCodecUnlocked(
+      const CodecInst& codec,
+      FunctionView<std::unique_ptr<AudioDecoder>()> isac_factory)
+      EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
+
   int Add10MsDataInternal(const AudioFrame& audio_frame, InputData* input_data)
       EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
   int Encode(const InputData& input_data)
@@ -240,7 +252,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // to |index|.
   int UpdateUponReceivingCodec(int index);
 
-  const rtc::scoped_ptr<CriticalSectionWrapper> acm_crit_sect_;
+  rtc::CriticalSection acm_crit_sect_;
   rtc::Buffer encode_buffer_ GUARDED_BY(acm_crit_sect_);
   int id_;  // TODO(henrik.lundin) Make const.
   uint32_t expected_codec_ts_ GUARDED_BY(acm_crit_sect_);
@@ -248,8 +260,15 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   ACMResampler resampler_ GUARDED_BY(acm_crit_sect_);
   AcmReceiver receiver_;  // AcmReceiver has it's own internal lock.
   ChangeLogger bitrate_logger_ GUARDED_BY(acm_crit_sect_);
-  CodecManager codec_manager_ GUARDED_BY(acm_crit_sect_);
-  RentACodec rent_a_codec_ GUARDED_BY(acm_crit_sect_);
+
+  std::unique_ptr<EncoderFactory> encoder_factory_ GUARDED_BY(acm_crit_sect_);
+
+  // Current encoder stack, either obtained from
+  // encoder_factory_->rent_a_codec.RentEncoderStack or provided by a call to
+  // RegisterEncoder.
+  std::unique_ptr<AudioEncoder> encoder_stack_ GUARDED_BY(acm_crit_sect_);
+
+  std::unique_ptr<AudioDecoder> isac_decoder_ GUARDED_BY(acm_crit_sect_);
 
   // This is to keep track of CN instances where we can send DTMFs.
   uint8_t previous_pltype_ GUARDED_BY(acm_crit_sect_);
@@ -260,7 +279,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // IMPORTANT: this variable is only used in IncomingPayload(), therefore,
   // no lock acquired when interacting with this variable. If it is going to
   // be used in other methods, locks need to be taken.
-  rtc::scoped_ptr<WebRtcRTPHeader> aux_rtp_header_;
+  std::unique_ptr<WebRtcRTPHeader> aux_rtp_header_;
 
   bool receiver_initialized_ GUARDED_BY(acm_crit_sect_);
 
@@ -271,7 +290,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   uint32_t last_timestamp_ GUARDED_BY(acm_crit_sect_);
   uint32_t last_rtp_timestamp_ GUARDED_BY(acm_crit_sect_);
 
-  const rtc::scoped_ptr<CriticalSectionWrapper> callback_crit_sect_;
+  rtc::CriticalSection callback_crit_sect_;
   AudioPacketizationCallback* packetization_callback_
       GUARDED_BY(callback_crit_sect_);
   ACMVADCallback* vad_callback_ GUARDED_BY(callback_crit_sect_);

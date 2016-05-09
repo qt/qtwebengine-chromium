@@ -27,6 +27,11 @@
 
 namespace blink {
 
+bool SVGImageForContainer::isTextureBacked()
+{
+    return m_image->isTextureBacked();
+}
+
 IntSize SVGImageForContainer::size() const
 {
     FloatSize scaledContainerSize(m_containerSize);
@@ -48,7 +53,7 @@ void SVGImageForContainer::drawPattern(GraphicsContext& context, const FloatRect
 
 PassRefPtr<SkImage> SVGImageForContainer::imageForCurrentFrame()
 {
-    return m_image->imageForCurrentFrameForContainer(m_url);
+    return m_image->imageForCurrentFrameForContainer(m_url, m_containerSize);
 }
 
 } // namespace blink

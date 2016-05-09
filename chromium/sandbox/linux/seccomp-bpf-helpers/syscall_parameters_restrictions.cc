@@ -52,6 +52,10 @@
 #define PR_SET_TIMERSLACK_PID 41
 #endif
 
+#ifndef PR_SET_PTRACER
+#define PR_SET_PTRACER 0x59616d61
+#endif
+
 #endif  // defined(OS_ANDROID)
 
 #if defined(__arm__) && !defined(MAP_STACK)
@@ -89,6 +93,18 @@ inline bool IsAndroid() {
 
 inline bool IsArchitectureMips() {
 #if defined(__mips__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+// Ubuntu's version of glibc has a race condition in sem_post that can cause
+// it to call futex(2) with bogus op arguments. To workaround this, we need
+// to allow those futex(2) calls to fail with EINVAL, instead of crashing the
+// process. See crbug.com/598471.
+inline bool IsBuggyGlibcSemPost() {
+#if defined(LIBC_GLIBC) && !defined(OS_CHROMEOS)
   return true;
 #else
   return false;
@@ -143,7 +159,7 @@ ResultExpr RestrictPrctl() {
       .CASES((PR_GET_NAME, PR_SET_NAME, PR_GET_DUMPABLE, PR_SET_DUMPABLE
 #if defined(OS_ANDROID)
               ,
-              PR_SET_VMA, PR_SET_TIMERSLACK_PID
+              PR_SET_VMA, PR_SET_TIMERSLACK_PID, PR_SET_PTRACER
 #endif
               ),
              Allow())
@@ -249,15 +265,10 @@ ResultExpr RestrictFutex() {
   const uint64_t kAllowedFutexFlags = FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME;
   const Arg<int> op(1);
   return Switch(op & ~kAllowedFutexFlags)
-      .CASES((FUTEX_WAIT,
-              FUTEX_WAKE,
-              FUTEX_REQUEUE,
-              FUTEX_CMP_REQUEUE,
-              FUTEX_WAKE_OP,
-              FUTEX_WAIT_BITSET,
-              FUTEX_WAKE_BITSET),
+      .CASES((FUTEX_WAIT, FUTEX_WAKE, FUTEX_REQUEUE, FUTEX_CMP_REQUEUE,
+              FUTEX_WAKE_OP, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET),
              Allow())
-      .Default(CrashSIGSYSFutex());
+      .Default(IsBuggyGlibcSemPost() ? Error(EINVAL) : CrashSIGSYSFutex());
 }
 
 ResultExpr RestrictGetSetpriority(pid_t target_pid) {
@@ -305,8 +316,16 @@ ResultExpr RestrictClockID() {
   static_assert(4 == sizeof(clockid_t), "clockid_t is not 32bit");
   const Arg<clockid_t> clockid(0);
   return Switch(clockid)
-      .CASES((CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE, CLOCK_PROCESS_CPUTIME_ID,
-              CLOCK_REALTIME, CLOCK_REALTIME_COARSE, CLOCK_THREAD_CPUTIME_ID),
+      .CASES((
+#if defined(OS_ANDROID)
+              CLOCK_BOOTTIME,
+#endif
+              CLOCK_MONOTONIC,
+              CLOCK_MONOTONIC_COARSE,
+              CLOCK_PROCESS_CPUTIME_ID,
+              CLOCK_REALTIME,
+              CLOCK_REALTIME_COARSE,
+              CLOCK_THREAD_CPUTIME_ID),
              Allow())
       .Default(CrashSIGSYS());
 }

@@ -9,6 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
+#include "cc/input/event_listener_properties.h"
+#include "cc/input/main_thread_scrolling_reason.h"
 #include "cc/input/scroll_state.h"
 #include "cc/input/scrollbar.h"
 #include "cc/trees/swap_promise_monitor.h"
@@ -77,15 +79,34 @@ class CC_EXPORT InputHandler {
  public:
   // Note these are used in a histogram. Do not reorder or delete existing
   // entries.
-  enum ScrollStatus {
+  enum ScrollThread {
     SCROLL_ON_MAIN_THREAD = 0,
-    SCROLL_STARTED,
+    SCROLL_ON_IMPL_THREAD,
     SCROLL_IGNORED,
     SCROLL_UNKNOWN,
-    // This must be the last entry.
-    ScrollStatusCount
+    LAST_SCROLL_STATUS = SCROLL_UNKNOWN
   };
-  enum ScrollInputType { GESTURE, WHEEL, ANIMATED_WHEEL, NON_BUBBLING_GESTURE };
+
+  struct ScrollStatus {
+    ScrollStatus()
+        : thread(SCROLL_ON_IMPL_THREAD),
+          main_thread_scrolling_reasons(
+              MainThreadScrollingReason::kNotScrollingOnMain) {}
+    ScrollStatus(ScrollThread thread, uint32_t main_thread_scrolling_reasons)
+        : thread(thread),
+          main_thread_scrolling_reasons(main_thread_scrolling_reasons) {}
+    ScrollThread thread;
+    uint32_t main_thread_scrolling_reasons;
+  };
+
+  // TODO(ymalik): Remove ANIMATED_WHEEL once it is no longer special cased.
+  // see crbug.com/575019.
+  enum ScrollInputType {
+    TOUCHSCREEN,
+    WHEEL,
+    ANIMATED_WHEEL,
+    NON_BUBBLING_GESTURE
+  };
 
   // Binds a client to this handler to receive notifications. Only one client
   // can be bound to an InputHandler. The client must live at least until the
@@ -104,6 +125,12 @@ class CC_EXPORT InputHandler {
   // targets at the root layer.
   virtual ScrollStatus RootScrollBegin(ScrollState* scroll_state,
                                        ScrollInputType type) = 0;
+
+  // Returns SCROLL_ON_IMPL_THREAD if a layer is actively being scrolled or
+  // a subsequent call to ScrollAnimated can begin on the impl thread.
+  virtual ScrollStatus ScrollAnimatedBegin(
+      const gfx::Point& viewport_point) = 0;
+
   virtual ScrollStatus ScrollAnimated(const gfx::Point& viewport_point,
                                       const gfx::Vector2dF& scroll_delta) = 0;
 
@@ -123,7 +150,7 @@ class CC_EXPORT InputHandler {
   virtual bool ScrollVerticallyByPage(const gfx::Point& viewport_point,
                                       ScrollDirection direction) = 0;
 
-  // Returns SCROLL_STARTED if a layer was being actively being scrolled,
+  // Returns SCROLL_STARTED if a layer was actively being scrolled,
   // SCROLL_IGNORED if not.
   virtual ScrollStatus FlingScrollBegin() = 0;
 
@@ -157,7 +184,8 @@ class CC_EXPORT InputHandler {
   virtual bool IsCurrentlyScrollingLayerAt(const gfx::Point& viewport_point,
                                            ScrollInputType type) const = 0;
 
-  virtual bool HaveWheelEventHandlersAt(const gfx::Point& viewport_point) = 0;
+  virtual EventListenerProperties GetEventListenerProperties(
+      EventListenerClass event_class) const = 0;
 
   // Whether the page should be given the opportunity to suppress scrolling by
   // consuming touch events that started at |viewport_point|.

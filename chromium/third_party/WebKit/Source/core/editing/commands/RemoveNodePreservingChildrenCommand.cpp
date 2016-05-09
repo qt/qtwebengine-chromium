@@ -30,7 +30,7 @@
 
 namespace blink {
 
-RemoveNodePreservingChildrenCommand::RemoveNodePreservingChildrenCommand(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
+RemoveNodePreservingChildrenCommand::RemoveNodePreservingChildrenCommand(RawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     : CompositeEditCommand(node->document())
     , m_node(node)
     , m_shouldAssumeContentIsAlwaysEditable(shouldAssumeContentIsAlwaysEditable)
@@ -38,19 +38,25 @@ RemoveNodePreservingChildrenCommand::RemoveNodePreservingChildrenCommand(PassRef
     ASSERT(m_node);
 }
 
-void RemoveNodePreservingChildrenCommand::doApply()
+void RemoveNodePreservingChildrenCommand::doApply(EditingState* editingState)
 {
+    ABORT_EDITING_COMMAND_IF(!m_node->parentNode());
+    ABORT_EDITING_COMMAND_IF(!m_node->parentNode()->hasEditableStyle());
     if (m_node->isContainerNode()) {
         NodeVector children;
         getChildNodes(toContainerNode(*m_node), children);
 
         for (auto& currentChild : children) {
-            RefPtrWillBeRawPtr<Node> child = currentChild.release();
-            removeNode(child, m_shouldAssumeContentIsAlwaysEditable);
-            insertNodeBefore(child.release(), m_node, m_shouldAssumeContentIsAlwaysEditable);
+            RawPtr<Node> child = currentChild.release();
+            removeNode(child, editingState, m_shouldAssumeContentIsAlwaysEditable);
+            if (editingState->isAborted())
+                return;
+            insertNodeBefore(child.release(), m_node, editingState, m_shouldAssumeContentIsAlwaysEditable);
+            if (editingState->isAborted())
+                return;
         }
     }
-    removeNode(m_node, m_shouldAssumeContentIsAlwaysEditable);
+    removeNode(m_node, editingState, m_shouldAssumeContentIsAlwaysEditable);
 }
 
 DEFINE_TRACE(RemoveNodePreservingChildrenCommand)
@@ -59,4 +65,4 @@ DEFINE_TRACE(RemoveNodePreservingChildrenCommand)
     CompositeEditCommand::trace(visitor);
 }
 
-}
+} // namespace blink

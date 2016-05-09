@@ -81,6 +81,9 @@
     # The setting is ignored if want_separate_host_toolset is 0.
     'v8_toolset_for_d8%': 'target',
 
+    # Control usage of a separate ignition snapshot file.
+    'v8_separate_ignition_snapshot%': 0,
+
     'host_os%': '<(OS)',
     'werror%': '-Werror',
     # For a shared library build, results in "libv8-<(soname_version).so".
@@ -1284,7 +1287,8 @@
           }],
         ],
       },  # Debug
-      'Release': {
+      'ReleaseBase': {
+        'abstract': 1,
         'variables': {
           'v8_enable_slow_dchecks%': 0,
         },
@@ -1364,6 +1368,27 @@
           }],
         ],  # conditions
       },  # Release
+      'Release': {
+        'inherit_from': ['ReleaseBase'],
+      },  # Debug
+      'conditions': [
+        [ 'OS=="win"', {
+          # TODO(bradnelson): add a gyp mechanism to make this more graceful.
+          'Debug_x64': {
+            'inherit_from': ['DebugBaseCommon'],
+            'conditions': [
+              ['v8_optimized_debug==0', {
+                'inherit_from': ['DebugBase0'],
+              }, {
+                'inherit_from': ['DebugBase1'],
+              }],
+            ],
+          },
+          'Release_x64': {
+            'inherit_from': ['ReleaseBase'],
+          },
+        }],
+      ],
     },  # configurations
   },  # target_defaults
 }

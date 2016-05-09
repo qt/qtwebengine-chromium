@@ -29,7 +29,7 @@
 #include <string>
 #include <vector>
 #include "webrtc/p2p/base/candidate.h"
-#include "webrtc/p2p/base/constants.h"
+#include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/sessiondescription.h"
 #include "webrtc/p2p/base/transportinfo.h"
 #include "webrtc/base/messagequeue.h"
@@ -139,14 +139,35 @@ struct TransportStats {
 
 // Information about ICE configuration.
 struct IceConfig {
-  // The ICE connection receiving timeout value.
-  // TODO(honghaiz): Remove suffix _ms to be consistent.
-  int receiving_timeout_ms = -1;
+  // The ICE connection receiving timeout value in milliseconds.
+  int receiving_timeout = -1;
   // Time interval in milliseconds to ping a backup connection when the ICE
   // channel is strongly connected.
   int backup_connection_ping_interval = -1;
   // If true, the most recent port allocator session will keep on running.
   bool gather_continually = false;
+
+  // Whether we should prioritize Relay/Relay candidate when nothing
+  // is writable yet.
+  bool prioritize_most_likely_candidate_pairs = false;
+
+  // If the current best connection is both writable and receiving,
+  // then we will also try hard to make sure it is pinged at this rate
+  // (Default value is a little less than 2 * STRONG_PING_INTERVAL).
+  int max_strong_interval = -1;
+
+  IceConfig() {}
+  IceConfig(int receiving_timeout_ms,
+            int backup_connection_ping_interval,
+            bool gather_continually,
+            bool prioritize_most_likely_candidate_pairs,
+            int max_strong_interval_ms)
+      : receiving_timeout(receiving_timeout_ms),
+        backup_connection_ping_interval(backup_connection_ping_interval),
+        gather_continually(gather_continually),
+        prioritize_most_likely_candidate_pairs(
+            prioritize_most_likely_candidate_pairs),
+        max_strong_interval(max_strong_interval_ms) {}
 };
 
 bool BadTransportDescription(const std::string& desc, std::string* err_desc);
@@ -193,7 +214,7 @@ class Transport : public sigslot::has_slots<> {
   }
 
   // Get a copy of the remote certificate in use by the specified channel.
-  bool GetRemoteSSLCertificate(rtc::SSLCertificate** cert);
+  rtc::scoped_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate();
 
   // Create, destroy, and lookup the channels of this type by their components.
   TransportChannelImpl* CreateChannel(int component);
@@ -237,11 +258,8 @@ class Transport : public sigslot::has_slots<> {
   // Called when one or more candidates are ready from the remote peer.
   bool AddRemoteCandidates(const std::vector<Candidate>& candidates,
                            std::string* error);
-
-  // If candidate is not acceptable, returns false and sets error.
-  // Call this before calling OnRemoteCandidates.
-  virtual bool VerifyCandidate(const Candidate& candidate,
-                               std::string* error);
+  bool RemoveRemoteCandidates(const std::vector<Candidate>& candidates,
+                              std::string* error);
 
   virtual bool GetSslRole(rtc::SSLRole* ssl_role) const { return false; }
 
@@ -295,6 +313,11 @@ class Transport : public sigslot::has_slots<> {
       std::string* error_desc);
 
  private:
+  // If a candidate is not acceptable, returns false and sets error.
+  // Call this before calling OnRemoteCandidates.
+  bool VerifyCandidate(const Candidate& candidate, std::string* error);
+  bool VerifyCandidates(const Candidates& candidates, std::string* error);
+
   // Candidate component => TransportChannelImpl*
   typedef std::map<int, TransportChannelImpl*> ChannelMap;
 

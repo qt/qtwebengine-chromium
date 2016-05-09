@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace ui {
@@ -18,10 +19,6 @@ class LatencyInfo;
 
 namespace cc {
 class InputHandler;
-}
-
-namespace blink {
-class WebInputEvent;
 }
 
 namespace ui {
@@ -47,19 +44,35 @@ class CONTENT_EXPORT InputHandlerManagerClient {
   virtual void SetBoundHandler(const Handler& handler) = 0;
 
   // Called from the compositor thread.
-  virtual void DidAddInputHandler(
-      int routing_id,
-      ui::SynchronousInputHandlerProxy* synchronous_handler) = 0;
+  virtual void DidAddInputHandler(int routing_id) = 0;
   virtual void DidRemoveInputHandler(int routing_id) = 0;
   virtual void DidOverscroll(int routing_id,
                              const DidOverscrollParams& params) = 0;
   virtual void DidStopFlinging(int routing_id) = 0;
+  virtual void NotifyInputEventHandled(int routing_id,
+                                       blink::WebInputEvent::Type type) = 0;
 
  protected:
   InputHandlerManagerClient() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputHandlerManagerClient);
+};
+
+class CONTENT_EXPORT SynchronousInputHandlerProxyClient {
+ public:
+  virtual ~SynchronousInputHandlerProxyClient() {}
+
+  virtual void DidAddSynchronousHandlerProxy(
+      int routing_id,
+      ui::SynchronousInputHandlerProxy* synchronous_handler) = 0;
+  virtual void DidRemoveSynchronousHandlerProxy(int routing_id) = 0;
+
+ protected:
+  SynchronousInputHandlerProxyClient() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SynchronousInputHandlerProxyClient);
 };
 
 }  // namespace content

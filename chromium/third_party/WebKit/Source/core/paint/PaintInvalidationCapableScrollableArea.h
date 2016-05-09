@@ -27,10 +27,14 @@ public:
 
     void willRemoveScrollbar(Scrollbar&, ScrollbarOrientation) override;
 
-    void invalidatePaintOfScrollControlsIfNeeded(const PaintInvalidationState&, const LayoutBoxModelObject& paintInvalidationContainer);
+    void invalidatePaintOfScrollControlsIfNeeded(const PaintInvalidationState&);
 
     // Should be called when the previous paint invalidation rects are no longer valid.
     void clearPreviousPaintInvalidationRects();
+
+    virtual IntRect scrollCornerAndResizerRect() const { return scrollCornerRect(); }
+
+    LayoutRect visualRectForScrollbarParts() const override;
 
 private:
     virtual LayoutBox& boxForScrollControlPaintInvalidation() const = 0;
@@ -41,7 +45,7 @@ private:
     bool m_verticalScrollbarPreviouslyWasOverlay;
     LayoutRect m_horizontalScrollbarPreviousPaintInvalidationRect;
     LayoutRect m_verticalScrollbarPreviousPaintInvalidationRect;
-    LayoutRect m_scrollCornerPreviousPaintInvalidationRect;
+    LayoutRect m_scrollCornerAndResizerPreviousPaintInvalidationRect;
 };
 
 } // namespace blink

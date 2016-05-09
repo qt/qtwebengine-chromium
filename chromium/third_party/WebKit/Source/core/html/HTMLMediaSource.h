@@ -42,7 +42,7 @@ class WebMediaSource;
 class HTMLMediaElement;
 class TimeRanges;
 
-class CORE_EXPORT HTMLMediaSource : public URLRegistrable, public WillBeGarbageCollectedMixin {
+class CORE_EXPORT HTMLMediaSource : public URLRegistrable, public GarbageCollectedMixin {
 public:
     static void setRegistry(URLRegistry*);
     static HTMLMediaSource* lookup(const String& url) { return s_registry ? static_cast<HTMLMediaSource*>(s_registry->lookup(url)) : 0; }
@@ -78,6 +78,6 @@ private:
     static URLRegistry* s_registry;
 };
 
-}
+} // namespace blink
 
 #endif

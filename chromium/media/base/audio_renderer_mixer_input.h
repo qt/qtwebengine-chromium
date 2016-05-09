@@ -1,6 +1,17 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+//
+// THREAD SAFETY
+//
+// This class is generally not thread safe. Callers should ensure thread safety.
+// For instance, the |sink_lock_| in WebAudioSourceProvider synchronizes access
+// to this object across the main thread (for WebAudio APIs) and the
+// media thread (for HTMLMediaElement APIs).
+//
+// The one exception is protection for |volume_| via |volume_lock_|. This lock
+// prevents races between SetVolume() (called on any thread) and ProvideInput
+// (called on audio device thread). See http://crbug.com/588992.
 
 #ifndef MEDIA_BASE_AUDIO_RENDERER_MIXER_INPUT_H_
 #define MEDIA_BASE_AUDIO_RENDERER_MIXER_INPUT_H_
@@ -9,6 +20,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/synchronization/lock.h"
 #include "media/base/audio_converter.h"
 #include "media/base/audio_renderer_sink.h"
 #include "url/origin.h"
@@ -18,8 +30,7 @@ namespace media {
 class AudioRendererMixer;
 
 class MEDIA_EXPORT AudioRendererMixerInput
-    : NON_EXPORTED_BASE(public RestartableAudioRendererSink),
-      NON_EXPORTED_BASE(public OutputDevice),
+    : NON_EXPORTED_BASE(public SwitchableAudioRendererSink),
       public AudioConverter::InputCallback {
  public:
   typedef base::Callback<AudioRendererMixer*(const AudioParameters& params,
@@ -37,22 +48,18 @@ class MEDIA_EXPORT AudioRendererMixerInput
                           const std::string& device_id,
                           const url::Origin& security_origin);
 
-  // RestartableAudioRendererSink implementation.
+  // SwitchableAudioRendererSink implementation.
   void Start() override;
   void Stop() override;
   void Play() override;
   void Pause() override;
   bool SetVolume(double volume) override;
-  OutputDevice* GetOutputDevice() override;
+  OutputDeviceInfo GetOutputDeviceInfo() override;
   void Initialize(const AudioParameters& params,
                   AudioRendererSink::RenderCallback* renderer) override;
-
-  // OutputDevice implementation.
   void SwitchOutputDevice(const std::string& device_id,
                           const url::Origin& security_origin,
-                          const SwitchOutputDeviceCB& callback) override;
-  AudioParameters GetOutputParameters() override;
-  OutputDeviceStatus GetDeviceStatus() override;
+                          const OutputDeviceStatusCB& callback) override;
 
   // Called by AudioRendererMixer when an error occurs.
   void OnRenderError();
@@ -63,7 +70,11 @@ class MEDIA_EXPORT AudioRendererMixerInput
  private:
   friend class AudioRendererMixerInputTest;
 
-  bool initialized_;
+  // Protect |volume_|, accessed by separate threads in ProvideInput() and
+  // SetVolume().
+  base::Lock volume_lock_;
+
+  bool started_;
   bool playing_;
   double volume_;
 
@@ -95,7 +106,7 @@ class MEDIA_EXPORT AudioRendererMixerInput
 
   // Pending switch-device callback, in case SwitchOutputDevice() is invoked
   // before Start()
-  SwitchOutputDeviceCB pending_switch_callback_;
+  OutputDeviceStatusCB pending_switch_callback_;
   std::string pending_switch_device_id_;
   url::Origin pending_switch_security_origin_;
 

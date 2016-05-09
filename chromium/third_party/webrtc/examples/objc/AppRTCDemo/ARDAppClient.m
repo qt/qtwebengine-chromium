@@ -11,16 +11,17 @@
 #import "ARDAppClient+Internal.h"
 
 #if defined(WEBRTC_IOS)
-#import "RTCAVFoundationVideoSource.h"
+#import "webrtc/base/objc/RTCTracing.h"
+#import "webrtc/api/objc/RTCAVFoundationVideoSource.h"
 #endif
-#import "RTCFileLogger.h"
-#import "RTCICEServer.h"
-#import "RTCLogging.h"
-#import "RTCMediaConstraints.h"
-#import "RTCMediaStream.h"
-#import "RTCPair.h"
-#import "RTCPeerConnectionInterface.h"
-#import "RTCVideoCapturer.h"
+#import "webrtc/api/objc/RTCAudioTrack.h"
+#import "webrtc/api/objc/RTCConfiguration.h"
+#import "webrtc/api/objc/RTCIceServer.h"
+#import "webrtc/api/objc/RTCMediaConstraints.h"
+#import "webrtc/api/objc/RTCMediaStream.h"
+#import "webrtc/api/objc/RTCPeerConnectionFactory.h"
+#import "webrtc/base/objc/RTCFileLogger.h"
+#import "webrtc/base/objc/RTCLogging.h"
 
 #import "ARDAppEngineClient.h"
 #import "ARDCEODTURNClient.h"
@@ -30,7 +31,7 @@
 #import "ARDSignalingMessage.h"
 #import "ARDUtilities.h"
 #import "ARDWebSocketChannel.h"
-#import "RTCICECandidate+JSON.h"
+#import "RTCIceCandidate+JSON.h"
 #import "RTCSessionDescription+JSON.h"
 
 static NSString * const kARDDefaultSTUNServerUrl =
@@ -47,6 +48,12 @@ static NSInteger const kARDAppClientErrorCreateSDP = -3;
 static NSInteger const kARDAppClientErrorSetSDP = -4;
 static NSInteger const kARDAppClientErrorInvalidClient = -5;
 static NSInteger const kARDAppClientErrorInvalidRoom = -6;
+
+// TODO(tkchin): Remove guard once rtc_base_objc compiles on Mac.
+#if defined(WEBRTC_IOS)
+// TODO(tkchin): Add this as a UI option.
+static BOOL const kARDAppClientEnableTracing = NO;
+#endif
 
 // We need a proxy to NSTimer because it causes a strong retain cycle. When
 // using the proxy, |invalidate| must be called before it properly deallocs.
@@ -181,9 +188,14 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
                                                   repeats:YES
                                              timerHandler:^{
       ARDAppClient *strongSelf = weakSelf;
-      [strongSelf.peerConnection getStatsWithDelegate:strongSelf
-                                     mediaStreamTrack:nil
-                                     statsOutputLevel:RTCStatsOutputLevelDebug];
+      [strongSelf.peerConnection statsForTrack:nil
+                              statsOutputLevel:RTCStatsOutputLevelDebug
+                             completionHandler:^(NSArray *stats) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          ARDAppClient *strongSelf = weakSelf;
+          [strongSelf.delegate appClient:strongSelf didGetStats:stats];
+        });
+      }];
     }];
   } else {
     [_statsTimer invalidate];
@@ -208,6 +220,17 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
   _isLoopback = isLoopback;
   _isAudioOnly = isAudioOnly;
   self.state = kARDAppClientStateConnecting;
+
+#if defined(WEBRTC_IOS)
+  if (kARDAppClientEnableTracing) {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(
+        NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirPath = paths.firstObject;
+    NSString *filePath =
+        [documentsDirPath stringByAppendingPathComponent:@"webrtc-trace.txt"];
+    RTCStartInternalCapture(filePath);
+  }
+#endif
 
   // Request TURN.
   __weak ARDAppClient *weakSelf = self;
@@ -285,6 +308,9 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
   _messageQueue = [NSMutableArray array];
   _peerConnection = nil;
   self.state = kARDAppClientStateDisconnected;
+#if defined(WEBRTC_IOS)
+  RTCStopInternalCapture();
+#endif
 }
 
 #pragma mark - ARDSignalingChannelDelegate
@@ -331,12 +357,12 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 // dispatched back to main queue as needed.
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-    signalingStateChanged:(RTCSignalingState)stateChanged {
-  RTCLog(@"Signaling state changed: %d", stateChanged);
+    didChangeSignalingState:(RTCSignalingState)stateChanged {
+  RTCLog(@"Signaling state changed: %ld", (long)stateChanged);
 }
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-           addedStream:(RTCMediaStream *)stream {
+          didAddStream:(RTCMediaStream *)stream {
   dispatch_async(dispatch_get_main_queue(), ^{
     RTCLog(@"Received %lu video tracks and %lu audio tracks",
         (unsigned long)stream.videoTracks.count,
@@ -349,30 +375,29 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 }
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-        removedStream:(RTCMediaStream *)stream {
+       didRemoveStream:(RTCMediaStream *)stream {
   RTCLog(@"Stream was removed.");
 }
 
-- (void)peerConnectionOnRenegotiationNeeded:
-    (RTCPeerConnection *)peerConnection {
+- (void)peerConnectionShouldNegotiate:(RTCPeerConnection *)peerConnection {
   RTCLog(@"WARNING: Renegotiation needed but unimplemented.");
 }
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-    iceConnectionChanged:(RTCICEConnectionState)newState {
-  RTCLog(@"ICE state changed: %d", newState);
+    didChangeIceConnectionState:(RTCIceConnectionState)newState {
+  RTCLog(@"ICE state changed: %ld", (long)newState);
   dispatch_async(dispatch_get_main_queue(), ^{
     [_delegate appClient:self didChangeConnectionState:newState];
   });
 }
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-    iceGatheringChanged:(RTCICEGatheringState)newState {
-  RTCLog(@"ICE gathering state changed: %d", newState);
+    didChangeIceGatheringState:(RTCIceGatheringState)newState {
+  RTCLog(@"ICE gathering state changed: %ld", (long)newState);
 }
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
-       gotICECandidate:(RTCICECandidate *)candidate {
+    didGenerateIceCandidate:(RTCIceCandidate *)candidate {
   dispatch_async(dispatch_get_main_queue(), ^{
     ARDICECandidateMessage *message =
         [[ARDICECandidateMessage alloc] initWithCandidate:candidate];
@@ -382,15 +407,6 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
     didOpenDataChannel:(RTCDataChannel *)dataChannel {
-}
-
-#pragma mark - RTCStatsDelegate
-
-- (void)peerConnection:(RTCPeerConnection *)peerConnection
-           didGetStats:(NSArray *)stats {
-  dispatch_async(dispatch_get_main_queue(), ^{
-    [_delegate appClient:self didGetStats:stats];
-  });
 }
 
 #pragma mark - RTCSessionDescriptionDelegate
@@ -418,8 +434,13 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
     RTCSessionDescription *sdpPreferringH264 =
         [ARDSDPUtils descriptionForDescription:sdp
                            preferredVideoCodec:@"H264"];
-    [_peerConnection setLocalDescriptionWithDelegate:self
-                                  sessionDescription:sdpPreferringH264];
+    __weak ARDAppClient *weakSelf = self;
+    [_peerConnection setLocalDescription:sdpPreferringH264
+                       completionHandler:^(NSError *error) {
+      ARDAppClient *strongSelf = weakSelf;
+      [strongSelf peerConnection:strongSelf.peerConnection
+          didSetSessionDescriptionWithError:error];
+    }];
     ARDSessionDescriptionMessage *message =
         [[ARDSessionDescriptionMessage alloc]
             initWithDescription:sdpPreferringH264];
@@ -447,9 +468,15 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
     // an answer and set the local description.
     if (!_isInitiator && !_peerConnection.localDescription) {
       RTCMediaConstraints *constraints = [self defaultAnswerConstraints];
-      [_peerConnection createAnswerWithDelegate:self
-                                    constraints:constraints];
-
+      __weak ARDAppClient *weakSelf = self;
+      [_peerConnection answerForConstraints:constraints
+                          completionHandler:^(RTCSessionDescription *sdp,
+                                              NSError *error) {
+        ARDAppClient *strongSelf = weakSelf;
+        [strongSelf peerConnection:strongSelf.peerConnection
+            didCreateSessionDescription:sdp
+                                  error:error];
+      }];
     }
   });
 }
@@ -483,8 +510,15 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
   [_peerConnection addStream:localStream];
   if (_isInitiator) {
     // Send offer.
-    [_peerConnection createOfferWithDelegate:self
-                                 constraints:[self defaultOfferConstraints]];
+    __weak ARDAppClient *weakSelf = self;
+    [_peerConnection offerForConstraints:[self defaultOfferConstraints]
+                       completionHandler:^(RTCSessionDescription *sdp,
+                                           NSError *error) {
+      ARDAppClient *strongSelf = weakSelf;
+      [strongSelf peerConnection:strongSelf.peerConnection
+          didCreateSessionDescription:sdp
+                                error:error];
+    }];
   } else {
     // Check if we've received an offer.
     [self drainMessageQueueIfReady];
@@ -520,14 +554,19 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
       RTCSessionDescription *sdpPreferringH264 =
           [ARDSDPUtils descriptionForDescription:description
                              preferredVideoCodec:@"H264"];
-      [_peerConnection setRemoteDescriptionWithDelegate:self
-                                     sessionDescription:sdpPreferringH264];
+      __weak ARDAppClient *weakSelf = self;
+      [_peerConnection setRemoteDescription:sdpPreferringH264
+                          completionHandler:^(NSError *error) {
+        ARDAppClient *strongSelf = weakSelf;
+        [strongSelf peerConnection:strongSelf.peerConnection
+            didSetSessionDescriptionWithError:error];
+      }];
       break;
     }
     case kARDSignalingMessageTypeCandidate: {
       ARDICECandidateMessage *candidateMessage =
           (ARDICECandidateMessage *)message;
-      [_peerConnection addICECandidate:candidateMessage.candidate];
+      [_peerConnection addIceCandidate:candidateMessage.candidate];
       break;
     }
     case kARDSignalingMessageTypeBye:
@@ -568,13 +607,15 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 }
 
 - (RTCMediaStream *)createLocalMediaStream {
-  RTCMediaStream* localStream = [_factory mediaStreamWithLabel:@"ARDAMS"];
-  RTCVideoTrack* localVideoTrack = [self createLocalVideoTrack];
+  RTCMediaStream *localStream = [_factory mediaStreamWithStreamId:@"ARDAMS"];
+  RTCVideoTrack *localVideoTrack = [self createLocalVideoTrack];
   if (localVideoTrack) {
     [localStream addVideoTrack:localVideoTrack];
     [_delegate appClient:self didReceiveLocalVideoTrack:localVideoTrack];
   }
-  [localStream addAudioTrack:[_factory audioTrackWithID:@"ARDAMSa0"]];
+  RTCAudioTrack *localAudioTrack =
+      [_factory audioTrackWithTrackId:@"ARDAMSa0"];
+  [localStream addAudioTrack:localAudioTrack];
   return localStream;
 }
 
@@ -590,12 +631,10 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
     RTCMediaConstraints *mediaConstraints =
         [self defaultMediaStreamConstraints];
     RTCAVFoundationVideoSource *source =
-        [[RTCAVFoundationVideoSource alloc] initWithFactory:_factory
-                                                constraints:mediaConstraints];
+        [_factory avFoundationVideoSourceWithConstraints:mediaConstraints];
     localVideoTrack =
-        [[RTCVideoTrack alloc] initWithFactory:_factory
-                                        source:source
-                                       trackId:@"ARDAMSv0"];
+        [_factory videoTrackWithSource:source
+                               trackId:@"ARDAMSv0"];
   }
 #endif
   return localVideoTrack;
@@ -640,10 +679,10 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
 }
 
 - (RTCMediaConstraints *)defaultOfferConstraints {
-  NSArray *mandatoryConstraints = @[
-      [[RTCPair alloc] initWithKey:@"OfferToReceiveAudio" value:@"true"],
-      [[RTCPair alloc] initWithKey:@"OfferToReceiveVideo" value:@"true"]
-  ];
+  NSDictionary *mandatoryConstraints = @{
+    @"OfferToReceiveAudio" : @"true",
+    @"OfferToReceiveVideo" : @"true"
+  };
   RTCMediaConstraints* constraints =
       [[RTCMediaConstraints alloc]
           initWithMandatoryConstraints:mandatoryConstraints
@@ -656,9 +695,7 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
     return _defaultPeerConnectionConstraints;
   }
   NSString *value = _isLoopback ? @"false" : @"true";
-  NSArray *optionalConstraints = @[
-      [[RTCPair alloc] initWithKey:@"DtlsSrtpKeyAgreement" value:value]
-  ];
+  NSDictionary *optionalConstraints = @{ @"DtlsSrtpKeyAgreement" : value };
   RTCMediaConstraints* constraints =
       [[RTCMediaConstraints alloc]
           initWithMandatoryConstraints:nil
@@ -666,11 +703,10 @@ static NSInteger const kARDAppClientErrorInvalidRoom = -6;
   return constraints;
 }
 
-- (RTCICEServer *)defaultSTUNServer {
-  NSURL *defaultSTUNServerURL = [NSURL URLWithString:kARDDefaultSTUNServerUrl];
-  return [[RTCICEServer alloc] initWithURI:defaultSTUNServerURL
-                                  username:@""
-                                  password:@""];
+- (RTCIceServer *)defaultSTUNServer {
+  return [[RTCIceServer alloc] initWithURLStrings:@[kARDDefaultSTUNServerUrl]
+                                         username:@""
+                                       credential:@""];
 }
 
 #pragma mark - Errors

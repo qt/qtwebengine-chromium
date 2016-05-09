@@ -11,6 +11,7 @@
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/lazy_instance.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
@@ -22,6 +23,7 @@
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "gpu/gles2_conform_support/egl/config.h"
 #include "gpu/gles2_conform_support/egl/surface.h"
+#include "gpu/gles2_conform_support/egl/test_support.h"
 
 namespace {
 const int32_t kCommandBufferSize = 1024 * 1024;
@@ -29,21 +31,59 @@ const int32_t kTransferBufferSize = 512 * 1024;
 }
 
 namespace egl {
+#if defined(COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY)
+// egl::Display is used for comformance tests and command_buffer_gles.  We only
+// need the exit manager for the command_buffer_gles library.
+// TODO(hendrikw): Find a cleaner solution for this.
+namespace {
+base::LazyInstance<base::Lock>::Leaky g_exit_manager_lock;
+int g_exit_manager_use_count;
+base::AtExitManager* g_exit_manager;
+void RefAtExitManager() {
+  base::AutoLock lock(g_exit_manager_lock.Get());
+#if defined(COMPONENT_BUILD)
+  if (g_command_buffer_gles_has_atexit_manager) {
+    return;
+  }
+#endif
+  if (g_exit_manager_use_count == 0) {
+    g_exit_manager = new base::AtExitManager;
+  }
+  ++g_exit_manager_use_count;
+}
+void ReleaseAtExitManager() {
+  base::AutoLock lock(g_exit_manager_lock.Get());
+#if defined(COMPONENT_BUILD)
+  if (g_command_buffer_gles_has_atexit_manager) {
+    return;
+  }
+#endif
+  --g_exit_manager_use_count;
+  if (g_exit_manager_use_count == 0) {
+    delete g_exit_manager;
+    g_exit_manager = nullptr;
+  }
+}
+}
+#endif
 
 Display::Display(EGLNativeDisplayType display_id)
     : display_id_(display_id),
       is_initialized_(false),
-#if defined(COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY)
-      exit_manager_(new base::AtExitManager),
-#endif
       create_offscreen_(false),
       create_offscreen_width_(0),
       create_offscreen_height_(0),
       next_fence_sync_release_(1) {
+#if defined(COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY)
+  RefAtExitManager();
+#endif
 }
 
 Display::~Display() {
   gles2::Terminate();
+#if defined(COMMAND_BUFFER_GLES_LIB_SUPPORT_ONLY)
+  ReleaseAtExitManager();
+#endif
 }
 
 bool Display::Initialize() {
@@ -126,18 +166,18 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
     return NULL;
 
   scoped_refptr<gpu::gles2::ContextGroup> group(new gpu::gles2::ContextGroup(
-      NULL, NULL, new gpu::gles2::ShaderTranslatorCache,
+      gpu_preferences_, NULL, NULL,
+      new gpu::gles2::ShaderTranslatorCache(gpu_preferences_),
       new gpu::gles2::FramebufferCompletenessCache, NULL, NULL, NULL, true));
 
   decoder_.reset(gpu::gles2::GLES2Decoder::Create(group.get()));
   if (!decoder_.get())
     return EGL_NO_SURFACE;
 
-  gpu_scheduler_.reset(new gpu::GpuScheduler(command_buffer.get(),
-                                             decoder_.get(),
-                                             NULL));
+  executor_.reset(
+      new gpu::CommandExecutor(command_buffer.get(), decoder_.get(), NULL));
 
-  decoder_->set_engine(gpu_scheduler_.get());
+  decoder_->set_engine(executor_.get());
   gfx::Size size(create_offscreen_width_, create_offscreen_height_);
   if (create_offscreen_) {
     gl_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(size);
@@ -183,12 +223,10 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
     return EGL_NO_SURFACE;
   }
 
-  command_buffer->SetPutOffsetChangeCallback(
-      base::Bind(&gpu::GpuScheduler::PutChanged,
-                 base::Unretained(gpu_scheduler_.get())));
-  command_buffer->SetGetBufferChangeCallback(
-      base::Bind(&gpu::GpuScheduler::SetGetBuffer,
-                 base::Unretained(gpu_scheduler_.get())));
+  command_buffer->SetPutOffsetChangeCallback(base::Bind(
+      &gpu::CommandExecutor::PutChanged, base::Unretained(executor_.get())));
+  command_buffer->SetGetBufferChangeCallback(base::Bind(
+      &gpu::CommandExecutor::SetGetBuffer, base::Unretained(executor_.get())));
 
   scoped_ptr<gpu::gles2::GLES2CmdHelper> cmd_helper(
       new gpu::gles2::GLES2CmdHelper(command_buffer.get()));
@@ -208,7 +246,7 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
 
 void Display::DestroySurface(EGLSurface surface) {
   DCHECK(IsValidSurface(surface));
-  gpu_scheduler_.reset();
+  executor_.reset();
   if (decoder_.get()) {
     decoder_->Destroy(true);
   }
@@ -308,25 +346,6 @@ int32_t Display::CreateGpuMemoryBufferImage(size_t width,
   return -1;
 }
 
-uint32_t Display::InsertSyncPoint() {
-  NOTIMPLEMENTED();
-  return 0u;
-}
-
-uint32_t Display::InsertFutureSyncPoint() {
-  NOTIMPLEMENTED();
-  return 0u;
-}
-
-void Display::RetireSyncPoint(uint32_t sync_point) {
-  NOTIMPLEMENTED();
-}
-
-void Display::SignalSyncPoint(uint32_t sync_point,
-                              const base::Closure& callback) {
-  NOTIMPLEMENTED();
-}
-
 void Display::SignalQuery(uint32_t query, const base::Closure& callback) {
   NOTIMPLEMENTED();
 }
@@ -348,8 +367,8 @@ gpu::CommandBufferNamespace Display::GetNamespaceID() const {
   return gpu::CommandBufferNamespace::IN_PROCESS;
 }
 
-uint64_t Display::GetCommandBufferID() const {
-  return 0;
+gpu::CommandBufferId Display::GetCommandBufferID() const {
+  return gpu::CommandBufferId();
 }
 
 int32_t Display::GetExtraCommandBufferData() const {

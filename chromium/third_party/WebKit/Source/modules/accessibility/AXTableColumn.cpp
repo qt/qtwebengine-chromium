@@ -70,7 +70,7 @@ void AXTableColumn::headerObjectsForColumn(AXObjectVector& headers)
     if (!m_parent)
         return;
 
-    LayoutObject* layoutObject = m_parent->layoutObject();
+    LayoutObject* layoutObject = m_parent->getLayoutObject();
     if (!layoutObject)
         return;
 
@@ -91,7 +91,7 @@ void AXTableColumn::headerObjectsForColumn(AXObjectVector& headers)
     LayoutTable* table = toLayoutTable(layoutObject);
     LayoutTableSection* tableSection = table->topSection();
     for (; tableSection; tableSection = table->sectionBelow(tableSection, SkipEmptySections)) {
-        unsigned numCols = tableSection->numColumns();
+        unsigned numCols = tableSection->numEffectiveColumns();
         if (m_columnIndex >= numCols)
             continue;
         unsigned numRows = tableSection->numRows();

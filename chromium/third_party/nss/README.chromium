@@ -42,14 +42,10 @@ We made the following local changes to NSPR.
   to use PR_GetHostByName.  Removing _PR_INET6_PROBE will prevent it from
   creating an IPv6 socket to probe if IPv6 is there.
   DO NOT upstream this patch.
-- patches/nspr-unused-variable.patch: Remove an unused variable. See NSPR
-  bug 1126408 (https://bugzilla.mozilla.org/show_bug.cgi?id=1126408).
 
 We made the following local changes to NSS.
 
 Files Added:
-- nss/exports_win.def: The list of exports to use when building nss as a
-  dynamic library (crnss.dll).
 - nss/lib/ckfw/builtins/certdata.c: a generated file. Do an upstream NSS
   build and copy the generated certdata.c.
 - nss/lib/freebl/nss_build_config_mac.h: a header that defines the target
@@ -67,9 +63,6 @@ Patches Applied:
   (https://bugzilla.mozilla.org/show_bug.cgi?id=668397).
 - patches/nss-urandom-abort.patch: call abort() if NSS cannot read from
   /dev/urandom.  See Chromium issue 244661 (http://crbug.com/244661).
-- patches/nss-chacha20-poly1305.patch: Support ChaCha20+Poly1305 cipher
-  suites.  See NSS bug 917571
-  (https://bugzilla.mozilla.org/show_bug.cgi?id=917571).
 - patches/nss-static.patch: to build NSS as static libraries and omit
   libpkix (the new certification path validation library) and
   softoken/legacydb (support for the old Berkeley DB databases).  See NSS

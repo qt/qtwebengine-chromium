@@ -28,6 +28,7 @@
 #include "content/browser/streams/stream_registry.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/service_worker_context.h"
@@ -115,10 +116,11 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
     FetchRequestMode request_mode,
     FetchCredentialsMode credentials_mode,
     FetchRedirectMode redirect_mode,
-    bool is_main_resource_load,
+    ResourceType resource_type,
     RequestContextType request_context_type,
     RequestContextFrameType frame_type,
     scoped_refptr<ResourceRequestBody> body,
+    ServiceWorkerFetchType fetch_type,
     Delegate* delegate)
     : net::URLRequestJob(request, network_delegate),
       delegate_(delegate),
@@ -132,11 +134,12 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
       request_mode_(request_mode),
       credentials_mode_(credentials_mode),
       redirect_mode_(redirect_mode),
-      is_main_resource_load_(is_main_resource_load),
+      resource_type_(resource_type),
       request_context_type_(request_context_type),
       frame_type_(frame_type),
       fall_back_required_(false),
       body_(body),
+      fetch_type_(fetch_type),
       weak_factory_(this) {
   DCHECK(delegate_) << "ServiceWorkerURLRequestJob requires a delegate";
 }
@@ -308,7 +311,8 @@ void ServiceWorkerURLRequestJob::OnBeforeNetworkStart(net::URLRequest* request,
 void ServiceWorkerURLRequestJob::OnResponseStarted(net::URLRequest* request) {
   // TODO(falken): Add Content-Length, Content-Type if they were not provided in
   // the ServiceWorkerResponse.
-  response_time_ = base::Time::Now();
+  if (response_time_.is_null())
+    response_time_ = base::Time::Now();
   CommitResponseHeader();
 }
 
@@ -429,7 +433,7 @@ void ServiceWorkerURLRequestJob::StartRequest() {
       // Send a fetch event to the ServiceWorker associated to the
       // provider_host.
       fetch_dispatcher_.reset(new ServiceWorkerFetchDispatcher(
-          CreateFetchRequest(), active_worker,
+          CreateFetchRequest(), active_worker, resource_type_,
           base::Bind(&ServiceWorkerURLRequestJob::DidPrepareFetchEvent,
                      weak_factory_.GetWeakPtr()),
           base::Bind(&ServiceWorkerURLRequestJob::DidDispatchFetchEvent,
@@ -446,11 +450,13 @@ scoped_ptr<ServiceWorkerFetchRequest>
 ServiceWorkerURLRequestJob::CreateFetchRequest() {
   std::string blob_uuid;
   uint64_t blob_size = 0;
-  CreateRequestBodyBlob(&blob_uuid, &blob_size);
+  // The upload data in URLRequest may have been cleared while handing redirect.
+  if (request_->has_upload())
+    CreateRequestBodyBlob(&blob_uuid, &blob_size);
   scoped_ptr<ServiceWorkerFetchRequest> request(
       new ServiceWorkerFetchRequest());
   request->mode = request_mode_;
-  request->is_main_resource_load = is_main_resource_load_;
+  request->is_main_resource_load = IsMainResourceLoad();
   request->request_context_type = request_context_type_;
   request->frame_type = frame_type_;
   request->url = request_->url();
@@ -479,6 +485,7 @@ ServiceWorkerURLRequestJob::CreateFetchRequest() {
     request->referrer =
         Referrer(GURL(request_->referrer()), blink::WebReferrerPolicyDefault);
   }
+  request->fetch_type = fetch_type_;
   return request;
 }
 
@@ -562,9 +569,9 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     ServiceWorkerStatusCode status,
     ServiceWorkerFetchEventResult fetch_result,
     const ServiceWorkerResponse& response,
-    scoped_refptr<ServiceWorkerVersion> version) {
+    const scoped_refptr<ServiceWorkerVersion>& version) {
   fetch_dispatcher_.reset();
-  ServiceWorkerMetrics::RecordFetchEventStatus(is_main_resource_load_, status);
+  ServiceWorkerMetrics::RecordFetchEventStatus(IsMainResourceLoad(), status);
 
   // Check if we're not orphaned.
   if (!request()) {
@@ -582,7 +589,7 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
 
   if (status != SERVICE_WORKER_OK) {
     RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_FETCH_EVENT_DISPATCH);
-    if (is_main_resource_load_) {
+    if (IsMainResourceLoad()) {
       // Using the service worker failed, so fallback to network.
       delegate_->MainResourceLoadFailed();
       response_type_ = FALLBACK_TO_NETWORK;
@@ -602,7 +609,8 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     // we returns a fall_back_required response to the renderer.
     if ((request_mode_ == FETCH_REQUEST_MODE_CORS ||
          request_mode_ == FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT) &&
-        delegate_->GetRequestingOrigin() != request()->url().GetOrigin()) {
+        !request()->initiator().IsSameOriginWith(
+            url::Origin(request()->url()))) {
       fall_back_required_ = true;
       RecordResult(ServiceWorkerMetrics::REQUEST_JOB_FALLBACK_FOR_CORS);
       CreateResponseHeader(
@@ -657,6 +665,7 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     streaming_version_->AddStreamingURLRequestJob(this);
     response_url_ = response.url;
     service_worker_response_type_ = response.response_type;
+    response_time_ = response.response_time;
     CreateResponseHeader(
         response.status_code, response.status_text, response.headers);
     load_timing_info_.receive_headers_end = base::TimeTicks::Now();
@@ -694,6 +703,9 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
 
   response_url_ = response.url;
   service_worker_response_type_ = response.response_type;
+  response_time_ = response.response_time;
+  response_is_in_cache_storage_ = response.is_in_cache_storage;
+  response_cache_storage_cache_name_ = response.cache_storage_cache_name;
   CreateResponseHeader(
       response.status_code, response.status_text, response.headers);
   load_timing_info_.receive_headers_end = base::TimeTicks::Now();
@@ -762,8 +774,7 @@ void ServiceWorkerURLRequestJob::RecordResult(
     return;
   }
   did_record_result_ = true;
-  ServiceWorkerMetrics::RecordURLRequestJobResult(is_main_resource_load_,
-                                                  result);
+  ServiceWorkerMetrics::RecordURLRequestJobResult(IsMainResourceLoad(), result);
   if (request())
     request()->net_log().AddEvent(RequestJobResultToNetEventType(result));
 }
@@ -777,7 +788,7 @@ void ServiceWorkerURLRequestJob::RecordStatusZeroResponseError(
     return;
   }
   RecordResult(ServiceWorkerMetrics::REQUEST_JOB_ERROR_RESPONSE_STATUS_ZERO);
-  ServiceWorkerMetrics::RecordStatusZeroResponseError(is_main_resource_load_,
+  ServiceWorkerMetrics::RecordStatusZeroResponseError(IsMainResourceLoad(),
                                                       error);
 }
 
@@ -823,13 +834,20 @@ void ServiceWorkerURLRequestJob::OnStartCompleted() const {
         GURL() /* original_url_via_service_worker */,
         blink::WebServiceWorkerResponseTypeDefault,
         base::TimeTicks() /* service_worker_start_time */,
-        base::TimeTicks() /* service_worker_ready_time */);
+        base::TimeTicks() /* service_worker_ready_time */,
+        false /* respons_is_in_cache_storage */,
+        std::string() /* response_cache_storage_cache_name */);
     return;
   }
   delegate_->OnStartCompleted(true /* was_fetched_via_service_worker */,
                               fall_back_required_, response_url_,
                               service_worker_response_type_, worker_start_time_,
-                              worker_ready_time_);
+                              worker_ready_time_, response_is_in_cache_storage_,
+                              response_cache_storage_cache_name_);
+}
+
+bool ServiceWorkerURLRequestJob::IsMainResourceLoad() const {
+  return ServiceWorkerUtils::IsMainResourceType(resource_type_);
 }
 
 }  // namespace content

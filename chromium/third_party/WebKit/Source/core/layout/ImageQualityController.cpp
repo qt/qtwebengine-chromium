@@ -89,8 +89,6 @@ ImageQualityController::~ImageQualityController()
 
 ImageQualityController::ImageQualityController()
     : m_timer(adoptPtr(new Timer<ImageQualityController>(this, &ImageQualityController::highQualityRepaintTimerFired)))
-    , m_animatedResizeIsActive(false)
-    , m_liveResizeOptimizationIsActive(false)
 {
 }
 
@@ -108,14 +106,16 @@ void ImageQualityController::removeLayer(const LayoutObject& object, LayerSizeMa
     }
 }
 
-void ImageQualityController::set(const LayoutObject& object, LayerSizeMap* innerMap, const void* layer, const LayoutSize& size)
+void ImageQualityController::set(const LayoutObject& object, LayerSizeMap* innerMap, const void* layer, const LayoutSize& size, bool isResizing)
 {
     if (innerMap) {
         innerMap->set(layer, size);
+        m_objectLayerSizeMap.find(&object)->value.isResizing = isResizing;
     } else {
-        LayerSizeMap newInnerMap;
-        newInnerMap.set(layer, size);
-        m_objectLayerSizeMap.set(&object, newInnerMap);
+        ObjectResizeInfo newResizeInfo;
+        newResizeInfo.layerSizeMap.set(layer, size);
+        newResizeInfo.isResizing = isResizing;
+        m_objectLayerSizeMap.set(&object, newResizeInfo);
     }
 }
 
@@ -123,30 +123,21 @@ void ImageQualityController::objectDestroyed(const LayoutObject& object)
 {
     m_objectLayerSizeMap.remove(&object);
     if (m_objectLayerSizeMap.isEmpty()) {
-        m_animatedResizeIsActive = false;
         m_timer->stop();
     }
 }
 
 void ImageQualityController::highQualityRepaintTimerFired(Timer<ImageQualityController>*)
 {
-    if (!m_animatedResizeIsActive && !m_liveResizeOptimizationIsActive)
-        return;
-    m_animatedResizeIsActive = false;
+    for (auto& i : m_objectLayerSizeMap) {
+        // Only invalidate the object if it is animating.
+        if (!i.value.isResizing)
+            continue;
 
-    for (auto* layoutObject : m_objectLayerSizeMap.keys()) {
-        if (LocalFrame* frame = layoutObject->document().frame()) {
-            // If this layoutObject's containing FrameView is in live resize, punt the timer and hold back for now.
-            if (frame->view() && frame->view()->inLiveResize()) {
-                restartTimer();
-                return;
-            }
-        }
-        // TODO(wangxianzhu): Use LayoutObject::mutableForPainting().
-        const_cast<LayoutObject*>(layoutObject)->setShouldDoFullPaintInvalidation();
+        // TODO(wangxianzhu): Use LayoutObject::getMutableForPainting().
+        const_cast<LayoutObject*>(i.key)->setShouldDoFullPaintInvalidation();
+        i.value.isResizing = false;
     }
-
-    m_liveResizeOptimizationIsActive = false;
 }
 
 void ImageQualityController::restartTimer()
@@ -169,7 +160,12 @@ bool ImageQualityController::shouldPaintAtLowQuality(const LayoutObject& object,
 
     // Look ourselves up in the hashtables.
     ObjectLayerSizeMap::iterator i = m_objectLayerSizeMap.find(&object);
-    LayerSizeMap* innerMap = i != m_objectLayerSizeMap.end() ? &i->value : 0;
+    LayerSizeMap* innerMap = nullptr;
+    bool objectIsResizing = false;
+    if (i != m_objectLayerSizeMap.end()) {
+        innerMap = &i->value.layerSizeMap;
+        objectIsResizing = i->value.isResizing;
+    }
     LayoutSize oldSize;
     bool isFirstResize = true;
     if (innerMap) {
@@ -180,32 +176,17 @@ bool ImageQualityController::shouldPaintAtLowQuality(const LayoutObject& object,
         }
     }
 
-    // If the containing FrameView is being resized, paint at low quality until resizing is finished.
-    if (LocalFrame* frame = object.document().frame()) {
-        bool frameViewIsCurrentlyInLiveResize = frame->view() && frame->view()->inLiveResize();
-        if (frameViewIsCurrentlyInLiveResize) {
-            set(object, innerMap, layer, layoutSize);
-            restartTimer();
-            m_liveResizeOptimizationIsActive = true;
-            return true;
-        }
-        if (m_liveResizeOptimizationIsActive) {
-            // Live resize has ended, paint in HQ and remove this object from the list.
-            removeLayer(object, innerMap, layer);
-            return false;
-        }
-    }
-
     if (layoutSize == image->size()) {
         // There is no scale in effect. If we had a scale in effect before, we can just remove this object from the list.
         removeLayer(object, innerMap, layer);
         return false;
     }
 
-    // If an animated resize is active, paint in low quality and kick the timer ahead.
-    if (m_animatedResizeIsActive) {
-        set(object, innerMap, layer, layoutSize);
-        if (oldSize != layoutSize)
+    // If an animated resize is active for this object, paint in low quality and kick the timer ahead.
+    if (objectIsResizing) {
+        bool sizesChanged = oldSize != layoutSize;
+        set(object, innerMap, layer, layoutSize, sizesChanged);
+        if (sizesChanged)
             restartTimer();
         return true;
     }
@@ -214,7 +195,7 @@ bool ImageQualityController::shouldPaintAtLowQuality(const LayoutObject& object,
     // size and set the timer.
     if (isFirstResize || oldSize == layoutSize) {
         restartTimer();
-        set(object, innerMap, layer, layoutSize);
+        set(object, innerMap, layer, layoutSize, false);
         return false;
     }
     // If the timer is no longer active, draw at high quality and don't
@@ -223,12 +204,10 @@ bool ImageQualityController::shouldPaintAtLowQuality(const LayoutObject& object,
         removeLayer(object, innerMap, layer);
         return false;
     }
-
     // This object has been resized to two different sizes while the timer
     // is active, so draw at low quality, set the flag for animated resizes and
     // the object to the list for high quality redraw.
-    set(object, innerMap, layer, layoutSize);
-    m_animatedResizeIsActive = true;
+    set(object, innerMap, layer, layoutSize, true);
     restartTimer();
     return true;
 }

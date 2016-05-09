@@ -38,13 +38,18 @@
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> ServiceWorkerGlobalScopeClientImpl::create(WebServiceWorkerContextClient& client)
+ServiceWorkerGlobalScopeClient* ServiceWorkerGlobalScopeClientImpl::create(WebServiceWorkerContextClient& client)
 {
-    return adoptPtrWillBeNoop(new ServiceWorkerGlobalScopeClientImpl(client));
+    return new ServiceWorkerGlobalScopeClientImpl(client);
 }
 
 ServiceWorkerGlobalScopeClientImpl::~ServiceWorkerGlobalScopeClientImpl()
 {
+}
+
+void ServiceWorkerGlobalScopeClientImpl::getClient(const WebString& id, WebServiceWorkerClientCallbacks* callbacks)
+{
+    m_client.getClient(id, callbacks);
 }
 
 void ServiceWorkerGlobalScopeClientImpl::getClients(const WebServiceWorkerClientQueryOptions& options, WebServiceWorkerClientsCallbacks* callbacks)
@@ -77,6 +82,11 @@ void ServiceWorkerGlobalScopeClientImpl::didHandleActivateEvent(int eventID, Web
     m_client.didHandleActivateEvent(eventID, result);
 }
 
+void ServiceWorkerGlobalScopeClientImpl::didHandleExtendableMessageEvent(int eventID, WebServiceWorkerEventResult result)
+{
+    m_client.didHandleExtendableMessageEvent(eventID, result);
+}
+
 void ServiceWorkerGlobalScopeClientImpl::didHandleFetchEvent(int fetchEventID)
 {
     m_client.didHandleFetchEvent(fetchEventID);
@@ -95,6 +105,11 @@ void ServiceWorkerGlobalScopeClientImpl::didHandleInstallEvent(int installEventI
 void ServiceWorkerGlobalScopeClientImpl::didHandleNotificationClickEvent(int eventID, WebServiceWorkerEventResult result)
 {
     m_client.didHandleNotificationClickEvent(eventID, result);
+}
+
+void ServiceWorkerGlobalScopeClientImpl::didHandleNotificationCloseEvent(int eventID, WebServiceWorkerEventResult result)
+{
+    m_client.didHandleNotificationCloseEvent(eventID, result);
 }
 
 void ServiceWorkerGlobalScopeClientImpl::didHandlePushEvent(int pushEventID, WebServiceWorkerEventResult result)
@@ -137,9 +152,9 @@ void ServiceWorkerGlobalScopeClientImpl::navigate(const WebString& clientUUID, c
     m_client.navigate(clientUUID, url, callback);
 }
 
-void ServiceWorkerGlobalScopeClientImpl::registerForeignFetchScopes(const WebVector<WebURL>& subScopes)
+void ServiceWorkerGlobalScopeClientImpl::registerForeignFetchScopes(const WebVector<WebURL>& subScopes, const WebVector<WebSecurityOrigin>& origins)
 {
-    m_client.registerForeignFetchScopes(subScopes);
+    m_client.registerForeignFetchScopes(subScopes, origins);
 }
 
 ServiceWorkerGlobalScopeClientImpl::ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient& client)

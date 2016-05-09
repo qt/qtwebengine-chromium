@@ -45,19 +45,13 @@
 #include "ui/views/win/hwnd_util.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/views/controls/menu/menu_key_event_handler.h"
+#endif
+
 using base::Time;
 using base::TimeDelta;
 using ui::OSExchangeData;
-
-// Period of the scroll timer (in milliseconds).
-static const int kScrollTimerMS = 30;
-
-// Amount of time from when the drop exits the menu and the menu is hidden.
-static const int kCloseOnExitTime = 1200;
-
-// If a context menu is invoked by touch, we shift the menu by this offset so
-// that the finger does not obscure the menu.
-static const int kCenteredContextMenuYOffset = -15;
 
 namespace views {
 
@@ -66,7 +60,17 @@ namespace {
 // When showing context menu on mouse down, the user might accidentally select
 // the menu item on the subsequent mouse up. To prevent this, we add the
 // following delay before the user is able to select an item.
-static int menu_selection_hold_time_ms = kMinimumMsPressedToActivate;
+int menu_selection_hold_time_ms = kMinimumMsPressedToActivate;
+
+// Period of the scroll timer (in milliseconds).
+const int kScrollTimerMS = 30;
+
+// Amount of time from when the drop exits the menu and the menu is hidden.
+const int kCloseOnExitTime = 1200;
+
+// If a context menu is invoked by touch, we shift the menu by this offset so
+// that the finger does not obscure the menu.
+const int kCenteredContextMenuYOffset = -15;
 
 // The spacing offset for the bubble tip.
 const int kBubbleTipSizeLeftRight = 12;
@@ -93,14 +97,12 @@ bool TitleMatchesMnemonic(MenuItemView* menu, base::char16 key) {
 }
 
 // Returns the first descendant of |view| that is hot tracked.
-static CustomButton* GetFirstHotTrackedView(View* view) {
+CustomButton* GetFirstHotTrackedView(View* view) {
   if (!view)
     return NULL;
   CustomButton* button = CustomButton::AsCustomButton(view);
-  if (button) {
-    if (button->IsHotTracked())
-      return button;
-  }
+  if (button && button->IsHotTracked())
+    return button;
 
   for (int i = 0; i < view->child_count(); ++i) {
     CustomButton* hot_view = GetFirstHotTrackedView(view->child_at(i));
@@ -115,7 +117,7 @@ static CustomButton* GetFirstHotTrackedView(View* view) {
 // the first view (if |forward| is false, iterating starts at the last view). If
 // |forward| is true the children are considered first to last, otherwise last
 // to first.
-static View* GetFirstFocusableView(View* view, int start, bool forward) {
+View* GetFirstFocusableView(View* view, int start, bool forward) {
   if (forward) {
     for (int i = start == -1 ? 0 : start; i < view->child_count(); ++i) {
       View* deepest = GetFirstFocusableView(view->child_at(i), -1, forward);
@@ -133,15 +135,13 @@ static View* GetFirstFocusableView(View* view, int start, bool forward) {
 }
 
 // Returns the first child of |start| that is focusable.
-static View* GetInitialFocusableView(View* start, bool forward) {
+View* GetInitialFocusableView(View* start, bool forward) {
   return GetFirstFocusableView(start, -1, forward);
 }
 
 // Returns the next view after |start_at| that is focusable. Returns NULL if
 // there are no focusable children of |ancestor| after |start_at|.
-static View* GetNextFocusableView(View* ancestor,
-                                  View* start_at,
-                                  bool forward) {
+View* GetNextFocusableView(View* ancestor, View* start_at, bool forward) {
   DCHECK(ancestor->Contains(start_at));
   View* parent = start_at;
   do {
@@ -157,6 +157,101 @@ static View* GetNextFocusableView(View* ancestor,
   } while (parent != ancestor);
   return NULL;
 }
+
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
+// Determines the correct cooridinates and window to repost |event| to, if it is
+// a mouse or touch event.
+static void RepostEventImpl(const ui::LocatedEvent* event,
+                            const gfx::Point& screen_loc,
+                            gfx::NativeView native_view,
+                            gfx::NativeWindow window) {
+  if (!event->IsMouseEvent() && !event->IsTouchEvent()) {
+    // TODO(rbyers): Gesture event repost is tricky to get right
+    // crbug.com/170987.
+    DCHECK(event->IsGestureEvent());
+    return;
+  }
+
+  if (!native_view)
+    return;
+
+#if defined(OS_WIN)
+  gfx::Point screen_loc_pixels = gfx::win::DIPToScreenPoint(screen_loc);
+  HWND target_window = ::WindowFromPoint(screen_loc_pixels.ToPOINT());
+  // If we don't find a native window for the HWND at the current location,
+  // then attempt to find a native window from its parent if one exists.
+  // There are HWNDs created outside views, which don't have associated
+  // native windows.
+  if (!window) {
+    HWND parent = ::GetParent(target_window);
+    if (parent) {
+      aura::WindowTreeHost* host =
+          aura::WindowTreeHost::GetForAcceleratedWidget(parent);
+      if (host) {
+        target_window = parent;
+        window = host->window();
+      }
+    }
+  }
+  // Convert screen_loc to pixels for the Win32 API's like WindowFromPoint,
+  // PostMessage/SendMessage to work correctly. These API's expect the
+  // coordinates to be in pixels.
+  if (event->IsMouseEvent()) {
+    HWND source_window = HWNDForNativeView(native_view);
+    if (!target_window || !source_window ||
+        GetWindowThreadProcessId(source_window, NULL) !=
+            GetWindowThreadProcessId(target_window, NULL)) {
+      // Even though we have mouse capture, windows generates a mouse event if
+      // the other window is in a separate thread. Only repost an event if
+      // |target_window| and |source_window| were created on the same thread,
+      // else double events can occur and lead to bad behavior.
+      return;
+    }
+
+    // Determine whether the click was in the client area or not.
+    // NOTE: WM_NCHITTEST coordinates are relative to the screen.
+    LPARAM coords = MAKELPARAM(screen_loc_pixels.x(), screen_loc_pixels.y());
+    LRESULT nc_hit_result = SendMessage(target_window, WM_NCHITTEST, 0, coords);
+    const bool client_area = nc_hit_result == HTCLIENT;
+
+    // TODO(sky): this isn't right. The event to generate should correspond with
+    // the event we just got. MouseEvent only tells us what is down, which may
+    // differ. Need to add ability to get changed button from MouseEvent.
+    int event_type;
+    int flags = event->flags();
+    if (flags & ui::EF_LEFT_MOUSE_BUTTON) {
+      event_type = client_area ? WM_LBUTTONDOWN : WM_NCLBUTTONDOWN;
+    } else if (flags & ui::EF_MIDDLE_MOUSE_BUTTON) {
+      event_type = client_area ? WM_MBUTTONDOWN : WM_NCMBUTTONDOWN;
+    } else if (flags & ui::EF_RIGHT_MOUSE_BUTTON) {
+      event_type = client_area ? WM_RBUTTONDOWN : WM_NCRBUTTONDOWN;
+    } else {
+      NOTREACHED();
+      return;
+    }
+
+    int window_x = screen_loc_pixels.x();
+    int window_y = screen_loc_pixels.y();
+    if (client_area) {
+      POINT pt = {window_x, window_y};
+      ScreenToClient(target_window, &pt);
+      window_x = pt.x;
+      window_y = pt.y;
+    }
+
+    WPARAM target = client_area ? event->native_event().wParam : nc_hit_result;
+    LPARAM window_coords = MAKELPARAM(window_x, window_y);
+    PostMessage(target_window, event_type, target, window_coords);
+    return;
+  }
+#endif
+  // Non Aura window.
+  if (!window)
+    return;
+
+  MenuMessageLoop::RepostEventToWindow(event, window, screen_loc);
+}
+#endif  // defined(OS_WIN) || defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -268,11 +363,14 @@ struct MenuController::SelectByCharDetails {
 // MenuController:State ------------------------------------------------------
 
 MenuController::State::State()
-    : item(NULL),
+    : item(nullptr),
+      hot_button(nullptr),
       submenu_open(false),
       anchor(MENU_ANCHOR_TOPLEFT),
       context_menu(false) {
 }
+
+MenuController::State::State(const State& other) = default;
 
 MenuController::State::~State() {}
 
@@ -327,6 +425,8 @@ MenuItemView* MenuController::Run(Widget* parent,
     // blocking/non-blocking shouldn't be needed.
     DCHECK(blocking_run_);
 
+    state_.hot_button = hot_button_;
+    hot_button_ = nullptr;
     // We're already showing, push the current state.
     menu_stack_.push_back(
         std::make_pair(state_, make_linked_ptr(pressed_lock_.release())));
@@ -335,6 +435,12 @@ MenuItemView* MenuController::Run(Widget* parent,
     DCHECK_EQ(owner_, parent);
   } else {
     showing_ = true;
+
+#if defined(USE_AURA)
+    // Only create a MenuKeyEventHandler for non-nested menus. Nested menus will
+    // use the existing one.
+    key_event_handler_.reset(new MenuKeyEventHandler);
+#endif
   }
 
   // Reset current state.
@@ -450,9 +556,14 @@ bool MenuController::OnMousePressed(SubmenuView* source,
 
   if (forward_to_root) {
     ui::MouseEvent event_for_root(event);
+    // Reset hot-tracking if a different view is getting a mouse press.
     ConvertLocatedEventForRootView(source, forward_to_root, &event_for_root);
     View* view =
         forward_to_root->GetEventHandlerForPoint(event_for_root.location());
+    CustomButton* button = CustomButton::AsCustomButton(view);
+    if (hot_button_ != button)
+      SetHotTrackedButton(button);
+
     // Empty menu items are always handled by the menu controller.
     if (!view || view->id() != MenuItemView::kEmptyMenuItemViewID) {
       bool processed = forward_to_root->ProcessMousePressed(event_for_root);
@@ -610,8 +721,21 @@ void MenuController::OnMouseMoved(SubmenuView* source,
   }
 
   MenuHostRootView* root_view = GetRootView(source, event.location());
-  if (root_view)
+  if (root_view) {
     root_view->ProcessMouseMoved(event);
+
+    // Update hot-tracked button when a button state is changed with a mouse
+    // event. It is necessary to track it for accurate hot-tracking when both
+    // mouse and keyboard are used to navigate the menu.
+    ui::MouseEvent event_for_root(event);
+    ConvertLocatedEventForRootView(source, root_view, &event_for_root);
+    View* view =
+        root_view->GetEventHandlerForPoint(event_for_root.location());
+    CustomButton* button = CustomButton::AsCustomButton(view);
+    if (button && button->IsHotTracked())
+      SetHotTrackedButton(button);
+  }
+
   HandleMouseLocation(source, event.location());
 }
 
@@ -629,6 +753,18 @@ bool MenuController::OnMouseWheel(SubmenuView* source,
 
 void MenuController::OnGestureEvent(SubmenuView* source,
                                     ui::GestureEvent* event) {
+  MenuHostRootView* root_view = GetRootView(source, event->location());
+  if (root_view) {
+    // Reset hot-tracking if a different view is getting a touch event.
+    ui::GestureEvent event_for_root(*event);
+    ConvertLocatedEventForRootView(source, root_view, &event_for_root);
+    View* view =
+        root_view->GetEventHandlerForPoint(event_for_root.location());
+    CustomButton* button = CustomButton::AsCustomButton(view);
+    if (hot_button_ && hot_button_ != button)
+      SetHotTrackedButton(nullptr);
+  }
+
   MenuPart part = GetMenuPart(source, event->location());
   if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
     SetSelectionOnPointerDown(source, event);
@@ -646,8 +782,8 @@ void MenuController::OnGestureEvent(SubmenuView* source,
         !(part.menu->HasSubmenu())) {
       if (part.menu->GetDelegate()->IsTriggerableEvent(
           part.menu, *event)) {
-        Accept(part.menu, event->flags());
         item_selected_by_touch_ = true;
+        Accept(part.menu, event->flags());
       }
       event->StopPropagation();
     } else if (part.type == MenuPart::MENU_ITEM) {
@@ -695,10 +831,22 @@ View* MenuController::GetTooltipHandlerForPoint(SubmenuView* source,
 void MenuController::ViewHierarchyChanged(
     SubmenuView* source,
     const View::ViewHierarchyChangedDetails& details) {
-  // If the current mouse handler is removed, remove it as the handler.
-  if (!details.is_add && details.child == current_mouse_event_target_) {
-    current_mouse_event_target_ = nullptr;
-    current_mouse_pressed_state_ = 0;
+  if (!details.is_add) {
+    // If the current mouse handler is removed, remove it as the handler.
+    if (details.child == current_mouse_event_target_) {
+      current_mouse_event_target_ = nullptr;
+      current_mouse_pressed_state_ = 0;
+    }
+    // Update |hot_button_| (both in |this| and in |menu_stack_| if it gets
+    // removed while a menu is up.
+    if (details.child == hot_button_) {
+      hot_button_ = nullptr;
+      for (auto nested_state : menu_stack_) {
+        State& state = nested_state.first;
+        if (details.child == state.hot_button)
+          state.hot_button = nullptr;
+      }
+    }
   }
 }
 
@@ -889,7 +1037,7 @@ ui::PostDispatchAction MenuController::OnWillDispatchKeyEvent(
 
 void MenuController::UpdateSubmenuSelection(SubmenuView* submenu) {
   if (submenu->IsShowing()) {
-    gfx::Point point = GetScreen()->GetCursorScreenPoint();
+    gfx::Point point = gfx::Screen::GetScreen()->GetCursorScreenPoint();
     const SubmenuView* root_submenu =
         submenu->GetMenuItem()->GetRootMenuItem()->GetSubmenu();
     View::ConvertPointFromScreen(
@@ -926,11 +1074,8 @@ void MenuController::SetSelection(MenuItemView* menu_item,
   size_t new_size = new_path.size();
 
   bool pending_item_changed = pending_state_.item != menu_item;
-  if (pending_item_changed && pending_state_.item) {
-    CustomButton* button = GetFirstHotTrackedView(pending_state_.item);
-    if (button)
-      button->SetHotTracked(false);
-  }
+  if (pending_item_changed && pending_state_.item)
+    SetHotTrackedButton(nullptr);
 
   // Notify the old path it isn't selected.
   MenuDelegate* current_delegate =
@@ -973,7 +1118,7 @@ void MenuController::SetSelection(MenuItemView* menu_item,
       (MenuDepth(menu_item) != 1 ||
        menu_item->GetType() != MenuItemView::SUBMENU)) {
     menu_item->NotifyAccessibilityEvent(
-        ui::AX_EVENT_FOCUS, true);
+        ui::AX_EVENT_SELECTION, true);
   }
 }
 
@@ -1059,7 +1204,9 @@ void MenuController::StartDrag(SubmenuView* source,
 }
 
 void MenuController::OnKeyDown(ui::KeyboardCode key_code) {
-  DCHECK(blocking_run_);
+  // Do not process while performing drag-and-drop
+  if (!blocking_run_)
+    return;
 
   switch (key_code) {
     case ui::VKEY_UP:
@@ -1149,6 +1296,15 @@ void MenuController::OnKeyDown(ui::KeyboardCode key_code) {
       break;
     }
 
+#if defined(OS_WIN)
+    // On Windows, pressing Alt and F10 keys should hide the menu to match the
+    // OS behavior.
+    case ui::VKEY_MENU:
+    case ui::VKEY_F10:
+      Cancel(EXIT_ALL);
+      break;
+#endif
+
     default:
       break;
   }
@@ -1172,6 +1328,7 @@ MenuController::MenuController(bool blocking,
       last_drop_operation_(MenuDelegate::DROP_UNKNOWN),
       showing_submenu_(false),
       active_mouse_view_id_(ViewStorage::GetInstance()->CreateStorageID()),
+      hot_button_(nullptr),
       delegate_(delegate),
       message_loop_depth_(0),
       closing_event_time_(base::TimeDelta()),
@@ -1208,7 +1365,7 @@ bool MenuController::SendAcceleratorToHotTrackedView() {
   ui::Accelerator accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   hot_view->AcceleratorPressed(accelerator);
   CustomButton* button = static_cast<CustomButton*>(hot_view);
-  button->SetHotTracked(true);
+  SetHotTrackedButton(button);
   return true;
 }
 
@@ -1235,14 +1392,16 @@ void MenuController::UpdateInitialLocation(const gfx::Rect& bounds,
 
   // Calculate the bounds of the monitor we'll show menus on. Do this once to
   // avoid repeated system queries for the info.
-  pending_state_.monitor_bounds = GetScreen()->GetDisplayNearestPoint(
-      bounds.origin()).work_area();
+  pending_state_.monitor_bounds = gfx::Screen::GetScreen()
+                                      ->GetDisplayNearestPoint(bounds.origin())
+                                      .work_area();
 
   if (!pending_state_.monitor_bounds.Contains(bounds)) {
     // Use the monitor area if the work area doesn't contain the bounds. This
     // handles showing a menu from the launcher.
-    gfx::Rect monitor_area = GetScreen()->GetDisplayNearestPoint(
-        bounds.origin()).bounds();
+    gfx::Rect monitor_area = gfx::Screen::GetScreen()
+                                 ->GetDisplayNearestPoint(bounds.origin())
+                                 .bounds();
     if (monitor_area.Contains(bounds))
       pending_state_.monitor_bounds = monitor_area;
   }
@@ -1275,7 +1434,8 @@ bool MenuController::ShowSiblingMenu(SubmenuView* source,
     return false;
   }
 
-  gfx::NativeWindow window_under_mouse = GetScreen()->GetWindowUnderCursor();
+  gfx::NativeWindow window_under_mouse =
+      gfx::Screen::GetScreen()->GetWindowUnderCursor();
   // TODO(oshima): Replace with views only API.
   if (!owner_ || window_under_mouse != owner_->GetNativeWindow())
     return false;
@@ -1303,7 +1463,8 @@ bool MenuController::ShowSiblingMenu(SubmenuView* source,
 
   // There is a sibling menu, update the button state, hide the current menu
   // and show the new one.
-  pressed_lock_.reset(new MenuButton::PressedLock(button));
+  pressed_lock_.reset(
+      new MenuButton::PressedLock(button, true /* is_sibling_menu_show */));
 
   // Need to reset capture when we show the menu again, otherwise we aren't
   // going to get any events.
@@ -1967,8 +2128,7 @@ void MenuController::IncrementSelection(
     // select the first menu item that is visible and enabled.
     if (item->GetSubmenu()->GetMenuItemCount()) {
       MenuItemView* to_select = FindInitialSelectableMenuItem(item, direction);
-      if (to_select)
-        SetSelection(to_select, SELECTION_DEFAULT);
+      SetInitialHotTrackedView(to_select, direction);
       return;
     }
   }
@@ -1976,22 +2136,17 @@ void MenuController::IncrementSelection(
   if (item->has_children()) {
     CustomButton* button = GetFirstHotTrackedView(item);
     if (button) {
-      button->SetHotTracked(false);
-      View* to_make_hot = GetNextFocusableView(
-          item, button, direction == INCREMENT_SELECTION_DOWN);
-      CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
-      if (button_hot) {
-        button_hot->SetHotTracked(true);
-        return;
-      }
-    } else {
-      View* to_make_hot =
-          GetInitialFocusableView(item, direction == INCREMENT_SELECTION_DOWN);
-      CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
-      if (button_hot) {
-        button_hot->SetHotTracked(true);
-        return;
-      }
+      DCHECK_EQ(hot_button_, button);
+      SetHotTrackedButton(nullptr);
+    }
+    bool direction_is_down = direction == INCREMENT_SELECTION_DOWN;
+    View* to_make_hot = button
+        ? GetNextFocusableView(item, button, direction_is_down)
+        : GetInitialFocusableView(item, direction_is_down);
+    CustomButton* hot_button = CustomButton::AsCustomButton(to_make_hot);
+    if (hot_button) {
+      SetHotTrackedButton(hot_button);
+      return;
     }
   }
 
@@ -2003,14 +2158,7 @@ void MenuController::IncrementSelection(
         if (parent->GetSubmenu()->GetMenuItemAt(i) == item) {
           MenuItemView* to_select =
               FindNextSelectableMenuItem(parent, i, direction);
-          if (!to_select)
-            break;
-          SetSelection(to_select, SELECTION_DEFAULT);
-          View* to_make_hot = GetInitialFocusableView(
-              to_select, direction == INCREMENT_SELECTION_DOWN);
-          CustomButton* button_hot = CustomButton::AsCustomButton(to_make_hot);
-          if (button_hot)
-            button_hot->SetHotTracked(true);
+          SetInitialHotTrackedView(to_select, direction);
           break;
         }
       }
@@ -2127,6 +2275,9 @@ void MenuController::AcceptOrSelect(MenuItemView* parent,
 }
 
 void MenuController::SelectByChar(base::char16 character) {
+  // Do not process while performing drag-and-drop
+  if (!blocking_run_)
+    return;
   if (!character)
     return;
 
@@ -2159,127 +2310,46 @@ void MenuController::SelectByChar(base::char16 character) {
   }
 }
 
-void MenuController::RepostEvent(SubmenuView* source,
-                                 const ui::LocatedEvent* event,
-                                 const gfx::Point& screen_loc,
-                                 gfx::NativeView native_view,
-                                 gfx::NativeWindow window) {
-  if (!event->IsMouseEvent() && !event->IsTouchEvent()) {
-    // TODO(rbyers): Gesture event repost is tricky to get right
-    // crbug.com/170987.
-    DCHECK(event->IsGestureEvent());
-    return;
-  }
-
-#if defined(OS_WIN)
-  if (!state_.item) {
-    // We some times get an event after closing all the menus. Ignore it. Make
-    // sure the menu is in fact not visible. If the menu is visible, then
-    // we're in a bad state where we think the menu isn't visibile but it is.
-    DCHECK(!source->GetWidget()->IsVisible());
-    return;
-  }
-
-  state_.item->GetRootMenuItem()->GetSubmenu()->ReleaseCapture();
-#endif
-
-  if (!native_view)
-    return;
-
-#if defined(OS_WIN)
-  gfx::Point screen_loc_pixels = gfx::win::DIPToScreenPoint(screen_loc);
-  HWND target_window = ::WindowFromPoint(screen_loc_pixels.ToPOINT());
-  // If we don't find a native window for the HWND at the current location,
-  // then attempt to find a native window from its parent if one exists.
-  // There are HWNDs created outside views, which don't have associated
-  // native windows.
-  if (!window) {
-    HWND parent = ::GetParent(target_window);
-    if (parent) {
-      aura::WindowTreeHost* host =
-          aura::WindowTreeHost::GetForAcceleratedWidget(parent);
-      if (host) {
-        target_window = parent;
-        window = host->window();
-      }
-    }
-  }
-  // Convert screen_loc to pixels for the Win32 API's like WindowFromPoint,
-  // PostMessage/SendMessage to work correctly. These API's expect the
-  // coordinates to be in pixels.
-  if (event->IsMouseEvent()) {
-    HWND source_window = HWNDForNativeView(native_view);
-    if (!target_window || !source_window ||
-        GetWindowThreadProcessId(source_window, NULL) !=
-        GetWindowThreadProcessId(target_window, NULL)) {
-      // Even though we have mouse capture, windows generates a mouse event if
-      // the other window is in a separate thread. Only repost an event if
-      // |target_window| and |source_window| were created on the same thread,
-      // else double events can occur and lead to bad behavior.
-      return;
-    }
-
-    // Determine whether the click was in the client area or not.
-    // NOTE: WM_NCHITTEST coordinates are relative to the screen.
-    LPARAM coords = MAKELPARAM(screen_loc_pixels.x(), screen_loc_pixels.y());
-    LRESULT nc_hit_result = SendMessage(target_window, WM_NCHITTEST, 0, coords);
-    const bool client_area = nc_hit_result == HTCLIENT;
-
-    // TODO(sky): this isn't right. The event to generate should correspond with
-    // the event we just got. MouseEvent only tells us what is down, which may
-    // differ. Need to add ability to get changed button from MouseEvent.
-    int event_type;
-    int flags = event->flags();
-    if (flags & ui::EF_LEFT_MOUSE_BUTTON) {
-      event_type = client_area ? WM_LBUTTONDOWN : WM_NCLBUTTONDOWN;
-    } else if (flags & ui::EF_MIDDLE_MOUSE_BUTTON) {
-      event_type = client_area ? WM_MBUTTONDOWN : WM_NCMBUTTONDOWN;
-    } else if (flags & ui::EF_RIGHT_MOUSE_BUTTON) {
-      event_type = client_area ? WM_RBUTTONDOWN : WM_NCRBUTTONDOWN;
-    } else {
-      NOTREACHED();
-      return;
-    }
-
-    int window_x = screen_loc_pixels.x();
-    int window_y = screen_loc_pixels.y();
-    if (client_area) {
-      POINT pt = { window_x, window_y };
-      ScreenToClient(target_window, &pt);
-      window_x = pt.x;
-      window_y = pt.y;
-    }
-
-    WPARAM target = client_area ? event->native_event().wParam : nc_hit_result;
-    LPARAM window_coords = MAKELPARAM(window_x, window_y);
-    PostMessage(target_window, event_type, target, window_coords);
-    return;
-  }
-#endif
-  // Non Aura window.
-  if (!window)
-    return;
-
-  MenuMessageLoop::RepostEventToWindow(event, window, screen_loc);
-}
-
 void MenuController::RepostEventAndCancel(SubmenuView* source,
                                           const ui::LocatedEvent* event) {
   // Cancel can lead to the deletion |source| so we save the view and window to
   // be used when reposting the event.
   gfx::Point screen_loc(event->location());
   View::ConvertPointToScreen(source->GetScrollViewContainer(), &screen_loc);
+
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
   gfx::NativeView native_view = source->GetWidget()->GetNativeView();
   gfx::NativeWindow window = nullptr;
   if (native_view) {
-    gfx::Screen* screen = gfx::Screen::GetScreenFor(native_view);
+    gfx::Screen* screen = gfx::Screen::GetScreen();
     window = screen->GetWindowAtScreenPoint(screen_loc);
   }
+#endif
 
 #if defined(OS_WIN)
-  // We're going to close and we own the event capture. We need to repost the
-  // event, otherwise the window the user clicked on won't get the event.
-  RepostEvent(source, event, screen_loc, native_view, window);
+  if (event->IsMouseEvent() || event->IsTouchEvent()) {
+    bool async_run = async_run_;
+    if (state_.item) {
+      state_.item->GetRootMenuItem()->GetSubmenu()->ReleaseCapture();
+      RepostEventImpl(event, screen_loc, native_view, window);
+    } else {
+      // We some times get an event after closing all the menus. Ignore it. Make
+      // sure the menu is in fact not visible. If the menu is visible, then
+      // we're in a bad state where we think the menu isn't visibile but it is.
+      DCHECK(!source->GetWidget()->IsVisible());
+    }
+
+    // We're going to close and we own the event capture. We need to repost the
+    // event, otherwise the window the user clicked on won't get the event.
+    //  RepostEvent(source, event, screen_loc, native_view, window);
+    // MenuController may have been deleted if |async_run_| so check for an
+    // active
+    // instance before accessing member variables.
+    if (!GetActiveInstance()) {
+      DCHECK(async_run);
+      return;
+    }
+  }
 #endif
 
   // Determine target to see if a complete or partial close of the menu should
@@ -2300,7 +2370,7 @@ void MenuController::RepostEventAndCancel(SubmenuView* source,
   // is handled normally after the context menu has exited. We call
   // RepostEvent after Cancel so that event capture has been released so
   // that finding the event target is unaffected by the current capture.
-  RepostEvent(source, event, screen_loc, native_view, window);
+  RepostEventImpl(event, screen_loc, native_view, window);
 #endif
 }
 
@@ -2427,8 +2497,7 @@ View* MenuController::GetActiveMouseView() {
 void MenuController::SetExitType(ExitType type) {
   exit_type_ = type;
   // Exit nested message loops as soon as possible. We do this as
-  // MessagePumpDispatcher is only invoked before native events, which means
-  // its entirely possible for a Widget::CloseNow() task to be processed before
+  // it's entirely possible for a Widget::CloseNow() task to be processed before
   // the next native message. We quite the nested message loop as soon as
   // possible to avoid having deleted views classes (such as widgets and
   // rootviews) on the stack when the nested message loop stops.
@@ -2453,7 +2522,8 @@ void MenuController::ExitAsyncRun() {
   MenuItemView* result = ExitMenuRun();
   delegate->OnMenuClosed(internal::MenuControllerDelegate::NOTIFY_DELEGATE,
                          result, accept_event_flags_);
-  if (nested && exit_type_ == EXIT_ALL)
+  // MenuController may have been deleted by |delegate|.
+  if (GetActiveInstance() && nested && exit_type_ == EXIT_ALL)
     ExitAsyncRun();
 }
 
@@ -2494,6 +2564,7 @@ MenuItemView* MenuController::ExitMenuRun() {
     // The menus are already showing, so we don't have to show them.
     state_ = menu_stack_.back().first;
     pending_state_ = menu_stack_.back().first;
+    hot_button_ = state_.hot_button;
     nested_pressed_lock = menu_stack_.back().second;
     menu_stack_.pop_back();
     // Even though the menus are nested, there may not be nested delegates.
@@ -2503,6 +2574,10 @@ MenuItemView* MenuController::ExitMenuRun() {
       async_run_ = delegate_stack_.back().second;
     }
   } else {
+#if defined(USE_AURA)
+    key_event_handler_.reset();
+#endif
+
     showing_ = false;
     did_capture_ = false;
   }
@@ -2529,9 +2604,11 @@ MenuItemView* MenuController::ExitMenuRun() {
     }
   }
 
-  // Reset our pressed lock to the previous state's, if there was one.
-  // The lock handles the case if the button was destroyed.
+  // Reset our pressed lock and hot-tracked state to the previous state's, if
+  // they were active. The lock handles the case if the button was destroyed.
   pressed_lock_.reset(nested_pressed_lock.release());
+  if (hot_button_)
+    hot_button_->SetHotTracked(true);
 
   return result;
 }
@@ -2568,10 +2645,29 @@ void MenuController::HandleMouseLocation(SubmenuView* source,
   }
 }
 
-gfx::Screen* MenuController::GetScreen() {
-  Widget* root = owner_ ? owner_->GetTopLevelWidget() : NULL;
-  return root ? gfx::Screen::GetScreenFor(root->GetNativeView())
-              : gfx::Screen::GetNativeScreen();
+void MenuController::SetInitialHotTrackedView(
+    MenuItemView* item,
+    SelectionIncrementDirectionType direction) {
+  if (!item)
+    return;
+  SetSelection(item, SELECTION_DEFAULT);
+  View* hot_view =
+      GetInitialFocusableView(item, direction == INCREMENT_SELECTION_DOWN);
+  SetHotTrackedButton(CustomButton::AsCustomButton(hot_view));
+}
+
+void MenuController::SetHotTrackedButton(CustomButton* hot_button) {
+  if (hot_button == hot_button_) {
+    // Hot-tracked state may change outside of the MenuController. Correct it.
+    if (hot_button && !hot_button->IsHotTracked())
+      hot_button->SetHotTracked(true);
+    return;
+  }
+  if (hot_button_)
+    hot_button_->SetHotTracked(false);
+  hot_button_ = hot_button;
+  if (hot_button)
+    hot_button->SetHotTracked(true);
 }
 
 }  // namespace views

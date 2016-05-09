@@ -43,7 +43,7 @@ Path SVGPolyElement::asPathFromPoints() const
 {
     Path path;
 
-    RefPtrWillBeRawPtr<SVGPointList> pointsValue = points()->currentValue();
+    SVGPointList* pointsValue = points()->currentValue();
     if (pointsValue->isEmpty())
         return path;
 
@@ -76,4 +76,4 @@ void SVGPolyElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGGeometryElement::svgAttributeChanged(attrName);
 }
 
-}
+} // namespace blink

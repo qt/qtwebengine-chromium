@@ -5,11 +5,13 @@
 #ifndef CONTENT_PUBLIC_COMMON_MOJO_SHELL_CONNECTION_H_
 #define CONTENT_PUBLIC_COMMON_MOJO_SHELL_CONNECTION_H_
 
+#include "base/callback_forward.h"
 #include "content/common/content_export.h"
+#include "mojo/shell/public/interfaces/shell_client.mojom.h"
 
 namespace mojo {
-class ApplicationConnection;
-class ApplicationImpl;
+class Connection;
+class Connector;
 }
 
 namespace content {
@@ -24,13 +26,18 @@ namespace content {
 class CONTENT_EXPORT MojoShellConnection {
  public:
   // Override to add additional services to inbound connections.
+  // TODO(beng): This should just be ShellClient.
   class Listener {
    public:
-    virtual bool ConfigureIncomingConnection(
-        mojo::ApplicationConnection* connection) = 0;
+    virtual bool AcceptConnection(mojo::Connection* connection) = 0;
 
     virtual ~Listener() {}
   };
+
+  using Factory = base::Closure;
+  // Sets the factory used to create the MojoShellConnection. This must be
+  // called before the MojoShellConnection has been created.
+  static void SetFactoryForTest(Factory* factory);
 
   // Will return null if no connection has been established (either because it
   // hasn't happened yet or the application was not spawned from the external
@@ -41,11 +48,22 @@ class CONTENT_EXPORT MojoShellConnection {
   // created on.
   static void Destroy();
 
-  // Returns an Initialized() ApplicationImpl.
-  virtual mojo::ApplicationImpl* GetApplication() = 0;
+  // Creates the appropriate MojoShellConnection from |request|. See
+  // UsingExternalShell() for details of |is_external|.
+  static void Create(mojo::shell::mojom::ShellClientRequest request,
+                     bool is_external);
+
+  virtual mojo::Connector* GetConnector() = 0;
+
+  // Indicates whether the shell connection is to an external shell (true) or
+  // a shell embedded in the browser process (false).
+  virtual bool UsingExternalShell() const = 0;
+
+  // Sets a closure that is called when the connection is lost.
+  virtual void SetConnectionLostClosure(const base::Closure& closure) = 0;
 
   // [De]Register an impl of Listener that will be consulted when the wrapped
-  // ApplicationImpl exposes services to inbound connections.
+  // ShellConnection exposes services to inbound connections.
   // Registered listeners are owned by this MojoShellConnection.
   virtual void AddListener(Listener* listener) = 0;
   virtual void RemoveListener(Listener* listener) = 0;

@@ -43,7 +43,7 @@ class CORE_EXPORT GestureEvent final : public MouseRelatedEvent {
 public:
     ~GestureEvent() override { }
 
-    static PassRefPtrWillBeRawPtr<GestureEvent> create(PassRefPtrWillBeRawPtr<AbstractView>, const PlatformGestureEvent&);
+    static GestureEvent* create(AbstractView*, const PlatformGestureEvent&);
 
     bool isGestureEvent() const override;
 
@@ -57,38 +57,24 @@ public:
 
     GestureSource source() const { return m_source; }
     int resendingPluginId() const { return m_resendingPluginId; }
-
-    PassRefPtrWillBeRawPtr<EventDispatchMediator> createMediator() override;
+    bool synthetic() const { return m_synthetic; }
+    ScrollGranularity deltaUnits() const { return m_deltaUnits; }
 
     DECLARE_VIRTUAL_TRACE();
 
 private:
     GestureEvent();
-    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, PlatformEvent::Modifiers, float deltaX, float deltaY, float velocityX, float velocityY, bool inertial, double platformTimeStamp, int resendingPluginId, GestureSource);
+    GestureEvent(const AtomicString& type, AbstractView*, int screenX, int screenY, int clientX, int clientY, PlatformEvent::Modifiers, float deltaX, float deltaY, float velocityX, float velocityY, bool inertial, bool synthetic, ScrollGranularity deltaUnits, double platformTimeStamp, int resendingPluginId, GestureSource);
 
     float m_deltaX;
     float m_deltaY;
     float m_velocityX;
     float m_velocityY;
     bool m_inertial;
-
+    bool m_synthetic;
+    ScrollGranularity m_deltaUnits;
     GestureSource m_source;
     int m_resendingPluginId;
-};
-
-class GestureEventDispatchMediator final : public EventDispatchMediator {
-public:
-    static PassRefPtrWillBeRawPtr<GestureEventDispatchMediator> create(PassRefPtrWillBeRawPtr<GestureEvent> gestureEvent)
-    {
-        return adoptRefWillBeNoop(new GestureEventDispatchMediator(gestureEvent));
-    }
-
-private:
-    explicit GestureEventDispatchMediator(PassRefPtrWillBeRawPtr<GestureEvent>);
-
-    GestureEvent& event() const;
-
-    bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(GestureEvent);

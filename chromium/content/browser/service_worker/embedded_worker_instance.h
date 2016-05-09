@@ -15,10 +15,12 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "url/gurl.h"
@@ -100,7 +102,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
                                         int line_number,
                                         const GURL& source_url) {}
     // Returns false if the message is not handled by this listener.
-    virtual bool OnMessageReceived(const IPC::Message& message) = 0;
+    CONTENT_EXPORT virtual bool OnMessageReceived(const IPC::Message& message);
   };
 
   ~EmbeddedWorkerInstance();
@@ -108,9 +110,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Starts the worker. It is invalid to call this when the worker is not in
   // STOPPED status. |callback| is invoked after the worker script has been
   // started and evaluated, or when an error occurs.
-  void Start(int64_t service_worker_version_id,
-             const GURL& scope,
-             const GURL& script_url,
+  // |params| should be populated with service worker version info needed
+  // to start the worker.
+  void Start(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
              const StatusCallback& callback);
 
   // Stops the worker. It is invalid to call this when the worker is
@@ -129,6 +131,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // status.
   ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
 
+  // Resumes the worker if it paused after download.
+  void ResumeAfterDownload();
+
   // Returns the ServiceRegistry for this worker. It is invalid to call this
   // when the worker is not in STARTING or RUNNING status.
   ServiceRegistry* GetServiceRegistry();
@@ -141,6 +146,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   }
   int process_id() const;
   int thread_id() const { return thread_id_; }
+  // This should be called only when the worker instance has a valid process,
+  // that is, when |process_id()| returns a valid process id.
+  bool is_new_process() const;
   int worker_devtools_agent_route_id() const;
   MessagePortMessageFilter* message_port_message_filter() const;
 
@@ -150,7 +158,11 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void set_devtools_attached(bool attached) { devtools_attached_ = attached; }
   bool devtools_attached() const { return devtools_attached_; }
 
-  // Called when the script load request accessed the network.
+  bool network_accessed_for_script() const {
+    return network_accessed_for_script_;
+  }
+
+  // Called when the main script load accessed the network.
   void OnNetworkAccessedForScriptLoad();
 
   // Called when reading the main script from the service worker script cache
@@ -158,10 +170,16 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void OnScriptReadStarted();
   void OnScriptReadFinished();
 
+  // Called when the net::URLRequestJob to load the service worker script
+  // created. Not called for import scripts.
+  void OnURLJobCreatedForMainScript();
+
   static std::string StatusToString(Status status);
   static std::string StartingPhaseToString(StartingPhase phase);
 
   void Detach();
+
+  base::WeakPtr<EmbeddedWorkerInstance> AsWeakPtr();
 
  private:
   typedef base::ObserverList<Listener> ListenerList;
@@ -253,6 +271,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void OnStartFailed(const StatusCallback& callback,
                      ServiceWorkerStatusCode status);
 
+  // Returns the time elapsed since |step_time_| and updates |step_time_|
+  // to the current time.
+  base::TimeDelta UpdateStepTime();
+
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
   const int embedded_worker_id_;
@@ -275,7 +297,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   scoped_ptr<DevToolsProxy> devtools_proxy_;
 
   scoped_ptr<StartTask> inflight_start_task_;
-  base::TimeTicks start_timing_;
+
+  // Used for UMA. The start time of the current start sequence step.
+  base::TimeTicks step_time_;
 
   base::WeakPtrFactory<EmbeddedWorkerInstance> weak_factory_;
 

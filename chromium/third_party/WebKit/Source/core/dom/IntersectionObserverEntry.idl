@@ -10,7 +10,8 @@
 ] interface IntersectionObserverEntry {
     readonly attribute ClientRect boundingClientRect;
     readonly attribute ClientRect intersectionRect;
-    readonly attribute ClientRect rootBounds;
+    readonly attribute double intersectionRatio;
+    readonly attribute ClientRect? rootBounds;
     readonly attribute Element target;
     readonly attribute DOMHighResTimeStamp time;
 };

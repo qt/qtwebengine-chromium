@@ -23,7 +23,7 @@
 [
     Constructor(DOMString type, optional EventInit eventInitDict),
     Exposed=(Window,Worker),
-    WillBeGarbageCollected,
+    GarbageCollected,
 ] interface Event {
     readonly attribute DOMString type;
     readonly attribute EventTarget? target;
@@ -42,6 +42,9 @@
     readonly attribute boolean cancelable;
     void preventDefault();
     readonly attribute boolean defaultPrevented;
+
+    [RuntimeEnabled=ShadowDOMV1, MeasureAs=EventScoped] readonly attribute boolean scoped;
+    [RuntimeEnabled=ShadowDOMV1, MeasureAs=EventRelatedTargetScoped] readonly attribute boolean relatedTargetScoped;
 
     [RuntimeEnabled=TrustedEvents, Unforgeable] readonly attribute boolean isTrusted;
 
@@ -64,6 +67,7 @@
     // Shadow DOM
     // https://w3c.github.io/webcomponents/spec/shadow/#extensions-to-event-interface
     [MeasureAs=EventPath, CallWith=ScriptState] readonly attribute EventTarget[] path;
+    [RuntimeEnabled=ShadowDOMV1, MeasureAs=EventDeepPath, CallWith=ScriptState] sequence<EventTarget> deepPath();
 
     // Non-standard APIs
     const unsigned short MOUSEDOWN = 1;

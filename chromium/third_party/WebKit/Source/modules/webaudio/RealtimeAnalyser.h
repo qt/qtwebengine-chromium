@@ -55,8 +55,8 @@ public:
     void setSmoothingTimeConstant(double k) { m_smoothingTimeConstant = k; }
     double smoothingTimeConstant() const { return m_smoothingTimeConstant; }
 
-    void getFloatFrequencyData(DOMFloat32Array*);
-    void getByteFrequencyData(DOMUint8Array*);
+    void getFloatFrequencyData(DOMFloat32Array*, double);
+    void getByteFrequencyData(DOMUint8Array*, double);
     void getFloatTimeDomainData(DOMFloat32Array*);
     void getByteTimeDomainData(DOMUint8Array*);
 
@@ -77,9 +77,18 @@ private:
     AudioFloatArray m_inputBuffer;
     unsigned m_writeIndex;
 
+    // Input audio is downmixed to this bus before copying to m_inputBuffer.
+    RefPtr<AudioBus> m_downMixBus;
+
     size_t m_fftSize;
     OwnPtr<FFTFrame> m_analysisFrame;
     void doFFTAnalysis();
+
+    // Convert the contents of magnitudeBuffer to byte values, saving the result in |destination|.
+    void convertToByteData(DOMUint8Array* destination);
+
+    // Convert magnidue buffer to dB, saving the result in |destination|
+    void convertFloatToDb(DOMFloat32Array* destination);
 
     // doFFTAnalysis() stores the floating-point magnitude analysis data here.
     AudioFloatArray m_magnitudeBuffer;
@@ -91,6 +100,9 @@ private:
     // The range used when converting when using getByteFrequencyData().
     double m_minDecibels;
     double m_maxDecibels;
+
+    // Time at which the FFT was last computed.
+    double m_lastAnalysisTime;
 };
 
 } // namespace blink

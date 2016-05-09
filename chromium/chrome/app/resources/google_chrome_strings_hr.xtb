@@ -3,7 +3,6 @@
 <translationbundle lang="hr">
 <translation id="1001534784610492198">Arhiva programa za instalaciju je oštećena ili nevažeća. Ponovno preuzmite program Google Chrome.</translation>
 <translation id="1013290471399003443">Chrome je potvrdio da je <ph name="ISSUER" /> izdavač certifikata web-lokacije. Poslužitelj je pružio važeće informacije o transparentnosti certifikata.</translation>
-<translation id="1016765312371154165">Chrome se nije ispravno zatvorio.</translation>
 <translation id="103396972844768118">Važne informacije o vašim podacima u sustavu Chrome</translation>
 <translation id="1035334672863811645">prijavite se na Chrome</translation>
 <translation id="1061441684050139317">Chrome treba imati pristup mikrofonu da bi ga dijelio s ovom web-lokacijom.</translation>
@@ -11,7 +10,6 @@
 <translation id="1073391069195728457">Chrome – obavijesti</translation>
 <translation id="1104959162601287462">O OS-u &amp;Chrome</translation>
 <translation id="110877069173485804">Ovo je vaš Chrome</translation>
-<translation id="1225016890511909183">Chrome će pohraniti vaše podatke na siguran način tako da ih ne morate ponovo unositi, ali ćete prilikom budućih plaćanja i dalje morati potvrđivati sigurnosni kôd kartice.</translation>
 <translation id="123620459398936149">OS Chrome nije mogao sinkronizirati vaše podatke. Ažurirajte zaporku za sinkronizaciju.</translation>
 <translation id="127345590676626841">Chrome se ažurira automatski, pa uvijek imate najnoviju verziju. Kada se ovo preuzimanje dovrši, Chrome će se ponovo pokrenuti i moći ćete nastaviti.</translation>
 <translation id="1302523850133262269">Pričekajte da Chrome instalira najnovija ažuriranja sustava.</translation>
@@ -34,6 +32,7 @@
 <translation id="1759842336958782510">Chrome</translation>
 <translation id="1773601347087397504">Pomoć za upotrebu OS-a Chrome</translation>
 <translation id="1818142563254268765">Chrome se nije uspio ažurirati na najnoviju verziju, tako da se nisu instalirale sjajne nove značajke i sigurnosni popravci. Trebate ažurirati Chrome.</translation>
+<translation id="1864458292167284385">Povlačimo Pokretač aplikacija za Chrome.</translation>
 <translation id="1877026089748256423">Chrome je zastario</translation>
 <translation id="2077129598763517140">Upotrijebi hardversko ubrzanje kada je dostupno</translation>
 <translation id="2084710999043359739">Dodajte u Chrome</translation>
@@ -51,7 +50,6 @@ Ako se ipak prijavite, podaci sustava Chrome kao što su oznake, povijest i osta
 <translation id="2397416548179033562">Prikaži izbornik Chrome</translation>
 <translation id="2429317896000329049">Google Chrome nije mogao sinkronizirati vaše podatke jer sinkronizacija nije dostupna za vašu domenu.</translation>
 <translation id="2485422356828889247">Deinstaliraj</translation>
-<translation id="2576431527583832481">Chrome je postao još bolji! Dostupna je nova verzija.</translation>
 <translation id="2580411288591421699">Nije moguće instalirati istu verziju programa Google Chrome koja je trenutačno pokrenuta. Zatvorite Google Chrome i pokušajte ponovo.</translation>
 <translation id="2582790009689336987">Ovo će računalo uskoro prestati primati ažuriranja za Google Chrome jer taj sustav Linuxa više neće biti podržan.</translation>
 <translation id="2588322182880276190">Logotip Chrome</translation>
@@ -90,6 +88,7 @@ Ako se ipak prijavite, podaci sustava Chrome kao što su oznake, povijest i osta
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3881912906674381083">Chrome je potvrdio da je <ph name="ISSUER" /> izdavač certifikata web-lokacije. Informacije o transparentnosti certifikata pružio je poslužitelj, ali Chrome nije prepoznao nijedan zapisnik transparentnosti certifikata.</translation>
 <translation id="3889417619312448367">Deinstaliranje preglednika Google Chrome</translation>
+<translation id="396182988103551265">Svojim aplikacijama možete pristupati pomoću prečaca <ph name="APPS_ICON_IMAGE" /> na traci oznaka u Chromeu.</translation>
 <translation id="4042449298237264661">Ovo računalo više neće primati ažuriranja za Google Chrome jer sustavi Windows XP i Windows Vista više nisu podržani.</translation>
 <translation id="4050175100176540509">Najnovija verzija sadrži važna sigurnosna poboljšanja i nove značajke.</translation>
 <translation id="4053720452172726777">Prilagodite Google Chrome i upravljajte njime</translation>
@@ -104,14 +103,12 @@ Ako se ipak prijavite, podaci sustava Chrome kao što su oznake, povijest i osta
 <translation id="4407807842708586359">Google Chrome OS</translation>
 <translation id="4458285410772214805">Odjavite se i prijavite se ponovo da bi ta promjena postala aktivna.</translation>
 <translation id="4480040274068703980">OS Chrome nije mogao sinkronizirati vaše podatke zbog pogreške prilikom prijave.</translation>
-<translation id="4513711165509885787">Vaše pojedinosti o naplati spremljene su u Chrome.</translation>
 <translation id="4561051373932531560">Google Chrome omogućuje da kliknete telefonski broj na webu i nazovete ga koristeći se Skypeom!</translation>
 <translation id="4567424176335768812">Prijavljeni ste kao <ph name="USER_EMAIL_ADDRESS" />. Sada možete pristupiti svojim oznakama, povijesti i drugim postavkama na svim uređajima na kojima se prijavljujete.</translation>
 <translation id="4631713731678262610">Sakrij u izborniku Chromea</translation>
 <translation id="4633000520311261472">Kako bismo Chrome učinili sigurnijim, onemogućili smo neka proširenja koja nisu navedena u trgovini <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> i možda su dodana bez vašeg znanja.</translation>
 <translation id="4700157086864140907">Google Chrome može pružiti bolju provjeru pravopisa slanjem teksta unesenog u preglednik Googleovim poslužiteljima te vam na taj način omogućuje upotrebu iste tehnologije provjere pravopisa kojom se služi Google pretraživanje.</translation>
 <translation id="4728575227883772061">Instalacija nije uspjela zbog nepoznate pogreške. Ako je program Google Chrome trenutno otvoren, zatvorite ga i pokušajte ponovno.</translation>
-<translation id="473775607612524610">Ažuriraj</translation>
 <translation id="4743926867934016338">Prihvati i traži</translation>
 <translation id="4751441238232965030">Ovo računalo uskoro više neće primati ažuriranja za 32-bitni Google Chrome. Nadogradite na 64-bitni Google Chrome.</translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
@@ -215,6 +212,7 @@ Ako se ipak prijavite, podaci sustava Chrome kao što su oznake, povijest i osta
 <translation id="8032142183999901390">Nakon uklanjanja računa s Chromea možda ćete morati ponovo učitati otvorene kartice kako bi nastupile promjene.</translation>
 <translation id="8037887340639533879">Nije pronađena nijedna instalacija Google Chromea za ažuriranje.</translation>
 <translation id="8129812357326543296">O programu Google Chrome</translation>
+<translation id="8183957050892517584">Chrome će pohraniti vaše osobne podatke na siguran način tako da ih ne morate ponovo upisivati.</translation>
 <translation id="8205111949707227942">Dodatno: Pomozite nam da poboljšamo OS Chrome automatskim slanjem statistike o upotrebi i izvješća o padu sustava Googleu.</translation>
 <translation id="8227755444512189073">Google Chrome treba pokrenuti vanjsku aplikaciju da bi mogao koristiti veze <ph name="SCHEME" />. Zatražena je veza <ph name="PROTOLINK" />.</translation>
 <translation id="8255190535488645436">Google Chrome upotrebljava vašu kameru i mikrofon.</translation>

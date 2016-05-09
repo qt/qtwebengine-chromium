@@ -4,9 +4,11 @@
 
 #include "bindings/core/v8/ToV8.h"
 
+#include "bindings/core/v8/WindowProxy.h"
 #include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/Frame.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 
 namespace blink {
@@ -24,13 +26,7 @@ v8::Local<v8::Value> toV8(DOMWindow* window, v8::Local<v8::Object> creationConte
     if (!frame)
         return v8Undefined();
 
-    v8::Local<v8::Context> context = toV8Context(frame, DOMWrapperWorld::current(isolate));
-    if (context.IsEmpty())
-        return v8Undefined();
-
-    v8::Local<v8::Object> global = context->Global();
-    ASSERT(!global.IsEmpty());
-    return global;
+    return frame->windowProxy(DOMWrapperWorld::current(isolate))->globalIfNotDetached();
 }
 
 v8::Local<v8::Value> toV8(EventTarget* impl, v8::Local<v8::Object> creationContext, v8::Isolate* isolate)
@@ -51,11 +47,11 @@ v8::Local<v8::Value> toV8(WorkerOrWorkletGlobalScope* impl, v8::Local<v8::Object
     if (UNLIKELY(!impl))
         return v8::Null(isolate);
 
-    WorkerOrWorkletScriptController* script = impl->script();
-    if (!script)
+    WorkerOrWorkletScriptController* scriptController = impl->scriptController();
+    if (!scriptController)
         return v8::Null(isolate);
 
-    v8::Local<v8::Object> global = script->context()->Global();
+    v8::Local<v8::Object> global = scriptController->context()->Global();
     ASSERT(!global.IsEmpty());
     return global;
 }

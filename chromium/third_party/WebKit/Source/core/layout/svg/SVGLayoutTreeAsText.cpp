@@ -172,7 +172,7 @@ String SVGEnumerationToString(Enum value)
     return String();
 }
 
-}
+} // namespace
 
 static TextStream& operator<<(TextStream& ts, const SVGUnitTypes::SVGUnitType& unitType)
 {
@@ -273,8 +273,8 @@ static void writeStyle(TextStream& ts, const LayoutObject& object)
     const ComputedStyle& style = object.styleRef();
     const SVGComputedStyle& svgStyle = style.svgStyle();
 
-    if (!object.localTransform().isIdentity())
-        writeNameValuePair(ts, "transform", object.localTransform());
+    if (!object.localSVGTransform().isIdentity())
+        writeNameValuePair(ts, "transform", object.localSVGTransform());
     writeIfNotDefault(ts, "image rendering", style.imageRendering(), ComputedStyle::initialImageRendering());
     writeIfNotDefault(ts, "opacity", style.opacity(), ComputedStyle::initialOpacity());
     if (object.isSVGShape()) {
@@ -396,10 +396,10 @@ static inline void writeSVGInlineTextBox(TextStream& ts, SVGInlineTextBox* textB
     if (fragments.isEmpty())
         return;
 
-    LineLayoutSVGInlineText textLineLayout = LineLayoutSVGInlineText(textBox->lineLayoutItem());
+    LineLayoutSVGInlineText textLineLayout = LineLayoutSVGInlineText(textBox->getLineLayoutItem());
 
     const SVGComputedStyle& svgStyle = textLineLayout.style()->svgStyle();
-    String text = textBox->lineLayoutItem().text();
+    String text = textBox->getLineLayoutItem().text();
 
     unsigned fragmentsSize = fragments.size();
     for (unsigned i = 0; i < fragmentsSize; ++i) {
@@ -506,9 +506,9 @@ void writeSVGResourceContainer(TextStream& ts, const LayoutObject& object, int i
         ts << "\n";
         // Creating a placeholder filter which is passed to the builder.
         FloatRect dummyRect;
-        RefPtrWillBeRawPtr<Filter> dummyFilter = Filter::create(dummyRect, dummyRect, 1, Filter::BoundingBox);
-        SVGFilterBuilder builder(dummyFilter->sourceGraphic());
-        builder.buildGraph(dummyFilter.get(), toSVGFilterElement(*filter->element()), dummyRect);
+        Filter* dummyFilter = Filter::create(dummyRect, dummyRect, 1, Filter::BoundingBox);
+        SVGFilterBuilder builder(dummyFilter->getSourceGraphic());
+        builder.buildGraph(dummyFilter, toSVGFilterElement(*filter->element()), dummyRect);
         if (FilterEffect* lastEffect = builder.lastEffect())
             lastEffect->externalRepresentation(ts, indent + 1);
     } else if (resource->resourceType() == ClipperResourceType) {

@@ -24,25 +24,18 @@ namespace content {
 class CONTENT_EXPORT BackgroundSyncRegistration {
  public:
   using RegistrationId = int64_t;
-  using StateCallback = base::Callback<void(BackgroundSyncState)>;
 
   static const RegistrationId kInitialId;
 
-  BackgroundSyncRegistration();
-  ~BackgroundSyncRegistration();
+  BackgroundSyncRegistration() = default;
+  BackgroundSyncRegistration(const BackgroundSyncRegistration& other) = default;
+  BackgroundSyncRegistration& operator=(
+      const BackgroundSyncRegistration& other) = default;
+  ~BackgroundSyncRegistration() = default;
 
   bool Equals(const BackgroundSyncRegistration& other) const;
   bool IsValid() const;
-  void AddFinishedCallback(const StateCallback& callback);
-  void RunFinishedCallbacks();
-  bool HasCompleted() const;
   bool IsFiring() const;
-
-  // If the registration is currently firing, sets its state to
-  // BACKGROUND_SYNC_STATE_UNREGISTERED_WHILE_FIRING. If it is firing, it sets
-  // the state to BACKGROUND_SYNC_STATE_UNREGISTERED and calls
-  // RunFinishedCallbacks.
-  void SetUnregisteredState();
 
   const BackgroundSyncRegistrationOptions* options() const { return &options_; }
   BackgroundSyncRegistrationOptions* options() { return &options_; }
@@ -50,8 +43,8 @@ class CONTENT_EXPORT BackgroundSyncRegistration {
   RegistrationId id() const { return id_; }
   void set_id(RegistrationId id) { id_ = id; }
 
-  BackgroundSyncState sync_state() const { return sync_state_; }
-  void set_sync_state(BackgroundSyncState state) { sync_state_ = state; }
+  mojom::BackgroundSyncState sync_state() const { return sync_state_; }
+  void set_sync_state(mojom::BackgroundSyncState state) { sync_state_ = state; }
 
   int num_attempts() const { return num_attempts_; }
   void set_num_attempts(int num_attempts) { num_attempts_ = num_attempts; }
@@ -64,13 +57,9 @@ class CONTENT_EXPORT BackgroundSyncRegistration {
 
   BackgroundSyncRegistrationOptions options_;
   RegistrationId id_ = kInvalidRegistrationId;
-  BackgroundSyncState sync_state_ = BACKGROUND_SYNC_STATE_PENDING;
+  mojom::BackgroundSyncState sync_state_ = mojom::BackgroundSyncState::PENDING;
   int num_attempts_ = 0;
   base::Time delay_until_;
-
-  std::list<StateCallback> notify_finished_callbacks_;
-
-  DISALLOW_COPY_AND_ASSIGN(BackgroundSyncRegistration);
 };
 
 }  // namespace content
@@ -80,15 +69,15 @@ namespace mojo {
 template <>
 struct CONTENT_EXPORT
     TypeConverter<scoped_ptr<content::BackgroundSyncRegistration>,
-                  content::SyncRegistrationPtr> {
+                  content::mojom::SyncRegistrationPtr> {
   static scoped_ptr<content::BackgroundSyncRegistration> Convert(
-      const content::SyncRegistrationPtr& input);
+      const content::mojom::SyncRegistrationPtr& input);
 };
 
 template <>
-struct CONTENT_EXPORT TypeConverter<content::SyncRegistrationPtr,
+struct CONTENT_EXPORT TypeConverter<content::mojom::SyncRegistrationPtr,
                                     content::BackgroundSyncRegistration> {
-  static content::SyncRegistrationPtr Convert(
+  static content::mojom::SyncRegistrationPtr Convert(
       const content::BackgroundSyncRegistration& input);
 };
 

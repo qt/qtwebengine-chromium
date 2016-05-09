@@ -31,16 +31,12 @@
 #include "core/inspector/InspectorRuntimeAgent.h"
 
 #include "bindings/core/v8/ScriptState.h"
-#include "core/inspector/InjectedScript.h"
-#include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorState.h"
-#include "core/inspector/MuteConsoleScope.h"
-#include "core/inspector/RemoteObjectId.h"
-#include "core/inspector/v8/V8Debugger.h"
-#include "core/inspector/v8/V8RuntimeAgent.h"
-#include "platform/JSONValues.h"
-
-using blink::TypeBuilder::Runtime::ExecutionContextDescription;
+#include "core/inspector/InspectorTraceEvents.h"
+#include "platform/UserGestureIndicator.h"
+#include "platform/inspector_protocol/Values.h"
+#include "platform/v8_inspector/public/V8Debugger.h"
+#include "platform/v8_inspector/public/V8RuntimeAgent.h"
+#include "wtf/Optional.h"
 
 namespace blink {
 
@@ -48,11 +44,10 @@ namespace InspectorRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
 
-InspectorRuntimeAgent::InspectorRuntimeAgent(InjectedScriptManager* injectedScriptManager, V8Debugger* debugger, Client* client)
-    : InspectorBaseAgent<InspectorRuntimeAgent, InspectorFrontend::Runtime>("Runtime")
+InspectorRuntimeAgent::InspectorRuntimeAgent(V8RuntimeAgent* agent, Client* client)
+    : InspectorBaseAgent<InspectorRuntimeAgent, protocol::Frontend::Runtime>("Runtime")
     , m_enabled(false)
-    , m_v8RuntimeAgent(V8RuntimeAgent::create(injectedScriptManager, debugger))
-    , m_injectedScriptManager(injectedScriptManager)
+    , m_v8RuntimeAgent(agent)
     , m_client(client)
 {
 }
@@ -61,22 +56,17 @@ InspectorRuntimeAgent::~InspectorRuntimeAgent()
 {
 }
 
-DEFINE_TRACE(InspectorRuntimeAgent)
-{
-    visitor->trace(m_injectedScriptManager);
-    InspectorBaseAgent::trace(visitor);
-}
-
 // InspectorBaseAgent overrides.
-void InspectorRuntimeAgent::init()
+void InspectorRuntimeAgent::setState(protocol::DictionaryValue* state)
 {
+    InspectorBaseAgent::setState(state);
     m_v8RuntimeAgent->setInspectorState(m_state);
 }
 
-void InspectorRuntimeAgent::setFrontend(InspectorFrontend* frontend)
+void InspectorRuntimeAgent::setFrontend(protocol::Frontend* frontend)
 {
     InspectorBaseAgent::setFrontend(frontend);
-    m_v8RuntimeAgent->setFrontend(InspectorFrontend::Runtime::from(frontend));
+    m_v8RuntimeAgent->setFrontend(protocol::Frontend::Runtime::from(frontend));
 }
 
 void InspectorRuntimeAgent::clearFrontend()
@@ -87,42 +77,69 @@ void InspectorRuntimeAgent::clearFrontend()
 
 void InspectorRuntimeAgent::restore()
 {
-    if (!m_state->getBoolean(InspectorRuntimeAgentState::runtimeEnabled))
+    if (!m_state->booleanProperty(InspectorRuntimeAgentState::runtimeEnabled, false))
         return;
     m_v8RuntimeAgent->restore();
     ErrorString errorString;
     enable(&errorString);
 }
 
-void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* optExecutionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+void InspectorRuntimeAgent::evaluate(ErrorString* errorString,
+    const String16& expression,
+    const Maybe<String16>& objectGroup,
+    const Maybe<bool>& includeCommandLineAPI,
+    const Maybe<bool>& doNotPauseOnExceptionsAndMuteConsole,
+    const Maybe<int>& executionContextId,
+    const Maybe<bool>& returnByValue,
+    const Maybe<bool>& generatePreview,
+    const Maybe<bool>& userGesture,
+    OwnPtr<protocol::Runtime::RemoteObject>* result,
+    Maybe<bool>* wasThrown,
+    Maybe<protocol::Runtime::ExceptionDetails>* exceptionDetails)
 {
-    int executionContextId = optExecutionContextId ? *optExecutionContextId : m_injectedScriptManager->injectedScriptFor(defaultScriptState()).contextId();
-    MuteConsoleScope<InspectorRuntimeAgent> muteScope;
-    if (asBool(doNotPauseOnExceptionsAndMuteConsole))
-        muteScope.enter(this);
-    m_v8RuntimeAgent->evaluate(errorString, expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, &executionContextId, returnByValue, generatePreview, result, wasThrown, exceptionDetails);
+    Optional<UserGestureIndicator> userGestureIndicator;
+    if (userGesture.fromMaybe(false))
+        userGestureIndicator.emplace(DefinitelyProcessingNewUserGesture);
+    m_v8RuntimeAgent->evaluate(errorString, expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, executionContextId, returnByValue, generatePreview, userGesture, result, wasThrown, exceptionDetails);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 }
 
-void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString,
+    const String16& objectId,
+    const String16& expression,
+    const Maybe<protocol::Array<protocol::Runtime::CallArgument>>& optionalArguments,
+    const Maybe<bool>& doNotPauseOnExceptionsAndMuteConsole,
+    const Maybe<bool>& returnByValue,
+    const Maybe<bool>& generatePreview,
+    const Maybe<bool>& userGesture,
+    OwnPtr<protocol::Runtime::RemoteObject>* result,
+    Maybe<bool>* wasThrown)
 {
-    MuteConsoleScope<InspectorRuntimeAgent> muteScope;
-    if (asBool(doNotPauseOnExceptionsAndMuteConsole))
-        muteScope.enter(this);
-    m_v8RuntimeAgent->callFunctionOn(errorString, objectId, expression, optionalArguments, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, result, wasThrown);
+    Optional<UserGestureIndicator> userGestureIndicator;
+    if (userGesture.fromMaybe(false))
+        userGestureIndicator.emplace(DefinitelyProcessingNewUserGesture);
+    m_v8RuntimeAgent->callFunctionOn(errorString, objectId, expression, optionalArguments, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, userGesture, result, wasThrown);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 }
 
-void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, const bool* generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>& internalProperties, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
+void InspectorRuntimeAgent::getProperties(ErrorString* errorString,
+    const String16& objectId,
+    const Maybe<bool>& ownProperties,
+    const Maybe<bool>& accessorPropertiesOnly,
+    const Maybe<bool>& generatePreview,
+    OwnPtr<protocol::Array<protocol::Runtime::PropertyDescriptor>>* result,
+    Maybe<protocol::Array<protocol::Runtime::InternalPropertyDescriptor>>* internalProperties,
+    Maybe<protocol::Runtime::ExceptionDetails>* exceptionDetails)
 {
-    MuteConsoleScope<InspectorRuntimeAgent> muteScope(this);
     m_v8RuntimeAgent->getProperties(errorString, objectId, ownProperties, accessorPropertiesOnly, generatePreview, result, internalProperties, exceptionDetails);
 }
 
-void InspectorRuntimeAgent::releaseObject(ErrorString* errorString, const String& objectId)
+void InspectorRuntimeAgent::releaseObject(ErrorString* errorString, const String16& objectId)
 {
     m_v8RuntimeAgent->releaseObject(errorString, objectId);
 }
 
-void InspectorRuntimeAgent::releaseObjectGroup(ErrorString* errorString, const String& objectGroup)
+void InspectorRuntimeAgent::releaseObjectGroup(ErrorString* errorString, const String16& objectGroup)
 {
     m_v8RuntimeAgent->releaseObjectGroup(errorString, objectGroup);
 }
@@ -132,14 +149,32 @@ void InspectorRuntimeAgent::run(ErrorString* errorString)
     m_client->resumeStartup();
 }
 
-void InspectorRuntimeAgent::isRunRequired(ErrorString* errorString, bool* outResult)
-{
-    *outResult = m_client->isRunRequired();
-}
-
 void InspectorRuntimeAgent::setCustomObjectFormatterEnabled(ErrorString* errorString, bool enabled)
 {
     m_v8RuntimeAgent->setCustomObjectFormatterEnabled(errorString, enabled);
+}
+
+void InspectorRuntimeAgent::compileScript(ErrorString* errorString,
+    const String16& inExpression,
+    const String16& inSourceURL,
+    bool inPersistScript,
+    int inExecutionContextId,
+    Maybe<protocol::Runtime::ScriptId>* optOutScriptId,
+    Maybe<protocol::Runtime::ExceptionDetails>* optOutExceptionDetails)
+{
+    m_v8RuntimeAgent->compileScript(errorString, inExpression, inSourceURL, inPersistScript, inExecutionContextId, optOutScriptId, optOutExceptionDetails);
+}
+
+void InspectorRuntimeAgent::runScript(ErrorString* errorString,
+    const String16& inScriptId,
+    int inExecutionContextId,
+    const Maybe<String16>& inObjectGroup,
+    const Maybe<bool>& inDoNotPauseOnExceptionsAndMuteConsole,
+    const Maybe<bool>& includeCommandLineAPI,
+    OwnPtr<protocol::Runtime::RemoteObject>* outResult,
+    Maybe<protocol::Runtime::ExceptionDetails>* optOutExceptionDetails)
+{
+    m_v8RuntimeAgent->runScript(errorString, inScriptId, inExecutionContextId, inObjectGroup, inDoNotPauseOnExceptionsAndMuteConsole, includeCommandLineAPI, outResult, optOutExceptionDetails);
 }
 
 void InspectorRuntimeAgent::enable(ErrorString* errorString)
@@ -160,16 +195,6 @@ void InspectorRuntimeAgent::disable(ErrorString* errorString)
     m_enabled = false;
     m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, false);
     m_v8RuntimeAgent->disable(errorString);
-}
-
-void InspectorRuntimeAgent::reportExecutionContextCreated(ScriptState* scriptState, const String& type, const String& origin, const String& humanReadableName, const String& frameId)
-{
-    m_v8RuntimeAgent->reportExecutionContextCreated(scriptState, type, origin, humanReadableName, frameId);
-}
-
-void InspectorRuntimeAgent::reportExecutionContextDestroyed(ScriptState* scriptState)
-{
-    m_v8RuntimeAgent->reportExecutionContextDestroyed(scriptState);
 }
 
 } // namespace blink

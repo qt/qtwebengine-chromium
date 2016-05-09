@@ -308,8 +308,6 @@ VISIT_GL_CALL(LoseContextCHROMIUM,
               void,
               (GLenum current, GLenum other),
               (current, other))
-VISIT_GL_CALL(InsertSyncPointCHROMIUM, GLuint, (), ())
-VISIT_GL_CALL(WaitSyncPointCHROMIUM, void, (GLuint sync_point), (sync_point))
 VISIT_GL_CALL(InsertFenceSyncCHROMIUM, GLuint64, (), ())
 VISIT_GL_CALL(GenSyncTokenCHROMIUM,
               void,
@@ -381,6 +379,7 @@ VISIT_GL_CALL(ScheduleCALayerCHROMIUM,
 VISIT_GL_CALL(CommitOverlayPlanesCHROMIUM, void, (), ())
 VISIT_GL_CALL(SwapInterval, void, (GLint interval), (interval))
 VISIT_GL_CALL(FlushDriverCachesCHROMIUM, void, (), ())
+VISIT_GL_CALL(GetLastFlushIdCHROMIUM, GLuint, (), ())
 VISIT_GL_CALL(MatrixLoadfCHROMIUM,
               void,
               (GLenum matrixMode, const GLfloat* m),
@@ -580,3 +579,9 @@ VISIT_GL_CALL(GetFragDataIndexEXT,
               GLint,
               (GLuint program, const char* name),
               (program, name))
+VISIT_GL_CALL(UniformMatrix4fvStreamTextureMatrixCHROMIUM,
+              void,
+              (GLint location,
+               GLboolean transpose,
+               const GLfloat* default_value),
+              (location, transpose, default_value))

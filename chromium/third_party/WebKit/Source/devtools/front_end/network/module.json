@@ -20,19 +20,15 @@
         {
             "type": "setting",
             "category": "Network",
-            "title": "Show primary load waterfall",
-            "settingName": "networkShowPrimaryLoadWaterfall",
-            "settingType": "boolean",
-            "experiment": "showPrimaryLoadWaterfallInNetworkTimeline",
-            "defaultValue": false
-        },
-        {
-            "type": "setting",
-            "category": "Network",
             "title": "Color-code resource types",
             "settingName": "networkColorCodeResourceTypes",
             "settingType": "boolean",
-            "defaultValue": false
+            "defaultValue": false,
+            "tags": "color code, resource type",
+            "options": [
+                { "value": true, "title": "Color code by resource type" },
+                { "value": false, "title": "Use default colors" }
+            ]
         },
         {
             "type": "@WebInspector.ActionDelegate",
@@ -85,23 +81,8 @@
             "title": "Network conditions",
             "persistence": "closeable",
             "order": 40,
-            "className": "WebInspector.NetworkConfigView"
-        },
-        {
-            "type": "setting",
-            "settingName": "networkConditionsCustomProfiles",
-            "settingType": "array",
-            "defaultValue": []
-        },
-        {
-            "type": "settings-view",
-            "name": "network-conditions",
-            "title": "Throttling",
-            "order": "35",
-            "className": "WebInspector.NetworkConditionsSettingsTab",
-            "settings": [
-                "networkConditionsCustomProfiles"
-            ]
+            "className": "WebInspector.NetworkConfigView",
+            "tags": "disk cache, network throttling, useragent, user agent"
         }
     ],
     "dependencies": [
@@ -117,7 +98,6 @@
         "HARWriter.js",
         "JSONView.js",
         "RequestView.js",
-        "NetworkConditionsSelector.js",
         "NetworkConfigView.js",
         "NetworkDataGridNode.js",
         "NetworkItemView.js",
@@ -137,7 +117,6 @@
     "resources": [
         "blockedURLsPane.css",
         "eventSourceMessagesView.css",
-        "networkConditionsSettingsTab.css",
         "networkConfigView.css",
         "networkLogView.css",
         "networkPanel.css",

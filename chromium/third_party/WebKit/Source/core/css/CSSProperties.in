@@ -18,6 +18,18 @@
 // The property is a shorthand for several other properties.
 
 
+// Flags which go into CSSOMTypes:
+// - typedom_types=[Type|OtherType]
+// The property can take types specified in typedom_types for CSS Typed OM.
+// Keyword does not need to be specified as every property can take keywords.
+// - keywords=[keyword1|keyword2]
+// The property can take these keywords.
+// - supports_multiple
+// The property supports a list of values.
+// - supports_percentage
+// The property supports percentage types.
+
+
 // Flags which go into CSSPropertyMetadata:
 // - interpolable
 // The interpolable flag indicates whether a property can be animated smoothly.
@@ -85,20 +97,20 @@ color interpolable, inherited, custom_all
 direction inherited, custom_value
 font-family inherited, font, type_name=FontDescription::FamilyDescription, name_for_methods=FamilyDescription, converter=convertFontFamily
 font-kerning inherited, font, type_name=FontDescription::Kerning, name_for_methods=Kerning
-font-size interpolable, inherited, font, name_for_methods=Size, converter=convertFontSize
+font-size interpolable, inherited, font, name_for_methods=Size, getter=getSize, converter=convertFontSize
 font-size-adjust runtime_flag=CSSFontSizeAdjust, interpolable, inherited, font, name_for_methods=SizeAdjust, converter=convertFontSizeAdjust
 font-stretch inherited, font, type_name=FontStretch, name_for_methods=Stretch
 font-style inherited, font, type_name=FontStyle, name_for_methods=Style
 font-variant inherited, font, type_name=FontVariant, name_for_methods=Variant
-font-variant-ligatures inherited, font, name_for_methods=VariantLigatures, converter=convertFontVariantLigatures
+font-variant-ligatures inherited, font, type_name=VariantLigatures, name_for_methods=VariantLigatures, converter=convertFontVariantLigatures
 font-weight interpolable, inherited, font, type_name=FontWeight, name_for_methods=Weight, converter=convertFontWeight
 font-feature-settings inherited, font, name_for_methods=FeatureSettings, converter=convertFontFeatureSettings
 -webkit-font-smoothing inherited, font, type_name=FontSmoothingMode
 -webkit-locale inherited, font, custom_value
-text-orientation inherited, custom_value
--webkit-text-orientation inherited, custom_value
-writing-mode inherited, custom_value
--webkit-writing-mode inherited, custom_value
+text-orientation inherited, custom_value, type_name=TextOrientation
+-webkit-text-orientation inherited, custom_value, type_name=TextOrientation
+writing-mode inherited, custom_value, type_name=WritingMode
+-webkit-writing-mode inherited, custom_value, type_name=WritingMode
 text-rendering inherited, font, type_name=TextRenderingMode
 zoom custom_all
 
@@ -149,10 +161,13 @@ border-top-color interpolable, custom_all
 border-top-left-radius interpolable, initial=initialBorderRadius, converter=convertRadius
 border-top-right-radius interpolable, initial=initialBorderRadius, converter=convertRadius
 border-top-style type_name=EBorderStyle, initial=initialBorderStyle
-border-top-width interpolable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
+border-top-width interpolable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>, typedom_types=[Length], keywords=[thin|medium|thick], supports_percentage
 bottom interpolable, initial=initialOffset, converter=convertLengthOrAuto
 box-shadow interpolable, converter=convertShadow
 box-sizing
+break-after type_name=EBreak
+break-before type_name=EBreak
+break-inside type_name=EBreak
 buffered-rendering svg
 caption-side inherited
 clear
@@ -170,10 +185,10 @@ counter-reset custom_all
 cursor inherited, custom_all
 cx interpolable, svg, converter=convertLength
 cy interpolable, svg, converter=convertLength
-d runtime_flag=CSSPropertyD, interpolable, svg, converter=convertPath
+d runtime_flag=CSSPropertyD, interpolable, svg, converter=convertPathOrNone
 display
 dominant-baseline inherited, svg
-empty-cells inherited, type_name=EEmptyCell
+empty-cells inherited, type_name=EEmptyCells
 fill interpolable, inherited, svg, setter=setFillPaint, custom_all
 fill-opacity interpolable, inherited, svg, converter=convertNumberOrPercentage
 fill-rule inherited, svg, type_name=WindRule
@@ -187,7 +202,7 @@ float type_name=EFloat, name_for_methods=Floating
 flood-color interpolable, svg, converter=convertColor
 flood-opacity interpolable, svg, converter=convertNumberOrPercentage
 grid-auto-columns runtime_flag=CSSGridLayout, converter=convertGridTrackSize
-grid-auto-flow runtime_flag=CSSGridLayout, converter=convertGridAutoFlow
+grid-auto-flow runtime_flag=CSSGridLayout, converter=convertGridAutoFlow, type_name=GridAutoFlow
 grid-auto-rows runtime_flag=CSSGridLayout, converter=convertGridTrackSize
 grid-column-end runtime_flag=CSSGridLayout, converter=convertGridPosition
 grid-column-gap runtime_flag=CSSGridLayout, converter=convertLength
@@ -201,7 +216,7 @@ grid-template-rows runtime_flag=CSSGridLayout, custom_all
 height interpolable, initial=initialSize, converter=convertLengthSizing
 image-rendering inherited
 image-orientation runtime_flag=ImageOrientation, inherited, name_for_methods=RespectImageOrientation, converter=convertImageOrientation
-isolation runtime_flag=CSSCompositing
+isolation
 justify-content initial=initialContentAlignment, converter=convertContentAlignmentData
 justify-items runtime_flag=CSSGridLayout, initial=initialSelfAlignment, converter=convertSelfOrDefaultAlignmentData
 justify-self runtime_flag=CSSGridLayout, initial=initialSelfAlignment, converter=convertSelfOrDefaultAlignmentData
@@ -226,10 +241,10 @@ max-height interpolable, initial=initialMaxSize, converter=convertLengthMaxSizin
 max-width interpolable, initial=initialMaxSize, converter=convertLengthMaxSizing
 min-height interpolable, initial=initialMinSize, converter=convertLengthSizing
 min-width interpolable, initial=initialMinSize, converter=convertLengthSizing
-mix-blend-mode runtime_flag=CSSCompositing, type_name=blink::WebBlendMode, name_for_methods=BlendMode
+mix-blend-mode type_name=blink::WebBlendMode, name_for_methods=BlendMode
 motion-offset interpolable, converter=convertLength
-motion-path custom_all
-motion-rotation interpolable, custom_all
+motion-path converter=convertPathOrNone
+motion-rotation interpolable, converter=convertMotionRotation
 object-fit type_name=ObjectFit
 object-position interpolable, converter=convertPosition
 opacity interpolable, type_name=float
@@ -246,14 +261,11 @@ padding-bottom interpolable, initial=initialPadding, converter=convertLength
 padding-left interpolable, initial=initialPadding, converter=convertLength
 padding-right interpolable, initial=initialPadding, converter=convertLength
 padding-top interpolable, initial=initialPadding, converter=convertLength
-page-break-after type_name=EPageBreak, initial=initialPageBreak
-page-break-before type_name=EPageBreak, initial=initialPageBreak
-page-break-inside type_name=EPageBreak, initial=initialPageBreak
 paint-order inherited, svg, converter=convertPaintOrder
 perspective interpolable, converter=convertPerspective
 perspective-origin interpolable, converter=convertPosition
 pointer-events inherited
-position
+position custom_inherit
 quotes inherited, converter=convertQuotes
 resize custom_value
 right interpolable, initial=initialOffset, converter=convertLengthOrAuto
@@ -271,6 +283,7 @@ shape-margin interpolable, converter=convertLength
 shape-outside interpolable, converter=convertShapeValue
 shape-rendering inherited, svg
 size custom_all
+snap-height runtime_flag=CSSSnapSize, inherited, custom_all
 speak inherited
 stop-color interpolable, svg, converter=convertColor
 stop-opacity interpolable, svg, converter=convertNumberOrPercentage
@@ -283,7 +296,7 @@ stroke-miterlimit interpolable, inherited, svg, type_name=float, name_for_method
 stroke-opacity interpolable, inherited, svg, converter=convertNumberOrPercentage
 stroke-width interpolable, inherited, svg, converter=convertUnzoomedLength
 table-layout
-tab-size inherited, converter=convertLengthOrTabSpaces
+tab-size inherited, converter=convertLengthOrTabSpaces, type_name=TabSize
 text-align inherited, custom_value
 text-align-last inherited, type_name=TextAlignLast
 text-anchor inherited, svg
@@ -291,7 +304,7 @@ text-combine-upright inherited, type_name=TextCombine, name_for_methods=TextComb
 // FIXME: We shouldn't switch between shorthand/not shorthand based on a runtime flag
 text-decoration use_handlers_for=CSSPropertyTextDecorationLine, longhands=text-decoration-line;text-decoration-style;text-decoration-color
 text-decoration-color runtime_flag=CSS3TextDecorations, interpolable, custom_all
-text-decoration-line runtime_flag=CSS3TextDecorations, name_for_methods=TextDecoration, converter=convertFlags<TextDecoration>
+text-decoration-line runtime_flag=CSS3TextDecorations, name_for_methods=TextDecoration, type_name=TextDecoration, converter=convertFlags<TextDecoration>
 text-decoration-style runtime_flag=CSS3TextDecorations, type_name=TextDecorationStyle
 text-indent interpolable, inherited, custom_all
 text-justify runtime_flag=CSS3Text, inherited, type_name=TextJustify
@@ -300,7 +313,7 @@ text-shadow interpolable, inherited, converter=convertShadow
 text-transform inherited
 text-underline-position runtime_flag=CSS3TextDecorations, inherited, type_name=TextUnderlinePosition
 top interpolable, initial=initialOffset, converter=convertLengthOrAuto
-touch-action converter=convertFlags<TouchAction>
+touch-action converter=convertFlags<TouchAction>, type_name=TouchAction
 transform interpolable, custom_value
 transform-origin interpolable, converter=convertTransformOrigin
 transform-style name_for_methods=TransformStyle3D
@@ -320,7 +333,6 @@ y interpolable, svg, converter=convertLength
 -webkit-appearance type_name=ControlPart
 -webkit-app-region custom_all
 -webkit-background-clip use_handlers_for=CSSPropertyBackgroundClip
--webkit-background-composite custom_all
 -webkit-background-origin use_handlers_for=CSSPropertyBackgroundOrigin
 -webkit-border-horizontal-spacing interpolable, inherited, name_for_methods=HorizontalBorderSpacing, converter=convertComputedLength<short>
 -webkit-border-image initial=initialNinePieceImage, custom_value
@@ -336,16 +348,13 @@ y interpolable, svg, converter=convertLength
 -webkit-box-pack
 -webkit-box-reflect converter=convertBoxReflect
 -webkit-clip-path interpolable, custom_value
--webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
--webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak
--webkit-column-break-inside type_name=EPageBreak, initial=initialPageBreak
--webkit-column-count interpolable, type_name=unsigned short, custom_all
--webkit-column-gap interpolable, converter=convertComputedLength<float>, custom_all
--webkit-column-rule-color interpolable, custom_all
--webkit-column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
--webkit-column-rule-width interpolable, converter=convertLineWidth<unsigned short>
--webkit-column-span type_name=ColumnSpan
--webkit-column-width interpolable, converter=convertComputedLength<float>, custom_all
+column-count interpolable, type_name=unsigned short, custom_all
+column-gap interpolable, converter=convertComputedLength<float>, custom_all
+column-rule-color interpolable, custom_all
+column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
+column-rule-width interpolable, converter=convertLineWidth<unsigned short>
+column-span type_name=ColumnSpan
+column-width interpolable, converter=convertComputedLength<float>, custom_all
 -webkit-filter interpolable, converter=convertFilterOperations
 -webkit-highlight inherited, converter=convertString<CSSValueNone>
 -webkit-hyphenate-character inherited, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
@@ -391,7 +400,7 @@ y interpolable, svg, converter=convertLength
 -webkit-user-select inherited
 white-space inherited
 widows interpolable, inherited, type_name=short, custom_all
-width interpolable, initial=initialSize, converter=convertLengthSizing
+width interpolable, initial=initialSize, converter=convertLengthSizing, typedom_types=[Length], keywords=[auto], supports_percentage
 will-change custom_all
 word-break inherited
 word-spacing interpolable, inherited, initial=initialLetterWordSpacing, converter=convertSpacing
@@ -463,12 +472,12 @@ border-width longhands=border-top-width;border-right-width;border-bottom-width;b
 flex longhands=flex-grow;flex-shrink;flex-basis
 flex-flow longhands=flex-direction;flex-wrap
 font longhands=font-style;font-variant;font-weight;font-stretch;font-size;line-height;font-family
-grid runtime_flag=CSSGridLayout, longhands=grid-template-columns;grid-template-rows;grid-template-areas;grid-auto-flow;grid-auto-columns;grid-auto-rows
+grid runtime_flag=CSSGridLayout, longhands=grid-template-rows;grid-template-columns;grid-template-areas;grid-auto-flow;grid-auto-rows;grid-auto-columns;grid-column-gap;grid-row-gap
 grid-area runtime_flag=CSSGridLayout, longhands=grid-row-start;grid-column-start;grid-row-end;grid-column-end
 grid-column runtime_flag=CSSGridLayout, longhands=grid-column-start;grid-column-end
-grid-gap runtime_flag=CSSGridLayout, longhands=grid-column-gap;grid-row-gap
+grid-gap runtime_flag=CSSGridLayout, longhands=grid-row-gap;grid-column-gap
 grid-row runtime_flag=CSSGridLayout, longhands=grid-row-start;grid-row-end
-grid-template runtime_flag=CSSGridLayout, longhands=grid-template-columns;grid-template-rows;grid-template-areas
+grid-template runtime_flag=CSSGridLayout, longhands=grid-template-rows;grid-template-columns;grid-template-areas
 list-style longhands=list-style-type;list-style-position;list-style-image
 margin longhands=margin-top;margin-right;margin-bottom;margin-left
 marker longhands=marker-start;marker-mid;marker-end
@@ -476,13 +485,19 @@ motion longhands=motion-path;motion-offset;motion-rotation
 outline longhands=outline-color;outline-style;outline-width
 overflow longhands=overflow-x;overflow-y
 padding longhands=padding-top;padding-right;padding-bottom;padding-left
+page-break-after longhands=break-after
+page-break-before longhands=break-before
+page-break-inside longhands=break-inside
 transition longhands=transition-property;transition-duration;transition-timing-function;transition-delay
 -webkit-border-after longhands=-webkit-border-after-width;-webkit-border-after-style;-webkit-border-after-color
 -webkit-border-before longhands=-webkit-border-before-width;-webkit-border-before-style;-webkit-border-before-color
 -webkit-border-end longhands=-webkit-border-end-width;-webkit-border-end-style;-webkit-border-end-color
 -webkit-border-start longhands=-webkit-border-start-width;-webkit-border-start-style;-webkit-border-start-color
--webkit-column-rule longhands=-webkit-column-rule-width;-webkit-column-rule-style;-webkit-column-rule-color
--webkit-columns longhands=-webkit-column-width;-webkit-column-count
+-webkit-column-break-after longhands=break-after
+-webkit-column-break-before longhands=break-before
+-webkit-column-break-inside longhands=break-inside
+column-rule longhands=column-rule-width;column-rule-style;column-rule-color
+columns longhands=column-width;column-count
 -webkit-margin-collapse longhands=-webkit-margin-before-collapse;-webkit-margin-after-collapse
 -webkit-mask longhands=-webkit-mask-image;-webkit-mask-position-x;-webkit-mask-position-y;-webkit-mask-size;-webkit-mask-repeat-x;-webkit-mask-repeat-y;-webkit-mask-origin;-webkit-mask-clip
 -webkit-mask-box-image longhands=-webkit-mask-box-image-source;-webkit-mask-box-image-slice;-webkit-mask-box-image-width;-webkit-mask-box-image-outset;-webkit-mask-box-image-repeat
@@ -525,6 +540,15 @@ transition longhands=transition-property;transition-duration;transition-timing-f
 -webkit-border-top-right-radius alias_for=border-top-right-radius
 -webkit-box-shadow alias_for=box-shadow
 -webkit-box-sizing alias_for=box-sizing
+-webkit-column-count alias_for=column-count
+-webkit-column-gap alias_for=column-gap
+-webkit-column-rule alias_for=column-rule
+-webkit-column-rule-color alias_for=column-rule-color
+-webkit-column-rule-style alias_for=column-rule-style
+-webkit-column-rule-width alias_for=column-rule-width
+-webkit-column-span alias_for=column-span
+-webkit-column-width alias_for=column-width
+-webkit-columns alias_for=columns
 -webkit-flex alias_for=flex
 -webkit-flex-basis alias_for=flex-basis
 -webkit-flex-direction alias_for=flex-direction

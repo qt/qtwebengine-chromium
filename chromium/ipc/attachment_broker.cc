@@ -18,9 +18,6 @@ namespace IPC {
 
 // static
 void AttachmentBroker::SetGlobal(AttachmentBroker* broker) {
-  CHECK(!g_attachment_broker || !broker)
-      << "Global attachment broker address: " << broker
-      << ". New attachment broker address: " << broker;
   g_attachment_broker = broker;
 }
 
@@ -61,6 +58,16 @@ void AttachmentBroker::AddObserver(
     info.runner = runner;
     info.unique_id = ++last_unique_id_;
     observers_.push_back(info);
+
+    // Give the observer a chance to handle attachments that arrived while the
+    // observer was handling the message that caused it to register, but our
+    // mutex was not yet locked.
+    for (const auto& attachment : attachments_) {
+      info.runner->PostTask(
+          FROM_HERE,
+          base::Bind(&AttachmentBroker::NotifyObserver, base::Unretained(this),
+                     info.unique_id, attachment->GetIdentifier()));
+    }
   }
 }
 
@@ -74,12 +81,28 @@ void AttachmentBroker::RemoveObserver(AttachmentBroker::Observer* observer) {
     observers_.erase(it);
 }
 
-void AttachmentBroker::RegisterCommunicationChannel(Endpoint* endpoint) {
+void AttachmentBroker::RegisterCommunicationChannel(
+    Endpoint* endpoint,
+    scoped_refptr<base::SingleThreadTaskRunner> runner) {
   NOTREACHED();
 }
 
 void AttachmentBroker::DeregisterCommunicationChannel(Endpoint* endpoint) {
   NOTREACHED();
+}
+
+void AttachmentBroker::RegisterBrokerCommunicationChannel(Endpoint* endpoint) {
+  NOTREACHED();
+}
+
+void AttachmentBroker::DeregisterBrokerCommunicationChannel(
+    Endpoint* endpoint) {
+  NOTREACHED();
+}
+
+bool AttachmentBroker::IsPrivilegedBroker() {
+  NOTREACHED();
+  return false;
 }
 
 void AttachmentBroker::HandleReceivedAttachment(
@@ -127,6 +150,8 @@ void AttachmentBroker::NotifyObserver(
 }
 
 AttachmentBroker::ObserverInfo::ObserverInfo() {}
+AttachmentBroker::ObserverInfo::ObserverInfo(const ObserverInfo& other) =
+    default;
 AttachmentBroker::ObserverInfo::~ObserverInfo() {}
 
 }  // namespace IPC

@@ -256,6 +256,10 @@ void LinkHeader::setValue(LinkParameterName name, String value)
         m_crossOrigin = crossOriginAttributeValue(value);
     else if (name == LinkParameterAs)
         m_as = value.lower();
+    else if (name == LinkParameterType)
+        m_mimeType = value.lower();
+    else if (name == LinkParameterMedia)
+        m_media = value.lower();
 }
 
 template <typename CharType>
@@ -298,6 +302,7 @@ LinkHeader::LinkHeader(CharType*& position, CharType* end)
 
         setValue(parameterName, parameterValue);
     }
+    findNextHeader(position, end);
 }
 
 LinkHeaderSet::LinkHeaderSet(const String& header)
@@ -320,4 +325,4 @@ void LinkHeaderSet::init(CharType* headerValue, unsigned len)
         m_headerSet.append(LinkHeader(position, end));
 }
 
-}
+} // namespace blink

@@ -22,6 +22,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/scoped_event_dispatcher.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/views/widget/desktop_aura/x11_pointer_grab.h"
@@ -81,7 +82,7 @@ uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
     case ui::ET_MOUSE_DRAGGED: {
       bool dispatch_mouse_event = !last_motion_in_screen_.get();
       last_motion_in_screen_.reset(
-          static_cast<ui::MouseEvent*>(ui::EventFromNative(xev).release()));
+          ui::EventFromNative(xev).release()->AsMouseEvent());
       last_motion_in_screen_->set_location(
           ui::EventSystemLocationFromNative(xev));
       if (dispatch_mouse_event) {

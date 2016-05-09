@@ -6,11 +6,11 @@
   'variables': {
     'pdf_enable_v8%': 1,
     'pdf_enable_xfa%': 0,  # Set to 1 in standalone builds by standalone.gypi.
+    'pdf_use_skia%': 0,
   },
   'target_defaults': {
     'defines' : [
       'PNG_PREFIX',
-      'PNGPREFIX_H',
       'PNG_USE_READ_MACROS',
     ],
     'include_dirs': [
@@ -65,6 +65,12 @@
         ['pdf_enable_v8==1', {
           'dependencies': [
             '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+          ],
+        }],
+        ['pdf_use_skia==1', {
+          'defines': ['PDF_ENABLE_SKIA'],
+          'dependencies': [
+            '<(DEPTH)/skia/skia.gyp:skia',
           ],
         }],
       ],

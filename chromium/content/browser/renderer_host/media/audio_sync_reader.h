@@ -59,14 +59,14 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
   const bool mute_audio_;
 
   // Socket for transmitting audio data.
-  scoped_ptr<base::CancelableSyncSocket> socket_;
+  std::unique_ptr<base::CancelableSyncSocket> socket_;
 
   // Socket to be used by the renderer. The reference is released after
   // PrepareForeignSocketHandle() is called and ran successfully.
-  scoped_ptr<base::CancelableSyncSocket> foreign_socket_;
+  std::unique_ptr<base::CancelableSyncSocket> foreign_socket_;
 
   // Shared memory wrapper used for transferring audio data to Read() callers.
-  scoped_ptr<media::AudioBus> output_bus_;
+  std::unique_ptr<media::AudioBus> output_bus_;
 
   // Maximum amount of audio data which can be transferred in one Read() call.
   const int packet_size_;
@@ -75,6 +75,7 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
   // report a UMA stat during destruction.
   size_t renderer_callback_count_;
   size_t renderer_missed_callback_count_;
+  size_t trailing_renderer_missed_callback_count_;
 
   // The maximum amount of time to wait for data from the renderer.  Calculated
   // from the parameters given at construction.

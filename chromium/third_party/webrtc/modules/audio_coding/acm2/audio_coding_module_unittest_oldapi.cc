@@ -10,20 +10,21 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <memory>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/base/criticalsection.h"
 #include "webrtc/base/md5digest.h"
 #include "webrtc/base/platform_thread.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
+#include "webrtc/modules/audio_coding/acm2/acm_receive_test_oldapi.h"
+#include "webrtc/modules/audio_coding/acm2/acm_send_test_oldapi.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
 #include "webrtc/modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
 #include "webrtc/modules/audio_coding/codecs/mock/mock_audio_encoder.h"
-#include "webrtc/modules/audio_coding/acm2/acm_receive_test_oldapi.h"
-#include "webrtc/modules/audio_coding/acm2/acm_send_test_oldapi.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module_typedefs.h"
 #include "webrtc/modules/audio_coding/neteq/audio_decoder_impl.h"
@@ -37,7 +38,6 @@
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/testsupport/fileutils.h"
@@ -94,8 +94,7 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
       : num_calls_(0),
         last_frame_type_(kEmptyFrame),
         last_payload_type_(-1),
-        last_timestamp_(0),
-        crit_sect_(CriticalSectionWrapper::CreateCriticalSection()) {}
+        last_timestamp_(0) {}
 
   int32_t SendData(FrameType frame_type,
                    uint8_t payload_type,
@@ -103,7 +102,7 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
                    const uint8_t* payload_data,
                    size_t payload_len_bytes,
                    const RTPFragmentationHeader* fragmentation) override {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     ++num_calls_;
     last_frame_type_ = frame_type;
     last_payload_type_ = payload_type;
@@ -113,32 +112,32 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
   }
 
   int num_calls() const {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     return num_calls_;
   }
 
   int last_payload_len_bytes() const {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     return last_payload_vec_.size();
   }
 
   FrameType last_frame_type() const {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     return last_frame_type_;
   }
 
   int last_payload_type() const {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     return last_payload_type_;
   }
 
   uint32_t last_timestamp() const {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     return last_timestamp_;
   }
 
   void SwapBuffers(std::vector<uint8_t>* payload) {
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     last_payload_vec_.swap(*payload);
   }
 
@@ -148,7 +147,7 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
   int last_payload_type_ GUARDED_BY(crit_sect_);
   uint32_t last_timestamp_ GUARDED_BY(crit_sect_);
   std::vector<uint8_t> last_payload_vec_ GUARDED_BY(crit_sect_);
-  const rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  rtc::CriticalSection crit_sect_;
 };
 
 class AudioCodingModuleTestOldApi : public ::testing::Test {
@@ -226,8 +225,8 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
   }
 
   const int id_;
-  rtc::scoped_ptr<RtpUtility> rtp_utility_;
-  rtc::scoped_ptr<AudioCodingModule> acm_;
+  std::unique_ptr<RtpUtility> rtp_utility_;
+  std::unique_ptr<AudioCodingModule> acm_;
   PacketizationCallbackStubOldApi packet_cb_;
   WebRtcRTPHeader rtp_header_;
   AudioFrame input_frame_;
@@ -469,7 +468,6 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
         send_count_(0),
         insert_packet_count_(0),
         pull_audio_count_(0),
-        crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
         next_insert_packet_time_ms_(0),
         fake_clock_(new SimulatedClock(0)) {
     clock_ = fake_clock_.get();
@@ -503,7 +501,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
 
   virtual bool TestDone() {
     if (packet_cb_.num_calls() > kNumPackets) {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       if (pull_audio_count_ > kNumPullCalls) {
         // Both conditions for completion are met. End the test.
         return true;
@@ -541,7 +539,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
   bool CbInsertPacketImpl() {
     SleepMs(1);
     {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       if (clock_->TimeInMilliseconds() < next_insert_packet_time_ms_) {
         return true;
       }
@@ -561,7 +559,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
   bool CbPullAudioImpl() {
     SleepMs(1);
     {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       // Don't let the insert thread fall behind.
       if (next_insert_packet_time_ms_ < clock_->TimeInMilliseconds()) {
         return true;
@@ -577,13 +575,13 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
   rtc::PlatformThread send_thread_;
   rtc::PlatformThread insert_packet_thread_;
   rtc::PlatformThread pull_audio_thread_;
-  const rtc::scoped_ptr<EventWrapper> test_complete_;
+  const std::unique_ptr<EventWrapper> test_complete_;
   int send_count_;
   int insert_packet_count_;
   int pull_audio_count_ GUARDED_BY(crit_sect_);
-  const rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  rtc::CriticalSection crit_sect_;
   int64_t next_insert_packet_time_ms_ GUARDED_BY(crit_sect_);
-  rtc::scoped_ptr<SimulatedClock> fake_clock_;
+  std::unique_ptr<SimulatedClock> fake_clock_;
 };
 
 #if defined(WEBRTC_IOS)
@@ -681,7 +679,7 @@ class AcmIsacMtTestOldApi : public AudioCodingModuleMtTestOldApi {
   // run).
   virtual bool TestDone() {
     if (packet_cb_.num_calls() > kNumPackets) {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       if (pull_audio_count_ > kNumPullCalls) {
         // Both conditions for completion are met. End the test.
         return true;
@@ -720,7 +718,6 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
                                    this,
                                    "codec_registration"),
         test_complete_(EventWrapper::Create()),
-        crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
         codec_registered_(false),
         receive_packet_count_(0),
         next_insert_packet_time_ms_(0),
@@ -777,11 +774,10 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
 
   bool CbReceiveImpl() {
     SleepMs(1);
-    const size_t max_encoded_bytes = isac_encoder_->MaxEncodedBytes();
-    rtc::scoped_ptr<uint8_t[]> encoded(new uint8_t[max_encoded_bytes]);
+    rtc::Buffer encoded;
     AudioEncoder::EncodedInfo info;
     {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       if (clock_->TimeInMilliseconds() < next_insert_packet_time_ms_) {
         return true;
       }
@@ -793,7 +789,7 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
       while (info.encoded_bytes == 0) {
         info =
             isac_encoder_->Encode(input_timestamp, audio_loop_.GetNextBlock(),
-                                  max_encoded_bytes, encoded.get());
+                                  &encoded);
         input_timestamp += 160;  // 10 ms at 16 kHz.
       }
       EXPECT_EQ(rtp_header_.header.timestamp + kPacketSizeSamples,
@@ -804,7 +800,7 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
     // Now we're not holding the crit sect when calling ACM.
 
     // Insert into ACM.
-    EXPECT_EQ(0, acm_->IncomingPacket(encoded.get(), info.encoded_bytes,
+    EXPECT_EQ(0, acm_->IncomingPacket(encoded.data(), info.encoded_bytes,
                                       rtp_header_));
 
     // Pull audio.
@@ -829,7 +825,7 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
       // End the test early if a fatal failure (ASSERT_*) has occurred.
       test_complete_->Set();
     }
-    CriticalSectionScoped lock(crit_sect_.get());
+    rtc::CritScope lock(&crit_sect_);
     if (!codec_registered_ &&
         receive_packet_count_ > kRegisterAfterNumPackets) {
       // Register the iSAC encoder.
@@ -844,13 +840,13 @@ class AcmReRegisterIsacMtTestOldApi : public AudioCodingModuleTestOldApi {
 
   rtc::PlatformThread receive_thread_;
   rtc::PlatformThread codec_registration_thread_;
-  const rtc::scoped_ptr<EventWrapper> test_complete_;
-  const rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  const std::unique_ptr<EventWrapper> test_complete_;
+  rtc::CriticalSection crit_sect_;
   bool codec_registered_ GUARDED_BY(crit_sect_);
   int receive_packet_count_ GUARDED_BY(crit_sect_);
   int64_t next_insert_packet_time_ms_ GUARDED_BY(crit_sect_);
-  rtc::scoped_ptr<AudioEncoderIsac> isac_encoder_;
-  rtc::scoped_ptr<SimulatedClock> fake_clock_;
+  std::unique_ptr<AudioEncoderIsac> isac_encoder_;
+  std::unique_ptr<SimulatedClock> fake_clock_;
   test::AudioLoop audio_loop_;
 };
 
@@ -900,7 +896,7 @@ class AcmReceiverBitExactnessOldApi : public ::testing::Test {
            const std::vector<ExternalDecoder>& external_decoders) {
     const std::string input_file_name =
         webrtc::test::ResourcePath("audio_coding/neteq_universal_new", "rtp");
-    rtc::scoped_ptr<test::RtpFileSource> packet_source(
+    std::unique_ptr<test::RtpFileSource> packet_source(
         test::RtpFileSource::Create(input_file_name));
 #ifdef WEBRTC_ANDROID
     // Filter out iLBC and iSAC-swb since they are not supported on Android.
@@ -943,34 +939,34 @@ class AcmReceiverBitExactnessOldApi : public ::testing::Test {
 #if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)) && \
     defined(WEBRTC_CODEC_ILBC) && defined(WEBRTC_CODEC_G722)
 TEST_F(AcmReceiverBitExactnessOldApi, 8kHzOutput) {
-  Run(8000, PlatformChecksum("908002dc01fc4eb1d2be24eb1d3f354b",
-                             "dcee98c623b147ebe1b40dd30efa896e",
-                             "adc92e173f908f93b96ba5844209815a",
-                             "ba16137d3a5a1e637252289c57522bfe"),
+  Run(8000, PlatformChecksum("d9334a99c7f185860028e6f08e5b7390",
+                             "946803da293ef3fa39242d3059eac491",
+                             "efb5a07480bad8afb184c4150f4b3f3a",
+                             "51717ab374871cbfa2c6977ea2aa40f3"),
       std::vector<ExternalDecoder>());
 }
 
 TEST_F(AcmReceiverBitExactnessOldApi, 16kHzOutput) {
-  Run(16000, PlatformChecksum("a909560b5ca49fa472b17b7b277195e9",
-                              "f790e7a8cce4e2c8b7bb5e0e4c5dac0d",
-                              "8cffa6abcb3e18e33b9d857666dff66a",
-                              "66ee001e23534d4dcf5d0f81f916c93b"),
+  Run(16000, PlatformChecksum("9ad7d5a5f3c9fac4e880a6fbfd9d3ac8",
+                              "4fc1b82404ae33511c1cdb385774b2a4",
+                              "f580bfd4e5e29f0399b61b7512d4e3b4",
+                              "5b2ae32c590b41d0c601179e14eaae96"),
       std::vector<ExternalDecoder>());
 }
 
 TEST_F(AcmReceiverBitExactnessOldApi, 32kHzOutput) {
-  Run(32000, PlatformChecksum("441aab4b347fb3db4e9244337aca8d8e",
-                              "306e0d990ee6e92de3fbecc0123ece37",
-                              "3e126fe894720c3f85edadcc91964ba5",
-                              "9c6ff204b14152c48fe41d5ab757943b"),
+  Run(32000, PlatformChecksum("08e6085ccb96494b242f0ecc4c8a2dc8",
+                              "d1f853b1e046c67c9ee186786eaf2124",
+                              "fdf5166b98c43235978685e40e28fea6",
+                              "7f620312f2fa74a10048bbb7739d4bf3"),
       std::vector<ExternalDecoder>());
 }
 
 TEST_F(AcmReceiverBitExactnessOldApi, 48kHzOutput) {
-  Run(48000, PlatformChecksum("4ee2730fa1daae755e8a8fd3abd779ec",
-                              "aa7c232f63a67b2a72703593bdd172e0",
-                              "0155665e93067c4e89256b944dd11999",
-                              "fc4f0da8844cd808d822bbddf3b9c285"),
+  Run(48000, PlatformChecksum("31343887b7ef70772df733d072b0dd00",
+                              "f6893278d75dad42ac44bff77f674b33",
+                              "71f89e87ee1bad594f529d6c036289ad",
+                              "b64c891e99eccc9ff45541ef67c9e9bf"),
       std::vector<ExternalDecoder>());
 }
 
@@ -1025,10 +1021,10 @@ TEST_F(AcmReceiverBitExactnessOldApi, 48kHzOutputExternalDecoder) {
   std::vector<ExternalDecoder> external_decoders;
   external_decoders.push_back(ed);
 
-  Run(48000, PlatformChecksum("4ee2730fa1daae755e8a8fd3abd779ec",
-                              "aa7c232f63a67b2a72703593bdd172e0",
-                              "0155665e93067c4e89256b944dd11999",
-                              "fc4f0da8844cd808d822bbddf3b9c285"),
+  Run(48000, PlatformChecksum("31343887b7ef70772df733d072b0dd00",
+                              "f6893278d75dad42ac44bff77f674b33",
+                              "71f89e87ee1bad594f529d6c036289ad",
+                              "b64c891e99eccc9ff45541ef67c9e9bf"),
       external_decoders);
 
   EXPECT_CALL(mock_decoder, Die());
@@ -1202,8 +1198,8 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
         RegisterExternalSendCodec(external_speech_encoder, payload_type));
   }
 
-  rtc::scoped_ptr<test::AcmSendTestOldApi> send_test_;
-  rtc::scoped_ptr<test::InputAudioFile> audio_source_;
+  std::unique_ptr<test::AcmSendTestOldApi> send_test_;
+  std::unique_ptr<test::InputAudioFile> audio_source_;
   uint32_t frame_size_rtp_timestamps_;
   int packet_count_;
   uint8_t payload_type_;
@@ -1409,13 +1405,13 @@ TEST_F(AcmSenderBitExactnessOldApi, Opus_stereo_20ms) {
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
           "855041f2490b887302bce9d544731849",
           "855041f2490b887302bce9d544731849",
-          "1e1a0fce893fef2d66886a7f09e2ebce",
-          "7417a66c28be42d5d9b2d64e0c191585"),
+          "9692eede45638eb425e0daf9c75b5c7a",
+          "c4faa472fbb0730370aaf34920381a09"),
       AcmReceiverBitExactnessOldApi::PlatformChecksum(
           "d781cce1ab986b618d0da87226cdde30",
           "d781cce1ab986b618d0da87226cdde30",
-          "1a1fe04dd12e755949987c8d729fb3e0",
-          "47b0b04f1d03076b857c86c72c2c298b"),
+          "8d6782b905c3230d4b0e3e83e1fc3439",
+          "8b0126eab82d9e4e367ab33ded2f1a8e"),
       50, test::AcmReceiveTestOldApi::kStereoOutput);
 }
 
@@ -1426,13 +1422,13 @@ TEST_F(AcmSenderBitExactnessOldApi, Opus_stereo_20ms_voip) {
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
           "9b9e12bc3cc793740966e11cbfa8b35b",
           "9b9e12bc3cc793740966e11cbfa8b35b",
-          "57412a4b5771d19ff03ec35deffe7067",
-          "7ad0bbefcaa87e23187bf4a56d2f3513"),
+          "0de6249018fdd316c21086db84e10610",
+          "fd21a19b6b1e891f5daea6c4a299c254"),
       AcmReceiverBitExactnessOldApi::PlatformChecksum(
           "c7340b1189652ab6b5e80dade7390cb4",
           "c7340b1189652ab6b5e80dade7390cb4",
-          "cdfe85939c411d12b61701c566e22d26",
-          "7a678fbe46df5bf0c67e88264a2d9275"),
+          "95612864c954ee63e28cc6eebad56626",
+          "49954b0d5a5f705a8798e7071b0c6f36"),
       50, test::AcmReceiveTestOldApi::kStereoOutput);
 }
 
@@ -1493,16 +1489,16 @@ class AcmSetBitRateOldApi : public ::testing::Test {
                                   codec_frame_size_rtp_timestamps));
   }
 
-  rtc::scoped_ptr<test::AcmSendTestOldApi> send_test_;
-  rtc::scoped_ptr<test::InputAudioFile> audio_source_;
+  std::unique_ptr<test::AcmSendTestOldApi> send_test_;
+  std::unique_ptr<test::InputAudioFile> audio_source_;
 };
 
 TEST_F(AcmSetBitRateOldApi, Opus_48khz_20ms_10kbps) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("opus", 48000, 1, 107, 960, 960));
 #if defined(WEBRTC_ANDROID)
-  Run(10000, 9328);
+  Run(10000, 9288);
 #else
-  Run(10000, 9072);
+  Run(10000, 9024);
 #endif // WEBRTC_ANDROID
 
 }
@@ -1510,9 +1506,9 @@ TEST_F(AcmSetBitRateOldApi, Opus_48khz_20ms_10kbps) {
 TEST_F(AcmSetBitRateOldApi, Opus_48khz_20ms_50kbps) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("opus", 48000, 1, 107, 960, 960));
 #if defined(WEBRTC_ANDROID)
-  Run(50000, 47952);
+  Run(50000, 47960);
 #else
-  Run(50000, 49600);
+  Run(50000, 49544);
 #endif // WEBRTC_ANDROID
 }
 
@@ -1592,18 +1588,18 @@ class AcmChangeBitRateOldApi : public AcmSetBitRateOldApi {
 TEST_F(AcmChangeBitRateOldApi, Opus_48khz_20ms_10kbps) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("opus", 48000, 1, 107, 960, 960));
 #if defined(WEBRTC_ANDROID)
-  Run(10000, 32200, 5496);
+  Run(10000, 32200, 5176);
 #else
-  Run(10000, 32200, 5432);
+  Run(10000, 32200, 5456);
 #endif // WEBRTC_ANDROID
 }
 
 TEST_F(AcmChangeBitRateOldApi, Opus_48khz_20ms_50kbps) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("opus", 48000, 1, 107, 960, 960));
 #if defined(WEBRTC_ANDROID)
-  Run(50000, 32200, 24912);
+  Run(50000, 32200, 24768);
 #else
-  Run(50000, 32200, 24792);
+  Run(50000, 32200, 24848);
 #endif // WEBRTC_ANDROID
 }
 
@@ -1636,9 +1632,7 @@ TEST_F(AcmSenderBitExactnessOldApi, External_Pcmu_20ms) {
   MockAudioEncoder mock_encoder;
   // Set expectations on the mock encoder and also delegate the calls to the
   // real encoder.
-  EXPECT_CALL(mock_encoder, MaxEncodedBytes())
-      .Times(AtLeast(1))
-      .WillRepeatedly(Invoke(&encoder, &AudioEncoderPcmU::MaxEncodedBytes));
+  EXPECT_CALL(mock_encoder, Die());
   EXPECT_CALL(mock_encoder, SampleRateHz())
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&encoder, &AudioEncoderPcmU::SampleRateHz));
@@ -1655,9 +1649,14 @@ TEST_F(AcmSenderBitExactnessOldApi, External_Pcmu_20ms) {
   EXPECT_CALL(mock_encoder, GetTargetBitrate())
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&encoder, &AudioEncoderPcmU::GetTargetBitrate));
-  EXPECT_CALL(mock_encoder, EncodeInternal(_, _, _, _))
+  EXPECT_CALL(mock_encoder, EncodeImpl(_, _, _))
       .Times(AtLeast(1))
-      .WillRepeatedly(Invoke(&encoder, &AudioEncoderPcmU::EncodeInternal));
+      .WillRepeatedly(Invoke(&encoder,
+                             static_cast<
+                             AudioEncoder::EncodedInfo(AudioEncoder::*)(
+                                 uint32_t,
+                                 rtc::ArrayView<const int16_t>,
+                                 rtc::Buffer*)>(&AudioEncoderPcmU::Encode)));
   EXPECT_CALL(mock_encoder, SetFec(_))
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&encoder, &AudioEncoderPcmU::SetFec));

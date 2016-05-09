@@ -31,17 +31,17 @@
 #ifndef WebURLResponse_h
 #define WebURLResponse_h
 
+#include "public/platform/WebCString.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebPrivateOwnPtr.h"
+#include "public/platform/WebString.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerResponseType.h"
 
 namespace blink {
 
 class ResourceResponse;
-class WebCString;
 class WebHTTPHeaderVisitor;
 class WebHTTPLoadInfo;
-class WebString;
 class WebURL;
 class WebURLLoadTiming;
 class WebURLResponsePrivate;
@@ -59,6 +59,31 @@ public:
         SecurityStyleAuthenticationBroken,
         SecurityStyleWarning,
         SecurityStyleAuthenticated
+    };
+
+    struct WebSecurityDetails {
+        WebSecurityDetails(const WebString& protocol, const WebString& keyExchange, const WebString& cipher, const WebString& mac, int certId, size_t numUnknownScts, size_t numInvalidScts, size_t numValidScts)
+            : protocol(protocol)
+            , keyExchange(keyExchange)
+            , cipher(cipher)
+            , mac(mac)
+            , certId(certId)
+            , numUnknownScts(numUnknownScts)
+            , numInvalidScts(numInvalidScts)
+            , numValidScts(numValidScts)
+        {
+        }
+        // All strings are human-readable values.
+        WebString protocol;
+        WebString keyExchange;
+        WebString cipher;
+        // mac is the empty string when the connection cipher suite does not
+        // have a separate MAC value (i.e. if the cipher suite is AEAD).
+        WebString mac;
+        int certId;
+        size_t numUnknownScts;
+        size_t numInvalidScts;
+        size_t numValidScts;
     };
 
     class ExtraData {
@@ -148,10 +173,10 @@ public:
 
     BLINK_PLATFORM_EXPORT void setHasMajorCertificateErrors(bool);
 
-    BLINK_PLATFORM_EXPORT SecurityStyle securityStyle() const;
+    BLINK_PLATFORM_EXPORT SecurityStyle getSecurityStyle() const;
     BLINK_PLATFORM_EXPORT void setSecurityStyle(SecurityStyle);
 
-    BLINK_PLATFORM_EXPORT void setSecurityDetails(const WebString& protocol, const WebString& keyExchange, const WebString& cipher, const WebString& mac, int certId);
+    BLINK_PLATFORM_EXPORT void setSecurityDetails(const WebSecurityDetails&);
 
 #if INSIDE_BLINK
     BLINK_PLATFORM_EXPORT ResourceResponse& toMutableResourceResponse();
@@ -199,9 +224,13 @@ public:
     BLINK_PLATFORM_EXPORT WebURL originalURLViaServiceWorker() const;
     BLINK_PLATFORM_EXPORT void setOriginalURLViaServiceWorker(const WebURL&);
 
-    // Flag whether this request is part of a multipart response.
-    BLINK_PLATFORM_EXPORT bool isMultipartPayload() const;
-    BLINK_PLATFORM_EXPORT void setIsMultipartPayload(bool);
+    // The boundary of the response. Set only when this is a multipart response.
+    BLINK_PLATFORM_EXPORT void setMultipartBoundary(const char* bytes, size_t /* size */);
+
+    // The cache name of the CacheStorage from where the response is served via
+    // the ServiceWorker. Null if the response isn't from the CacheStorage.
+    BLINK_PLATFORM_EXPORT WebString cacheStorageCacheName() const;
+    BLINK_PLATFORM_EXPORT void setCacheStorageCacheName(const WebString&);
 
     // This indicates the location of a downloaded response if the
     // WebURLRequest had the downloadToFile flag set to true. This file path
@@ -223,7 +252,7 @@ public:
     // deleted when the last resource response is destroyed. Setting the extra
     // data pointer will cause the underlying resource response to be
     // dissociated from any existing non-null extra data pointer.
-    BLINK_PLATFORM_EXPORT ExtraData* extraData() const;
+    BLINK_PLATFORM_EXPORT ExtraData* getExtraData() const;
     BLINK_PLATFORM_EXPORT void setExtraData(ExtraData*);
 
 protected:

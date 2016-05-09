@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "ui/base/resource/material_design/material_design_controller.h"
+#include "ui/base/material_design/material_design_controller.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
@@ -29,11 +29,6 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
   if (ui::MaterialDesignController::IsModeMaterial()) {
     // Dialogs:
     static const SkColor kDialogBackgroundColorMd = SK_ColorWHITE;
-    // Button:
-    static const SkColor kTextButtonEnabledColorMd =
-        SkColorSetRGB(0x64, 0x64, 0x64);
-    static const SkColor kTextButtonDisabledColorMd =
-        SkColorSetA(kTextButtonEnabledColorMd, 0x80);
     // MenuItem:
     static const SkColor kMenuHighlightBackgroundColorMd =
         SkColorSetARGB(0x14, 0x00, 0x00, 0x00);
@@ -53,12 +48,6 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
       case NativeTheme::kColorId_DialogBackground:
       case NativeTheme::kColorId_BubbleBackground:
         return kDialogBackgroundColorMd;
-
-      // Button
-      case NativeTheme::kColorId_MdTextButtonEnabledColor:
-        return kTextButtonEnabledColorMd;
-      case NativeTheme::kColorId_MdTextButtonDisabledColor:
-        return kTextButtonDisabledColorMd;
 
       // MenuItem
       case NativeTheme::kColorId_FocusedMenuItemBackgroundColor:
@@ -132,6 +121,7 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
   static const SkColor kBlueButtonHoverColor = SK_ColorWHITE;
   static const SkColor kBlueButtonShadowColor = SkColorSetRGB(0x53, 0x8C, 0xEA);
   static const SkColor kCallToActionColor = gfx::kGoogleBlue500;
+  static const SkColor kTextOnCallToActionColor = SK_ColorWHITE;
   // MenuItem:
   static const SkColor kMenuBackgroundColor = SK_ColorWHITE;
   static const SkColor kMenuHighlightBackgroundColor =
@@ -263,6 +253,8 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
       return kBlueButtonShadowColor;
     case NativeTheme::kColorId_CallToActionColor:
       return kCallToActionColor;
+    case NativeTheme::kColorId_TextOnCallToActionColor:
+      return kTextOnCallToActionColor;
 
     // MenuItem
     case NativeTheme::kColorId_MenuBorderColor:
@@ -405,8 +397,6 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
     case NativeTheme::kColorId_ThrobberLightColor:
       return kThrobberLightColor;
 
-    case NativeTheme::kColorId_MdTextButtonEnabledColor:
-    case NativeTheme::kColorId_MdTextButtonDisabledColor:
     case NativeTheme::kColorId_NumColors:
       break;
   }
@@ -415,32 +405,12 @@ SkColor GetAuraColor(NativeTheme::ColorId color_id,
   return gfx::kPlaceholderColor;
 }
 
-gfx::Size CommonThemeGetPartSize(NativeTheme::Part part,
-                                 NativeTheme::State state,
-                                 const NativeTheme::ExtraParams& extra) {
-  gfx::Size size;
-  switch (part) {
-    case NativeTheme::kComboboxArrow:
-      return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-          IDR_MENU_DROPARROW).Size();
-
-    default:
-      break;
-  }
-
-  return size;
-}
-
-void CommonThemePaintComboboxArrow(SkCanvas* canvas, const gfx::Rect& rect) {
-  gfx::ImageSkia* arrow = ui::ResourceBundle::GetSharedInstance().
-      GetImageSkiaNamed(IDR_MENU_DROPARROW);
-  CommonThemeCreateCanvas(canvas)->DrawImageInt(*arrow, rect.x(), rect.y());
-}
-
-void CommonThemePaintMenuItemBackground(const NativeTheme *theme,
-                                        SkCanvas* canvas,
-                                        NativeTheme::State state,
-                                        const gfx::Rect &rect) {
+void CommonThemePaintMenuItemBackground(
+    const NativeTheme* theme,
+    SkCanvas* canvas,
+    NativeTheme::State state,
+    const gfx::Rect& rect,
+    const NativeTheme::MenuItemExtraParams& menu_item) {
   SkPaint paint;
   switch (state) {
     case NativeTheme::kNormal:
@@ -456,6 +426,11 @@ void CommonThemePaintMenuItemBackground(const NativeTheme *theme,
       NOTREACHED() << "Invalid state " << state;
       break;
   }
+  if (menu_item.corner_radius > 0) {
+    const SkScalar radius = SkIntToScalar(menu_item.corner_radius);
+    canvas->drawRoundRect(gfx::RectToSkRect(rect), radius, radius, paint);
+    return;
+  }
   canvas->drawRect(gfx::RectToSkRect(rect), paint);
 }
 
@@ -465,7 +440,8 @@ scoped_ptr<gfx::Canvas> CommonThemeCreateCanvas(SkCanvas* sk_canvas) {
   // scale factor from canvas scale.
   SkMatrix m = sk_canvas->getTotalMatrix();
   float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  return make_scoped_ptr(new gfx::Canvas(sk_canvas, device_scale));
+  return make_scoped_ptr(new gfx::Canvas(skia::SharePtr(sk_canvas),
+                                         device_scale));
 }
 
 }  // namespace ui

@@ -28,7 +28,8 @@
 // https://html.spec.whatwg.org/#message-ports
 
 [
-    ActiveDOMObject,
+    ActiveScriptWrappable,
+    DependentLifetime,
     Exposed=(Window,Worker),
     GarbageCollected,
 ] interface MessagePort : EventTarget {

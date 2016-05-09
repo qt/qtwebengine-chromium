@@ -189,7 +189,7 @@ int64_t AudioConferenceMixerImpl::TimeUntilNextProcess() {
     return timeUntilNextProcess;
 }
 
-int32_t AudioConferenceMixerImpl::Process() {
+void AudioConferenceMixerImpl::Process() {
     size_t remainingParticipantsAllowedToMix =
         kMaximumAmountOfMixedParticipants;
     {
@@ -222,7 +222,7 @@ int32_t AudioConferenceMixerImpl::Process() {
         if(lowFreq <= 0) {
             CriticalSectionScoped cs(_crit.get());
             _processCalls--;
-            return 0;
+            return;
         } else {
             switch(lowFreq) {
             case 8000:
@@ -250,7 +250,7 @@ int32_t AudioConferenceMixerImpl::Process() {
 
                 CriticalSectionScoped cs(_crit.get());
                 _processCalls--;
-                return -1;
+                return;
             }
         }
 
@@ -267,10 +267,9 @@ int32_t AudioConferenceMixerImpl::Process() {
         WEBRTC_TRACE(kTraceMemory, kTraceAudioMixerServer, _id,
                      "failed PopMemory() call");
         assert(false);
-        return -1;
+        return;
     }
 
-    int retval = 0;
     {
         CriticalSectionScoped cs(_crit.get());
 
@@ -304,8 +303,7 @@ int32_t AudioConferenceMixerImpl::Process() {
             mixedAudio->Mute();
         } else {
             // Only call the limiter if we have something to mix.
-            if(!LimitMixedAudio(mixedAudio))
-                retval = -1;
+            LimitMixedAudio(mixedAudio);
         }
     }
 
@@ -330,7 +328,7 @@ int32_t AudioConferenceMixerImpl::Process() {
         CriticalSectionScoped cs(_crit.get());
         _processCalls--;
     }
-    return retval;
+    return;
 }
 
 int32_t AudioConferenceMixerImpl::RegisterMixedStreamCallback(
@@ -583,17 +581,16 @@ void AudioConferenceMixerImpl::UpdateToMix(
                 // There are already more active participants than should be
                 // mixed. Only keep the ones with the highest energy.
                 AudioFrameList::iterator replaceItem;
-                CalculateEnergy(*audioFrame);
-                uint32_t lowestEnergy = audioFrame->energy_;
+                uint32_t lowestEnergy = CalculateEnergy(*audioFrame);
 
                 bool found_replace_item = false;
                 for (AudioFrameList::iterator iter = activeList.begin();
                      iter != activeList.end();
                      ++iter) {
-                    CalculateEnergy(**iter);
-                    if((*iter)->energy_ < lowestEnergy) {
+                    const uint32_t energy = CalculateEnergy(**iter);
+                    if(energy < lowestEnergy) {
                         replaceItem = iter;
-                        lowestEnergy = (*iter)->energy_;
+                        lowestEnergy = energy;
                         found_replace_item = true;
                     }
                 }
@@ -781,18 +778,6 @@ void AudioConferenceMixerImpl::ClearAudioFrameList(
         _audioFramePool->PushMemory(*iter);
     }
     audioFrameList->clear();
-}
-
-void AudioConferenceMixerImpl::UpdateVADPositiveParticipants(
-    AudioFrameList* mixList) const {
-    WEBRTC_TRACE(kTraceStream, kTraceAudioMixerServer, _id,
-                 "UpdateVADPositiveParticipants(mixList)");
-
-    for (AudioFrameList::const_iterator iter = mixList->begin();
-         iter != mixList->end();
-         ++iter) {
-        CalculateEnergy(**iter);
-    }
 }
 
 bool AudioConferenceMixerImpl::IsParticipantInList(

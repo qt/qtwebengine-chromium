@@ -13,7 +13,6 @@ namespace internal {
 
 // Forward declarations.
 class Callable;
-class TypeCache;
 
 
 namespace compiler {
@@ -43,16 +42,9 @@ class JSIntrinsicLowering final : public AdvancedReducer {
   Reduction ReduceDeoptimizeNow(Node* node);
   Reduction ReduceDoubleHi(Node* node);
   Reduction ReduceDoubleLo(Node* node);
-  Reduction ReduceIncrementStatsCounter(Node* node);
-  Reduction ReduceIsMinusZero(Node* node);
   Reduction ReduceIsInstanceType(Node* node, InstanceType instance_type);
-  Reduction ReduceIsFunction(Node* node);
   Reduction ReduceIsJSReceiver(Node* node);
   Reduction ReduceIsSmi(Node* node);
-  Reduction ReduceJSValueGetValue(Node* node);
-  Reduction ReduceMathClz32(Node* node);
-  Reduction ReduceMathFloor(Node* node);
-  Reduction ReduceMathSqrt(Node* node);
   Reduction ReduceValueOf(Node* node);
   Reduction ReduceFixedArrayGet(Node* node);
   Reduction ReduceFixedArraySet(Node* node);
@@ -69,8 +61,9 @@ class JSIntrinsicLowering final : public AdvancedReducer {
   Reduction ReduceToPrimitive(Node* node);
   Reduction ReduceToString(Node* node);
   Reduction ReduceCall(Node* node);
-  Reduction ReduceTailCall(Node* node);
+  Reduction ReduceNewObject(Node* node);
   Reduction ReduceGetSuperConstructor(Node* node);
+  Reduction ReduceGetOrdinaryHasInstance(Node* node);
 
   Reduction Change(Node* node, const Operator* op);
   Reduction Change(Node* node, const Operator* op, Node* a, Node* b);
@@ -89,11 +82,9 @@ class JSIntrinsicLowering final : public AdvancedReducer {
   MachineOperatorBuilder* machine() const;
   SimplifiedOperatorBuilder* simplified() const;
   DeoptimizationMode mode() const { return mode_; }
-  TypeCache const& type_cache() const { return type_cache_; }
 
   JSGraph* const jsgraph_;
   DeoptimizationMode const mode_;
-  TypeCache const& type_cache_;
 };
 
 }  // namespace compiler

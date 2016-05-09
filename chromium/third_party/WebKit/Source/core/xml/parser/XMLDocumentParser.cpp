@@ -39,6 +39,7 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/TransformSource.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/RawResource.h"
@@ -310,10 +311,6 @@ void XMLDocumentParser::pushCurrentNode(ContainerNode* n)
 {
     ASSERT(n);
     ASSERT(m_currentNode);
-#if !ENABLE(OILPAN)
-    if (n != document())
-        n->ref();
-#endif
     m_currentNodeStack.append(m_currentNode);
     m_currentNode = n;
     if (m_currentNodeStack.size() > maxXMLTreeDepth)
@@ -325,30 +322,16 @@ void XMLDocumentParser::popCurrentNode()
     if (!m_currentNode)
         return;
     ASSERT(m_currentNodeStack.size());
-#if !ENABLE(OILPAN)
-    if (m_currentNode != document())
-        m_currentNode->deref();
-#endif
     m_currentNode = m_currentNodeStack.last();
     m_currentNodeStack.removeLast();
 }
 
 void XMLDocumentParser::clearCurrentNodeStack()
 {
-#if !ENABLE(OILPAN)
-    if (m_currentNode && m_currentNode != document())
-        m_currentNode->deref();
-#endif
     m_currentNode = nullptr;
     m_leafTextNode = nullptr;
 
     if (m_currentNodeStack.size()) { // Aborted parsing.
-#if !ENABLE(OILPAN)
-        for (size_t i = m_currentNodeStack.size() - 1; i != 0; --i)
-            m_currentNodeStack[i]->deref();
-        if (m_currentNodeStack[0] && m_currentNodeStack[0] != document())
-            m_currentNodeStack[0]->deref();
-#endif
         m_currentNodeStack.clear();
     }
 }
@@ -374,7 +357,7 @@ void XMLDocumentParser::append(const String& inputSource)
 
     // JavaScript can detach the parser. Make sure this is not released
     // before the end of this method.
-    RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+    RawPtr<XMLDocumentParser> protect(this);
 
     doWrite(source.toString());
 }
@@ -416,6 +399,10 @@ bool XMLDocumentParser::updateLeafTextNode()
 
 void XMLDocumentParser::detach()
 {
+    if (m_pendingScript) {
+        m_pendingScript->removeClient(this);
+        m_pendingScript = nullptr;
+    }
     clearCurrentNodeStack();
     ScriptableDocumentParser::detach();
 }
@@ -438,14 +425,10 @@ void XMLDocumentParser::end()
     if (m_parserPaused)
         return;
 
-    if (m_sawError) {
+    if (m_sawError)
         insertErrorMessageBlock();
-    } else {
+    else
         updateLeafTextNode();
-        // Do not bail out if in a stopped state, but notify document that
-        // parsing has finished.
-        document()->styleResolverChanged();
-    }
 
     if (isParsing())
         prepareToStopParsing();
@@ -461,7 +444,7 @@ void XMLDocumentParser::finish()
     // However, FrameLoader::stop calls DocumentParser::finish unconditionally.
 
     // flush may ending up executing arbitrary script, and possibly detach the parser.
-    RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+    RawPtr<XMLDocumentParser> protect(this);
     flush();
     if (isDetached())
         return;
@@ -486,9 +469,9 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
     bool wasCanceled = m_pendingScript->wasCanceled();
 
     m_pendingScript->removeClient(this);
-    m_pendingScript = 0;
+    m_pendingScript = nullptr;
 
-    RefPtrWillBeRawPtr<Element> e = m_scriptElement;
+    RawPtr<Element> e = m_scriptElement;
     m_scriptElement = nullptr;
 
     ScriptLoader* scriptLoader = toScriptLoaderIfPossible(e.get());
@@ -496,7 +479,7 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
 
     // JavaScript can detach this parser, make sure it's kept alive even if
     // detached.
-    RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+    RawPtr<XMLDocumentParser> protect(this);
 
     if (errorOccurred) {
         scriptLoader->dispatchErrorEvent();
@@ -537,7 +520,7 @@ bool XMLDocumentParser::parseDocumentFragment(const String& chunk, DocumentFragm
         return true;
     }
 
-    RefPtrWillBeRawPtr<XMLDocumentParser> parser = XMLDocumentParser::create(fragment, contextElement, parserContentPolicy);
+    RawPtr<XMLDocumentParser> parser = XMLDocumentParser::create(fragment, contextElement, parserContentPolicy);
     bool wellFormed = parser->appendFragmentSource(chunk);
 
     // Do not call finish(). Current finish() and doEnd() implementations touch
@@ -619,7 +602,7 @@ static bool isLibxmlDefaultCatalogFile(const String& urlString)
 
 static bool shouldAllowExternalLoad(const KURL& url)
 {
-    String urlString = url.string();
+    String urlString = url.getString();
 
     // This isn't really necessary now that initializeLibXMLIfNecessary
     // disables catalog support in libxml, but keeping it for defense in depth.
@@ -641,7 +624,7 @@ static bool shouldAllowExternalLoad(const KURL& url)
     // content. If we had more context, we could potentially allow the parser to
     // load a DTD. As things stand, we take the conservative route and allow
     // same-origin requests only.
-    if (!XMLDocumentParserScope::currentDocument->securityOrigin()->canRequest(url)) {
+    if (!XMLDocumentParserScope::currentDocument->getSecurityOrigin()->canRequest(url)) {
         // FIXME: This is copy/pasted. We should probably build console logging into canRequest().
         if (!url.isNull()) {
             String message = "Unsafe attempt to load URL " + url.elidedString() +
@@ -673,7 +656,7 @@ static void* openFunc(const char* uri)
         XMLDocumentParserScope scope(0);
         // FIXME: We should restore the original global error handler as well.
         FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, ResourceFetcher::defaultResourceOptions());
-        ResourcePtr<Resource> resource = RawResource::fetchSynchronously(request, document->fetcher());
+        RawPtr<Resource> resource = RawResource::fetchSynchronously(request, document->fetcher());
         if (resource && !resource->errorOccurred()) {
             data = resource->resourceBuffer();
             finalURL = resource->response().url();
@@ -802,7 +785,6 @@ XMLDocumentParser::XMLDocumentParser(Document& document, FrameView* frameView)
     , m_requestingScript(false)
     , m_finishCalled(false)
     , m_xmlErrors(&document)
-    , m_pendingScript(0)
     , m_scriptStartPosition(TextPosition::belowRangePosition())
     , m_parsingFragment(false)
 {
@@ -826,16 +808,11 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
     , m_requestingScript(false)
     , m_finishCalled(false)
     , m_xmlErrors(&fragment->document())
-    , m_pendingScript(0)
     , m_scriptStartPosition(TextPosition::belowRangePosition())
     , m_parsingFragment(true)
 {
-#if !ENABLE(OILPAN)
-    fragment->ref();
-#endif
-
     // Add namespaces based on the parent node
-    WillBeHeapVector<RawPtrWillBeMember<Element>> elemStack;
+    HeapVector<Member<Element>> elemStack;
     while (parentElement) {
         elemStack.append(parentElement);
 
@@ -860,7 +837,7 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
     }
 
     // If the parent element is not in document tree, there may be no xmlns attribute; just default to the parent's namespace.
-    if (m_defaultNamespaceURI.isNull() && !parentElement->inDocument())
+    if (m_defaultNamespaceURI.isNull() && !parentElement->inShadowIncludingDocument())
         m_defaultNamespaceURI = parentElement->namespaceURI();
 }
 
@@ -873,25 +850,16 @@ XMLParserContext::~XMLParserContext()
 
 XMLDocumentParser::~XMLDocumentParser()
 {
-#if !ENABLE(OILPAN)
-    // The XMLDocumentParser will always be detached before being destroyed.
-    ASSERT(m_currentNodeStack.isEmpty());
-    ASSERT(!m_currentNode);
-#endif
-
-    // FIXME: m_pendingScript handling should be moved into XMLDocumentParser.cpp!
-    if (m_pendingScript)
-        m_pendingScript->removeClient(this);
+    ASSERT(!m_pendingScript);
 }
 
 DEFINE_TRACE(XMLDocumentParser)
 {
     visitor->trace(m_currentNode);
-#if ENABLE(OILPAN)
     visitor->trace(m_currentNodeStack);
-#endif
     visitor->trace(m_leafTextNode);
     visitor->trace(m_xmlErrors);
+    visitor->trace(m_pendingScript);
     visitor->trace(m_scriptElement);
     ScriptableDocumentParser::trace(visitor);
 }
@@ -911,7 +879,7 @@ void XMLDocumentParser::doWrite(const String& parseString)
     if (parseString.length()) {
         // JavaScript may cause the parser to detach during parseChunk
         // keep this alive until this function is done.
-        RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+        RawPtr<XMLDocumentParser> protect(this);
 
         XMLDocumentParserScope scope(document());
         TemporaryChange<bool> encodingScope(m_isCurrentlyParsing8BitChunk, parseString.is8Bit());
@@ -1025,7 +993,7 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
     m_sawFirstElement = true;
 
     QualifiedName qName(prefix, localName, adjustedURI);
-    RefPtrWillBeRawPtr<Element> newElement = m_currentNode->document().createElement(qName, true);
+    RawPtr<Element> newElement = m_currentNode->document().createElement(qName, true);
     if (!newElement) {
         stopParsing();
         return;
@@ -1035,13 +1003,13 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
     TrackExceptionState exceptionState;
     handleNamespaceAttributes(prefixedAttributes, libxmlNamespaces, nbNamespaces, exceptionState);
     if (exceptionState.hadException()) {
-        setAttributes(newElement.get(), prefixedAttributes, parserContentPolicy());
+        setAttributes(newElement.get(), prefixedAttributes, getParserContentPolicy());
         stopParsing();
         return;
     }
 
     handleElementAttributes(prefixedAttributes, libxmlAttributes, nbAttributes, m_prefixToNamespaceMap, exceptionState);
-    setAttributes(newElement.get(), prefixedAttributes, parserContentPolicy());
+    setAttributes(newElement.get(), prefixedAttributes, getParserContentPolicy());
     if (exceptionState.hadException()) {
         stopParsing();
         return;
@@ -1070,8 +1038,11 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
     if (isHTMLHtmlElement(*newElement))
         toHTMLHtmlElement(*newElement).insertedByParser();
 
-    if (!m_parsingFragment && isFirstElement && document()->frame())
+    if (!m_parsingFragment && isFirstElement && document()->frame()) {
         document()->frame()->loader().dispatchDocumentElementAvailable();
+        document()->frame()->loader().runScriptsAtDocumentElementAvailable();
+        // runScriptsAtDocumentElementAvailable might have invalidated the document.
+    }
 }
 
 void XMLDocumentParser::endElementNs()
@@ -1086,16 +1057,16 @@ void XMLDocumentParser::endElementNs()
 
     // JavaScript can detach the parser. Make sure this is not released before
     // the end of this method.
-    RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+    RawPtr<XMLDocumentParser> protect(this);
 
     if (!updateLeafTextNode())
         return;
 
-    RefPtrWillBeRawPtr<ContainerNode> n = m_currentNode;
+    RawPtr<ContainerNode> n = m_currentNode;
     if (m_currentNode->isElementNode())
         toElement(n.get())->finishParsingChildren();
 
-    if (!scriptingContentIsAllowed(parserContentPolicy()) && n->isElementNode() && toScriptLoaderIfPossible(toElement(n))) {
+    if (!scriptingContentIsAllowed(getParserContentPolicy()) && n->isElementNode() && toScriptLoaderIfPossible(toElement(n))) {
         popCurrentNode();
         n->remove(IGNORE_EXCEPTION);
         return;
@@ -1110,7 +1081,7 @@ void XMLDocumentParser::endElementNs()
 
     // The element's parent may have already been removed from document.
     // Parsing continues in this case, but scripts aren't executed.
-    if (!element->inDocument()) {
+    if (!element->inShadowIncludingDocument()) {
         popCurrentNode();
         return;
     }
@@ -1205,15 +1176,11 @@ void XMLDocumentParser::processingInstruction(const String& target, const String
 
     // ### handle exceptions
     TrackExceptionState exceptionState;
-    RefPtrWillBeRawPtr<ProcessingInstruction> pi = m_currentNode->document().createProcessingInstruction(target, data, exceptionState);
+    RawPtr<ProcessingInstruction> pi = m_currentNode->document().createProcessingInstruction(target, data, exceptionState);
     if (exceptionState.hadException())
         return;
 
-    pi->setCreatedByParser(true);
-
     m_currentNode->parserAppendChild(pi.get());
-
-    pi->setCreatedByParser(false);
 
     if (pi->isCSS())
         m_sawCSS = true;
@@ -1537,18 +1504,8 @@ void XMLDocumentParser::doEnd()
         document()->setIsViewSource(true);
         V8Document::PrivateScript::transformDocumentToTreeViewMethod(document()->frame(), document(), noStyleMessage);
     } else if (m_sawXSLTransform) {
-        xmlDocPtr doc = xmlDocPtrForString(document(), m_originalSourceForTransform.toString(), document()->url().string());
+        xmlDocPtr doc = xmlDocPtrForString(document(), m_originalSourceForTransform.toString(), document()->url().getString());
         document()->setTransformSource(adoptPtr(new TransformSource(doc)));
-        // Make the document think it's done, so it will apply XSL stylesheets.
-        document()->setParsingState(Document::FinishedParsing);
-        document()->styleResolverChanged();
-
-        // styleResolverChanged() call can detach the parser and null out its
-        // document. In that case, we just bail out.
-        if (isDetached())
-            return;
-
-        document()->setParsingState(Document::Parsing);
         DocumentParser::stopParsing();
     }
 }

@@ -27,24 +27,25 @@
 #define SelectionEditor_h
 
 #include "core/editing/FrameSelection.h"
+#include "core/events/EventDispatchResult.h"
 
 namespace blink {
 
-class SelectionEditor final : public NoBaseWillBeGarbageCollectedFinalized<SelectionEditor>, public VisibleSelectionChangeObserver {
+class SelectionEditor final : public GarbageCollectedFinalized<SelectionEditor>, public VisibleSelectionChangeObserver {
     WTF_MAKE_NONCOPYABLE(SelectionEditor);
-    USING_FAST_MALLOC_WILL_BE_REMOVED(SelectionEditor);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SelectionEditor);
+    USING_GARBAGE_COLLECTED_MIXIN(SelectionEditor);
 public:
     // TODO(yosin) We should move |EAlteration| and |VerticalDirection| out
     // from |FrameSelection| class like |EUserTriggered|.
     typedef FrameSelection::EAlteration EAlteration;
     typedef FrameSelection::VerticalDirection VerticalDirection;
 
-    static PassOwnPtrWillBeRawPtr<SelectionEditor> create(FrameSelection& frameSelection)
+    static RawPtr<SelectionEditor> create(FrameSelection& frameSelection)
     {
-        return adoptPtrWillBeNoop(new SelectionEditor(frameSelection));
+        return new SelectionEditor(frameSelection);
     }
     virtual ~SelectionEditor();
+    void dispose();
 
     bool hasEditableStyle() const { return m_selection.hasEditableStyle(); }
     bool isContentEditable() const { return m_selection.isContentEditable(); }
@@ -58,7 +59,7 @@ public:
     template <typename Strategy>
     const VisibleSelectionTemplate<Strategy>& visibleSelection() const;
     void setVisibleSelection(const VisibleSelection&, FrameSelection::SetSelectionOptions);
-    void setVisibleSelection(const VisibleSelectionInComposedTree&, FrameSelection::SetSelectionOptions);
+    void setVisibleSelection(const VisibleSelectionInFlatTree&, FrameSelection::SetSelectionOptions);
 
     void setIsDirectional(bool);
     void setWithoutValidation(const Position& base, const Position& extent);
@@ -70,10 +71,14 @@ public:
     // If this FrameSelection has a logical range which is still valid, this
     // function return its clone. Otherwise, the return value from underlying
     // |VisibleSelection|'s |firstRange()| is returned.
-    PassRefPtrWillBeRawPtr<Range> firstRange() const;
+    RawPtr<Range> firstRange() const;
 
     // VisibleSelectionChangeObserver interface.
     void didChangeVisibleSelection() override;
+
+    // Updates |m_selection| and |m_selectionInFlatTree| with up-to-date
+    // layout if needed.
+    void updateIfNeeded();
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -84,9 +89,6 @@ private:
     enum EPositionType { START, END, BASE, EXTENT }; // NOLINT
 
     LocalFrame* frame() const;
-
-    void adjustVisibleSelectionInComposedTree();
-    void adjustVisibleSelectionInDOMTree();
 
     TextDirection directionOfEnclosingBlock();
     TextDirection directionOfSelection();
@@ -109,20 +111,20 @@ private:
     void stopObservingVisibleSelectionChangeIfNecessary();
 
     LayoutUnit lineDirectionPointForBlockDirectionNavigation(EPositionType);
-    bool dispatchSelectStart();
+    DispatchEventResult dispatchSelectStart();
 
-    RawPtrWillBeMember<FrameSelection> m_frameSelection;
+    Member<FrameSelection> m_frameSelection;
 
     LayoutUnit m_xPosForVerticalArrowNavigation;
     VisibleSelection m_selection;
-    VisibleSelectionInComposedTree m_selectionInComposedTree;
+    VisibleSelectionInFlatTree m_selectionInFlatTree;
     bool m_observingVisibleSelection;
 
     // The range specified by the user, which may not be visually canonicalized
     // (hence "logical"). This will be invalidated if the underlying
     // |VisibleSelection| changes. If that happens, this variable will
     // become |nullptr|, in which case logical positions == visible positions.
-    RefPtrWillBeMember<Range> m_logicalRange;
+    Member<Range> m_logicalRange;
 };
 
 } // namespace blink

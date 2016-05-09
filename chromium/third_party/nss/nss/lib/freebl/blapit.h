@@ -241,7 +241,7 @@ typedef struct SHA512ContextStr     SHA512Context;
 typedef struct SHA512ContextStr     SHA384Context;
 typedef struct AESKeyWrapContextStr AESKeyWrapContext;
 typedef struct SEEDContextStr	    SEEDContext;	
-typedef struct ChaCha20Poly1305ContextStr ChaCha20Poly1305Context;	
+typedef struct ChaCha20Poly1305ContextStr ChaCha20Poly1305Context;
 
 /***************************************************************************
 ** RSA Public and Private Key structures

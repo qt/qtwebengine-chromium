@@ -122,36 +122,6 @@ public:
     }
 };
 
-TEST_F(ImageQualityControllerTest, LowQualityFilterForLiveResize)
-{
-    MockTimer* mockTimer = new MockTimer(controller(), &ImageQualityController::highQualityRepaintTimerFired);
-    controller()->setTimer(mockTimer);
-    setBodyInnerHTML("<img src='myimage'></img>");
-    LayoutImage* img = toLayoutImage(document().body()->firstChild()->layoutObject());
-
-    RefPtr<TestImageLowQuality> testImage = adoptRef(new TestImageLowQuality);
-
-    // Start a resize
-    document().frame()->view()->willStartLiveResize();
-    EXPECT_EQ(InterpolationLow, controller()->chooseInterpolationQuality(*img, testImage.get(), testImage.get(), LayoutSize(2, 2)));
-
-    document().frame()->view()->willEndLiveResize();
-
-    // End of live resize, but timer has not fired. Therefore paint at non-low quality.
-    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*img, testImage.get(), testImage.get(), LayoutSize(3, 3)));
-
-    // Start another resize
-    document().frame()->view()->willStartLiveResize();
-    EXPECT_EQ(InterpolationLow, controller()->chooseInterpolationQuality(*img, testImage.get(), testImage.get(), LayoutSize(3, 3)));
-
-    // While still in resize, expire the timer.
-    document().frame()->view()->willEndLiveResize();
-
-    mockTimer->fire();
-    // End of live resize, and timer has fired. Therefore paint at non-low quality, even though the size has changed.
-    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*img, testImage.get(), testImage.get(), LayoutSize(4, 4)));
-}
-
 TEST_F(ImageQualityControllerTest, LowQualityFilterForResizingImage)
 {
     MockTimer* mockTimer = new MockTimer(controller(), &ImageQualityController::highQualityRepaintTimerFired);
@@ -175,6 +145,36 @@ TEST_F(ImageQualityControllerTest, LowQualityFilterForResizingImage)
     mockTimer->fire();
     // The timer fired before painting at another size, so this doesn't count as animation. Therefore not painting at low quality.
     EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*img, testImage.get(), testImage.get(), LayoutSize(4, 4)));
+}
+
+TEST_F(ImageQualityControllerTest, MediumQualityFilterForNotAnimatedWhileAnotherAnimates)
+{
+    MockTimer* mockTimer = new MockTimer(controller(), &ImageQualityController::highQualityRepaintTimerFired);
+    controller()->setTimer(mockTimer);
+    setBodyInnerHTML("<img id='myAnimatingImage' src='myimage'></img> <img id='myNonAnimatingImage' src='myimage2'></img>");
+    LayoutImage* animatingImage = toLayoutImage(document().getElementById("myAnimatingImage")->layoutObject());
+    LayoutImage* nonAnimatingImage = toLayoutImage(document().getElementById("myNonAnimatingImage")->layoutObject());
+
+    RefPtr<TestImageLowQuality> testImage = adoptRef(new TestImageLowQuality);
+    OwnPtr<PaintController> paintController = PaintController::create();
+    GraphicsContext context(*paintController);
+
+    // Paint once. This will kick off a timer to see if we resize it during that timer's execution.
+    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*animatingImage, testImage.get(), testImage.get(), LayoutSize(2, 2)));
+
+    // Go into low-quality mode now that the size changed.
+    EXPECT_EQ(InterpolationLow, controller()->chooseInterpolationQuality(*animatingImage, testImage.get(), testImage.get(), LayoutSize(3, 3)));
+
+    // The non-animating image receives a medium-quality filter, even though the other one is animating.
+    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*nonAnimatingImage, testImage.get(), testImage.get(), LayoutSize(4, 4)));
+
+    // Now the second image has animated, so it also gets painted with a low-quality filter.
+    EXPECT_EQ(InterpolationLow, controller()->chooseInterpolationQuality(*nonAnimatingImage, testImage.get(), testImage.get(), LayoutSize(3, 3)));
+
+    mockTimer->fire();
+    // The timer fired before painting at another size, so this doesn't count as animation. Therefore not painting at low quality for any image.
+    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*animatingImage, testImage.get(), testImage.get(), LayoutSize(4, 4)));
+    EXPECT_EQ(InterpolationMedium, controller()->chooseInterpolationQuality(*nonAnimatingImage, testImage.get(), testImage.get(), LayoutSize(4, 4)));
 }
 
 TEST_F(ImageQualityControllerTest, DontKickTheAnimationTimerWhenPaintingAtTheSameSize)

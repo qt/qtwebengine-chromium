@@ -20,13 +20,18 @@
         # We don't use ICU plugins and dyload is only necessary for them.
         # NaCl-related builds also fail looking for dlfcn.h when it's enabled.
         'U_ENABLE_DYLOAD=0',
+        # With exception disabled, MSVC emits C4577 warning on coming across
+        # 'noexcept'. See http://bugs.icu-project.org/trac/ticket/12406
+        # TODO(jshin): Remove this when updating to a newer version with this
+        # fixed.
+        'U_NOEXCEPT=',
       ],
     },
     'defines': [
       'U_USING_ICU_NAMESPACE=0',
       'HAVE_DLOPEN=0',
       # Only build encoding coverters and detectors necessary for HTML5.
-      'UCONFIG_NO_NON_HTML5_CONVERSION=1',
+      'UCONFIG_ONLY_HTML_CONVERSION=1',
       # No dependency on the default platform encoding.
       # Will cut down the code size.
       'U_CHARSET_IS_UTF8=1',
@@ -94,7 +99,7 @@
                 ],
               } , { # else: OS != android
                 'files': [
-                  'source/data/in/icudtl.dat',
+                  'common/icudtl.dat',
                 ],
               }],
             ],
@@ -150,7 +155,7 @@
                 } , { # else: OS=="ios"
                   'link_settings': {
                     'mac_bundle_resources': [
-                      'source/data/in/icudtl.dat',
+                      'common/icudtl.dat',
                     ],
                   },
                 }], # OS!=ios
@@ -246,8 +251,6 @@
                     # See http://bugs.icu-project.org/trac/ticket/11122
                     '-Wno-inline-new-delete',
                     '-Wno-implicit-exception-spec-mismatch',
-                    # See http://bugs.icu-project.org/trac/ticket/11757.
-                    '-Wno-reorder',
                   ],
                 },
               },

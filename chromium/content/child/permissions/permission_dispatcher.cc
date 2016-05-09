@@ -12,9 +12,10 @@
 #include "content/public/common/service_registry.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/modules/permissions/WebPermissionObserver.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 
 using blink::WebPermissionObserver;
+using blink::mojom::PermissionName;
+using blink::mojom::PermissionStatus;
 
 namespace content {
 
@@ -23,46 +24,48 @@ namespace {
 PermissionName GetPermissionName(blink::WebPermissionType type) {
   switch (type) {
     case blink::WebPermissionTypeGeolocation:
-      return PERMISSION_NAME_GEOLOCATION;
+      return PermissionName::GEOLOCATION;
     case blink::WebPermissionTypeNotifications:
-      return PERMISSION_NAME_NOTIFICATIONS;
+      return PermissionName::NOTIFICATIONS;
     case blink::WebPermissionTypePushNotifications:
-      return PERMISSION_NAME_PUSH_NOTIFICATIONS;
+      return PermissionName::PUSH_NOTIFICATIONS;
     case blink::WebPermissionTypeMidiSysEx:
-      return PERMISSION_NAME_MIDI_SYSEX;
+      return PermissionName::MIDI_SYSEX;
     case blink::WebPermissionTypeDurableStorage:
-        return PERMISSION_NAME_DURABLE_STORAGE;
+      return PermissionName::DURABLE_STORAGE;
     case blink::WebPermissionTypeMidi:
-      return PERMISSION_NAME_MIDI;
+      return PermissionName::MIDI;
+    case blink::WebPermissionTypeBackgroundSync:
+      return PermissionName::BACKGROUND_SYNC;
     default:
       // The default statement is only there to prevent compilation failures if
       // WebPermissionType enum gets extended.
       NOTREACHED();
-      return PERMISSION_NAME_GEOLOCATION;
+      return PermissionName::GEOLOCATION;
   }
 }
 
 PermissionStatus GetPermissionStatus(blink::WebPermissionStatus status) {
   switch (status) {
     case blink::WebPermissionStatusGranted:
-      return PERMISSION_STATUS_GRANTED;
+      return PermissionStatus::GRANTED;
     case blink::WebPermissionStatusDenied:
-      return PERMISSION_STATUS_DENIED;
+      return PermissionStatus::DENIED;
     case blink::WebPermissionStatusPrompt:
-      return PERMISSION_STATUS_ASK;
+      return PermissionStatus::ASK;
   }
 
   NOTREACHED();
-  return PERMISSION_STATUS_DENIED;
+  return PermissionStatus::DENIED;
 }
 
 blink::WebPermissionStatus GetWebPermissionStatus(PermissionStatus status) {
   switch (status) {
-    case PERMISSION_STATUS_GRANTED:
+    case PermissionStatus::GRANTED:
       return blink::WebPermissionStatusGranted;
-    case PERMISSION_STATUS_DENIED:
+    case PermissionStatus::DENIED:
       return blink::WebPermissionStatusDenied;
-    case PERMISSION_STATUS_ASK:
+    case PermissionStatus::ASK:
       return blink::WebPermissionStatusPrompt;
   }
 
@@ -79,7 +82,9 @@ bool PermissionDispatcher::IsObservable(blink::WebPermissionType type) {
   return type == blink::WebPermissionTypeGeolocation ||
          type == blink::WebPermissionTypeNotifications ||
          type == blink::WebPermissionTypePushNotifications ||
-         type == blink::WebPermissionTypeMidiSysEx;
+         type == blink::WebPermissionTypeMidiSysEx ||
+         type == blink::WebPermissionTypeMidi ||
+         type == blink::WebPermissionTypeBackgroundSync;
 }
 
 PermissionDispatcher::PermissionDispatcher(ServiceRegistry* service_registry)
@@ -130,16 +135,14 @@ void PermissionDispatcher::startListening(
 
   RegisterObserver(observer);
 
-  GetNextPermissionChange(type,
-                          origin.string().utf8(),
-                          observer,
+  GetNextPermissionChange(type, origin.string().utf8(), observer,
                           // We initialize with an arbitrary value because the
                           // mojo service wants a value. Worst case, the
                           // observer will get notified about a non-change which
                           // should be a no-op. After the first notification,
                           // GetNextPermissionChange will be called with the
                           // latest known value.
-                          PERMISSION_STATUS_ASK);
+                          PermissionStatus::ASK);
 }
 
 void PermissionDispatcher::stopListening(WebPermissionObserver* observer) {
@@ -184,17 +187,14 @@ void PermissionDispatcher::StartListeningForWorker(
     int worker_thread_id,
     const base::Callback<void(blink::WebPermissionStatus)>& callback) {
   GetPermissionServicePtr()->GetNextPermissionChange(
-      GetPermissionName(type),
-      origin,
+      GetPermissionName(type), origin,
       // We initialize with an arbitrary value because the mojo service wants a
       // value. Worst case, the observer will get notified about a non-change
       // which should be a no-op. After the first notification,
       // GetNextPermissionChange will be called with the latest known value.
-      PERMISSION_STATUS_ASK,
+      PermissionStatus::ASK,
       base::Bind(&PermissionDispatcher::OnPermissionChangedForWorker,
-                 base::Unretained(this),
-                 worker_thread_id,
-                 callback));
+                 base::Unretained(this), worker_thread_id, callback));
 }
 
 void PermissionDispatcher::GetNextPermissionChangeForWorker(
@@ -215,23 +215,24 @@ void PermissionDispatcher::GetNextPermissionChangeForWorker(
 
 // static
 void PermissionDispatcher::RunPermissionCallbackOnWorkerThread(
-    scoped_ptr<blink::WebPermissionCallback> callback,
+    std::unique_ptr<blink::WebPermissionCallback> callback,
     blink::WebPermissionStatus status) {
   callback->onSuccess(status);
 }
 
 void PermissionDispatcher::RunPermissionsCallbackOnWorkerThread(
-    scoped_ptr<blink::WebPermissionsCallback> callback,
-    scoped_ptr<blink::WebVector<blink::WebPermissionStatus>> statuses) {
-  callback->onSuccess(blink::adoptWebPtr(statuses.release()));
+    std::unique_ptr<blink::WebPermissionsCallback> callback,
+    std::unique_ptr<blink::WebVector<blink::WebPermissionStatus>> statuses) {
+  callback->onSuccess(std::move(statuses));
 }
 
-PermissionServicePtr& PermissionDispatcher::GetPermissionServicePtr() {
+blink::mojom::PermissionService*
+PermissionDispatcher::GetPermissionServicePtr() {
   if (!permission_service_.get()) {
     service_registry_->ConnectToRemoteService(
         mojo::GetProxy(&permission_service_));
   }
-  return permission_service_;
+  return permission_service_.get();
 }
 
 void PermissionDispatcher::QueryPermissionInternal(
@@ -244,8 +245,8 @@ void PermissionDispatcher::QueryPermissionInternal(
   // the |permission_service_| pipe will be destroyed too so OnQueryPermission
   // will not be called.
   uintptr_t callback_key = reinterpret_cast<uintptr_t>(callback);
-  permission_callbacks_.add(callback_key,
-      scoped_ptr<blink::WebPermissionCallback>(callback));
+  permission_callbacks_.add(
+      callback_key, std::unique_ptr<blink::WebPermissionCallback>(callback));
 
   GetPermissionServicePtr()->HasPermission(
       GetPermissionName(type),
@@ -266,13 +267,12 @@ void PermissionDispatcher::RequestPermissionInternal(
   // the |permission_service_| pipe will be destroyed too so OnQueryPermission
   // will not be called.
   uintptr_t callback_key = reinterpret_cast<uintptr_t>(callback);
-  permission_callbacks_.add(callback_key,
-      scoped_ptr<blink::WebPermissionCallback>(callback));
+  permission_callbacks_.add(
+      callback_key, std::unique_ptr<blink::WebPermissionCallback>(callback));
 
   GetPermissionServicePtr()->RequestPermission(
       GetPermissionName(type),
       origin,
-      blink::WebUserGestureIndicator::isProcessingUserGesture(),
       base::Bind(&PermissionDispatcher::OnPermissionResponse,
                  base::Unretained(this),
                  worker_thread_id,
@@ -289,8 +289,8 @@ void PermissionDispatcher::RequestPermissionsInternal(
   // the |permission_service_| pipe will be destroyed too so OnQueryPermission
   // will not be called.
   uintptr_t callback_key = reinterpret_cast<uintptr_t>(callback);
-  permissions_callbacks_.add(callback_key,
-      scoped_ptr<blink::WebPermissionsCallback>(callback));
+  permissions_callbacks_.add(
+      callback_key, std::unique_ptr<blink::WebPermissionsCallback>(callback));
 
   mojo::Array<PermissionName> names(types.size());
   for (size_t i = 0; i < types.size(); ++i)
@@ -298,7 +298,6 @@ void PermissionDispatcher::RequestPermissionsInternal(
 
   GetPermissionServicePtr()->RequestPermissions(
       std::move(names), origin,
-      blink::WebUserGestureIndicator::isProcessingUserGesture(),
       base::Bind(&PermissionDispatcher::OnRequestPermissionsResponse,
                  base::Unretained(this), worker_thread_id, callback_key));
 }
@@ -313,8 +312,8 @@ void PermissionDispatcher::RevokePermissionInternal(
   // the |permission_service_| pipe will be destroyed too so OnQueryPermission
   // will not be called.
   uintptr_t callback_key = reinterpret_cast<uintptr_t>(callback);
-  permission_callbacks_.add(callback_key,
-      scoped_ptr<blink::WebPermissionCallback>(callback));
+  permission_callbacks_.add(
+      callback_key, std::unique_ptr<blink::WebPermissionCallback>(callback));
 
   GetPermissionServicePtr()->RevokePermission(
       GetPermissionName(type),
@@ -325,11 +324,10 @@ void PermissionDispatcher::RevokePermissionInternal(
                  callback_key));
 }
 
-void PermissionDispatcher::OnPermissionResponse(
-    int worker_thread_id,
-    uintptr_t callback_key,
-    PermissionStatus result) {
-  scoped_ptr<blink::WebPermissionCallback> callback =
+void PermissionDispatcher::OnPermissionResponse(int worker_thread_id,
+                                                uintptr_t callback_key,
+                                                PermissionStatus result) {
+  std::unique_ptr<blink::WebPermissionCallback> callback =
       permission_callbacks_.take_and_erase(callback_key);
   blink::WebPermissionStatus status = GetWebPermissionStatus(result);
 
@@ -350,9 +348,9 @@ void PermissionDispatcher::OnRequestPermissionsResponse(
     int worker_thread_id,
     uintptr_t callback_key,
     const mojo::Array<PermissionStatus>& result) {
-  scoped_ptr<blink::WebPermissionsCallback> callback =
+  std::unique_ptr<blink::WebPermissionsCallback> callback =
       permissions_callbacks_.take_and_erase(callback_key);
-  scoped_ptr<blink::WebVector<blink::WebPermissionStatus>> statuses(
+  std::unique_ptr<blink::WebVector<blink::WebPermissionStatus>> statuses(
       new blink::WebVector<blink::WebPermissionStatus>(result.size()));
 
   for (size_t i = 0; i < result.size(); i++)
@@ -368,14 +366,13 @@ void PermissionDispatcher::OnRequestPermissionsResponse(
     return;
   }
 
-  callback->onSuccess(blink::adoptWebPtr(statuses.release()));
+  callback->onSuccess(std::move(statuses));
 }
 
-void PermissionDispatcher::OnPermissionChanged(
-    blink::WebPermissionType type,
-    const std::string& origin,
-    WebPermissionObserver* observer,
-    PermissionStatus status) {
+void PermissionDispatcher::OnPermissionChanged(blink::WebPermissionType type,
+                                               const std::string& origin,
+                                               WebPermissionObserver* observer,
+                                               PermissionStatus status) {
   if (!IsObserverRegistered(observer))
     return;
 

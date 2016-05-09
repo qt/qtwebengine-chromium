@@ -38,9 +38,9 @@ class LayoutImageResourceStyleImage final : public LayoutImageResource {
 public:
     ~LayoutImageResourceStyleImage() override;
 
-    static PassOwnPtrWillBeRawPtr<LayoutImageResource> create(StyleImage* styleImage)
+    static LayoutImageResource* create(StyleImage* styleImage)
     {
-        return adoptPtrWillBeNoop(new LayoutImageResourceStyleImage(styleImage));
+        return new LayoutImageResourceStyleImage(styleImage);
     }
     void initialize(LayoutObject*) override;
     void shutdown() override;
@@ -49,10 +49,13 @@ public:
     PassRefPtr<Image> image(const IntSize&, float) const override;
     bool errorOccurred() const override { return m_styleImage->errorOccurred(); }
 
-    bool imageHasRelativeWidth() const override { return m_styleImage->imageHasRelativeWidth(); }
-    bool imageHasRelativeHeight() const override { return m_styleImage->imageHasRelativeHeight(); }
+    bool imageHasRelativeSize() const override { return m_styleImage->imageHasRelativeSize(); }
 
-    LayoutSize imageSize(float multiplier) const override { return m_styleImage->imageSize(m_layoutObject, multiplier); }
+    LayoutSize imageSize(float multiplier) const override
+    {
+        // TODO(davve): Find out the default object size, if any, in this context.
+        return m_styleImage->imageSize(*m_layoutObject, multiplier, LayoutSize());
+    }
 
     WrappedImagePtr imagePtr() const override { return m_styleImage->data(); }
 
@@ -60,7 +63,7 @@ public:
 
 private:
     explicit LayoutImageResourceStyleImage(StyleImage*);
-    RefPtrWillBeMember<StyleImage> m_styleImage;
+    Member<StyleImage> m_styleImage;
 };
 
 } // namespace blink

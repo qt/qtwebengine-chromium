@@ -139,6 +139,7 @@
           ],
           'dependencies': [
             'crash_component_lib',
+            'crash_core_common',
             '../base/base.gyp:base',
           ],
           'defines': ['CRASH_IMPLEMENTATION'],
@@ -204,10 +205,14 @@
           },
           'type': '<(crash_component_target_type)',
           'sources': [
+            'crash/content/app/crash_switches.cc',
+            'crash/content/app/crash_switches.h',
             'crash/content/app/crashpad.cc',
             'crash/content/app/crashpad.h',
             'crash/content/app/crashpad_mac.mm',
             'crash/content/app/crashpad_win.cc',
+            'crash/content/app/run_as_crashpad_handler_win.cc',
+            'crash/content/app/run_as_crashpad_handler_win.h',
           ],
           'dependencies': [
             'crash_component_non_mac_win',
@@ -215,7 +220,9 @@
             '../base/base.gyp:base',
             '../third_party/kasko/kasko.gyp:kasko',
           ],
-          'defines': ['CRASH_IMPLEMENTATION'],
+          'export_dependent_settings': [
+            '../third_party/kasko/kasko.gyp:kasko',
+          ],
           'conditions': [
             ['OS=="win"', {
               'dependencies': [
@@ -227,9 +234,16 @@
             ['OS=="mac" or OS=="win"', {
               'dependencies': [
                 '../third_party/crashpad/crashpad/client/client.gyp:crashpad_client',
+                '../third_party/crashpad/crashpad/snapshot/snapshot.gyp:crashpad_snapshot_api',
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../third_party/crashpad/crashpad/handler/handler.gyp:crashpad_handler_lib',
               ],
             }],
           ],
+          'defines': ['CRASH_IMPLEMENTATION'],
         },
         {
           # TODO(mark): https://crbug.com/466890: remove this target.
@@ -284,6 +298,22 @@
                 '..',
                 '../breakpad/src',
               ],
+              'all_dependent_settings': {
+                'msvs_settings': {
+                  'VCLinkerTool': {
+                    'AdditionalDependencies': [
+                      'userenv.lib',
+                    ],
+                  },
+                },
+              },
+              'msvs_settings': {
+                'VCLinkerTool': {
+                  'AdditionalDependencies': [
+                    'userenv.lib',
+                  ],
+                },
+              },
             }],
           ],
         },
@@ -359,6 +389,26 @@
                   'msvs_target_platform': 'x64',
                 },
               },
+              'conditions': [
+                ['OS=="win"', {
+                  'all_dependent_settings': {
+                    'msvs_settings': {
+                      'VCLinkerTool': {
+                        'AdditionalDependencies': [
+                          'userenv.lib',
+                        ],
+                      },
+                    },
+                  },
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'AdditionalDependencies': [
+                        'userenv.lib',
+                      ],
+                    },
+                  },
+                }],
+              ],
             },
             {
               # GN version: //components/crash/content/tools:crash_service

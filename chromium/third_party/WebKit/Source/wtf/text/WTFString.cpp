@@ -481,34 +481,41 @@ String String::format(const char *format, ...)
     return StringImpl::create(reinterpret_cast<const LChar*>(buffer.data()), len);
 }
 
+template<typename IntegerType>
+static String integerToString(IntegerType input)
+{
+    IntegerToStringConverter<IntegerType> converter(input);
+    return StringImpl::create(converter.characters8(), converter.length());
+}
+
 String String::number(int number)
 {
-    return numberToStringSigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(unsigned number)
 {
-    return numberToStringUnsigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(long number)
 {
-    return numberToStringSigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(unsigned long number)
 {
-    return numberToStringUnsigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(long long number)
 {
-    return numberToStringSigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(unsigned long long number)
 {
-    return numberToStringUnsigned<String>(number);
+    return integerToString(number);
 }
 
 String String::number(double number, unsigned precision, TrailingZerosTruncatingPolicy trailingZerosTruncatingPolicy)
@@ -1139,6 +1146,16 @@ double charactersToDouble(const UChar* data, size_t length, bool* ok)
     return toDoubleType<UChar, DisallowTrailingJunk>(data, length, ok, parsedLength);
 }
 
+double charactersToDouble(const LChar* data, size_t length, size_t& parsedLength)
+{
+    return toDoubleType<LChar, AllowTrailingJunk>(data, length, nullptr, parsedLength);
+}
+
+double charactersToDouble(const UChar* data, size_t length, size_t& parsedLength)
+{
+    return toDoubleType<UChar, AllowTrailingJunk>(data, length, nullptr, parsedLength);
+}
+
 float charactersToFloat(const LChar* data, size_t length, bool* ok)
 {
     // FIXME: This will return ok even when the string fits into a double but
@@ -1179,6 +1196,49 @@ const String& emptyString16Bit()
 {
     DEFINE_STATIC_LOCAL(String, emptyString, (StringImpl::empty16Bit()));
     return emptyString;
+}
+
+std::ostream& operator<<(std::ostream& out, const String& string)
+{
+    if (string.isNull())
+        return out << "<null>";
+
+    out << '"';
+    for (unsigned index = 0; index < string.length(); ++index) {
+        // Print shorthands for select cases.
+        UChar character = string[index];
+        switch (character) {
+        case '\t':
+            out << "\\t";
+            break;
+        case '\n':
+            out << "\\n";
+            break;
+        case '\r':
+            out << "\\r";
+            break;
+        case '"':
+            out << "\\\"";
+            break;
+        case '\\':
+            out << "\\\\";
+            break;
+        default:
+            if (isASCIIPrintable(character)) {
+                out << static_cast<char>(character);
+            } else {
+                // Print "\uXXXX" for control or non-ASCII characters.
+                out << "\\u";
+                out.width(4);
+                out.fill('0');
+                out.setf(std::ios_base::hex, std::ios_base::basefield);
+                out.setf(std::ios::uppercase);
+                out << character;
+            }
+            break;
+        }
+    }
+    return out << '"';
 }
 
 } // namespace WTF

@@ -17,7 +17,6 @@
 #include "content/browser/android/in_process/synchronous_compositor_registry_in_proc.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
-#include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
@@ -29,6 +28,7 @@
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/ipc/client/gpu_channel_host.h"
 #include "ui/gl/android/surface_texture.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_stub.h"
@@ -46,30 +46,15 @@ struct ContextHolder {
   gpu::GLInProcessContext* gl_in_process_context;
 };
 
-blink::WebGraphicsContext3D::Attributes GetDefaultAttribs() {
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.antialias = false;
-  attributes.depth = false;
-  attributes.stencil = false;
-  attributes.shareResources = true;
-  attributes.noAutomaticFlushes = true;
-
-  return attributes;
-}
-
 ContextHolder CreateContextHolder(
-    const blink::WebGraphicsContext3D::Attributes& attributes,
+    const gpu::gles2::ContextCreationAttribHelper& attributes,
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
-    const gpu::GLInProcessContextSharedMemoryLimits& mem_limits,
-    bool is_offscreen) {
-  gpu::gles2::ContextCreationAttribHelper in_process_attribs;
-  WebGraphicsContext3DImpl::ConvertAttributes(attributes, &in_process_attribs);
-  in_process_attribs.lose_context_when_out_of_memory = true;
-
+    const gpu::GLInProcessContextSharedMemoryLimits& mem_limits) {
+  bool is_offscreen = true;
   scoped_ptr<gpu::GLInProcessContext> context(gpu::GLInProcessContext::Create(
-      service, NULL /* surface */, is_offscreen, gfx::kNullAcceleratedWidget,
-      gfx::Size(1, 1), NULL /* share_context */, attributes.shareResources,
-      in_process_attribs, gfx::PreferDiscreteGpu, mem_limits,
+      service, nullptr /* surface */, is_offscreen, gfx::kNullAcceleratedWidget,
+      gfx::Size(1, 1), nullptr /* share_context */, attributes,
+      gfx::PreferDiscreteGpu, mem_limits,
       BrowserGpuMemoryBufferManager::current(), nullptr));
 
   gpu::GLInProcessContext* context_ptr = context.get();
@@ -86,12 +71,58 @@ ContextHolder CreateContextHolder(
 
 }  // namespace
 
-class SynchronousCompositorFactoryImpl::VideoContextProvider
+SynchronousCompositorFactoryImpl::SynchronousCompositorFactoryImpl() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
+    // TODO(boliu): Figure out how to deal with this more nicely.
+    SynchronousCompositorFactory::SetInstance(this);
+  }
+}
+
+SynchronousCompositorFactoryImpl::~SynchronousCompositorFactoryImpl() {}
+
+scoped_refptr<base::SingleThreadTaskRunner>
+SynchronousCompositorFactoryImpl::GetCompositorTaskRunner() {
+  return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+}
+
+scoped_ptr<cc::OutputSurface>
+SynchronousCompositorFactoryImpl::CreateOutputSurface(
+    int routing_id,
+    uint32_t output_surface_id,
+    const scoped_refptr<FrameSwapMessageQueue>& frame_swap_message_queue,
+    const scoped_refptr<cc::ContextProvider>& onscreen_context,
+    const scoped_refptr<cc::ContextProvider>& worker_context) {
+  return make_scoped_ptr(new SynchronousCompositorOutputSurface(
+      onscreen_context, worker_context, routing_id, output_surface_id,
+      SynchronousCompositorRegistryInProc::GetInstance(),
+      frame_swap_message_queue));
+}
+
+InputHandlerManagerClient*
+SynchronousCompositorFactoryImpl::GetInputHandlerManagerClient() {
+  return synchronous_input_event_filter();
+}
+
+SynchronousInputHandlerProxyClient*
+SynchronousCompositorFactoryImpl::GetSynchronousInputHandlerProxyClient() {
+  return synchronous_input_event_filter();
+}
+
+scoped_ptr<cc::BeginFrameSource>
+SynchronousCompositorFactoryImpl::CreateExternalBeginFrameSource(
+    int routing_id) {
+  return make_scoped_ptr(new SynchronousCompositorExternalBeginFrameSource(
+      routing_id, SynchronousCompositorRegistryInProc::GetInstance()));
+}
+
+// SynchronousCompositorStreamTextureFactoryImpl.
+
+class SynchronousCompositorStreamTextureFactoryImpl::VideoContextProvider
     : public StreamTextureFactorySynchronousImpl::ContextProvider {
  public:
-  VideoContextProvider(
-      scoped_refptr<cc::ContextProvider> context_provider,
-      gpu::GLInProcessContext* gl_in_process_context)
+  VideoContextProvider(scoped_refptr<cc::ContextProvider> context_provider,
+                       gpu::GLInProcessContext* gl_in_process_context)
       : context_provider_(context_provider),
         gl_in_process_context_(gl_in_process_context) {
     context_provider_->BindToCurrentThread();
@@ -119,8 +150,7 @@ class SynchronousCompositorFactoryImpl::VideoContextProvider
   }
 
   void RestoreContext() {
-    FOR_EACH_OBSERVER(StreamTextureFactoryContextObserver,
-                      observer_list_,
+    FOR_EACH_OBSERVER(StreamTextureFactoryContextObserver, observer_list_,
                       ResetStreamTextureProxy());
   }
 
@@ -135,87 +165,62 @@ class SynchronousCompositorFactoryImpl::VideoContextProvider
   DISALLOW_COPY_AND_ASSIGN(VideoContextProvider);
 };
 
-SynchronousCompositorFactoryImpl::SynchronousCompositorFactoryImpl()
-    : num_hardware_compositors_(0) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSingleProcess)) {
-    // TODO(boliu): Figure out how to deal with this more nicely.
-    SynchronousCompositorFactory::SetInstance(this);
-  }
+namespace {
+base::LazyInstance<SynchronousCompositorStreamTextureFactoryImpl>::Leaky
+    g_stream_texture_factory = LAZY_INSTANCE_INITIALIZER;
+}  // namespace
+
+// static
+SynchronousCompositorStreamTextureFactoryImpl*
+SynchronousCompositorStreamTextureFactoryImpl::GetInstance() {
+  return g_stream_texture_factory.Pointer();
 }
 
-SynchronousCompositorFactoryImpl::~SynchronousCompositorFactoryImpl() {}
-
-scoped_refptr<base::SingleThreadTaskRunner>
-SynchronousCompositorFactoryImpl::GetCompositorTaskRunner() {
-  return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
-}
-
-scoped_ptr<cc::OutputSurface>
-SynchronousCompositorFactoryImpl::CreateOutputSurface(
-    int routing_id,
-    const scoped_refptr<FrameSwapMessageQueue>& frame_swap_message_queue,
-    const scoped_refptr<cc::ContextProvider>& onscreen_context,
-    const scoped_refptr<cc::ContextProvider>& worker_context) {
-  return make_scoped_ptr(new SynchronousCompositorOutputSurface(
-      onscreen_context, worker_context, routing_id,
-      SynchronousCompositorRegistryInProc::GetInstance(),
-      frame_swap_message_queue));
-}
-
-InputHandlerManagerClient*
-SynchronousCompositorFactoryImpl::GetInputHandlerManagerClient() {
-  return synchronous_input_event_filter();
-}
-
-scoped_ptr<cc::BeginFrameSource>
-SynchronousCompositorFactoryImpl::CreateExternalBeginFrameSource(
-    int routing_id) {
-  return make_scoped_ptr(new SynchronousCompositorExternalBeginFrameSource(
-      routing_id, SynchronousCompositorRegistryInProc::GetInstance()));
-}
+SynchronousCompositorStreamTextureFactoryImpl::
+    SynchronousCompositorStreamTextureFactoryImpl()
+    : num_hardware_compositors_(0) {}
 
 scoped_refptr<StreamTextureFactory>
-SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
-  scoped_refptr<StreamTextureFactorySynchronousImpl> factory(
-      StreamTextureFactorySynchronousImpl::Create(
-          base::Bind(
-              &SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory,
-              base::Unretained(this)),
-          frame_id));
-  return factory;
+SynchronousCompositorStreamTextureFactoryImpl::CreateStreamTextureFactory() {
+  return StreamTextureFactorySynchronousImpl::Create(
+      base::Bind(&SynchronousCompositorStreamTextureFactoryImpl::
+                     TryCreateStreamTextureFactory,
+                 base::Unretained(this)));
 }
 
-void SynchronousCompositorFactoryImpl::CompositorInitializedHardwareDraw() {
+void SynchronousCompositorStreamTextureFactoryImpl::
+    CompositorInitializedHardwareDraw() {
   base::AutoLock lock(num_hardware_compositor_lock_);
   num_hardware_compositors_++;
   if (num_hardware_compositors_ == 1 && main_thread_task_runner_.get()) {
     main_thread_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(
-            &SynchronousCompositorFactoryImpl::RestoreContextOnMainThread,
-            base::Unretained(this)));
+        FROM_HERE, base::Bind(&SynchronousCompositorStreamTextureFactoryImpl::
+                                  RestoreContextOnMainThread,
+                              base::Unretained(this)));
   }
 }
 
-void SynchronousCompositorFactoryImpl::CompositorReleasedHardwareDraw() {
+void SynchronousCompositorStreamTextureFactoryImpl::
+    CompositorReleasedHardwareDraw() {
   base::AutoLock lock(num_hardware_compositor_lock_);
   DCHECK_GT(num_hardware_compositors_, 0u);
   num_hardware_compositors_--;
 }
 
-void SynchronousCompositorFactoryImpl::RestoreContextOnMainThread() {
+void SynchronousCompositorStreamTextureFactoryImpl::
+    RestoreContextOnMainThread() {
   if (CanCreateMainThreadContext() && video_context_provider_.get())
     video_context_provider_->RestoreContext();
 }
 
-bool SynchronousCompositorFactoryImpl::CanCreateMainThreadContext() {
+bool SynchronousCompositorStreamTextureFactoryImpl::
+    CanCreateMainThreadContext() {
   base::AutoLock lock(num_hardware_compositor_lock_);
   return num_hardware_compositors_ > 0;
 }
 
 scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
-SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
+SynchronousCompositorStreamTextureFactoryImpl::TryCreateStreamTextureFactory() {
   {
     base::AutoLock lock(num_hardware_compositor_lock_);
     main_thread_task_runner_ = base::ThreadTaskRunnerHandle::Get();
@@ -226,20 +231,29 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
   // |video_context_provider_| to null is also not safe since it makes
   // synchronous destruction uncontrolled and possibly deadlock.
   if (!CanCreateMainThreadContext()) {
-    return
-        scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>();
+    return scoped_refptr<
+        StreamTextureFactorySynchronousImpl::ContextProvider>();
   }
 
   if (!video_context_provider_.get()) {
     DCHECK(android_view_service_.get());
 
-    blink::WebGraphicsContext3D::Attributes attributes = GetDefaultAttribs();
-    attributes.shareResources = false;
+    // This is for an offscreen context, so the default framebuffer doesn't need
+    // any alpha, depth, stencil, antialiasing.
+    gpu::gles2::ContextCreationAttribHelper attributes;
+    attributes.alpha_size = -1;
+    attributes.depth_size = 0;
+    attributes.stencil_size = 0;
+    attributes.samples = 0;
+    attributes.sample_buffers = 0;
+    attributes.bind_generates_resource = false;
+    attributes.lose_context_when_out_of_memory = true;
+
     // This needs to run in on-screen |android_view_service_| context due to
     // SurfaceTexture limitations.
     ContextHolder holder =
         CreateContextHolder(attributes, android_view_service_,
-                            gpu::GLInProcessContextSharedMemoryLimits(), false);
+                            gpu::GLInProcessContextSharedMemoryLimits());
     video_context_provider_ = new VideoContextProvider(
         ContextProviderInProcess::Create(std::move(holder.command_buffer),
                                          "Video-Offscreen-main-thread"),
@@ -248,10 +262,15 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
   return video_context_provider_;
 }
 
-void SynchronousCompositorFactoryImpl::SetDeferredGpuService(
+void SynchronousCompositorStreamTextureFactoryImpl::SetDeferredGpuService(
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service) {
   DCHECK(!android_view_service_.get());
   android_view_service_ = service;
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
+    RenderThreadImpl::SetStreamTextureFactory(CreateStreamTextureFactory());
+  }
 }
 
 }  // namespace content

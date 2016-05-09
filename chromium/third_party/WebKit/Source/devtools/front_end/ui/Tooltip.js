@@ -33,7 +33,7 @@ WebInspector.Tooltip.prototype = {
      */
     _mouseMove: function(event)
     {
-        var path = event.deepPath ? event.deepPath : event.path;
+        var path = event.path;
         if (!path || event.buttons !== 0)
             return;
 
@@ -70,7 +70,7 @@ WebInspector.Tooltip.prototype = {
         }
 
         if (typeof tooltip.content === "string")
-            this._tooltipElement.textContent = tooltip.content;
+            this._tooltipElement.setTextContentTruncatedIfNeeded(tooltip.content);
         else
             this._tooltipElement.appendChild(tooltip.content);
 
