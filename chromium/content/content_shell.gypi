@@ -38,12 +38,10 @@
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../cc/blink/cc_blink.gyp:cc_blink',
         '../cc/cc.gyp:cc',
-        '../components/components.gyp:crash_component_breakpad_to_be_deleted',
         '../components/components.gyp:devtools_discovery',
         '../components/components.gyp:devtools_http_handler',
         '../components/components.gyp:network_session_configurator_switches',
         '../components/components.gyp:web_cache_renderer',
-        '../components/components.gyp:plugins_renderer',
         '../components/test_runner/test_runner.gyp:test_runner',
         '../components/url_formatter/url_formatter.gyp:url_formatter',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
@@ -285,7 +283,7 @@
             'content_shell_jni_headers',
           ],
         }],  # OS=="android"
-        ['os_posix == 1 and OS != "mac"', {
+        ['os_posix == 1 and OS != "mac" and use_qt != 1', {
           'dependencies': [
             '../components/components.gyp:breakpad_host',
           ],
