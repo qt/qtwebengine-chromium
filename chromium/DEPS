@@ -54,7 +54,7 @@ allowed_hosts = [
 
 deps = {
   'src/breakpad/src':
-    (Var("chromium_git")) + '/breakpad/breakpad/src.git@9992f5d9d02d052f09cc85f0a1e678cf576867e8',
+    (Var("chromium_git")) + '/breakpad/breakpad/src.git@eb46b8c4fa1892541a78693183845ed25b886fa9',
   'src/buildtools':
     (Var("chromium_git")) + '/chromium/buildtools.git@a2082cafead67b75c9c8edbdca47a2def6dbab21',
   'src/chrome/test/data/perf/canvas_bench':
@@ -162,7 +162,7 @@ deps = {
   'src/tools/swarming_client':
     (Var("chromium_git")) + '/external/swarming.client.git@df6e95e7669883c8fe9ef956c69a544154701a49',
   'src/v8':
-    (Var("chromium_git")) + '/v8/v8.git@b07d929954bc6d0240e0d3cf3995069367bc3504'
+    (Var("chromium_git")) + '/v8/v8.git@3def66f95172f036eabbff420487ca078ab645fc'
 }
 
 deps_os = {
