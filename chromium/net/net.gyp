@@ -193,7 +193,7 @@
         }],
         [ 'use_nss_verifier == 1', {
           'conditions': [
-            [ 'desktop_linux == 1 or chromeos == 1', {
+            [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
               'dependencies': [
                 '../build/linux/system.gyp:ssl',
               ],
@@ -621,7 +621,7 @@
         }],
         ['use_nss_verifier == 1', {
           'conditions': [
-            [ 'desktop_linux == 1 or chromeos == 1', {
+            [ 'desktop_linux == 1 or chromeos == 1 or qt_os == "embedded_linux"', {
               'dependencies': [
                 '../build/linux/system.gyp:ssl',
               ],
