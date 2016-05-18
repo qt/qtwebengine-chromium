@@ -847,7 +847,7 @@
         },
       ],
     }],  # OS=="android"
-    ['OS=="win"', {
+    ['OS=="win" and use_qt==0', {
       'targets': [
         {
           # GN version: //content/shell:crash_service
