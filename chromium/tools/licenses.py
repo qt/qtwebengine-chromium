@@ -427,6 +427,7 @@ def GenerateCredits(file_template_file, entry_template_file, output_file):
         for key, val in env.items():
             if escape:
                 val = cgi.escape(val)
+                val = val.replace("*/", "* /")
             template = template.replace('{{%s}}' % key, val)
         return template
 
@@ -453,8 +454,10 @@ def GenerateCredits(file_template_file, entry_template_file, output_file):
             continue
         env = {
             'name': metadata['Name'],
+            'name-sanitized': metadata['Name'].replace(' ', '-'),
             'url': metadata['URL'],
             'license': open(metadata['License File'], 'rb').read(),
+            'license-type': metadata['License']
         }
         entry = {
             'name': metadata['Name'],
