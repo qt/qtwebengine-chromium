@@ -952,6 +952,7 @@ def GenerateCredits(file_template_file,
     for key, val in env.items():
       if escape:
         val = html.escape(val)
+        val = val.replace("*/", "* /")
       template = template.replace('{{%s}}' % key, val)
     return template
 
@@ -964,8 +965,10 @@ def GenerateCredits(file_template_file,
 
     env = {
         'name': metadata['Name'],
+        'name-sanitized': metadata['Name'].replace(' ', '-'),
         'url': metadata['URL'],
         'license': license_content,
+        'license-type': metadata['License']
     }
 
     return {
@@ -1009,6 +1012,7 @@ def GenerateCredits(file_template_file,
       'Name': 'The Chromium Project',
       'URL': 'https://www.chromium.org',
       'Shipped': 'yes',
+      'License': 'BSD 3-clause "New" or "Revised" License',
       'License File': [os.path.join(_REPOSITORY_ROOT, 'LICENSE')],
   }
   entries.append(
