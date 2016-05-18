@@ -144,12 +144,19 @@ inline sk_sp<SkColorSpace> ReadColorSpace(png_structp png, png_infop info) {
   if (png_get_valid(png, info, PNG_INFO_sRGB))
     return SkColorSpace::MakeSRGB();
 
-  png_charp name;
-  int compression;
-  png_bytep profile;
-  png_uint_32 length;
-  if (png_get_iCCP(png, info, &name, &compression, &profile, &length))
+#ifdef PNG_iCCP_SUPPORTED
+  png_charp name = nullptr;
+  int compression = 0;
+#if (PNG_LIBPNG_VER < 10500)
+  png_charp profile = nullptr;
+#else
+  png_bytep profile = nullptr;
+#endif
+  png_uint_32 length = 0;
+  if (png_get_iCCP(png, info, &name, &compression, &profile, &length)) {
     return SkColorSpace::MakeICC(profile, length);
+  }
+#endif // #ifdef PNG_iCCP_SUPPORTED
 
   png_fixed_point chrm[8];
   if (!png_get_cHRM_fixed(png, info, &chrm[0], &chrm[1], &chrm[2], &chrm[3],
