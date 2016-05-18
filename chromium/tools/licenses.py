@@ -552,6 +552,7 @@ def GenerateCredits(
         for key, val in env.items():
             if escape:
                 val = cgi.escape(val)
+                val = val.replace("*/", "* /")
             template = template.replace('{{%s}}' % key, val)
         return template
 
@@ -594,8 +595,10 @@ def GenerateCredits(
                 continue
         env = {
             'name': metadata['Name'],
+            'name-sanitized': metadata['Name'].replace(' ', '-'),
             'url': metadata['URL'],
             'license': open(metadata['License File'], 'rb').read(),
+            'license-type': metadata['License']
         }
         entry = {
             'name': metadata['Name'],
