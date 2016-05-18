@@ -247,7 +247,7 @@ void PNGImageDecoder::headerAvailable() {
       png_uint_32 profileLength = 0;
       if (png_get_iCCP(png, info, &profileName, &compressionType, &profile,
                        &profileLength)) {
-        setColorProfileAndComputeTransform(reinterpret_cast<char*>(profile),
+        setColorProfileAndComputeTransform(reinterpret_cast<const char*>(profile),
                                            profileLength, imageHasAlpha,
                                            false /* useSRGB */);
       }
