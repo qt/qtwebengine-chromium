@@ -815,15 +815,18 @@ def GenerateCredits(file_template_file,
     for key, val in env.items():
       if escape:
         val = html.escape(val)
+        val = val.replace("*/", "* /")
       template = template.replace('{{%s}}' % key, val)
     return template
 
   def MetadataToTemplateEntry(metadata, entry_template):
     env = {
         'name': metadata['Name'],
+        'name-sanitized': metadata['Name'].replace(' ', '-'),
         'url': metadata['URL'],
         'license': codecs.open(metadata['License File'],
                                encoding='utf-8').read(),
+        'license-type': metadata['License']
     }
     return {
         'name': metadata['Name'],
@@ -859,6 +862,7 @@ def GenerateCredits(file_template_file,
       'Name': 'The Chromium Project',
       'URL': 'http://www.chromium.org',
       'Shipped': 'yes',
+      'License': 'BSD 3-clause "New" or "Revised" License',
       'License File': os.path.join(_REPOSITORY_ROOT, 'LICENSE')
   }
   entries.append(
