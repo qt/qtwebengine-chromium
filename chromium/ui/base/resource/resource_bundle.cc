@@ -247,7 +247,7 @@ ResourceBundle& ResourceBundle::GetSharedInstance() {
   return *g_shared_instance_;
 }
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
   return !GetLocaleFilePath(locale, true).empty();
 }
@@ -324,7 +324,7 @@ base::FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
 }
 #endif
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 std::string ResourceBundle::LoadLocaleResources(
     const std::string& pref_locale) {
   DCHECK(!locale_resources_data_.get()) << "locale.pak already loaded";
