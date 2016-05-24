@@ -394,7 +394,7 @@ void ResourceBundle::LoadAdditionalLocaleDataWithPakFileRegion(
   locale_resources_data_.push_back(std::move(data_pack));
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 // static
 bool ResourceBundle::LocaleDataPakExists(std::string_view locale,
                                          Gender gender) {
@@ -499,7 +499,7 @@ base::FilePath ResourceBundle::GetLocaleFilePath(std::string_view app_locale) {
 }
 #endif
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 std::string ResourceBundle::LoadLocaleResources(const std::string& pref_locale,
                                                 bool crash_on_failure) {
   DCHECK_EQ(locale_resources_data_.size(), 0u) << "locale.pak already loaded";
