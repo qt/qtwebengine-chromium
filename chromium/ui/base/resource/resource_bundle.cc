@@ -364,7 +364,7 @@ void ResourceBundle::LoadSecondaryLocaleDataWithPakFileRegion(
   secondary_locale_resources_data_ = std::move(data_pack);
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
 // static
 bool ResourceBundle::LocaleDataPakExists(const std::string& locale) {
   const auto path = GetLocaleFilePath(locale);
@@ -434,7 +434,7 @@ base::FilePath ResourceBundle::GetLocaleFilePath(
 }
 #endif
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
 std::string ResourceBundle::LoadLocaleResources(const std::string& pref_locale,
                                                 bool crash_on_failure) {
   DCHECK(!locale_resources_data_.get()) << "locale.pak already loaded";
