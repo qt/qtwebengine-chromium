@@ -43,6 +43,7 @@
 #include FT_TYPE1_TABLES_H
 #include FT_XFREE86_H
 
+#include <memory>
 // FT_LOAD_COLOR and the corresponding FT_Pixel_Mode::FT_PIXEL_MODE_BGRA
 // were introduced in FreeType 2.5.0.
 // The following may be removed once FreeType 2.5.0 is required to build.
@@ -148,7 +149,7 @@ SK_DECLARE_STATIC_MUTEX(gFTMutex);
 static FreeTypeLibrary* gFTLibrary;
 static SkFaceRec* gFaceRecHead;
 
-// Private to RefFreeType and UnrefFreeType
+// Private to ref_ft_library and unref_ft_library
 static int gFTCount;
 
 // Caller must lock gFTMutex before calling this function.
@@ -171,6 +172,7 @@ static void unref_ft_library() {
 
     --gFTCount;
     if (0 == gFTCount) {
+        SkASSERT(nullptr == gFaceRecHead);
         SkASSERT(nullptr != gFTLibrary);
         delete gFTLibrary;
         SkDEBUGCODE(gFTLibrary = nullptr;)
@@ -675,6 +677,8 @@ void SkTypeface_FreeType::onFilterRec(SkScalerContextRec* rec) const {
     //BOGUS: http://code.google.com/p/chromium/issues/detail?id=121119
     //Cap the requested size as larger sizes give bogus values.
     //Remove when http://code.google.com/p/skia/issues/detail?id=554 is fixed.
+    //Note that this also currently only protects against large text size requests,
+    //the total matrix is not taken into account here.
     if (rec->fTextSize > SkIntToScalar(1 << 14)) {
         rec->fTextSize = SkIntToScalar(1 << 14);
     }
@@ -784,8 +788,19 @@ static FT_Int chooseBitmapStrike(FT_Face face, SkFixed scaleY) {
     return chosenStrikeIndex;
 }
 
+struct UnrefFTFace {
+    void operator()(FT_Face t) { unref_ft_face(t); }
+};
+
+struct DoneFTSize {
+    void operator()(FT_Size t) { FT_Done_Size(t); }
+};
+
 SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const SkDescriptor* desc)
     : SkScalerContext_FreeType_Base(typeface, desc)
+    , fFace(nullptr)
+    , fFTSize(nullptr)
+    , fStrikeIndex(-1)
 {
     SkAutoMutexAcquire  ac(gFTMutex);
 
@@ -794,10 +809,9 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
     }
 
     // load the font file
-    fStrikeIndex = -1;
-    fFTSize = nullptr;
-    fFace = ref_ft_face(typeface);
-    if (nullptr == fFace) {
+    std::unique_ptr<FT_FaceRec_, UnrefFTFace> ftFace(ref_ft_face(typeface));
+    if (nullptr == ftFace) {
+        SkDEBUGF(("Could not create FT_Face.\n"));
         return;
     }
 
@@ -883,34 +897,40 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
         fLoadGlyphFlags = loadFlags;
     }
 
-    FT_Error err = FT_New_Size(fFace, &fFTSize);
-    if (err != 0) {
-        SkDEBUGF(("FT_New_Size returned %x for face %s\n", err, fFace->family_name));
-        fFace = nullptr;
-        return;
-    }
-    err = FT_Activate_Size(fFTSize);
-    if (err != 0) {
-        SkDEBUGF(("FT_Activate_Size(%08x, 0x%x, 0x%x) returned 0x%x\n", fFace, fScaleX, fScaleY,
-                  err));
-        fFTSize = nullptr;
+    std::unique_ptr<FT_SizeRec_, DoneFTSize> ftSize([&ftFace]() -> FT_Size {
+        FT_Size size;
+        FT_Error err = FT_New_Size(ftFace.get(), &size);
+        if (err != 0) {
+            SkDEBUGF(("FT_New_Size returned %x for face %s\n", err, ftFace->family_name));
+            return nullptr;
+        }
+        return size;
+    }());
+    if (nullptr == ftSize) {
+        SkDEBUGF(("Could not create FT_Size.\n"));
         return;
     }
 
-    if (FT_IS_SCALABLE(fFace)) {
-        err = FT_Set_Char_Size(fFace, SkFixedToFDot6(fScaleX), SkFixedToFDot6(fScaleY), 72, 72);
+    FT_Error err = FT_Activate_Size(ftSize.get());
+    if (err != 0) {
+        SkDEBUGF(("FT_Activate_Size(%08x, 0x%x, 0x%x) returned 0x%x\n",
+                         ftFace.get(), fScaleX,   fScaleY,       err));
+        return;
+    }
+
+    if (FT_IS_SCALABLE(ftFace)) {
+        err = FT_Set_Char_Size(ftFace.get(), SkFixedToFDot6(fScaleX), SkFixedToFDot6(fScaleY), 72, 72);
         if (err != 0) {
             SkDEBUGF(("FT_Set_CharSize(%08x, 0x%x, 0x%x) returned 0x%x\n",
-                                    fFace, fScaleX, fScaleY,      err));
-            fFace = nullptr;
+                               ftFace.get(), fScaleX, fScaleY,      err));
             return;
         }
-        FT_Set_Transform(fFace, &fMatrix22, nullptr);
-    } else if (FT_HAS_FIXED_SIZES(fFace)) {
-        fStrikeIndex = chooseBitmapStrike(fFace, fScaleY);
+        FT_Set_Transform(ftFace.get(), &fMatrix22, nullptr);
+    } else if (FT_HAS_FIXED_SIZES(ftFace)) {
+        fStrikeIndex = chooseBitmapStrike(ftFace.get(), fScaleY);
         if (fStrikeIndex == -1) {
             SkDEBUGF(("no glyphs for font \"%s\" size %f?\n",
-                            fFace->family_name,       SkFixedToScalar(fScaleY)));
+                            ftFace->family_name,      SkFixedToScalar(fScaleY)));
         } else {
             // FreeType does no provide linear metrics for bitmap fonts.
             linearMetrics = false;
@@ -925,9 +945,11 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
         }
     } else {
         SkDEBUGF(("unknown kind of font \"%s\" size %f?\n",
-                            fFace->family_name,       SkFixedToScalar(fScaleY)));
+                            ftFace->family_name,      SkFixedToScalar(fScaleY)));
     }
 
+    fFTSize = ftSize.release();
+    fFace = ftFace.release();
     fDoLinearMetrics = linearMetrics;
 }
 
