@@ -919,7 +919,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
     }
 
     if (FT_IS_SCALABLE(ftFace)) {
-        err = FT_Set_Char_Size(ftFace.get(), SkFixedToScalar(fScaleX), SkFixedToScalar(fScaleY), 72, 72);
+        err = FT_Set_Char_Size(ftFace.get(), SkFixedToFDot6(fScaleX), SkFixedToFDot6(fScaleY), 72, 72);
         if (err != 0) {
             SkDEBUGF(("FT_Set_CharSize(%08x, 0x%x, 0x%x) returned 0x%x\n",
                                ftFace.get(), fScaleX, fScaleY,      err));
