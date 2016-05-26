@@ -919,7 +919,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
     }
 
     if (FT_IS_SCALABLE(ftFace)) {
-        err = FT_Set_Char_Size(ftFace.get(), fScaleX, fScaleY, 72, 72);
+        err = FT_Set_Char_Size(ftFace.get(), SkFixedToScalar(fScaleX), SkFixedToScalar(fScaleY), 72, 72);
         if (err != 0) {
             SkDEBUGF(("FT_Set_CharSize(%08x, 0x%x, 0x%x) returned 0x%x\n",
                                ftFace.get(), fScaleX, fScaleY,      err));
@@ -930,7 +930,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
         fStrikeIndex = chooseBitmapStrike(ftFace.get(), fScaleY);
         if (fStrikeIndex == -1) {
             SkDEBUGF(("no glyphs for font \"%s\" size %f?\n",
-                            ftFace->family_name,      SkFDot6ToScalar(fScaleY)));
+                            ftFace->family_name,      SkFixedToScalar(fScaleY)));
         } else {
             // FreeType does no provide linear metrics for bitmap fonts.
             linearMetrics = false;
@@ -945,7 +945,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const S
         }
     } else {
         SkDEBUGF(("unknown kind of font \"%s\" size %f?\n",
-                            fFace->family_name,       SkFixedToScalar(fScaleY)));
+                            ftFace->family_name,      SkFixedToScalar(fScaleY)));
     }
 
     fFTSize = ftSize.release();
