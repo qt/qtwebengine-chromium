@@ -41,6 +41,7 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "modules/EventTargetModules.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
@@ -244,6 +245,14 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
     if (!SchemeRegistry::shouldTreatURLSchemeAsAllowingServiceWorkers(patternURL.protocol())) {
         resolver->reject(DOMException::create(SecurityError, "Failed to register a ServiceWorker: The URL protocol of the scope ('" + patternURL.string() + "') is not supported."));
         return promise;
+    }
+
+    ContentSecurityPolicy* csp = executionContext->contentSecurityPolicy();
+    if (csp) {
+        if (!csp->allowWorkerContextFromSource(scriptURL, ContentSecurityPolicy::DidNotRedirect, ContentSecurityPolicy::SendReport)) {
+            resolver->reject(DOMException::create(SecurityError, "Failed to register a ServiceWorker: The provided scriptURL ('" + scriptURL.string() + "') violates the Content Security Policy."));
+            return promise;
+        }
     }
 
     m_provider->registerServiceWorker(patternURL, scriptURL, new RegistrationCallback(resolver));
