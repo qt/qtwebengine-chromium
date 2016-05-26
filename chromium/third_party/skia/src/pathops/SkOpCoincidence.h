@@ -81,7 +81,7 @@ public:
         return !fHead;
     }
 
-    void mark();
+    bool mark();
 
 private:
     void addIfMissing(const SkCoincidentSpans* outer, SkOpPtT* over1s, SkOpPtT* over1e,

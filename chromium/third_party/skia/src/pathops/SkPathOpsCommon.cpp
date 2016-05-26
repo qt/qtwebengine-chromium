@@ -462,7 +462,9 @@ bool HandleCoincidence(SkOpContourHead* contourList, SkOpCoincidence* coincidenc
         coincidence->addExpanded(allocator  PATH_OPS_DEBUG_VALIDATE_PARAMS(globalState));
     }
     // the expanded ranges may not align -- add the missing spans
-    coincidence->mark();  // mark spans of coincident segments as coincident
+    if (!coincidence->mark()) {  // mark spans of coincident segments as coincident
+        return false;
+    }
     // look for coincidence missed earlier
     if (missingCoincidence(contourList, coincidence, allocator)) {
         (void) coincidence->expand();
