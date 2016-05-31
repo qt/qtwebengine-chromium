@@ -78,7 +78,8 @@ BitVector::OutOfLineBits* BitVector::OutOfLineBits::create(size_t numBits)
     // Because of the way BitVector stores the pointer, memory tools
     // will erroneously report a leak here.
     WTF_ANNOTATE_SCOPED_MEMORY_LEAK;
-    numBits = (numBits + bitsInPointer() - 1) & ~(bitsInPointer() - 1);
+    size_t mask = bitsInPointer() - 1;
+    numBits = (numBits + mask) & ~mask;
     size_t size = sizeof(OutOfLineBits) + sizeof(uintptr_t) * (numBits / bitsInPointer());
     void* allocation = partitionAllocGeneric(Partitions::bufferPartition(), size);
     OutOfLineBits* result = new (NotNull, allocation) OutOfLineBits(numBits);
