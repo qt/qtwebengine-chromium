@@ -35,6 +35,7 @@
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutEmbeddedObject.h"
@@ -400,6 +401,7 @@ bool CompositedLayerMapping::updateGraphicsLayerConfiguration()
 
     PaintLayerCompositor* compositor = this->compositor();
     LayoutObject* layoutObject = this->layoutObject();
+    const ComputedStyle& style = layoutObject->styleRef();
 
     bool layerConfigChanged = false;
     setBackgroundLayerPaintsFixedRootBackground(compositor->needsFixedRootBackgroundLayer(&m_owningLayer));
@@ -438,10 +440,7 @@ bool CompositedLayerMapping::updateGraphicsLayerConfiguration()
     if (updateOverflowControlsLayers(requiresHorizontalScrollbarLayer(), requiresVerticalScrollbarLayer(), requiresScrollCornerLayer(), needsAncestorClip))
         layerConfigChanged = true;
 
-    bool hasPerspective = false;
-    // FIXME: Can |style| be really null that late in the DocumentCycle?
-    if (const ComputedStyle* style = layoutObject->style())
-        hasPerspective = style->hasPerspective();
+    bool hasPerspective = style.hasPerspective();
     bool needsChildTransformLayer = hasPerspective && layoutObject->isBox();
     if (updateChildTransformLayer(needsChildTransformLayer))
         layerConfigChanged = true;
@@ -471,8 +470,8 @@ bool CompositedLayerMapping::updateGraphicsLayerConfiguration()
     bool hasChildClippingLayer = compositor->clipsCompositingDescendants(&m_owningLayer) && (hasClippingLayer() || hasScrollingLayer());
     // If we have a border radius or clip path on a scrolling layer, we need a clipping mask to properly
     // clip the scrolled contents, even if there are no composited descendants.
-    bool hasClipPath = layoutObject->style()->clipPath();
-    bool needsChildClippingMask = (hasClipPath || layoutObject->style()->hasBorderRadius()) && (hasChildClippingLayer || isAcceleratedContents(layoutObject) || hasScrollingLayer());
+    bool hasClipPath = style.clipPath();
+    bool needsChildClippingMask = (hasClipPath || style.hasBorderRadius()) && (hasChildClippingLayer || isAcceleratedContents(layoutObject) || hasScrollingLayer());
 
     GraphicsLayer* layerToApplyChildClippingMask = nullptr;
     bool shouldApplyChildClippingMaskOnContents = false;
@@ -555,6 +554,10 @@ bool CompositedLayerMapping::updateGraphicsLayerConfiguration()
         updatePaintingPhases();
 
     updateElementIdAndCompositorMutableProperties();
+
+    m_owningLayer.update3DTransformedDescendantStatus();
+    if (style.preserves3D() && style.hasOpacity() && m_owningLayer.has3DTransformedDescendant())
+        UseCounter::count(layoutObject->document(), UseCounter::OpacityWithPreserve3DQuirk);
 
     return layerConfigChanged;
 }
@@ -766,7 +769,11 @@ void CompositedLayerMapping::updateMainGraphicsLayerGeometry(const IntRect& rela
     // descendants. So, the visibility flag for m_graphicsLayer should be true if there are any
     // non-compositing visible layers.
     bool contentsVisible = m_owningLayer.hasVisibleContent() || hasVisibleNonCompositingDescendant(&m_owningLayer);
-
+    if (layoutObject()->isVideo()) {
+        HTMLVideoElement* videoElement = toHTMLVideoElement(layoutObject()->node());
+        if (videoElement->isFullscreen() && videoElement->usesOverlayFullscreenVideo())
+            contentsVisible = false;
+    }
     m_graphicsLayer->setContentsVisible(contentsVisible);
 
     m_graphicsLayer->setBackfaceVisibility(layoutObject()->style()->backfaceVisibility() == BackfaceVisibilityVisible);

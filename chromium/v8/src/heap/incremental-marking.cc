@@ -568,10 +568,6 @@ void IncrementalMarking::StartMarking() {
   IncrementalMarkingRootMarkingVisitor visitor(this);
   heap_->IterateStrongRoots(&visitor, VISIT_ONLY_STRONG);
 
-  if (FLAG_black_allocation) {
-    StartBlackAllocation();
-  }
-
   // Ready to start incremental marking.
   if (FLAG_trace_incremental_marking) {
     PrintF("[IncrementalMarking] Running\n");
@@ -591,9 +587,11 @@ void IncrementalMarking::StartBlackAllocation() {
 }
 
 void IncrementalMarking::FinishBlackAllocation() {
-  black_allocation_ = false;
-  if (FLAG_trace_incremental_marking) {
-    PrintF("[IncrementalMarking] Black allocation finished\n");
+  if (black_allocation_) {
+    black_allocation_ = false;
+    if (FLAG_trace_incremental_marking) {
+      PrintF("[IncrementalMarking] Black allocation finished\n");
+    }
   }
 }
 
@@ -767,6 +765,13 @@ void IncrementalMarking::FinalizeIncrementally() {
       (marking_progress <
        FLAG_min_progress_during_incremental_marking_finalization)) {
     finalize_marking_completed_ = true;
+  }
+
+  if (FLAG_black_allocation && !heap()->ShouldReduceMemory() &&
+      !black_allocation_) {
+    // TODO(hpayer): Move to an earlier point as soon as we make faster marking
+    // progress.
+    StartBlackAllocation();
   }
 }
 

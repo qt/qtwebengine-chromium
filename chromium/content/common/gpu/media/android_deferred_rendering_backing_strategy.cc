@@ -53,7 +53,16 @@ gfx::ScopedJavaSurface AndroidDeferredRenderingBackingStrategy::Initialize(
     surface = gpu::GpuSurfaceLookup::GetInstance()->AcquireJavaSurface(
         surface_view_id);
   } else {
-    if (DoesSurfaceTextureDetachWork()) {
+    bool using_virtualized_context = false;
+    if (gfx::GLContext* context = gfx::GLContext::GetCurrent()) {
+      if (gfx::GLShareGroup* share_group = context->share_group())
+        using_virtualized_context = !!share_group->GetSharedContext();
+    }
+
+    // If we're using a virtualized context, then detaching the surface texture
+    // won't buy us much, since there's no real context switch anyway.  Since
+    // detaching is a little flaky, we skip it if possible.
+    if (!using_virtualized_context && DoesSurfaceTextureDetachWork()) {
       // Create a detached SurfaceTexture. Detaching it will silently fail to
       // delete texture 0.
       surface_texture_ = gfx::SurfaceTexture::Create(0);
@@ -441,28 +450,34 @@ bool AndroidDeferredRenderingBackingStrategy::ShouldCopyPictures() const {
           state_provider_->GetGlDecoder().get()) {
     if (gpu::gles2::ContextGroup* group = gl_decoder->GetContextGroup()) {
       if (gpu::gles2::FeatureInfo* feature_info = group->feature_info()) {
-        return !feature_info->workarounds().avda_dont_copy_pictures;
+        if (feature_info->workarounds().avda_dont_copy_pictures)
+          return false;
       }
     }
   }
 
   // Samsung Galaxy Tab A, J3, and J1 Mini all like to crash on Lollipop in
-  // glEGLImageTargetTexture2DOES .  Exact models were SM-T280, SM-J320F,
-  // and SM-j105H.
+  // glEGLImageTargetTexture2DOES .  These include SM-J105, SM-J111, SM-J120,
+  // SM-T280, SM-T285, and SM-J320 with various suffixes.  All run lollipop and
+  // and have a Mali-400 gpu.
+  // For these devices, we must check based on the brand / model
+  // number, since the strings used by FeatureInfo aren't populated.
   if (base::android::BuildInfo::GetInstance()->sdk_int() <= 22) {  // L MR1
     const std::string brand(
         base::ToLowerASCII(base::android::BuildInfo::GetInstance()->brand()));
     if (brand == "samsung") {
       const std::string model(
           base::ToLowerASCII(base::android::BuildInfo::GetInstance()->model()));
-      if (model.find("sm-t280") != std::string::npos ||
-          model.find("sm-j320f") != std::string::npos ||
-          model.find("sm-j105") != std::string::npos)
+      if (model.find("sm-j105") != std::string::npos ||
+          model.find("sm-j111") != std::string::npos ||
+          model.find("sm-j120") != std::string::npos ||
+          model.find("sm-t280") != std::string::npos ||
+          model.find("sm-t285") != std::string::npos ||
+          model.find("sm-j320") != std::string::npos)
         return false;
     }
   }
 
-  // Assume so.
   return true;
 }
 

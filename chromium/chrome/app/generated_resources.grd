@@ -6454,11 +6454,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_SUPERVISED_USER_SAFESITES_ONLINE_CHECK_ONLY" desc="Description for the choice to enable only the online check in the supervised user SafeSites filtering feature.">
         Online check only
       </message>
-      <message name="IDS_FLAGS_DISABLE_UNIFIED_MEDIA_PIPELINE_NAME" desc="Title for the flag to disable the unified media pipeline on Android.">
-        Disables the unified media pipeline on Android.
+      <message name="IDS_FLAGS_ENABLE_UNIFIED_MEDIA_PIPELINE_NAME" desc="Title for the flag to enable the unified media pipeline on Android.">
+        Enables the unified media pipeline on Android.
       </message>
-      <message name="IDS_FLAGS_DISABLE_UNIFIED_MEDIA_PIPELINE_DESCRIPTION" desc="Description for the flag to disable the unified media pipeline on Android.">
-        Disables the unified (Android and desktop) media pipeline on Android.
+      <message name="IDS_FLAGS_ENABLE_UNIFIED_MEDIA_PIPELINE_DESCRIPTION" desc="Description for the flag to enable the unified media pipeline on Android.">
+        Enables the unified (Android and desktop) media pipeline on Android.
       </message>
       <message name="IDS_FLAGS_TRY_SUPPORTED_CHANNEL_LAYOUTS_NAME" desc="Title for the flag to enable support for trying supported channel layouts.">
         Causes audio output streams to check if channel layouts other than the default hardware layout are available.
@@ -11130,10 +11130,15 @@ Some features may be unavailable.  Please check that the profile exists and you 
         </message>
       </if>
 
-      <message name="IDS_SET_AS_DEFAULT_INFOBAR_BUTTON_LABEL" desc="The label of the 'set as default' button on the default browser infobar.">
+      <message name="IDS_DEFAULT_BROWSER_INFOBAR_OK_BUTTON_LABEL" desc="The label of the 'set as default' button on the default browser infobar.">
         Set as default
       </message>
-      <message name="IDS_DONT_ASK_AGAIN_INFOBAR_BUTTON_LABEL" desc="The label of the 'don't ask again' button on the default browser infobar.">
+      <if expr="is_win">
+        <message name="IDS_DEFAULT_BROWSER_INFOBAR_OK_BUTTON_LABEL_WIN_10" desc="The label of the 'open settings' button on the default browser infobar for Windows 10 and newer. Pressing this button opens the Windows &quot;Settings&quot; application to the &quot;Choose default apps&quot; page.">
+          Set as default
+        </message>
+      </if>
+      <message name="IDS_DEFAULT_BROWSER_INFOBAR_CANCEL_BUTTON_LABEL" desc="The label of the 'don't ask again' button on the default browser infobar.">
         Don't ask again
       </message>
 
