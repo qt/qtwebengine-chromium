@@ -196,7 +196,9 @@ class MediaSessionVisibilityBrowserTest_UnifiedPipeline_SuspendOnHide :
       public MediaSessionVisibilityBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     MediaSessionVisibilityBrowserTest::SetUpCommandLine(command_line);
-#if !defined(OS_ANDROID)
+#if defined(OS_ANDROID)
+    command_line->AppendSwitch(switches::kEnableUnifiedMediaPipeline);
+#else
     command_line->AppendSwitch(switches::kEnableMediaSuspend);
 #endif  // defined(OS_ANDROID)
   }
@@ -215,6 +217,7 @@ class MediaSessionVisibilityBrowserTest_UnifiedPipeline_NosuspendOnHide :
   void SetUpCommandLine(base::CommandLine* command_line) override {
     MediaSessionVisibilityBrowserTest::SetUpCommandLine(command_line);
 #if defined(OS_ANDROID)
+    command_line->AppendSwitch(switches::kEnableUnifiedMediaPipeline);
     command_line->AppendSwitch(switches::kDisableMediaSuspend);
 #endif  // defined(OS_ANDROID)
   }
@@ -233,7 +236,6 @@ class MediaSessionVisibilityBrowserTest_AndroidPipeline_SuspendOnHide :
       public MediaSessionVisibilityBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     MediaSessionVisibilityBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kDisableUnifiedMediaPipeline);
   }
 };
 
@@ -249,7 +251,6 @@ class MediaSessionVisibilityBrowserTest_AndroidPipeline_NosuspendOnHide :
       public MediaSessionVisibilityBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     MediaSessionVisibilityBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kDisableUnifiedMediaPipeline);
     command_line->AppendSwitch(switches::kDisableMediaSuspend);
   }
 };
