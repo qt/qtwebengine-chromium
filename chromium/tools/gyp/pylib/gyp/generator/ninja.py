@@ -1268,7 +1268,7 @@ class NinjaWriter(object):
             pdb_name = 'Qt5WebEngineCored.pdb'
         if '/PDB:QtWebEngineCore.dll.pdb' in ldflags:
             pdb_index = ldflags.index('/PDB:QtWebEngineCore.dll.pdb')
-            ldflags[pdb_index] = '/PDB:$$shell_quote($$shell_path($$[QT_HOST_LIBS/get]/)' + pdb_name + ')'
+            ldflags[pdb_index] = '/PDB:$$shell_quote($$shell_path($$MODULE_BASE_OUTDIR/lib/)' + pdb_name + ')'
 
       # Replace "$!PRODUCT_DIR" with "$$PWD" in link flags (which might contain some -L directives).
       prefixed_lflags = [self.ExpandSpecial(f, '$$PWD') for f in ldflags]
