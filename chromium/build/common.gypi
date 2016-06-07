@@ -508,7 +508,7 @@
       'use_custom_libcxx%': 0,
 
       # Use system libc++ instead of the default C++ library, usually libstdc++.
-      # This is intended for iOS builds only.
+      # This is intended for Linux/*BSD and iOS builds only.
       'use_system_libcxx%': 0,
 
       # Use a modified version of Clang to intercept allocated types and sizes
@@ -4352,6 +4352,14 @@
             'cflags': [
               # See http://crbug.com/110262
               '-fcolor-diagnostics',
+            ],
+          }],
+          ['clang==1 and use_system_libcxx==1', {
+            'cflags_cc': [
+              '-stdlib=libc++'
+            ],
+            'ldflags': [
+              '-stdlib=libc++'
             ],
           }],
           # Common options for AddressSanitizer, LeakSanitizer,
