@@ -537,6 +537,10 @@
       # builds.
       'use_custom_libcxx%': 0,
 
+      # Use system libc++ instead of the default C++ library, usually libstdc++.
+      # This is intended for Linux/*BSD builds only.
+      'use_system_libcxx%': 0,
+
       # Use the provided profiled order file to link Chrome image with it.
       # This makes Chrome faster by better using CPU cache when executing code.
       # This is known as PGO (profile guided optimization).
@@ -1224,6 +1228,7 @@
     'use_instrumented_libraries%': '<(use_instrumented_libraries)',
     'use_prebuilt_instrumented_libraries%': '<(use_prebuilt_instrumented_libraries)',
     'use_custom_libcxx%': '<(use_custom_libcxx)',
+    'use_system_libcxx%': '<(use_system_libcxx)',
     'order_profiling%': '<(order_profiling)',
     'order_text_section%': '<(order_text_section)',
     'enable_extensions%': '<(enable_extensions)',
@@ -4360,6 +4365,14 @@
             'cflags': [
               # See http://crbug.com/110262
               '-fcolor-diagnostics',
+            ],
+          }],
+          ['clang==1 and use_system_libcxx==1', {
+            'cflags_cc': [
+              '-stdlib=libc++'
+            ],
+            'ldflags': [
+              '-stdlib=libc++'
             ],
           }],
           # Common options for AddressSanitizer, LeakSanitizer,
