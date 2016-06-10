@@ -4757,26 +4757,6 @@
               }],
             ],
           }],
-          ['gcc_version>=60 and clang==0', {
-            'target_conditions': [
-              ['_toolset=="target"', {
-                'cflags_cc': [
-                  # V8 needs this, see https://bugs.chromium.org/p/v8/issues/detail?id=3782
-                  '-fno-delete-null-pointer-checks',
-                ],
-              }],
-            ],
-          }],
-          ['host_gcc_version>=60 and clang==0 and host_clang==0', {
-            'target_conditions': [
-              ['_toolset=="host"', {
-                'cflags_cc': [
-                  # V8 needs this, see https://bugs.chromium.org/p/v8/issues/detail?id=3782
-                  '-fno-delete-null-pointer-checks',
-                ],
-              }],
-            ],
-          }],
         ],
       },
     }],
