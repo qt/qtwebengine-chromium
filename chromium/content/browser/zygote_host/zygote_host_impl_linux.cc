@@ -125,7 +125,7 @@ void ZygoteHostImpl::Init(const base::CommandLine& command_line) {
     // root.
     use_suid_sandbox_for_adj_oom_score_ = use_suid_sandbox_;
   } else {
-    LOG(FATAL)
+    LOG(INFO)
         << "No usable sandbox! If you are running on Ubuntu 23.10+ or another "
            "Linux distro that has disabled unprivileged user namespaces with "
            "AppArmor, see "
