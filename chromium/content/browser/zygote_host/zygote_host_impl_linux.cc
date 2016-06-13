@@ -114,7 +114,7 @@ void ZygoteHostImpl::Init(const base::CommandLine& command_line) {
     // root.
     use_suid_sandbox_for_adj_oom_score_ = use_suid_sandbox_;
   } else {
-    LOG(FATAL)
+    LOG(INFO)
         << "No usable sandbox! Update your kernel or see "
            "https://chromium.googlesource.com/chromium/src/+/main/"
            "docs/linux/suid_sandbox_development.md for more information on "
