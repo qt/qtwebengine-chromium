@@ -186,7 +186,7 @@ void SetupSandbox(const base::CommandLine& parsed_command_line) {
       LOG(FATAL) << no_suid_error;
     }
   } else {
-    LOG(ERROR) << no_suid_error;
+    LOG(INFO) << no_suid_error;
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
