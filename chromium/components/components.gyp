@@ -31,7 +31,12 @@
         'includes': [
           'printing.gypi',
         ],
-      }]
+      }],
+      ['enable_pdf==1', {
+        'includes': [
+          'pdf.gypi',
+        ],
+      }],
       ]
   }, {
   'includes': [
