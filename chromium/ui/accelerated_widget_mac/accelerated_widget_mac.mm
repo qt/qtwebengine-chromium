@@ -194,7 +194,7 @@ void AcceleratedWidgetMac::GotIOSurfaceFrame(
   // If there is not a layer for local frames, create one.
   EnsureLocalLayer();
 
-  id new_contents = static_cast<id>(io_surface.get());
+  id new_contents = (__bridge id)(io_surface.get());
 
   if (new_contents && new_contents == [local_layer_ contents]) {
     [local_layer_ setContentsChanged];

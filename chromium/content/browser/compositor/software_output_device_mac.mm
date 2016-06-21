@@ -89,10 +89,10 @@ bool SoftwareOutputDeviceMac::EnsureBuffersExist() {
       unsigned pixel_format = 'BGRA';
       unsigned bytes_per_element = 4;
       NSDictionary* options = @{
-        static_cast<id>(kIOSurfaceWidth) : @(pixel_size_.width()),
-        static_cast<id>(kIOSurfaceHeight) : @(pixel_size_.height()),
-        static_cast<id>(kIOSurfacePixelFormat) : @(pixel_format),
-        static_cast<id>(kIOSurfaceBytesPerElement) : @(bytes_per_element),
+        (__bridge id)(kIOSurfaceWidth) : @(pixel_size_.width()),
+        (__bridge id)(kIOSurfaceHeight) : @(pixel_size_.height()),
+        (__bridge id)(kIOSurfacePixelFormat) : @(pixel_format),
+        (__bridge id)(kIOSurfaceBytesPerElement) : @(bytes_per_element),
       };
       io_surfaces_[i].reset(IOSurfaceCreate(base::mac::NSToCFCast(options)));
     }
