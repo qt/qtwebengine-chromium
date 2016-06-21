@@ -614,7 +614,7 @@ void CARendererLayerTree::ContentLayer::CommitToCA(CALayer* superlayer,
     }
   } else {
     if (update_contents) {
-      [ca_layer setContents:static_cast<id>(io_surface.get())];
+      [ca_layer setContents:(__bridge id)(io_surface.get())];
       if ([ca_layer respondsToSelector:(@selector(setContentsScale:))])
         [ca_layer setContentsScale:scale_factor];
     }

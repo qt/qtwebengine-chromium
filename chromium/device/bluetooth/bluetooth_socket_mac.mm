@@ -597,12 +597,11 @@ void BluetoothSocketMac::OnSDPQueryComplete(
   connect_callbacks_->error_callback = error_callback;
 
   if (rfcomm_channel_id != kInvalidRfcommChannelId) {
-    channel_ = BluetoothRfcommChannelMac::OpenAsync(
-        this, device, rfcomm_channel_id, &status);
+    channel_.reset(BluetoothRfcommChannelMac::OpenAsync(
+        this, device, rfcomm_channel_id, &status).release());
   } else {
     DCHECK_NE(l2cap_psm, kInvalidL2capPsm);
-    channel_ =
-        BluetoothL2capChannelMac::OpenAsync(this, device, l2cap_psm, &status);
+    channel_.reset(BluetoothL2capChannelMac::OpenAsync(this, device, l2cap_psm, &status).release());
   }
   if (status != kIOReturnSuccess) {
     ReleaseChannel();

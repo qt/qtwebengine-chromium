@@ -8,8 +8,8 @@
 #include "base/mac/scoped_nsobject.h"
 
 @interface NSNib (MountainLionSDK)
-- (BOOL)instantiateWithOwner:(nullable id)owner
-             topLevelObjects:(NSArray* __nonnull* __nullable)topLevelObjects;
+- (BOOL)instantiateWithOwner:(id)owner
+             topLevelObjects:(NSArray*)topLevelObjects;
 @end
 
 namespace ui {

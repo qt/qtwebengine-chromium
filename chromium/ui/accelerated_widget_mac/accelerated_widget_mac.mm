@@ -214,7 +214,7 @@ void AcceleratedWidgetMac::GotIOSurfaceFrame(
     [io_surface_layer_ setAnchorPoint:CGPointMake(0, 0)];
     [flipped_layer_ addSublayer:io_surface_layer_];
   }
-  id new_contents = static_cast<id>(io_surface.get());
+  id new_contents = (__bridge id)(io_surface.get());
   if (new_contents && new_contents == [io_surface_layer_ contents])
     [io_surface_layer_ setContentsChanged];
   else

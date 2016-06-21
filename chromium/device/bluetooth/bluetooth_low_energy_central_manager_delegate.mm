@@ -93,13 +93,13 @@ class BluetoothLowEnergyCentralManagerBridge {
 
 - (void)centralManager:(CBCentralManager*)central
     didFailToConnectPeripheral:(CBPeripheral*)peripheral
-                         error:(nullable NSError*)error {
+                         error:(NSError*)error {
   bridge_->DidFailToConnectPeripheral(peripheral, error);
 }
 
 - (void)centralManager:(CBCentralManager*)central
     didDisconnectPeripheral:(CBPeripheral*)peripheral
-                      error:(nullable NSError*)error {
+                      error:(NSError*)error {
   bridge_->DidDisconnectPeripheral(peripheral, error);
 }
 
