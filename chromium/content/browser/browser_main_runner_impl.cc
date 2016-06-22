@@ -95,10 +95,12 @@ int BrowserMainRunnerImpl::Initialize(MainFunctionParams parameters) {
 
 #if BUILDFLAG(IS_WIN)
     base::win::EnableHighDPISupport();
+#if !defined(TOOLKIT_QT)
     // Ole must be initialized before starting message pump, so that TSF
     // (Text Services Framework) module can interact with the message pump
     // on Windows 8 Metro mode.
     ole_initializer_ = std::make_unique<ui::ScopedOleInitializer>();
+#endif
 #endif  // BUILDFLAG(IS_WIN)
 
     gfx::InitializeFonts();
@@ -197,7 +199,7 @@ void BrowserMainRunnerImpl::Shutdown() {
         base::features::WhenFreeBecomesNoOp::kAfterShutDownThreads);
 
     ui::ShutdownInputMethod();
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
     ole_initializer_.reset(NULL);
 #endif
     main_loop_.reset(nullptr);
