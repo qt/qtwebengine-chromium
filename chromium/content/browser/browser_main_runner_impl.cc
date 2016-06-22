@@ -88,10 +88,12 @@ int BrowserMainRunnerImpl::Initialize(MainFunctionParams parameters) {
     notification_service_ = std::make_unique<NotificationServiceImpl>();
 
 #if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
     // Ole must be initialized before starting message pump, so that TSF
     // (Text Services Framework) module can interact with the message pump
     // on Windows 8 Metro mode.
     ole_initializer_ = std::make_unique<ui::ScopedOleInitializer>();
+#endif
 #endif  // OS_WIN
 
     gfx::InitializeFonts();
@@ -180,7 +182,7 @@ void BrowserMainRunnerImpl::Shutdown() {
     main_loop_->ShutdownThreadsAndCleanUp();
 
     ui::ShutdownInputMethod();
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     ole_initializer_.reset(NULL);
 #endif
 #if defined(OS_ANDROID)
