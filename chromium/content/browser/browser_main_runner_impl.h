@@ -53,7 +53,7 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
   std::unique_ptr<base::ScopedThreadPoolExecutionFence> scoped_execution_fence_;
 
   std::unique_ptr<BrowserMainLoop> main_loop_;
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<ui::ScopedOleInitializer> ole_initializer_;
 #endif
 };
