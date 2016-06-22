@@ -102,10 +102,12 @@ int BrowserMainRunnerImpl::Initialize(const MainFunctionParams& parameters) {
     notification_service_.reset(new NotificationServiceImpl);
 
 #if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
     // Ole must be initialized before starting message pump, so that TSF
     // (Text Services Framework) module can interact with the message pump
     // on Windows 8 Metro mode.
     ole_initializer_.reset(new ui::ScopedOleInitializer);
+#endif
     gfx::win::InitializeDirectWrite();
 #endif  // OS_WIN
 
@@ -191,7 +193,7 @@ void BrowserMainRunnerImpl::Shutdown() {
     main_loop_->ShutdownThreadsAndCleanUp();
 
     ui::ShutdownInputMethod();
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     ole_initializer_.reset(NULL);
 #endif
 #if defined(OS_ANDROID)
