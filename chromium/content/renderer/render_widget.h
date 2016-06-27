@@ -129,6 +129,7 @@ class CONTENT_EXPORT RenderWidget
   blink::WebDisplayMode display_mode() const { return display_mode_; }
   bool is_hidden() const { return is_hidden_; }
   bool handling_input_event() const { return handling_input_event_; }
+  bool handling_find_op() const { return handling_find_op_; }
   // Temporary for debugging purposes...
   bool closing() const { return closing_; }
   bool is_swapped_out() { return is_swapped_out_; }
@@ -679,6 +680,10 @@ class CONTENT_EXPORT RenderWidget
 
   // Are we currently handling an input event?
   bool handling_input_event_;
+
+  // Indicates that a find operation is in process (OnFind).
+  // Used to clear currently selected text in a RenderWidget.
+  bool handling_find_op_;
 
   // Used to intercept overscroll notifications while an event is being
   // handled. If the event causes overscroll, the overscroll metadata can be

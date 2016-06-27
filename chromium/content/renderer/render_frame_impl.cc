@@ -2977,7 +2977,9 @@ void RenderFrameImpl::requestNotificationPermission(
 }
 
 void RenderFrameImpl::didChangeSelection(bool is_empty_selection) {
-  if (!GetRenderWidget()->handling_input_event() && !handling_select_range_)
+  if (!GetRenderWidget()->handling_input_event()
+      && !GetRenderWidget()->handling_find_op()
+      && !handling_select_range_)
     return;
 
 

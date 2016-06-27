@@ -2364,6 +2364,7 @@ blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
 void RenderViewImpl::OnFind(int request_id,
                             const base::string16& search_text,
                             const WebFindOptions& options) {
+  base::AutoReset<bool> handling_find_op(&handling_find_op_, true);
   WebFrame* main_frame = webview()->mainFrame();
   blink::WebPlugin* plugin = GetWebPluginForFind();
   // Check if the plugin still exists in the document.
