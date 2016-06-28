@@ -36,6 +36,12 @@ package=${!#}
 
 libdir=$root/usr/$libpath/pkgconfig:$root/usr/share/pkgconfig
 
+# prepend paths specified by the environment
+if [ -n "${PKG_CONFIG_LIBDIR-}" ]
+then
+ libdir="$PKG_CONFIG_LIBDIR:$libdir"
+fi
+
 set -e
 # Some sysroots, like the Chromium OS ones, may generate paths that are not
 # relative to the sysroot. For example,
