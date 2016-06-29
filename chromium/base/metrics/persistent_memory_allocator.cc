@@ -336,10 +336,13 @@ PersistentMemoryAllocator::PersistentMemoryAllocator(Memory memory,
 
   // These atomics operate inter-process and so must be lock-free. The local
   // casts are to make sure it can be evaluated at compile time to a constant.
+#ifndef TOOLKIT_QT
+  // These can not be inlined by clang-libstdc++ and some embedded GCC versions
   CHECK(((SharedMetadata*)0)->freeptr.is_lock_free());
   CHECK(((SharedMetadata*)0)->flags.is_lock_free());
   CHECK(((BlockHeader*)0)->next.is_lock_free());
   CHECK(corrupt_.is_lock_free());
+#endif
 
   if (shared_meta()->cookie != kGlobalCookie) {
     if (readonly) {
