@@ -662,7 +662,9 @@ class ModuleDecoder : public Decoder {
       }
     }
     TRACE("Unknown section: '");
-    for (uint32_t i = 0; i != *string_length; ++i) TRACE("%c", *(start + i));
+    for (uint32_t i = 0; i != *string_length; ++i) {
+        TRACE("%c", *(start + i));
+    }
     TRACE("'\n");
     return WasmSection::Code::Max;
   }
