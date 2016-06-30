@@ -629,9 +629,11 @@ smv_out:
     if (wav->ignore_length)
         left = INT_MAX;
     if (left <= 0) {
+#if CONFIG_W64_DEMUXER
         if (CONFIG_W64_DEMUXER && wav->w64)
             left = find_guid(s->pb, ff_w64_guid_data) - 24;
         else
+#endif // CONFIG_W64_DEMUXER
             left = find_tag(wav, s->pb, MKTAG('d', 'a', 't', 'a'));
         if (left < 0) {
             wav->audio_eof = 1;
