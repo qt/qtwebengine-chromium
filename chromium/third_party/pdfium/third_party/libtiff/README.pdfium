@@ -1,0 +1,13 @@
+Name: LibTIFF
+URL: http://www.remotesensing.org/libtiff/
+Version: 4.0.6
+Security Critical: yes
+License: BSD
+
+Description:
+TIFF library.
+
+Local Modifications:
+
+0000-build-config.patch: Local build configuration changes.
+0001-build-config.patch: Enable HAVE_SEARCH_H in tiffconf.h for VS 2015
