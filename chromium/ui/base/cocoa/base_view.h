@@ -8,7 +8,9 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/mac/scoped_nsobject.h"
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 #include "base/mac/sdk_forward_declarations.h"
+#endif
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/ui_base_export.h"
 #include "ui/gfx/geometry/rect.h"
@@ -29,7 +31,9 @@ UI_BASE_EXPORT
   ui::ScopedCrTrackingArea trackingArea_;
   BOOL dragging_;
   base::scoped_nsobject<NSEvent> pendingExitEvent_;
+#if !defined(QT_DISABLE_FORCE_TOUCH)
   NSInteger pressureEventStage_;
+#endif
 }
 
 // Override these methods (mouseEvent, keyEvent, forceTouchEvent) in a
@@ -40,7 +44,9 @@ UI_BASE_EXPORT
 // kEventNotHandled if it should be forwarded to BaseView's super class.
 - (EventHandled)keyEvent:(NSEvent *)theEvent;
 
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 - (void)forceTouchEvent:(NSEvent*)theEvent;
+#endif
 
 // Useful rect conversions (doing coordinate flipping)
 - (gfx::Rect)flipNSRectToRect:(NSRect)rect;

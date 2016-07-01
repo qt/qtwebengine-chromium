@@ -78,9 +78,11 @@ NSString* kSelectionDirection = @"Chromium.kSelectionDirection";
   return kEventNotHandled;
 }
 
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 - (void)forceTouchEvent:(NSEvent*)theEvent {
   // This method left intentionally blank.
 }
+#endif
 
 - (void)mouseDown:(NSEvent*)theEvent {
   dragging_ = YES;
@@ -170,6 +172,7 @@ NSString* kSelectionDirection = @"Chromium.kSelectionDirection";
     [super keyUp:theEvent];
 }
 
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 - (void)pressureChangeWithEvent:(NSEvent*)theEvent {
   NSInteger newStage = [theEvent stage];
   if (pressureEventStage_ == newStage)
@@ -182,6 +185,7 @@ NSString* kSelectionDirection = @"Chromium.kSelectionDirection";
   }
   pressureEventStage_ = newStage;
 }
+#endif
 
 - (void)flagsChanged:(NSEvent*)theEvent {
   if ([self keyEvent:theEvent] != kEventHandled)
