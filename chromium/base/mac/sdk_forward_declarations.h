@@ -213,7 +213,9 @@ typedef NSUInteger NSEventModifierFlags;
     MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10_3
 
 @interface NSEvent (YosemiteSDK)
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 @property(readonly) NSInteger stage;
+#endif
 @end
 
 @interface NSView (YosemiteSDK)

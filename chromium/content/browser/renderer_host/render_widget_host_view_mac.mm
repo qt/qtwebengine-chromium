@@ -2142,10 +2142,12 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     [NSCursor setHiddenUntilMouseMoves:YES];
 }
 
+#if !defined(QT_DISABLE_FORCE_TOUCH)
 - (void)forceTouchEvent:(NSEvent*)theEvent {
   if (ui::ForceClickInvokesQuickLook())
     [self quickLookWithEvent:theEvent];
 }
+#endif
 
 - (void)shortCircuitScrollWheelEvent:(NSEvent*)event {
   if ([event phase] != NSEventPhaseEnded &&

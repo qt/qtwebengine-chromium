@@ -714,6 +714,9 @@
       # By default include non-appstore-compliant code.
       'appstore_compliant_code%': 0,
 
+      # By default enable force touch API. It's only supported with OSX SDK 10.10.3+.
+      'disable_force_touch%': 0,
+
       'conditions': [
         # A flag for POSIX platforms
         ['OS=="win"', {
@@ -1255,6 +1258,7 @@
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'proprietary_codecs%': '<(proprietary_codecs)',
     'appstore_compliant_code%': '<(appstore_compliant_code)',
+    'disable_force_touch%': '<(disable_force_touch)',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
     'use_lto%': '<(use_lto)',
@@ -2734,6 +2738,9 @@
       }],
       ['appstore_compliant_code==1', {
         'defines': ['USE_APPSTORE_COMPLIANT_CODE'],
+      }],
+      ['disable_force_touch==1', {
+        'defines': ['QT_DISABLE_FORCE_TOUCH'],
       }],
       ['enable_viewport==1', {
         'defines': ['ENABLE_VIEWPORT'],
