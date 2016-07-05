@@ -146,6 +146,10 @@ def RelativePath(path, relative_to):
     if (os.path.splitdrive(path)[0].lower() !=
         os.path.splitdrive(relative_to)[0].lower()):
       return path
+    # Now that they are identical, get rid of the drive,
+    # as the algorithm below can not handle it.
+    path = os.path.splitdrive(path)[1]
+    relative_to = os.path.splitdrive(relative_to)[1]
 
   # Split the paths into components.
   path_split = path.split(os.path.sep)
