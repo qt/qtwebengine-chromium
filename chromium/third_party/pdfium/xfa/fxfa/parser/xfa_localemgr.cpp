@@ -6,11 +6,10 @@
 
 #include "xfa/fxfa/parser/xfa_localemgr.h"
 
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_xml.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_locale.h"
@@ -1132,17 +1131,14 @@ CXFA_LocaleMgr::CXFA_LocaleMgr(CXFA_Node* pLocaleSet, CFX_WideString wsDeflcid)
       pNodeLocale = pNodeLocale->GetNodeItem(XFA_NODEITEM_NextSibling);
     }
   }
-  m_pDefLocale = GetLocaleByName(wsDeflcid.AsWideStringC());
+  m_pDefLocale = GetLocaleByName(wsDeflcid);
 }
 CXFA_LocaleMgr::~CXFA_LocaleMgr() {
-  int32_t iCount = m_LocaleArray.GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
-    ((IFX_Locale*)m_LocaleArray[i])->Release();
-  }
-  int32_t iXmls = m_XMLLocaleArray.GetSize();
-  for (int32_t j = 0; j < iXmls; j++) {
-    ((IFX_Locale*)m_XMLLocaleArray[j])->Release();
-  }
+  for (int32_t i = 0; i < m_LocaleArray.GetSize(); i++)
+    m_LocaleArray[i]->Release();
+
+  for (int32_t j = 0; j < m_XMLLocaleArray.GetSize(); j++)
+    m_XMLLocaleArray[j]->Release();
 }
 void CXFA_LocaleMgr::Release() {
   delete this;
@@ -1150,19 +1146,24 @@ void CXFA_LocaleMgr::Release() {
 uint16_t CXFA_LocaleMgr::GetDefLocaleID() {
   return m_dwDeflcid;
 }
+
 IFX_Locale* CXFA_LocaleMgr::GetDefLocale() {
-  if (m_pDefLocale) {
+  if (m_pDefLocale)
     return m_pDefLocale;
-  } else if (m_LocaleArray.GetSize()) {
-    return (IFX_Locale*)m_LocaleArray[0];
-  } else if (m_XMLLocaleArray.GetSize()) {
-    return (IFX_Locale*)m_XMLLocaleArray[0];
-  }
+
+  if (m_LocaleArray.GetSize())
+    return m_LocaleArray[0];
+
+  if (m_XMLLocaleArray.GetSize())
+    return m_XMLLocaleArray[0];
+
   m_pDefLocale = GetLocale(m_dwDeflcid);
   if (m_pDefLocale)
     m_XMLLocaleArray.Add(m_pDefLocale);
+
   return m_pDefLocale;
 }
+
 IFX_Locale* CXFA_LocaleMgr::GetLocale(uint16_t lcid) {
   IFX_Locale* pLocal = NULL;
   switch (lcid) {
@@ -1216,11 +1217,11 @@ IFX_Locale* CXFA_LocaleMgr::GetLocale(uint16_t lcid) {
   return pLocal;
 }
 IFX_Locale* CXFA_LocaleMgr::GetLocaleByName(
-    const CFX_WideStringC& wsLocaleName) {
+    const CFX_WideString& wsLocaleName) {
   int32_t iCount = m_LocaleArray.GetSize();
   int32_t i = 0;
   for (i = 0; i < iCount; i++) {
-    IFX_Locale* pLocale = ((IFX_Locale*)m_LocaleArray[i]);
+    IFX_Locale* pLocale = m_LocaleArray[i];
     if (pLocale->GetName() == wsLocaleName) {
       return pLocale;
     }
@@ -1231,7 +1232,7 @@ IFX_Locale* CXFA_LocaleMgr::GetLocaleByName(
   }
   iCount = m_XMLLocaleArray.GetSize();
   for (i = 0; i < iCount; i++) {
-    IFX_Locale* pLocale = ((IFX_Locale*)m_XMLLocaleArray[i]);
+    IFX_Locale* pLocale = m_XMLLocaleArray[i];
     if (pLocale->GetName() == wsLocaleName) {
       return pLocale;
     }
@@ -1247,7 +1248,7 @@ void CXFA_LocaleMgr::SetDefLocale(IFX_Locale* pLocale) {
 }
 CFX_WideStringC CXFA_LocaleMgr::GetConfigLocaleName(CXFA_Node* pConfig) {
   if (!(m_dwLocaleFlags & 0x01)) {
-    m_wsConfigLocale.Empty();
+    m_wsConfigLocale.clear();
     if (pConfig) {
       CXFA_Node* pChildfConfig =
           pConfig->GetFirstChildByClass(XFA_ELEMENT_Acrobat);
@@ -1266,13 +1267,13 @@ CFX_WideStringC CXFA_LocaleMgr::GetConfigLocaleName(CXFA_Node* pConfig) {
     }
     m_dwLocaleFlags |= 0x01;
   }
-  return m_wsConfigLocale.AsWideStringC();
+  return m_wsConfigLocale.AsStringC();
 }
 static CXFA_TimeZoneProvider* g_pProvider = NULL;
 
 // Static.
 CXFA_TimeZoneProvider* CXFA_TimeZoneProvider::Create() {
-  FXSYS_assert(!g_pProvider);
+  ASSERT(!g_pProvider);
   g_pProvider = new CXFA_TimeZoneProvider();
   return g_pProvider;
 }

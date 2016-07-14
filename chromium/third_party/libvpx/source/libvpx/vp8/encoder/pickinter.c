@@ -36,7 +36,7 @@
 extern unsigned int cnt_pm;
 #endif
 
-#define MODEL_MODE 0
+#define MODEL_MODE 1
 
 extern const int vp8_ref_frame_order[MAX_MODES];
 extern const MB_PREDICTION_MODE vp8_mode_order[MAX_MODES];
@@ -90,7 +90,7 @@ static int is_skin_color(int y, int cb, int cr, int consec_zeromv)
     {
       int i = 0;
       // No skin if block has been zero motion for long consecutive time.
-      if (consec_zeromv > 80)
+      if (consec_zeromv > 60)
         return 0;
       // Exit on grey.
        if (cb == 128 && cr == 128)
@@ -103,7 +103,7 @@ static int is_skin_color(int y, int cb, int cr, int consec_zeromv)
          if (skin_color_diff < skin_threshold[i + 1]) {
             if (y < 60 && skin_color_diff > 3 * (skin_threshold[i + 1] >> 2))
               return 0;
-            else if (consec_zeromv > 30 &&
+            else if (consec_zeromv > 25 &&
                      skin_color_diff > (skin_threshold[i + 1] >> 1))
               return 0;
             else
@@ -1477,7 +1477,8 @@ void vp8_pick_inter_mode(VP8_COMP *cpi, MACROBLOCK *x, int recon_yoffset,
         vp8_denoiser_denoise_mb(&cpi->denoiser, x, best_sse, zero_mv_sse,
                                 recon_yoffset, recon_uvoffset,
                                 &cpi->common.lf_info, mb_row, mb_col,
-                                block_index);
+                                block_index,
+                                cpi->consec_zero_last_mvbias[block_index]);
 
         // Reevaluate ZEROMV after denoising: for large noise content
         // (i.e., cpi->mse_source_denoised is above threshold), do this for all

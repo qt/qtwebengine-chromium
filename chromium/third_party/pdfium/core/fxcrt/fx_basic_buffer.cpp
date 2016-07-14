@@ -100,10 +100,6 @@ void CFX_BinaryBuf::InsertBlock(FX_STRSIZE pos,
   m_DataSize += size;
 }
 
-CFX_ByteStringC CFX_ByteTextBuf::GetByteString() const {
-  return CFX_ByteStringC(m_pBuffer.get(), m_DataSize);
-}
-
 CFX_ByteTextBuf& CFX_ByteTextBuf::operator<<(const CFX_ByteStringC& lpsz) {
   AppendBlock(lpsz.raw_str(), lpsz.GetLength());
   return *this;
@@ -142,7 +138,7 @@ void CFX_WideTextBuf::AppendChar(FX_WCHAR ch) {
 }
 
 CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const CFX_WideStringC& str) {
-  AppendBlock(str.raw_str(), str.GetLength() * sizeof(FX_WCHAR));
+  AppendBlock(str.c_str(), str.GetLength() * sizeof(FX_WCHAR));
   return *this;
 }
 
@@ -184,11 +180,6 @@ CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const FX_WCHAR* lpsz) {
 CFX_WideTextBuf& CFX_WideTextBuf::operator<<(const CFX_WideTextBuf& buf) {
   AppendBlock(buf.m_pBuffer.get(), buf.m_DataSize);
   return *this;
-}
-
-CFX_WideStringC CFX_WideTextBuf::GetWideString() const {
-  return CFX_WideStringC((const FX_WCHAR*)m_pBuffer.get(),
-                         m_DataSize / sizeof(FX_WCHAR));
 }
 
 #ifdef PDF_ENABLE_XFA
@@ -248,7 +239,7 @@ CFX_ArchiveSaver& CFX_ArchiveSaver::operator<<(const FX_WCHAR* wstr) {
 }
 CFX_ArchiveSaver& CFX_ArchiveSaver::operator<<(const CFX_WideString& wstr) {
   CFX_ByteString encoded = wstr.UTF16LE_Encode();
-  return operator<<(encoded.AsByteStringC());
+  return operator<<(encoded.AsStringC());
 }
 void CFX_ArchiveSaver::Write(const void* pData, FX_STRSIZE dwSize) {
   if (m_pStream) {
@@ -290,7 +281,7 @@ CFX_ArchiveLoader& CFX_ArchiveLoader::operator>>(CFX_ByteString& str) {
   }
   int len;
   operator>>(len);
-  str.Empty();
+  str.clear();
   if (len <= 0 || m_LoadingPos + len > m_LoadingSize) {
     return *this;
   }
@@ -423,6 +414,6 @@ int32_t CFX_FileBufferArchive::AppendString(const CFX_ByteStringC& lpsz) {
 }
 
 void CFX_FileBufferArchive::AttachFile(IFX_StreamWrite* pFile) {
-  FXSYS_assert(pFile);
+  ASSERT(pFile);
   m_pFile = pFile;
 }

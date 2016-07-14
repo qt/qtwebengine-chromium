@@ -56,10 +56,9 @@ public:
         return new ImageResource(image, ResourceLoaderOptions());
     }
 
-    // Exposed for testing
-    static ImageResource* create(const ResourceRequest& request, blink::Image* image)
+    static ImageResource* create(const ResourceRequest& request)
     {
-        return new ImageResource(request, image, ResourceLoaderOptions());
+        return new ImageResource(request, ResourceLoaderOptions());
     }
 
     ~ImageResource() override;
@@ -100,9 +99,9 @@ public:
     void allClientsAndObserversRemoved() override;
 
     void appendData(const char*, size_t) override;
-    void error(Resource::Status) override;
+    void error(const ResourceError&) override;
     void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
-    void finish() override;
+    void finish(double finishTime = 0.0) override;
 
     // For compatibility, images keep loading even if there are HTTP errors.
     bool shouldIgnoreHTTPStatusCodeErrors() const override { return true; }
@@ -110,7 +109,7 @@ public:
     bool isImage() const override { return true; }
 
     // ImageObserver
-    void decodedSizeChanged(const blink::Image*, int delta) override;
+    void decodedSizeChangedTo(const blink::Image*, size_t newSize) override;
     void didDraw(const blink::Image*) override;
 
     bool shouldPauseAnimation(const blink::Image*) override;
@@ -130,7 +129,6 @@ protected:
 
 private:
     explicit ImageResource(blink::Image*, const ResourceLoaderOptions&);
-    ImageResource(const ResourceRequest&, blink::Image*, const ResourceLoaderOptions&);
 
     enum class MultipartParsingState : uint8_t {
         WaitingForFirstPart,
@@ -154,6 +152,7 @@ private:
 
     void createImage();
     void updateImage(bool allDataReceived);
+    void updateImageAndClearBuffer();
     void clearImage();
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = nullptr);

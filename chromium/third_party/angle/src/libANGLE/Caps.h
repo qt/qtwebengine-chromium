@@ -281,10 +281,23 @@ struct Extensions
     // GL_ANGLE_lossy_etc_decode
     bool lossyETCDecode;
 
+    // GL_CHROMIUM_bind_uniform_location
+    bool bindUniformLocation;
+
+    // GL_CHROMIUM_sync_query
+    bool syncQuery;
+
     // ES3 Extension support
 
     // GL_EXT_color_buffer_float
     bool colorBufferFloat;
+
+    // GL_EXT_multisample_compatibility.
+    // written against ES 3.1 but can apply to earlier versions.
+    bool multisampleCompatibility;
+
+    // GL_CHROMIUM_framebuffer_mixed_samples
+    bool framebufferMixedSamples;
 };
 
 struct Limitations
@@ -494,6 +507,9 @@ struct DisplayExtensions
 
     // EGL_NV_stream_consumer_gltexture_yuv
     bool streamConsumerGLTextureYUV;
+
+    // EGL_ANGLE_stream_producer_d3d_texture_nv12
+    bool streamProducerD3DTextureNV12;
 };
 
 struct DeviceExtensions

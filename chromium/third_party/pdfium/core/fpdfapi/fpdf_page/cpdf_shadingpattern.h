@@ -12,7 +12,7 @@
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fxcrt/include/fx_system.h"
 
-typedef enum {
+enum ShadingType {
   kInvalidShading = 0,
   kFunctionBasedShading = 1,
   kAxialShading = 2,
@@ -22,7 +22,7 @@ typedef enum {
   kCoonsPatchMeshShading = 6,
   kTensorProductPatchMeshShading = 7,
   kMaxShading = 8
-} ShadingType;
+};
 
 class CFX_Matrix;
 class CPDF_ColorSpace;
@@ -34,9 +34,12 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
   CPDF_ShadingPattern(CPDF_Document* pDoc,
                       CPDF_Object* pPatternObj,
                       FX_BOOL bShading,
-                      const CFX_Matrix* parentMatrix);
+                      const CFX_Matrix& parentMatrix);
 
   ~CPDF_ShadingPattern() override;
+
+  CPDF_TilingPattern* AsTilingPattern() override { return nullptr; }
+  CPDF_ShadingPattern* AsShadingPattern() override { return this; }
 
   bool IsMeshShading() const {
     return m_ShadingType == kFreeFormGouraudTriangleMeshShading ||
@@ -56,7 +59,7 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
 
   CPDF_CountedColorSpace* m_pCountedCS;
   CPDF_Function* m_pFunctions[4];
-  int m_nFuncs;
+  size_t m_nFuncs;
 };
 
 #endif  // CORE_FPDFAPI_FPDF_PAGE_CPDF_SHADINGPATTERN_H_

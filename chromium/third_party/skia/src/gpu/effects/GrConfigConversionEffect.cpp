@@ -31,7 +31,7 @@ public:
         fragBuilder->codeAppendf("%s;", tmpDecl.c_str());
 
         fragBuilder->codeAppendf("%s = ", tmpVar.c_str());
-        fragBuilder->appendTextureLookup(args.fSamplers[0], args.fCoords[0].c_str(),
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], args.fCoords[0].c_str(),
                                        args.fCoords[0].getType());
         fragBuilder->codeAppend(";");
 
@@ -225,14 +225,14 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
         paint1.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
 
 
-        SkAutoTUnref<GrDrawContext> readDrawContext(
-                                    context->drawContext(readTex->asRenderTarget()));
+        sk_sp<GrDrawContext> readDrawContext(
+                                    context->drawContext(sk_ref_sp(readTex->asRenderTarget())));
         if (!readDrawContext) {
             failed = true;
             break;
         }
 
-        readDrawContext->fillRectToRect(GrClip::WideOpen(),
+        readDrawContext->fillRectToRect(GrNoClip(),
                                         paint1,
                                         SkMatrix::I(),
                                         kDstRect,
@@ -243,13 +243,13 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
         paint2.addColorFragmentProcessor(upmToPM);
         paint2.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
 
-        SkAutoTUnref<GrDrawContext> tempDrawContext(
-                                    context->drawContext(tempTex->asRenderTarget()));
+        sk_sp<GrDrawContext> tempDrawContext(
+                                    context->drawContext(sk_ref_sp(tempTex->asRenderTarget())));
         if (!tempDrawContext) {
             failed = true;
             break;
         }
-        tempDrawContext->fillRectToRect(GrClip::WideOpen(),
+        tempDrawContext->fillRectToRect(GrNoClip(),
                                         paint2,
                                         SkMatrix::I(),
                                         kDstRect,
@@ -258,13 +258,13 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
         paint3.addColorFragmentProcessor(pmToUPM2);
         paint3.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
 
-        readDrawContext.reset(context->drawContext(readTex->asRenderTarget()));
+        readDrawContext = context->drawContext(sk_ref_sp(readTex->asRenderTarget()));
         if (!readDrawContext) {
             failed = true;
             break;
         }
 
-        readDrawContext->fillRectToRect(GrClip::WideOpen(),
+        readDrawContext->fillRectToRect(GrNoClip(),
                                         paint3,
                                         SkMatrix::I(),
                                         kDstRect,

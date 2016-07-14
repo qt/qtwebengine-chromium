@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
 
 #include <vector>
 
@@ -63,7 +63,7 @@ void CPDF_LinkList::LoadPageLinks(CPDF_Page* pPage,
   if (!pAnnotList)
     return;
 
-  for (uint32_t i = 0; i < pAnnotList->GetCount(); ++i) {
+  for (size_t i = 0; i < pAnnotList->GetCount(); ++i) {
     CPDF_Dictionary* pAnnot = pAnnotList->GetDictAt(i);
     bool add_link = (pAnnot && pAnnot->GetStringBy("Subtype") == "Link");
     // Add non-links as nullptrs to preserve z-order.
@@ -81,8 +81,7 @@ CPDF_Dest CPDF_Link::GetDest(CPDF_Document* pDoc) {
 
   if (pDest->IsString() || pDest->IsName()) {
     CPDF_NameTree name_tree(pDoc, "Dests");
-    return CPDF_Dest(
-        name_tree.LookupNamedDest(pDoc, pDest->GetString().AsByteStringC()));
+    return CPDF_Dest(name_tree.LookupNamedDest(pDoc, pDest->GetString()));
   }
   if (CPDF_Array* pArray = pDest->AsArray())
     return CPDF_Dest(pArray);

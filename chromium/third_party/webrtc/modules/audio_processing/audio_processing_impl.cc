@@ -94,7 +94,7 @@ bool is_multi_band(int sample_rate_hz) {
          sample_rate_hz == AudioProcessing::kSampleRate48kHz;
 }
 
-int ClosestNativeRate(int min_proc_rate) {
+int ClosestHigherNativeRate(int min_proc_rate) {
   for (int rate : AudioProcessing::kNativeSampleRatesHz) {
     if (rate >= min_proc_rate) {
       return rate;
@@ -163,12 +163,10 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
       private_submodules_(new ApmPrivateSubmodules(beamformer)),
       constants_(config.Get<ExperimentalAgc>().startup_min_volume,
 #if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
-                 false,
+                 false),
 #else
-                 config.Get<ExperimentalAgc>().enabled,
+                 config.Get<ExperimentalAgc>().enabled),
 #endif
-                 config.Get<Intelligibility>().enabled),
-
 #if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
       capture_(false,
 #else
@@ -176,7 +174,8 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config,
 #endif
                config.Get<Beamforming>().array_geometry,
                config.Get<Beamforming>().target_direction),
-      capture_nonlocked_(config.Get<Beamforming>().enabled)
+      capture_nonlocked_(config.Get<Beamforming>().enabled,
+                         config.Get<Intelligibility>().enabled)
 {
   {
     rtc::CritScope cs_render(&crit_render_);
@@ -362,22 +361,24 @@ int AudioProcessingImpl::InitializeLocked(const ProcessingConfig& config) {
 
   formats_.api_format = config;
 
-  capture_nonlocked_.fwd_proc_format = StreamConfig(ClosestNativeRate(std::min(
-      formats_.api_format.input_stream().sample_rate_hz(),
-      formats_.api_format.output_stream().sample_rate_hz())));
+  capture_nonlocked_.fwd_proc_format = StreamConfig(ClosestHigherNativeRate(
+      std::min(formats_.api_format.input_stream().sample_rate_hz(),
+               formats_.api_format.output_stream().sample_rate_hz())));
 
-  // We normally process the reverse stream at 16 kHz. Unless...
-  int rev_proc_rate = kSampleRate16kHz;
+  int rev_proc_rate = ClosestHigherNativeRate(std::min(
+      formats_.api_format.reverse_input_stream().sample_rate_hz(),
+      formats_.api_format.reverse_output_stream().sample_rate_hz()));
+  // TODO(aluebs): Remove this restriction once we figure out why the 3-band
+  // splitting filter degrades the AEC performance.
+  if (rev_proc_rate > kSampleRate32kHz) {
+    rev_proc_rate = is_rev_processed() ? kSampleRate32kHz : kSampleRate16kHz;
+  }
+  // If the forward sample rate is 8 kHz, the reverse stream is also processed
+  // at this rate.
   if (capture_nonlocked_.fwd_proc_format.sample_rate_hz() == kSampleRate8kHz) {
-    // ...the forward stream is at 8 kHz.
     rev_proc_rate = kSampleRate8kHz;
   } else {
-    if (formats_.api_format.reverse_input_stream().sample_rate_hz() ==
-        kSampleRate32kHz) {
-      // ...or the input is at 32 kHz, in which case we use the splitting
-      // filter rather than the resampler.
-      rev_proc_rate = kSampleRate32kHz;
-    }
+    rev_proc_rate = std::max(rev_proc_rate, static_cast<int>(kSampleRate16kHz));
   }
 
   // Always downmix the reverse stream to mono for analysis. This has been
@@ -407,6 +408,13 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
     capture_.transient_suppressor_enabled =
         config.Get<ExperimentalNs>().enabled;
     InitializeTransient();
+  }
+
+  if(capture_nonlocked_.intelligibility_enabled !=
+     config.Get<Intelligibility>().enabled) {
+    capture_nonlocked_.intelligibility_enabled =
+        config.Get<Intelligibility>().enabled;
+    InitializeIntelligibility();
   }
 
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
@@ -702,10 +710,13 @@ int AudioProcessingImpl::ProcessStreamLocked() {
     ca->CopyLowPassToReference();
   }
   public_submodules_->noise_suppression->ProcessCaptureAudio(ca);
-  if (constants_.intelligibility_enabled) {
+  if (capture_nonlocked_.intelligibility_enabled) {
     RTC_DCHECK(public_submodules_->noise_suppression->is_enabled());
+    int gain_db = public_submodules_->gain_control->is_enabled() ?
+                  public_submodules_->gain_control->compression_gain_db() :
+                  0;
     public_submodules_->intelligibility_enhancer->SetCaptureNoiseEstimate(
-        public_submodules_->noise_suppression->NoiseEstimate());
+        public_submodules_->noise_suppression->NoiseEstimate(), gain_db);
   }
 
   // Ensure that the stream delay was set before the call to the
@@ -898,7 +909,7 @@ int AudioProcessingImpl::ProcessReverseStreamLocked() {
     ra->SplitIntoFrequencyBands();
   }
 
-  if (constants_.intelligibility_enabled) {
+  if (capture_nonlocked_.intelligibility_enabled) {
     public_submodules_->intelligibility_enhancer->ProcessRenderAudio(
         ra->split_channels_f(kBand0To8kHz), capture_nonlocked_.split_rate,
         ra->num_channels());
@@ -1146,16 +1157,16 @@ bool AudioProcessingImpl::fwd_analysis_needed() const {
 }
 
 bool AudioProcessingImpl::is_rev_processed() const {
-  return constants_.intelligibility_enabled;
+  return capture_nonlocked_.intelligibility_enabled;
 }
 
 bool AudioProcessingImpl::rev_synthesis_needed() const {
   return (is_rev_processed() &&
-          formats_.rev_proc_format.sample_rate_hz() == kSampleRate32kHz);
+          is_multi_band(formats_.rev_proc_format.sample_rate_hz()));
 }
 
 bool AudioProcessingImpl::rev_analysis_needed() const {
-  return formats_.rev_proc_format.sample_rate_hz() == kSampleRate32kHz &&
+  return is_multi_band(formats_.rev_proc_format.sample_rate_hz()) &&
          (is_rev_processed() ||
           public_submodules_->echo_cancellation
               ->is_enabled_render_side_query() ||
@@ -1211,7 +1222,7 @@ void AudioProcessingImpl::InitializeBeamformer() {
 }
 
 void AudioProcessingImpl::InitializeIntelligibility() {
-  if (constants_.intelligibility_enabled) {
+  if (capture_nonlocked_.intelligibility_enabled) {
     public_submodules_->intelligibility_enhancer.reset(
         new IntelligibilityEnhancer(capture_nonlocked_.split_rate,
                                     render_.render_audio->num_channels(),
@@ -1392,8 +1403,10 @@ int AudioProcessingImpl::WriteInitMessage() {
       formats_.api_format.reverse_input_stream().sample_rate_hz());
   msg->set_output_sample_rate(
       formats_.api_format.output_stream().sample_rate_hz());
-  // TODO(ekmeyerson): Add reverse output fields to
-  // debug_dump_.capture.event_msg.
+  msg->set_reverse_output_sample_rate(
+      formats_.api_format.reverse_output_stream().sample_rate_hz());
+  msg->set_num_reverse_output_channels(
+      formats_.api_format.reverse_output_stream().num_channels());
 
   RETURN_ON_ERR(WriteMessageToDebugFile(debug_dump_.debug_file.get(),
                                         &debug_dump_.num_bytes_left_for_log_,
@@ -1436,6 +1449,8 @@ int AudioProcessingImpl::WriteConfigMessage(bool forced) {
 
   config.set_transient_suppression_enabled(
       capture_.transient_suppressor_enabled);
+  config.set_intelligibility_enhancer_enabled(
+      capture_nonlocked_.intelligibility_enabled);
 
   std::string experiments_description =
       public_submodules_->echo_cancellation->GetExperimentsDescription();

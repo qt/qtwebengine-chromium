@@ -12,8 +12,8 @@
 #include <map>
 
 #include "core/fxcrt/include/fx_basic.h"
-#include "core/include/fxge/fx_font.h"
-#include "core/include/fxge/fx_freetype.h"
+#include "core/fxge/include/fx_font.h"
+#include "core/fxge/include/fx_freetype.h"
 
 class CFX_GlyphMap {
  public:
@@ -25,6 +25,7 @@ class CFX_GlyphMap {
  protected:
   CFX_BinaryBuf m_Buffer;
 };
+
 class CFX_CTTGSUBTable {
  public:
   CFX_CTTGSUBTable(void) : m_bFeautureMapLoad(FALSE), loaded(false) {}
@@ -351,13 +352,6 @@ class CFX_CTTGSUBTable {
   struct TScriptList ScriptList;
   struct TFeatureList FeatureList;
   struct TLookupList LookupList;
-};
-class CFX_GSUBTable final : public IFX_GSUBTable {
- public:
-  ~CFX_GSUBTable() override {}
-  FX_BOOL GetVerticalGlyph(uint32_t glyphnum, uint32_t* vglyphnum) override;
-
-  CFX_CTTGSUBTable m_GsubImp;
 };
 
 #endif  // CORE_FPDFAPI_FPDF_FONT_TTGSUBTABLE_H_

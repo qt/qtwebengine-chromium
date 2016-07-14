@@ -7,7 +7,7 @@
 #ifndef XFA_FXGRAPHICS_CAGG_GRAPHICS_H_
 #define XFA_FXGRAPHICS_CAGG_GRAPHICS_H_
 
-#include "core/include/fxge/fx_dib.h"
+#include "core/fxge/include/fx_dib.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
 
 class CFX_Graphics;
@@ -17,10 +17,10 @@ class CAGG_Graphics {
   CAGG_Graphics();
   virtual ~CAGG_Graphics();
 
-  FX_ERR Create(CFX_Graphics* owner,
-                int32_t width,
-                int32_t height,
-                FXDIB_Format format);
+  FWL_Error Create(CFX_Graphics* owner,
+                   int32_t width,
+                   int32_t height,
+                   FXDIB_Format format);
 
  private:
   CFX_Graphics* m_owner;

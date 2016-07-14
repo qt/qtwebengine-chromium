@@ -35,6 +35,7 @@
 #include "SkPathEffect.h"
 #include "SkPathOps.h"
 #include "SkPoint.h"
+#include "SkRasterClip.h"
 #include "SkRasterizer.h"
 #include "SkSFNTHeader.h"
 #include "SkShader.h"
@@ -1210,7 +1211,7 @@ void SkXPSDevice::internalDrawRect(const SkDraw& d,
                                    bool transformRect,
                                    const SkPaint& paint) {
     //Exit early if there is nothing to draw.
-    if (d.fClip->isEmpty() ||
+    if (d.fRC->isEmpty() ||
         (paint.getAlpha() == 0 && paint.getXfermode() == nullptr)) {
         return;
     }
@@ -1526,7 +1527,7 @@ void SkXPSDevice::drawPath(const SkDraw& d,
     SkTCopyOnFirstWrite<SkPaint> paint(origPaint);
 
     // nothing to draw
-    if (d.fClip->isEmpty() ||
+    if (d.fRC->isEmpty() ||
         (paint->getAlpha() == 0 && paint->getXfermode() == nullptr)) {
         return;
     }
@@ -1609,7 +1610,7 @@ void SkXPSDevice::drawPath(const SkDraw& d,
         this->convertToPpm(filter,
                            &matrix,
                            &ppuScale,
-                           d.fClip->getBounds(),
+                           d.fRC->getBounds(),
                            &clipIRect);
 
         SkMask* mask = nullptr;
@@ -1647,7 +1648,7 @@ void SkXPSDevice::drawPath(const SkDraw& d,
         this->convertToPpm(filter,
                            &matrix,
                            &ppuScale,
-                           d.fClip->getBounds(),
+                           d.fRC->getBounds(),
                            &clipIRect);
 
         //[Fillable-path -> Pixel-path]
@@ -1656,6 +1657,11 @@ void SkXPSDevice::drawPath(const SkDraw& d,
 
         SkMask* mask = nullptr;
 
+        SkASSERT(SkPaint::kFill_Style == paint->getStyle() ||
+                 (SkPaint::kStroke_Style == paint->getStyle() && 0 == paint->getStrokeWidth()));
+        SkStrokeRec::InitStyle style = (SkPaint::kFill_Style == paint->getStyle())
+                                            ? SkStrokeRec::kFill_InitStyle
+                                            : SkStrokeRec::kHairline_InitStyle;
         //[Pixel-path -> Mask]
         SkMask rasteredMask;
         if (SkDraw::DrawToMask(
@@ -1665,7 +1671,7 @@ void SkXPSDevice::drawPath(const SkDraw& d,
                         &matrix,
                         &rasteredMask,
                         SkMask::kComputeBoundsAndRenderImage_CreateMode,
-                        paint->getStyle())) {
+                        style)) {
 
             SkAutoMaskFreeImage rasteredAmi(rasteredMask.fImage);
             mask = &rasteredMask;
@@ -1765,7 +1771,13 @@ void SkXPSDevice::drawPath(const SkDraw& d,
 
 HRESULT SkXPSDevice::clip(IXpsOMVisual* xpsVisual, const SkDraw& d) {
     SkPath clipPath;
-    SkAssertResult(d.fClip->getBoundaryPath(&clipPath));
+    if (d.fRC->isBW()) {
+        SkAssertResult(d.fRC->bwRgn().getBoundaryPath(&clipPath));
+    } else {
+        // Don't have a way to turn a AAClip into a path, so we just use the bounds.
+        // TODO: consider using fClipStack instead?
+        clipPath.addRect(SkRect::Make(d.fRC->getBounds()));
+    }
 
     return this->clipToPath(xpsVisual, clipPath, XPS_FILL_RULE_EVENODD);
 }
@@ -1797,7 +1809,7 @@ HRESULT SkXPSDevice::clipToPath(IXpsOMVisual* xpsVisual,
 
 void SkXPSDevice::drawBitmap(const SkDraw& d, const SkBitmap& bitmap,
                              const SkMatrix& matrix, const SkPaint& paint) {
-    if (d.fClip->isEmpty()) {
+    if (d.fRC->isEmpty()) {
         return;
     }
 

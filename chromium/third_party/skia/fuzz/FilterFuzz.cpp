@@ -512,9 +512,7 @@ static SkPaint make_paint() {
 
     if (false) {
         // our validating buffer does not support typefaces yet, so skip this for now
-        SkAutoTUnref<SkTypeface> typeface(
-                      SkTypeface::CreateFromName(make_font_name().c_str(), make_typeface_style()));
-        paint.setTypeface(typeface);
+        paint.setTypeface(SkTypeface::MakeFromName(make_font_name().c_str(),make_typeface_style()));
     }
 
     SkLayerRasterizer::Builder rasterizerBuilder;
@@ -552,7 +550,7 @@ static sk_sp<SkImageFilter> make_image_filter(bool canBeNull) {
         filter = SkAlphaThresholdFilter::Make(make_region(),
                                               make_scalar(),
                                               make_scalar(),
-                                              nullptr);
+                                              make_image_filter());
         break;
     case MERGE:
         filter = SkMergeImageFilter::Make(make_image_filter(),
@@ -580,7 +578,7 @@ static sk_sp<SkImageFilter> make_image_filter(bool canBeNull) {
         break;
     case MAGNIFIER:
         filter = SkMagnifierImageFilter::Make(make_rect(),
-                                              make_scalar(true), 
+                                              make_scalar(true),
                                               make_image_filter());
         break;
     case DOWN_SAMPLE:
@@ -611,69 +609,61 @@ static sk_sp<SkImageFilter> make_image_filter(bool canBeNull) {
         }
         SkIPoint kernelOffset = SkIPoint::Make(R(SkIntToScalar(size.width())),
                                                R(SkIntToScalar(size.height())));
-        sk_sp<SkImageFilter> subFilter(make_image_filter());
 
-        filter = sk_sp<SkImageFilter>(SkMatrixConvolutionImageFilter::Create(
-                                                        size,
-                                                        kernel.begin(),
-                                                        make_scalar(),
-                                                        make_scalar(),
-                                                        kernelOffset,
-                                                        (SkMatrixConvolutionImageFilter::TileMode)R(3),
-                                                        R(2) == 1,
-                                                        subFilter.get(),
-                                                        &cropR));
+        filter = SkMatrixConvolutionImageFilter::Make(size,
+                                                      kernel.begin(),
+                                                      make_scalar(),
+                                                      make_scalar(),
+                                                      kernelOffset,
+                                                      (SkMatrixConvolutionImageFilter::TileMode)R(3),
+                                                      R(2) == 1,
+                                                      make_image_filter(),
+                                                      &cropR);
         break;
     }
     case COMPOSE:
         filter = SkComposeImageFilter::Make(make_image_filter(), make_image_filter());
         break;
-    case DISTANT_LIGHT: {
-        sk_sp<SkImageFilter> subFilter(make_image_filter());
-
+    case DISTANT_LIGHT:
         filter = (R(2) == 1)
-                 ? sk_sp<SkImageFilter>(SkLightingImageFilter::CreateDistantLitDiffuse(make_point(),
-                                                make_color(), make_scalar(), make_scalar(),
-                                                subFilter.get()))
-                 : sk_sp<SkImageFilter>(SkLightingImageFilter::CreateDistantLitSpecular(make_point(),
-                                                make_color(), make_scalar(),
-                                                make_scalar(), SkIntToScalar(R(10)),
-                                                subFilter.get()));
+                 ? SkLightingImageFilter::MakeDistantLitDiffuse(make_point(), make_color(),
+                                                                make_scalar(), make_scalar(),
+                                                                make_image_filter())
+                 : SkLightingImageFilter::MakeDistantLitSpecular(make_point(), make_color(),
+                                                                 make_scalar(), make_scalar(),
+                                                                 SkIntToScalar(R(10)),
+                                                                 make_image_filter());
         break;
-    }
-    case POINT_LIGHT: {
-        sk_sp<SkImageFilter> subFilter(make_image_filter());
-
+    case POINT_LIGHT:
         filter = (R(2) == 1)
-                 ? sk_sp<SkImageFilter>(SkLightingImageFilter::CreatePointLitDiffuse(make_point(),
-                                                make_color(), make_scalar(), make_scalar(),
-                                                subFilter.get()))
-                 : sk_sp<SkImageFilter>(SkLightingImageFilter::CreatePointLitSpecular(make_point(),
-                                                make_color(), make_scalar(), make_scalar(),
-                                                SkIntToScalar(R(10)),
-                                                subFilter.get()));
+                 ? SkLightingImageFilter::MakePointLitDiffuse(make_point(), make_color(),
+                                                              make_scalar(), make_scalar(),
+                                                              make_image_filter())
+                 : SkLightingImageFilter::MakePointLitSpecular(make_point(), make_color(),
+                                                               make_scalar(), make_scalar(),
+                                                               SkIntToScalar(R(10)),
+                                                               make_image_filter());
         break;
-    }
-    case SPOT_LIGHT: {
-        sk_sp<SkImageFilter> subFilter(make_image_filter());
-
+    case SPOT_LIGHT:
         filter = (R(2) == 1)
-                 ? sk_sp<SkImageFilter>(SkLightingImageFilter::CreateSpotLitDiffuse(SkPoint3::Make(0, 0, 0),
-                                                 make_point(), make_scalar(), make_scalar(),
-                                                 make_color(), make_scalar(), make_scalar(),
-                                                 subFilter.get()))
-                 : sk_sp<SkImageFilter>(SkLightingImageFilter::CreateSpotLitSpecular(SkPoint3::Make(0, 0, 0),
-                                                 make_point(), make_scalar(), make_scalar(),
-                                                 make_color(), make_scalar(), make_scalar(),
-                                                 SkIntToScalar(R(10)), subFilter.get()));
+                 ? SkLightingImageFilter::MakeSpotLitDiffuse(SkPoint3::Make(0, 0, 0),
+                                                             make_point(), make_scalar(),
+                                                             make_scalar(), make_color(),
+                                                             make_scalar(), make_scalar(),
+                                                             make_image_filter())
+                 : SkLightingImageFilter::MakeSpotLitSpecular(SkPoint3::Make(0, 0, 0),
+                                                              make_point(), make_scalar(),
+                                                              make_scalar(), make_color(),
+                                                              make_scalar(), make_scalar(),
+                                                              SkIntToScalar(R(10)),
+                                                              make_image_filter());
         break;
-    }
     case NOISE: {
-        sk_sp<SkShader> shader((R(2) == 1) ?
-            SkPerlinNoiseShader::MakeFractalNoise(
-                make_scalar(true), make_scalar(true), R(10.0f), make_scalar()) :
-            SkPerlinNoiseShader::MakeTurbulence(
-                make_scalar(true), make_scalar(true), R(10.0f), make_scalar()));
+        sk_sp<SkShader> shader((R(2) == 1)
+                ? SkPerlinNoiseShader::MakeFractalNoise(make_scalar(true), make_scalar(true),
+                                                        R(10.0f), make_scalar())
+                : SkPerlinNoiseShader::MakeTurbulence(make_scalar(true), make_scalar(true),
+                                                      R(10.0f), make_scalar()));
         SkPaint paint;
         paint.setShader(shader);
         SkImageFilter::CropRect cropR(SkRect::MakeWH(SkIntToScalar(kBitmapSize),
@@ -714,25 +704,16 @@ static sk_sp<SkImageFilter> make_image_filter(bool canBeNull) {
         }
         break;
     }
-    case DISPLACE: {
-        sk_sp<SkImageFilter> subFilter1(make_image_filter(false));
-        sk_sp<SkImageFilter> subFilter2(make_image_filter());
-
-        filter = sk_sp<SkImageFilter>(SkDisplacementMapEffect::Create(make_channel_selector_type(),
-                                                                      make_channel_selector_type(),
-                                                                      make_scalar(),
-                                                                      subFilter1.get(),
-                                                                      subFilter2.get()));
+    case DISPLACE:
+        filter = SkDisplacementMapEffect::Make(make_channel_selector_type(),
+                                               make_channel_selector_type(),
+                                               make_scalar(),
+                                               make_image_filter(false),
+                                               make_image_filter());
         break;
-    }
-    case TILE: {
-        sk_sp<SkImageFilter> subFilter(make_image_filter(false));
-
-        filter = sk_sp<SkImageFilter>(SkTileImageFilter::Create(make_rect(),
-                                                                make_rect(),
-                                                                subFilter.get()));
+    case TILE:
+        filter = SkTileImageFilter::Make(make_rect(), make_rect(), make_image_filter(false));
         break;
-    }
     case PICTURE: {
         SkRTreeFactory factory;
         SkPictureRecorder recorder;

@@ -42,11 +42,15 @@ function default_toolchain() {
   else
       API=14  # Android 4.0
   fi
+  
+  if [ "$SKIA_VULKAN" == "true" ]; then
+      API=24  # Android N Preview
+  fi
 
   TOOLCHAIN=$ANDROID_ARCH-$NDK-$API
   HOST=`uname | tr '[A-Z]' '[a-z]'`
 
-  exportVar ANDROID_TOOLCHAIN "${TOOLCHAINS}/${TOOLCHAIN}/bin"
+  exportVar ANDROID_TOOLCHAIN "${TOOLCHAINS}/${TOOLCHAIN}"
 
   if [ ! -d "$ANDROID_TOOLCHAIN" ]; then
     mkdir -p $TOOLCHAINS
@@ -78,9 +82,9 @@ if [ -z "$ANDROID_TOOLCHAIN" ]; then
   fi
 fi
 
-GCC=$(command ls $ANDROID_TOOLCHAIN/*-gcc | head -n1)
+GCC=$(command ls $ANDROID_TOOLCHAIN/bin/*-gcc | head -n1)
 if [ -z "$GCC" ]; then
-  echo "ERROR: Could not find Android cross-compiler in: $ANDROID_TOOLCHAIN"
+  echo "ERROR: Could not find Android cross-compiler in: ${ANDROID_TOOLCHAIN}/bin"
   return 1
 fi
 
@@ -149,4 +153,4 @@ if [ $(uname) == "Darwin" ]; then
   ln -sf $ANDROID_TOOLCHAIN_PREFIX-as $ANDROID_TOOLCHAIN/as
 fi
 
-exportVar PATH $ANDROID_TOOLCHAIN:$PATH
+exportVar PATH ${ANDROID_TOOLCHAIN}/bin:${PATH}

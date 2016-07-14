@@ -11,17 +11,18 @@
 #import "ARDAppClient+Internal.h"
 
 #if defined(WEBRTC_IOS)
-#import "webrtc/base/objc/RTCTracing.h"
-#import "webrtc/api/objc/RTCAVFoundationVideoSource.h"
+#import "WebRTC/RTCAVFoundationVideoSource.h"
+#import "WebRTC/RTCTracing.h"
 #endif
-#import "webrtc/api/objc/RTCAudioTrack.h"
-#import "webrtc/api/objc/RTCConfiguration.h"
-#import "webrtc/api/objc/RTCIceServer.h"
-#import "webrtc/api/objc/RTCMediaConstraints.h"
-#import "webrtc/api/objc/RTCMediaStream.h"
-#import "webrtc/api/objc/RTCPeerConnectionFactory.h"
-#import "webrtc/base/objc/RTCFileLogger.h"
-#import "webrtc/base/objc/RTCLogging.h"
+#import "WebRTC/RTCAudioTrack.h"
+#import "WebRTC/RTCConfiguration.h"
+#import "WebRTC/RTCFileLogger.h"
+#import "WebRTC/RTCIceServer.h"
+#import "WebRTC/RTCLogging.h"
+#import "WebRTC/RTCMediaConstraints.h"
+#import "WebRTC/RTCMediaStream.h"
+#import "WebRTC/RTCPeerConnectionFactory.h"
+#import "WebRTC/RTCRtpSender.h"
 
 #import "ARDAppEngineClient.h"
 #import "ARDCEODTURNClient.h"
@@ -48,8 +49,11 @@ static NSInteger const kARDAppClientErrorCreateSDP = -3;
 static NSInteger const kARDAppClientErrorSetSDP = -4;
 static NSInteger const kARDAppClientErrorInvalidClient = -5;
 static NSInteger const kARDAppClientErrorInvalidRoom = -6;
+static NSString * const kARDMediaStreamId = @"ARDAMS";
+static NSString * const kARDAudioTrackId = @"ARDAMSa0";
+static NSString * const kARDVideoTrackId = @"ARDAMSv0";
 
-// TODO(tkchin): Remove guard once rtc_base_objc compiles on Mac.
+// TODO(tkchin): Remove guard once rtc_sdk_common_objc compiles on Mac.
 #if defined(WEBRTC_IOS)
 // TODO(tkchin): Add this as a UI option.
 static BOOL const kARDAppClientEnableTracing = NO;
@@ -505,9 +509,9 @@ static BOOL const kARDAppClientEnableTracing = NO;
   _peerConnection = [_factory peerConnectionWithConfiguration:config
                                                   constraints:constraints
                                                      delegate:self];
-  // Create AV media stream and add it to the peer connection.
-  RTCMediaStream *localStream = [self createLocalMediaStream];
-  [_peerConnection addStream:localStream];
+  // Create AV senders.
+  [self createAudioSender];
+  [self createVideoSender];
   if (_isInitiator) {
     // Send offer.
     __weak ARDAppClient *weakSelf = self;
@@ -606,17 +610,25 @@ static BOOL const kARDAppClientEnableTracing = NO;
   }
 }
 
-- (RTCMediaStream *)createLocalMediaStream {
-  RTCMediaStream *localStream = [_factory mediaStreamWithStreamId:@"ARDAMS"];
-  RTCVideoTrack *localVideoTrack = [self createLocalVideoTrack];
-  if (localVideoTrack) {
-    [localStream addVideoTrack:localVideoTrack];
-    [_delegate appClient:self didReceiveLocalVideoTrack:localVideoTrack];
+- (RTCRtpSender *)createVideoSender {
+  RTCRtpSender *sender =
+      [_peerConnection senderWithKind:kRTCMediaStreamTrackKindVideo
+                             streamId:kARDMediaStreamId];
+  RTCVideoTrack *track = [self createLocalVideoTrack];
+  if (track) {
+    sender.track = track;
+    [_delegate appClient:self didReceiveLocalVideoTrack:track];
   }
-  RTCAudioTrack *localAudioTrack =
-      [_factory audioTrackWithTrackId:@"ARDAMSa0"];
-  [localStream addAudioTrack:localAudioTrack];
-  return localStream;
+  return sender;
+}
+
+- (RTCRtpSender *)createAudioSender {
+  RTCRtpSender *sender =
+      [_peerConnection senderWithKind:kRTCMediaStreamTrackKindAudio
+                             streamId:kARDMediaStreamId];
+  RTCAudioTrack *track = [_factory audioTrackWithTrackId:kARDAudioTrackId];
+  sender.track = track;
+  return sender;
 }
 
 - (RTCVideoTrack *)createLocalVideoTrack {
@@ -634,7 +646,7 @@ static BOOL const kARDAppClientEnableTracing = NO;
         [_factory avFoundationVideoSourceWithConstraints:mediaConstraints];
     localVideoTrack =
         [_factory videoTrackWithSource:source
-                               trackId:@"ARDAMSv0"];
+                               trackId:kARDVideoTrackId];
   }
 #endif
   return localVideoTrack;

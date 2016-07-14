@@ -13,9 +13,11 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/random.h"
 #include "webrtc/base/thread_annotations.h"
@@ -95,7 +97,9 @@ class RTPSender : public RTPSenderInterface {
             BitrateStatisticsObserver* bitrate_callback,
             FrameCountObserver* frame_count_observer,
             SendSideDelayObserver* send_side_delay_observer,
-            RtcEventLog* event_log);
+            RtcEventLog* event_log,
+            SendPacketObserver* send_packet_observer);
+
   virtual ~RTPSender();
 
   void ProcessBitrate();
@@ -351,6 +355,9 @@ class RTPSender : public RTPSenderInterface {
                            const PacketOptions& options);
 
   void UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms);
+  void UpdateOnSendPacket(int packet_id,
+                          int64_t capture_time_ms,
+                          uint32_t ssrc);
 
   // Find the byte position of the RTP extension as indicated by |type| in
   // |rtp_packet|. Return false if such extension doesn't exist.
@@ -368,12 +375,13 @@ class RTPSender : public RTPSenderInterface {
                               size_t rtp_packet_length,
                               const RTPHeader& rtp_header,
                               int64_t now_ms) const;
-  // Update the transport sequence number of the packet using a new sequence
-  // number allocated by SequenceNumberAllocator. Returns the assigned sequence
-  // number, or 0 if extension could not be updated.
-  uint16_t UpdateTransportSequenceNumber(uint8_t* rtp_packet,
-                                         size_t rtp_packet_length,
-                                         const RTPHeader& rtp_header) const;
+
+  bool UpdateTransportSequenceNumber(uint16_t sequence_number,
+                                     uint8_t* rtp_packet,
+                                     size_t rtp_packet_length,
+                                     const RTPHeader& rtp_header) const;
+
+  bool AllocateTransportSequenceNumber(int* packet_id) const;
 
   void UpdateRtpStats(const uint8_t* buffer,
                       size_t packet_length,
@@ -422,8 +430,8 @@ class RTPSender : public RTPSenderInterface {
   Bitrate total_bitrate_sent_;
 
   const bool audio_configured_;
-  const rtc::scoped_ptr<RTPSenderAudio> audio_;
-  const rtc::scoped_ptr<RTPSenderVideo> video_;
+  const std::unique_ptr<RTPSenderAudio> audio_;
+  const std::unique_ptr<RTPSenderVideo> video_;
 
   RtpPacketSender* const paced_sender_;
   TransportSequenceNumberAllocator* const transport_sequence_number_allocator_;
@@ -454,7 +462,7 @@ class RTPSender : public RTPSenderInterface {
   RTPPacketHistory packet_history_;
 
   // Statistics
-  rtc::scoped_ptr<CriticalSectionWrapper> statistics_crit_;
+  rtc::CriticalSection statistics_crit_;
   SendDelayMap send_delays_ GUARDED_BY(statistics_crit_);
   FrameCounts frame_counts_ GUARDED_BY(statistics_crit_);
   StreamDataCounters rtp_stats_ GUARDED_BY(statistics_crit_);
@@ -463,6 +471,7 @@ class RTPSender : public RTPSenderInterface {
   FrameCountObserver* const frame_count_observer_;
   SendSideDelayObserver* const send_side_delay_observer_;
   RtcEventLog* const event_log_;
+  SendPacketObserver* const send_packet_observer_;
 
   // RTP variables
   bool start_timestamp_forced_ GUARDED_BY(send_critsect_);
@@ -489,7 +498,7 @@ class RTPSender : public RTPSenderInterface {
   // SetTargetBitrateKbps or GetTargetBitrateKbps. Also remember
   // that by the time the function returns there is no guarantee
   // that the target bitrate is still valid.
-  rtc::scoped_ptr<CriticalSectionWrapper> target_bitrate_critsect_;
+  rtc::CriticalSection target_bitrate_critsect_;
   uint32_t target_bitrate_ GUARDED_BY(target_bitrate_critsect_);
 
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(RTPSender);

@@ -69,7 +69,7 @@ RembReceiver::RembReceiver(int flow_id, bool plot)
       recv_stats_(ReceiveStatistics::Create(&clock_)),
       latest_estimate_bps_(-1),
       last_feedback_ms_(-1),
-      estimator_(new RemoteBitrateEstimatorAbsSendTime(this, &clock_)) {
+      estimator_(new RemoteBitrateEstimatorAbsSendTime(this)) {
   std::stringstream ss;
   ss << "Estimate_" << flow_id_ << "#1";
   estimate_log_prefix_ = ss.str();
@@ -95,7 +95,7 @@ void RembReceiver::ReceivePacket(int64_t arrival_time_ms,
     step_ms = std::max<int64_t>(estimator_->TimeUntilNextProcess(), 0);
   }
   estimator_->IncomingPacket(arrival_time_ms, media_packet.payload_size(),
-                             media_packet.header(), true);
+                             media_packet.header());
   clock_.AdvanceTimeMilliseconds(arrival_time_ms - clock_.TimeInMilliseconds());
   ASSERT_TRUE(arrival_time_ms == clock_.TimeInMilliseconds());
 

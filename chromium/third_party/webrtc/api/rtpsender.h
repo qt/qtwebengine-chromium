@@ -15,6 +15,7 @@
 #ifndef WEBRTC_API_RTPSENDER_H_
 #define WEBRTC_API_RTPSENDER_H_
 
+#include <memory>
 #include <string>
 
 #include "webrtc/api/mediastreamprovider.h"
@@ -22,7 +23,6 @@
 #include "webrtc/api/statscollector.h"
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/criticalsection.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/media/base/audiosource.h"
 
 namespace webrtc {
@@ -97,8 +97,8 @@ class AudioRtpSender : public ObserverInterface,
 
   void Stop() override;
 
-  RtpParameters GetParameters() const;
-  bool SetParameters(const RtpParameters& parameters);
+  RtpParameters GetParameters() const override;
+  bool SetParameters(const RtpParameters& parameters) override;
 
  private:
   // TODO(nisse): Since SSRC == 0 is technically valid, figure out
@@ -119,7 +119,7 @@ class AudioRtpSender : public ObserverInterface,
 
   // Used to pass the data callback from the |track_| to the other end of
   // cricket::AudioSource.
-  rtc::scoped_ptr<LocalAudioSinkAdapter> sink_adapter_;
+  std::unique_ptr<LocalAudioSinkAdapter> sink_adapter_;
 };
 
 class VideoRtpSender : public ObserverInterface,
@@ -163,8 +163,8 @@ class VideoRtpSender : public ObserverInterface,
 
   void Stop() override;
 
-  RtpParameters GetParameters() const;
-  bool SetParameters(const RtpParameters& parameters);
+  RtpParameters GetParameters() const override;
+  bool SetParameters(const RtpParameters& parameters) override;
 
  private:
   bool can_send_track() const { return track_ && ssrc_; }

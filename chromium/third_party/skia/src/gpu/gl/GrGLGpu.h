@@ -28,7 +28,7 @@ class GrPipeline;
 class GrNonInstancedMesh;
 class GrSwizzle;
 
-#ifdef SK_DEVELOPER
+#ifdef SK_DEBUG
 #define PROGRAM_CACHE_STATS
 #endif
 
@@ -60,6 +60,8 @@ public:
     void bindTexture(int unitIdx, const GrTextureParams& params, bool dstConfigAllowsSRGB,
                      GrGLTexture* texture);
 
+    void bindTexelBuffer(int unitIdx, intptr_t offsetInBytes, GrPixelConfig, GrGLBuffer*);
+
     bool onGetReadPixelsInfo(GrSurface* srcSurface, int readWidth, int readHeight, size_t rowBytes,
                              GrPixelConfig readConfig, DrawPreference*,
                              ReadPixelTempDrawInfo*) override;
@@ -87,6 +89,9 @@ public:
     // When 'type' is kIndex_GrBufferType, this function will also implicitly bind the default VAO.
     // If the caller wishes to bind an index buffer to a specific VAO, it can call glBind directly.
     GrGLenum bindBuffer(GrBufferType type, const GrGLBuffer*);
+
+    // Called by GrGLBuffer after its buffer object has been destroyed.
+    void notifyBufferReleased(const GrGLBuffer*);
 
     const GrGLContext* glContextForTesting() const override {
         return &this->glContext();
@@ -121,13 +126,14 @@ private:
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override;
 
-    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle lifeCycle,
+    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                const SkTArray<GrMipLevel>& texels) override;
     GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc,
-                                         GrGpuResource::LifeCycle lifeCycle,
+                                         SkBudgeted budgeted,
                                          const SkTArray<GrMipLevel>& texels) override;
 
-    GrBuffer* onCreateBuffer(size_t size, GrBufferType intendedType, GrAccessPattern) override;
+    GrBuffer* onCreateBuffer(size_t size, GrBufferType intendedType, GrAccessPattern,
+                             const void* data) override;
     GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership) override;
     GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
                                               GrWrapOwnership) override;
@@ -136,8 +142,7 @@ private:
     // compatible stencil format, or negative if there is no compatible stencil format.
     int getCompatibleStencilIndex(GrPixelConfig config);
 
-    // If |desc.fTextureStorageAllocator| exists, use that to create the
-    // texture. Otherwise, create the texture directly.
+
     // Returns whether the texture is successfully created. On success, the
     // result is stored in |info|.
     // The texture is populated with |texels|, if it exists.
@@ -145,8 +150,6 @@ private:
     bool createTextureImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info,
                            bool renderTarget, GrGLTexture::TexParams* initialTexParams,
                            const SkTArray<GrMipLevel>& texels);
-    bool createTextureExternalAllocatorImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info,
-                                            const SkTArray<GrMipLevel>& texels);
 
     void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) override;
 
@@ -205,6 +208,8 @@ private:
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
+
+    void setTextureSwizzle(int unitIdx, GrGLenum target, const GrGLenum swizzle[]);
 
     // Flushes state from GrPipeline to GL. Returns false if the state couldn't be set.
     bool flushGLState(const GrPipeline& pipeline, const GrPrimitiveProcessor& primProc);
@@ -303,8 +308,6 @@ private:
     // bounds is region that may be modified.
     // nullptr means whole target. Can be an empty rect.
     void flushRenderTarget(GrGLRenderTarget*, const SkIRect* bounds, bool disableSRGB = false);
-    // Handles cases where a surface will be updated without a call to flushRenderTarget
-    void didWriteToSurface(GrSurface*, const SkIRect* bounds) const;
 
     // Need not be called if flushRenderTarget is used.
     void flushViewport(const GrGLIRect&);
@@ -342,8 +345,8 @@ private:
                                  int left = 0, int top = 0,
                                  int width = -1, int height = -1);
 
-    bool createRenderTargetObjects(const GrSurfaceDesc&, GrGpuResource::LifeCycle lifeCycle,
-                                   const GrGLTextureInfo& texInfo, GrGLRenderTarget::IDDesc*);
+    bool createRenderTargetObjects(const GrSurfaceDesc&, const GrGLTextureInfo& texInfo,
+                                   GrGLRenderTarget::IDDesc*);
 
     enum TempFBOTarget {
         kSrc_TempFBOTarget,
@@ -497,6 +500,23 @@ private:
     uint32_t                    fHWBoundRenderTargetUniqueID;
     TriState                    fHWSRGBFramebuffer;
     SkTArray<uint32_t, true>    fHWBoundTextureUniqueIDs;
+
+    struct BufferTexture {
+        BufferTexture() : fTextureID(0), fKnownBound(false),
+                          fAttachedBufferUniqueID(SK_InvalidUniqueID),
+                          fSwizzle(GrSwizzle::RGBA()) {}
+
+        GrGLuint        fTextureID;
+        bool            fKnownBound;
+        intptr_t        fOffsetInBytes;
+        GrPixelConfig   fTexelConfig;
+        size_t          fAttachedSizeInBytes;
+        uint32_t        fAttachedBufferUniqueID;
+        GrSwizzle       fSwizzle;
+    };
+
+    SkTArray<BufferTexture, true>   fHWBufferTextures;
+    int                             fHWMaxUsedBufferTextureUnit;
 
     // EXT_raster_multisample.
     TriState                    fHWRasterMultisampleEnabled;

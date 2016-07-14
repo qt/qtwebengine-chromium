@@ -136,7 +136,6 @@ void GrAtlasTextBatch::onPrepareDraws(Target* target) const {
     // in a row
     const SkDescriptor* desc = nullptr;
     SkGlyphCache* cache = nullptr;
-    GrFontScaler* scaler = nullptr;
     SkTypeface* typeface = nullptr;
 
     GrBlobRegenHelper helper(this, target, &flushInfo);
@@ -148,7 +147,7 @@ void GrAtlasTextBatch::onPrepareDraws(Target* target) const {
         void* blobVertices;
         int subRunGlyphCount;
         blob->regenInBatch(target, fFontCache, &helper, args.fRun, args.fSubRun, &cache,
-                           &typeface, &scaler, &desc, vertexStride, args.fViewMatrix, args.fX,
+                           &typeface, &desc, vertexStride, args.fViewMatrix, args.fX,
                            args.fY, args.fColor, &blobVertices, &byteCount, &subRunGlyphCount);
 
         // now copy all vertices
@@ -164,7 +163,10 @@ void GrAtlasTextBatch::onPrepareDraws(Target* target) const {
         if (this->usesDistanceFields()) {
             args.fViewMatrix.mapRect(&rect);
         }
-        SkASSERT(fBounds.contains(rect));
+        // Allow for small numerical error in the bounds.
+        SkRect bounds = fBounds;
+        bounds.outset(0.001f, 0.001f);
+        SkASSERT(bounds.contains(rect));
 #endif
 
         currVertex += byteCount;
@@ -261,6 +263,7 @@ GrGeometryProcessor* GrAtlasTextBatch::setupDfProcessor(const SkMatrix& viewMatr
     // set up any flags
     uint32_t flags = viewMatrix.isSimilarity() ? kSimilarity_DistanceFieldEffectFlag : 0;
     flags |= viewMatrix.isScaleTranslate() ? kScaleOnly_DistanceFieldEffectFlag : 0;
+    flags |= fUseGammaCorrectDistanceTable ? kGammaCorrect_DistanceFieldEffectFlag : 0;
 
     // see if we need to create a new effect
     if (isLCD) {
@@ -269,12 +272,15 @@ GrGeometryProcessor* GrAtlasTextBatch::setupDfProcessor(const SkMatrix& viewMatr
 
         GrColor colorNoPreMul = skcolor_to_grcolor_nopremultiply(filteredColor);
 
-        float redCorrection =
-            (*fDistanceAdjustTable)[GrColorUnpackR(colorNoPreMul) >> kDistanceAdjustLumShift];
-        float greenCorrection =
-            (*fDistanceAdjustTable)[GrColorUnpackG(colorNoPreMul) >> kDistanceAdjustLumShift];
-        float blueCorrection =
-            (*fDistanceAdjustTable)[GrColorUnpackB(colorNoPreMul) >> kDistanceAdjustLumShift];
+        float redCorrection = fDistanceAdjustTable->getAdjustment(
+            GrColorUnpackR(colorNoPreMul) >> kDistanceAdjustLumShift,
+            fUseGammaCorrectDistanceTable);
+        float greenCorrection = fDistanceAdjustTable->getAdjustment(
+            GrColorUnpackG(colorNoPreMul) >> kDistanceAdjustLumShift,
+            fUseGammaCorrectDistanceTable);
+        float blueCorrection = fDistanceAdjustTable->getAdjustment(
+            GrColorUnpackB(colorNoPreMul) >> kDistanceAdjustLumShift,
+            fUseGammaCorrectDistanceTable);
         GrDistanceFieldLCDTextGeoProc::DistanceAdjust widthAdjust =
             GrDistanceFieldLCDTextGeoProc::DistanceAdjust::Make(redCorrection,
                                                                 greenCorrection,
@@ -290,7 +296,8 @@ GrGeometryProcessor* GrAtlasTextBatch::setupDfProcessor(const SkMatrix& viewMatr
     } else {
 #ifdef SK_GAMMA_APPLY_TO_A8
         U8CPU lum = SkColorSpaceLuminance::computeLuminance(SK_GAMMA_EXPONENT, filteredColor);
-        float correction = (*fDistanceAdjustTable)[lum >> kDistanceAdjustLumShift];
+        float correction = fDistanceAdjustTable->getAdjustment(
+            lum >> kDistanceAdjustLumShift, fUseGammaCorrectDistanceTable);
         return GrDistanceFieldA8TextGeoProc::Create(color,
                                                     viewMatrix,
                                                     texture,

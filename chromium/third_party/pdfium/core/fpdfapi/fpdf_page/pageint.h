@@ -14,9 +14,8 @@
 
 #include "core/fpdfapi/fpdf_page/cpdf_contentmark.h"
 #include "core/fpdfapi/fpdf_page/cpdf_countedobject.h"
-#include "core/fpdfapi/fpdf_page/cpdf_parseoptions.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_pageobjectholder.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 class CPDF_AllStates;
 class CPDF_ColorSpace;
@@ -27,7 +26,6 @@ class CPDF_IccProfile;
 class CPDF_Image;
 class CPDF_ImageObject;
 class CPDF_Page;
-class CPDF_ParseOptions;
 class CPDF_Pattern;
 class CPDF_StreamAcc;
 class CPDF_TextObject;
@@ -44,8 +42,7 @@ class CPDF_StreamParser {
 
   CPDF_Stream* ReadInlineStream(CPDF_Document* pDoc,
                                 CPDF_Dictionary* pDict,
-                                CPDF_Object* pCSObj,
-                                FX_BOOL bDecode);
+                                CPDF_Object* pCSObj);
   SyntaxType ParseNextElement();
   uint8_t* GetWordBuf() { return m_WordBuffer; }
   uint32_t GetWordSize() const { return m_WordSize; }
@@ -56,9 +53,7 @@ class CPDF_StreamParser {
   }
   uint32_t GetPos() const { return m_Pos; }
   void SetPos(uint32_t pos) { m_Pos = pos; }
-  CPDF_Object* ReadNextObject(FX_BOOL bAllowNestedArray = FALSE,
-                              FX_BOOL bInArray = FALSE);
-  void SkipPathObject();
+  CPDF_Object* ReadNextObject(bool bAllowNestedArray, uint32_t dwInArrayLevel);
 
  protected:
   friend class fpdf_page_parser_old_ReadHexString_Test;
@@ -103,17 +98,15 @@ struct ContentParam {
 };
 #define _FPDF_MAX_FORM_LEVEL_ 30
 #define _FPDF_MAX_TYPE3_FORM_LEVEL_ 4
-#define _FPDF_MAX_OBJECT_STACK_SIZE_ 512
 class CPDF_StreamContentParser {
  public:
   CPDF_StreamContentParser(CPDF_Document* pDoc,
                            CPDF_Dictionary* pPageResources,
                            CPDF_Dictionary* pParentResources,
-                           CFX_Matrix* pmtContentToUser,
+                           const CFX_Matrix* pmtContentToUser,
                            CPDF_PageObjectHolder* pObjectHolder,
                            CPDF_Dictionary* pResources,
                            CFX_FloatRect* pBBox,
-                           CPDF_ParseOptions* pOptions,
                            CPDF_AllStates* pAllStates,
                            int level);
   ~CPDF_StreamContentParser();
@@ -131,7 +124,6 @@ class CPDF_StreamContentParser {
   CPDF_Object* GetObject(uint32_t index);
   CFX_ByteString GetString(uint32_t index);
   FX_FLOAT GetNumber(uint32_t index);
-  FX_FLOAT GetNumber16(uint32_t index);
   int GetInteger(uint32_t index) { return (int32_t)(GetNumber(index)); }
   void OnOperator(const FX_CHAR* op);
   void BigCaseCaller(int index);
@@ -162,8 +154,8 @@ class CPDF_StreamContentParser {
   void RestoreStates(CPDF_AllStates* pState);
   CPDF_Font* FindFont(const CFX_ByteString& name);
   CPDF_ColorSpace* FindColorSpace(const CFX_ByteString& name);
-  CPDF_Pattern* FindPattern(const CFX_ByteString& name, FX_BOOL bShading);
-  CPDF_Object* FindResourceObj(const CFX_ByteStringC& type,
+  CPDF_Pattern* FindPattern(const CFX_ByteString& name, bool bShading);
+  CPDF_Object* FindResourceObj(const CFX_ByteString& type,
                                const CFX_ByteString& name);
 
  protected:
@@ -252,7 +244,6 @@ class CPDF_StreamContentParser {
   int m_Level;
   CFX_Matrix m_mtContentToUser;
   CFX_FloatRect m_BBox;
-  CPDF_ParseOptions m_Options;
   ContentParam m_ParamBuf[PARAM_BUF_SIZE];
   uint32_t m_ParamStartPos;
   uint32_t m_ParamCount;
@@ -291,12 +282,11 @@ class CPDF_ContentParser {
   ~CPDF_ContentParser();
 
   ParseStatus GetStatus() const { return m_Status; }
-  void Start(CPDF_Page* pPage, CPDF_ParseOptions* pOptions);
+  void Start(CPDF_Page* pPage);
   void Start(CPDF_Form* pForm,
              CPDF_AllStates* pGraphicStates,
-             CFX_Matrix* pParentMatrix,
+             const CFX_Matrix* pParentMatrix,
              CPDF_Type3Char* pType3Char,
-             CPDF_ParseOptions* pOptions,
              int level);
   void Continue(IFX_Pause* pPause);
 
@@ -311,7 +301,6 @@ class CPDF_ContentParser {
   InternalStage m_InternalStage;
   CPDF_PageObjectHolder* m_pObjectHolder;
   FX_BOOL m_bForm;
-  CPDF_ParseOptions m_Options;
   CPDF_Type3Char* m_pType3Char;
   uint32_t m_nStreams;
   std::unique_ptr<CPDF_StreamAcc> m_pSingleStream;
@@ -329,7 +318,7 @@ class CPDF_DocPageData {
 
   void Clear(FX_BOOL bRelease = FALSE);
   CPDF_Font* GetFont(CPDF_Dictionary* pFontDict, FX_BOOL findOnly);
-  CPDF_Font* GetStandardFont(const CFX_ByteStringC& fontName,
+  CPDF_Font* GetStandardFont(const CFX_ByteString& fontName,
                              CPDF_FontEncoding* pEncoding);
   void ReleaseFont(CPDF_Dictionary* pFontDict);
   CPDF_ColorSpace* GetColorSpace(CPDF_Object* pCSObj,
@@ -338,7 +327,7 @@ class CPDF_DocPageData {
   void ReleaseColorSpace(CPDF_Object* pColorSpace);
   CPDF_Pattern* GetPattern(CPDF_Object* pPatternObj,
                            FX_BOOL bShading,
-                           const CFX_Matrix* matrix);
+                           const CFX_Matrix& matrix);
   void ReleasePattern(CPDF_Object* pPatternObj);
   CPDF_Image* GetImage(CPDF_Object* pImageStream);
   void ReleaseImage(CPDF_Object* pImageStream);
@@ -393,6 +382,7 @@ class CPDF_Function {
   uint32_t CountInputs() const { return m_nInputs; }
   uint32_t CountOutputs() const { return m_nOutputs; }
   FX_FLOAT GetDomain(int i) const { return m_pDomains[i]; }
+  FX_FLOAT GetRange(int i) const { return m_pRanges[i]; }
   Type GetType() const { return m_Type; }
 
  protected:
@@ -421,6 +411,33 @@ class CPDF_ExpIntFunc : public CPDF_Function {
   FX_FLOAT m_Exponent;
   FX_FLOAT* m_pBeginValues;
   FX_FLOAT* m_pEndValues;
+};
+
+class CPDF_SampledFunc : public CPDF_Function {
+ public:
+  struct SampleEncodeInfo {
+    FX_FLOAT encode_max;
+    FX_FLOAT encode_min;
+    uint32_t sizes;
+  };
+
+  struct SampleDecodeInfo {
+    FX_FLOAT decode_max;
+    FX_FLOAT decode_min;
+  };
+
+  CPDF_SampledFunc();
+  ~CPDF_SampledFunc() override;
+
+  // CPDF_Function
+  FX_BOOL v_Init(CPDF_Object* pObj) override;
+  FX_BOOL v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const override;
+
+  SampleEncodeInfo* m_pEncodeInfo;
+  SampleDecodeInfo* m_pDecodeInfo;
+  uint32_t m_nBitsPerSample;
+  uint32_t m_SampleMax;
+  CPDF_StreamAcc* m_pSampleStream;
 };
 
 class CPDF_StitchFunc : public CPDF_Function {

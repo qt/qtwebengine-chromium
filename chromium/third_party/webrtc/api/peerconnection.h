@@ -13,6 +13,7 @@
 
 #include <string>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include "webrtc/api/dtlsidentitystore.h"
@@ -23,7 +24,6 @@
 #include "webrtc/api/statscollector.h"
 #include "webrtc/api/streamcollection.h"
 #include "webrtc/api/webrtcsession.h"
-#include "webrtc/base/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -68,10 +68,9 @@ class PeerConnection : public PeerConnectionInterface,
   explicit PeerConnection(PeerConnectionFactory* factory);
 
   bool Initialize(
-      const cricket::MediaConfig& media_config,
       const PeerConnectionInterface::RTCConfiguration& configuration,
-      rtc::scoped_ptr<cricket::PortAllocator> allocator,
-      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<cricket::PortAllocator> allocator,
+      std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
       PeerConnectionObserver* observer);
 
   rtc::scoped_refptr<StreamCollectionInterface> local_streams() override;
@@ -131,7 +130,7 @@ class PeerConnection : public PeerConnectionInterface,
   void SetRemoteDescription(SetSessionDescriptionObserver* observer,
                             SessionDescriptionInterface* desc) override;
   bool SetConfiguration(
-      const PeerConnectionInterface::RTCConfiguration& config) override;
+      const PeerConnectionInterface::RTCConfiguration& configuration) override;
   bool AddIceCandidate(const IceCandidateInterface* candidate) override;
   bool RemoveIceCandidates(
       const std::vector<cricket::Candidate>& candidates) override;
@@ -209,6 +208,8 @@ class PeerConnection : public PeerConnectionInterface,
   rtc::Thread* signaling_thread() const {
     return factory_->signaling_thread();
   }
+
+  rtc::Thread* worker_thread() const { return factory_->worker_thread(); }
 
   void PostSetSessionDescriptionFailure(SetSessionDescriptionObserver* observer,
                                         const std::string& error);
@@ -351,6 +352,12 @@ class PeerConnection : public PeerConnectionInterface,
   // or nullptr if not found.
   DataChannel* FindDataChannelBySid(int sid) const;
 
+  // Called when first configuring the port allocator.
+  bool InitializePortAllocator_w(const RTCConfiguration& configuration);
+  // Called when SetConfiguration is called. Only a subset of the configuration
+  // is applied.
+  bool ReconfigurePortAllocator_w(const RTCConfiguration& configuration);
+
   // Storing the factory as a scoped reference pointer ensures that the memory
   // in the PeerConnectionFactoryImpl remains available as long as the
   // PeerConnection is running. It is passed to PeerConnection as a raw pointer.
@@ -366,15 +373,19 @@ class PeerConnection : public PeerConnectionInterface,
   IceConnectionState ice_connection_state_;
   IceGatheringState ice_gathering_state_;
 
-  rtc::scoped_ptr<cricket::PortAllocator> port_allocator_;
-  rtc::scoped_ptr<MediaControllerInterface> media_controller_;
+  std::unique_ptr<cricket::PortAllocator> port_allocator_;
+  std::unique_ptr<MediaControllerInterface> media_controller_;
+
+  // One PeerConnection has only one RTCP CNAME.
+  // https://tools.ietf.org/html/draft-ietf-rtcweb-rtp-usage-26#section-4.9
+  std::string rtcp_cname_;
 
   // Streams added via AddStream.
   rtc::scoped_refptr<StreamCollection> local_streams_;
   // Streams created as a result of SetRemoteDescription.
   rtc::scoped_refptr<StreamCollection> remote_streams_;
 
-  std::vector<rtc::scoped_ptr<MediaStreamObserver>> stream_observers_;
+  std::vector<std::unique_ptr<MediaStreamObserver>> stream_observers_;
 
   // These lists store track info seen in local/remote descriptions.
   TrackInfos remote_audio_tracks_;
@@ -393,12 +404,8 @@ class PeerConnection : public PeerConnectionInterface,
   std::vector<rtc::scoped_refptr<RtpSenderInterface>> senders_;
   std::vector<rtc::scoped_refptr<RtpReceiverInterface>> receivers_;
 
-  // The session_ scoped_ptr is declared at the bottom of PeerConnection
-  // because its destruction fires signals (such as VoiceChannelDestroyed)
-  // which will trigger some final actions in PeerConnection...
-  rtc::scoped_ptr<WebRtcSession> session_;
-  // ... But stats_ depends on session_ so it should be destroyed even earlier.
-  rtc::scoped_ptr<StatsCollector> stats_;
+  std::unique_ptr<WebRtcSession> session_;
+  std::unique_ptr<StatsCollector> stats_;
 };
 
 }  // namespace webrtc

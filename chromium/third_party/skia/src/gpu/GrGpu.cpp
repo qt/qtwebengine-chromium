@@ -20,6 +20,7 @@
 #include "GrRenderTargetPriv.h"
 #include "GrStencilAttachment.h"
 #include "GrSurfacePriv.h"
+#include "GrTexturePriv.h"
 #include "SkTypes.h"
 
 GrMesh& GrMesh::operator =(const GrMesh& di) {
@@ -150,9 +151,6 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, SkBudgeted budget
     desc.fOrigin = resolve_origin(desc.fOrigin, isRT);
 
     GrTexture* tex = nullptr;
-    GrGpuResource::LifeCycle lifeCycle = SkBudgeted::kYes == budgeted ?
-                                            GrGpuResource::kCached_LifeCycle :
-                                            GrGpuResource::kUncached_LifeCycle;
 
     if (GrPixelConfigIsCompressed(desc.fConfig)) {
         // We shouldn't be rendering into this
@@ -165,10 +163,10 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, SkBudgeted budget
         }
 
         this->handleDirtyContext();
-        tex = this->onCreateCompressedTexture(desc, lifeCycle, texels);
+        tex = this->onCreateCompressedTexture(desc, budgeted, texels);
     } else {
         this->handleDirtyContext();
-        tex = this->onCreateTexture(desc, lifeCycle, texels);
+        tex = this->onCreateTexture(desc, budgeted, texels);
     }
     if (tex) {
         if (!caps->reuseScratchTextures() && !isRT) {
@@ -236,9 +234,9 @@ GrRenderTarget* GrGpu::wrapBackendTextureAsRenderTarget(const GrBackendTextureDe
 }
 
 GrBuffer* GrGpu::createBuffer(size_t size, GrBufferType intendedType,
-                              GrAccessPattern accessPattern) {
+                              GrAccessPattern accessPattern, const void* data) {
     this->handleDirtyContext();
-    GrBuffer* buffer = this->onCreateBuffer(size, intendedType, accessPattern);
+    GrBuffer* buffer = this->onCreateBuffer(size, intendedType, accessPattern, data);
     if (!this->caps()->reuseScratchBuffers()) {
         buffer->resourcePriv().removeScratchKey();
     }
@@ -378,6 +376,8 @@ bool GrGpu::writePixels(GrSurface* surface,
 
     this->handleDirtyContext();
     if (this->onWritePixels(surface, left, top, width, height, config, texels)) {
+        SkIRect rect = SkIRect::MakeXYWH(left, top, width, height);
+        this->didWriteToSurface(surface, &rect, texels.count());
         fStats.incTextureUploads();
         return true;
     }
@@ -406,6 +406,8 @@ bool GrGpu::transferPixels(GrSurface* surface,
     this->handleDirtyContext();
     if (this->onTransferPixels(surface, left, top, width, height, config,
                                transferBuffer, offset, rowBytes)) {
+        SkIRect rect = SkIRect::MakeXYWH(left, top, width, height);
+        this->didWriteToSurface(surface, &rect);
         fStats.incTransfersToTexture();
         return true;
     }
@@ -416,6 +418,20 @@ void GrGpu::resolveRenderTarget(GrRenderTarget* target) {
     SkASSERT(target);
     this->handleDirtyContext();
     this->onResolveRenderTarget(target);
+}
+
+void GrGpu::didWriteToSurface(GrSurface* surface, const SkIRect* bounds, uint32_t mipLevels) const {
+    SkASSERT(surface);
+    // Mark any MIP chain and resolve buffer as dirty if and only if there is a non-empty bounds.
+    if (nullptr == bounds || !bounds->isEmpty()) {
+        if (GrRenderTarget* target = surface->asRenderTarget()) {
+            target->flagAsNeedingResolve(bounds);
+        }
+        GrTexture* texture = surface->asTexture();
+        if (texture && 1 == mipLevels) {
+            texture->texturePriv().dirtyMipMaps(true);
+        }
+    }
 }
 
 inline static uint8_t multisample_specs_id(uint8_t numSamples, GrSurfaceOrigin origin,

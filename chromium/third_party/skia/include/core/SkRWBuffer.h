@@ -25,7 +25,7 @@ public:
      *  Return the logical length of the data owned/shared by this buffer. It may be stored in
      *  multiple contiguous blocks, accessible via the iterator.
      */
-    size_t size() const { return fUsed; }
+    size_t size() const { return fAvailable; }
 
     class SK_API Iter {
     public:
@@ -53,22 +53,25 @@ public:
     private:
         const SkBufferBlock* fBlock;
         size_t               fRemaining;
+        const SkROBuffer*    fBuffer;
     };
 
 private:
-    SkROBuffer(const SkBufferHead* head, size_t used);
+    SkROBuffer(const SkBufferHead* head, size_t available, const SkBufferBlock* fTail);
     virtual ~SkROBuffer();
 
-    const SkBufferHead* fHead;
-    const size_t        fUsed;
+    const SkBufferHead*     fHead;
+    const size_t            fAvailable;
+    const SkBufferBlock*    fTail;
 
     friend class SkRWBuffer;
 };
 
 /**
  *  Accumulates bytes of memory that are "appended" to it, growing internal storage as needed.
- *  The growth is done such that at any time, a RBuffer or StreamAsset can be snapped off, which
- *  can see the previously stored bytes, but which will be unaware of any future writes.
+ *  The growth is done such that at any time in the writer's thread, an RBuffer or StreamAsset
+ *  can be snapped off (and safely passed to another thread). The RBuffer/StreamAsset snapshot
+ *  can see the previously stored bytes, but will be unaware of any future writes.
  */
 class SK_API SkRWBuffer {
 public:
@@ -77,7 +80,6 @@ public:
 
     size_t size() const { return fTotalUsed; }
     void append(const void* buffer, size_t length);
-    void* append(size_t length);
 
     SkROBuffer* newRBufferSnapshot() const;
     SkStreamAsset* newStreamSnapshot() const;

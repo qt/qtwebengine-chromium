@@ -10,11 +10,11 @@
 
 #import "ARDVideoCallViewController.h"
 
-#import "webrtc/base/objc/RTCDispatcher.h"
 #import "webrtc/modules/audio_device/ios/objc/RTCAudioSession.h"
 
-#import "webrtc/api/objc/RTCAVFoundationVideoSource.h"
-#import "webrtc/base/objc/RTCLogging.h"
+#import "WebRTC/RTCAVFoundationVideoSource.h"
+#import "WebRTC/RTCDispatcher.h"
+#import "WebRTC/RTCLogging.h"
 
 #import "ARDAppClient.h"
 #import "ARDVideoCallView.h"
@@ -34,11 +34,14 @@
 }
 
 @synthesize videoCallView = _videoCallView;
+@synthesize delegate = _delegate;
 
 - (instancetype)initForRoom:(NSString *)room
                  isLoopback:(BOOL)isLoopback
-                isAudioOnly:(BOOL)isAudioOnly {
+                isAudioOnly:(BOOL)isAudioOnly
+                   delegate:(id<ARDVideoCallViewControllerDelegate>)delegate {
   if (self = [super init]) {
+    _delegate = delegate;
     _client = [[ARDAppClient alloc] initWithDelegate:self];
     [_client connectToRoomWithId:room
                       isLoopback:isLoopback
@@ -177,10 +180,7 @@
   self.remoteVideoTrack = nil;
   self.localVideoTrack = nil;
   [_client disconnect];
-  if (![self isBeingDismissed]) {
-    [self.presentingViewController dismissViewControllerAnimated:YES
-                                                      completion:nil];
-  }
+  [_delegate viewControllerDidFinish:self];
 }
 
 - (void)switchCamera {

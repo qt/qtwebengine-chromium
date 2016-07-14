@@ -19,27 +19,35 @@ class CFWL_SpinButtonImp : public CFWL_WidgetImp, public IFWL_Timer {
  public:
   CFWL_SpinButtonImp(const CFWL_WidgetImpProperties& properties,
                      IFWL_Widget* pOuter);
-  ~CFWL_SpinButtonImp();
-  virtual FWL_ERR GetClassName(CFX_WideString& wsClass) const;
-  virtual uint32_t GetClassID() const;
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
-  virtual FWL_ERR GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE);
-  virtual FWL_ERR Update();
-  virtual uint32_t HitTest(FX_FLOAT fx, FX_FLOAT fy);
-  virtual FWL_ERR DrawWidget(CFX_Graphics* pGraphics,
-                             const CFX_Matrix* pMatrix = NULL);
-  virtual int32_t Run(FWL_HTIMER hTimer);
-  FWL_ERR EnableButton(FX_BOOL bEnable, FX_BOOL bUp = TRUE);
+  ~CFWL_SpinButtonImp() override;
+
+  // CFWL_WidgetImp
+  FWL_Error GetClassName(CFX_WideString& wsClass) const override;
+  FWL_Type GetClassID() const override;
+  FWL_Error Initialize() override;
+  FWL_Error Finalize() override;
+  FWL_Error GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE) override;
+  FWL_Error Update() override;
+  FWL_WidgetHit HitTest(FX_FLOAT fx, FX_FLOAT fy) override;
+  FWL_Error DrawWidget(CFX_Graphics* pGraphics,
+                       const CFX_Matrix* pMatrix = nullptr) override;
+
+  // IFWL_Timer
+  int32_t Run(FWL_HTIMER hTimer) override;
+
+  FWL_Error EnableButton(FX_BOOL bEnable, FX_BOOL bUp = TRUE);
   FX_BOOL IsButtonEnable(FX_BOOL bUp = TRUE);
 
  protected:
+  friend class CFWL_SpinButtonImpDelegate;
+
   void DrawUpButton(CFX_Graphics* pGraphics,
                     IFWL_ThemeProvider* pTheme,
                     const CFX_Matrix* pMatrix);
   void DrawDownButton(CFX_Graphics* pGraphics,
                       IFWL_ThemeProvider* pTheme,
                       const CFX_Matrix* pMatrix);
+
   CFX_RectF m_rtClient;
   CFX_RectF m_rtUpButton;
   CFX_RectF m_rtDnButton;
@@ -48,15 +56,14 @@ class CFWL_SpinButtonImp : public CFWL_WidgetImp, public IFWL_Timer {
   int32_t m_iButtonIndex;
   FX_BOOL m_bLButtonDwn;
   FWL_HTIMER m_hTimer;
-  friend class CFWL_SpinButtonImpDelegate;
 };
 class CFWL_SpinButtonImpDelegate : public CFWL_WidgetImpDelegate {
  public:
   CFWL_SpinButtonImpDelegate(CFWL_SpinButtonImp* pOwner);
-  int32_t OnProcessMessage(CFWL_Message* pMessage) override;
-  FWL_ERR OnProcessEvent(CFWL_Event* pEvent) override;
-  FWL_ERR OnDrawWidget(CFX_Graphics* pGraphics,
-                       const CFX_Matrix* pMatrix = NULL) override;
+  void OnProcessMessage(CFWL_Message* pMessage) override;
+  void OnProcessEvent(CFWL_Event* pEvent) override;
+  void OnDrawWidget(CFX_Graphics* pGraphics,
+                    const CFX_Matrix* pMatrix = NULL) override;
 
  protected:
   void OnFocusChanged(CFWL_Message* pMsg, FX_BOOL bSet = TRUE);

@@ -16,11 +16,12 @@
 #include "fpdfsdk/include/fsdk_mgr.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
+#include "xfa/fwl/core/include/fwl_widgethit.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
 #endif  // PDF_ENABLE_XFA
 
 CPDFSDK_AnnotHandlerMgr::CPDFSDK_AnnotHandlerMgr(CPDFDoc_Environment* pApp) {
@@ -375,22 +376,20 @@ CPDFSDK_Annot* CPDFSDK_AnnotHandlerMgr::GetNextAnnot(CPDFSDK_Annot* pSDKAnnot,
     return pNext;
   }
   // for xfa annots
-  IXFA_WidgetIterator* pWidgetIterator =
+  std::unique_ptr<IXFA_WidgetIterator> pWidgetIterator(
       pPage->GetXFAPageView()->CreateWidgetIterator(
-          XFA_TRAVERSEWAY_Tranvalse, XFA_WIDGETFILTER_Visible |
-                                         XFA_WIDGETFILTER_Viewable |
-                                         XFA_WIDGETFILTER_Field);
-  if (pWidgetIterator == NULL)
-    return NULL;
+          XFA_TRAVERSEWAY_Tranvalse, XFA_WidgetStatus_Visible |
+                                         XFA_WidgetStatus_Viewable |
+                                         XFA_WidgetStatus_Focused));
+  if (!pWidgetIterator)
+    return nullptr;
   if (pWidgetIterator->GetCurrentWidget() != pSDKAnnot->GetXFAWidget())
     pWidgetIterator->SetCurrentWidget(pSDKAnnot->GetXFAWidget());
-  CXFA_FFWidget* hNextFocus = NULL;
-  hNextFocus =
+  CXFA_FFWidget* hNextFocus =
       bNext ? pWidgetIterator->MoveToNext() : pWidgetIterator->MoveToPrevious();
   if (!hNextFocus && pSDKAnnot)
     hNextFocus = pWidgetIterator->MoveToFirst();
 
-  pWidgetIterator->Release();
   return pPageView->GetAnnotByXFAWidget(hNextFocus);
 #else   // PDF_ENABLE_XFA
   CBA_AnnotIterator ai(pSDKAnnot->GetPageView(), "Widget", "");
@@ -723,14 +722,6 @@ FX_BOOL CPDFSDK_BFAnnotHandler::HitTest(CPDFSDK_PageView* pPageView,
 }
 
 #ifdef PDF_ENABLE_XFA
-#define FWL_WGTHITTEST_Unknown 0
-#define FWL_WGTHITTEST_Client 1     // arrow
-#define FWL_WGTHITTEST_Titlebar 11  // caption
-#define FWL_WGTHITTEST_HScrollBar 15
-#define FWL_WGTHITTEST_VScrollBar 16
-#define FWL_WGTHITTEST_Border 17
-#define FWL_WGTHITTEST_Edit 19
-#define FWL_WGTHITTEST_HyperLink 20
 
 CPDFSDK_XFAAnnotHandler::CPDFSDK_XFAAnnotHandler(CPDFDoc_Environment* pApp)
     : m_pApp(pApp) {}
@@ -789,9 +780,9 @@ CFX_FloatRect CPDFSDK_XFAAnnotHandler::GetViewBBox(CPDFSDK_PageView* pPageView,
   CFX_RectF rcBBox;
   XFA_ELEMENT eType = pAnnot->GetXFAWidget()->GetDataAcc()->GetUIType();
   if (eType == XFA_ELEMENT_Signature)
-    pAnnot->GetXFAWidget()->GetBBox(rcBBox, XFA_WIDGETSTATUS_Visible, TRUE);
+    pAnnot->GetXFAWidget()->GetBBox(rcBBox, XFA_WidgetStatus_Visible, TRUE);
   else
-    pAnnot->GetXFAWidget()->GetBBox(rcBBox, 0);
+    pAnnot->GetXFAWidget()->GetBBox(rcBBox, XFA_WidgetStatus_None);
 
   CFX_FloatRect rcWidget(rcBBox.left, rcBBox.top, rcBBox.left + rcBBox.width,
                          rcBBox.top + rcBBox.height);
@@ -825,9 +816,9 @@ FX_BOOL CPDFSDK_XFAAnnotHandler::HitTest(CPDFSDK_PageView* pPageView,
   if (!pWidgetHandler)
     return FALSE;
 
-  uint32_t dwHitTest =
+  FWL_WidgetHit dwHitTest =
       pWidgetHandler->OnHitTest(pAnnot->GetXFAWidget(), point.x, point.y);
-  return (dwHitTest != FWL_WGTHITTEST_Unknown);
+  return dwHitTest != FWL_WidgetHit::Unknown;
 }
 
 void CPDFSDK_XFAAnnotHandler::OnMouseEnter(CPDFSDK_PageView* pPageView,

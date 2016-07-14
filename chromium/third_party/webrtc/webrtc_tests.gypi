@@ -30,11 +30,11 @@
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
-        ['OS=="ios"', {
+        ['OS=="ios" or (OS=="mac" and mac_deployment_target=="10.7")', {
           'dependencies': [
-            'api/api_tests.gyp:rtc_api_objc_tests',
-          ]
-        }]
+            'sdk/sdk_tests.gyp:rtc_sdk_peerconnection_objc_tests',
+          ],
+        }],
       ],
     },
     {
@@ -57,7 +57,6 @@
       ],
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
-        '<(webrtc_root)/modules/modules.gyp:video_render',
         '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
         'webrtc',
@@ -144,7 +143,6 @@
         'test/test.gyp:test_common',
         'test/test.gyp:test_renderer',
         '<(webrtc_root)/modules/modules.gyp:video_capture',
-        '<(webrtc_root)/modules/modules.gyp:video_render',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
         'webrtc',
       ],
@@ -161,6 +159,7 @@
         'call/bitrate_estimator_tests.cc',
         'call/call_unittest.cc',
         'call/packet_injection_tests.cc',
+        'call/ringbuffer_unittest.cc',
         'test/common_unittest.cc',
         'test/testsupport/metrics/video_metrics_unittest.cc',
         'video/call_stats_unittest.cc',
@@ -169,6 +168,7 @@
         'video/overuse_frame_detector_unittest.cc',
         'video/payload_router_unittest.cc',
         'video/report_block_stats_unittest.cc',
+        'video/send_delay_stats_unittest.cc',
         'video/send_statistics_proxy_unittest.cc',
         'video/stream_synchronization_unittest.cc',
         'video/video_capture_input_unittest.cc',
@@ -183,7 +183,6 @@
         '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:video_capture',
-        '<(webrtc_root)/modules/modules.gyp:video_render',
         '<(webrtc_root)/test/test.gyp:channel_transport',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         'test/metrics.gyp:metrics',
@@ -214,10 +213,12 @@
           ],
           'dependencies': [
             'webrtc.gyp:rtc_event_log',
+            'webrtc.gyp:rtc_event_log_parser',
             'webrtc.gyp:rtc_event_log_proto',
           ],
           'sources': [
             'call/rtc_event_log_unittest.cc',
+            'call/rtc_event_log_unittest_helper.cc'
           ],
         }],
       ],
@@ -342,6 +343,66 @@
             '<(apk_tests_path):webrtc_nonparallel_tests_apk',
           ],
         },
+      ],
+      'conditions': [
+        ['test_isolation_mode != "noop"',
+          {
+            'targets': [
+              {
+                'target_name': 'rtc_unittests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):rtc_unittests_apk',
+                ],
+                'includes': [
+                  'build/isolate.gypi',
+                ],
+                'sources': [
+                  'rtc_unittests_apk.isolate',
+                ],
+              },
+              {
+                'target_name': 'video_engine_tests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):video_engine_tests_apk',
+                ],
+                'includes': [
+                  'build/isolate.gypi',
+                ],
+                'sources': [
+                  'video_engine_tests_apk.isolate',
+                ],
+              },
+              {
+                'target_name': 'webrtc_perf_tests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):webrtc_perf_tests_apk',
+                ],
+                'includes': [
+                  'build/isolate.gypi',
+                ],
+                'sources': [
+                  'webrtc_perf_tests_apk.isolate',
+                ],
+              },
+              {
+                'target_name': 'webrtc_nonparallel_tests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):webrtc_nonparallel_tests_apk',
+                ],
+                'includes': [
+                  'build/isolate.gypi',
+                ],
+                'sources': [
+                  'webrtc_nonparallel_tests_apk.isolate',
+                ],
+              },
+            ],
+          },
+        ],
       ],
     }],
     ['test_isolation_mode != "noop"', {

@@ -7,8 +7,7 @@
 #ifndef XFA_FXFA_PARSER_XFA_SCRIPT_H_
 #define XFA_FXFA_PARSER_XFA_SCRIPT_H_
 
-#include "xfa/include/fxfa/fxfa.h"
-#include "xfa/include/fxfa/fxfa_objectacc.h"
+#include "xfa/fxfa/include/fxfa.h"
 
 #define XFA_RESOLVENODE_Children 0x0001
 #define XFA_RESOLVENODE_Attributes 0x0004
@@ -74,12 +73,5 @@ struct XFA_RESOLVENODE_RS {
   XFA_RESOVENODE_RSTYPE dwFlags;
   const XFA_SCRIPTATTRIBUTEINFO* pScriptAttribute;
 };
-
-struct XFA_JSBUILTININFO {
-  uint32_t uUnicodeHash;
-  const FX_CHAR* pName;
-};
-
-const XFA_JSBUILTININFO* XFA_GetJSBuiltinByHash(uint32_t uHashCode);
 
 #endif  // XFA_FXFA_PARSER_XFA_SCRIPT_H_

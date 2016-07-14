@@ -19,7 +19,7 @@ public:
 
 protected:
     void onOnceBeforeDraw() override {
-        sk_tool_utils::emoji_typeface(&fEmojiTypeface);
+        fEmojiTypeface = sk_tool_utils::emoji_typeface();
         fEmojiText = sk_tool_utils::emoji_sample_text();
     }
 
@@ -51,9 +51,9 @@ protected:
         SkImageInfo info = SkImageInfo::MakeN32Premul(onISize(),
                                                       inputCanvas->imageInfo().profileType());
         SkSurfaceProps canvasProps(SkSurfaceProps::kLegacyFontHost_InitType);
-        uint32_t allowSRGBInputs = inputCanvas->getProps(&canvasProps)
-            ? canvasProps.flags() & SkSurfaceProps::kAllowSRGBInputs_Flag : 0;
-        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag | allowSRGBInputs,
+        uint32_t gammaCorrect = inputCanvas->getProps(&canvasProps)
+            ? canvasProps.flags() & SkSurfaceProps::kGammaCorrect_Flag : 0;
+        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag | gammaCorrect,
                              SkSurfaceProps::kLegacyFontHost_InitType);
         auto surface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props));
         SkCanvas* canvas = surface ? surface->getCanvas() : inputCanvas;
@@ -210,7 +210,7 @@ protected:
     }
 
 private:
-    SkAutoTUnref<SkTypeface> fEmojiTypeface;
+    sk_sp<SkTypeface> fEmojiTypeface;
     const char* fEmojiText;
 
     typedef skiagm::GM INHERITED;

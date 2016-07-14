@@ -5,8 +5,10 @@
 #ifndef MEDIA_FILTERS_AUDIO_FILE_READER_H_
 #define MEDIA_FILTERS_AUDIO_FILE_READER_H_
 
+#include <memory>
+
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
+#include "media/base/audio_codecs.h"
 #include "media/base/media_export.h"
 #include "media/filters/ffmpeg_glue.h"
 
@@ -81,10 +83,11 @@ class MEDIA_EXPORT AudioFileReader {
   bool OpenDecoder();
   bool ReadPacket(AVPacket* output_packet);
 
-  scoped_ptr<FFmpegGlue> glue_;
+  std::unique_ptr<FFmpegGlue> glue_;
   AVCodecContext* codec_context_;
   int stream_index_;
   FFmpegURLProtocol* protocol_;
+  AudioCodec audio_codec_;
   int channels_;
   int sample_rate_;
 

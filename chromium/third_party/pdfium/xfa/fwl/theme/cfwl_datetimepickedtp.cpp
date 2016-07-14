@@ -13,28 +13,29 @@ CFWL_DateTimePickerTP::CFWL_DateTimePickerTP() {
   m_pThemeData = new DTPThemeData;
   initThemeData();
 }
+
 CFWL_DateTimePickerTP::~CFWL_DateTimePickerTP() {
   delete m_pThemeData;
 }
-FX_BOOL CFWL_DateTimePickerTP::IsValidWidget(IFWL_Widget* pWidget) {
-  if (!pWidget)
-    return FALSE;
-  return pWidget->GetClassID() == FWL_CLASSHASH_DateTimePicker;
+
+bool CFWL_DateTimePickerTP::IsValidWidget(IFWL_Widget* pWidget) {
+  return pWidget && pWidget->GetClassID() == FWL_Type::DateTimePicker;
 }
+
 FX_BOOL CFWL_DateTimePickerTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return FALSE;
   switch (pParams->m_iPart) {
-    case FWL_PART_DTP_Border: {
+    case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_DTP_Edge: {
+    case CFWL_Part::Edge: {
       DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
                &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_DTP_DropDownButton: {
+    case CFWL_Part::DropDownButton: {
       DrawDropDownButton(pParams, &pParams->m_matrix);
       break;
     }
@@ -42,26 +43,26 @@ FX_BOOL CFWL_DateTimePickerTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   }
   return TRUE;
 }
-#ifdef THEME_XPSimilar
+
 void CFWL_DateTimePickerTP::DrawDropDownButton(CFWL_ThemeBackground* pParams,
                                                CFX_Matrix* pMatrix) {
   uint32_t dwStates = pParams->m_dwStates;
   dwStates &= 0x03;
   FWLTHEME_STATE eState = FWLTHEME_STATE_Normal;
   switch (eState & dwStates) {
-    case FWL_PARTSTATE_DTP_Normal: {
+    case CFWL_PartState_Normal: {
       eState = FWLTHEME_STATE_Normal;
       break;
     }
-    case FWL_PARTSTATE_DTP_Hovered: {
+    case CFWL_PartState_Hovered: {
       eState = FWLTHEME_STATE_Hover;
       break;
     }
-    case FWL_PARTSTATE_DTP_Pressed: {
+    case CFWL_PartState_Pressed: {
       eState = FWLTHEME_STATE_Pressed;
       break;
     }
-    case FWL_PARTSTATE_DTP_Disabled: {
+    case CFWL_PartState_Disabled: {
       eState = FWLTHEME_STATE_Disabale;
       break;
     }
@@ -70,46 +71,7 @@ void CFWL_DateTimePickerTP::DrawDropDownButton(CFWL_ThemeBackground* pParams,
   DrawArrowBtn(pParams->m_pGraphics, &pParams->m_rtPart,
                FWLTHEME_DIRECTION_Down, eState, pMatrix);
 }
-#else
-void CFWL_DateTimePickerTP::DrawDropDownButton(CFWL_ThemeBackground* pParams,
-                                               CFX_Matrix* pMatrix) {
-  FX_BOOL bPressed = ((pParams->m_dwStates & FWL_PARTSTATE_DTP_Pressed) ==
-                      FWL_PARTSTATE_DTP_Pressed);
-  FX_FLOAT fWidth = bPressed ? 1.0f : 2.0f;
-  FWLTHEME_EDGE eType = bPressed ? FWLTHEME_EDGE_Flat : FWLTHEME_EDGE_Raised;
-  Draw3DRect(pParams->m_pGraphics, eType, fWidth, &pParams->m_rtPart,
-             FWLTHEME_COLOR_EDGELT1, FWLTHEME_COLOR_EDGELT2,
-             FWLTHEME_COLOR_EDGERB1, FWLTHEME_COLOR_EDGERB2, pMatrix);
-  CFX_Path path;
-  path.Create();
-  path.AddRectangle(pParams->m_rtPart.left + fWidth,
-                    pParams->m_rtPart.top + fWidth,
-                    pParams->m_rtPart.width - 2 * fWidth,
-                    pParams->m_rtPart.height - 2 * fWidth);
-  pParams->m_pGraphics->SaveGraphState();
-  CFX_Color crFill(FWLTHEME_COLOR_Background);
-  pParams->m_pGraphics->SetFillColor(&crFill);
-  pParams->m_pGraphics->FillPath(&path, FXFILL_WINDING, pMatrix);
-  pParams->m_pGraphics->RestoreGraphState();
-  FX_ARGB argbFill = ArgbEncode(255, 77, 97, 133);
-  switch (pParams->m_dwStates & 0x03) {
-    case FWL_PARTSTATE_DTP_Normal: {
-    }
-    case FWL_PARTSTATE_DTP_Hovered: {
-    }
-    case FWL_PARTSTATE_DTP_Pressed: {
-      argbFill = 0xFF000000;
-      break;
-    }
-    case FWL_PARTSTATE_DTP_Disabled: {
-      argbFill = 0xFFF0F0F0;
-      break;
-    }
-  }
-  DrawArrow(pParams->m_pGraphics, &pParams->m_rtPart, FWLTHEME_DIRECTION_Down,
-            argbFill, bPressed, pMatrix);
-}
-#endif
+
 void CFWL_DateTimePickerTP::initThemeData() {
   uint32_t* pData = (uint32_t*)&m_pThemeData->BoxBkColor;
   *pData++ = 0;

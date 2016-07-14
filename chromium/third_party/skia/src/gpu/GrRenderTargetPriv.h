@@ -30,7 +30,11 @@ public:
      */
     bool attachStencilAttachment(GrStencilAttachment* stencil);
 
+    int numStencilBits() const;
+
     const GrGpu::MultisampleSpecs& getMultisampleSpecs(const GrStencilSettings& stencil) const;
+
+    GrRenderTarget::SampleConfig sampleConfig() const { return fRenderTarget->fSampleConfig; }
 
 private:
     explicit GrRenderTargetPriv(GrRenderTarget* renderTarget) : fRenderTarget(renderTarget) {}

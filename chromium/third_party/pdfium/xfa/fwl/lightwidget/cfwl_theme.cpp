@@ -45,7 +45,7 @@ CFWL_Theme::CFWL_Theme() {
 
 CFWL_Theme::~CFWL_Theme() {}
 
-FX_BOOL CFWL_Theme::IsValidWidget(IFWL_Widget* pWidget) {
+bool CFWL_Theme::IsValidWidget(IFWL_Widget* pWidget) {
   return !!GetTheme(pWidget);
 }
 
@@ -64,13 +64,13 @@ uint32_t CFWL_Theme::SetThemeID(IFWL_Widget* pWidget,
   return dwID;
 }
 
-FWL_ERR CFWL_Theme::GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix) {
-  return FWL_ERR_Succeeded;
+FWL_Error CFWL_Theme::GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix) {
+  return FWL_Error::Succeeded;
 }
 
-FWL_ERR CFWL_Theme::SetThemeMatrix(IFWL_Widget* pWidget,
-                                   const CFX_Matrix& matrix) {
-  return FWL_ERR_Succeeded;
+FWL_Error CFWL_Theme::SetThemeMatrix(IFWL_Widget* pWidget,
+                                     const CFX_Matrix& matrix) {
+  return FWL_Error::Succeeded;
 }
 
 FX_BOOL CFWL_Theme::DrawBackground(CFWL_ThemeBackground* pParams) {
@@ -81,7 +81,8 @@ FX_BOOL CFWL_Theme::DrawText(CFWL_ThemeText* pParams) {
   return GetTheme(pParams->m_pWidget)->DrawText(pParams);
 }
 
-void* CFWL_Theme::GetCapacity(CFWL_ThemePart* pThemePart, uint32_t dwCapacity) {
+void* CFWL_Theme::GetCapacity(CFWL_ThemePart* pThemePart,
+                              CFWL_WidgetCapacity dwCapacity) {
   return GetTheme(pThemePart->m_pWidget)->GetCapacity(pThemePart, dwCapacity);
 }
 
@@ -89,7 +90,8 @@ FX_BOOL CFWL_Theme::IsCustomizedLayout(IFWL_Widget* pWidget) {
   return GetTheme(pWidget)->IsCustomizedLayout(pWidget);
 }
 
-FWL_ERR CFWL_Theme::GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart) {
+FWL_Error CFWL_Theme::GetPartRect(CFWL_ThemePart* pThemePart,
+                                  CFX_RectF& rtPart) {
   return GetTheme(pThemePart->m_pWidget)->GetPartRect(pThemePart, rtPart);
 }
 
@@ -103,30 +105,30 @@ FX_BOOL CFWL_Theme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
   return GetTheme(pParams->m_pWidget)->CalcTextRect(pParams, rect);
 }
 
-FWL_ERR CFWL_Theme::Initialize() {
+FWL_Error CFWL_Theme::Initialize() {
   for (const auto& pTheme : m_ThemesArray)
     pTheme->Initialize();
 
   FWLTHEME_Init();
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
 
-FWL_ERR CFWL_Theme::Finalize() {
+FWL_Error CFWL_Theme::Finalize() {
   for (const auto& pTheme : m_ThemesArray)
     pTheme->Finalize();
 
   FWLTHEME_Release();
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
 
-FWL_ERR CFWL_Theme::SetFont(IFWL_Widget* pWidget,
-                            const FX_WCHAR* strFont,
-                            FX_FLOAT fFontSize,
-                            FX_ARGB rgbFont) {
+FWL_Error CFWL_Theme::SetFont(IFWL_Widget* pWidget,
+                              const FX_WCHAR* strFont,
+                              FX_FLOAT fFontSize,
+                              FX_ARGB rgbFont) {
   for (const auto& pTheme : m_ThemesArray)
     pTheme->SetFont(pWidget, strFont, fFontSize, rgbFont);
 
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
 
 CFWL_WidgetTP* CFWL_Theme::GetTheme(IFWL_Widget* pWidget) {

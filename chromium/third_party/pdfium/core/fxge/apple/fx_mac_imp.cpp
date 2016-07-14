@@ -5,7 +5,7 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "core/fxge/apple/apple_int.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 #if _FX_OS_ == _FX_MACOSX_
 static const struct {
@@ -64,7 +64,7 @@ void* CFX_MacFontInfo::MapFont(int weight,
       break;
     }
   if (iBaseFont < 12) {
-    return GetFont(face);
+    return GetFont(face.c_str());
   }
   auto it = m_FontList.find(face);
   if (it != m_FontList.end())

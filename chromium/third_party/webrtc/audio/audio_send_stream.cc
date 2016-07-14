@@ -76,6 +76,8 @@ AudioSendStream::AudioSendStream(
   channel_proxy_->SetLocalSSRC(config.rtp.ssrc);
   channel_proxy_->SetRTCP_CNAME(config.rtp.c_name);
 
+  channel_proxy_->RegisterExternalTransport(config.send_transport);
+
   for (const auto& extension : config.rtp.extensions) {
     if (extension.name == RtpExtension::kAbsSendTime) {
       channel_proxy_->SetSendAbsoluteSenderTimeStatus(true, extension.id);
@@ -92,6 +94,7 @@ AudioSendStream::AudioSendStream(
 AudioSendStream::~AudioSendStream() {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   LOG(LS_INFO) << "~AudioSendStream: " << config_.ToString();
+  channel_proxy_->DeRegisterExternalTransport();
   channel_proxy_->ResetCongestionControlObjects();
 }
 
@@ -111,18 +114,6 @@ void AudioSendStream::Stop() {
   if (error != 0) {
     LOG(LS_ERROR) << "AudioSendStream::Stop failed with error: " << error;
   }
-}
-
-void AudioSendStream::SignalNetworkState(NetworkState state) {
-  RTC_DCHECK(thread_checker_.CalledOnValidThread());
-}
-
-bool AudioSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {
-  // TODO(solenberg): Tests call this function on a network thread, libjingle
-  // calls on the worker thread. We should move towards always using a network
-  // thread. Then this check can be enabled.
-  // RTC_DCHECK(!thread_checker_.CalledOnValidThread());
-  return false;
 }
 
 bool AudioSendStream::SendTelephoneEvent(int payload_type, int event,
@@ -213,6 +204,18 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
   stats.typing_noise_detected = audio_state->typing_noise_detected();
 
   return stats;
+}
+
+void AudioSendStream::SignalNetworkState(NetworkState state) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+}
+
+bool AudioSendStream::DeliverRtcp(const uint8_t* packet, size_t length) {
+  // TODO(solenberg): Tests call this function on a network thread, libjingle
+  // calls on the worker thread. We should move towards always using a network
+  // thread. Then this check can be enabled.
+  // RTC_DCHECK(!thread_checker_.CalledOnValidThread());
+  return channel_proxy_->ReceivedRTCPPacket(packet, length);
 }
 
 const webrtc::AudioSendStream::Config& AudioSendStream::config() const {

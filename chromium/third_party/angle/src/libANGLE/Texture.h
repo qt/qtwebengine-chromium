@@ -20,27 +20,67 @@
 #include "libANGLE/Error.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Image.h"
+#include "libANGLE/Stream.h"
 #include "libANGLE/angletypes.h"
-#include "libANGLE/renderer/TextureImpl.h"
 
 namespace egl
 {
 class Surface;
+class Stream;
+}
+
+namespace rx
+{
+class GLImplFactory;
+class TextureImpl;
 }
 
 namespace gl
 {
+struct ContextState;
 class Framebuffer;
-struct Data;
 
 bool IsMipmapFiltered(const SamplerState &samplerState);
+
+// State from Table 6.9 (state per texture object) in the OpenGL ES 3.0.2 spec.
+struct TextureState final : public angle::NonCopyable
+{
+    TextureState(GLenum target);
+
+    bool swizzleRequired() const;
+    GLuint getEffectiveBaseLevel() const;
+    GLuint getEffectiveMaxLevel() const;
+
+    // TODO(jmadill): Make the data members here private.
+
+    const GLenum target;
+
+    GLenum swizzleRed;
+    GLenum swizzleGreen;
+    GLenum swizzleBlue;
+    GLenum swizzleAlpha;
+
+    SamplerState samplerState;
+
+    GLuint baseLevel;
+    GLuint maxLevel;
+
+    bool immutableFormat;
+    GLuint immutableLevels;
+
+    // From GL_ANGLE_texture_usage
+    GLenum usage;
+};
+
+bool operator==(const TextureState &a, const TextureState &b);
+bool operator!=(const TextureState &a, const TextureState &b);
 
 class Texture final : public egl::ImageSibling,
                       public FramebufferAttachmentObject,
                       public LabeledObject
 {
   public:
-    Texture(rx::TextureImpl *impl, GLuint id, GLenum target);
+    Texture(rx::GLImplFactory *factory, GLuint id, GLenum target);
     ~Texture() override;
 
     void setLabel(const std::string &label) override;
@@ -112,7 +152,7 @@ class Texture final : public egl::ImageSibling,
     size_t getDepth(GLenum target, size_t level) const;
     GLenum getInternalFormat(GLenum target, size_t level) const;
 
-    bool isSamplerComplete(const SamplerState &samplerState, const Data &data) const;
+    bool isSamplerComplete(const SamplerState &samplerState, const ContextState &data) const;
     bool isMipmapComplete() const;
     bool isCubeComplete() const;
     size_t getMipCompleteLevels() const;
@@ -166,6 +206,7 @@ class Texture final : public egl::ImageSibling,
     Error generateMipmaps();
 
     egl::Surface *getBoundSurface() const;
+    egl::Stream *getBoundStream() const;
 
     rx::TextureImpl *getImplementation() { return mTexture; }
     const rx::TextureImpl *getImplementation() const { return mTexture; }
@@ -180,20 +221,24 @@ class Texture final : public egl::ImageSibling,
     GLuint getId() const override;
 
   private:
-    rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override { return mTexture; }
+    rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override;
 
     // ANGLE-only method, used internally
     friend class egl::Surface;
     void bindTexImageFromSurface(egl::Surface *surface);
     void releaseTexImageFromSurface();
 
+    // ANGLE-only methods, used internally
+    friend class egl::Stream;
+    void bindStream(egl::Stream *stream);
+    void releaseStream();
+    void acquireImageFromStream(const egl::Stream::GLTextureDescription &desc);
+    void releaseImageFromStream();
+
+    TextureState mState;
     rx::TextureImpl *mTexture;
 
     std::string mLabel;
-
-    TextureState mTextureState;
-
-    GLenum mTarget;
 
     struct ImageDesc
     {
@@ -206,7 +251,8 @@ class Texture final : public egl::ImageSibling,
 
     GLenum getBaseImageTarget() const;
 
-    bool computeSamplerCompleteness(const SamplerState &samplerState, const Data &data) const;
+    bool computeSamplerCompleteness(const SamplerState &samplerState,
+                                    const ContextState &data) const;
     bool computeMipmapCompleteness() const;
     bool computeLevelCompleteness(GLenum target, size_t level) const;
 
@@ -238,8 +284,22 @@ class Texture final : public egl::ImageSibling,
     mutable SamplerCompletenessCache mCompletenessCache;
 
     egl::Surface *mBoundSurface;
+    egl::Stream *mBoundStream;
 };
 
+inline bool operator==(const TextureState &a, const TextureState &b)
+{
+    return a.swizzleRed == b.swizzleRed && a.swizzleGreen == b.swizzleGreen &&
+           a.swizzleBlue == b.swizzleBlue && a.swizzleAlpha == b.swizzleAlpha &&
+           a.samplerState == b.samplerState && a.baseLevel == b.baseLevel &&
+           a.maxLevel == b.maxLevel && a.immutableFormat == b.immutableFormat &&
+           a.immutableLevels == b.immutableLevels && a.usage == b.usage;
+}
+
+inline bool operator!=(const TextureState &a, const TextureState &b)
+{
+    return !(a == b);
+}
 }
 
 #endif   // LIBANGLE_TEXTURE_H_

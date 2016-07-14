@@ -4,14 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/include/fxfa/xfa_checksum.h"
+#include "xfa/fxfa/include/xfa_checksum.h"
 
 #include "core/fdrm/crypto/include/fx_crypt.h"
 #include "xfa/fgas/crt/fgas_algorithm.h"
 
 CXFA_SAXReaderHandler::CXFA_SAXReaderHandler(CXFA_ChecksumContext* pContext)
     : m_pContext(pContext) {
-  FXSYS_assert(m_pContext);
+  ASSERT(m_pContext);
 }
 CXFA_SAXReaderHandler::~CXFA_SAXReaderHandler() {}
 void* CXFA_SAXReaderHandler::OnTagEnter(const CFX_ByteStringC& bsTagName,
@@ -73,7 +73,7 @@ void CXFA_SAXReaderHandler::OnTagClose(void* pTag, uint32_t dwEndPos) {
   if (pSAXContext->m_eNode == FX_SAXNODE_Instruction) {
     textBuf << "?>";
   } else if (pSAXContext->m_eNode == FX_SAXNODE_Tag) {
-    textBuf << "></" << pSAXContext->m_bsTagName.AsByteStringC() << ">";
+    textBuf << "></" << pSAXContext->m_bsTagName.AsStringC() << ">";
   }
   UpdateChecksum(FALSE);
 }
@@ -126,30 +126,28 @@ void CXFA_SAXReaderHandler::UpdateChecksum(FX_BOOL bCheckSpace) {
 }
 
 CXFA_ChecksumContext::CXFA_ChecksumContext()
-    : m_pSAXReader(NULL), m_pByteContext(NULL) {}
+    : m_pSAXReader(nullptr), m_pByteContext(nullptr) {}
+
 CXFA_ChecksumContext::~CXFA_ChecksumContext() {
   FinishChecksum();
 }
-FX_BOOL CXFA_ChecksumContext::StartChecksum() {
+
+void CXFA_ChecksumContext::StartChecksum() {
   FinishChecksum();
   m_pByteContext = FX_Alloc(uint8_t, 128);
   CRYPT_SHA1Start(m_pByteContext);
-  m_bsChecksum.Empty();
-  m_pSAXReader = FX_SAXReader_Create();
-  return m_pSAXReader != NULL;
+  m_bsChecksum.clear();
+  m_pSAXReader = new CFX_SAXReader;
 }
+
 FX_BOOL CXFA_ChecksumContext::UpdateChecksum(IFX_FileRead* pSrcFile,
                                              FX_FILESIZE offset,
                                              size_t size) {
-  if (m_pSAXReader == NULL) {
+  if (!m_pSAXReader || !pSrcFile)
     return FALSE;
-  }
-  if (pSrcFile == NULL) {
-    return FALSE;
-  }
-  if (size < 1) {
+  if (size < 1)
     size = pSrcFile->GetSize();
-  }
+
   CXFA_SAXReaderHandler handler(this);
   m_pSAXReader->SetHandler(&handler);
   if (m_pSAXReader->StartParse(
@@ -161,6 +159,7 @@ FX_BOOL CXFA_ChecksumContext::UpdateChecksum(IFX_FileRead* pSrcFile,
   }
   return m_pSAXReader->ContinueParse(NULL) > 99;
 }
+
 void CXFA_ChecksumContext::FinishChecksum() {
   if (m_pSAXReader) {
     m_pSAXReader->Release();

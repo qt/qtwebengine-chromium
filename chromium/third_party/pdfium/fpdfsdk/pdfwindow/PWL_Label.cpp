@@ -4,15 +4,12 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "fpdfsdk/include/fxedit/fx_edit.h"
+#include "fpdfsdk/fxedit/include/fx_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_Label.h"
 #include "fpdfsdk/pdfwindow/PWL_Utils.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
-CPWL_Label::CPWL_Label() : m_pEdit(NULL) {
-  m_pEdit = IFX_Edit::NewEdit();
-  ASSERT(m_pEdit);
-}
+CPWL_Label::CPWL_Label() : m_pEdit(IFX_Edit::NewEdit()) {}
 
 CPWL_Label::~CPWL_Label() {
   IFX_Edit::DelEdit(m_pEdit);
@@ -96,7 +93,7 @@ void CPWL_Label::DrawThisAppearance(CFX_RenderDevice* pDevice,
     rcClip = GetClientRect();
     pRange = &wrRange;
   }
-  IFX_SystemHandler* pSysHandler = GetSystemHandler();
+  CFX_SystemHandler* pSysHandler = GetSystemHandler();
   IFX_Edit::DrawEdit(
       pDevice, pUser2Device, m_pEdit,
       CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
@@ -119,22 +116,18 @@ CFX_FloatRect CPWL_Label::GetContentRect() const {
 void CPWL_Label::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
   CPWL_Wnd::GetThisAppearanceStream(sAppStream);
 
-  sAppStream << GetTextAppearanceStream(CFX_FloatPoint(0.0f, 0.0f))
-                    .AsByteStringC();
+  sAppStream << GetTextAppearanceStream(CFX_FloatPoint(0.0f, 0.0f)).AsStringC();
 }
 
 CFX_ByteString CPWL_Label::GetTextAppearanceStream(
     const CFX_FloatPoint& ptOffset) const {
   CFX_ByteTextBuf sRet;
   CFX_ByteString sEdit = CPWL_Utils::GetEditAppStream(m_pEdit, ptOffset);
-
   if (sEdit.GetLength() > 0) {
-    sRet << "BT\n"
-         << CPWL_Utils::GetColorAppStream(GetTextColor()).AsByteStringC()
-         << sEdit.AsByteStringC() << "ET\n";
+    sRet << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+         << sEdit.AsStringC() << "ET\n";
   }
-
-  return sRet.GetByteString();
+  return sRet.MakeString();
 }
 
 CFX_WideString CPWL_Label::GetText() const {
@@ -146,8 +139,5 @@ void CPWL_Label::SetLimitChar(int32_t nLimitChar) {
 }
 
 int32_t CPWL_Label::GetTotalWords() {
-  if (m_pEdit)
-    return m_pEdit->GetTotalWords();
-
-  return 0;
+  return m_pEdit->GetTotalWords();
 }

@@ -52,7 +52,7 @@ class CFX_CRTFileAccess : public IFX_FileAccess {
   void GetPath(CFX_WideString& wsPath) override { wsPath = m_path; }
 
   IFX_FileStream* CreateFileStream(uint32_t dwModes) override {
-    return FX_CreateFileStream(m_path, dwModes);
+    return FX_CreateFileStream(m_path.c_str(), dwModes);
   }
 
   FX_BOOL Init(const CFX_WideStringC& wsPath) {
@@ -241,7 +241,7 @@ class CFX_MemoryStream final : public IFX_MemoryStream {
   }
   FX_BOOL Flush() override { return TRUE; }
   FX_BOOL IsConsecutive() const override {
-    return m_dwFlags & FX_MEMSTREAM_Consecutive;
+    return !!(m_dwFlags & FX_MEMSTREAM_Consecutive);
   }
   void EstimateSize(size_t nInitSize, size_t nGrowSize) override {
     if (m_dwFlags & FX_MEMSTREAM_Consecutive) {

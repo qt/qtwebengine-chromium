@@ -13,11 +13,10 @@
 #include "xfa/fwl/core/cfwl_themetext.h"
 #include "xfa/fwl/core/fwl_formimp.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/fwl_panelimp.h"
-#include "xfa/fwl/core/fwl_targetimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 #include "xfa/fwl/core/ifwl_tooltiptarget.h"
+#include "xfa/fwl/theme/cfwl_widgettp.h"
 
 // static
 IFWL_ToolTip* IFWL_ToolTip::Create(const CFWL_WidgetImpProperties& properties,
@@ -28,16 +27,21 @@ IFWL_ToolTip* IFWL_ToolTip::Create(const CFWL_WidgetImpProperties& properties,
   pToolTipImpl->SetInterface(pToolTip);
   return pToolTip;
 }
-FWL_ERR IFWL_ToolTip::SetAnchor(const CFX_RectF& rtAnchor) {
-  return static_cast<CFWL_ToolTipImp*>(GetImpl())->SetAnchor(rtAnchor);
+
+void IFWL_ToolTip::SetAnchor(const CFX_RectF& rtAnchor) {
+  static_cast<CFWL_ToolTipImp*>(GetImpl())->SetAnchor(rtAnchor);
 }
-FWL_ERR IFWL_ToolTip::Show() {
-  return static_cast<CFWL_ToolTipImp*>(GetImpl())->Show();
+
+void IFWL_ToolTip::Show() {
+  static_cast<CFWL_ToolTipImp*>(GetImpl())->Show();
 }
-FWL_ERR IFWL_ToolTip::Hide() {
-  return static_cast<CFWL_ToolTipImp*>(GetImpl())->Hide();
+
+void IFWL_ToolTip::Hide() {
+  static_cast<CFWL_ToolTipImp*>(GetImpl())->Hide();
 }
+
 IFWL_ToolTip::IFWL_ToolTip() {}
+
 CFWL_ToolTipImp::CFWL_ToolTipImp(const CFWL_WidgetImpProperties& properties,
                                  IFWL_Widget* pOuter)
     : CFWL_FormImp(properties, pOuter),
@@ -53,33 +57,39 @@ CFWL_ToolTipImp::CFWL_ToolTipImp(const CFWL_WidgetImpProperties& properties,
   m_TimerShow.m_pToolTip = this;
   m_TimerHide.m_pToolTip = this;
 }
+
 CFWL_ToolTipImp::~CFWL_ToolTipImp() {
   if (m_pTimer) {
     delete m_pTimer;
     m_pTimer = NULL;
   }
 }
-FWL_ERR CFWL_ToolTipImp::GetClassName(CFX_WideString& wsClass) const {
+
+FWL_Error CFWL_ToolTipImp::GetClassName(CFX_WideString& wsClass) const {
   wsClass = FWL_CLASS_ToolTip;
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-uint32_t CFWL_ToolTipImp::GetClassID() const {
-  return FWL_CLASSHASH_ToolTip;
+
+FWL_Type CFWL_ToolTipImp::GetClassID() const {
+  return FWL_Type::ToolTip;
 }
-FWL_ERR CFWL_ToolTipImp::Initialize() {
+
+FWL_Error CFWL_ToolTipImp::Initialize() {
   m_pProperties->m_dwStyles |= FWL_WGTSTYLE_Popup;
   m_pProperties->m_dwStyles &= ~FWL_WGTSTYLE_Child;
-  if (CFWL_WidgetImp::Initialize() != FWL_ERR_Succeeded)
-    return FWL_ERR_Indefinite;
+  if (CFWL_WidgetImp::Initialize() != FWL_Error::Succeeded)
+    return FWL_Error::Indefinite;
+
   m_pDelegate = new CFWL_ToolTipImpDelegate(this);
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FWL_ERR CFWL_ToolTipImp::Finalize() {
+
+FWL_Error CFWL_ToolTipImp::Finalize() {
   delete m_pDelegate;
   m_pDelegate = nullptr;
   return CFWL_WidgetImp::Finalize();
 }
-FWL_ERR CFWL_ToolTipImp::GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize) {
+FWL_Error CFWL_ToolTipImp::GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize) {
   if (bAutoSize) {
     rect.Set(0, 0, 0, 0);
     if (m_pProperties->m_pThemeProvider == NULL) {
@@ -95,18 +105,18 @@ FWL_ERR CFWL_ToolTipImp::GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize) {
     if (iLen > 0) {
       CFX_SizeF sz = CalcTextSize(wsCaption, m_pProperties->m_pThemeProvider);
       rect.Set(0, 0, sz.x, sz.y);
-      rect.width += FWL_WGTCAPACITY_CXBorder * 25;
-      rect.height += FWL_WGTCAPACITY_CYBorder * 8;
+      rect.width += 25;
+      rect.height += 16;
     }
     CFWL_WidgetImp::GetWidgetRect(rect, TRUE);
   } else {
     rect = m_pProperties->m_rtWidget;
   }
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FWL_ERR CFWL_ToolTipImp::Update() {
+FWL_Error CFWL_ToolTipImp::Update() {
   if (IsLocked()) {
-    return FWL_ERR_Indefinite;
+    return FWL_Error::Indefinite;
   }
   if (!m_pProperties->m_pThemeProvider) {
     m_pProperties->m_pThemeProvider = GetAvailableTheme();
@@ -114,9 +124,9 @@ FWL_ERR CFWL_ToolTipImp::Update() {
   UpdateTextOutStyles();
   GetClientRect(m_rtClient);
   m_rtCaption = m_rtClient;
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FWL_ERR CFWL_ToolTipImp::GetClientRect(CFX_RectF& rect) {
+FWL_Error CFWL_ToolTipImp::GetClientRect(CFX_RectF& rect) {
   FX_FLOAT x = 0;
   FX_FLOAT y = 0;
   FX_FLOAT t = 0;
@@ -125,37 +135,37 @@ FWL_ERR CFWL_ToolTipImp::GetClientRect(CFX_RectF& rect) {
     CFWL_ThemePart part;
     part.m_pWidget = m_pInterface;
     x = *static_cast<FX_FLOAT*>(
-        pTheme->GetCapacity(&part, FWL_WGTCAPACITY_CXBorder));
+        pTheme->GetCapacity(&part, CFWL_WidgetCapacity::CXBorder));
     y = *static_cast<FX_FLOAT*>(
-        pTheme->GetCapacity(&part, FWL_WGTCAPACITY_CYBorder));
+        pTheme->GetCapacity(&part, CFWL_WidgetCapacity::CYBorder));
   }
   rect = m_pProperties->m_rtWidget;
   rect.Offset(-rect.left, -rect.top);
   rect.Deflate(x, t, x, y);
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FWL_ERR CFWL_ToolTipImp::DrawWidget(CFX_Graphics* pGraphics,
-                                    const CFX_Matrix* pMatrix) {
+FWL_Error CFWL_ToolTipImp::DrawWidget(CFX_Graphics* pGraphics,
+                                      const CFX_Matrix* pMatrix) {
   IFWL_ToolTipTarget* toolTipTarget =
       CFWL_ToolTipContainer::getInstance()->GetCurrentToolTipTarget();
   if (toolTipTarget && !toolTipTarget->UseDefaultTheme()) {
     return toolTipTarget->DrawToolTip(pGraphics, pMatrix, m_pInterface);
   }
   if (!pGraphics)
-    return FWL_ERR_Indefinite;
+    return FWL_Error::Indefinite;
   if (!m_pProperties->m_pThemeProvider)
-    return FWL_ERR_Indefinite;
+    return FWL_Error::Indefinite;
   IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
   DrawBkground(pGraphics, pTheme, pMatrix);
   DrawText(pGraphics, pTheme, pMatrix);
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
 void CFWL_ToolTipImp::DrawBkground(CFX_Graphics* pGraphics,
                                    IFWL_ThemeProvider* pTheme,
                                    const CFX_Matrix* pMatrix) {
   CFWL_ThemeBackground param;
   param.m_pWidget = m_pInterface;
-  param.m_iPart = FWL_PART_TTP_Background;
+  param.m_iPart = CFWL_Part::Background;
   param.m_dwStates = m_pProperties->m_dwStates;
   param.m_pGraphics = pGraphics;
   if (pMatrix) {
@@ -179,7 +189,7 @@ void CFWL_ToolTipImp::DrawText(CFX_Graphics* pGraphics,
   }
   CFWL_ThemeText param;
   param.m_pWidget = m_pInterface;
-  param.m_iPart = FWL_PART_TTP_Caption;
+  param.m_iPart = CFWL_Part::Caption;
   param.m_dwStates = m_pProperties->m_dwStates;
   param.m_pGraphics = pGraphics;
   if (pMatrix) {
@@ -201,40 +211,41 @@ void CFWL_ToolTipImp::UpdateTextOutStyles() {
     m_dwTTOStyles &= ~FDE_TTOSTYLE_SingleLine;
   }
 }
-FWL_ERR CFWL_ToolTipImp::SetAnchor(const CFX_RectF& rtAnchor) {
+
+void CFWL_ToolTipImp::SetAnchor(const CFX_RectF& rtAnchor) {
   m_rtAnchor = rtAnchor;
-  return TRUE;
 }
-FWL_ERR CFWL_ToolTipImp::Show() {
+
+void CFWL_ToolTipImp::Show() {
   IFWL_ToolTipDP* pData =
       static_cast<IFWL_ToolTipDP*>(m_pProperties->m_pDataProvider);
   int32_t nInitDelay = pData->GetInitialDelay(m_pInterface);
-  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Invisible)) {
+  if ((m_pProperties->m_dwStates & FWL_WGTSTATE_Invisible))
     m_hTimerShow = FWL_StartTimer(&m_TimerShow, nInitDelay, FALSE);
-  }
-  return TRUE;
 }
-FWL_ERR CFWL_ToolTipImp::Hide() {
+
+void CFWL_ToolTipImp::Hide() {
   SetStates(FWL_WGTSTATE_Invisible, TRUE);
   if (m_hTimerHide) {
     FWL_StopTimer(m_hTimerHide);
-    m_hTimerHide = NULL;
+    m_hTimerHide = nullptr;
   }
   if (m_hTimerShow) {
     FWL_StopTimer(m_hTimerShow);
-    m_hTimerShow = NULL;
+    m_hTimerShow = nullptr;
   }
-  return TRUE;
 }
-FWL_ERR CFWL_ToolTipImp::SetStates(uint32_t dwStates, FX_BOOL bSet) {
+
+void CFWL_ToolTipImp::SetStates(uint32_t dwStates, FX_BOOL bSet) {
   if ((dwStates & FWL_WGTSTATE_Invisible) && !bSet) {
     IFWL_ToolTipDP* pData =
         static_cast<IFWL_ToolTipDP*>(m_pProperties->m_pDataProvider);
     int32_t nAutoPopDelay = pData->GetAutoPopDelay(m_pInterface);
     m_hTimerHide = FWL_StartTimer(&m_TimerHide, nAutoPopDelay, FALSE);
   }
-  return CFWL_WidgetImp::SetStates(dwStates, bSet);
+  CFWL_WidgetImp::SetStates(dwStates, bSet);
 }
+
 void CFWL_ToolTipImp::RefreshToolTipPos() {
   if ((m_pProperties->m_dwStyleExes & FWL_STYLEEXT_TTP_NoAnchor) == 0) {
     CFX_RectF rtPopup;
@@ -283,15 +294,17 @@ int32_t CFWL_ToolTipImp::CFWL_ToolTipTimer::Run(FWL_HTIMER hTimer) {
   }
   return TRUE;
 }
+
 CFWL_ToolTipImpDelegate::CFWL_ToolTipImpDelegate(CFWL_ToolTipImp* pOwner)
     : m_pOwner(pOwner) {}
-int32_t CFWL_ToolTipImpDelegate::OnProcessMessage(CFWL_Message* pMessage) {
-  return CFWL_WidgetImpDelegate::OnProcessMessage(pMessage);
+
+void CFWL_ToolTipImpDelegate::OnProcessMessage(CFWL_Message* pMessage) {
+  CFWL_WidgetImpDelegate::OnProcessMessage(pMessage);
 }
-FWL_ERR CFWL_ToolTipImpDelegate::OnProcessEvent(CFWL_Event* pEvent) {
-  return FWL_ERR_Succeeded;
-}
-FWL_ERR CFWL_ToolTipImpDelegate::OnDrawWidget(CFX_Graphics* pGraphics,
-                                              const CFX_Matrix* pMatrix) {
-  return m_pOwner->DrawWidget(pGraphics, pMatrix);
+
+void CFWL_ToolTipImpDelegate::OnProcessEvent(CFWL_Event* pEvent) {}
+
+void CFWL_ToolTipImpDelegate::OnDrawWidget(CFX_Graphics* pGraphics,
+                                           const CFX_Matrix* pMatrix) {
+  m_pOwner->DrawWidget(pGraphics, pMatrix);
 }

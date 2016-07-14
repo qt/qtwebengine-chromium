@@ -51,6 +51,8 @@
       'dependencies': [
         '<@(neteq_dependencies)',
         '<(webrtc_root)/common.gyp:webrtc_common',
+        'builtin_audio_decoder_factory',
+        'rent_a_codec',
       ],
       'defines': [
         '<@(neteq_defines)',
@@ -73,6 +75,8 @@
         'buffer_level_filter.h',
         'comfort_noise.cc',
         'comfort_noise.h',
+        'cross_correlation.cc',
+        'cross_correlation.h',
         'decision_logic.cc',
         'decision_logic.h',
         'decision_logic_fax.cc',
@@ -105,6 +109,8 @@
         'statistics_calculator.h',
         'normal.cc',
         'normal.h',
+        'packet.cc',
+        'packet.h',
         'packet_buffer.cc',
         'packet_buffer.h',
         'payload_splitter.cc',
@@ -119,6 +125,8 @@
         'rtcp.h',
         'sync_buffer.cc',
         'sync_buffer.h',
+        'tick_timer.cc',
+        'tick_timer.h',
         'timestamp_scaler.cc',
         'timestamp_scaler.h',
         'time_stretch.cc',
@@ -206,19 +214,6 @@
           ],
         }, # neteq_unittest_tools
       ], # targets
-      'conditions': [
-        ['OS=="android"', {
-          'targets': [
-            {
-              'target_name': 'audio_decoder_unittests_apk_target',
-              'type': 'none',
-              'dependencies': [
-                '<(apk_tests_path):audio_decoder_unittests_apk',
-              ],
-            },
-          ],
-        }],
-      ],
     }], # include_tests
   ], # conditions
 }

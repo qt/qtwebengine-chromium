@@ -15,7 +15,7 @@ class CFDE_CSSFunction : public CFX_Target {
  public:
   CFDE_CSSFunction(const FX_WCHAR* pszFuncName, IFDE_CSSValueList* pArgList)
       : m_pArgList(pArgList), m_pszFuncName(pszFuncName) {
-    FXSYS_assert(pArgList != NULL);
+    ASSERT(pArgList != NULL);
   }
   int32_t CountArgs() const { return m_pArgList->CountValues(); }
   IFDE_CSSValue* GetArgs(int32_t index) const {
@@ -39,7 +39,7 @@ class CFDE_CSSPrimitiveValue : public IFDE_CSSPrimitiveValue,
       : m_eType(eType), m_fNumber(fValue) {}
   CFDE_CSSPrimitiveValue(FDE_CSSPRIMITIVETYPE eType, const FX_WCHAR* pValue)
       : m_eType(eType), m_pString(pValue) {
-    FXSYS_assert(m_pString != NULL);
+    ASSERT(m_pString != NULL);
   }
   CFDE_CSSPrimitiveValue(CFDE_CSSFunction* pFunction)
       : m_eType(FDE_CSSPRIMITIVETYPE_Function), m_pFunction(pFunction) {}
@@ -47,34 +47,34 @@ class CFDE_CSSPrimitiveValue : public IFDE_CSSPrimitiveValue,
   virtual FDE_CSSPRIMITIVETYPE GetPrimitiveType() const { return m_eType; }
 
   virtual FX_ARGB GetRGBColor() const {
-    FXSYS_assert(m_eType == FDE_CSSPRIMITIVETYPE_RGB);
+    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_RGB);
     return m_dwColor;
   }
   virtual FX_FLOAT GetFloat() const {
-    FXSYS_assert(m_eType >= FDE_CSSPRIMITIVETYPE_Number &&
-                 m_eType <= FDE_CSSPRIMITIVETYPE_PC);
+    ASSERT(m_eType >= FDE_CSSPRIMITIVETYPE_Number &&
+           m_eType <= FDE_CSSPRIMITIVETYPE_PC);
     return m_fNumber;
   }
   virtual const FX_WCHAR* GetString(int32_t& iLength) const {
-    FXSYS_assert(m_eType >= FDE_CSSPRIMITIVETYPE_String &&
-                 m_eType <= FDE_CSSPRIMITIVETYPE_URI);
+    ASSERT(m_eType >= FDE_CSSPRIMITIVETYPE_String &&
+           m_eType <= FDE_CSSPRIMITIVETYPE_URI);
     iLength = FXSYS_wcslen(m_pString);
     return m_pString;
   }
   virtual FDE_CSSPROPERTYVALUE GetEnum() const {
-    FXSYS_assert(m_eType == FDE_CSSPRIMITIVETYPE_Enum);
+    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Enum);
     return m_eEnum;
   }
   virtual const FX_WCHAR* GetFuncName() const {
-    FXSYS_assert(m_eType == FDE_CSSPRIMITIVETYPE_Function);
+    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
     return m_pFunction->GetFuncName();
   }
   virtual int32_t CountArgs() const {
-    FXSYS_assert(m_eType == FDE_CSSPRIMITIVETYPE_Function);
+    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
     return m_pFunction->CountArgs();
   }
   virtual IFDE_CSSValue* GetArgs(int32_t index) const {
-    FXSYS_assert(m_eType == FDE_CSSPRIMITIVETYPE_Function);
+    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
     return m_pFunction->GetArgs(index);
   }
 
@@ -91,7 +91,7 @@ typedef CFX_ArrayTemplate<IFDE_CSSPrimitiveValue*> CFDE_CSSPrimitiveArray;
 typedef CFX_ArrayTemplate<IFDE_CSSValue*> CFDE_CSSValueArray;
 class CFDE_CSSValueList : public IFDE_CSSValueList, public CFX_Target {
  public:
-  CFDE_CSSValueList(IFX_MEMAllocator* pStaticStore,
+  CFDE_CSSValueList(IFX_MemoryAllocator* pStaticStore,
                     const CFDE_CSSValueArray& list);
   virtual int32_t CountValues() const { return m_iCount; }
   virtual IFDE_CSSValue* GetValue(int32_t index) const {
@@ -106,7 +106,7 @@ class CFDE_CSSValueListParser : public CFX_Target {
  public:
   CFDE_CSSValueListParser(const FX_WCHAR* psz, int32_t iLen, FX_WCHAR separator)
       : m_Separator(separator), m_pCur(psz), m_pEnd(psz + iLen) {
-    FXSYS_assert(psz != NULL && iLen > 0);
+    ASSERT(psz != NULL && iLen > 0);
   }
   FX_BOOL NextValue(FDE_CSSPRIMITIVETYPE& eType,
                     const FX_WCHAR*& pStart,
@@ -137,8 +137,7 @@ struct FDE_CSSPROPERTYTABLE {
 };
 typedef FDE_CSSPROPERTYTABLE const* FDE_LPCCSSPROPERTYTABLE;
 
-FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByName(const FX_WCHAR* pszName,
-                                                 int32_t iLength);
+FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByName(const CFX_WideStringC& wsName);
 FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByEnum(FDE_CSSPROPERTY eName);
 struct FDE_CSSPROPERTYVALUETABLE {
   FDE_CSSPROPERTYVALUE eName;
@@ -148,8 +147,7 @@ struct FDE_CSSPROPERTYVALUETABLE {
 typedef FDE_CSSPROPERTYVALUETABLE const* FDE_LPCCSSPROPERTYVALUETABLE;
 
 FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByName(
-    const FX_WCHAR* pszName,
-    int32_t iLength);
+    const CFX_WideStringC& wsName);
 FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByEnum(
     FDE_CSSPROPERTYVALUE eName);
 struct FDE_CSSMEDIATYPETABLE {
@@ -157,22 +155,22 @@ struct FDE_CSSMEDIATYPETABLE {
   uint16_t wValue;
 };
 typedef FDE_CSSMEDIATYPETABLE const* FDE_LPCCSSMEDIATYPETABLE;
-FDE_LPCCSSMEDIATYPETABLE FDE_GetCSSMediaTypeByName(const FX_WCHAR* pszName,
-                                                   int32_t iLength);
+FDE_LPCCSSMEDIATYPETABLE FDE_GetCSSMediaTypeByName(
+    const CFX_WideStringC& wsName);
 struct FDE_CSSLENGTHUNITTABLE {
   uint16_t wHash;
   uint16_t wValue;
 };
 typedef FDE_CSSLENGTHUNITTABLE const* FDE_LPCCSSLENGTHUNITTABLE;
-FDE_LPCCSSLENGTHUNITTABLE FDE_GetCSSLengthUnitByName(const FX_WCHAR* pszName,
-                                                     int32_t iLength);
+FDE_LPCCSSLENGTHUNITTABLE FDE_GetCSSLengthUnitByName(
+    const CFX_WideStringC& wsName);
 struct FDE_CSSCOLORTABLE {
   uint32_t dwHash;
   FX_ARGB dwValue;
 };
 typedef FDE_CSSCOLORTABLE const* FDE_LPCCSSCOLORTABLE;
-FDE_LPCCSSCOLORTABLE FDE_GetCSSColorByName(const FX_WCHAR* pszName,
-                                           int32_t iLength);
+FDE_LPCCSSCOLORTABLE FDE_GetCSSColorByName(const CFX_WideStringC& wsName);
+
 struct FDE_CSSPERSUDOTABLE {
   FDE_CSSPERSUDO eName;
   const FX_WCHAR* pszName;

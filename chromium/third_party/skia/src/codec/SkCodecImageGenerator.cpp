@@ -16,24 +16,16 @@ SkImageGenerator* SkCodecImageGenerator::NewFromEncodedCodec(SkData* data) {
     return new SkCodecImageGenerator(codec, data);
 }
 
-// FIXME: We should expose information about the encoded format on the
-//        SkImageGenerator, so the client can interpret the encoded
-//        format and request an output format.  For now, as a workaround,
-//        we guess what output format the client wants.
-static SkImageInfo fix_info(const SkCodec& codec) {
-    const SkImageInfo& info = codec.getInfo();
-    SkAlphaType alphaType = (kUnpremul_SkAlphaType == info.alphaType()) ? kPremul_SkAlphaType :
-            info.alphaType();
+static SkImageInfo make_premul(const SkImageInfo& info) {
+    if (kUnpremul_SkAlphaType == info.alphaType()) {
+        return info.makeAlphaType(kPremul_SkAlphaType);
+    }
 
-    // Crudely guess that the presence of a color space means sRGB.
-    SkColorProfileType profileType = (codec.getColorSpace()) ? kSRGB_SkColorProfileType :
-            kLinear_SkColorProfileType;
-
-    return SkImageInfo::Make(info.width(), info.height(), info.colorType(), alphaType, profileType);
+    return info;
 }
 
 SkCodecImageGenerator::SkCodecImageGenerator(SkCodec* codec, SkData* data)
-    : INHERITED(fix_info(*codec))
+    : INHERITED(make_premul(codec->getInfo()))
     , fCodec(codec)
     , fData(SkRef(data))
 {}

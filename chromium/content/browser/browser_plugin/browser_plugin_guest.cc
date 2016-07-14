@@ -36,6 +36,7 @@
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/site_isolation_policy.h"
+#include "content/common/text_input_state.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
@@ -556,7 +557,7 @@ IPC::Message* BrowserPluginGuest::UpdateInstanceIdIfNecessary(
   if (!browser_plugin_instance_id())
     return msg;
 
-  scoped_ptr<IPC::Message> new_msg(
+  std::unique_ptr<IPC::Message> new_msg(
       new IPC::Message(msg->routing_id(), msg->type(), msg->priority()));
   new_msg->WriteInt(browser_plugin_instance_id());
 
@@ -766,7 +767,8 @@ void BrowserPluginGuest::OnWillAttachComplete(
   delegate_->DidAttach(GetGuestProxyRoutingID());
   RenderWidgetHostViewGuest* rwhv = static_cast<RenderWidgetHostViewGuest*>(
       web_contents()->GetRenderWidgetHostView());
-  rwhv->RegisterSurfaceNamespaceId();
+  if (rwhv)
+    rwhv->RegisterSurfaceNamespaceId();
   has_render_view_ = true;
 
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));
@@ -803,17 +805,19 @@ void BrowserPluginGuest::OnDragStatusUpdate(int browser_plugin_instance_id,
       // coming from the guest.
       if (!embedder->DragEnteredGuest(this))
         dragged_url_ = drop_data.url;
-      host->DragTargetDragEnter(drop_data, location, location, mask, 0);
+      host->DragTargetDragEnter(drop_data, location, location, mask,
+                                drop_data.key_modifiers);
       break;
     case blink::WebDragStatusOver:
-      host->DragTargetDragOver(location, location, mask, 0);
+      host->DragTargetDragOver(location, location, mask,
+                               drop_data.key_modifiers);
       break;
     case blink::WebDragStatusLeave:
       embedder->DragLeftGuest(this);
       host->DragTargetDragLeave();
       break;
     case blink::WebDragStatusDrop:
-      host->DragTargetDrop(location, location, 0);
+      host->DragTargetDrop(location, location, drop_data.key_modifiers);
       if (dragged_url_.is_valid()) {
         delegate_->DidDropLink(dragged_url_);
         dragged_url_ = GURL();
@@ -979,10 +983,9 @@ void BrowserPluginGuest::OnTakeFocus(bool reverse) {
       new BrowserPluginMsg_AdvanceFocus(browser_plugin_instance_id(), reverse));
 }
 
-void BrowserPluginGuest::OnTextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
+void BrowserPluginGuest::OnTextInputStateChanged(const TextInputState& params) {
   // Save the state of text input so we can restore it on focus.
-  last_text_input_state_.reset(new ViewHostMsg_TextInputState_Params(params));
+  last_text_input_state_.reset(new TextInputState(params));
 
   SendTextInputTypeChangedToView(
       static_cast<RenderWidgetHostViewBase*>(

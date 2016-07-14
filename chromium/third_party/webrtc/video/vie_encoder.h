@@ -12,15 +12,18 @@
 #define WEBRTC_VIDEO_VIE_ENCODER_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
-#include "webrtc/frame_callback.h"
+#include "webrtc/video_encoder.h"
+#include "webrtc/media/base/videosinkinterface.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
+#include "webrtc/modules/video_coding/video_coding_impl.h"
 #include "webrtc/modules/video_processing/include/video_processing.h"
 #include "webrtc/typedefs.h"
 
@@ -30,84 +33,79 @@ class Config;
 class EncodedImageCallback;
 class OveruseFrameDetector;
 class PacedSender;
-class PayloadRouter;
 class ProcessThread;
-class QMVideoSettingsCallback;
 class SendStatisticsProxy;
 class ViEBitrateObserver;
 class ViEEffectFilter;
-class VideoCodingModule;
 class VideoEncoder;
 
+// VieEncoder represent a video encoder that accepts raw video frames as input
+// and produces an encoded bit stream.
+// Usage:
+// 1. Instantiate
+// 2. Call Init
+// 3. Call RegisterExternalEncoder if available.
+// 4. Call SetEncoder with the codec settings and the object that shall receive
+//    the encoded bit stream.
+// 5. Call Start.
+// 6. For each available raw video frame call EncodeVideoFrame.
 class ViEEncoder : public VideoEncoderRateObserver,
-                   public VCMPacketizationCallback,
+                   public EncodedImageCallback,
                    public VCMSendStatisticsCallback {
  public:
   friend class ViEBitrateObserver;
 
   ViEEncoder(uint32_t number_of_cores,
-             const std::vector<uint32_t>& ssrcs,
              ProcessThread* module_process_thread,
              SendStatisticsProxy* stats_proxy,
-             I420FrameCallback* pre_encode_callback,
-             OveruseFrameDetector* overuse_detector,
-             PacedSender* pacer,
-             PayloadRouter* payload_router);
+             OveruseFrameDetector* overuse_detector);
   ~ViEEncoder();
 
-  bool Init();
-
-  VideoCodingModule* vcm() const;
-
-  void SetNetworkTransmissionState(bool is_transmitting);
+  vcm::VideoSender* video_sender();
 
   // Returns the id of the owning channel.
   int Owner() const;
 
+  void Start();
   // Drops incoming packets before they get to the encoder.
   void Pause();
-  void Restart();
 
   // Codec settings.
   int32_t RegisterExternalEncoder(VideoEncoder* encoder,
                                   uint8_t pl_type,
                                   bool internal_source);
   int32_t DeRegisterExternalEncoder(uint8_t pl_type);
-  void SetEncoder(const VideoCodec& video_codec, int min_transmit_bitrate_bps);
+  void SetEncoder(const VideoCodec& video_codec,
+                  int min_transmit_bitrate_bps,
+                  size_t max_data_payload_length,
+                  EncodedImageCallback* sink);
 
   void EncodeVideoFrame(const VideoFrame& video_frame);
   void SendKeyFrame();
 
   uint32_t LastObservedBitrateBps() const;
-  int CodecTargetBitrate(uint32_t* bitrate) const;
   // Loss protection. Must be called before SetEncoder() to have max packet size
   // updated according to protection.
-  // TODO(pbos): Set protection method on construction or extract vcm_ outside
-  // this class and set it on construction there.
+  // TODO(pbos): Set protection method on construction.
   void SetProtectionMethod(bool nack, bool fec);
 
   // Implements VideoEncoderRateObserver.
   void OnSetRates(uint32_t bitrate_bps, int framerate) override;
 
-  // Implements VCMPacketizationCallback.
-  int32_t SendData(uint8_t payload_type,
-                   const EncodedImage& encoded_image,
-                   const RTPFragmentationHeader* fragmentation_header,
-                   const RTPVideoHeader* rtp_video_hdr) override;
-  void OnEncoderImplementationName(const char* implementation_name) override;
+  // Implements EncodedImageCallback.
+  int32_t Encoded(const EncodedImage& encoded_image,
+                  const CodecSpecificInfo* codec_specific_info,
+                  const RTPFragmentationHeader* fragmentation) override;
 
   // Implements VideoSendStatisticsCallback.
-  int32_t SendStatistics(const uint32_t bit_rate,
-                         const uint32_t frame_rate) override;
+  void SendStatistics(uint32_t bit_rate,
+                      uint32_t frame_rate,
+                      const std::string& encoder_name) override;
 
   // virtual to test EncoderStateFeedback with mocks.
-  virtual void OnReceivedIntraFrameRequest(uint32_t ssrc);
-  virtual void OnReceivedSLI(uint32_t ssrc, uint8_t picture_id);
-  virtual void OnReceivedRPSI(uint32_t ssrc, uint64_t picture_id);
-
-  // New-style callbacks, used by VideoSendStream.
-  void RegisterPostEncodeImageCallback(
-        EncodedImageCallback* post_encode_callback);
+  virtual void OnReceivedIntraFrameRequest(size_t stream_index);
+  virtual void OnReceivedSLI(uint8_t picture_id);
+  virtual void OnReceivedRPSI(uint64_t picture_id);
 
   int GetPaddingNeededBps() const;
 
@@ -121,19 +119,14 @@ class ViEEncoder : public VideoEncoderRateObserver,
   void TraceFrameDropEnd() EXCLUSIVE_LOCKS_REQUIRED(data_cs_);
 
   const uint32_t number_of_cores_;
-  const std::vector<uint32_t> ssrcs_;
 
   const std::unique_ptr<VideoProcessing> vp_;
-  const std::unique_ptr<QMVideoSettingsCallback> qm_callback_;
-  const std::unique_ptr<VideoCodingModule> vcm_;
+  vcm::VideoSender video_sender_;
 
   rtc::CriticalSection data_cs_;
 
   SendStatisticsProxy* const stats_proxy_;
-  I420FrameCallback* const pre_encode_callback_;
   OveruseFrameDetector* const overuse_detector_;
-  PacedSender* const pacer_;
-  PayloadRouter* const send_payload_router_;
 
   // The time we last received an input frame or encoded frame. This is used to
   // track when video is stopped long enough that we also want to stop sending
@@ -142,10 +135,11 @@ class ViEEncoder : public VideoEncoderRateObserver,
   VideoCodec encoder_config_ GUARDED_BY(data_cs_);
   int min_transmit_bitrate_bps_ GUARDED_BY(data_cs_);
   uint32_t last_observed_bitrate_bps_ GUARDED_BY(data_cs_);
-  bool network_is_transmitting_ GUARDED_BY(data_cs_);
   bool encoder_paused_ GUARDED_BY(data_cs_);
   bool encoder_paused_and_dropped_frame_ GUARDED_BY(data_cs_);
-  std::vector<int64_t> time_last_intra_request_ms_ GUARDED_BY(data_cs_);
+
+  rtc::CriticalSection sink_cs_;
+  EncodedImageCallback* sink_ GUARDED_BY(sink_cs_);
 
   ProcessThread* module_process_thread_;
 

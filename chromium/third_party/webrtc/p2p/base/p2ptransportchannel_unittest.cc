@@ -8,12 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <algorithm>
+#include <memory>
+
+#include "webrtc/p2p/base/fakeportallocator.h"
 #include "webrtc/p2p/base/p2ptransportchannel.h"
 #include "webrtc/p2p/base/testrelayserver.h"
 #include "webrtc/p2p/base/teststunserver.h"
 #include "webrtc/p2p/base/testturnserver.h"
 #include "webrtc/p2p/client/basicportallocator.h"
-#include "webrtc/p2p/client/fakeportallocator.h"
 #include "webrtc/base/dscp.h"
 #include "webrtc/base/fakenetwork.h"
 #include "webrtc/base/firewallsocketserver.h"
@@ -211,7 +214,7 @@ class P2PTransportChannelTestBase : public testing::Test,
 
     std::string name_;  // TODO - Currently not used.
     std::list<std::string> ch_packets_;
-    rtc::scoped_ptr<cricket::P2PTransportChannel> ch_;
+    std::unique_ptr<cricket::P2PTransportChannel> ch_;
   };
 
   struct CandidatesData : public rtc::MessageData {
@@ -255,7 +258,7 @@ class P2PTransportChannelTestBase : public testing::Test,
     }
 
     rtc::FakeNetworkManager network_manager_;
-    rtc::scoped_ptr<cricket::BasicPortAllocator> allocator_;
+    std::unique_ptr<cricket::BasicPortAllocator> allocator_;
     ChannelData cd1_;
     ChannelData cd2_;
     cricket::IceRole role_;
@@ -285,6 +288,8 @@ class P2PTransportChannelTestBase : public testing::Test,
         1, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
         ice_ufrag_ep2_cd1_ch, ice_pwd_ep2_cd1_ch,
         ice_ufrag_ep1_cd1_ch, ice_pwd_ep1_cd1_ch));
+    ep1_.cd1_.ch_->MaybeStartGathering();
+    ep2_.cd1_.ch_->MaybeStartGathering();
     if (num == 2) {
       std::string ice_ufrag_ep1_cd2_ch = kIceUfrag[2];
       std::string ice_pwd_ep1_cd2_ch = kIcePwd[2];
@@ -298,6 +303,8 @@ class P2PTransportChannelTestBase : public testing::Test,
           1, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
           ice_ufrag_ep2_cd2_ch, ice_pwd_ep2_cd2_ch,
           ice_ufrag_ep1_cd2_ch, ice_pwd_ep1_cd2_ch));
+      ep1_.cd2_.ch_->MaybeStartGathering();
+      ep2_.cd2_.ch_->MaybeStartGathering();
     }
   }
   cricket::P2PTransportChannel* CreateChannel(
@@ -326,7 +333,6 @@ class P2PTransportChannelTestBase : public testing::Test,
     channel->SetIceRole(GetEndpoint(endpoint)->ice_role());
     channel->SetIceTiebreaker(GetEndpoint(endpoint)->GetIceTiebreaker());
     channel->Connect();
-    channel->MaybeStartGathering();
     return channel;
   }
   void DestroyChannels() {
@@ -504,7 +510,7 @@ class P2PTransportChannelTestBase : public testing::Test,
   }
 
   void Test(const Result& expected) {
-    int64_t connect_start = rtc::Time64();
+    int64_t connect_start = rtc::TimeMillis();
     int64_t connect_time;
 
     // Create the channels and wait for them to connect.
@@ -517,7 +523,7 @@ class P2PTransportChannelTestBase : public testing::Test,
                             ep2_ch1()->writable(),
                             expected.connect_wait,
                             1000);
-    connect_time = rtc::Time64() - connect_start;
+    connect_time = rtc::TimeMillis() - connect_start;
     if (connect_time < expected.connect_wait) {
       LOG(LS_INFO) << "Connect time: " << connect_time << " ms";
     } else {
@@ -529,7 +535,7 @@ class P2PTransportChannelTestBase : public testing::Test,
     // This may take up to 2 seconds.
     if (ep1_ch1()->best_connection() &&
         ep2_ch1()->best_connection()) {
-      int64_t converge_start = rtc::Time64();
+      int64_t converge_start = rtc::TimeMillis();
       int64_t converge_time;
       int64_t converge_wait = 2000;
       EXPECT_TRUE_WAIT_MARGIN(CheckCandidate1(expected), converge_wait,
@@ -547,7 +553,7 @@ class P2PTransportChannelTestBase : public testing::Test,
       // For verbose
       ExpectCandidate2(expected);
 
-      converge_time = rtc::Time64() - converge_start;
+      converge_time = rtc::TimeMillis() - converge_start;
       if (converge_time < converge_wait) {
         LOG(LS_INFO) << "Converge time: " << converge_time << " ms";
       } else {
@@ -702,7 +708,7 @@ class P2PTransportChannelTestBase : public testing::Test,
   void OnMessage(rtc::Message* msg) {
     switch (msg->message_id) {
       case MSG_ADD_CANDIDATES: {
-        rtc::scoped_ptr<CandidatesData> data(
+        std::unique_ptr<CandidatesData> data(
             static_cast<CandidatesData*>(msg->pdata));
         cricket::P2PTransportChannel* rch = GetRemoteChannel(data->channel);
         for (auto& c : data->candidates) {
@@ -717,7 +723,7 @@ class P2PTransportChannelTestBase : public testing::Test,
         break;
       }
       case MSG_REMOVE_CANDIDATES: {
-        rtc::scoped_ptr<CandidatesData> data(
+        std::unique_ptr<CandidatesData> data(
             static_cast<CandidatesData*>(msg->pdata));
         cricket::P2PTransportChannel* rch = GetRemoteChannel(data->channel);
         for (cricket::Candidate& c : data->candidates) {
@@ -797,12 +803,12 @@ class P2PTransportChannelTestBase : public testing::Test,
 
  private:
   rtc::Thread* main_;
-  rtc::scoped_ptr<rtc::PhysicalSocketServer> pss_;
-  rtc::scoped_ptr<rtc::VirtualSocketServer> vss_;
-  rtc::scoped_ptr<rtc::NATSocketServer> nss_;
-  rtc::scoped_ptr<rtc::FirewallSocketServer> ss_;
+  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
+  std::unique_ptr<rtc::VirtualSocketServer> vss_;
+  std::unique_ptr<rtc::NATSocketServer> nss_;
+  std::unique_ptr<rtc::FirewallSocketServer> ss_;
   rtc::SocketServerScope ss_scope_;
-  rtc::scoped_ptr<cricket::TestStunServer> stun_server_;
+  std::unique_ptr<cricket::TestStunServer> stun_server_;
   cricket::TestTurnServer turn_server_;
   cricket::TestRelayServer relay_server_;
   rtc::SocksProxyServer socks_server1_;
@@ -1193,7 +1199,7 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignaling) {
   set_clear_remote_candidates_ufrag_pwd(false);
   CreateChannels(1);
   // Only have remote credentials come in for ep2, not ep1.
-  ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[3], kIcePwd[3]);
+  ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[0], kIcePwd[0]);
 
   // Pause sending ep2's candidates to ep1 until ep1 receives the peer reflexive
   // candidate.
@@ -1209,14 +1215,22 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignaling) {
   EXPECT_EQ(kIceUfrag[1],
             ep1_ch1()->best_connection()->remote_candidate().username());
   EXPECT_EQ("", ep1_ch1()->best_connection()->remote_candidate().password());
+  // Because we don't have ICE credentials yet, we don't know the generation.
+  EXPECT_EQ(0u, ep1_ch1()->best_connection()->remote_candidate().generation());
   EXPECT_TRUE(nullptr == ep1_ch1()->FindNextPingableConnection());
 
+  // Add two sets of remote ICE credentials, so that the ones used by the
+  // candidate will be generation 1 instead of 0.
+  ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[3], kIcePwd[3]);
   ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[1], kIcePwd[1]);
-  ResumeCandidates(1);
-
+  // After setting the remote ICE credentials, the password and generation
+  // of the peer reflexive candidate should be updated.
   EXPECT_EQ(kIcePwd[1],
             ep1_ch1()->best_connection()->remote_candidate().password());
+  EXPECT_EQ(1u, ep1_ch1()->best_connection()->remote_candidate().generation());
   EXPECT_TRUE(nullptr != ep1_ch1()->FindNextPingableConnection());
+
+  ResumeCandidates(1);
 
   WAIT(ep2_ch1()->best_connection() != NULL, 2000);
   // Verify ep1's best connection is updated to use the 'local' candidate.
@@ -1237,7 +1251,7 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignalingWithNAT) {
   set_clear_remote_candidates_ufrag_pwd(false);
   CreateChannels(1);
   // Only have remote credentials come in for ep2, not ep1.
-  ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[3], kIcePwd[3]);
+  ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[0], kIcePwd[0]);
   // Pause sending ep2's candidates to ep1 until ep1 receives the peer reflexive
   // candidate.
   PauseCandidates(1);
@@ -1251,14 +1265,21 @@ TEST_F(P2PTransportChannelTest, PeerReflexiveCandidateBeforeSignalingWithNAT) {
   EXPECT_EQ(kIceUfrag[1],
             ep1_ch1()->best_connection()->remote_candidate().username());
   EXPECT_EQ("", ep1_ch1()->best_connection()->remote_candidate().password());
+  // Because we don't have ICE credentials yet, we don't know the generation.
+  EXPECT_EQ(0u, ep1_ch1()->best_connection()->remote_candidate().generation());
   EXPECT_TRUE(nullptr == ep1_ch1()->FindNextPingableConnection());
 
+  // Add two sets of remote ICE credentials, so that the ones used by the
+  // candidate will be generation 1 instead of 0.
+  ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[3], kIcePwd[3]);
   ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[1], kIcePwd[1]);
-  ResumeCandidates(1);
-
+  // After setting the remote ICE credentials, the password and generation
+  // of the peer reflexive candidate should be updated.
   EXPECT_EQ(kIcePwd[1],
             ep1_ch1()->best_connection()->remote_candidate().password());
-  EXPECT_TRUE(nullptr != ep1_ch1()->FindNextPingableConnection());
+  EXPECT_EQ(1u, ep1_ch1()->best_connection()->remote_candidate().generation());
+
+  ResumeCandidates(1);
 
   const cricket::Connection* best_connection = NULL;
   WAIT((best_connection = ep2_ch1()->best_connection()) != NULL, 2000);
@@ -1528,6 +1549,92 @@ TEST_F(P2PTransportChannelTest, TestContinualGathering) {
             ep2_ch1()->gathering_state());
 
   DestroyChannels();
+}
+
+// Test that a connection succeeds when the P2PTransportChannel uses a pooled
+// PortAllocatorSession that has not yet finished gathering candidates.
+TEST_F(P2PTransportChannelTest, TestUsingPooledSessionBeforeDoneGathering) {
+  ConfigureEndpoints(OPEN, OPEN, kDefaultPortAllocatorFlags,
+                     kDefaultPortAllocatorFlags);
+  // First create a pooled session for each endpoint.
+  auto& allocator_1 = GetEndpoint(0)->allocator_;
+  auto& allocator_2 = GetEndpoint(1)->allocator_;
+  int pool_size = 1;
+  allocator_1->SetConfiguration(allocator_1->stun_servers(),
+                                allocator_1->turn_servers(), pool_size);
+  allocator_2->SetConfiguration(allocator_2->stun_servers(),
+                                allocator_2->turn_servers(), pool_size);
+  const cricket::PortAllocatorSession* pooled_session_1 =
+      allocator_1->GetPooledSession();
+  const cricket::PortAllocatorSession* pooled_session_2 =
+      allocator_2->GetPooledSession();
+  ASSERT_NE(nullptr, pooled_session_1);
+  ASSERT_NE(nullptr, pooled_session_2);
+  // Sanity check that pooled sessions haven't gathered anything yet.
+  EXPECT_TRUE(pooled_session_1->ReadyPorts().empty());
+  EXPECT_TRUE(pooled_session_1->ReadyCandidates().empty());
+  EXPECT_TRUE(pooled_session_2->ReadyPorts().empty());
+  EXPECT_TRUE(pooled_session_2->ReadyCandidates().empty());
+  // Now let the endpoints connect and try exchanging some data.
+  CreateChannels(1);
+  EXPECT_TRUE_WAIT_MARGIN(ep1_ch1() != NULL && ep2_ch1() != NULL &&
+                              ep1_ch1()->receiving() && ep1_ch1()->writable() &&
+                              ep2_ch1()->receiving() && ep2_ch1()->writable(),
+                          1000, 1000);
+  TestSendRecv(1);
+  // Make sure the P2PTransportChannels are actually using ports from the
+  // pooled sessions.
+  auto pooled_ports_1 = pooled_session_1->ReadyPorts();
+  auto pooled_ports_2 = pooled_session_2->ReadyPorts();
+  EXPECT_NE(pooled_ports_1.end(),
+            std::find(pooled_ports_1.begin(), pooled_ports_1.end(),
+                      ep1_ch1()->best_connection()->port()));
+  EXPECT_NE(pooled_ports_2.end(),
+            std::find(pooled_ports_2.begin(), pooled_ports_2.end(),
+                      ep2_ch1()->best_connection()->port()));
+}
+
+// Test that a connection succeeds when the P2PTransportChannel uses a pooled
+// PortAllocatorSession that already finished gathering candidates.
+TEST_F(P2PTransportChannelTest, TestUsingPooledSessionAfterDoneGathering) {
+  ConfigureEndpoints(OPEN, OPEN, kDefaultPortAllocatorFlags,
+                     kDefaultPortAllocatorFlags);
+  // First create a pooled session for each endpoint.
+  auto& allocator_1 = GetEndpoint(0)->allocator_;
+  auto& allocator_2 = GetEndpoint(1)->allocator_;
+  int pool_size = 1;
+  allocator_1->SetConfiguration(allocator_1->stun_servers(),
+                                allocator_1->turn_servers(), pool_size);
+  allocator_2->SetConfiguration(allocator_2->stun_servers(),
+                                allocator_2->turn_servers(), pool_size);
+  const cricket::PortAllocatorSession* pooled_session_1 =
+      allocator_1->GetPooledSession();
+  const cricket::PortAllocatorSession* pooled_session_2 =
+      allocator_2->GetPooledSession();
+  ASSERT_NE(nullptr, pooled_session_1);
+  ASSERT_NE(nullptr, pooled_session_2);
+  // Wait for the pooled sessions to finish gathering before the
+  // P2PTransportChannels try to use them.
+  EXPECT_TRUE_WAIT(pooled_session_1->CandidatesAllocationDone() &&
+                       pooled_session_2->CandidatesAllocationDone(),
+                   kDefaultTimeout);
+  // Now let the endpoints connect and try exchanging some data.
+  CreateChannels(1);
+  EXPECT_TRUE_WAIT_MARGIN(ep1_ch1() != NULL && ep2_ch1() != NULL &&
+                              ep1_ch1()->receiving() && ep1_ch1()->writable() &&
+                              ep2_ch1()->receiving() && ep2_ch1()->writable(),
+                          1000, 1000);
+  TestSendRecv(1);
+  // Make sure the P2PTransportChannels are actually using ports from the
+  // pooled sessions.
+  auto pooled_ports_1 = pooled_session_1->ReadyPorts();
+  auto pooled_ports_2 = pooled_session_2->ReadyPorts();
+  EXPECT_NE(pooled_ports_1.end(),
+            std::find(pooled_ports_1.begin(), pooled_ports_1.end(),
+                      ep1_ch1()->best_connection()->port()));
+  EXPECT_NE(pooled_ports_2.end(),
+            std::find(pooled_ports_2.begin(), pooled_ports_2.end(),
+                      ep2_ch1()->best_connection()->port()));
 }
 
 // Test what happens when we have 2 users behind the same NAT. This can lead
@@ -1979,8 +2086,8 @@ class P2PTransportChannelPingTest : public testing::Test,
   void reset_channel_ready_to_send() { channel_ready_to_send_ = false; }
 
  private:
-  rtc::scoped_ptr<rtc::PhysicalSocketServer> pss_;
-  rtc::scoped_ptr<rtc::VirtualSocketServer> vss_;
+  std::unique_ptr<rtc::PhysicalSocketServer> pss_;
+  std::unique_ptr<rtc::VirtualSocketServer> vss_;
   rtc::SocketServerScope ss_scope_;
   cricket::CandidatePairInterface* last_selected_candidate_pair_ = nullptr;
   int last_sent_packet_id_ = -1;
@@ -2532,9 +2639,10 @@ TEST_F(P2PTransportChannelPingTest, TestDeleteConnectionsIfAllWriteTimedout) {
   EXPECT_TRUE_WAIT(ch.connections().empty(), 1000);
 }
 
-// Test that after a port allocator session is started, it will be stopped
-// when a new connection becomes writable and receiving. Also test that this
-// holds even if the transport channel did not lose the writability.
+// Tests that after a port allocator session is started, it will be stopped
+// when a new connection becomes writable and receiving. Also tests that if a
+// connection belonging to an old session becomes writable, it won't stop
+// the current port allocator session.
 TEST_F(P2PTransportChannelPingTest, TestStopPortAllocatorSessions) {
   cricket::FakePortAllocator pa(rtc::Thread::Current(), nullptr);
   cricket::P2PTransportChannel ch("test channel", 1, &pa);
@@ -2548,11 +2656,17 @@ TEST_F(P2PTransportChannelPingTest, TestStopPortAllocatorSessions) {
   conn1->ReceivedPingResponse();  // Becomes writable and receiving
   EXPECT_TRUE(!ch.allocator_session()->IsGettingPorts());
 
-  // Restart gathering even if the transport channel is still writable.
-  // It should stop getting ports after a new connection becomes strongly
-  // connected.
+  // Start a new session. Even though conn1, which belongs to an older
+  // session, becomes unwritable and writable again, it should not stop the
+  // current session.
   ch.SetIceCredentials(kIceUfrag[1], kIcePwd[1]);
   ch.MaybeStartGathering();
+  conn1->Prune();
+  conn1->ReceivedPingResponse();
+  EXPECT_TRUE(ch.allocator_session()->IsGettingPorts());
+
+  // But if a new connection created from the new session becomes writable,
+  // it will stop the current session.
   ch.AddRemoteCandidate(CreateHostCandidate("2.2.2.2", 2, 100));
   cricket::Connection* conn2 = WaitForConnectionTo(&ch, "2.2.2.2", 2);
   ASSERT_TRUE(conn2 != nullptr);
@@ -2625,10 +2739,10 @@ class P2PTransportChannelMostLikelyToWorkFirstTest
   }
 
  private:
-  rtc::scoped_ptr<cricket::BasicPortAllocator> allocator_;
+  std::unique_ptr<cricket::BasicPortAllocator> allocator_;
   rtc::FakeNetworkManager network_manager_;
   cricket::TestTurnServer turn_server_;
-  rtc::scoped_ptr<cricket::P2PTransportChannel> channel_;
+  std::unique_ptr<cricket::P2PTransportChannel> channel_;
 };
 
 // Test that Relay/Relay connections will be pinged first when no other

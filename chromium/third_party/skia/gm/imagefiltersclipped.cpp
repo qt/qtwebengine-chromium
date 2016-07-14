@@ -43,11 +43,11 @@ static sk_sp<SkImage> make_gradient_circle(int width, int height) {
     return surface->makeImageSnapshot();
 }
 
-static void draw_clipped_filter(SkCanvas* canvas, SkImageFilter* filter, size_t i,
+static void draw_clipped_filter(SkCanvas* canvas, sk_sp<SkImageFilter> filter, size_t i,
                                 const SkRect& primBounds, const SkRect& clipBounds) {
     SkPaint paint;
     paint.setColor(SK_ColorWHITE);
-    paint.setImageFilter(filter);
+    paint.setImageFilter(std::move(filter));
     paint.setAntiAlias(true);
     canvas->save();
     canvas->clipRect(clipBounds);
@@ -93,23 +93,24 @@ protected:
         resizeMatrix.setScale(RESIZE_FACTOR_X, RESIZE_FACTOR_Y);
         SkPoint3 pointLocation = SkPoint3::Make(32, 32, SkIntToScalar(10));
 
-        SkImageFilter* filters[] = {
-            SkBlurImageFilter::Make(SkIntToScalar(12), SkIntToScalar(12), nullptr).release(),
-            SkDropShadowImageFilter::Make(SkIntToScalar(10), SkIntToScalar(10),
-                SkIntToScalar(3), SkIntToScalar(3), SK_ColorGREEN,
-                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode,
-                nullptr).release(),
-            SkDisplacementMapEffect::Create(SkDisplacementMapEffect::kR_ChannelSelectorType,
-                                            SkDisplacementMapEffect::kR_ChannelSelectorType,
-                                            SkIntToScalar(12),
-                                            gradient.get(),
-                                            checkerboard.get()),
-            SkDilateImageFilter::Make(2, 2, checkerboard).release(),
-            SkErodeImageFilter::Make(2, 2, checkerboard).release(),
-            SkOffsetImageFilter::Make(SkIntToScalar(-16), SkIntToScalar(32), nullptr).release(),
-            SkImageFilter::MakeMatrixFilter(resizeMatrix, kNone_SkFilterQuality, nullptr).release(),
-            SkLightingImageFilter::CreatePointLitDiffuse(pointLocation, SK_ColorWHITE, SK_Scalar1,
-                                                         SkIntToScalar(2), checkerboard.get()),
+        sk_sp<SkImageFilter> filters[] = {
+            SkBlurImageFilter::Make(SkIntToScalar(12), SkIntToScalar(12), nullptr),
+            SkDropShadowImageFilter::Make(
+                                    SkIntToScalar(10), SkIntToScalar(10),
+                                    SkIntToScalar(3), SkIntToScalar(3), SK_ColorGREEN,
+                                    SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode,
+                                    nullptr),
+            SkDisplacementMapEffect::Make(SkDisplacementMapEffect::kR_ChannelSelectorType,
+                                          SkDisplacementMapEffect::kR_ChannelSelectorType,
+                                          SkIntToScalar(12),
+                                          std::move(gradient),
+                                          checkerboard),
+            SkDilateImageFilter::Make(2, 2, checkerboard),
+            SkErodeImageFilter::Make(2, 2, checkerboard),
+            SkOffsetImageFilter::Make(SkIntToScalar(-16), SkIntToScalar(32), nullptr),
+            SkImageFilter::MakeMatrixFilter(resizeMatrix, kNone_SkFilterQuality, nullptr),
+            SkLightingImageFilter::MakePointLitDiffuse(pointLocation, SK_ColorWHITE, SK_Scalar1,
+                                                       SkIntToScalar(2), checkerboard),
 
         };
 
@@ -131,10 +132,6 @@ protected:
         }
         canvas->restore();
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(filters); ++i) {
-            SkSafeUnref(filters[i]);
-        }
-
         SkPaint noisePaint;
         noisePaint.setShader(SkPerlinNoiseShader::MakeFractalNoise(0.1f, 0.05f, 1, 0));
 
@@ -142,7 +139,7 @@ protected:
         canvas->translate(SK_ARRAY_COUNT(filters)*(r.width() + margin), 0);
         for (int xOffset = 0; xOffset < 80; xOffset += 16) {
             bounds.fLeft = SkIntToScalar(xOffset);
-            draw_clipped_filter(canvas, rectFilter.get(), 0, r, bounds);
+            draw_clipped_filter(canvas, rectFilter, 0, r, bounds);
             canvas->translate(0, r.height() + margin);
         }
     }

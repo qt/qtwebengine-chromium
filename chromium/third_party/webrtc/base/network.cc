@@ -32,10 +32,10 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <memory>
 
 #include "webrtc/base/logging.h"
 #include "webrtc/base/networkmonitor.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/socket.h"  // includes something that makes windows happy
 #include "webrtc/base/stream.h"
 #include "webrtc/base/stringencode.h"
@@ -357,10 +357,32 @@ bool NetworkManagerBase::GetDefaultLocalAddress(int family,
     *ipaddr = default_local_ipv4_address_;
     return true;
   } else if (family == AF_INET6 && !default_local_ipv6_address_.IsNil()) {
-    *ipaddr = default_local_ipv6_address_;
+    Network* ipv6_network = GetNetworkFromAddress(default_local_ipv6_address_);
+    if (ipv6_network) {
+      // If the default ipv6 network's BestIP is different than
+      // default_local_ipv6_address_, use it instead.
+      // This is to prevent potential IP address leakage. See WebRTC bug 5376.
+      *ipaddr = ipv6_network->GetBestIP();
+    } else {
+      *ipaddr = default_local_ipv6_address_;
+    }
     return true;
   }
   return false;
+}
+
+Network* NetworkManagerBase::GetNetworkFromAddress(
+    const rtc::IPAddress& ip) const {
+  for (Network* network : networks_) {
+    const auto& ips = network->GetIPs();
+    if (std::find_if(ips.begin(), ips.end(),
+                     [ip](const InterfaceAddress& existing_ip) {
+                       return ip == static_cast<rtc::IPAddress>(existing_ip);
+                     }) != ips.end()) {
+      return network;
+    }
+  }
+  return nullptr;
 }
 
 BasicNetworkManager::BasicNetworkManager()
@@ -449,9 +471,9 @@ void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
       }
 #endif
       // TODO(phoglund): Need to recognize other types as well.
-      scoped_ptr<Network> network(new Network(cursor->ifa_name,
-                                              cursor->ifa_name, prefix,
-                                              prefix_length, adapter_type));
+      std::unique_ptr<Network> network(
+          new Network(cursor->ifa_name, cursor->ifa_name, prefix, prefix_length,
+                      adapter_type));
       network->set_default_local_address_provider(this);
       network->set_scope_id(scope_id);
       network->AddIP(ip);
@@ -475,7 +497,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
     return false;
   }
 
-  rtc::scoped_ptr<IfAddrsConverter> ifaddrs_converter(CreateIfAddrsConverter());
+  std::unique_ptr<IfAddrsConverter> ifaddrs_converter(CreateIfAddrsConverter());
   ConvertIfAddrs(interfaces, ifaddrs_converter.get(), include_ignored,
                  networks);
 
@@ -531,7 +553,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
   NetworkMap current_networks;
   // MSDN recommends a 15KB buffer for the first try at GetAdaptersAddresses.
   size_t buffer_size = 16384;
-  scoped_ptr<char[]> adapter_info(new char[buffer_size]);
+  std::unique_ptr<char[]> adapter_info(new char[buffer_size]);
   PIP_ADAPTER_ADDRESSES adapter_addrs =
       reinterpret_cast<PIP_ADAPTER_ADDRESSES>(adapter_info.get());
   int adapter_flags = (GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_ANYCAST |
@@ -567,7 +589,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
 
         IPAddress ip;
         int scope_id = 0;
-        scoped_ptr<Network> network;
+        std::unique_ptr<Network> network;
         switch (address->Address.lpSockaddr->sa_family) {
           case AF_INET: {
             sockaddr_in* v4_addr =
@@ -606,8 +628,8 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
             // TODO(phoglund): Need to recognize other types as well.
             adapter_type = ADAPTER_TYPE_LOOPBACK;
           }
-          scoped_ptr<Network> network(new Network(name, description, prefix,
-                                                  prefix_length, adapter_type));
+          std::unique_ptr<Network> network(new Network(
+              name, description, prefix, prefix_length, adapter_type));
           network->set_default_local_address_provider(this);
           network->set_scope_id(scope_id);
           network->AddIP(ip);
@@ -770,7 +792,7 @@ IPAddress BasicNetworkManager::QueryDefaultLocalAddress(int family) const {
   ASSERT(thread_->socketserver() != nullptr);
   ASSERT(family == AF_INET || family == AF_INET6);
 
-  scoped_ptr<AsyncSocket> socket(
+  std::unique_ptr<AsyncSocket> socket(
       thread_->socketserver()->CreateAsyncSocket(family, SOCK_DGRAM));
   if (!socket) {
     LOG_ERR(LERROR) << "Socket creation failed";

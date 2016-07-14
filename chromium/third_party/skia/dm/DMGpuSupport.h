@@ -37,7 +37,7 @@ static inline sk_sp<SkSurface> NewGpuSurface(
         bool useDIText) {
     uint32_t flags = useDIText ? SkSurfaceProps::kUseDeviceIndependentFonts_Flag : 0;
     if (SkImageInfoIsGammaCorrect(info)) {
-        flags |= SkSurfaceProps::kAllowSRGBInputs_Flag;
+        flags |= SkSurfaceProps::kGammaCorrect_Flag;
     }
     SkSurfaceProps props(flags, SkSurfaceProps::kLegacyFontHost_InitType);
     return SkSurface::MakeRenderTarget(grFactory->get(type, options), SkBudgeted::kNo,
@@ -80,7 +80,8 @@ public:
                              kNativeGL_ContextType      = 0,
                              kGL_ContextType            = 0,
                              kGLES_ContextType          = 0,
-                             kNullGL_ContextType        = 0;
+                             kNullGL_ContextType        = 0,
+                             kVulkan_ContextType        = 0;
     static const int kContextTypeCnt = 1;
     enum ContextOptions {
         kNone_ContextOptions = 0,

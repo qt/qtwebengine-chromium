@@ -81,7 +81,7 @@ TEST(MainThreadTaskRunnerTest, RemoveRunner)
 
     context->setTasksNeedSuspension(true);
     runner->postTask(BLINK_FROM_HERE, createSameThreadTask(&markBoolean, &isMarked));
-    runner.clear();
+    runner = nullptr;
     blink::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);
 }

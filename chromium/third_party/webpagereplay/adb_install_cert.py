@@ -23,11 +23,20 @@ import sys
 KEYCODE_ENTER = '66'
 KEYCODE_TAB = '61'
 
+
 class CertInstallError(Exception):
   pass
 
+
 class CertRemovalError(Exception):
   pass
+
+
+class AdbShellError(subprocess.CalledProcessError):
+  pass
+
+
+_ANDROID_M_BUILD_VERSION = 23
 
 
 class AndroidCertInstaller(object):
@@ -48,22 +57,53 @@ class AndroidCertInstaller(object):
   def _run_cmd(cmd, dirname=None):
     return subprocess.check_output(cmd, cwd=dirname)
 
-  def _adb(self, *args):
-    """Runs the adb command."""
+  def _get_adb_cmd(self, *args):
     cmd = ['adb']
     if self.device_id:
       cmd.extend(['-s', self.device_id])
     cmd.extend(args)
-    return self._run_cmd(cmd)
+    return cmd
+
+  def _adb(self, *args):
+    """Runs the adb command."""
+    return self._run_cmd(self._get_adb_cmd(*args))
+
+  def _adb_shell(self, *args):
+    """Runs the adb shell command."""
+    # We are not using self._adb() because adb shell return 0 even if the
+    # command has failed. This method is taking care of checking the actual
+    # return code of the command line ran on the device.
+    RETURN_CODE_PREFIX = '%%%s%% ' % __file__
+    adb_cmd = self._get_adb_cmd('shell', '(%s); echo %s$?' % (
+        subprocess.list2cmdline(args), RETURN_CODE_PREFIX))
+    process = subprocess.Popen(adb_cmd, stdout=subprocess.PIPE)
+    adb_stdout, _ = process.communicate()
+    if process.returncode != 0:
+      raise subprocess.CalledProcessError(
+          cmd=adb_cmd, returncode=process.returncode, output=adb_stdout)
+    assert adb_stdout[-1] == '\n'
+    prefix_pos = adb_stdout.rfind(RETURN_CODE_PREFIX)
+    assert prefix_pos != -1, \
+        'Couldn\'t find "%s" at the end of the output of %s' % (
+            RETURN_CODE_PREFIX, subprocess.list2cmdline(adb_cmd))
+    returncode = int(adb_stdout[prefix_pos + len(RETURN_CODE_PREFIX):])
+    stdout = adb_stdout[:prefix_pos]
+    if returncode != 0:
+      raise AdbShellError(cmd=args, returncode=returncode, output=stdout)
+    return stdout
 
   def _adb_su_shell(self, *args):
     """Runs command as root."""
-    cmd = ['shell', 'su', '-c']
+    build_version_sdk = int(self._get_property('ro.build.version.sdk'))
+    if build_version_sdk >= _ANDROID_M_BUILD_VERSION:
+      cmd = ['su', '0']
+    else:
+      cmd = ['su', '-c']
     cmd.extend(args)
-    return self._adb(*cmd)
+    return self._adb_shell(*cmd)
 
   def _get_property(self, prop):
-    return self._adb('shell', 'getprop', prop).strip()
+    return self._adb_shell('getprop', prop).strip()
 
   def check_device(self):
     install_warning = False
@@ -78,11 +118,11 @@ class AndroidCertInstaller(object):
 
   def _input_key(self, key):
     """Inputs a keyevent."""
-    self._adb('shell', 'input', 'keyevent', key)
+    self._adb_shell('input', 'keyevent', key)
 
   def _input_text(self, text):
     """Inputs text."""
-    self._adb('shell', 'input', 'text', text)
+    self._adb_shell('input', 'text', text)
 
   @staticmethod
   def _remove(file_name):
@@ -103,11 +143,14 @@ class AndroidCertInstaller(object):
 
   def _remove_cert_from_cacerts(self):
     self._adb_su_shell('mount', '-o', 'remount,rw', '/system')
-    self._adb_su_shell('rm', self.android_cacerts_path)
+    self._adb_su_shell('rm', '-f', self.android_cacerts_path)
 
   def _is_cert_installed(self):
-    return (self._adb_su_shell('ls', self.android_cacerts_path).strip() ==
-            self.android_cacerts_path)
+    try:
+      return (self._adb_su_shell('ls', self.android_cacerts_path).strip() ==
+              self.android_cacerts_path)
+    except AdbShellError:
+      return False
 
   def _generate_reformatted_cert_path(self):
     # Determine OpenSSL version, string is of the form
@@ -171,7 +214,7 @@ class AndroidCertInstaller(object):
     self._adb('push', self.cert_path, '/sdcard/')
 
     # Start credential install intent.
-    self._adb('shell', 'am', 'start', '-W', '-a', 'android.credentials.INSTALL')
+    self._adb_shell('am', 'start', '-W', '-a', 'android.credentials.INSTALL')
 
     # Move to and click search button.
     self._input_key(KEYCODE_TAB)
@@ -184,7 +227,7 @@ class AndroidCertInstaller(object):
     self._input_key(KEYCODE_ENTER)
 
     # These coordinates work for hammerhead devices.
-    self._adb('shell', 'input', 'tap', '300', '300')
+    self._adb_shell('input', 'tap', '300', '300')
 
     # Name the certificate and click enter.
     self._input_text(self.cert_name)
@@ -194,7 +237,7 @@ class AndroidCertInstaller(object):
     self._input_key(KEYCODE_ENTER)
 
     # Remove the file.
-    self._adb('shell', 'rm', '/sdcard/' + self.file_name)
+    self._adb_shell('rm', '/sdcard/' + self.file_name)
 
 
 def parse_args():

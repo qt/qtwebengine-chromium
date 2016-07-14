@@ -10,6 +10,7 @@
 
 #include "webrtc/p2p/quic/reliablequicstream.h"
 
+#include <memory>
 #include <string>
 
 #include "net/base/ip_address_number.h"
@@ -25,7 +26,6 @@
 using cricket::QuicConnectionHelper;
 using cricket::ReliableQuicStream;
 
-using net::FecProtection;
 using net::IPAddress;
 using net::IPEndPoint;
 using net::PerPacketOptions;
@@ -65,7 +65,6 @@ class MockQuicSession : public QuicSession {
       QuicIOVector iovector,
       QuicStreamOffset offset,
       bool fin,
-      FecProtection fec_protection,
       QuicAckListenerInterface* ack_notifier_delegate) override {
     if (!writable_) {
       return QuicConsumedData(0, false);
@@ -117,11 +116,11 @@ class DummyPacketWriter : public QuicPacketWriter {
   DummyPacketWriter() {}
 
   // QuicPacketWriter overrides.
-  virtual net::WriteResult WritePacket(const char* buffer,
-                                       size_t buf_len,
-                                       const IPAddress& self_address,
-                                       const IPEndPoint& peer_address,
-                                       PerPacketOptions* options) {
+  net::WriteResult WritePacket(const char* buffer,
+                               size_t buf_len,
+                               const IPAddress& self_address,
+                               const IPEndPoint& peer_address,
+                               PerPacketOptions* options) override {
     return net::WriteResult(net::WRITE_STATUS_ERROR, 0);
   }
 
@@ -163,6 +162,8 @@ class ReliableQuicStreamTest : public ::testing::Test,
     stream_->SignalDataReceived.connect(
         this, &ReliableQuicStreamTest::OnDataReceived);
     stream_->SignalClosed.connect(this, &ReliableQuicStreamTest::OnClosed);
+    stream_->SignalQueuedBytesWritten.connect(
+        this, &ReliableQuicStreamTest::OnQueuedBytesWritten);
 
     session_->register_write_blocked_stream(stream_->id(), kDefaultPriority);
   }
@@ -172,11 +173,15 @@ class ReliableQuicStreamTest : public ::testing::Test,
     read_buffer_.append(data, length);
   }
 
-  void OnClosed(QuicStreamId id, QuicErrorCode err) { closed_ = true; }
+  void OnClosed(QuicStreamId id, int err) { closed_ = true; }
+
+  void OnQueuedBytesWritten(QuicStreamId id, uint64_t queued_bytes_written) {
+    queued_bytes_written_ = queued_bytes_written;
+  }
 
  protected:
-  rtc::scoped_ptr<ReliableQuicStream> stream_;
-  rtc::scoped_ptr<MockQuicSession> session_;
+  std::unique_ptr<ReliableQuicStream> stream_;
+  std::unique_ptr<MockQuicSession> session_;
 
   // Data written by the ReliableQuicStream.
   std::string write_buffer_;
@@ -184,6 +189,8 @@ class ReliableQuicStreamTest : public ::testing::Test,
   std::string read_buffer_;
   // Whether the ReliableQuicStream is closed.
   bool closed_ = false;
+  // Bytes written by OnCanWrite().
+  uint64_t queued_bytes_written_;
 };
 
 // Write an entire string.
@@ -213,6 +220,7 @@ TEST_F(ReliableQuicStreamTest, BufferData) {
 
   session_->set_writable(true);
   stream_->OnCanWrite();
+  EXPECT_EQ(7ul, queued_bytes_written_);
 
   EXPECT_FALSE(stream_->HasBufferedData());
   EXPECT_EQ("Foo bar", write_buffer_);

@@ -12,8 +12,8 @@
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLSampler.h"
 #include "glsl/GrGLSLShaderBuilder.h"
-#include "glsl/GrGLSLTextureSampler.h"
 #include "glsl/GrGLSLUniformHandler.h"
 
 GrTextureDomain::GrTextureDomain(const SkRect& domain, Mode mode, int index)
@@ -49,7 +49,7 @@ void GrTextureDomain::GLDomain::sampleTexture(GrGLSLShaderBuilder* builder,
                                               const GrTextureDomain& textureDomain,
                                               const char* outColor,
                                               const SkString& inCoords,
-                                              const GrGLSLTextureSampler& sampler,
+                                              GrGLSLFragmentProcessor::SamplerHandle sampler,
                                               const char* inModulateColor) {
     SkASSERT((Mode)-1 == fMode || textureDomain.mode() == fMode);
     SkDEBUGCODE(fMode = textureDomain.mode();)
@@ -103,11 +103,9 @@ void GrTextureDomain::GLDomain::sampleTexture(GrGLSLShaderBuilder* builder,
                                                           inCoords.c_str());
                 builder->codeAppend(";");
 
-                builder->codeAppend(GrGLSLShaderVar::PrecisionString(glslCaps,
-                                                                     kHigh_GrSLPrecision));
+                builder->appendPrecisionModifier(kHigh_GrSLPrecision);
                 builder->codeAppendf("float x = (%s).x;", inCoords.c_str());
-                builder->codeAppend(GrGLSLShaderVar::PrecisionString(glslCaps,
-                                                                     kHigh_GrSLPrecision));
+                builder->appendPrecisionModifier(kHigh_GrSLPrecision);
                 builder->codeAppendf("float y = (%s).y;", inCoords.c_str());
 
                 builder->codeAppendf("x = abs(2.0*(x - %s.x)/(%s.z - %s.x) - 1.0);",
@@ -200,7 +198,7 @@ void GrGLTextureDomainEffect::emitCode(EmitArgs& args) {
                             domain,
                             args.fOutputColor,
                             coords2D,
-                            args.fSamplers[0],
+                            args.fTexSamplers[0],
                             args.fInputColor);
 }
 

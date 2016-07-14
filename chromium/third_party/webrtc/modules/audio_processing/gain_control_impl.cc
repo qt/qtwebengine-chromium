@@ -10,6 +10,7 @@
 
 #include "webrtc/modules/audio_processing/gain_control_impl.h"
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/optional.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/agc/legacy/gain_control.h"
@@ -274,6 +275,11 @@ int GainControlImpl::ProcessCaptureAudio(AudioBuffer* audio,
   return AudioProcessing::kNoError;
 }
 
+int GainControlImpl::compression_gain_db() const {
+  rtc::CritScope cs(crit_capture_);
+  return compression_gain_db_;
+}
+
 // TODO(ajm): ensure this is called under kAdaptiveAnalog.
 int GainControlImpl::set_stream_analog_level(int level) {
   rtc::CritScope cs(crit_capture_);
@@ -411,11 +417,6 @@ int GainControlImpl::set_compression_gain_db(int gain) {
     compression_gain_db_ = gain;
   }
   return Configure();
-}
-
-int GainControlImpl::compression_gain_db() const {
-  rtc::CritScope cs(crit_capture_);
-  return compression_gain_db_;
 }
 
 int GainControlImpl::enable_limiter(bool enable) {

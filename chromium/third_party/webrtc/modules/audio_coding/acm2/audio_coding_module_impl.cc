@@ -29,6 +29,18 @@
 
 namespace webrtc {
 
+namespace {
+
+// Adds a codec usage sample to the histogram.
+void UpdateCodecTypeHistogram(size_t codec_type) {
+  RTC_HISTOGRAM_ENUMERATION(
+      "WebRTC.Audio.Encoder.CodecType", static_cast<int>(codec_type),
+      static_cast<int>(
+          webrtc::AudioEncoder::CodecType::kMaxLoggedAudioCodecTypes));
+}
+
+}  // namespace
+
 namespace acm2 {
 
 struct EncoderFactory {
@@ -104,7 +116,6 @@ void ConvertEncodedInfoToFragmentationHeader(
 class RawAudioEncoderWrapper final : public AudioEncoder {
  public:
   RawAudioEncoderWrapper(AudioEncoder* enc) : enc_(enc) {}
-  size_t MaxEncodedBytes() const override { return enc_->MaxEncodedBytes(); }
   int SampleRateHz() const override { return enc_->SampleRateHz(); }
   size_t NumChannels() const override { return enc_->NumChannels(); }
   int RtpTimestampRateHz() const override { return enc_->RtpTimestampRateHz(); }
@@ -119,13 +130,6 @@ class RawAudioEncoderWrapper final : public AudioEncoder {
                          rtc::ArrayView<const int16_t> audio,
                          rtc::Buffer* encoded) override {
     return enc_->Encode(rtp_timestamp, audio, encoded);
-  }
-  EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
-                             rtc::ArrayView<const int16_t> audio,
-                             size_t max_encoded_bytes,
-                             uint8_t* encoded) override {
-    return enc_->EncodeInternal(rtp_timestamp, audio, max_encoded_bytes,
-                                encoded);
   }
   void Reset() override { return enc_->Reset(); }
   bool SetFec(bool enable) override { return enc_->SetFec(enable); }
@@ -193,7 +197,9 @@ AudioCodingModuleImpl::AudioCodingModuleImpl(
       first_10ms_data_(false),
       first_frame_(true),
       packetization_callback_(NULL),
-      vad_callback_(NULL) {
+      vad_callback_(NULL),
+      codec_histogram_bins_log_(),
+      number_of_consecutive_empty_packets_(0) {
   if (InitializeReceiverSafe() < 0) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                  "Cannot initialize receiver");
@@ -238,6 +244,20 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
     return 0;
   }
   previous_pltype = previous_pltype_;  // Read it while we have the critsect.
+
+  // Log codec type to histogram once every 500 packets.
+  if (encoded_info.encoded_bytes == 0) {
+    ++number_of_consecutive_empty_packets_;
+  } else {
+    size_t codec_type = static_cast<size_t>(encoded_info.encoder_type);
+    codec_histogram_bins_log_[codec_type] +=
+        number_of_consecutive_empty_packets_ + 1;
+    number_of_consecutive_empty_packets_ = 0;
+    if (codec_histogram_bins_log_[codec_type] >= 500) {
+      codec_histogram_bins_log_[codec_type] -= 500;
+      UpdateCodecTypeHistogram(codec_type);
+    }
+  }
 
   RTPFragmentationHeader my_fragmentation;
   ConvertEncodedInfoToFragmentationHeader(encoded_info, &my_fragmentation);
@@ -727,10 +747,12 @@ int AudioCodingModuleImpl::RegisterReceiveCodecUnlocked(
 
   AudioDecoder* isac_decoder = nullptr;
   if (STR_CASE_CMP(codec.plname, "isac") == 0) {
-    if (!isac_decoder_) {
-      isac_decoder_ = isac_factory();
+    std::unique_ptr<AudioDecoder>& saved_isac_decoder =
+        codec.plfreq == 16000 ? isac_decoder_16k_ : isac_decoder_32k_;
+    if (!saved_isac_decoder) {
+      saved_isac_decoder = isac_factory();
     }
-    isac_decoder = isac_decoder_.get();
+    isac_decoder = saved_isac_decoder.get();
   }
   return receiver_.AddCodec(*codec_index, codec.pltype, codec.channels,
                             codec.plfreq, isac_decoder, codec.plname);
@@ -797,15 +819,24 @@ int AudioCodingModuleImpl::SetMaximumPlayoutDelay(int time_ms) {
 // Get 10 milliseconds of raw audio data to play out.
 // Automatic resample to the requested frequency.
 int AudioCodingModuleImpl::PlayoutData10Ms(int desired_freq_hz,
-                                           AudioFrame* audio_frame) {
+                                           AudioFrame* audio_frame,
+                                           bool* muted) {
   // GetAudio always returns 10 ms, at the requested sample rate.
-  if (receiver_.GetAudio(desired_freq_hz, audio_frame) != 0) {
+  if (receiver_.GetAudio(desired_freq_hz, audio_frame, muted) != 0) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                  "PlayoutData failed, RecOut Failed");
     return -1;
   }
   audio_frame->id_ = id_;
   return 0;
+}
+
+int AudioCodingModuleImpl::PlayoutData10Ms(int desired_freq_hz,
+                                           AudioFrame* audio_frame) {
+  bool muted;
+  int ret = PlayoutData10Ms(desired_freq_hz, audio_frame, &muted);
+  RTC_DCHECK(!muted);
+  return ret;
 }
 
 /////////////////////////////////////////

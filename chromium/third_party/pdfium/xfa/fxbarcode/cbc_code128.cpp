@@ -53,45 +53,44 @@ FX_BOOL CBC_Code128::Encode(const CFX_WideStringC& contents,
   BCFORMAT format = BCFORMAT_CODE_128;
   int32_t outWidth = 0;
   int32_t outHeight = 0;
-  CFX_WideString content = contents;
+  CFX_WideString content(contents);
   if (contents.GetLength() % 2 &&
       ((CBC_OnedCode128Writer*)m_pBCWriter)->GetType() == BC_CODE128_C) {
     content += '0';
   }
   CFX_WideString encodeContents = ((CBC_OnedCode128Writer*)m_pBCWriter)
-                                      ->FilterContents(content.AsWideStringC());
+                                      ->FilterContents(content.AsStringC());
   m_renderContents = encodeContents;
   CFX_ByteString byteString = encodeContents.UTF8Encode();
   uint8_t* data = static_cast<CBC_OnedCode128Writer*>(m_pBCWriter)
                       ->Encode(byteString, format, outWidth, outHeight, e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   ((CBC_OneDimWriter*)m_pBCWriter)
-      ->RenderResult(encodeContents.AsWideStringC(), data, outWidth, isDevice,
-                     e);
+      ->RenderResult(encodeContents.AsStringC(), data, outWidth, isDevice, e);
   FX_Free(data);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   return TRUE;
 }
 
 FX_BOOL CBC_Code128::RenderDevice(CFX_RenderDevice* device,
-                                  const CFX_Matrix* matirx,
+                                  const CFX_Matrix* matrix,
                                   int32_t& e) {
   ((CBC_OneDimWriter*)m_pBCWriter)
-      ->RenderDeviceResult(device, matirx, m_renderContents.AsWideStringC(), e);
+      ->RenderDeviceResult(device, matrix, m_renderContents.AsStringC(), e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   return TRUE;
 }
 
 FX_BOOL CBC_Code128::RenderBitmap(CFX_DIBitmap*& pOutBitmap, int32_t& e) {
   ((CBC_OneDimWriter*)m_pBCWriter)
-      ->RenderBitmapResult(pOutBitmap, m_renderContents.AsWideStringC(), e);
+      ->RenderBitmapResult(pOutBitmap, m_renderContents.AsStringC(), e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   return TRUE;
 }
 
 CFX_WideString CBC_Code128::Decode(uint8_t* buf,
                                    int32_t width,
-                                   int32_t hight,
+                                   int32_t height,
                                    int32_t& e) {
   CFX_WideString str;
   return str;
@@ -102,6 +101,6 @@ CFX_WideString CBC_Code128::Decode(CFX_DIBitmap* pBitmap, int32_t& e) {
   CBC_GlobalHistogramBinarizer binarizer(&source);
   CBC_BinaryBitmap bitmap(&binarizer);
   CFX_ByteString str = m_pBCReader->Decode(&bitmap, 0, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, FX_WSTRC(L""));
-  return CFX_WideString::FromUTF8(str, str.GetLength());
+  BC_EXCEPTION_CHECK_ReturnValue(e, CFX_WideString());
+  return CFX_WideString::FromUTF8(str.AsStringC());
 }

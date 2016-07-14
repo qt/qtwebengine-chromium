@@ -17,13 +17,32 @@
   'includes': [
     'common.gypi',
   ],
+  'variables': {
+    'shard_timeout': 900,
+  },
   'targets': [
+    {
+      'target_name': 'audio_codec_speed_tests_apk',
+      'type': 'none',
+      'variables': {
+        'test_suite_name': 'audio_codec_speed_tests',
+        'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)audio_codec_speed_tests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../modules/audio_codec_speed_tests.isolate',
+      },
+      'dependencies': [
+        '<(webrtc_root)/modules/modules.gyp:audio_codec_speed_tests',
+      ],
+      'includes': [
+        '../../build/apk_test.gypi',
+      ],
+    },
     {
       'target_name': 'audio_decoder_unittests_apk',
       'type': 'none',
       'variables': {
         'test_suite_name': 'audio_decoder_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)audio_decoder_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../modules/audio_decoder_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/modules/modules.gyp:audio_decoder_unittests',
@@ -38,6 +57,7 @@
       'variables': {
         'test_suite_name': 'common_audio_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)common_audio_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../common_audio/common_audio_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio_unittests',
@@ -52,24 +72,10 @@
       'variables': {
         'test_suite_name': 'common_video_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)common_video_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../common_video/common_video_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/common_video/common_video_unittests.gyp:common_video_unittests',
-      ],
-      'includes': [
-        '../../build/apk_test.gypi',
-      ],
-    },
-    {
-      'target_name': 'peerconnection_unittests_apk',
-      'type': 'none',
-      'variables': {
-        'test_suite_name': 'peerconnection_unittests',
-        'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)peerconnection_unittests<(SHARED_LIB_SUFFIX)',
-      },
-      'dependencies': [
-        '<(webrtc_root)/api/api_tests.gyp:peerconnection_unittests',
-        '<(webrtc_root)/api/api.gyp:libjingle_peerconnection_java',
       ],
       'includes': [
         '../../build/apk_test.gypi',
@@ -81,6 +87,7 @@
       'variables': {
         'test_suite_name': 'modules_tests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)modules_tests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../modules/modules_tests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/modules/modules.gyp:modules_tests',
@@ -95,10 +102,27 @@
       'variables': {
         'test_suite_name': 'modules_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)modules_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../modules/modules_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/modules/modules.gyp:modules_unittests',
         'audio_device_java',
+      ],
+      'includes': [
+        '../../build/apk_test.gypi',
+      ],
+    },
+    {
+      'target_name': 'peerconnection_unittests_apk',
+      'type': 'none',
+      'variables': {
+        'test_suite_name': 'peerconnection_unittests',
+        'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)peerconnection_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../api/peerconnection_unittests.isolate',
+      },
+      'dependencies': [
+        '<(webrtc_root)/api/api_tests.gyp:peerconnection_unittests',
+        '<(webrtc_root)/api/api.gyp:libjingle_peerconnection_java',
       ],
       'includes': [
         '../../build/apk_test.gypi',
@@ -110,6 +134,7 @@
       'variables': {
         'test_suite_name': 'rtc_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)rtc_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../rtc_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/webrtc.gyp:rtc_unittests',
@@ -124,6 +149,7 @@
       'variables': {
         'test_suite_name': 'system_wrappers_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)system_wrappers_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../system_wrappers/system_wrappers_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/system_wrappers/system_wrappers_tests.gyp:system_wrappers_unittests',
@@ -138,6 +164,7 @@
       'variables': {
         'test_suite_name': 'test_support_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)test_support_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../test/test_support_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/test/test.gyp:test_support_unittests',
@@ -152,6 +179,7 @@
       'variables': {
         'test_suite_name': 'tools_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)tools_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../tools/tools_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/tools/tools.gyp:tools_unittests',
@@ -166,6 +194,7 @@
       'variables': {
         'test_suite_name': 'video_engine_tests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)video_engine_tests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../video_engine_tests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/webrtc.gyp:video_engine_tests',
@@ -180,6 +209,7 @@
       'variables': {
         'test_suite_name': 'voice_engine_unittests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)voice_engine_unittests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../voice_engine/voice_engine_unittests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine_unittests',
@@ -194,6 +224,8 @@
       'variables': {
         'test_suite_name': 'webrtc_perf_tests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)webrtc_perf_tests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../webrtc_perf_tests.isolate',
+        'shard_timeout': 2700,
       },
       'dependencies': [
         '<(webrtc_root)/webrtc.gyp:webrtc_perf_tests',
@@ -208,23 +240,10 @@
       'variables': {
         'test_suite_name': 'webrtc_nonparallel_tests',
         'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)webrtc_nonparallel_tests<(SHARED_LIB_SUFFIX)',
+        'isolate_file': '../webrtc_nonparallel_tests.isolate',
       },
       'dependencies': [
         '<(webrtc_root)/webrtc.gyp:webrtc_nonparallel_tests',
-      ],
-      'includes': [
-        '../../build/apk_test.gypi',
-      ],
-    },
-    {
-      'target_name': 'audio_codec_speed_tests_apk',
-      'type': 'none',
-      'variables': {
-        'test_suite_name': 'audio_codec_speed_tests',
-        'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)audio_codec_speed_tests<(SHARED_LIB_SUFFIX)',
-      },
-      'dependencies': [
-        '<(webrtc_root)/modules/modules.gyp:audio_codec_speed_tests',
       ],
       'includes': [
         '../../build/apk_test.gypi',

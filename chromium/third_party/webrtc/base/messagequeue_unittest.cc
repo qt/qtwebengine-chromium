@@ -21,6 +21,7 @@ using namespace rtc;
 
 class MessageQueueTest: public testing::Test, public MessageQueue {
  public:
+  MessageQueueTest() : MessageQueue(SocketServer::CreateDefault(), true) {}
   bool IsLocked_Worker() {
     if (!crit_.TryEnter()) {
       return true;
@@ -53,7 +54,7 @@ struct DeletedLockChecker {
 static void DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(
     MessageQueue* q) {
   EXPECT_TRUE(q != NULL);
-  TimeStamp now = Time();
+  int64_t now = TimeMillis();
   q->PostAt(now, NULL, 3);
   q->PostAt(now - 2, NULL, 0);
   q->PostAt(now - 1, NULL, 1);
@@ -72,10 +73,11 @@ static void DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(
 
 TEST_F(MessageQueueTest,
        DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder) {
-  MessageQueue q;
+  MessageQueue q(SocketServer::CreateDefault(), true);
   DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(&q);
+
   NullSocketServer nullss;
-  MessageQueue q_nullss(&nullss);
+  MessageQueue q_nullss(&nullss, true);
   DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(&q_nullss);
 }
 

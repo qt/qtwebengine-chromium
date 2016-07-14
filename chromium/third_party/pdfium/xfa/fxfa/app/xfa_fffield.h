@@ -7,11 +7,10 @@
 #ifndef XFA_FXFA_APP_XFA_FFFIELD_H_
 #define XFA_FXFA_APP_XFA_FFFIELD_H_
 
-#include "xfa/fwl/core/fwl_sdadapterimp.h"
 #include "xfa/fwl/core/ifwl_widgetdelegate.h"
 #include "xfa/fwl/lightwidget/cfwl_widget.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 
 #define XFA_MINUI_HEIGHT 4.32f
 #define XFA_DEFAULTUI_HEIGHT 2.0f
@@ -53,7 +52,7 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
   virtual FX_BOOL OnKeyDown(uint32_t dwKeyCode, uint32_t dwFlags);
   virtual FX_BOOL OnKeyUp(uint32_t dwKeyCode, uint32_t dwFlags);
   virtual FX_BOOL OnChar(uint32_t dwChar, uint32_t dwFlags);
-  virtual uint32_t OnHitTest(FX_FLOAT fx, FX_FLOAT fy);
+  virtual FWL_WidgetHit OnHitTest(FX_FLOAT fx, FX_FLOAT fy);
   virtual FX_BOOL OnSetCursor(FX_FLOAT fx, FX_FLOAT fy);
 
  protected:
@@ -86,10 +85,10 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
   void SetEditScrollOffset();
 
  public:
-  virtual int32_t OnProcessMessage(CFWL_Message* pMessage);
-  virtual FWL_ERR OnProcessEvent(CFWL_Event* pEvent);
-  virtual FWL_ERR OnDrawWidget(CFX_Graphics* pGraphics,
-                               const CFX_Matrix* pMatrix = NULL);
+  virtual void OnProcessMessage(CFWL_Message* pMessage);
+  virtual void OnProcessEvent(CFWL_Event* pEvent);
+  virtual void OnDrawWidget(CFX_Graphics* pGraphics,
+                            const CFX_Matrix* pMatrix = NULL);
 
  protected:
   CFWL_Widget* m_pNormalWidget;

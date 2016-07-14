@@ -13,7 +13,7 @@
 #include "SkGifCodec.h"
 #include "SkIcoCodec.h"
 #include "SkJpegCodec.h"
-#ifdef SK_CODEC_DECODES_PNG
+#ifdef SK_HAS_PNG_LIBRARY
 #include "SkPngCodec.h"
 #endif
 #include "SkRawCodec.h"
@@ -27,16 +27,16 @@ struct DecoderProc {
 };
 
 static const DecoderProc gDecoderProcs[] = {
-#ifdef SK_CODEC_DECODES_JPEG
+#ifdef SK_HAS_JPEG_LIBRARY
     { SkJpegCodec::IsJpeg, SkJpegCodec::NewFromStream },
 #endif
-#ifdef SK_CODEC_DECODES_WEBP
+#ifdef SK_HAS_WEBP_LIBRARY
     { SkWebpCodec::IsWebp, SkWebpCodec::NewFromStream },
 #endif
-#ifdef SK_CODEC_DECODES_GIF
+#ifdef SK_HAS_GIF_LIBRARY
     { SkGifCodec::IsGif, SkGifCodec::NewFromStream },
 #endif
-#ifdef SK_CODEC_DECODES_PNG
+#ifdef SK_HAS_PNG_LIBRARY
     { SkIcoCodec::IsIco, SkIcoCodec::NewFromStream },
 #endif
     { SkBmpCodec::IsBmp, SkBmpCodec::NewFromStream },
@@ -86,7 +86,7 @@ SkCodec* SkCodec::NewFromStream(SkStream* stream,
 
     // PNG is special, since we want to be able to supply an SkPngChunkReader.
     // But this code follows the same pattern as the loop.
-#ifdef SK_CODEC_DECODES_PNG
+#ifdef SK_HAS_PNG_LIBRARY
     if (SkPngCodec::IsPng(buffer, bytesRead)) {
         return SkPngCodec::NewFromStream(streamDeleter.release(), chunkReader);
     } else
@@ -114,9 +114,10 @@ SkCodec* SkCodec::NewFromData(SkData* data, SkPngChunkReader* reader) {
     return NewFromStream(new SkMemoryStream(data), reader);
 }
 
-SkCodec::SkCodec(const SkImageInfo& info, SkStream* stream, sk_sp<SkColorSpace> colorSpace,
-        Origin origin)
-    : fSrcInfo(info)
+SkCodec::SkCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
+        sk_sp<SkColorSpace> colorSpace, Origin origin)
+    : fEncodedInfo(info)
+    , fSrcInfo(info.makeImageInfo(width, height))
     , fStream(stream)
     , fNeedsRewind(false)
     , fColorSpace(colorSpace)

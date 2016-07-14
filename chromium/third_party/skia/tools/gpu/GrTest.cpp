@@ -156,7 +156,7 @@ void SkGpuDevice::drawTexture(GrTexture* tex, const SkRect& dst, const SkPaint& 
     SkMatrix mat;
     mat.reset();
     if (!SkPaintToGrPaint(this->context(), paint, mat,
-                          this->surfaceProps().allowSRGBInputs(), &grPaint)) {
+                          this->surfaceProps().isGammaCorrect(), &grPaint)) {
         return;
     }
     SkMatrix textureMat;
@@ -168,8 +168,7 @@ void SkGpuDevice::drawTexture(GrTexture* tex, const SkRect& dst, const SkPaint& 
 
     grPaint.addColorTextureProcessor(tex, textureMat);
 
-    GrClip clip;
-    fDrawContext->drawRect(clip, grPaint, mat, dst);
+    fDrawContext->drawRect(GrNoClip(), grPaint, mat, dst);
 }
 
 
@@ -222,10 +221,9 @@ void GrResourceCache::dumpStats(SkString* out) const {
 
     out->appendf("Budget: %d items %d bytes\n", fMaxCount, (int)fMaxBytes);
     out->appendf("\t\tEntry Count: current %d"
-                 " (%d budgeted, %d external(%d borrowed, %d adopted), %d locked, %d scratch %.2g%% full), high %d\n",
-                 stats.fTotal, fBudgetedCount, stats.fExternal, stats.fBorrowed,
-                 stats.fAdopted, stats.fNumNonPurgeable, stats.fScratch, countUtilization,
-                 fHighWaterCount);
+                 " (%d budgeted, %d wrapped, %d locked, %d scratch %.2g%% full), high %d\n",
+                 stats.fTotal, fBudgetedCount, stats.fWrapped, stats.fNumNonPurgeable,
+                 stats.fScratch, countUtilization, fHighWaterCount);
     out->appendf("\t\tEntry Bytes: current %d (budgeted %d, %.2g%% full, %d unbudgeted) high %d\n",
                  SkToInt(fBytes), SkToInt(fBudgetedBytes), byteUtilization,
                  SkToInt(stats.fUnbudgetedSize), SkToInt(fHighWaterBytes));
@@ -251,16 +249,21 @@ void GrResourceCache::changeTimestamp(uint32_t newTimestamp) { fTimestamp = newT
 
 #define ASSERT_SINGLE_OWNER \
     SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(fDrawContext->fSingleOwner);)
-#define RETURN_IF_ABANDONED        if (fDrawContext->fDrawingManager->abandoned()) { return; }
+#define RETURN_IF_ABANDONED        if (fDrawContext->fDrawingManager->wasAbandoned()) { return; }
 
 void GrDrawContextPriv::testingOnly_drawBatch(const GrPipelineBuilder& pipelineBuilder,
-                                              GrDrawBatch* batch) {
+                                              GrDrawBatch* batch,
+                                              const GrClip* clip) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(fDrawContext->validate();)
     GR_AUDIT_TRAIL_AUTO_FRAME(fDrawContext->fAuditTrail, "GrDrawContext::testingOnly_drawBatch");
 
-    fDrawContext->getDrawTarget()->drawBatch(pipelineBuilder, batch);
+    if (clip) {
+        fDrawContext->getDrawTarget()->drawBatch(pipelineBuilder, *clip, batch);
+    } else {
+        fDrawContext->getDrawTarget()->drawBatch(pipelineBuilder, GrNoClip(), batch);
+    }
 }
 
 #undef ASSERT_SINGLE_OWNER
@@ -323,12 +326,12 @@ private:
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
-    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle lifeCycle,
+    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                const SkTArray<GrMipLevel>& texels) override {
         return nullptr;
     }
 
-    GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle,
+    GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                          const SkTArray<GrMipLevel>& texels) override {
         return nullptr;
     }
@@ -345,7 +348,9 @@ private:
         return nullptr;
     }
 
-    GrBuffer* onCreateBuffer(size_t, GrBufferType, GrAccessPattern) override { return nullptr; }
+    GrBuffer* onCreateBuffer(size_t, GrBufferType, GrAccessPattern, const void*) override {
+        return nullptr;
+    }
 
     void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) override {}
 

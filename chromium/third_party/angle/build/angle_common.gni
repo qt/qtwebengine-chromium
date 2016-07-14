@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/ui.gni")  # import the use_x11 variable
+
 angle_enable_d3d9 = false
 angle_enable_d3d11 = false
 angle_enable_gl = false
@@ -12,11 +14,13 @@ if (is_win) {
   angle_enable_gl = true
 
   import("//build/config/win/visual_studio_version.gni")
-} # is_win
-
-if (is_linux) {
+} else if (is_linux && use_x11 && !is_chromeos) {
+  angle_enable_gl = true
+} else if (is_mac) {
   angle_enable_gl = true
 }
+# TODO(gyp): Probably also want to angle_enable_gl = true if (use_ozone)
+# to match gyp.
 
 angle_enable_essl = true
 angle_enable_glsl = true

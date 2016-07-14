@@ -8,6 +8,7 @@
 #include <memory>
 #include "SkColor.h"
 #include "SkLinearBitmapPipeline.h"
+#include "SkBitmapProcShader.h"
 #include "SkPM4f.h"
 #include "Benchmark.h"
 #include "SkShader.h"
@@ -145,7 +146,7 @@ struct SkBitmapFPGeneral final : public CommonBitmapFPBenchmark {
         SkPixmap srcPixmap{fInfo, fBitmap.get(), static_cast<size_t>(4 * width)};
 
         SkLinearBitmapPipeline pipeline{
-            fInvert, filterQuality, fXTile, fYTile, 1.0f, srcPixmap};
+            fInvert, filterQuality, fXTile, fYTile, SK_ColorBLACK, srcPixmap};
 
         int count = 100;
 
@@ -193,7 +194,7 @@ struct SkBitmapFPOrigShader : public CommonBitmapFPBenchmark {
 
         SkAutoTMalloc<SkPMColor> buffer4b(width*height);
 
-        uint32_t storage[300];
+        uint32_t storage[kSkBlitterContextSize];
         const SkShader::ContextRec rec(fPaint, fM, nullptr,
                                        SkShader::ContextRec::kPMColor_DstType);
         SkASSERT(fPaint.getShader()->contextSize(rec) <= sizeof(storage));

@@ -38,8 +38,6 @@
   'variables': {  # level 1
     'angle_path%': '../',
 
-    'skia_mojo%': '0',
-
     'variables': {  # level 2
       # Variables needed by conditions list within the level-2 variables dict.
       'variables': {  # level 3
@@ -198,7 +196,6 @@
     # so that siblings of the level-1 'variables' dict can see them.
     'arm_version%': '<(arm_version)',
     'arm_neon%': '<(arm_neon)',
-    'arm_neon_optional%': 0,
     'mips_arch_variant%': 'mips32',
     'mips_dsp%': 0,
     'skia_os%': '<(skia_os)',
@@ -232,7 +229,6 @@
     'skia_win_ltcg%': '<(skia_is_bot)',
     'skia_osx_deployment_target%': '<(skia_osx_deployment_target)',
     'skia_pdf%': '<(skia_pdf)',
-    'skia_pdf_generate_pdfa%': 0,  # emit larger PDF/A-2b file
     'skia_profile_enabled%': '<(skia_profile_enabled)',
     'skia_shared_lib%': '<(skia_shared_lib)',
     'skia_force_distance_field_text%': '<(skia_force_distance_field_text)',

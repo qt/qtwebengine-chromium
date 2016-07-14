@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/random.h"
 #include "webrtc/base/thread_annotations.h"
@@ -134,7 +135,7 @@ class RTCPSender {
 
   void SetMaxPayloadLength(size_t max_payload_length);
 
-  int32_t SetTMMBN(const TMMBRSet* boundingSet);
+  void SetTMMBN(const std::vector<rtcp::TmmbItem>* boundingSet);
 
   int32_t SetApplicationSpecificData(uint8_t subType,
                                      uint32_t name,
@@ -240,6 +241,8 @@ class RTCPSender {
   std::vector<uint32_t> remb_ssrcs_ GUARDED_BY(critical_section_rtcp_sender_);
 
   TMMBRHelp tmmbr_help_ GUARDED_BY(critical_section_rtcp_sender_);
+  std::vector<rtcp::TmmbItem> tmmbn_to_send_
+      GUARDED_BY(critical_section_rtcp_sender_);
   uint32_t tmmbr_send_ GUARDED_BY(critical_section_rtcp_sender_);
   uint32_t packet_oh_send_ GUARDED_BY(critical_section_rtcp_sender_);
   size_t max_payload_length_;

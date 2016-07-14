@@ -8,180 +8,14 @@
 
 #include <algorithm>
 
+#include "core/fxcrt/include/fx_arabic.h"
 #include "core/fxcrt/include/fx_arb.h"
 #include "core/fxcrt/include/fx_memory.h"
 #include "xfa/fgas/layout/fgas_linebreak.h"
 #include "xfa/fgas/layout/fgas_unicode.h"
 
-namespace {
-
-class CFX_TxtLine {
- public:
-  CFX_TxtLine(int32_t iBlockSize)
-      : m_iStart(0), m_iWidth(0), m_iArabicChars(0) {
-    m_pLineChars = new CFX_TxtCharArray;
-    m_pLinePieces = new CFX_TxtPieceArray(16);
-  }
-  ~CFX_TxtLine() {
-    RemoveAll();
-    delete m_pLineChars;
-    delete m_pLinePieces;
-  }
-  int32_t CountChars() const { return m_pLineChars->GetSize(); }
-  CFX_TxtChar* GetCharPtr(int32_t index) const {
-    FXSYS_assert(index > -1 && index < m_pLineChars->GetSize());
-    return m_pLineChars->GetDataPtr(index);
-  }
-  int32_t CountPieces() const { return m_pLinePieces->GetSize(); }
-  CFX_TxtPiece* GetPiecePtr(int32_t index) const {
-    FXSYS_assert(index > -1 && index < m_pLinePieces->GetSize());
-    return m_pLinePieces->GetPtrAt(index);
-  }
-  void GetString(CFX_WideString& wsStr) const {
-    int32_t iCount = m_pLineChars->GetSize();
-    FX_WCHAR* pBuf = wsStr.GetBuffer(iCount);
-    CFX_Char* pChar;
-    for (int32_t i = 0; i < iCount; i++) {
-      pChar = m_pLineChars->GetDataPtr(i);
-      *pBuf++ = (FX_WCHAR)pChar->m_wCharCode;
-    }
-    wsStr.ReleaseBuffer(iCount);
-  }
-  void RemoveAll(FX_BOOL bLeaveMemory = FALSE) {
-    m_pLineChars->RemoveAll();
-    m_pLinePieces->RemoveAll(bLeaveMemory);
-    m_iWidth = 0;
-    m_iArabicChars = 0;
-  }
-  CFX_TxtCharArray* m_pLineChars;
-  CFX_TxtPieceArray* m_pLinePieces;
-  int32_t m_iStart;
-  int32_t m_iWidth;
-  int32_t m_iArabicChars;
-};
-
-class CFX_TxtBreak : public IFX_TxtBreak {
- public:
-  CFX_TxtBreak(uint32_t dwPolicies);
-  ~CFX_TxtBreak();
-  virtual void Release() { delete this; }
-  virtual void SetLineWidth(FX_FLOAT fLineWidth);
-  virtual void SetLinePos(FX_FLOAT fLinePos);
-  virtual uint32_t GetLayoutStyles() const { return m_dwLayoutStyles; }
-  virtual void SetLayoutStyles(uint32_t dwLayoutStyles);
-  virtual void SetFont(IFX_Font* pFont);
-  virtual void SetFontSize(FX_FLOAT fFontSize);
-  virtual void SetTabWidth(FX_FLOAT fTabWidth, FX_BOOL bEquidistant);
-  virtual void SetDefaultChar(FX_WCHAR wch);
-  virtual void SetParagraphBreakChar(FX_WCHAR wch);
-  virtual void SetLineBreakTolerance(FX_FLOAT fTolerance);
-  virtual void SetHorizontalScale(int32_t iScale);
-  virtual void SetVerticalScale(int32_t iScale);
-  virtual void SetCharRotation(int32_t iCharRotation);
-  virtual void SetCharSpace(FX_FLOAT fCharSpace);
-  virtual void SetAlignment(int32_t iAlignment);
-  virtual uint32_t GetContextCharStyles() const;
-  virtual void SetContextCharStyles(uint32_t dwCharStyles);
-  virtual void SetCombWidth(FX_FLOAT fCombWidth);
-  virtual void SetUserData(void* pUserData);
-  virtual uint32_t AppendChar(FX_WCHAR wch);
-  virtual uint32_t EndBreak(uint32_t dwStatus = FX_TXTBREAK_PieceBreak);
-  virtual int32_t CountBreakChars() const;
-  virtual int32_t CountBreakPieces() const;
-  virtual const CFX_TxtPiece* GetBreakPiece(int32_t index) const;
-  virtual void ClearBreakPieces();
-  virtual void Reset();
-  virtual int32_t GetDisplayPos(
-      const FX_TXTRUN* pTxtRun,
-      FXTEXT_CHARPOS* pCharPos,
-      FX_BOOL bCharCode = FALSE,
-      CFX_WideString* pWSForms = NULL,
-      FX_AdjustCharDisplayPos pAdjustPos = NULL) const;
-  virtual int32_t GetCharRects(const FX_TXTRUN* pTxtRun,
-                               CFX_RectFArray& rtArray,
-                               FX_BOOL bCharBBox = FALSE) const;
-  void AppendChar_PageLoad(CFX_Char* pCurChar, uint32_t dwProps);
-  uint32_t AppendChar_Combination(CFX_Char* pCurChar, int32_t iRotation);
-  uint32_t AppendChar_Tab(CFX_Char* pCurChar, int32_t iRotation);
-  uint32_t AppendChar_Control(CFX_Char* pCurChar, int32_t iRotation);
-  uint32_t AppendChar_Arabic(CFX_Char* pCurChar, int32_t iRotation);
-  uint32_t AppendChar_Others(CFX_Char* pCurChar, int32_t iRotation);
-
- protected:
-  uint32_t m_dwPolicies;
-  FX_BOOL m_bPagination;
-  IFX_ArabicChar* m_pArabicChar;
-  int32_t m_iLineWidth;
-  uint32_t m_dwLayoutStyles;
-  FX_BOOL m_bVertical;
-  FX_BOOL m_bArabicContext;
-  FX_BOOL m_bArabicShapes;
-  FX_BOOL m_bRTL;
-  FX_BOOL m_bSingleLine;
-  FX_BOOL m_bCombText;
-  int32_t m_iArabicContext;
-  int32_t m_iCurArabicContext;
-  IFX_Font* m_pFont;
-  int32_t m_iFontSize;
-  FX_BOOL m_bEquidistant;
-  int32_t m_iTabWidth;
-  FX_WCHAR m_wDefChar;
-  FX_WCHAR m_wParagBreakChar;
-  int32_t m_iDefChar;
-  int32_t m_iLineRotation;
-  int32_t m_iCharRotation;
-  int32_t m_iRotation;
-  int32_t m_iAlignment;
-  uint32_t m_dwContextCharStyles;
-  int32_t m_iCombWidth;
-  void* m_pUserData;
-  uint32_t m_dwCharType;
-  FX_BOOL m_bCurRTL;
-  int32_t m_iCurAlignment;
-  FX_BOOL m_bArabicNumber;
-  FX_BOOL m_bArabicComma;
-  CFX_TxtLine* m_pTxtLine1;
-  CFX_TxtLine* m_pTxtLine2;
-  CFX_TxtLine* m_pCurLine;
-  int32_t m_iReady;
-  int32_t m_iTolerance;
-  int32_t m_iHorScale;
-  int32_t m_iVerScale;
-  int32_t m_iCharSpace;
-  void SetBreakStatus();
-  int32_t GetLineRotation(uint32_t dwStyles) const;
-  CFX_TxtChar* GetLastChar(int32_t index, FX_BOOL bOmitChar = TRUE) const;
-  CFX_TxtLine* GetTxtLine(FX_BOOL bReady) const;
-  CFX_TxtPieceArray* GetTxtPieces(FX_BOOL bReady) const;
-  uint32_t GetUnifiedCharType(uint32_t dwType) const;
-  void ResetArabicContext();
-  void ResetContextCharStyles();
-  void EndBreak_UpdateArabicShapes();
-  FX_BOOL EndBreak_SplitLine(CFX_TxtLine* pNextLine,
-                             FX_BOOL bAllChars,
-                             uint32_t dwStatus);
-  void EndBreak_BidiLine(CFX_TPOArray& tpos, uint32_t dwStatus);
-  void EndBreak_Alignment(CFX_TPOArray& tpos,
-                          FX_BOOL bAllChars,
-                          uint32_t dwStatus);
-  int32_t GetBreakPos(CFX_TxtCharArray& ca,
-                      int32_t& iEndPos,
-                      FX_BOOL bAllChars = FALSE,
-                      FX_BOOL bOnlyBrk = FALSE);
-  void SplitTextLine(CFX_TxtLine* pCurLine,
-                     CFX_TxtLine* pNextLine,
-                     FX_BOOL bAllChars = FALSE);
-};
-
-}  // namespace
-
-extern const FX_LINEBREAKTYPE gs_FX_LineBreak_PairTable[64][32];
-IFX_TxtBreak* IFX_TxtBreak::Create(uint32_t dwPolicies) {
-  return new CFX_TxtBreak(dwPolicies);
-}
 CFX_TxtBreak::CFX_TxtBreak(uint32_t dwPolicies)
     : m_dwPolicies(dwPolicies),
-      m_pArabicChar(NULL),
       m_iLineWidth(2000000),
       m_dwLayoutStyles(0),
       m_bVertical(FALSE),
@@ -216,7 +50,6 @@ CFX_TxtBreak::CFX_TxtBreak(uint32_t dwPolicies)
       m_iVerScale(100),
       m_iCharSpace(0) {
   m_bPagination = (m_dwPolicies & FX_TXTBREAKPOLICY_Pagination) != 0;
-  m_pArabicChar = IFX_ArabicChar::Create();
   if (m_bPagination) {
     m_pTxtLine1 = new CFX_TxtLine(sizeof(CFX_Char));
     m_pTxtLine2 = new CFX_TxtLine(sizeof(CFX_Char));
@@ -231,11 +64,10 @@ CFX_TxtBreak::~CFX_TxtBreak() {
   Reset();
   delete m_pTxtLine1;
   delete m_pTxtLine2;
-  m_pArabicChar->Release();
 }
 void CFX_TxtBreak::SetLineWidth(FX_FLOAT fLineWidth) {
   m_iLineWidth = FXSYS_round(fLineWidth * 20000.0f);
-  FXSYS_assert(m_iLineWidth >= 20000);
+  ASSERT(m_iLineWidth >= 20000);
 }
 void CFX_TxtBreak::SetLinePos(FX_FLOAT fLinePos) {
   int32_t iLinePos = FXSYS_round(fLinePos * 20000.0f);
@@ -332,8 +164,8 @@ void CFX_TxtBreak::SetCharRotation(int32_t iCharRotation) {
   m_iRotation %= 4;
 }
 void CFX_TxtBreak::SetAlignment(int32_t iAlignment) {
-  FXSYS_assert(iAlignment >= FX_TXTLINEALIGNMENT_Left &&
-               iAlignment <= FX_TXTLINEALIGNMENT_Distributed);
+  ASSERT(iAlignment >= FX_TXTLINEALIGNMENT_Left &&
+         iAlignment <= FX_TXTLINEALIGNMENT_Distributed);
   m_iAlignment = iAlignment;
   ResetArabicContext();
 }
@@ -507,7 +339,7 @@ void CFX_TxtBreak::AppendChar_PageLoad(CFX_Char* pCurChar, uint32_t dwProps) {
 }
 uint32_t CFX_TxtBreak::AppendChar_Combination(CFX_Char* pCurChar,
                                               int32_t iRotation) {
-  FXSYS_assert(pCurChar != NULL);
+  ASSERT(pCurChar != NULL);
   FX_WCHAR wch = pCurChar->m_wCharCode;
   FX_WCHAR wForm;
   int32_t iCharWidth = 0;
@@ -630,7 +462,7 @@ uint32_t CFX_TxtBreak::AppendChar_Arabic(CFX_Char* pCurChar,
         iLineWidth -= iCharWidth;
       }
       CFX_Char* pPrevChar = GetLastChar(2);
-      wForm = m_pArabicChar->GetFormChar(pLastChar, pPrevChar, pCurChar);
+      wForm = pdfium::arabic::GetFormChar(pLastChar, pPrevChar, pCurChar);
       bAlef = (wForm == 0xFEFF &&
                pLastChar->GetCharType() == FX_CHARTYPE_ArabicAlef);
       int32_t iLastRotation = pLastChar->m_nRotation + m_iLineRotation;
@@ -653,7 +485,7 @@ uint32_t CFX_TxtBreak::AppendChar_Arabic(CFX_Char* pCurChar,
     }
   }
   m_dwCharType = dwType;
-  wForm = m_pArabicChar->GetFormChar(pCurChar, bAlef ? NULL : pLastChar, NULL);
+  wForm = pdfium::arabic::GetFormChar(pCurChar, bAlef ? NULL : pLastChar, NULL);
   if (m_bCombText) {
     iCharWidth = m_iCombWidth;
   } else {
@@ -773,7 +605,7 @@ uint32_t CFX_TxtBreak::AppendChar(FX_WCHAR wch) {
   return std::max(dwRet1, dwRet2);
 }
 void CFX_TxtBreak::EndBreak_UpdateArabicShapes() {
-  FXSYS_assert(m_bArabicShapes);
+  ASSERT(m_bArabicShapes);
   int32_t iCount = m_pCurLine->CountChars();
   if (iCount < 2) {
     return;
@@ -1072,8 +904,8 @@ void CFX_TxtBreak::EndBreak_Alignment(CFX_TPOArray& tpos,
   }
 }
 uint32_t CFX_TxtBreak::EndBreak(uint32_t dwStatus) {
-  FXSYS_assert(dwStatus >= FX_TXTBREAK_PieceBreak &&
-               dwStatus <= FX_TXTBREAK_PageBreak);
+  ASSERT(dwStatus >= FX_TXTBREAK_PieceBreak &&
+         dwStatus <= FX_TXTBREAK_PageBreak);
   CFX_TxtPieceArray* pCurPieces = m_pCurLine->m_pLinePieces;
   int32_t iCount = pCurPieces->GetSize();
   if (iCount > 0) {
@@ -1239,7 +1071,7 @@ int32_t CFX_TxtBreak::GetBreakPos(CFX_TxtCharArray& ca,
 void CFX_TxtBreak::SplitTextLine(CFX_TxtLine* pCurLine,
                                  CFX_TxtLine* pNextLine,
                                  FX_BOOL bAllChars) {
-  FXSYS_assert(pCurLine != NULL && pNextLine != NULL);
+  ASSERT(pCurLine != NULL && pNextLine != NULL);
   int32_t iCount = pCurLine->CountChars();
   if (iCount < 2) {
     return;
@@ -1339,7 +1171,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
   }
   IFX_TxtAccess* pAccess = pTxtRun->pAccess;
   void* pIdentity = pTxtRun->pIdentity;
-  const FX_WCHAR* pStr = pTxtRun->pStr;
+  const FX_WCHAR* pStr = pTxtRun->wsStr.c_str();
   int32_t* pWidths = pTxtRun->pWidths;
   int32_t iLength = pTxtRun->iLength - 1;
   IFX_Font* pFont = pTxtRun->pFont;
@@ -1433,7 +1265,7 @@ int32_t CFX_TxtBreak::GetDisplayPos(const FX_TXTRUN* pTxtRun,
       } else {
         wNext = 0xFEFF;
       }
-      wForm = m_pArabicChar->GetFormChar(wch, wPrev, wNext);
+      wForm = pdfium::arabic::GetFormChar(wch, wPrev, wNext);
       bLam = (wPrev == 0x0644 && wch == 0x0644 && wNext == 0x0647);
     } else if (dwCharType == FX_CHARTYPE_Combination) {
       wForm = wch;
@@ -1719,7 +1551,7 @@ int32_t CFX_TxtBreak::GetCharRects(const FX_TXTRUN* pTxtRun,
   }
   IFX_TxtAccess* pAccess = pTxtRun->pAccess;
   void* pIdentity = pTxtRun->pIdentity;
-  const FX_WCHAR* pStr = pTxtRun->pStr;
+  const FX_WCHAR* pStr = pTxtRun->wsStr.c_str();
   int32_t* pWidths = pTxtRun->pWidths;
   int32_t iLength = pTxtRun->iLength;
   CFX_RectF rect(*pTxtRun->pRect);

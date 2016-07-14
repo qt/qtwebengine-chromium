@@ -105,7 +105,7 @@ public:
      */
     const GrCaps* caps() const { return fGpu->caps(); }
 
-    void drawBatch(const GrPipelineBuilder&, GrDrawBatch*, const SkIRect* scissorRect = nullptr);
+    void drawBatch(const GrPipelineBuilder&, const GrClip&, GrDrawBatch*);
 
     /**
      * Draws path into the stencil buffer. The fill must be either even/odd or
@@ -113,17 +113,8 @@ public:
      * on the GrPipelineBuilder (if possible in the 3D API).  Note, we will never have an inverse
      * fill with stencil path
      */
-    void stencilPath(const GrPipelineBuilder&, const SkMatrix& viewMatrix, const GrPath*,
-                     GrPathRendering::FillType);
-
-    /**
-     * Draws a path batch. Fill must not be a hairline. It will respect the HW antialias flag on
-     * the GrPipelineBuilder (if possible in the 3D API). This needs to be separate from drawBatch
-     * because we install path stencil settings late.
-     *
-     * TODO: Figure out a better model that allows us to roll this method into drawBatch.
-     */
-    void drawPathBatch(const GrPipelineBuilder& pipelineBuilder, GrDrawPathBatchBase* batch);
+    void stencilPath(const GrPipelineBuilder&, const GrClip&, const SkMatrix& viewMatrix,
+                     const GrPath*, GrPathRendering::FillType);
 
     /**
      * Clear the passed in render target. Ignores the GrPipelineBuilder and clip. Clears the whole
@@ -221,22 +212,15 @@ private:
 
     void recordBatch(GrBatch*);
     void forwardCombine();
-    bool installPipelineInDrawBatch(const GrPipelineBuilder* pipelineBuilder,
-                                    const GrScissorState* scissor,
-                                    GrDrawBatch* batch);
 
     // Makes a copy of the dst if it is necessary for the draw. Returns false if a copy is required
     // but couldn't be made. Otherwise, returns true.  This method needs to be protected because it
     // needs to be accessed by GLPrograms to setup a correct drawstate
     bool setupDstReadIfNecessary(const GrPipelineBuilder&,
+        const GrClip&,
         const GrPipelineOptimizations& optimizations,
         GrXferProcessor::DstTexture*,
         const SkRect& batchBounds);
-
-    // Check to see if this set of draw commands has been sent out
-    void getPathStencilSettingsForFilltype(GrPathRendering::FillType,
-                                           const GrStencilAttachment*,
-                                           GrStencilSettings*);
 
     void addDependency(GrDrawTarget* dependedOn);
 
@@ -258,6 +242,7 @@ private:
     SkTDArray<GrDrawTarget*>                    fDependencies;
     GrRenderTarget*                             fRenderTarget;
 
+    bool                                        fClipBatchToBounds;
     bool                                        fDrawBatchBounds;
     int                                         fMaxBatchLookback;
     int                                         fMaxBatchLookahead;

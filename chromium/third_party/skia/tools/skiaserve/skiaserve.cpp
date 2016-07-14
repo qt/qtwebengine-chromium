@@ -9,14 +9,18 @@
 #include "Response.h"
 
 #include "SkCommandLineFlags.h"
+#include "SkGraphics.h"
 
 #include "microhttpd.h"
 
 #include "urlhandlers/UrlHandler.h"
 
 #include <errno.h>
+
+#if !defined _WIN32
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#endif
 
 using namespace Response;
 
@@ -39,6 +43,8 @@ public:
         fHandlers.push_back(new BreakHandler);
         fHandlers.push_back(new BatchesHandler);
         fHandlers.push_back(new BatchBoundsHandler);
+        fHandlers.push_back(new ColorModeHandler);
+        fHandlers.push_back(new SRGBModeHandler);
     }
 
     ~UrlManager() {
@@ -79,6 +85,7 @@ int answer_to_connection(void* cls, struct MHD_Connection* connection,
 }
 
 int skiaserve_main() {
+    SkGraphics::Init();
     Request request(SkString("/data")); // This simple server has one request
 
     struct sockaddr_in address;

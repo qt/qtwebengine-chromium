@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/media/base/videosourceinterface.h"
 #include "webrtc/base/sigslot.h"
@@ -283,10 +284,7 @@ class VideoCapturer : public sigslot::has_slots<>,
   std::unique_ptr<VideoFormat> max_format_;
   std::vector<VideoFormat> filtered_supported_formats_;
 
-  int ratio_w_;  // View resolution. e.g. 1280 x 720.
-  int ratio_h_;
   bool enable_camera_list_;
-  bool square_pixel_aspect_ratio_;  // Enable scaling to square pixels.
   int scaled_width_;  // Current output size from ComputeScale.
   int scaled_height_;
 

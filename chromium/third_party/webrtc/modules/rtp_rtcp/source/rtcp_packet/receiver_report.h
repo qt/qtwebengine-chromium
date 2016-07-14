@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 
@@ -49,7 +50,7 @@ class ReceiverReport : public RtcpPacket {
   static const size_t kRrBaseLength = 4;
   static const size_t kMaxNumberOfReportBlocks = 0x1F;
 
-  size_t BlockLength() const {
+  size_t BlockLength() const override {
     return kHeaderLength + kRrBaseLength +
            report_blocks_.size() * ReportBlock::kLength;
   }

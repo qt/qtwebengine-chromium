@@ -39,7 +39,6 @@
         '../samplecode/SampleAARectModes.cpp',
         '../samplecode/SampleAll.cpp',
         '../samplecode/SampleAnimatedText.cpp',
-        '../samplecode/SampleAnimator.cpp',
         '../samplecode/SampleAnimBlur.cpp',
         '../samplecode/SampleApp.cpp',
         '../samplecode/SampleArc.cpp',
@@ -145,7 +144,6 @@
         '../samplecode/SampleFontCache.cpp',
       ],
       'dependencies': [
-        'animator.gyp:animator',
         'etc1.gyp:libetc1',
         'experimental.gyp:experimental',
         'flags.gyp:flags',
@@ -234,9 +232,6 @@
           ],
         }],
         [ 'skia_os == "android"', {
-          'sources!': [
-            '../samplecode/SampleAnimator.cpp',
-          ],
           'conditions': [
             ['skia_android_framework == 0', {
               'dependencies': [
@@ -246,20 +241,11 @@
             }],
           ],
           'dependencies!': [
-            'animator.gyp:animator',
             'experimental.gyp:experimental',
           ],
           'dependencies': [
             'android_output.gyp:android_output',
             'android_deps.gyp:Android_SampleApp',
-          ],
-        }],
-        [ 'skia_os == "chromeos"', {
-          'sources!': [
-            '../samplecode/SampleLighting.cpp',  #doesn't compile due to gpu dependencies
-          ],
-          'include_dirs' : [
-            '../include/gpu',
           ],
         }],
         [ 'skia_gpu == 1', {

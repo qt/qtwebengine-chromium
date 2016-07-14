@@ -15,6 +15,7 @@ GrShaderCaps::GrShaderCaps() {
     fDstReadInShaderSupport = false;
     fDualSourceBlendingSupport = false;
     fIntegerSupport = false;
+    fTexelBufferSupport = false;
     fShaderPrecisionVaries = false;
 }
 
@@ -51,6 +52,7 @@ SkString GrShaderCaps::dump() const {
     r.appendf("Dst Read In Shader Support         : %s\n", gNY[fDstReadInShaderSupport]);
     r.appendf("Dual Source Blending Support       : %s\n", gNY[fDualSourceBlendingSupport]);
     r.appendf("Integer Support                    : %s\n", gNY[fIntegerSupport]);
+    r.appendf("Texel Buffer Support               : %s\n", gNY[fTexelBufferSupport]);
 
     r.appendf("Shader Float Precisions (varies: %s):\n", gNY[fShaderPrecisionVaries]);
 
@@ -83,6 +85,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMipMapSupport = false;
     fNPOTTextureTileSupport = false;
     fSRGBSupport = false;
+    fSRGBWriteControl = false;
     fTwoSidedStencilSupport = false;
     fStencilWrapOpsSupport = false;
     fDiscardRenderTargetSupport = false;
@@ -115,7 +118,6 @@ GrCaps::GrCaps(const GrContextOptions& options) {
 
     fSuppressPrints = options.fSuppressPrints;
     fImmediateFlush = options.fImmediateMode;
-    fDrawPathMasksToCompressedTextureSupport = options.fDrawPathToCompressedTexture;
     fBufferMapThreshold = options.fBufferMapThreshold;
     fUseDrawInsteadOfPartialRenderTargetWrite = options.fUseDrawInsteadOfPartialRenderTargetWrite;
     fUseDrawInsteadOfAllRenderTargetWrites = false;
@@ -160,6 +162,7 @@ SkString GrCaps::dump() const {
     r.appendf("MIP Map Support                    : %s\n", gNY[fMipMapSupport]);
     r.appendf("NPOT Texture Tile Support          : %s\n", gNY[fNPOTTextureTileSupport]);
     r.appendf("sRGB Support                       : %s\n", gNY[fSRGBSupport]);
+    r.appendf("sRGB Write Control                 : %s\n", gNY[fSRGBWriteControl]);
     r.appendf("Two Sided Stencil Support          : %s\n", gNY[fTwoSidedStencilSupport]);
     r.appendf("Stencil Wrap Ops  Support          : %s\n", gNY[fStencilWrapOpsSupport]);
     r.appendf("Discard Render Target Support      : %s\n", gNY[fDiscardRenderTargetSupport]);

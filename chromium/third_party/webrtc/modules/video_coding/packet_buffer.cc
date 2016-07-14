@@ -14,8 +14,8 @@
 #include <limits>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/video_coding/frame_object.h"
-#include "webrtc/modules/video_coding/sequence_number_util.h"
 
 namespace webrtc {
 namespace video_coding {
@@ -25,12 +25,12 @@ PacketBuffer::PacketBuffer(size_t start_buffer_size,
                            OnCompleteFrameCallback* frame_callback)
     : size_(start_buffer_size),
       max_size_(max_buffer_size),
-      last_seq_num_(0),
       first_seq_num_(0),
-      initialized_(false),
+      last_seq_num_(0),
+      first_packet_received_(false),
       data_buffer_(start_buffer_size),
       sequence_buffer_(start_buffer_size),
-      frame_callback_(frame_callback) {
+      reference_finder_(frame_callback) {
   RTC_DCHECK_LE(start_buffer_size, max_buffer_size);
   // Buffer size must always be a power of 2.
   RTC_DCHECK((start_buffer_size & (start_buffer_size - 1)) == 0);
@@ -40,12 +40,12 @@ PacketBuffer::PacketBuffer(size_t start_buffer_size,
 bool PacketBuffer::InsertPacket(const VCMPacket& packet) {
   rtc::CritScope lock(&crit_);
   uint16_t seq_num = packet.seqNum;
-  int index = seq_num % size_;
+  size_t index = seq_num % size_;
 
-  if (!initialized_) {
+  if (!first_packet_received_) {
     first_seq_num_ = seq_num - 1;
     last_seq_num_ = seq_num;
-    initialized_ = true;
+    first_packet_received_ = true;
   }
 
   if (sequence_buffer_[index].used) {
@@ -70,16 +70,17 @@ bool PacketBuffer::InsertPacket(const VCMPacket& packet) {
   sequence_buffer_[index].frame_end = packet.markerBit;
   sequence_buffer_[index].seq_num = packet.seqNum;
   sequence_buffer_[index].continuous = false;
+  sequence_buffer_[index].frame_created = false;
   sequence_buffer_[index].used = true;
   data_buffer_[index] = packet;
 
-  FindCompleteFrames(seq_num);
+  FindFrames(seq_num);
   return true;
 }
 
 void PacketBuffer::ClearTo(uint16_t seq_num) {
   rtc::CritScope lock(&crit_);
-  int index = first_seq_num_ % size_;
+  size_t index = first_seq_num_ % size_;
   while (AheadOf<uint16_t>(seq_num, first_seq_num_ + 1)) {
     index = (index + 1) % size_;
     first_seq_num_ = Add<1 << 16>(first_seq_num_, 1);
@@ -96,7 +97,7 @@ bool PacketBuffer::ExpandBufferSize() {
   std::vector<ContinuityInfo> new_sequence_buffer(new_size);
   for (size_t i = 0; i < size_; ++i) {
     if (sequence_buffer_[i].used) {
-      int index = sequence_buffer_[i].seq_num % new_size;
+      size_t index = sequence_buffer_[i].seq_num % new_size;
       new_sequence_buffer[index] = sequence_buffer_[i];
       new_data_buffer[index] = data_buffer_[i];
     }
@@ -108,13 +109,19 @@ bool PacketBuffer::ExpandBufferSize() {
 }
 
 bool PacketBuffer::IsContinuous(uint16_t seq_num) const {
-  int index = seq_num % size_;
+  size_t index = seq_num % size_;
   int prev_index = index > 0 ? index - 1 : size_ - 1;
+
   if (!sequence_buffer_[index].used)
+    return false;
+  if (sequence_buffer_[index].frame_created)
     return false;
   if (sequence_buffer_[index].frame_begin)
     return true;
   if (!sequence_buffer_[prev_index].used)
+    return false;
+  if (sequence_buffer_[prev_index].seq_num !=
+      static_cast<uint16_t>(seq_num - 1))
     return false;
   if (sequence_buffer_[prev_index].continuous)
     return true;
@@ -122,24 +129,27 @@ bool PacketBuffer::IsContinuous(uint16_t seq_num) const {
   return false;
 }
 
-void PacketBuffer::FindCompleteFrames(uint16_t seq_num) {
-  int index = seq_num % size_;
+void PacketBuffer::FindFrames(uint16_t seq_num) {
+  size_t index = seq_num % size_;
   while (IsContinuous(seq_num)) {
     sequence_buffer_[index].continuous = true;
 
-    // If the frame is complete, find the first packet of the frame and
-    // create a FrameObject.
+    // If all packets of the frame is continuous, find the first packet of the
+    // frame and create an RtpFrameObject.
     if (sequence_buffer_[index].frame_end) {
-      int rindex = index;
+      int start_index = index;
       uint16_t start_seq_num = seq_num;
-      while (!sequence_buffer_[rindex].frame_begin) {
-        rindex = rindex > 0 ? rindex - 1 : size_ - 1;
+
+      while (!sequence_buffer_[start_index].frame_begin) {
+        sequence_buffer_[start_index].frame_created = true;
+        start_index = start_index > 0 ? start_index - 1 : size_ - 1;
         start_seq_num--;
       }
+      sequence_buffer_[start_index].frame_created = true;
 
-      std::unique_ptr<FrameObject> frame(
-          new RtpFrameObject(this, 1, start_seq_num, seq_num));
-      frame_callback_->OnCompleteFrame(std::move(frame));
+      std::unique_ptr<RtpFrameObject> frame(
+          new RtpFrameObject(this, start_seq_num, seq_num));
+      reference_finder_.ManageFrame(std::move(frame));
     }
 
     index = (index + 1) % size_;
@@ -149,14 +159,13 @@ void PacketBuffer::FindCompleteFrames(uint16_t seq_num) {
 
 void PacketBuffer::ReturnFrame(RtpFrameObject* frame) {
   rtc::CritScope lock(&crit_);
-  int index = frame->first_packet() % size_;
-  int end = (frame->last_packet() + 1) % size_;
-  uint16_t seq_num = frame->first_packet();
+  size_t index = frame->first_seq_num() % size_;
+  size_t end = (frame->last_seq_num() + 1) % size_;
+  uint16_t seq_num = frame->first_seq_num();
   while (index != end) {
-    if (sequence_buffer_[index].seq_num == seq_num) {
+    if (sequence_buffer_[index].seq_num == seq_num)
       sequence_buffer_[index].used = false;
-      sequence_buffer_[index].continuous = false;
-    }
+
     index = (index + 1) % size_;
     ++seq_num;
   }
@@ -173,9 +182,9 @@ bool PacketBuffer::GetBitstream(const RtpFrameObject& frame,
                                 uint8_t* destination) {
   rtc::CritScope lock(&crit_);
 
-  int index = frame.first_packet() % size_;
-  int end = (frame.last_packet() + 1) % size_;
-  uint16_t seq_num = frame.first_packet();
+  size_t index = frame.first_seq_num() % size_;
+  size_t end = (frame.last_seq_num() + 1) % size_;
+  uint16_t seq_num = frame.first_seq_num();
   while (index != end) {
     if (!sequence_buffer_[index].used ||
         sequence_buffer_[index].seq_num != seq_num) {
@@ -192,12 +201,22 @@ bool PacketBuffer::GetBitstream(const RtpFrameObject& frame,
   return true;
 }
 
-void PacketBuffer::Flush() {
+VCMPacket* PacketBuffer::GetPacket(uint16_t seq_num) {
   rtc::CritScope lock(&crit_);
-  for (size_t i = 0; i < size_; ++i) {
-    sequence_buffer_[i].used = false;
-    sequence_buffer_[i].continuous = false;
+  size_t index = seq_num % size_;
+  if (!sequence_buffer_[index].used ||
+      seq_num != sequence_buffer_[index].seq_num) {
+    return nullptr;
   }
+  return &data_buffer_[index];
+}
+
+void PacketBuffer::Clear() {
+  rtc::CritScope lock(&crit_);
+  for (size_t i = 0; i < size_; ++i)
+    sequence_buffer_[i].used = false;
+
+  first_packet_received_ = false;
 }
 
 }  // namespace video_coding

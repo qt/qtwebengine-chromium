@@ -14,26 +14,24 @@ CFWL_BarcodeTP::CFWL_BarcodeTP() {}
 
 CFWL_BarcodeTP::~CFWL_BarcodeTP() {}
 
-FX_BOOL CFWL_BarcodeTP::IsValidWidget(IFWL_Widget* pWidget) {
-  if (!pWidget)
-    return FALSE;
-  return pWidget->GetClassID() == FWL_CLASSHASH_Barcode;
+bool CFWL_BarcodeTP::IsValidWidget(IFWL_Widget* pWidget) {
+  return pWidget && pWidget->GetClassID() == FWL_Type::Barcode;
 }
 
 FX_BOOL CFWL_BarcodeTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return FALSE;
   switch (pParams->m_iPart) {
-    case FWL_PART_BCD_Border: {
+    case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_BCD_Edge: {
+    case CFWL_Part::Edge: {
       DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
                &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_BCD_Background: {
+    case CFWL_Part::Background: {
       FillBackground(pParams->m_pGraphics, &pParams->m_rtPart,
                      &pParams->m_matrix);
       break;

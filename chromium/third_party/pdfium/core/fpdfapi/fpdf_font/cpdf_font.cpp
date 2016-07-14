@@ -6,11 +6,14 @@
 
 #include "core/fpdfapi/fpdf_font/include/cpdf_font.h"
 
+#include <memory>
+
 #include "core/fpdfapi/fpdf_font/cpdf_truetypefont.h"
 #include "core/fpdfapi/fpdf_font/cpdf_type1font.h"
 #include "core/fpdfapi/fpdf_font/cpdf_type3font.h"
 #include "core/fpdfapi/fpdf_font/font_int.h"
 #include "core/fpdfapi/fpdf_font/include/cpdf_fontencoding.h"
+#include "core/fpdfapi/fpdf_page/cpdf_pagemodule.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
@@ -18,7 +21,7 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_name.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
-#include "core/include/fxge/fx_freetype.h"
+#include "core/fxge/include/fx_freetype.h"
 
 namespace {
 
@@ -146,7 +149,7 @@ FX_BOOL CPDF_Font::IsVertWriting() const {
 }
 
 int CPDF_Font::AppendChar(FX_CHAR* buf, uint32_t charcode) const {
-  *buf = (FX_CHAR)charcode;
+  *buf = static_cast<FX_CHAR>(charcode);
   return 1;
 }
 
@@ -337,54 +340,30 @@ CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
 CPDF_Font* CPDF_Font::CreateFontF(CPDF_Document* pDoc,
                                   CPDF_Dictionary* pFontDict) {
   CFX_ByteString type = pFontDict->GetStringBy("Subtype");
-  CPDF_Font* pFont;
+  std::unique_ptr<CPDF_Font> pFont;
   if (type == "TrueType") {
-    {
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_ || \
-    _FXM_PLATFORM_ == _FXM_PLATFORM_LINUX_ ||   \
-    _FXM_PLATFORM_ == _FXM_PLATFORM_ANDROID_ || \
-    _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-      CFX_ByteString basefont = pFontDict->GetStringBy("BaseFont");
-      CFX_ByteString tag = basefont.Left(4);
-      int i;
-      int count = sizeof(ChineseFontNames) / sizeof(ChineseFontNames[0]);
-      for (i = 0; i < count; ++i) {
-        if (tag == CFX_ByteString((const FX_CHAR*)ChineseFontNames[i])) {
-          break;
-        }
-      }
-      if (i < count) {
+    CFX_ByteString tag = pFontDict->GetStringBy("BaseFont").Left(4);
+    for (size_t i = 0; i < FX_ArraySize(ChineseFontNames); ++i) {
+      if (tag == CFX_ByteString(ChineseFontNames[i], 4)) {
         CPDF_Dictionary* pFontDesc = pFontDict->GetDictBy("FontDescriptor");
-        if (!pFontDesc || !pFontDesc->KeyExist("FontFile2")) {
-          pFont = new CPDF_CIDFont;
-          pFont->m_pFontDict = pFontDict;
-          pFont->m_pDocument = pDoc;
-          pFont->m_BaseFont = pFontDict->GetStringBy("BaseFont");
-          if (!pFont->Load()) {
-            delete pFont;
-            return NULL;
-          }
-          return pFont;
-        }
+        if (!pFontDesc || !pFontDesc->KeyExist("FontFile2"))
+          pFont.reset(new CPDF_CIDFont);
+        break;
       }
-#endif
     }
-    pFont = new CPDF_TrueTypeFont;
+    if (!pFont)
+      pFont.reset(new CPDF_TrueTypeFont);
   } else if (type == "Type3") {
-    pFont = new CPDF_Type3Font;
+    pFont.reset(new CPDF_Type3Font);
   } else if (type == "Type0") {
-    pFont = new CPDF_CIDFont;
+    pFont.reset(new CPDF_CIDFont);
   } else {
-    pFont = new CPDF_Type1Font;
+    pFont.reset(new CPDF_Type1Font);
   }
   pFont->m_pFontDict = pFontDict;
   pFont->m_pDocument = pDoc;
   pFont->m_BaseFont = pFontDict->GetStringBy("BaseFont");
-  if (!pFont->Load()) {
-    delete pFont;
-    return NULL;
-  }
-  return pFont;
+  return pFont->Load() ? pFont.release() : nullptr;
 }
 
 uint32_t CPDF_Font::GetNextChar(const FX_CHAR* pString,
@@ -485,7 +464,7 @@ const FX_CHAR* CPDF_Font::GetAdobeCharName(int iBaseEncoding,
 
   const FX_CHAR* name = nullptr;
   if (pCharNames)
-    name = pCharNames[charcode];
+    name = pCharNames[charcode].c_str();
   if ((!name || name[0] == 0) && iBaseEncoding)
     name = PDF_CharNameFromPredefinedCharSet(iBaseEncoding, charcode);
   return name && name[0] ? name : nullptr;

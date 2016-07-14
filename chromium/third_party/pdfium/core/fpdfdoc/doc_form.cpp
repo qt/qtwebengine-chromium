@@ -13,7 +13,7 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
 #include "core/fpdfdoc/doc_utils.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -35,23 +35,25 @@ CFX_WideString FPDFDOC_FDF_GetFieldValue(const CPDF_Dictionary& pFieldDict,
   const CFX_ByteString csBValue = pFieldDict.GetStringBy("V");
   for (const auto& encoding : g_fieldEncoding) {
     if (bsEncoding == encoding.m_name)
-      return CFX_WideString::FromCodePage(csBValue, encoding.m_codePage);
+      return CFX_WideString::FromCodePage(csBValue.AsStringC(),
+                                          encoding.m_codePage);
   }
   CFX_ByteString csTemp = csBValue.Left(2);
   if (csTemp == "\xFF\xFE" || csTemp == "\xFE\xFF")
     return PDF_DecodeText(csBValue);
-  return CFX_WideString::FromLocal(csBValue);
+  return CFX_WideString::FromLocal(csBValue.AsStringC());
 }
 
 }  // namespace
 
 class CFieldNameExtractor {
  public:
-  explicit CFieldNameExtractor(const CFX_WideString& full_name) {
-    m_pStart = full_name.c_str();
-    m_pEnd = m_pStart + full_name.GetLength();
-    m_pCur = m_pStart;
+  explicit CFieldNameExtractor(const CFX_WideString& full_name)
+      : m_FullName(full_name) {
+    m_pCur = m_FullName.c_str();
+    m_pEnd = m_pCur + m_FullName.GetLength();
   }
+
   void GetNext(const FX_WCHAR*& pSubName, FX_STRSIZE& size) {
     pSubName = m_pCur;
     while (m_pCur < m_pEnd && m_pCur[0] != L'.') {
@@ -64,10 +66,11 @@ class CFieldNameExtractor {
   }
 
  protected:
-  const FX_WCHAR* m_pStart;
-  const FX_WCHAR* m_pEnd;
+  CFX_WideString m_FullName;
   const FX_WCHAR* m_pCur;
+  const FX_WCHAR* m_pEnd;
 };
+
 class CFieldTree {
  public:
   struct _Node {
@@ -277,10 +280,8 @@ CPDF_InterForm::CPDF_InterForm(CPDF_Document* pDocument, FX_BOOL bGenerateAP)
   if (!pFields)
     return;
 
-  int count = pFields->GetCount();
-  for (int i = 0; i < count; i++) {
+  for (size_t i = 0; i < pFields->GetCount(); i++)
     LoadField(pFields->GetDictAt(i));
-  }
 }
 
 CPDF_InterForm::~CPDF_InterForm() {
@@ -344,7 +345,7 @@ CFX_ByteString CPDF_InterForm::GenerateNewResourceName(
   CFX_ByteString bsNum;
   while (TRUE) {
     CFX_ByteString csKey = csTmp + bsNum;
-    if (!pDict->KeyExist(csKey.AsByteStringC())) {
+    if (!pDict->KeyExist(csKey)) {
       return csKey;
     }
     if (m < iCount) {
@@ -415,7 +416,7 @@ CPDF_Font* CPDF_InterForm::AddStandardFont(CPDF_Document* pDocument,
 CFX_ByteString CPDF_InterForm::GetNativeFont(uint8_t charSet, void* pLogFont) {
   CFX_ByteString csFontName;
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-  LOGFONTA lf;
+  LOGFONTA lf = {};
   FX_BOOL bRet;
   if (charSet == ANSI_CHARSET) {
     csFontName = "Helvetica";
@@ -634,11 +635,11 @@ FX_BOOL CPDF_InterForm::ValidateFieldName(const CPDF_FormControl* pControl,
 }
 int CPDF_InterForm::CompareFieldName(const CFX_ByteString& name1,
                                      const CFX_ByteString& name2) {
-  const FX_CHAR* ptr1 = name1;
-  const FX_CHAR* ptr2 = name2;
   if (name1.GetLength() == name2.GetLength()) {
     return name1 == name2 ? 1 : 0;
   }
+  const FX_CHAR* ptr1 = name1.c_str();
+  const FX_CHAR* ptr2 = name2.c_str();
   int i = 0;
   while (ptr1[i] == ptr2[i]) {
     i++;
@@ -703,8 +704,8 @@ CPDF_FormControl* CPDF_InterForm::GetControlAtPoint(CPDF_Page* pPage,
   if (!pAnnotList)
     return nullptr;
 
-  for (uint32_t i = pAnnotList->GetCount(); i > 0; --i) {
-    uint32_t annot_index = i - 1;
+  for (size_t i = pAnnotList->GetCount(); i > 0; --i) {
+    size_t annot_index = i - 1;
     CPDF_Dictionary* pAnnot = pAnnotList->GetDictAt(annot_index);
     if (!pAnnot)
       continue;
@@ -719,7 +720,7 @@ CPDF_FormControl* CPDF_InterForm::GetControlAtPoint(CPDF_Page* pPage,
       continue;
 
     if (z_order)
-      *z_order = annot_index;
+      *z_order = static_cast<int>(annot_index);
     return pControl;
   }
   return nullptr;
@@ -741,6 +742,7 @@ void CPDF_InterForm::NeedConstructAP(FX_BOOL bNeedAP) {
   m_pFormDict->SetAtBoolean("NeedAppearances", bNeedAP);
   m_bGenerateAP = bNeedAP;
 }
+
 int CPDF_InterForm::CountFieldsInCalculationOrder() {
   if (!m_pFormDict) {
     return 0;
@@ -748,6 +750,7 @@ int CPDF_InterForm::CountFieldsInCalculationOrder() {
   CPDF_Array* pArray = m_pFormDict->GetArrayBy("CO");
   return pArray ? pArray->GetCount() : 0;
 }
+
 CPDF_FormField* CPDF_InterForm::GetFieldInCalculationOrder(int index) {
   if (!m_pFormDict || index < 0) {
     return NULL;
@@ -770,7 +773,7 @@ int CPDF_InterForm::FindFieldInCalculationOrder(const CPDF_FormField* pField) {
   if (!pArray) {
     return -1;
   }
-  for (uint32_t i = 0; i < pArray->GetCount(); i++) {
+  for (size_t i = 0; i < pArray->GetCount(); i++) {
     CPDF_Object* pElement = pArray->GetDirectObjectAt(i);
     if (pElement == pField->m_pDict) {
       return i;
@@ -900,7 +903,7 @@ void CPDF_InterForm::LoadField(CPDF_Dictionary* pFieldDict, int nLevel) {
     return;
   }
   if (pFirstKid->KeyExist("T") || pFirstKid->KeyExist("Kids")) {
-    for (uint32_t i = 0; i < pKids->GetCount(); i++) {
+    for (size_t i = 0; i < pKids->GetCount(); i++) {
       CPDF_Dictionary* pChildDict = pKids->GetDictAt(i);
       if (pChildDict) {
         if (pChildDict->GetObjNum() != dwParentObjNum) {
@@ -924,8 +927,7 @@ void CPDF_InterForm::FixPageFields(const CPDF_Page* pPage) {
   if (!pAnnots) {
     return;
   }
-  int iAnnotCount = pAnnots->GetCount();
-  for (int i = 0; i < iAnnotCount; i++) {
+  for (size_t i = 0; i < pAnnots->GetCount(); i++) {
     CPDF_Dictionary* pAnnot = pAnnots->GetDictAt(i);
     if (pAnnot && pAnnot->GetStringBy("Subtype") == "Widget") {
       LoadField(pAnnot);
@@ -983,7 +985,7 @@ CPDF_FormField* CPDF_InterForm::AddTerminalField(CPDF_Dictionary* pFieldDict) {
       AddControl(pField, pFieldDict);
     }
   } else {
-    for (uint32_t i = 0; i < pKids->GetCount(); i++) {
+    for (size_t i = 0; i < pKids->GetCount(); i++) {
       CPDF_Dictionary* pKid = pKids->GetDictAt(i);
       if (!pKid) {
         continue;
@@ -1121,7 +1123,7 @@ void CPDF_InterForm::FDF_ImportField(CPDF_Dictionary* pFieldDict,
   name += pFieldDict->GetUnicodeTextBy("T");
   CPDF_Array* pKids = pFieldDict->GetArrayBy("Kids");
   if (pKids) {
-    for (uint32_t i = 0; i < pKids->GetCount(); i++) {
+    for (size_t i = 0; i < pKids->GetCount(); i++) {
       CPDF_Dictionary* pKid = pKids->GetDictAt(i);
       if (!pKid) {
         continue;
@@ -1193,7 +1195,7 @@ FX_BOOL CPDF_InterForm::ImportFromFDF(const CFDF_Document* pFDF,
       return FALSE;
     }
   }
-  for (uint32_t i = 0; i < pFields->GetCount(); i++) {
+  for (size_t i = 0; i < pFields->GetCount(); i++) {
     CPDF_Dictionary* pField = pFields->GetDictAt(i);
     if (!pField) {
       continue;

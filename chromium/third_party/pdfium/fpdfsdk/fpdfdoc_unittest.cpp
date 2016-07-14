@@ -13,17 +13,19 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_reference.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/test_support.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
 #endif  // PDF_ENABLE_XFA
 
 class CPDF_TestDocument : public CPDF_Document {
  public:
+  CPDF_TestDocument() : CPDF_Document(nullptr) {}
+
   void SetRoot(CPDF_Dictionary* root) { m_pRootDict = root; }
   CPDF_IndirectObjectHolder* GetHolder() { return this; }
 };
@@ -58,7 +60,6 @@ class PDFDocTest : public testing::Test {
     CPDF_ModuleMgr::Create();
     CPDF_ModuleMgr* module_mgr = CPDF_ModuleMgr::Get();
     module_mgr->InitPageModule();
-    module_mgr->InitRenderModule();
 
     m_pDoc.reset(new CPDF_TestPdfDocument());
     m_pIndirectObjs = m_pDoc->GetHolder();

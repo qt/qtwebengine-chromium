@@ -10,13 +10,13 @@
 #include <map>
 #include <vector>
 
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "core/fxcrt/include/fx_basic.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
-#include "core/include/fxge/fx_dib.h"
+#include "core/fxge/include/fx_dib.h"
 #include "fpdfsdk/include/fsdk_baseannot.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "xfa/include/fxfa/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
 #endif  // PDF_ENABLE_XFA
 
 #if _FX_OS_ == _FX_ANDROID_
@@ -243,9 +243,6 @@ class CPDFSDK_XFAWidget : public CPDFSDK_Annot {
   CPDFSDK_InterForm* m_pInterForm;
   CXFA_FFWidget* m_hXFAWidget;
 };
-#define CPDFSDK_XFAWidgetMap \
-  CFX_MapPtrTemplate<CXFA_FFWidget*, CPDFSDK_XFAWidget*>
-#define CPDFSDK_FieldSynchronizeMap CFX_MapPtrTemplate<CPDF_FormField*, int>
 #endif  // PDF_ENABLE_XFA
 
 class CPDFSDK_InterForm : public CPDF_FormNotify {
@@ -341,8 +338,7 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
   CPDF_InterForm* m_pInterForm;
   CPDFSDK_WidgetMap m_Map;
 #ifdef PDF_ENABLE_XFA
-  CPDFSDK_XFAWidgetMap m_XFAMap;
-  CPDFSDK_FieldSynchronizeMap m_FieldSynchronizeMap;
+  std::map<CXFA_FFWidget*, CPDFSDK_XFAWidget*> m_XFAMap;
   FX_BOOL m_bXfaCalculate;
   FX_BOOL m_bXfaValidationsEnabled;
 #endif  // PDF_ENABLE_XFA

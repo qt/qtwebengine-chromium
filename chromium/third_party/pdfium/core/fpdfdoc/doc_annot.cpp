@@ -9,12 +9,11 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_reference.h"
-#include "core/fpdfapi/fpdf_parser/ipdf_occontext.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_rendercontext.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpvt_generateap.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
+#include "core/fxge/include/fx_ge.h"
 
 CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     : m_pDocument(pPage->m_pDocument) {
@@ -29,7 +28,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
   CPDF_Dictionary* pAcroForm = pRoot->GetDictBy("AcroForm");
   FX_BOOL bRegenerateAP =
       pAcroForm && pAcroForm->GetBooleanBy("NeedAppearances");
-  for (uint32_t i = 0; i < pAnnots->GetCount(); ++i) {
+  for (size_t i = 0; i < pAnnots->GetCount(); ++i) {
     CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetDirectObjectAt(i));
     if (!pDict)
       continue;
@@ -43,7 +42,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
       pDict = pAnnots->GetDictAt(i);
     }
     m_AnnotList.push_back(new CPDF_Annot(pDict, this));
-    if (bRegenerateAP && pDict->GetConstStringBy("Subtype") == "Widget" &&
+    if (bRegenerateAP && pDict->GetStringBy("Subtype") == "Widget" &&
         CPDF_InterForm::UpdatingAPEnabled()) {
       FPDF_GenerateAP(m_pDocument, pDict);
     }
@@ -79,7 +78,7 @@ void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,
       continue;
 
     if (pOptions) {
-      IPDF_OCContext* pOCContext = pOptions->m_pOCContext;
+      CPDF_OCContext* pOCContext = pOptions->m_pOCContext;
       CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
       if (pOCContext && pAnnotDict &&
           !pOCContext->CheckOCGVisible(pAnnotDict->GetDictBy("OC"))) {
@@ -127,10 +126,12 @@ void CPDF_AnnotList::DisplayAnnots(CPDF_Page* pPage,
 CPDF_Annot::CPDF_Annot(CPDF_Dictionary* pDict, CPDF_AnnotList* pList)
     : m_pAnnotDict(pDict),
       m_pList(pList),
-      m_sSubtype(m_pAnnotDict->GetConstStringBy("Subtype")) {}
+      m_sSubtype(m_pAnnotDict->GetStringBy("Subtype")) {}
+
 CPDF_Annot::~CPDF_Annot() {
   ClearCachedAP();
 }
+
 void CPDF_Annot::ClearCachedAP() {
   for (const auto& pair : m_APMap) {
     delete pair.second;
@@ -181,12 +182,12 @@ CPDF_Stream* FPDFDOC_GetAnnotAP(CPDF_Dictionary* pAnnotDict,
         CPDF_Dictionary* pDict = pAnnotDict->GetDictBy("Parent");
         value = pDict ? pDict->GetStringBy("V") : CFX_ByteString();
       }
-      if (value.IsEmpty() || !pDict->KeyExist(value.AsByteStringC()))
+      if (value.IsEmpty() || !pDict->KeyExist(value))
         as = "Off";
       else
         as = value;
     }
-    return pDict->GetStreamBy(as.AsByteStringC());
+    return pDict->GetStreamBy(as);
   }
   return nullptr;
 }
@@ -202,7 +203,7 @@ CPDF_Form* CPDF_Annot::GetAPForm(const CPDF_Page* pPage, AppearanceMode mode) {
 
   CPDF_Form* pNewForm =
       new CPDF_Form(m_pList->GetDocument(), pPage->m_pResources, pStream);
-  pNewForm->ParseContent(nullptr, nullptr, nullptr, nullptr);
+  pNewForm->ParseContent(nullptr, nullptr, nullptr);
   m_APMap[pStream] = pNewForm;
   return pNewForm;
 }
@@ -286,8 +287,8 @@ void CPDF_Annot::DrawBorder(CFX_RenderDevice* pDevice,
         if (!pDashArray) {
           return;
         }
-        int nLen = pDashArray->GetCount();
-        int i = 0;
+        size_t nLen = pDashArray->GetCount();
+        size_t i = 0;
         for (; i < nLen; ++i) {
           CPDF_Object* pObj = pDashArray->GetDirectObjectAt(i);
           if (pObj && pObj->GetInteger()) {
@@ -323,13 +324,13 @@ void CPDF_Annot::DrawBorder(CFX_RenderDevice* pDevice,
   graph_state.m_LineWidth = width;
   if (style_char == 'D') {
     if (pDashArray) {
-      uint32_t dash_count = pDashArray->GetCount();
+      size_t dash_count = pDashArray->GetCount();
       if (dash_count % 2) {
         dash_count++;
       }
       graph_state.m_DashArray = FX_Alloc(FX_FLOAT, dash_count);
       graph_state.m_DashCount = dash_count;
-      uint32_t i;
+      size_t i;
       for (i = 0; i < pDashArray->GetCount(); ++i) {
         graph_state.m_DashArray[i] = pDashArray->GetNumberAt(i);
       }

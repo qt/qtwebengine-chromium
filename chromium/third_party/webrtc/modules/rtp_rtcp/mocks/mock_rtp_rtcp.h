@@ -85,12 +85,12 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD0(StartTimestamp,
       uint32_t());
   MOCK_METHOD1(SetStartTimestamp, void(const uint32_t timestamp));
-  MOCK_CONST_METHOD0(SequenceNumber,
-      uint16_t());
+  MOCK_CONST_METHOD0(SequenceNumber, uint16_t());
   MOCK_METHOD1(SetSequenceNumber, void(const uint16_t seq));
-  MOCK_METHOD2(SetRtpStateForSsrc,
-               bool(uint32_t ssrc, const RtpState& rtp_state));
-  MOCK_METHOD2(GetRtpStateForSsrc, bool(uint32_t ssrc, RtpState* rtp_state));
+  MOCK_METHOD1(SetRtpState, void(const RtpState& rtp_state));
+  MOCK_METHOD1(SetRtxState, void(const RtpState& rtp_state));
+  MOCK_CONST_METHOD0(GetRtpState, RtpState());
+  MOCK_CONST_METHOD0(GetRtxState, RtpState());
   MOCK_CONST_METHOD0(SSRC,
       uint32_t());
   MOCK_METHOD1(SetSSRC,
@@ -202,10 +202,6 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(SetTMMBRStatus, void(const bool enable));
   MOCK_METHOD1(OnBandwidthEstimateUpdate,
       void(uint16_t bandWidthKbit));
-  MOCK_CONST_METHOD0(NACK,
-      NACKMethod());
-  MOCK_METHOD2(SetNACKStatus,
-      int32_t(const NACKMethod method, int oldestSequenceNumberToNack));
   MOCK_CONST_METHOD0(SelectiveRetransmissions,
       int());
   MOCK_METHOD1(SetSelectiveRetransmissions,

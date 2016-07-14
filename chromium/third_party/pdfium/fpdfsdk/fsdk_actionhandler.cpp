@@ -439,7 +439,7 @@ void CPDFSDK_ActionHandler::DoAction_GoTo(CPDFSDK_Document* pDocument,
   if (pMyArray) {
     pPosAry = new float[pMyArray->GetCount()];
     int j = 0;
-    for (int i = 2; i < (int)pMyArray->GetCount(); i++) {
+    for (size_t i = 2; i < pMyArray->GetCount(); i++) {
       pPosAry[j++] = pMyArray->GetFloatAt(i);
     }
     sizeOfAry = j;
@@ -470,7 +470,7 @@ void CPDFSDK_ActionHandler::DoAction_Named(CPDFSDK_Document* pDocument,
   ASSERT(action.GetDict());
 
   CFX_ByteString csName = action.GetNamedAction();
-  pDocument->GetEnv()->FFI_ExecuteNamedAction(csName);
+  pDocument->GetEnv()->FFI_ExecuteNamedAction(csName.c_str());
 }
 
 void CPDFSDK_ActionHandler::DoAction_SetOCGState(CPDFSDK_Document* pDocument,

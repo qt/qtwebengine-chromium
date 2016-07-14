@@ -10,7 +10,7 @@
 
 #include "gl/GrGLInterface.h"
 #include "GrGLDefines.h"
-#include "GrStencil.h"
+#include "GrStencilSettings.h"
 
 class SkMatrix;
 
@@ -51,6 +51,7 @@ enum GrGLRenderer {
     kPowerVRRogue_GrGLRenderer,
     kAdreno3xx_GrGLRenderer,
     kAdreno4xx_GrGLRenderer,
+    kOSMesa_GrGLRenderer,
     kOther_GrGLRenderer
 };
 
@@ -204,7 +205,7 @@ void GrGLClearErr(const GrGLInterface* gl);
 // call glGetError without doing a redundant error check or logging.
 #define GR_GL_GET_ERROR(IFACE) (IFACE)->fFunctions.fGetError()
 
-GrGLenum GrToGLStencilFunc(GrStencilFunc basicFunc);
+GrGLenum GrToGLStencilFunc(GrStencilTest test);
 
 
 #endif

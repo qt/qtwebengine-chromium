@@ -700,7 +700,6 @@ static void highbd_filter_selectively_horiz(uint16_t *s, int pitch,
 // whether there were any coefficients encoded, and the loop filter strength
 // block we are currently looking at. Shift is used to position the
 // 1's we produce.
-// TODO(JBB) Need another function for different resolution color..
 static void build_masks(const loop_filter_info_n *const lfi_n,
                         const MODE_INFO *mi, const int shift_y,
                         const int shift_uv,
@@ -935,7 +934,6 @@ void vp9_adjust_mask(VP9_COMMON *const cm, const int mi_row,
 
 // This function sets up the bit masks for the entire 64x64 region represented
 // by mi_row, mi_col.
-// TODO(JBB): This function only works for yv12.
 void vp9_setup_mask(VP9_COMMON *const cm, const int mi_row, const int mi_col,
                     MODE_INFO **mi, const int mode_info_stride,
                     LOOP_FILTER_MASK *lfm) {
@@ -971,9 +969,6 @@ void vp9_setup_mask(VP9_COMMON *const cm, const int mi_row, const int mi_col,
   vp9_zero(*lfm);
   assert(mip[0] != NULL);
 
-  // TODO(jimbankoski): Try moving most of the following code into decode
-  // loop and storing lfm in the mbmi structure so that we don't have to go
-  // through the recursive loop structure multiple times.
   switch (mip[0]->sb_type) {
     case BLOCK_64X64:
       build_masks(lfi_n, mip[0] , 0, 0, lfm);
@@ -1077,8 +1072,6 @@ void vp9_setup_mask(VP9_COMMON *const cm, const int mi_row, const int mi_col,
       }
       break;
   }
-
-  vp9_adjust_mask(cm, mi_row, mi_col, lfm);
 }
 
 static void filter_selectively_vert(uint8_t *s, int pitch,
@@ -1552,7 +1545,7 @@ static void loop_filter_rows(YV12_BUFFER_CONFIG *frame_buffer, VP9_COMMON *cm,
 
       vp9_setup_dst_planes(planes, frame_buffer, mi_row, mi_col);
 
-      // TODO(JBB): Make setup_mask work for non 420.
+      // TODO(jimbankoski): For 444 only need to do y mask.
       vp9_adjust_mask(cm, mi_row, mi_col, lfm);
 
       vp9_filter_block_plane_ss00(cm, &planes[0], mi_row, lfm);
@@ -1592,6 +1585,8 @@ void vp9_loop_filter_frame(YV12_BUFFER_CONFIG *frame,
 }
 
 // Used by the encoder to build the loopfilter masks.
+// TODO(slavarnway): Do the encoder the same way the decoder does it and
+//                   build the masks in line as part of the encode process.
 void vp9_build_mask_frame(VP9_COMMON *cm, int frame_filter_level,
                           int partial_frame) {
   int start_mi_row, end_mi_row, mi_rows_to_filter;

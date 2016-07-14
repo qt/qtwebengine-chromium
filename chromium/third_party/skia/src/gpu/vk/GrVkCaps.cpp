@@ -20,9 +20,10 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     /**************************************************************************
     * GrDrawTargetCaps fields
     **************************************************************************/
-    fMipMapSupport = false; //TODO: figure this out
+    fMipMapSupport = true;   // always available in Vulkan
+    fSRGBSupport = true;   // always available in Vulkan
     fNPOTTextureTileSupport = false; //TODO: figure this out
-    fTwoSidedStencilSupport = false; //TODO: figure this out
+    fTwoSidedStencilSupport = true;  // always available in Vulkan
     fStencilWrapOpsSupport = false; //TODO: figure this out
     fDiscardRenderTargetSupport = false; //TODO: figure this out
     fReuseScratchTextures = true; //TODO: figure this out
@@ -154,6 +155,21 @@ void GrVkCaps::initGLSLCaps(const VkPhysicalDeviceProperties& properties,
 
     glslCaps->fIntegerSupport = true;
 
+    // Assume the minimum precisions mandated by the SPIR-V spec.
+    glslCaps->fShaderPrecisionVaries = true;
+    for (int s = 0; s < kGrShaderTypeCount; ++s) {
+        auto& highp = glslCaps->fFloatPrecisions[s][kHigh_GrSLPrecision];
+        highp.fLogRangeLow = highp.fLogRangeHigh = 127;
+        highp.fBits = 23;
+
+        auto& mediump = glslCaps->fFloatPrecisions[s][kMedium_GrSLPrecision];
+        mediump.fLogRangeLow = mediump.fLogRangeHigh = 14;
+        mediump.fBits = 10;
+
+        glslCaps->fFloatPrecisions[s][kLow_GrSLPrecision] = mediump;
+    }
+    glslCaps->initSamplerPrecisionTable();
+
     glslCaps->fMaxVertexSamplers =
     glslCaps->fMaxGeometrySamplers =
     glslCaps->fMaxFragmentSamplers = SkTMin(properties.limits.maxPerStageDescriptorSampledImages,
@@ -174,7 +190,7 @@ bool stencil_format_supported(const GrVkInterface* interface,
 void GrVkCaps::initStencilFormat(const GrVkInterface* interface, VkPhysicalDevice physDev) {
     // List of legal stencil formats (though perhaps not supported on
     // the particular gpu/driver) from most preferred to least. We are guaranteed to have either
-    // VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D24_SFLOAT_S8_UINT. VK_FORMAT_D32_SFLOAT_S8_UINT
+    // VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D32_SFLOAT_S8_UINT. VK_FORMAT_D32_SFLOAT_S8_UINT
     // can optionally have 24 unused bits at the end so we assume the total bits is 64.
     static const StencilFormat
                   // internal Format             stencil bits      total bits        packed?

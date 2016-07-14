@@ -8,6 +8,7 @@
 #include "SkBitmapDevice.h"
 #include "SkConfig8888.h"
 #include "SkDraw.h"
+#include "SkImageFilterCache.h"
 #include "SkMallocPixelRef.h"
 #include "SkMatrix.h"
 #include "SkPaint.h"
@@ -237,6 +238,7 @@ void SkBitmapDevice::drawPath(const SkDraw& draw, const SkPath& path,
 
 void SkBitmapDevice::drawBitmap(const SkDraw& draw, const SkBitmap& bitmap,
                                 const SkMatrix& matrix, const SkPaint& paint) {
+    LogDrawScaleFactor(SkMatrix::Concat(*draw.fMatrix, matrix), paint.getFilterQuality());
     draw.drawBitmap(bitmap, matrix, nullptr, paint);
 }
 
@@ -256,6 +258,8 @@ void SkBitmapDevice::drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
         tmpSrc = bitmapBounds;
     }
     matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
+
+    LogDrawScaleFactor(SkMatrix::Concat(*draw.fMatrix, matrix), paint.getFilterQuality());
 
     const SkRect* dstPtr = &dst;
     const SkBitmap* bitmapPtr = &bitmap;
@@ -364,8 +368,8 @@ sk_sp<SkSurface> SkBitmapDevice::makeSurface(const SkImageInfo& info, const SkSu
     return SkSurface::MakeRaster(info, &props);
 }
 
-SkImageFilter::Cache* SkBitmapDevice::getImageFilterCache() {
-    SkImageFilter::Cache* cache = SkImageFilter::Cache::Get();
+SkImageFilterCache* SkBitmapDevice::getImageFilterCache() {
+    SkImageFilterCache* cache = SkImageFilterCache::Get();
     cache->ref();
     return cache;
 }

@@ -24,14 +24,10 @@
         'safe_browsing_db/prefix_set.cc',
         'safe_browsing_db/util.h',
         'safe_browsing_db/util.cc',
-        'safe_browsing_db/v4_local_database_manager.h',
-        'safe_browsing_db/v4_local_database_manager.cc',
         'safe_browsing_db/v4_protocol_manager_util.h',
         'safe_browsing_db/v4_protocol_manager_util.cc',
         'safe_browsing_db/v4_get_hash_protocol_manager.h',
         'safe_browsing_db/v4_get_hash_protocol_manager.cc',
-        'safe_browsing_db/v4_update_protocol_manager.h',
-        'safe_browsing_db/v4_update_protocol_manager.cc',
       ],
       'include_dirs': [
         '..',
@@ -45,8 +41,16 @@
       'type': 'static_library',
       'dependencies': [
         ':safe_browsing_db_shared',
+        ':safebrowsing_proto',
       ],
       'sources': [
+        'safe_browsing_db/v4_database.h',
+        'safe_browsing_db/v4_database.cc',
+        'safe_browsing_db/v4_local_database_manager.h',
+        'safe_browsing_db/v4_local_database_manager.cc',
+        'safe_browsing_db/v4_store.h',
+        'safe_browsing_db/v4_update_protocol_manager.h',
+        'safe_browsing_db/v4_update_protocol_manager.cc',
       ],
       'include_dirs': [
         '..',
@@ -64,7 +68,7 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
-        'safe_browsing_db/remote_database_managerh',
+        'safe_browsing_db/remote_database_manager.h',
         'safe_browsing_db/remote_database_manager.cc',
         'safe_browsing_db/safe_browsing_api_handler.h',
         'safe_browsing_db/safe_browsing_api_handler.cc',

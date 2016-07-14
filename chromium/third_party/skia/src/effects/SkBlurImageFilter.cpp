@@ -20,6 +20,15 @@
 #include "SkGr.h"
 #endif
 
+sk_sp<SkImageFilter> SkBlurImageFilter::Make(SkScalar sigmaX, SkScalar sigmaY, 
+                                             sk_sp<SkImageFilter> input,
+                                             const CropRect* cropRect) {
+    if (0 == sigmaX && 0 == sigmaY && !cropRect) {
+        return input;
+    }
+    return sk_sp<SkImageFilter>(new SkBlurImageFilter(sigmaX, sigmaY, input, cropRect));
+}
+
 // This rather arbitrary-looking value results in a maximum box blur kernel size
 // of 1000 pixels on the raster path, which matches the WebKit and Firefox
 // implementations. Since the GPU path does not compute a box blur, putting
@@ -95,7 +104,11 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(SkSpecialImage* source,
     const SkVector sigma = map_sigma(fSigma, ctx.ctm());
 
 #if SK_SUPPORT_GPU
-    if (input->peekTexture() && input->peekTexture()->getContext()) {
+    if (source->isTextureBacked()) {
+        GrContext* context = source->getContext();
+        sk_sp<GrTexture> inputTexture(input->asTextureRef(context));
+        SkASSERT(inputTexture);
+
         if (0 == sigma.x() && 0 == sigma.y()) {
             offset->fX = inputBounds.x();
             offset->fY = inputBounds.y();
@@ -103,29 +116,25 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(SkSpecialImage* source,
                                                             -inputOffset.y()));
         }
 
-        GrTexture* inputTexture = input->peekTexture();
-
         offset->fX = dstBounds.fLeft;
         offset->fY = dstBounds.fTop;
         inputBounds.offset(-inputOffset);
         dstBounds.offset(-inputOffset);
-        SkRect inputBoundsF(SkRect::Make(inputBounds));
-        SkAutoTUnref<GrTexture> tex(SkGpuBlurUtils::GaussianBlur(inputTexture->getContext(),
-                                                                 inputTexture,
-                                                                 false,
-                                                                 source->props().allowSRGBInputs(),
-                                                                 SkRect::Make(dstBounds),
-                                                                 &inputBoundsF,
-                                                                 sigma.x(),
-                                                                 sigma.y()));
-        if (!tex) {
+        sk_sp<GrDrawContext> drawContext(SkGpuBlurUtils::GaussianBlur(
+                                                                  context,
+                                                                  inputTexture.get(),
+                                                                  source->props().isGammaCorrect(),
+                                                                  dstBounds,
+                                                                  &inputBounds,
+                                                                  sigma.x(),
+                                                                  sigma.y()));
+        if (!drawContext) {
             return nullptr;
         }
 
-        return SkSpecialImage::MakeFromGpu(source->internal_getProxy(),
-                                           SkIRect::MakeWH(dstBounds.width(), dstBounds.height()),
+        return SkSpecialImage::MakeFromGpu(SkIRect::MakeWH(dstBounds.width(), dstBounds.height()),
                                            kNeedNewImageUniqueID_SpecialImage,
-                                           tex, &source->props());
+                                           drawContext->asTexture(), &source->props());
     }
 #endif
 
@@ -145,39 +154,39 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(SkSpecialImage* source,
                                                         -inputOffset.y()));
     }
 
-    SkPixmap inputPixmap;
+    SkBitmap inputBM;
 
-    if (!input->peekPixels(&inputPixmap)) {
+    if (!input->getROPixels(&inputBM)) {
         return nullptr;
     }
 
-    if (inputPixmap.colorType() != kN32_SkColorType) {
+    if (inputBM.colorType() != kN32_SkColorType) {
         return nullptr;
     }
 
     SkImageInfo info = SkImageInfo::Make(dstBounds.width(), dstBounds.height(),
-                                         inputPixmap.colorType(), inputPixmap.alphaType());
+                                         inputBM.colorType(), inputBM.alphaType());
 
     SkBitmap tmp, dst;
     if (!tmp.tryAllocPixels(info) || !dst.tryAllocPixels(info)) {
         return nullptr;
     }
 
-    SkAutoLockPixels tmpLock(tmp), dstLock(dst);
+    SkAutoLockPixels inputLock(inputBM), tmpLock(tmp), dstLock(dst);
 
     offset->fX = dstBounds.fLeft;
     offset->fY = dstBounds.fTop;
     SkPMColor* t = tmp.getAddr32(0, 0);
     SkPMColor* d = dst.getAddr32(0, 0);
     int w = dstBounds.width(), h = dstBounds.height();
-    const SkPMColor* s = inputPixmap.addr32(inputBounds.x() - inputOffset.x(),
-                                            inputBounds.y() - inputOffset.y());
+    const SkPMColor* s = inputBM.getAddr32(inputBounds.x() - inputOffset.x(),
+                                           inputBounds.y() - inputOffset.y());
     inputBounds.offset(-dstBounds.x(), -dstBounds.y());
     dstBounds.offset(-dstBounds.x(), -dstBounds.y());
     SkIRect inputBoundsT = SkIRect::MakeLTRB(inputBounds.top(), inputBounds.left(),
                                              inputBounds.bottom(), inputBounds.right());
     SkIRect dstBoundsT = SkIRect::MakeWH(dstBounds.height(), dstBounds.width());
-    int sw = int(inputPixmap.rowBytes() >> 2);
+    int sw = int(inputBM.rowBytes() >> 2);
 
     /**
      *
@@ -214,8 +223,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(SkSpecialImage* source,
         SkOpts::box_blur_xy(t,  h,  dstBoundsT,   d, kernelSizeY3, highOffsetY, highOffsetY, h, w);
     }
 
-    return SkSpecialImage::MakeFromRaster(source->internal_getProxy(),
-                                          SkIRect::MakeWH(dstBounds.width(),
+    return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(),
                                                           dstBounds.height()),
                                           dst, &source->props());
 }

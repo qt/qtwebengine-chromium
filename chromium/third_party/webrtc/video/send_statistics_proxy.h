@@ -49,12 +49,13 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   VideoSendStream::Stats GetStats();
 
   virtual void OnSendEncodedImage(const EncodedImage& encoded_image,
-                                  const RTPVideoHeader* rtp_video_header);
+                                  const CodecSpecificInfo* codec_info);
   // Used to update incoming frame rate.
   void OnIncomingFrame(int width, int height);
 
-  void OnEncoderImplementationName(const char* implementation_name);
-  void OnOutgoingRate(uint32_t framerate, uint32_t bitrate);
+  void OnEncoderStatsUpdate(uint32_t framerate,
+                            uint32_t bitrate,
+                            const std::string& encoder_name);
   void OnSuspendChange(bool is_suspended);
   void OnInactiveSsrc(uint32_t ssrc);
 
@@ -126,7 +127,8 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
     int64_t bitrate_update_ms;
   };
   struct QpCounters {
-    SampleCounter vp8;
+    SampleCounter vp8;  // QP range: 0-127
+    SampleCounter vp9;  // QP range: 0-255
   };
   void PurgeOldStats() EXCLUSIVE_LOCKS_REQUIRED(crit_);
   VideoSendStream::StreamStats* GetStatsEntry(uint32_t ssrc)

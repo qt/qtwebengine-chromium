@@ -44,6 +44,8 @@
 #       include "libANGLE/renderer/gl/glx/DisplayGLX.h"
 #   elif defined(ANGLE_PLATFORM_APPLE)
 #       include "libANGLE/renderer/gl/cgl/DisplayCGL.h"
+#   elif defined(ANGLE_USE_OZONE)
+#       include "libANGLE/renderer/gl/egl/ozone/DisplayOzone.h"
 #   else
 #       error Unsupported OpenGL platform.
 #   endif
@@ -146,6 +148,8 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap)
         impl = new rx::DisplayGLX();
 #elif defined(ANGLE_PLATFORM_APPLE)
         impl = new rx::DisplayCGL();
+#elif defined(ANGLE_USE_OZONE)
+        impl = new rx::DisplayOzone();
 #else
         // No display available
         UNREACHABLE();
@@ -170,6 +174,9 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap)
         impl = new rx::DisplayGLX();
 #elif defined(ANGLE_PLATFORM_APPLE)
         impl = new rx::DisplayCGL();
+#elif defined(ANGLE_USE_OZONE)
+        // This might work but has never been tried, so disallow for now.
+        impl = nullptr;
 #else
 #error Unsupported OpenGL platform.
 #endif
@@ -184,6 +191,8 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap)
           impl = new rx::DisplayWGL();
 #elif defined(ANGLE_USE_X11)
           impl = new rx::DisplayGLX();
+#elif defined(ANGLE_USE_OZONE)
+          impl = new rx::DisplayOzone();
 #else
           // No GLES support on this platform, fail display creation.
           impl = nullptr;
@@ -711,10 +720,7 @@ Error Display::createStream(const AttributeMap &attribs, Stream **outStream)
 {
     ASSERT(isInitialized());
 
-    rx::StreamImpl *streamImpl = mImplementation->createStream(attribs);
-    ASSERT(streamImpl != nullptr);
-
-    Stream *stream = new Stream(streamImpl, attribs);
+    Stream *stream = new Stream(this, attribs);
 
     ASSERT(stream != nullptr);
     mStreamSet.insert(stream);
@@ -732,15 +738,10 @@ Error Display::createContext(const Config *configuration, gl::Context *shareCont
 
     if (mImplementation->testDeviceLost())
     {
-        Error error = restoreLostDevice();
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(restoreLostDevice());
     }
 
-    gl::Context *context = *outContext =
-        mImplementation->createContext(configuration, shareContext, attribs);
+    gl::Context *context = new gl::Context(mImplementation, configuration, shareContext, attribs);
 
     ASSERT(context != nullptr);
     mContextSet.insert(context);

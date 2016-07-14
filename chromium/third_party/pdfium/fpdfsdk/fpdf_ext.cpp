@@ -13,7 +13,7 @@
 #include "fpdfsdk/include/fsdk_define.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
 #endif  // PDF_ENABLE_XFA
 
 #define FPDFSDK_UNSUPPORT_CALL 100
@@ -105,7 +105,7 @@ FX_BOOL CheckSharedForm(const CXML_Element* pElement, CFX_ByteString cbName) {
     if (space == "xmlns" && name == "adhocwf" &&
         value == L"http://ns.adobe.com/AcrobatAdhocWorkflow/1.0/") {
       CXML_Element* pVersion =
-          pElement->GetElement("adhocwf", cbName.AsByteStringC());
+          pElement->GetElement("adhocwf", cbName.AsStringC());
       if (!pVersion)
         continue;
       CFX_WideString wsContent = pVersion->GetContent(0);
@@ -163,8 +163,7 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
         CPDF_Dictionary* pJSDict = pNameDict->GetDictBy("JavaScript");
         CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayBy("Names") : NULL;
         if (pArray) {
-          int nCount = pArray->GetCount();
-          for (int i = 0; i < nCount; i++) {
+          for (size_t i = 0; i < pArray->GetCount(); i++) {
             CFX_ByteString cbStr = pArray->GetStringAt(i);
             if (cbStr.Compare("com.adobe.acrobat.SharedReview.Register") == 0) {
               FPDF_UnSupportError(FPDF_UNSP_DOC_SHAREDREVIEW);

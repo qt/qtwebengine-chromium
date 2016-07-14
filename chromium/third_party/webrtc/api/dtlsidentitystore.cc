@@ -51,7 +51,7 @@ class DtlsIdentityStoreImpl::WorkerTask : public sigslot::has_slots<>,
  private:
   void GenerateIdentity_w() {
     LOG(LS_INFO) << "Generating identity, using keytype " << key_type_;
-    rtc::scoped_ptr<rtc::SSLIdentity> identity(
+    std::unique_ptr<rtc::SSLIdentity> identity(
         rtc::SSLIdentity::Generate(kIdentityName, key_type_));
 
     // Posting to |this| avoids touching |store_| on threads other than
@@ -74,7 +74,7 @@ class DtlsIdentityStoreImpl::WorkerTask : public sigslot::has_slots<>,
       case MSG_GENERATE_IDENTITY_RESULT:
         RTC_DCHECK(signaling_thread_->IsCurrent());
         {
-          rtc::scoped_ptr<IdentityResultMessageData> pdata(
+          std::unique_ptr<IdentityResultMessageData> pdata(
               static_cast<IdentityResultMessageData*>(msg->pdata));
           if (store_) {
             store_->OnIdentityGenerated(pdata->data()->key_type_,
@@ -108,12 +108,6 @@ DtlsIdentityStoreImpl::DtlsIdentityStoreImpl(rtc::Thread* signaling_thread,
       worker_thread_(worker_thread),
       request_info_() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
-  // Preemptively generate identities unless the worker thread and signaling
-  // thread are the same (only do preemptive work in the background).
-  if (worker_thread_ != signaling_thread_) {
-    // Only necessary for RSA.
-    GenerateIdentity(rtc::KT_RSA, nullptr);
-  }
 }
 
 DtlsIdentityStoreImpl::~DtlsIdentityStoreImpl() {
@@ -137,7 +131,7 @@ void DtlsIdentityStoreImpl::OnMessage(rtc::Message* msg) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   switch (msg->message_id) {
     case MSG_GENERATE_IDENTITY_RESULT: {
-      rtc::scoped_ptr<IdentityResultMessageData> pdata(
+      std::unique_ptr<IdentityResultMessageData> pdata(
           static_cast<IdentityResultMessageData*>(msg->pdata));
       OnIdentityGenerated(pdata->data()->key_type_,
                           std::move(pdata->data()->identity_));
@@ -192,7 +186,8 @@ void DtlsIdentityStoreImpl::GenerateIdentity(
 }
 
 void DtlsIdentityStoreImpl::OnIdentityGenerated(
-    rtc::KeyType key_type, rtc::scoped_ptr<rtc::SSLIdentity> identity) {
+    rtc::KeyType key_type,
+    std::unique_ptr<rtc::SSLIdentity> identity) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
 
   RTC_DCHECK(request_info_[key_type].gen_in_progress_counts_);
@@ -226,7 +221,7 @@ void DtlsIdentityStoreImpl::OnIdentityGenerated(
     if (worker_thread_ != signaling_thread_ && // Only do in background thread.
         key_type == rtc::KT_RSA &&             // Only necessary for RSA.
         !request_info_[key_type].free_identity_.get() &&
-        request_info_[key_type].request_observers_.size() <=
+        request_info_[key_type].request_observers_.size() ==
             request_info_[key_type].gen_in_progress_counts_) {
       GenerateIdentity(key_type, nullptr);
     }

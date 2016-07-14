@@ -12,23 +12,23 @@
 #include <vector>
 
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
+#include "fpdfsdk/cfx_systemhandler.h"
 #include "fpdfsdk/include/fsdk_actionhandler.h"
 #include "fpdfsdk/include/fsdk_annothandler.h"
 #include "fpdfsdk/include/fsdk_baseannot.h"
 #include "fpdfsdk/include/fsdk_baseform.h"
 #include "fpdfsdk/include/fsdk_common.h"
 #include "fpdfsdk/include/fsdk_define.h"
-#include "fpdfsdk/include/fx_systemhandler.h"
 #include "public/fpdf_formfill.h"
 #include "public/fpdf_fwlevent.h"
 
 class CFFL_IFormFiller;
+class CFX_SystemHandler;
 class CPDFSDK_ActionHandler;
 class CPDFSDK_Annot;
 class CPDFSDK_InterForm;
 class CPDFSDK_PageView;
 class CPDFSDK_Widget;
-class IFX_SystemHandler;
 class IJS_Runtime;
 
 // NOTE: |bsUTF16LE| must outlive the use of the result. Care must be taken
@@ -114,8 +114,6 @@ class CPDFDoc_Environment final {
   FX_BOOL FFI_IsALTKeyDown(uint32_t nFlag) const {
     return (nFlag & FWL_EVENTFLAG_AltKey) != 0;
   }
-
-  FX_BOOL FFI_IsINSERTKeyDown(uint32_t nFlag) const { return FALSE; }
 
   FPDF_PAGE FFI_GetPage(FPDF_DOCUMENT document, int nPageIndex) {
     if (m_pInfo && m_pInfo->FFI_GetPage)
@@ -334,14 +332,14 @@ class CPDFDoc_Environment final {
       FPDF_WIDESTRING header =
           (FPDF_WIDESTRING)bsHeader.GetBuffer(bsHeader.GetLength());
 
-      FPDF_BSTR respone;
-      FPDF_BStr_Init(&respone);
+      FPDF_BSTR response;
+      FPDF_BStr_Init(&response);
       m_pInfo->FFI_PostRequestURL(m_pInfo, URL, data, contentType, encode,
-                                  header, &respone);
+                                  header, &response);
 
       CFX_WideString wsRet = CFX_WideString::FromUTF16LE(
-          (unsigned short*)respone.str, respone.len / sizeof(unsigned short));
-      FPDF_BStr_Clear(&respone);
+          (unsigned short*)response.str, response.len / sizeof(unsigned short));
+      FPDF_BStr_Clear(&response);
 
       return wsRet;
     }
@@ -365,13 +363,6 @@ class CPDFDoc_Environment final {
 
       return m_pInfo->FFI_PutRequestURL(m_pInfo, URL, data, encode);
     }
-    return FALSE;
-  }
-
-  FPDF_BOOL FFI_ShowFileDialog(const FX_WCHAR* wsTitle,
-                               const FX_WCHAR* wsFilter,
-                               std::vector<CFX_WideString>& wsPathArr,
-                               FX_BOOL bOpen) {
     return FALSE;
   }
 
@@ -444,7 +435,7 @@ class CPDFDoc_Environment final {
     return m_pUnderlyingDoc;
   }
   CFX_ByteString GetAppName() const { return ""; }
-  IFX_SystemHandler* GetSysHandler() const { return m_pSysHandler.get(); }
+  CFX_SystemHandler* GetSysHandler() const { return m_pSysHandler.get(); }
   FPDF_FORMFILLINFO* GetFormFillInfo() const { return m_pInfo; }
 
   CFFL_IFormFiller* GetIFormFiller();             // Creates if not present.
@@ -460,7 +451,7 @@ class CPDFDoc_Environment final {
   CPDFSDK_Document* m_pSDKDoc;
   UnderlyingDocumentType* const m_pUnderlyingDoc;
   std::unique_ptr<CFFL_IFormFiller> m_pIFormFiller;
-  std::unique_ptr<IFX_SystemHandler> m_pSysHandler;
+  std::unique_ptr<CFX_SystemHandler> m_pSysHandler;
 };
 
 class CPDFSDK_Document {
@@ -614,7 +605,7 @@ class CPDFSDK_PageView final {
                        int nFlag);
   bool IsValidAnnot(const CPDF_Annot* p) const;
   void GetCurrentMatrix(CFX_Matrix& matrix) { matrix = m_curMatrix; }
-  void UpdateRects(CFX_RectArray& rects);
+  void UpdateRects(const std::vector<CFX_FloatRect>& rects);
   void UpdateView(CPDFSDK_Annot* pAnnot);
   const std::vector<CPDFSDK_Annot*>& GetAnnotList() const {
     return m_fxAnnotArray;

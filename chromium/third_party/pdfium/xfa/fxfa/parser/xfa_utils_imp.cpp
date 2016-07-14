@@ -9,7 +9,6 @@
 #include "core/fxcrt/include/fx_ext.h"
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -197,7 +196,7 @@ void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
       CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
       CFX_WideString wsTag;
       pXMLElement->GetLocalTagName(wsTag);
-      uint32_t uTag = FX_HashCode_String_GetW(wsTag, wsTag.GetLength(), TRUE);
+      uint32_t uTag = FX_HashCode_GetW(wsTag.AsStringC(), true);
       if (uTag == 0x0001f714) {
         wsPlainText += L"\n";
       } else if (uTag == 0x00000070) {
@@ -265,37 +264,7 @@ FX_BOOL XFA_IsLayoutElement(XFA_ELEMENT eElement, FX_BOOL bLayoutContainer) {
   }
   return FALSE;
 }
-FX_BOOL XFA_IsTakingupSpace(XFA_ATTRIBUTEENUM ePresence) {
-  switch (ePresence) {
-    case XFA_ATTRIBUTEENUM_Visible:
-    case XFA_ATTRIBUTEENUM_Invisible:
-      return TRUE;
-    default:
-      return FALSE;
-  }
-  return FALSE;
-}
-FX_BOOL XFA_IsFlowingLayout(XFA_ATTRIBUTEENUM eLayout) {
-  switch (eLayout) {
-    case XFA_ATTRIBUTEENUM_Tb:
-    case XFA_ATTRIBUTEENUM_Lr_tb:
-    case XFA_ATTRIBUTEENUM_Rl_tb:
-      return TRUE;
-    default:
-      return FALSE;
-  }
-  return FALSE;
-}
-FX_BOOL XFA_IsHorizontalFlow(XFA_ATTRIBUTEENUM eLayout) {
-  switch (eLayout) {
-    case XFA_ATTRIBUTEENUM_Lr_tb:
-    case XFA_ATTRIBUTEENUM_Rl_tb:
-      return TRUE;
-    default:
-      return FALSE;
-  }
-  return FALSE;
-}
+
 static const FX_DOUBLE fraction_scales[] = {0.1,
                                             0.01,
                                             0.001,
@@ -321,7 +290,7 @@ FX_DOUBLE XFA_WideStringToDouble(const CFX_WideString& wsStringVal) {
   int32_t nExponent = 0;
   int32_t cc = 0;
   FX_BOOL bNegative = FALSE, bExpSign = FALSE;
-  const FX_WCHAR* str = (const FX_WCHAR*)wsValue;
+  const FX_WCHAR* str = wsValue.c_str();
   int32_t len = wsValue.GetLength();
   if (str[0] == '+') {
     cc++;
@@ -392,8 +361,7 @@ FX_DOUBLE XFA_WideStringToDouble(const CFX_WideString& wsStringVal) {
 }
 
 FX_DOUBLE XFA_ByteStringToDouble(const CFX_ByteStringC& szStringVal) {
-  CFX_WideString wsValue =
-      CFX_WideString::FromUTF8(szStringVal.c_str(), szStringVal.GetLength());
+  CFX_WideString wsValue = CFX_WideString::FromUTF8(szStringVal);
   return XFA_WideStringToDouble(wsValue);
 }
 

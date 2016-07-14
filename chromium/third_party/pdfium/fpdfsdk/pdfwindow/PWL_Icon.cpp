@@ -42,11 +42,11 @@ CFX_ByteString CPWL_Image::GetImageAppStream() {
     sAppStream << mt.GetA() << " " << mt.GetB() << " " << mt.GetC() << " "
                << mt.GetD() << " " << mt.GetE() << " " << mt.GetF() << " cm\n";
 
-    sAppStream << "0 g 0 G 1 w /" << sAlias.AsByteStringC() << " Do\n"
+    sAppStream << "0 g 0 G 1 w /" << sAlias.AsStringC() << " Do\n"
                << "Q\n";
   }
 
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 void CPWL_Image::SetPDFStream(CPDF_Stream* pStream) {
@@ -133,7 +133,7 @@ void CPWL_Icon::GetIconPosition(FX_FLOAT& fLeft, FX_FLOAT& fBottom) {
     CPDF_Array* pA =
         m_pIconFit->GetDict() ? m_pIconFit->GetDict()->GetArrayBy("A") : NULL;
     if (pA) {
-      uint32_t dwCount = pA->GetCount();
+      size_t dwCount = pA->GetCount();
       if (dwCount > 0)
         fLeft = pA->GetNumberAt(0);
       if (dwCount > 1)

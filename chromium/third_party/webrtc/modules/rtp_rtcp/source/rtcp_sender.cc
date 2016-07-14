@@ -13,6 +13,7 @@
 #include <string.h>  // memcpy
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/call.h"
@@ -638,16 +639,11 @@ std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBR(
 
 std::unique_ptr<rtcp::RtcpPacket> RTCPSender::BuildTMMBN(
     const RtcpContext& ctx) {
-  TMMBRSet* boundingSet = tmmbr_help_.BoundingSetToSend();
-  if (boundingSet == nullptr)
-    return nullptr;
-
   rtcp::Tmmbn* tmmbn = new rtcp::Tmmbn();
   tmmbn->From(ssrc_);
-  for (uint32_t i = 0; i < boundingSet->lengthOfSet(); i++) {
-    if (boundingSet->Tmmbr(i) > 0) {
-      tmmbn->WithTmmbr(boundingSet->Ssrc(i), boundingSet->Tmmbr(i),
-                       boundingSet->PacketOH(i));
+  for (const rtcp::TmmbItem& tmmbr : tmmbn_to_send_) {
+    if (tmmbr.bitrate_bps() > 0) {
+      tmmbn->WithTmmbr(tmmbr);
     }
   }
 
@@ -871,11 +867,13 @@ void RTCPSender::PrepareReport(const std::set<RTCPPacketType>& packetTypes,
         random_.Rand(minIntervalMs * 1 / 2, minIntervalMs * 3 / 2);
     next_time_to_send_rtcp_ = clock_->TimeInMilliseconds() + timeToNext;
 
-    StatisticianMap statisticians =
-        receive_statistics_->GetActiveStatisticians();
-    RTC_DCHECK(report_blocks_.empty());
-    for (auto& it : statisticians) {
-      AddReportBlock(feedback_state, it.first, it.second);
+    if (receive_statistics_) {
+      StatisticianMap statisticians =
+          receive_statistics_->GetActiveStatisticians();
+      RTC_DCHECK(report_blocks_.empty());
+      for (auto& it : statisticians) {
+        AddReportBlock(feedback_state, it.first, it.second);
+      }
     }
   }
 }
@@ -972,14 +970,14 @@ bool RTCPSender::RtcpXrReceiverReferenceTime() const {
 }
 
 // no callbacks allowed inside this function
-int32_t RTCPSender::SetTMMBN(const TMMBRSet* boundingSet) {
+void RTCPSender::SetTMMBN(const std::vector<rtcp::TmmbItem>* bounding_set) {
   rtc::CritScope lock(&critical_section_rtcp_sender_);
-
-  if (0 == tmmbr_help_.SetTMMBRBoundingSetToSend(boundingSet)) {
-    SetFlag(kRtcpTmmbn, true);
-    return 0;
+  if (bounding_set) {
+    tmmbn_to_send_ = *bounding_set;
+  } else {
+    tmmbn_to_send_.clear();
   }
-  return -1;
+  SetFlag(kRtcpTmmbn, true);
 }
 
 void RTCPSender::SetFlag(RTCPPacketType type, bool is_volatile) {

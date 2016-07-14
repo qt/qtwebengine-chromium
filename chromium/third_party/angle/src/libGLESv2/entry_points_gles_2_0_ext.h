@@ -140,6 +140,14 @@ ANGLE_EXPORT void GL_APIENTRY GetObjectPtrLabelKHR(const void *ptr,
                                                    GLsizei *length,
                                                    GLchar *label);
 ANGLE_EXPORT void GL_APIENTRY GetPointervKHR(GLenum pname, void **params);
+
+// GL_CHROMIUM_bind_uniform_location
+ANGLE_EXPORT void GL_APIENTRY BindUniformLocationCHROMIUM(GLuint program,
+                                                          GLint location,
+                                                          const GLchar *name);
+
+// GL_CHROMIUM_framebuffer_mixed_samples
+ANGLE_EXPORT void GL_APIENTRY CoverageModulationCHROMIUM(GLenum components);
 }
 
 #endif // LIBGLESV2_ENTRYPOINTGLES20EXT_H_

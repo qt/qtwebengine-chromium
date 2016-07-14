@@ -6,17 +6,17 @@
 
 #include "xfa/fxfa/app/xfa_ffpushbutton.h"
 
-#include "xfa/fwl/core/ifwl_notedriver.h"
-#include "xfa/fwl/core/ifwl_widgetmgrdelegate.h"
+#include "xfa/fwl/core/fwl_noteimp.h"
+#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/lightwidget/cfwl_pushbutton.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
 
 CXFA_FFPushButton::CXFA_FFPushButton(CXFA_FFPageView* pPageView,
                                      CXFA_WidgetAcc* pDataAcc)
@@ -52,7 +52,7 @@ void CXFA_FFPushButton::RenderWidget(CFX_Graphics* pGS,
                                                  pGS, &mt);
 }
 FX_BOOL CXFA_FFPushButton::LoadWidget() {
-  FXSYS_assert(m_pNormalWidget == NULL);
+  ASSERT(!m_pNormalWidget);
   CFWL_PushButton* pPushButton = CFWL_PushButton::Create();
   if (pPushButton) {
     pPushButton->Initialize();
@@ -61,7 +61,7 @@ FX_BOOL CXFA_FFPushButton::LoadWidget() {
   m_pNormalWidget = (CFWL_Widget*)pPushButton;
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
   m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
-  IFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
@@ -86,25 +86,19 @@ void CXFA_FFPushButton::UpdateWidgetProperty() {
   }
   m_pNormalWidget->ModifyStylesEx(dwStyleEx, 0xFFFFFFFF);
 }
+
 void CXFA_FFPushButton::UnloadWidget() {
-  if (m_pRolloverTextLayout) {
-    delete m_pRolloverTextLayout;
-    m_pRolloverTextLayout = NULL;
-  }
-  if (m_pDownTextLayout) {
-    delete m_pDownTextLayout;
-    m_pDownTextLayout = NULL;
-  }
-  if (m_pDownProvider) {
-    delete m_pDownProvider;
-    m_pDownProvider = NULL;
-  }
-  if (m_pRollProvider) {
-    delete m_pRollProvider;
-    m_pRollProvider = NULL;
-  }
+  delete m_pRolloverTextLayout;
+  m_pRolloverTextLayout = nullptr;
+  delete m_pDownTextLayout;
+  m_pDownTextLayout = nullptr;
+  delete m_pDownProvider;
+  m_pDownProvider = nullptr;
+  delete m_pRollProvider;
+  m_pRollProvider = nullptr;
   CXFA_FFField::UnloadWidget();
 }
+
 FX_BOOL CXFA_FFPushButton::PerformLayout() {
   CXFA_FFWidget::PerformLayout();
   CFX_RectF rtWidget;
@@ -207,15 +201,18 @@ void CXFA_FFPushButton::RenderHighlightCaption(CFX_Graphics* pGS,
     }
   }
 }
-int32_t CXFA_FFPushButton::OnProcessMessage(CFWL_Message* pMessage) {
-  return m_pOldDelegate->OnProcessMessage(pMessage);
+
+void CXFA_FFPushButton::OnProcessMessage(CFWL_Message* pMessage) {
+  m_pOldDelegate->OnProcessMessage(pMessage);
 }
-FWL_ERR CXFA_FFPushButton::OnProcessEvent(CFWL_Event* pEvent) {
+
+void CXFA_FFPushButton::OnProcessEvent(CFWL_Event* pEvent) {
   m_pOldDelegate->OnProcessEvent(pEvent);
-  return CXFA_FFField::OnProcessEvent(pEvent);
+  CXFA_FFField::OnProcessEvent(pEvent);
 }
-FWL_ERR CXFA_FFPushButton::OnDrawWidget(CFX_Graphics* pGraphics,
-                                        const CFX_Matrix* pMatrix) {
+
+void CXFA_FFPushButton::OnDrawWidget(CFX_Graphics* pGraphics,
+                                     const CFX_Matrix* pMatrix) {
   if (m_pNormalWidget->GetStylesEx() & XFA_FWL_PSBSTYLEEXT_HiliteInverted) {
     if ((m_pNormalWidget->GetStates() & FWL_STATE_PSB_Pressed) &&
         (m_pNormalWidget->GetStates() & FWL_STATE_PSB_Hovered)) {
@@ -246,7 +243,5 @@ FWL_ERR CXFA_FFPushButton::OnDrawWidget(CFX_Graphics* pGraphics,
       path.AddRectangle(0, 0, rect.width, rect.height);
       pGraphics->StrokePath(&path, (CFX_Matrix*)pMatrix);
     }
-  } else if (m_pNormalWidget->GetStylesEx() & XFA_FWL_PSBSTYLEEXT_HilitePush) {
   }
-  return FWL_ERR_Succeeded;
 }

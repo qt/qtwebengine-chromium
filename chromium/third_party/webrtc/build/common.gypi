@@ -41,10 +41,23 @@
             'apk_tests_path%': '<(DEPTH)/webrtc/build/apk_tests.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/webrtc/modules/modules_java.gyp',
           }],
+
+          # Controls whether we use libevent on posix platforms.
+          # TODO(phoglund): should arguably be controlled by platform #ifdefs
+          # in the code instead.
+          ['OS=="win" or OS=="mac" or OS=="ios"', {
+            'build_libevent%': 0,
+            'enable_libevent%': 0,
+          }, {
+            'build_libevent%': 1,
+            'enable_libevent%': 1,
+          }],
         ],
       },
       'build_with_chromium%': '<(build_with_chromium)',
       'build_with_mozilla%': '<(build_with_mozilla)',
+      'build_libevent%': '<(build_libevent)',
+      'enable_libevent%': '<(enable_libevent)',
       'webrtc_root%': '<(webrtc_root)',
       'apk_tests_path%': '<(apk_tests_path)',
       'modules_java_gyp_path%': '<(modules_java_gyp_path)',
@@ -56,8 +69,11 @@
     },
     'build_with_chromium%': '<(build_with_chromium)',
     'build_with_mozilla%': '<(build_with_mozilla)',
+    'build_libevent%': '<(build_libevent)',
+    'enable_libevent%': '<(enable_libevent)',
     'webrtc_root%': '<(webrtc_root)',
     'apk_tests_path%': '<(apk_tests_path)',
+    'test_runner_path': '<(DEPTH)/webrtc/build/android/test_runner.py',
     'modules_java_gyp_path%': '<(modules_java_gyp_path)',
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'webrtc_vp9_dir%': '<(webrtc_vp9_dir)',
@@ -98,9 +114,9 @@
     # Disable these to not build components which can be externally provided.
     'build_expat%': 1,
     'build_json%': 1,
-    'build_libjpeg%': 1,
     'build_libsrtp%': 1,
     'build_libvpx%': 1,
+    'libvpx_build_vp9%': 1,
     'build_libyuv%': 1,
     'build_openmax_dl%': 1,
     'build_opus%': 1,
@@ -202,13 +218,10 @@
         'include_tests%': 1,
         'restrict_webrtc_logging%': 0,
       }],
-      ['OS=="ios"', {
-        'build_libjpeg%': 0,
-      }],
       ['target_arch=="arm" or target_arch=="arm64" or target_arch=="mipsel"', {
         'prefer_fixed_point%': 1,
       }],
-      ['(target_arch=="arm" and (arm_neon==1 or arm_neon_optional==1)) or target_arch=="arm64"', {
+      ['(target_arch=="arm" and arm_neon==1) or target_arch=="arm64"', {
         'build_with_neon%': 1,
       }],
       ['OS!="ios" and (target_arch!="arm" or arm_version>=7) and target_arch!="mips64el"', {
@@ -312,8 +325,14 @@
             'cflags': [
               '-Wimplicit-fallthrough',
               '-Wthread-safety',
+              '-Winconsistent-missing-override',
             ],
           }],
+        ],
+      }],
+      ['enable_libevent==1', {
+        'defines': [
+          'WEBRTC_BUILD_LIBEVENT',
         ],
       }],
       ['target_arch=="arm64"', {
@@ -332,9 +351,6 @@
             'conditions': [
               ['arm_neon==1', {
                 'defines': ['WEBRTC_HAS_NEON',],
-              }],
-              ['arm_neon==0 and arm_neon_optional==1', {
-                'defines': ['WEBRTC_DETECT_NEON',],
               }],
             ],
           }],
@@ -371,6 +387,7 @@
       ['coverage==1 and OS=="linux"', {
         'cflags': [ '-ftest-coverage',
                     '-fprofile-arcs' ],
+        'ldflags': [ '--coverage' ],
         'link_settings': { 'libraries': [ '-lgcov' ] },
       }],
       ['os_posix==1', {
@@ -442,6 +459,11 @@
       ['include_internal_audio_device==1', {
         'defines': [
           'WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE',
+        ],
+      }],
+      ['libvpx_build_vp9==0', {
+        'defines': [
+          'RTC_DISABLE_VP9',
         ],
       }],
     ], # conditions

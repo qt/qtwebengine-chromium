@@ -9,9 +9,9 @@
 #include "libANGLE/renderer/gl/DisplayGL.h"
 
 #include "libANGLE/AttributeMap.h"
-#include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
+#include "libANGLE/renderer/gl/ContextGL.h"
 #include "libANGLE/renderer/gl/RendererGL.h"
 #include "libANGLE/renderer/gl/SurfaceGL.h"
 
@@ -55,17 +55,17 @@ ImageImpl *DisplayGL::createImage(EGLenum target,
     return nullptr;
 }
 
-gl::Context *DisplayGL::createContext(const egl::Config *config,
-                                      const gl::Context *shareContext,
-                                      const egl::AttributeMap &attribs)
+ContextImpl *DisplayGL::createContext(const gl::ContextState &state)
 {
     ASSERT(mRenderer != nullptr);
-    return new gl::Context(config, shareContext, mRenderer, attribs);
+    return new ContextGL(state, mRenderer);
 }
 
-StreamImpl *DisplayGL::createStream(const egl::AttributeMap &attribs)
+StreamProducerImpl *DisplayGL::createStreamProducerD3DTextureNV12(
+    egl::Stream::ConsumerType consumerType,
+    const egl::AttributeMap &attribs)
 {
-    UNREACHABLE();
+    UNIMPLEMENTED();
     return nullptr;
 }
 

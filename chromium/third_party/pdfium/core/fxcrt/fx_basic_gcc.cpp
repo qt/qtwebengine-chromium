@@ -133,8 +133,8 @@ uint32_t FXSYS_GetModuleFileName(void* hModule, char* buf, uint32_t bufsize) {
 extern "C" {
 #endif
 FXSYS_FILE* FXSYS_wfopen(const FX_WCHAR* filename, const FX_WCHAR* mode) {
-  return FXSYS_fopen(CFX_ByteString::FromUnicode(filename),
-                     CFX_ByteString::FromUnicode(mode));
+  return FXSYS_fopen(CFX_ByteString::FromUnicode(filename).c_str(),
+                     CFX_ByteString::FromUnicode(mode).c_str());
 }
 char* FXSYS_strlwr(char* str) {
   if (!str) {
@@ -226,9 +226,8 @@ int FXSYS_WideCharToMultiByte(uint32_t codepage,
   int len = 0;
   for (int i = 0; i < wlen; i++) {
     if (wstr[i] < 0x100) {
-      if (buf && len < buflen) {
-        buf[len] = (FX_CHAR)wstr[i];
-      }
+      if (buf && len < buflen)
+        buf[len] = static_cast<FX_CHAR>(wstr[i]);
       len++;
     }
   }

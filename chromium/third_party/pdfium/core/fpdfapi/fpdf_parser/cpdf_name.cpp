@@ -10,10 +10,6 @@
 
 CPDF_Name::CPDF_Name(const CFX_ByteString& str) : m_Name(str) {}
 
-CPDF_Name::CPDF_Name(const CFX_ByteStringC& str) : m_Name(str) {}
-
-CPDF_Name::CPDF_Name(const FX_CHAR* str) : m_Name(str) {}
-
 CPDF_Name::~CPDF_Name() {}
 
 CPDF_Object::Type CPDF_Name::GetType() const {
@@ -26,10 +22,6 @@ CPDF_Object* CPDF_Name::Clone(FX_BOOL bDirect) const {
 
 CFX_ByteString CPDF_Name::GetString() const {
   return m_Name;
-}
-
-CFX_ByteStringC CPDF_Name::GetConstString() const {
-  return m_Name.AsByteStringC();
 }
 
 void CPDF_Name::SetString(const CFX_ByteString& str) {

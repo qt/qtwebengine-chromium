@@ -139,10 +139,6 @@ public:
      */
     virtual int approximateOpCount() const = 0;
 
-    /** Return true if this picture contains text.
-     */
-    virtual bool hasText() const = 0;
-
     /** Returns the approximate byte size of this picture, not including large ref'd objects. */
     virtual size_t approximateBytesUsed() const = 0;
 
@@ -157,8 +153,10 @@ public:
     static bool InternalOnly_StreamIsSKP(SkStream*, SkPictInfo*);
     static bool InternalOnly_BufferIsSKP(SkReadBuffer*, SkPictInfo*);
 
+#ifdef SK_SUPPORT_LEGACY_PICTURE_GPUVETO
     /** Return true if the picture is suitable for rendering on the GPU.  */
     bool suitableForGpuRasterization(GrContext*, const char** whyNot = NULL) const;
+#endif
 
     // Sent via SkMessageBus from destructor.
     struct DeletionMessage { int32_t fUniqueID; };  // TODO: -> uint32_t?
@@ -194,6 +192,7 @@ private:
     friend class SkPictureData;
 
     virtual int numSlowPaths() const = 0;
+    friend class SkPictureGpuAnalyzer;
     friend struct SkPathCounter;
 
     // V35: Store SkRect (rather then width & height) in header
@@ -206,10 +205,11 @@ private:
     // V42: Added a bool to SkPictureShader serialization to indicate did-we-serialize-a-picture?
     // V43: Added DRAW_IMAGE and DRAW_IMAGE_RECT opt codes to serialized data
     // V44: Move annotations from paint to drawAnnotation
+    // V45: Add invNormRotation to SkLightingShader.
 
     // Only SKPs within the min/current picture version range (inclusive) can be read.
     static const uint32_t     MIN_PICTURE_VERSION = 35;     // Produced by Chrome M39.
-    static const uint32_t CURRENT_PICTURE_VERSION = 44;
+    static const uint32_t CURRENT_PICTURE_VERSION = 45;
 
     static_assert(MIN_PICTURE_VERSION <= 41,
                   "Remove kFontFileName and related code from SkFontDescriptor.cpp.");
@@ -221,7 +221,9 @@ private:
                   "Remove SkBitmapSourceDeserializer.");
     
     static bool IsValidPictInfo(const SkPictInfo& info);
-    static sk_sp<SkPicture> Forwardport(const SkPictInfo&, const SkPictureData*);
+    static sk_sp<SkPicture> Forwardport(const SkPictInfo&,
+                                        const SkPictureData*,
+                                        const SkReadBuffer* buffer);
 
     SkPictInfo createHeader() const;
     SkPictureData* backport() const;

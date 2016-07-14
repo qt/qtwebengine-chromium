@@ -14,6 +14,8 @@
 
 #include <utility>
 
+#include "webrtc/base/checks.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_frame_win.h"
@@ -24,7 +26,6 @@
 #include "webrtc/modules/desktop_capture/win/desktop.h"
 #include "webrtc/modules/desktop_capture/win/screen_capture_utils.h"
 #include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -35,22 +36,6 @@ const UINT DWM_EC_DISABLECOMPOSITION = 0;
 const UINT DWM_EC_ENABLECOMPOSITION = 1;
 
 const wchar_t kDwmapiLibraryName[] = L"dwmapi.dll";
-
-// SharedMemoryFactory that creates SharedMemory using the deprecated
-// DesktopCapturer::Callback::CreateSharedMemory().
-class CallbackSharedMemoryFactory : public SharedMemoryFactory {
- public:
-  CallbackSharedMemoryFactory(DesktopCapturer::Callback* callback)
-      : callback_(callback) {}
-  ~CallbackSharedMemoryFactory() override {}
-
-  rtc::scoped_ptr<SharedMemory> CreateSharedMemory(size_t size) override {
-    return rtc::scoped_ptr<SharedMemory>(callback_->CreateSharedMemory(size));
-  }
-
- private:
-  DesktopCapturer::Callback* callback_;
-};
 
 }  // namespace
 
@@ -89,15 +74,15 @@ ScreenCapturerWinGdi::~ScreenCapturerWinGdi() {
 }
 
 void ScreenCapturerWinGdi::SetSharedMemoryFactory(
-    rtc::scoped_ptr<SharedMemoryFactory> shared_memory_factory) {
-  shared_memory_factory_ =
-      rtc::ScopedToUnique(std::move(shared_memory_factory));
+    std::unique_ptr<SharedMemoryFactory> shared_memory_factory) {
+  shared_memory_factory_ = std::move(shared_memory_factory);
 }
 
 void ScreenCapturerWinGdi::Capture(const DesktopRegion& region) {
-  TickTime capture_start_time = TickTime::Now();
+  int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
+  RTC_DCHECK(!queue_.current_frame() || !queue_.current_frame()->IsShared());
 
   // Request that the system not power-down the system, or the display hardware.
   if (!SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)) {
@@ -152,7 +137,8 @@ void ScreenCapturerWinGdi::Capture(const DesktopRegion& region) {
   frame->mutable_updated_region()->Clear();
   helper_.TakeInvalidRegion(frame->mutable_updated_region());
   frame->set_capture_time_ms(
-      (TickTime::Now() - capture_start_time).Milliseconds());
+      (rtc::TimeNanos() - capture_start_time_nanos) /
+      rtc::kNumNanosecsPerMillisec);
   callback_->OnCaptureCompleted(frame);
 }
 
@@ -172,8 +158,6 @@ void ScreenCapturerWinGdi::Start(Callback* callback) {
   assert(callback);
 
   callback_ = callback;
-  if (!shared_memory_factory_)
-    shared_memory_factory_.reset(new CallbackSharedMemoryFactory(callback));
 
   // Vote to disable Aero composited desktop effects while capturing. Windows
   // will restore Aero automatically if the process exits. This has no effect
@@ -265,9 +249,9 @@ bool ScreenCapturerWinGdi::CaptureImage() {
 
     std::unique_ptr<DesktopFrame> buffer(DesktopFrameWin::Create(
         size, shared_memory_factory_.get(), desktop_dc_));
-    if (!buffer.get())
+    if (!buffer)
       return false;
-    queue_.ReplaceCurrentFrame(buffer.release());
+    queue_.ReplaceCurrentFrame(SharedDesktopFrame::Wrap(buffer.release()));
   }
 
   // Select the target bitmap into the memory dc and copy the rect from desktop

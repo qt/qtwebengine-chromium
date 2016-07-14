@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <memory>
 
 #include "webrtc/base/byteorder.h"
 #include "webrtc/base/checks.h"
@@ -44,7 +45,7 @@ AsyncSocket* AsyncTCPSocketBase::ConnectSocket(
     rtc::AsyncSocket* socket,
     const rtc::SocketAddress& bind_address,
     const rtc::SocketAddress& remote_address) {
-  rtc::scoped_ptr<rtc::AsyncSocket> owned_socket(socket);
+  std::unique_ptr<rtc::AsyncSocket> owned_socket(socket);
   if (socket->Bind(bind_address) < 0) {
     LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
     return NULL;
@@ -295,7 +296,7 @@ int AsyncTCPSocket::Send(const void *pv, size_t cb,
     return res;
   }
 
-  rtc::SentPacket sent_packet(options.packet_id, rtc::Time());
+  rtc::SentPacket sent_packet(options.packet_id, rtc::TimeMillis());
   SignalSentPacket(this, sent_packet);
 
   // We claim to have sent the whole thing, even if we only sent partial

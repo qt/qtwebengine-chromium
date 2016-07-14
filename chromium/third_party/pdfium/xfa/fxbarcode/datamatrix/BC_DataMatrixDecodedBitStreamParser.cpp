@@ -36,9 +36,9 @@ const FX_CHAR CBC_DataMatrixDecodedBitStreamParser::TEXT_BASIC_SET_CHARS[] = {
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
     'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'};
 const FX_CHAR CBC_DataMatrixDecodedBitStreamParser::TEXT_SHIFT3_SET_CHARS[] = {
-    '\'', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',         'J',
-    'K',  'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',         'U',
-    'V',  'W', 'X', 'Y', 'Z', '{', '|', '}', '~', (FX_CHAR)127};
+    '\'', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+    'K',  'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U',
+    'V',  'W', 'X', 'Y', 'Z', '{', '|', '}', '~', 127};
 const int32_t CBC_DataMatrixDecodedBitStreamParser::PAD_ENCODE = 0;
 const int32_t CBC_DataMatrixDecodedBitStreamParser::ASCII_ENCODE = 1;
 const int32_t CBC_DataMatrixDecodedBitStreamParser::C40_ENCODE = 2;
@@ -48,6 +48,7 @@ const int32_t CBC_DataMatrixDecodedBitStreamParser::EDIFACT_ENCODE = 5;
 const int32_t CBC_DataMatrixDecodedBitStreamParser::BASE256_ENCODE = 6;
 CBC_DataMatrixDecodedBitStreamParser::CBC_DataMatrixDecodedBitStreamParser() {}
 CBC_DataMatrixDecodedBitStreamParser::~CBC_DataMatrixDecodedBitStreamParser() {}
+
 CBC_CommonDecoderResult* CBC_DataMatrixDecodedBitStreamParser::Decode(
     CFX_ByteArray& bytes,
     int32_t& e) {
@@ -59,32 +60,32 @@ CBC_CommonDecoderResult* CBC_DataMatrixDecodedBitStreamParser::Decode(
   do {
     if (mode == 1) {
       mode = DecodeAsciiSegment(&bits, result, resultTrailer, e);
-      BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+      BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
     } else {
       switch (mode) {
         case 2:
           DecodeC40Segment(&bits, result, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+          BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
           break;
         case 3:
           DecodeTextSegment(&bits, result, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+          BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
           break;
         case 4:
           DecodeAnsiX12Segment(&bits, result, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+          BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
           break;
         case 5:
           DecodeEdifactSegment(&bits, result, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+          BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
           break;
         case 6:
           DecodeBase256Segment(&bits, result, byteSegments, e);
-          BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+          BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
           break;
         default:
           e = BCExceptionFormatException;
-          return NULL;
+          return nullptr;
       }
       mode = ASCII_ENCODE;
     }
@@ -93,12 +94,11 @@ CBC_CommonDecoderResult* CBC_DataMatrixDecodedBitStreamParser::Decode(
     result += resultTrailer;
   }
   CBC_CommonDecoderResult* tempCp = new CBC_CommonDecoderResult();
-  tempCp->Init(bytes, result,
-               (byteSegments.GetSize() <= 0) ? CFX_Int32Array() : byteSegments,
-               NULL, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  tempCp->Init(bytes, result, byteSegments, nullptr, e);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   return tempCp;
 }
+
 int32_t CBC_DataMatrixDecodedBitStreamParser::DecodeAsciiSegment(
     CBC_CommonBitSource* bits,
     CFX_ByteString& result,

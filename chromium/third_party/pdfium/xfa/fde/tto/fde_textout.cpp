@@ -10,181 +10,13 @@
 
 #include "core/fxcrt/include/fx_coordinates.h"
 #include "core/fxcrt/include/fx_system.h"
-#include "xfa/fde/fde_brush.h"
-#include "xfa/fde/fde_pen.h"
-#include "xfa/fde/fde_renderdevice.h"
+#include "xfa/fde/cfde_path.h"
+#include "xfa/fde/fde_gedevice.h"
+#include "xfa/fde/fde_object.h"
 #include "xfa/fgas/crt/fgas_memory.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/layout/fgas_textbreak.h"
 
-namespace {
-
-struct FDE_TTOPIECE {
- public:
-  int32_t iStartChar;
-  int32_t iChars;
-  uint32_t dwCharStyles;
-  CFX_RectF rtPiece;
-};
-typedef FDE_TTOPIECE* FDE_LPTTOPIECE;
-typedef CFX_MassArrayTemplate<FDE_TTOPIECE> CFDE_TTOPieceArray;
-
-class CFDE_TTOLine : public CFX_Target {
- public:
-  CFDE_TTOLine();
-  CFDE_TTOLine(const CFDE_TTOLine& ttoLine);
-  ~CFDE_TTOLine();
-  int32_t AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece);
-  int32_t GetSize() const;
-  FDE_LPTTOPIECE GetPtrAt(int32_t index);
-  void RemoveLast(int32_t iCount);
-  void RemoveAll(FX_BOOL bLeaveMemory);
-  FX_BOOL m_bNewReload;
-  CFDE_TTOPieceArray m_pieces;
-
- protected:
-  int32_t m_iPieceCount;
-};
-typedef CFX_ObjectMassArrayTemplate<CFDE_TTOLine> CFDE_TTOLineArray;
-
-class CFDE_TextOut : public IFDE_TextOut, public CFX_Target {
- public:
-  CFDE_TextOut();
-  ~CFDE_TextOut();
-  virtual void Release() { delete this; }
-  virtual void SetFont(IFX_Font* pFont);
-  virtual void SetFontSize(FX_FLOAT fFontSize);
-  virtual void SetTextColor(FX_ARGB color);
-  virtual void SetStyles(uint32_t dwStyles);
-  virtual void SetTabWidth(FX_FLOAT fTabWidth);
-  virtual void SetEllipsisString(const CFX_WideString& wsEllipsis);
-  virtual void SetParagraphBreakChar(FX_WCHAR wch);
-  virtual void SetAlignment(int32_t iAlignment);
-  virtual void SetLineSpace(FX_FLOAT fLineSpace);
-  virtual void SetDIBitmap(CFX_DIBitmap* pDIB);
-  virtual void SetRenderDevice(CFX_RenderDevice* pDevice);
-  virtual void SetClipRect(const CFX_Rect& rtClip);
-  virtual void SetClipRect(const CFX_RectF& rtClip);
-  virtual void SetMatrix(const CFX_Matrix& matrix);
-  virtual void SetLineBreakTolerance(FX_FLOAT fTolerance);
-  virtual void CalcSize(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        CFX_Size& size);
-  virtual void CalcSize(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        CFX_SizeF& size);
-  virtual void CalcSize(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        CFX_Rect& rect);
-  virtual void CalcSize(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        CFX_RectF& rect);
-
-  virtual void DrawText(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        int32_t x,
-                        int32_t y);
-  virtual void DrawText(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        FX_FLOAT x,
-                        FX_FLOAT y);
-  virtual void DrawText(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        const CFX_Rect& rect);
-  virtual void DrawText(const FX_WCHAR* pwsStr,
-                        int32_t iLength,
-                        const CFX_RectF& rect);
-
-  virtual void SetLogicClipRect(const CFX_RectF& rtClip);
-  virtual void CalcLogicSize(const FX_WCHAR* pwsStr,
-                             int32_t iLength,
-                             CFX_SizeF& size);
-  virtual void CalcLogicSize(const FX_WCHAR* pwsStr,
-                             int32_t iLength,
-                             CFX_RectF& rect);
-  virtual void DrawLogicText(const FX_WCHAR* pwsStr,
-                             int32_t iLength,
-                             FX_FLOAT x,
-                             FX_FLOAT y);
-  virtual void DrawLogicText(const FX_WCHAR* pwsStr,
-                             int32_t iLength,
-                             const CFX_RectF& rect);
-  virtual int32_t GetTotalLines();
-
- protected:
-  void CalcTextSize(const FX_WCHAR* pwsStr, int32_t iLength, CFX_RectF& rect);
-  FX_BOOL RetrieveLineWidth(uint32_t dwBreakStatus,
-                            FX_FLOAT& fStartPos,
-                            FX_FLOAT& fWidth,
-                            FX_FLOAT& fHeight);
-  void SetLineWidth(CFX_RectF& rect);
-  void DrawText(const FX_WCHAR* pwsStr,
-                int32_t iLength,
-                const CFX_RectF& rect,
-                const CFX_RectF& rtClip);
-  void LoadText(const FX_WCHAR* pwsStr, int32_t iLength, const CFX_RectF& rect);
-  void LoadEllipsis();
-  void ExpandBuffer(int32_t iSize, int32_t iType);
-  void RetrieveEllPieces(int32_t*& pCharWidths);
-
-  void Reload(const CFX_RectF& rect);
-  void ReloadLinePiece(CFDE_TTOLine* pLine, const CFX_RectF& rect);
-  FX_BOOL RetriecePieces(uint32_t dwBreakStatus,
-                         int32_t& iStartChar,
-                         int32_t& iPieceWidths,
-                         FX_BOOL bReload,
-                         const CFX_RectF& rect);
-  void AppendPiece(const FDE_TTOPIECE& ttoPiece,
-                   FX_BOOL bNeedReload,
-                   FX_BOOL bEnd);
-  void ReplaceWidthEllipsis();
-  void DoAlignment(const CFX_RectF& rect);
-  void OnDraw(const CFX_RectF& rtClip);
-  int32_t GetDisplayPos(FDE_LPTTOPIECE pPiece);
-  int32_t GetCharRects(FDE_LPTTOPIECE pPiece);
-
-  void ToTextRun(const FDE_LPTTOPIECE pPiece, FX_TXTRUN& tr);
-  void DrawLine(const FDE_LPTTOPIECE pPiece, IFDE_Pen*& pPen);
-
-  IFX_TxtBreak* m_pTxtBreak;
-  IFX_Font* m_pFont;
-  FX_FLOAT m_fFontSize;
-  FX_FLOAT m_fLineSpace;
-  FX_FLOAT m_fLinePos;
-  FX_FLOAT m_fTolerance;
-  int32_t m_iAlignment;
-  int32_t m_iTxtBkAlignment;
-  int32_t* m_pCharWidths;
-  int32_t m_iChars;
-  int32_t* m_pEllCharWidths;
-  int32_t m_iEllChars;
-  FX_WCHAR m_wParagraphBkChar;
-  FX_ARGB m_TxtColor;
-  uint32_t m_dwStyles;
-  uint32_t m_dwTxtBkStyles;
-  CFX_WideString m_wsEllipsis;
-  FX_BOOL m_bElliChanged;
-  int32_t m_iEllipsisWidth;
-  CFX_WideString m_wsText;
-  CFX_RectF m_rtClip;
-  CFX_RectF m_rtLogicClip;
-  CFX_Matrix m_Matrix;
-  CFDE_TTOLineArray m_ttoLines;
-  int32_t m_iCurLine;
-  int32_t m_iCurPiece;
-  int32_t m_iTotalLines;
-  FXTEXT_CHARPOS* m_pCharPos;
-  int32_t m_iCharPosSize;
-  IFDE_RenderDevice* m_pRenderDevice;
-  CFX_Int32Array m_hotKeys;
-  CFX_RectFArray m_rectArray;
-};
-
-}  // namespace
-
-IFDE_TextOut* IFDE_TextOut::Create() {
-  return new CFDE_TextOut;
-}
 CFDE_TextOut::CFDE_TextOut()
     : m_pFont(NULL),
       m_fFontSize(12.0f),
@@ -208,10 +40,8 @@ CFDE_TextOut::CFDE_TextOut()
       m_iCurPiece(0),
       m_iTotalLines(0),
       m_pCharPos(NULL),
-      m_iCharPosSize(0),
-      m_pRenderDevice(NULL) {
-  m_pTxtBreak = IFX_TxtBreak::Create(FX_TXTBREAKPOLICY_None);
-  FXSYS_assert(m_pTxtBreak != NULL);
+      m_iCharPosSize(0) {
+  m_pTxtBreak = new CFX_TxtBreak(FX_TXTBREAKPOLICY_None);
   m_Matrix.SetIdentity();
   m_rtClip.Reset();
   m_rtLogicClip.Reset();
@@ -222,19 +52,16 @@ CFDE_TextOut::~CFDE_TextOut() {
   }
   FX_Free(m_pCharWidths);
   FX_Free(m_pEllCharWidths);
-  if (m_pRenderDevice) {
-    m_pRenderDevice->Release();
-  }
   FX_Free(m_pCharPos);
   m_ttoLines.RemoveAll();
 }
 void CFDE_TextOut::SetFont(IFX_Font* pFont) {
-  FXSYS_assert(pFont);
+  ASSERT(pFont);
   m_pFont = pFont;
   m_pTxtBreak->SetFont(pFont);
 }
 void CFDE_TextOut::SetFontSize(FX_FLOAT fFontSize) {
-  FXSYS_assert(fFontSize > 0);
+  ASSERT(fFontSize > 0);
   m_fFontSize = fFontSize;
   m_pTxtBreak->SetFontSize(fFontSize);
 }
@@ -266,7 +93,7 @@ void CFDE_TextOut::SetStyles(uint32_t dwStyles) {
   m_pTxtBreak->SetLayoutStyles(m_dwTxtBkStyles);
 }
 void CFDE_TextOut::SetTabWidth(FX_FLOAT fTabWidth) {
-  FXSYS_assert(fTabWidth > 1.0f);
+  ASSERT(fTabWidth > 1.0f);
   m_pTxtBreak->SetTabWidth(fTabWidth, FALSE);
 }
 void CFDE_TextOut::SetEllipsisString(const CFX_WideString& wsEllipsis) {
@@ -297,23 +124,23 @@ void CFDE_TextOut::SetAlignment(int32_t iAlignment) {
   m_pTxtBreak->SetAlignment(m_iTxtBkAlignment);
 }
 void CFDE_TextOut::SetLineSpace(FX_FLOAT fLineSpace) {
-  FXSYS_assert(fLineSpace > 1.0f);
+  ASSERT(fLineSpace > 1.0f);
   m_fLineSpace = fLineSpace;
 }
 void CFDE_TextOut::SetDIBitmap(CFX_DIBitmap* pDIB) {
-  FXSYS_assert(pDIB != NULL);
-  if (m_pRenderDevice != NULL) {
-    m_pRenderDevice->Release();
-  }
-  m_pRenderDevice = IFDE_RenderDevice::Create(pDIB);
+  ASSERT(pDIB);
+
+  m_pRenderDevice.reset();
+  CFX_FxgeDevice* device = new CFX_FxgeDevice;
+  device->Attach(pDIB, 0, FALSE);
+  m_pRenderDevice.reset(new CFDE_RenderDevice(device, FALSE));
 }
+
 void CFDE_TextOut::SetRenderDevice(CFX_RenderDevice* pDevice) {
-  FXSYS_assert(pDevice != NULL);
-  if (m_pRenderDevice != NULL) {
-    m_pRenderDevice->Release();
-  }
-  m_pRenderDevice = IFDE_RenderDevice::Create(pDevice);
+  ASSERT(pDevice);
+  m_pRenderDevice.reset(new CFDE_RenderDevice(pDevice, FALSE));
 }
+
 void CFDE_TextOut::SetClipRect(const CFX_Rect& rtClip) {
   m_rtClip.Set((FX_FLOAT)rtClip.left, (FX_FLOAT)rtClip.top,
                (FX_FLOAT)rtClip.Width(), (FX_FLOAT)rtClip.Height());
@@ -398,7 +225,7 @@ void CFDE_TextOut::CalcLogicSize(const FX_WCHAR* pwsStr,
 void CFDE_TextOut::CalcTextSize(const FX_WCHAR* pwsStr,
                                 int32_t iLength,
                                 CFX_RectF& rect) {
-  FXSYS_assert(m_pFont != NULL && m_fFontSize >= 1.0f);
+  ASSERT(m_pFont != NULL && m_fFontSize >= 1.0f);
   SetLineWidth(rect);
   m_iTotalLines = 0;
   const FX_WCHAR* pStr = pwsStr;
@@ -560,7 +387,7 @@ void CFDE_TextOut::DrawText(const FX_WCHAR* pwsStr,
                             int32_t iLength,
                             const CFX_RectF& rect,
                             const CFX_RectF& rtClip) {
-  FXSYS_assert(m_pFont != NULL && m_fFontSize >= 1.0f);
+  ASSERT(m_pFont != NULL && m_fFontSize >= 1.0f);
   if (pwsStr == NULL || iLength < 1) {
     return;
   }
@@ -573,7 +400,7 @@ void CFDE_TextOut::DrawText(const FX_WCHAR* pwsStr,
   }
   m_pTxtBreak->SetLineWidth(fLineWidth);
   m_ttoLines.RemoveAll(TRUE);
-  m_wsText.Empty();
+  m_wsText.clear();
   LoadText(pwsStr, iLength, rect);
   if (m_dwStyles & FDE_TTOSTYLE_Ellipsis) {
     ReplaceWidthEllipsis();
@@ -626,7 +453,7 @@ void CFDE_TextOut::LoadEllipsis() {
     return;
   }
   ExpandBuffer(iLength, 1);
-  const FX_WCHAR* pStr = (const FX_WCHAR*)m_wsEllipsis;
+  const FX_WCHAR* pStr = m_wsEllipsis.c_str();
   int32_t* pCharWidths = m_pEllCharWidths;
   uint32_t dwBreakStatus;
   FX_WCHAR wch;
@@ -836,7 +663,7 @@ void CFDE_TextOut::ReplaceWidthEllipsis() {
     int32_t iCharCount = 0;
     int32_t iPiece = pLine->GetSize();
     while (iPiece-- > 0) {
-      FDE_LPTTOPIECE pPiece = pLine->GetPtrAt(iPiece);
+      FDE_TTOPIECE* pPiece = pLine->GetPtrAt(iPiece);
       if (pPiece == NULL) {
         break;
       }
@@ -875,10 +702,10 @@ void CFDE_TextOut::Reload(const CFX_RectF& rect) {
   }
 }
 void CFDE_TextOut::ReloadLinePiece(CFDE_TTOLine* pLine, const CFX_RectF& rect) {
-  const FX_WCHAR* pwsStr = (const FX_WCHAR*)m_wsText;
+  const FX_WCHAR* pwsStr = m_wsText.c_str();
   FX_BOOL bVertical = !!(m_dwStyles & FDE_TTOSTYLE_VerticalLayout);
   int32_t iPieceWidths = 0;
-  FDE_LPTTOPIECE pPiece = pLine->GetPtrAt(0);
+  FDE_TTOPIECE* pPiece = pLine->GetPtrAt(0);
   int32_t iStartChar = pPiece->iStartChar;
   m_fLinePos = bVertical ? pPiece->rtPiece.left : pPiece->rtPiece.top;
   int32_t iPieceCount = pLine->GetSize();
@@ -913,7 +740,7 @@ void CFDE_TextOut::DoAlignment(const CFX_RectF& rect) {
     return;
   }
   CFDE_TTOLine* pLine = m_ttoLines.GetPtrAt(iLines - 1);
-  FDE_LPTTOPIECE pPiece = pLine->GetPtrAt(0);
+  FDE_TTOPIECE* pPiece = pLine->GetPtrAt(0);
   if (pPiece == NULL) {
     return;
   }
@@ -933,7 +760,7 @@ void CFDE_TextOut::DoAlignment(const CFX_RectF& rect) {
     CFDE_TTOLine* pLine = m_ttoLines.GetPtrAt(i);
     int32_t iPieces = pLine->GetSize();
     for (int32_t j = 0; j < iPieces; j++) {
-      FDE_LPTTOPIECE pPiece = pLine->GetPtrAt(j);
+      FDE_TTOPIECE* pPiece = pLine->GetPtrAt(j);
       if (bVertical) {
         pPiece->rtPiece.left += fInc;
       } else {
@@ -943,17 +770,16 @@ void CFDE_TextOut::DoAlignment(const CFX_RectF& rect) {
   }
 }
 void CFDE_TextOut::OnDraw(const CFX_RectF& rtClip) {
-  if (m_pRenderDevice == NULL) {
+  if (!m_pRenderDevice)
     return;
-  }
+
   int32_t iLines = m_ttoLines.GetSize();
-  if (iLines < 1) {
+  if (iLines < 1)
     return;
-  }
-  IFDE_SolidBrush* pBrush =
-      (IFDE_SolidBrush*)IFDE_Brush::Create(FDE_BRUSHTYPE_Solid);
+
+  CFDE_Brush* pBrush = new CFDE_Brush;
   pBrush->SetColor(m_TxtColor);
-  IFDE_Pen* pPen = NULL;
+  CFDE_Pen* pPen = NULL;
   FDE_HDEVICESTATE hDev = m_pRenderDevice->SaveState();
   if (rtClip.Width() > 0.0f && rtClip.Height() > 0.0f) {
     m_pRenderDevice->SetClipRect(rtClip);
@@ -962,7 +788,7 @@ void CFDE_TextOut::OnDraw(const CFX_RectF& rtClip) {
     CFDE_TTOLine* pLine = m_ttoLines.GetPtrAt(i);
     int32_t iPieces = pLine->GetSize();
     for (int32_t j = 0; j < iPieces; j++) {
-      FDE_LPTTOPIECE pPiece = pLine->GetPtrAt(j);
+      FDE_TTOPIECE* pPiece = pLine->GetPtrAt(j);
       if (pPiece == NULL) {
         continue;
       }
@@ -975,52 +801,49 @@ void CFDE_TextOut::OnDraw(const CFX_RectF& rtClip) {
     }
   }
   m_pRenderDevice->RestoreState(hDev);
-  if (pBrush) {
-    pBrush->Release();
-  }
-  if (pPen) {
-    pPen->Release();
-  }
+  delete pBrush;
+  delete pPen;
 }
-int32_t CFDE_TextOut::GetDisplayPos(FDE_LPTTOPIECE pPiece) {
-  FX_TXTRUN tr;
-  ToTextRun(pPiece, tr);
+
+int32_t CFDE_TextOut::GetDisplayPos(FDE_TTOPIECE* pPiece) {
+  FX_TXTRUN tr = ToTextRun(pPiece);
   ExpandBuffer(tr.iLength, 2);
   return m_pTxtBreak->GetDisplayPos(&tr, m_pCharPos);
 }
-int32_t CFDE_TextOut::GetCharRects(FDE_LPTTOPIECE pPiece) {
-  FX_TXTRUN tr;
-  ToTextRun(pPiece, tr);
+
+int32_t CFDE_TextOut::GetCharRects(const FDE_TTOPIECE* pPiece) {
+  FX_TXTRUN tr = ToTextRun(pPiece);
   m_rectArray.RemoveAll();
   return m_pTxtBreak->GetCharRects(&tr, m_rectArray);
 }
-void CFDE_TextOut::ToTextRun(const FDE_LPTTOPIECE pPiece, FX_TXTRUN& tr) {
-  tr.pAccess = NULL;
-  tr.pIdentity = NULL;
-  tr.pStr = (const FX_WCHAR*)m_wsText + pPiece->iStartChar;
+
+FX_TXTRUN CFDE_TextOut::ToTextRun(const FDE_TTOPIECE* pPiece) {
+  FX_TXTRUN tr;
+  tr.wsStr = m_wsText + pPiece->iStartChar;
   tr.pWidths = m_pCharWidths + pPiece->iStartChar;
   tr.iLength = pPiece->iChars;
   tr.pFont = m_pFont;
   tr.fFontSize = m_fFontSize;
   tr.dwStyles = m_dwTxtBkStyles;
-  tr.iCharRotation = 0;
   tr.dwCharStyles = pPiece->dwCharStyles;
   tr.wLineBreakChar = m_wParagraphBkChar;
   tr.pRect = &pPiece->rtPiece;
+  return tr;
 }
-void CFDE_TextOut::DrawLine(const FDE_LPTTOPIECE pPiece, IFDE_Pen*& pPen) {
+
+void CFDE_TextOut::DrawLine(const FDE_TTOPIECE* pPiece, CFDE_Pen*& pPen) {
   FX_BOOL bUnderLine = !!(m_dwStyles & FDE_TTOSTYLE_Underline);
   FX_BOOL bStrikeOut = !!(m_dwStyles & FDE_TTOSTYLE_Strikeout);
   FX_BOOL bHotKey = !!(m_dwStyles & FDE_TTOSTYLE_HotKey);
   FX_BOOL bVertical = !!(m_dwStyles & FDE_TTOSTYLE_VerticalLayout);
-  if (!bUnderLine && !bStrikeOut && !bHotKey) {
+  if (!bUnderLine && !bStrikeOut && !bHotKey)
     return;
-  }
-  if (pPen == NULL) {
-    pPen = IFDE_Pen::Create();
+
+  if (!pPen) {
+    pPen = new CFDE_Pen;
     pPen->SetColor(m_TxtColor);
   }
-  IFDE_Path* pPath = IFDE_Path::Create();
+  std::unique_ptr<CFDE_Path> pPath(new CFDE_Path);
   int32_t iLineCount = 0;
   CFX_RectF rtText = pPiece->rtPiece;
   CFX_PointF pt1, pt2;
@@ -1080,19 +903,21 @@ void CFDE_TextOut::DrawLine(const FDE_LPTTOPIECE pPiece, IFDE_Pen*& pPen) {
       }
     }
   }
-  if (iLineCount > 0) {
-    m_pRenderDevice->DrawPath(pPen, 1, pPath, &m_Matrix);
-  }
-  pPath->Release();
+  if (iLineCount > 0)
+    m_pRenderDevice->DrawPath(pPen, 1, pPath.get(), &m_Matrix);
 }
+
 CFDE_TTOLine::CFDE_TTOLine()
     : m_bNewReload(FALSE), m_pieces(5), m_iPieceCount(0) {}
+
 CFDE_TTOLine::CFDE_TTOLine(const CFDE_TTOLine& ttoLine) : m_pieces(5) {
   m_bNewReload = ttoLine.m_bNewReload;
   m_iPieceCount = ttoLine.m_iPieceCount;
   m_pieces.Copy(ttoLine.m_pieces);
 }
+
 CFDE_TTOLine::~CFDE_TTOLine() {}
+
 int32_t CFDE_TTOLine::AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece) {
   if (index >= m_iPieceCount) {
     index = m_pieces.Add(ttoPiece) + 1;
@@ -1106,7 +931,7 @@ int32_t CFDE_TTOLine::AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece) {
 int32_t CFDE_TTOLine::GetSize() const {
   return m_iPieceCount;
 }
-FDE_LPTTOPIECE CFDE_TTOLine::GetPtrAt(int32_t index) {
+FDE_TTOPIECE* CFDE_TTOLine::GetPtrAt(int32_t index) {
   if (index >= m_iPieceCount) {
     return NULL;
   }

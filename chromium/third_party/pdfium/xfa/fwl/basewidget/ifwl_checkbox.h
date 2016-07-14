@@ -13,7 +13,6 @@
 #include "xfa/fwl/core/cfwl_widgetimpproperties.h"
 
 #define FWL_CLASS_CheckBox L"FWL_CHECKBOX"
-#define FWL_CLASSHASH_CheckBox 4107183823
 #define FWL_STYLEEXT_CKB_Left (0L << 0)
 #define FWL_STYLEEXT_CKB_Center (1L << 0)
 #define FWL_STYLEEXT_CKB_Right (2L << 0)
@@ -44,26 +43,9 @@
 #define FWL_STATE_CKB_Checked (1 << (FWL_WGTSTATE_MAX + 2))
 #define FWL_STATE_CKB_Neutral (2 << (FWL_WGTSTATE_MAX + 2))
 #define FWL_STATE_CKB_CheckMask (3L << (FWL_WGTSTATE_MAX + 2))
-#define FWL_PART_CKB_Border 1
-#define FWL_PART_CKB_Edge 2
-#define FWL_PART_CKB_Background 3
-#define FWL_PART_CKB_CheckBox 4
-#define FWL_PART_CKB_Caption 5
-#define FWL_PARTSTATE_CKB_Normal (0L << 0)
-#define FWL_PARTSTATE_CKB_Pressed (1L << 0)
-#define FWL_PARTSTATE_CKB_Hovered (2L << 0)
-#define FWL_PARTSTATE_CKB_Disabled (3L << 0)
-#define FWL_PARTSTATE_CKB_UnChecked (0L << 2)
-#define FWL_PARTSTATE_CKB_Checked (1L << 2)
-#define FWL_PARTSTATE_CKB_Neutral (2L << 2)
-#define FWL_PARTSTATE_CKB_Focused (1L << 4)
-#define FWL_PARTSTATE_CKB_Mask1 (3L << 0)
-#define FWL_PARTSTATE_CKB_Mask2 (3L << 2)
-#define FWL_EVT_CKB_CheckStateChanged L"FWL_EVENT_CKB_CheckStateChanged"
-#define FWL_EVTHASH_CKB_CheckStateChanged 2503252963
 
 BEGIN_FWL_EVENT_DEF(CFWL_EvtCkbCheckStateChanged,
-                    FWL_EVTHASH_CKB_CheckStateChanged)
+                    CFWL_EventType::CheckStateChanged)
 END_FWL_EVENT_DEF
 
 class IFWL_CheckBoxDP : public IFWL_DataProvider {
@@ -76,7 +58,7 @@ class IFWL_CheckBox : public IFWL_Widget {
   static IFWL_CheckBox* Create(const CFWL_WidgetImpProperties& properties,
                                IFWL_Widget* pOuter);
   int32_t GetCheckState();
-  FWL_ERR SetCheckState(int32_t iCheck);
+  FWL_Error SetCheckState(int32_t iCheck);
 
  protected:
   IFWL_CheckBox();

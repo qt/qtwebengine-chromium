@@ -114,8 +114,16 @@ config("common_config") {
     }
 
     if (is_clang) {
-      cflags += [ "-Wthread-safety" ]
+      cflags += [
+        "-Wimplicit-fallthrough",
+        "-Wthread-safety",
+        "-Winconsistent-missing-override",
+      ]
     }
+  }
+
+  if (rtc_enable_libevent) {
+    defines += [ "WEBRTC_BUILD_LIBEVENT" ]
   }
 
   if (current_cpu == "arm64") {
@@ -129,8 +137,6 @@ config("common_config") {
       defines += [ "WEBRTC_ARCH_ARM_V7" ]
       if (arm_use_neon) {
         defines += [ "WEBRTC_HAS_NEON" ]
-      } else if (arm_optionally_use_neon) {
-        defines += [ "WEBRTC_DETECT_NEON" ]
       }
     }
   }
@@ -169,7 +175,6 @@ source_set("webrtc") {
   sources = [
     "call.h",
     "config.h",
-    "frame_callback.h",
     "transport.h",
   ]
 
@@ -202,10 +207,7 @@ source_set("webrtc") {
   ]
 
   if (build_with_chromium) {
-    deps += [
-      "modules/video_capture",
-      "modules/video_render",
-    ]
+    deps += [ "modules/video_capture" ]
   }
 
   if (rtc_enable_protobuf) {
@@ -220,7 +222,6 @@ if (!build_with_chromium) {
     deps = [
       ":webrtc",
       "modules/video_capture:video_capture_internal_impl",
-      "modules/video_render:video_render_internal_impl",
       "test",
     ]
   }
@@ -260,6 +261,8 @@ source_set("rtc_event_log") {
   sources = [
     "call/rtc_event_log.cc",
     "call/rtc_event_log.h",
+    "call/rtc_event_log_helper_thread.cc",
+    "call/rtc_event_log_helper_thread.h",
   ]
 
   defines = []
@@ -278,6 +281,29 @@ source_set("rtc_event_log") {
     # Suppress warnings from Chrome's Clang plugins.
     # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
     configs -= [ "//build/config/clang:find_bad_constructs" ]
+  }
+}
+
+if (rtc_enable_protobuf) {
+  source_set("rtc_event_log_parser") {
+    sources = [
+      "call/rtc_event_log_parser.cc",
+      "call/rtc_event_log_parser.h",
+    ]
+
+    configs += [ ":common_config" ]
+    public_configs = [ ":common_inherited_config" ]
+
+    deps = [
+      ":rtc_event_log_proto",
+      ":webrtc_common",
+    ]
+
+    if (is_clang && !is_nacl) {
+      # Suppress warnings from Chrome's Clang plugins.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      configs -= [ "//build/config/clang:find_bad_constructs" ]
+    }
   }
 }
 

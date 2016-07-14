@@ -70,6 +70,15 @@ public:
     void setAllowSRGBInputs(bool allowSRGBInputs) { fAllowSRGBInputs = allowSRGBInputs; }
     bool getAllowSRGBInputs() const { return fAllowSRGBInputs; }
 
+    /**
+     * Should rendering be gamma-correct, end-to-end. Causes sRGB render targets to behave
+     * as such (with linear blending), and sRGB inputs to be filtered and decoded correctly.
+     */
+    void setGammaCorrect(bool gammaCorrect) {
+        setDisableOutputConversionToSRGB(!gammaCorrect);
+        setAllowSRGBInputs(gammaCorrect);
+    }
+
     const GrXPFactory* setXPFactory(const GrXPFactory* xpFactory) {
         fXPFactory.reset(SkSafeRef(xpFactory));
         return xpFactory;

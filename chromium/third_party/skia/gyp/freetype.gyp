@@ -33,7 +33,7 @@
           }, { # (not skia_freetype_static)
             # dynamic linking depends on the OS:
             'conditions': [
-              [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]',
+              [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]',
                 {
                   'direct_dependent_settings': {
                     'include_dirs' : [
@@ -104,7 +104,7 @@
         }],
         [ 'skia_clang_build == 1', {
           'cflags':[
-            '-Wno-error',
+            '-w',
           ],
         }],
       ],

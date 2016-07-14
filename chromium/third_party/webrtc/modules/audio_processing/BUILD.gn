@@ -24,17 +24,16 @@ source_set("audio_processing") {
   sources = [
     "aec/aec_core.cc",
     "aec/aec_core.h",
-    "aec/aec_core_internal.h",
-    "aec/aec_rdft.c",
+    "aec/aec_core_optimized_methods.h",
+    "aec/aec_rdft.cc",
     "aec/aec_rdft.h",
     "aec/aec_resampler.cc",
     "aec/aec_resampler.h",
     "aec/echo_cancellation.cc",
     "aec/echo_cancellation.h",
-    "aec/echo_cancellation_internal.h",
-    "aecm/aecm_core.c",
+    "aecm/aecm_core.cc",
     "aecm/aecm_core.h",
-    "aecm/echo_control_mobile.c",
+    "aecm/echo_control_mobile.cc",
     "aecm/echo_control_mobile.h",
     "agc/agc.cc",
     "agc/agc.h",
@@ -81,9 +80,8 @@ source_set("audio_processing") {
     "intelligibility/intelligibility_utils.h",
     "level_estimator_impl.cc",
     "level_estimator_impl.h",
-    "logging/aec_logging.h",
-    "logging/aec_logging_file_handling.cc",
-    "logging/aec_logging_file_handling.h",
+    "logging/apm_data_dumper.cc",
+    "logging/apm_data_dumper.h",
     "noise_suppression_impl.cc",
     "noise_suppression_impl.h",
     "render_queue_item_verifier.h",
@@ -110,10 +108,10 @@ source_set("audio_processing") {
     "typing_detection.h",
     "utility/block_mean_calculator.cc",
     "utility/block_mean_calculator.h",
-    "utility/delay_estimator.c",
+    "utility/delay_estimator.cc",
     "utility/delay_estimator.h",
     "utility/delay_estimator_internal.h",
-    "utility/delay_estimator_wrapper.c",
+    "utility/delay_estimator_wrapper.cc",
     "utility/delay_estimator_wrapper.h",
     "vad/common.h",
     "vad/gmm.cc",
@@ -149,7 +147,9 @@ source_set("audio_processing") {
   ]
 
   if (aec_debug_dump) {
-    defines += [ "WEBRTC_AEC_DEBUG_DUMP" ]
+    defines += [ "WEBRTC_AEC_DEBUG_DUMP=1" ]
+  } else {
+    defines += [ "WEBRTC_AEC_DEBUG_DUMP=0" ]
   }
 
   if (aec_untrusted_delay_for_testing) {
@@ -196,15 +196,15 @@ source_set("audio_processing") {
   }
 
   if (current_cpu == "mipsel") {
-    sources += [ "aecm/aecm_core_mips.c" ]
+    sources += [ "aecm/aecm_core_mips.cc" ]
     if (mips_float_abi == "hard") {
       sources += [
         "aec/aec_core_mips.cc",
-        "aec/aec_rdft_mips.c",
+        "aec/aec_rdft_mips.cc",
       ]
     }
   } else {
-    sources += [ "aecm/aecm_core_c.c" ]
+    sources += [ "aecm/aecm_core_c.cc" ]
   }
 
   if (is_win) {
@@ -241,7 +241,7 @@ if (current_cpu == "x86" || current_cpu == "x64") {
   source_set("audio_processing_sse2") {
     sources = [
       "aec/aec_core_sse2.cc",
-      "aec/aec_rdft_sse2.c",
+      "aec/aec_rdft_sse2.cc",
     ]
 
     if (is_posix) {
@@ -250,6 +250,12 @@ if (current_cpu == "x86" || current_cpu == "x64") {
 
     configs += [ "../..:common_config" ]
     public_configs = [ "../..:common_inherited_config" ]
+
+    if (aec_debug_dump) {
+      defines = [ "WEBRTC_AEC_DEBUG_DUMP=1" ]
+    } else {
+      defines = [ "WEBRTC_AEC_DEBUG_DUMP=0" ]
+    }
   }
 }
 
@@ -257,8 +263,8 @@ if (rtc_build_with_neon) {
   source_set("audio_processing_neon") {
     sources = [
       "aec/aec_core_neon.cc",
-      "aec/aec_rdft_neon.c",
-      "aecm/aecm_core_neon.c",
+      "aec/aec_rdft_neon.cc",
+      "aecm/aecm_core_neon.cc",
       "ns/nsx_core_neon.c",
     ]
 
@@ -285,5 +291,11 @@ if (rtc_build_with_neon) {
     deps = [
       "../../common_audio",
     ]
+
+    if (aec_debug_dump) {
+      defines = [ "WEBRTC_AEC_DEBUG_DUMP=1" ]
+    } else {
+      defines = [ "WEBRTC_AEC_DEBUG_DUMP=0" ]
+    }
   }
 }

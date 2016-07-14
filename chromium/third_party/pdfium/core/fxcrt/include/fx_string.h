@@ -10,144 +10,35 @@
 #include <stdint.h>  // For intptr_t.
 #include <algorithm>
 
+#include "core/fxcrt/cfx_string_c_template.h"
 #include "core/fxcrt/cfx_string_data_template.h"
 #include "core/fxcrt/include/cfx_retain_ptr.h"
 #include "core/fxcrt/include/fx_memory.h"
 #include "core/fxcrt/include/fx_system.h"
 
-class CFX_BinaryBuf;
 class CFX_ByteString;
 class CFX_WideString;
 
-// An immutable string with caller-provided storage which must outlive the
-// string itself.
-class CFX_ByteStringC {
- public:
-  typedef FX_CHAR value_type;
+using CFX_ByteStringC = CFX_StringCTemplate<FX_CHAR>;
+using CFX_WideStringC = CFX_StringCTemplate<FX_WCHAR>;
 
-  CFX_ByteStringC() {
-    m_Ptr = NULL;
-    m_Length = 0;
-  }
-
-  CFX_ByteStringC(const uint8_t* ptr, FX_STRSIZE size) {
-    m_Ptr = ptr;
-    m_Length = size;
-  }
-
-  CFX_ByteStringC(const FX_CHAR* ptr) {
-    m_Ptr = (const uint8_t*)ptr;
-    m_Length = ptr ? FXSYS_strlen(ptr) : 0;
-  }
-
-  // |ch| must be an lvalue that outlives the the CFX_ByteStringC. However,
-  // the use of char rvalues are not caught at compile time.  They are
-  // implicitly promoted to CFX_ByteString (see below) and then the
-  // CFX_ByteStringC is constructed from the CFX_ByteString via the alternate
-  // constructor below. The CFX_ByteString then typically goes out of scope
-  // and |m_Ptr| may be left pointing to invalid memory. Beware.
-  // TODO(tsepez): Mark single-argument string constructors as explicit.
-  CFX_ByteStringC(FX_CHAR& ch) {
-    m_Ptr = (const uint8_t*)&ch;
-    m_Length = 1;
-  }
-
-  CFX_ByteStringC(const FX_CHAR* ptr, FX_STRSIZE len) {
-    m_Ptr = (const uint8_t*)ptr;
-    m_Length = (len == -1) ? FXSYS_strlen(ptr) : len;
-  }
-
-  CFX_ByteStringC(const CFX_ByteStringC& src) {
-    m_Ptr = src.m_Ptr;
-    m_Length = src.m_Length;
-  }
-
-  CFX_ByteStringC& operator=(const FX_CHAR* src) {
-    m_Ptr = (const uint8_t*)src;
-    m_Length = m_Ptr ? FXSYS_strlen(src) : 0;
-    return *this;
-  }
-
-  CFX_ByteStringC& operator=(const CFX_ByteStringC& src) {
-    m_Ptr = src.m_Ptr;
-    m_Length = src.m_Length;
-    return *this;
-  }
-
-  CFX_ByteStringC& operator=(const CFX_ByteString& src);
-
-  bool operator==(const char* ptr) const {
-    return FXSYS_strlen(ptr) == m_Length &&
-           FXSYS_memcmp(ptr, m_Ptr, m_Length) == 0;
-  }
-  bool operator==(const CFX_ByteStringC& other) const {
-    return other.m_Length == m_Length &&
-           FXSYS_memcmp(other.m_Ptr, m_Ptr, m_Length) == 0;
-  }
-  bool operator!=(const char* ptr) const { return !(*this == ptr); }
-  bool operator!=(const CFX_ByteStringC& other) const {
-    return !(*this == other);
-  }
-
-  uint32_t GetID(FX_STRSIZE start_pos = 0) const;
-
-  const uint8_t* raw_str() const { return m_Ptr; }
-  const FX_CHAR* c_str() const {
-    return reinterpret_cast<const FX_CHAR*>(m_Ptr);
-  }
-
-  FX_STRSIZE GetLength() const { return m_Length; }
-  bool IsEmpty() const { return m_Length == 0; }
-
-  uint8_t GetAt(FX_STRSIZE index) const { return m_Ptr[index]; }
-
-  CFX_ByteStringC Mid(FX_STRSIZE index, FX_STRSIZE count = -1) const {
-    if (index < 0) {
-      index = 0;
-    }
-    if (index > m_Length) {
-      return CFX_ByteStringC();
-    }
-    if (count < 0 || count > m_Length - index) {
-      count = m_Length - index;
-    }
-    return CFX_ByteStringC(m_Ptr + index, count);
-  }
-
-  const uint8_t& operator[](size_t index) const { return m_Ptr[index]; }
-
-  bool operator<(const CFX_ByteStringC& that) const {
-    int result = memcmp(m_Ptr, that.m_Ptr, std::min(m_Length, that.m_Length));
-    return result < 0 || (result == 0 && m_Length < that.m_Length);
-  }
-
- protected:
-  const uint8_t* m_Ptr;
-  FX_STRSIZE m_Length;
-
- private:
-  void* operator new(size_t) throw() { return NULL; }
-};
-inline bool operator==(const char* lhs, const CFX_ByteStringC& rhs) {
-  return rhs == lhs;
-}
-inline bool operator!=(const char* lhs, const CFX_ByteStringC& rhs) {
-  return rhs != lhs;
-}
 #define FXBSTR_ID(c1, c2, c3, c4)                                      \
   (((uint32_t)c1 << 24) | ((uint32_t)c2 << 16) | ((uint32_t)c3 << 8) | \
    ((uint32_t)c4))
+
+#define FX_WSTRC(wstr) CFX_WideStringC(wstr, FX_ArraySize(wstr) - 1)
 
 // A mutable string with shared buffers using copy-on-write semantics that
 // avoids the cost of std::string's iterator stability guarantees.
 class CFX_ByteString {
  public:
-  typedef FX_CHAR value_type;
+  using CharType = FX_CHAR;
 
   CFX_ByteString() {}
   CFX_ByteString(const CFX_ByteString& other) : m_pData(other.m_pData) {}
   CFX_ByteString(CFX_ByteString&& other) { m_pData.Swap(other.m_pData); }
 
+  // Deliberately implicit to avoid calling on every string literal.
   CFX_ByteString(char ch);
   CFX_ByteString(const FX_CHAR* ptr)
       : CFX_ByteString(ptr, ptr ? FXSYS_strlen(ptr) : 0) {}
@@ -155,41 +46,30 @@ class CFX_ByteString {
   CFX_ByteString(const FX_CHAR* ptr, FX_STRSIZE len);
   CFX_ByteString(const uint8_t* ptr, FX_STRSIZE len);
 
-  CFX_ByteString(const CFX_ByteStringC& bstrc);
+  explicit CFX_ByteString(const CFX_ByteStringC& bstrc);
   CFX_ByteString(const CFX_ByteStringC& bstrc1, const CFX_ByteStringC& bstrc2);
 
   ~CFX_ByteString();
 
-  // Deprecated -- use clear().
-  void Empty() { m_pData.Reset(); }
   void clear() { m_pData.Reset(); }
 
   static CFX_ByteString FromUnicode(const FX_WCHAR* ptr, FX_STRSIZE len = -1);
   static CFX_ByteString FromUnicode(const CFX_WideString& str);
 
   // Explicit conversion to C-style string.
-  // Note: |this| must outlive the use of the result.
+  // Note: Any subsequent modification of |this| will invalidate the result.
   const FX_CHAR* c_str() const { return m_pData ? m_pData->m_String : ""; }
 
-  // Implicit conversion to C-style string -- deprecated.
-  operator const FX_CHAR*() const { return m_pData ? m_pData->m_String : ""; }
-
   // Explicit conversion to uint8_t*.
-  // Note: |this| must outlive the use of the result.
+  // Note: Any subsequent modification of |this| will invalidate the result.
   const uint8_t* raw_str() const {
     return m_pData ? reinterpret_cast<const uint8_t*>(m_pData->m_String)
                    : nullptr;
   }
 
-  // Implicit conversion to uint8_t* -- deprecated.
-  operator const uint8_t*() const {
-    return m_pData ? reinterpret_cast<const uint8_t*>(m_pData->m_String)
-                   : nullptr;
-  }
-
   // Explicit conversion to CFX_ByteStringC.
-  // Note: |this| must outlive the use of the result.
-  CFX_ByteStringC AsByteStringC() const {
+  // Note: Any subsequent modification of |this| will invalidate the result.
+  CFX_ByteStringC AsStringC() const {
     return CFX_ByteStringC(raw_str(), GetLength());
   }
 
@@ -218,9 +98,6 @@ class CFX_ByteString {
   const CFX_ByteString& operator=(const FX_CHAR* str);
   const CFX_ByteString& operator=(const CFX_ByteStringC& bstrc);
   const CFX_ByteString& operator=(const CFX_ByteString& stringSrc);
-  const CFX_ByteString& operator=(const CFX_BinaryBuf& buf);
-
-  void Load(const uint8_t* str, FX_STRSIZE len);
 
   const CFX_ByteString& operator+=(FX_CHAR ch);
   const CFX_ByteString& operator+=(const FX_CHAR* str);
@@ -297,12 +174,6 @@ class CFX_ByteString {
   friend class fxcrt_ByteStringConcat_Test;
 };
 
-inline CFX_ByteStringC& CFX_ByteStringC::operator=(const CFX_ByteString& src) {
-  m_Ptr = (const uint8_t*)src;
-  m_Length = src.GetLength();
-  return *this;
-}
-
 inline bool operator==(const char* lhs, const CFX_ByteString& rhs) {
   return rhs == lhs;
 }
@@ -336,200 +207,76 @@ inline CFX_ByteString operator+(FX_CHAR ch, const CFX_ByteStringC& str2) {
 }
 inline CFX_ByteString operator+(const CFX_ByteString& str1,
                                 const CFX_ByteString& str2) {
-  return CFX_ByteString(str1.AsByteStringC(), str2.AsByteStringC());
+  return CFX_ByteString(str1.AsStringC(), str2.AsStringC());
 }
 inline CFX_ByteString operator+(const CFX_ByteString& str1, FX_CHAR ch) {
-  return CFX_ByteString(str1.AsByteStringC(), CFX_ByteStringC(ch));
+  return CFX_ByteString(str1.AsStringC(), CFX_ByteStringC(ch));
 }
 inline CFX_ByteString operator+(FX_CHAR ch, const CFX_ByteString& str2) {
-  return CFX_ByteString(ch, str2.AsByteStringC());
+  return CFX_ByteString(ch, str2.AsStringC());
 }
 inline CFX_ByteString operator+(const CFX_ByteString& str1,
                                 const FX_CHAR* str2) {
-  return CFX_ByteString(str1.AsByteStringC(), str2);
+  return CFX_ByteString(str1.AsStringC(), str2);
 }
 inline CFX_ByteString operator+(const FX_CHAR* str1,
                                 const CFX_ByteString& str2) {
-  return CFX_ByteString(str1, str2.AsByteStringC());
+  return CFX_ByteString(str1, str2.AsStringC());
 }
 inline CFX_ByteString operator+(const CFX_ByteString& str1,
                                 const CFX_ByteStringC& str2) {
-  return CFX_ByteString(str1.AsByteStringC(), str2);
+  return CFX_ByteString(str1.AsStringC(), str2);
 }
 inline CFX_ByteString operator+(const CFX_ByteStringC& str1,
                                 const CFX_ByteString& str2) {
-  return CFX_ByteString(str1, str2.AsByteStringC());
+  return CFX_ByteString(str1, str2.AsStringC());
 }
-
-class CFX_WideStringC {
- public:
-  typedef FX_WCHAR value_type;
-
-  CFX_WideStringC() {
-    m_Ptr = NULL;
-    m_Length = 0;
-  }
-
-  CFX_WideStringC(const FX_WCHAR* ptr) {
-    m_Ptr = ptr;
-    m_Length = ptr ? FXSYS_wcslen(ptr) : 0;
-  }
-
-  CFX_WideStringC(FX_WCHAR& ch) {
-    m_Ptr = &ch;
-    m_Length = 1;
-  }
-
-  CFX_WideStringC(const FX_WCHAR* ptr, FX_STRSIZE len) {
-    m_Ptr = ptr;
-    m_Length = (len == -1) ? FXSYS_wcslen(ptr) : len;
-  }
-
-  CFX_WideStringC(const CFX_WideStringC& src) {
-    m_Ptr = src.m_Ptr;
-    m_Length = src.m_Length;
-  }
-
-  CFX_WideStringC& operator=(const FX_WCHAR* src) {
-    m_Ptr = src;
-    m_Length = FXSYS_wcslen(src);
-    return *this;
-  }
-
-  CFX_WideStringC& operator=(const CFX_WideStringC& src) {
-    m_Ptr = src.m_Ptr;
-    m_Length = src.m_Length;
-    return *this;
-  }
-
-  CFX_WideStringC& operator=(const CFX_WideString& src);
-
-  bool operator==(const wchar_t* ptr) const {
-    return FXSYS_wcslen(ptr) == m_Length && wmemcmp(ptr, m_Ptr, m_Length) == 0;
-  }
-  bool operator==(const CFX_WideStringC& str) const {
-    return str.m_Length == m_Length && wmemcmp(str.m_Ptr, m_Ptr, m_Length) == 0;
-  }
-  bool operator!=(const wchar_t* ptr) const { return !(*this == ptr); }
-  bool operator!=(const CFX_WideStringC& str) const { return !(*this == str); }
-
-  const FX_WCHAR* raw_str() const { return m_Ptr; }
-
-  FX_STRSIZE GetLength() const { return m_Length; }
-  bool IsEmpty() const { return m_Length == 0; }
-
-  FX_WCHAR GetAt(FX_STRSIZE index) const { return m_Ptr[index]; }
-
-  CFX_WideStringC Left(FX_STRSIZE count) const {
-    if (count < 1) {
-      return CFX_WideStringC();
-    }
-    if (count > m_Length) {
-      count = m_Length;
-    }
-    return CFX_WideStringC(m_Ptr, count);
-  }
-
-  CFX_WideStringC Mid(FX_STRSIZE index, FX_STRSIZE count = -1) const {
-    if (index < 0) {
-      index = 0;
-    }
-    if (index > m_Length) {
-      return CFX_WideStringC();
-    }
-    if (count < 0 || count > m_Length - index) {
-      count = m_Length - index;
-    }
-    return CFX_WideStringC(m_Ptr + index, count);
-  }
-
-  CFX_WideStringC Right(FX_STRSIZE count) const {
-    if (count < 1) {
-      return CFX_WideStringC();
-    }
-    if (count > m_Length) {
-      count = m_Length;
-    }
-    return CFX_WideStringC(m_Ptr + m_Length - count, count);
-  }
-
-  const FX_WCHAR& operator[](size_t index) const { return m_Ptr[index]; }
-
-  bool operator<(const CFX_WideStringC& that) const {
-    int result = wmemcmp(m_Ptr, that.m_Ptr, std::min(m_Length, that.m_Length));
-    return result < 0 || (result == 0 && m_Length < that.m_Length);
-  }
-
- protected:
-  const FX_WCHAR* m_Ptr;
-  FX_STRSIZE m_Length;
-
- private:
-  void* operator new(size_t) throw() { return NULL; }
-};
-
-inline bool operator==(const wchar_t* lhs, const CFX_WideStringC& rhs) {
-  return rhs == lhs;
-}
-inline bool operator!=(const wchar_t* lhs, const CFX_WideStringC& rhs) {
-  return rhs != lhs;
-}
-#define FX_WSTRC(wstr) CFX_WideStringC(wstr, FX_ArraySize(wstr) - 1)
 
 // A mutable string with shared buffers using copy-on-write semantics that
 // avoids the cost of std::string's iterator stability guarantees.
 class CFX_WideString {
  public:
-  typedef FX_WCHAR value_type;
+  using CharType = FX_WCHAR;
 
-  CFX_WideString() : m_pData(nullptr) {}
+  CFX_WideString() {}
+  CFX_WideString(const CFX_WideString& other) : m_pData(other.m_pData) {}
+  CFX_WideString(CFX_WideString&& other) { m_pData.Swap(other.m_pData); }
 
-  // Copy constructor.
-  CFX_WideString(const CFX_WideString& str);
-
-  // Move constructor.
-  CFX_WideString(CFX_WideString&& other) {
-    m_pData = other.m_pData;
-    other.m_pData = nullptr;
-  }
-
+  // Deliberately implicit to avoid calling on every string literal.
+  CFX_WideString(FX_WCHAR ch);
   CFX_WideString(const FX_WCHAR* ptr)
       : CFX_WideString(ptr, ptr ? FXSYS_wcslen(ptr) : 0) {}
 
   CFX_WideString(const FX_WCHAR* ptr, FX_STRSIZE len);
-  CFX_WideString(FX_WCHAR ch);
 
-  CFX_WideString(const CFX_WideStringC& str);
+  explicit CFX_WideString(const CFX_WideStringC& str);
   CFX_WideString(const CFX_WideStringC& str1, const CFX_WideStringC& str2);
 
   ~CFX_WideString();
 
-  static CFX_WideString FromLocal(const CFX_ByteString& str);
-  static CFX_WideString FromCodePage(const CFX_ByteString& str,
+  static CFX_WideString FromLocal(const CFX_ByteStringC& str);
+  static CFX_WideString FromCodePage(const CFX_ByteStringC& str,
                                      uint16_t codepage);
 
-  static CFX_WideString FromUTF8(const char* str, FX_STRSIZE len);
+  static CFX_WideString FromUTF8(const CFX_ByteStringC& str);
   static CFX_WideString FromUTF16LE(const unsigned short* str, FX_STRSIZE len);
 
   static FX_STRSIZE WStringLength(const unsigned short* str);
 
   // Explicit conversion to C-style wide string.
-  // Note: |this| must outlive the use of the result.
+  // Note: Any subsequent modification of |this| will invalidate the result.
   const FX_WCHAR* c_str() const { return m_pData ? m_pData->m_String : L""; }
 
-  // Implicit conversion to C-style wide string -- deprecated.
-  // Note: |this| must outlive the use of the result.
-  operator const FX_WCHAR*() const { return m_pData ? m_pData->m_String : L""; }
-
   // Explicit conversion to CFX_WideStringC.
-  // Note: |this| must outlive the use of the result.
-  CFX_WideStringC AsWideStringC() const {
+  // Note: Any subsequent modification of |this| will invalidate the result.
+  CFX_WideStringC AsStringC() const {
     return CFX_WideStringC(c_str(), GetLength());
   }
 
-  void Empty();
-  bool IsEmpty() const { return !GetLength(); }
+  void clear() { m_pData.Reset(); }
+
   FX_STRSIZE GetLength() const { return m_pData ? m_pData->m_nDataLength : 0; }
+  bool IsEmpty() const { return !GetLength(); }
 
   const CFX_WideString& operator=(const FX_WCHAR* str);
   const CFX_WideString& operator=(const CFX_WideString& stringSrc);
@@ -587,11 +334,11 @@ class CFX_WideString {
 
   void TrimRight();
   void TrimRight(FX_WCHAR chTarget);
-  void TrimRight(const FX_WCHAR* lpszTargets);
+  void TrimRight(const CFX_WideStringC& pTargets);
 
   void TrimLeft();
   void TrimLeft(FX_WCHAR chTarget);
-  void TrimLeft(const FX_WCHAR* lpszTargets);
+  void TrimLeft(const CFX_WideStringC& pTargets);
 
   void Reserve(FX_STRSIZE len);
   FX_WCHAR* GetBuffer(FX_STRSIZE len);
@@ -600,61 +347,28 @@ class CFX_WideString {
   int GetInteger() const;
   FX_FLOAT GetFloat() const;
 
-  FX_STRSIZE Find(const FX_WCHAR* lpszSub, FX_STRSIZE start = 0) const;
+  FX_STRSIZE Find(const CFX_WideStringC& pSub, FX_STRSIZE start = 0) const;
   FX_STRSIZE Find(FX_WCHAR ch, FX_STRSIZE start = 0) const;
-  FX_STRSIZE Replace(const FX_WCHAR* lpszOld, const FX_WCHAR* lpszNew);
+  FX_STRSIZE Replace(const CFX_WideStringC& pOld, const CFX_WideStringC& pNew);
   FX_STRSIZE Remove(FX_WCHAR ch);
 
   CFX_ByteString UTF8Encode() const;
   CFX_ByteString UTF16LE_Encode() const;
 
  protected:
-  class StringData {
-   public:
-    static StringData* Create(int nLen);
-    void Retain() { ++m_nRefs; }
-    void Release() {
-      if (--m_nRefs <= 0)
-        FX_Free(this);
-    }
+  using StringData = CFX_StringDataTemplate<FX_WCHAR>;
 
-    intptr_t m_nRefs;  // Would prefer ssize_t, but no windows support.
-    FX_STRSIZE m_nDataLength;
-    FX_STRSIZE m_nAllocLength;
-    FX_WCHAR m_String[1];
-
-   private:
-    StringData(FX_STRSIZE dataLen, FX_STRSIZE allocLen)
-        : m_nRefs(1), m_nDataLength(dataLen), m_nAllocLength(allocLen) {
-      FXSYS_assert(dataLen >= 0);
-      FXSYS_assert(allocLen >= 0);
-      FXSYS_assert(dataLen <= allocLen);
-      m_String[dataLen] = 0;
-    }
-    ~StringData() = delete;
-  };
-
-  void CopyBeforeWrite();
+  void ReallocBeforeWrite(FX_STRSIZE nLen);
   void AllocBeforeWrite(FX_STRSIZE nLen);
-  void ConcatInPlace(FX_STRSIZE nSrcLen, const FX_WCHAR* lpszSrcData);
-  void ConcatCopy(FX_STRSIZE nSrc1Len,
-                  const FX_WCHAR* lpszSrc1Data,
-                  FX_STRSIZE nSrc2Len,
-                  const FX_WCHAR* lpszSrc2Data);
-  void AssignCopy(FX_STRSIZE nSrcLen, const FX_WCHAR* lpszSrcData);
   void AllocCopy(CFX_WideString& dest,
                  FX_STRSIZE nCopyLen,
                  FX_STRSIZE nCopyIndex) const;
+  void AssignCopy(const FX_WCHAR* pSrcData, FX_STRSIZE nSrcLen);
+  void Concat(const FX_WCHAR* lpszSrcData, FX_STRSIZE nSrcLen);
 
-  StringData* m_pData;
+  CFX_RetainPtr<StringData> m_pData;
   friend class fxcrt_WideStringConcatInPlace_Test;
 };
-
-inline CFX_WideStringC& CFX_WideStringC::operator=(const CFX_WideString& src) {
-  m_Ptr = src.c_str();
-  m_Length = src.GetLength();
-  return *this;
-}
 
 inline CFX_WideString operator+(const CFX_WideStringC& str1,
                                 const CFX_WideStringC& str2) {
@@ -676,29 +390,29 @@ inline CFX_WideString operator+(FX_WCHAR ch, const CFX_WideStringC& str2) {
 }
 inline CFX_WideString operator+(const CFX_WideString& str1,
                                 const CFX_WideString& str2) {
-  return CFX_WideString(str1.AsWideStringC(), str2.AsWideStringC());
+  return CFX_WideString(str1.AsStringC(), str2.AsStringC());
 }
 inline CFX_WideString operator+(const CFX_WideString& str1, FX_WCHAR ch) {
-  return CFX_WideString(str1.AsWideStringC(), CFX_WideStringC(ch));
+  return CFX_WideString(str1.AsStringC(), CFX_WideStringC(ch));
 }
 inline CFX_WideString operator+(FX_WCHAR ch, const CFX_WideString& str2) {
-  return CFX_WideString(ch, str2.AsWideStringC());
+  return CFX_WideString(ch, str2.AsStringC());
 }
 inline CFX_WideString operator+(const CFX_WideString& str1,
                                 const FX_WCHAR* str2) {
-  return CFX_WideString(str1.AsWideStringC(), str2);
+  return CFX_WideString(str1.AsStringC(), str2);
 }
 inline CFX_WideString operator+(const FX_WCHAR* str1,
                                 const CFX_WideString& str2) {
-  return CFX_WideString(str1, str2.AsWideStringC());
+  return CFX_WideString(str1, str2.AsStringC());
 }
 inline CFX_WideString operator+(const CFX_WideString& str1,
                                 const CFX_WideStringC& str2) {
-  return CFX_WideString(str1.AsWideStringC(), str2);
+  return CFX_WideString(str1.AsStringC(), str2);
 }
 inline CFX_WideString operator+(const CFX_WideStringC& str1,
                                 const CFX_WideString& str2) {
-  return CFX_WideString(str1, str2.AsWideStringC());
+  return CFX_WideString(str1, str2.AsStringC());
 }
 inline bool operator==(const wchar_t* lhs, const CFX_WideString& rhs) {
   return rhs == lhs;
@@ -715,7 +429,7 @@ inline bool operator!=(const CFX_WideStringC& lhs, const CFX_WideString& rhs) {
 
 CFX_ByteString FX_UTF8Encode(const FX_WCHAR* pwsStr, FX_STRSIZE len);
 inline CFX_ByteString FX_UTF8Encode(const CFX_WideStringC& wsStr) {
-  return FX_UTF8Encode(wsStr.raw_str(), wsStr.GetLength());
+  return FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength());
 }
 inline CFX_ByteString FX_UTF8Encode(const CFX_WideString& wsStr) {
   return FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength());
@@ -723,7 +437,7 @@ inline CFX_ByteString FX_UTF8Encode(const CFX_WideString& wsStr) {
 
 FX_FLOAT FX_atof(const CFX_ByteStringC& str);
 inline FX_FLOAT FX_atof(const CFX_WideStringC& wsStr) {
-  return FX_atof(FX_UTF8Encode(wsStr.raw_str(), wsStr.GetLength()).c_str());
+  return FX_atof(FX_UTF8Encode(wsStr.c_str(), wsStr.GetLength()).c_str());
 }
 void FX_atonum(const CFX_ByteStringC& str, FX_BOOL& bInteger, void* pData);
 FX_STRSIZE FX_ftoa(FX_FLOAT f, FX_CHAR* buf);

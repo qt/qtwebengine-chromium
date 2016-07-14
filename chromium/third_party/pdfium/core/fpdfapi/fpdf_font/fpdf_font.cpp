@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/fpdf_font/font_int.h"
 
+#include "core/fpdfapi/fpdf_page/cpdf_pagemodule.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_form.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
@@ -17,7 +18,7 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
 #include "core/fxcrt/include/fx_ext.h"
-#include "core/include/fxge/fx_freetype.h"
+#include "core/fxge/include/fx_freetype.h"
 #include "third_party/base/stl_util.h"
 
 FX_BOOL FT_UseTTCharmap(FXFT_Face face, int platform_id, int encoding_id) {
@@ -131,20 +132,19 @@ uint32_t CPDF_ToUnicodeMap::ReverseLookup(FX_WCHAR unicode) {
 
 // Static.
 uint32_t CPDF_ToUnicodeMap::StringToCode(const CFX_ByteStringC& str) {
-  const FX_CHAR* buf = str.c_str();
   int len = str.GetLength();
   if (len == 0)
     return 0;
 
   int result = 0;
-  if (buf[0] == '<') {
-    for (int i = 1; i < len && std::isxdigit(buf[i]); ++i)
-      result = result * 16 + FXSYS_toHexDigit(buf[i]);
+  if (str[0] == '<') {
+    for (int i = 1; i < len && std::isxdigit(str[i]); ++i)
+      result = result * 16 + FXSYS_toHexDigit(str.CharAt(i));
     return result;
   }
 
-  for (int i = 0; i < len && std::isdigit(buf[i]); ++i)
-    result = result * 10 + FXSYS_toDecimalDigit(buf[i]);
+  for (int i = 0; i < len && std::isdigit(str[i]); ++i)
+    result = result * 10 + FXSYS_toDecimalDigit(str.CharAt(i));
 
   return result;
 }
@@ -171,17 +171,16 @@ static CFX_WideString StringDataAdd(CFX_WideString str) {
 // Static.
 CFX_WideString CPDF_ToUnicodeMap::StringToWideString(
     const CFX_ByteStringC& str) {
-  const FX_CHAR* buf = str.c_str();
   int len = str.GetLength();
   if (len == 0)
     return CFX_WideString();
 
   CFX_WideString result;
-  if (buf[0] == '<') {
+  if (str[0] == '<') {
     int byte_pos = 0;
     FX_WCHAR ch = 0;
-    for (int i = 1; i < len && std::isxdigit(buf[i]); ++i) {
-      ch = ch * 16 + FXSYS_toHexDigit(buf[i]);
+    for (int i = 1; i < len && std::isxdigit(str[i]); ++i) {
+      ch = ch * 16 + FXSYS_toHexDigit(str[i]);
       byte_pos++;
       if (byte_pos == 4) {
         result += ch;
@@ -233,17 +232,17 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
           break;
         }
         high = parser.GetWord();
-        uint32_t lowcode = StringToCode(low.AsByteStringC());
-        uint32_t highcode = (lowcode & 0xffffff00) |
-                            (StringToCode(high.AsByteStringC()) & 0xff);
+        uint32_t lowcode = StringToCode(low.AsStringC());
+        uint32_t highcode =
+            (lowcode & 0xffffff00) | (StringToCode(high.AsStringC()) & 0xff);
         if (highcode == (uint32_t)-1) {
           break;
         }
-        CFX_ByteString start = parser.GetWord();
+        CFX_ByteString start(parser.GetWord());
         if (start == "[") {
           for (uint32_t code = lowcode; code <= highcode; code++) {
-            CFX_ByteString dest = parser.GetWord();
-            CFX_WideString destcode = StringToWideString(dest.AsByteStringC());
+            CFX_ByteString dest(parser.GetWord());
+            CFX_WideString destcode = StringToWideString(dest.AsStringC());
             int len = destcode.GetLength();
             if (len == 0) {
               continue;
@@ -258,11 +257,11 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
           }
           parser.GetWord();
         } else {
-          CFX_WideString destcode = StringToWideString(start.AsByteStringC());
+          CFX_WideString destcode = StringToWideString(start.AsStringC());
           int len = destcode.GetLength();
           uint32_t value = 0;
           if (len == 1) {
-            value = StringToCode(start.AsByteStringC());
+            value = StringToCode(start.AsStringC());
             for (uint32_t code = lowcode; code <= highcode; code++) {
               m_Map[code] = value++;
             }

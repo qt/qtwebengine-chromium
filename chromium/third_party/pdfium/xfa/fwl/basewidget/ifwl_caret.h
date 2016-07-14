@@ -11,20 +11,17 @@
 #include "xfa/fwl/core/cfwl_widgetimpproperties.h"
 
 #define FWL_CLASS_Caret L"FWL_CARET"
-#define FWL_CLASSHASH_Caret 671181879
 #define FWL_STATE_CAT_HightLight 1
-#define FWL_PART_CAT_Background 1
-#define FWL_PARTSTATE_CAT_HightLight 1
 
 class IFWL_Caret : public IFWL_Widget {
  public:
   static IFWL_Caret* Create(const CFWL_WidgetImpProperties& properties,
                             IFWL_Widget* pOuter);
 
-  FWL_ERR ShowCaret(FX_BOOL bFlag = TRUE);
-  FWL_ERR GetFrequency(uint32_t& elapse);
-  FWL_ERR SetFrequency(uint32_t elapse);
-  FWL_ERR SetColor(CFX_Color crFill);
+  void ShowCaret(FX_BOOL bFlag = TRUE);
+  FWL_Error GetFrequency(uint32_t& elapse);
+  FWL_Error SetFrequency(uint32_t elapse);
+  FWL_Error SetColor(CFX_Color crFill);
 
  protected:
   IFWL_Caret();

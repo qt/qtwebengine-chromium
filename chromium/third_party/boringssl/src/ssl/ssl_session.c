@@ -231,6 +231,19 @@ X509 *SSL_SESSION_get0_peer(const SSL_SESSION *session) {
   return session->peer;
 }
 
+size_t SSL_SESSION_get_master_key(const SSL_SESSION *session, uint8_t *out,
+                                  size_t max_out) {
+  /* TODO(davidben): Fix master_key_length's type and remove these casts. */
+  if (max_out == 0) {
+    return (size_t)session->master_key_length;
+  }
+  if (max_out > (size_t)session->master_key_length) {
+    max_out = (size_t)session->master_key_length;
+  }
+  memcpy(out, session->master_key, max_out);
+  return max_out;
+}
+
 long SSL_SESSION_set_time(SSL_SESSION *session, long time) {
   if (session == NULL) {
     return 0;
@@ -645,7 +658,8 @@ void SSL_CTX_flush_sessions(SSL_CTX *ctx, long time) {
 }
 
 int ssl_clear_bad_session(SSL *ssl) {
-  if (ssl->session != NULL && !(ssl->shutdown & SSL_SENT_SHUTDOWN) &&
+  if (ssl->session != NULL &&
+      ssl->s3->send_shutdown != ssl_shutdown_close_notify &&
       !SSL_in_init(ssl)) {
     SSL_CTX_remove_session(ssl->ctx, ssl->session);
     return 1;

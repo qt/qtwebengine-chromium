@@ -594,16 +594,15 @@ FuncTestManager::~FuncTestManager()
 
 int32_t FuncTestManager::Init()
 {
-    EXPECT_TRUE((_processThread = rtc::ScopedToUnique(
-                     ProcessThread::Create("ProcessThread"))) != NULL);
-    if (_processThread == NULL)
-    {
-        return -1;
+    EXPECT_TRUE((_processThread = ProcessThread::Create("ProcessThread")) !=
+                NULL);
+    if (_processThread == NULL) {
+      return -1;
     }
     _processThread->Start();
 
     // create the Audio Device module
-    EXPECT_TRUE((_audioDevice = AudioDeviceModuleImpl::Create(
+    EXPECT_TRUE((_audioDevice = AudioDeviceModule::Create(
         555, ADM_AUDIO_LAYER)) != NULL);
     if (_audioDevice == NULL)
     {
@@ -832,8 +831,8 @@ int32_t FuncTestManager::TestAudioLayerSelection()
         // ==================================================
         // Next, try to make fresh start with new audio layer
 
-        EXPECT_TRUE((_processThread = rtc::ScopedToUnique(
-                         ProcessThread::Create("ProcessThread"))) != NULL);
+        EXPECT_TRUE((_processThread = ProcessThread::Create("ProcessThread")) !=
+                    NULL);
         if (_processThread == NULL)
         {
             return -1;
@@ -843,12 +842,12 @@ int32_t FuncTestManager::TestAudioLayerSelection()
         // create the Audio Device module based on selected audio layer
         if (tryWinWave)
         {
-            _audioDevice = AudioDeviceModuleImpl::Create(
+            _audioDevice = AudioDeviceModule::Create(
                 555,
                 AudioDeviceModule::kWindowsWaveAudio);
         } else if (tryWinCore)
         {
-            _audioDevice = AudioDeviceModuleImpl::Create(
+            _audioDevice = AudioDeviceModule::Create(
                 555,
                 AudioDeviceModule::kWindowsCoreAudio);
         }
@@ -857,7 +856,7 @@ int32_t FuncTestManager::TestAudioLayerSelection()
         {
             TEST_LOG("\nERROR: Switch of audio layer failed!\n");
             // restore default audio layer instead
-            EXPECT_TRUE((_audioDevice = AudioDeviceModuleImpl::Create(
+            EXPECT_TRUE((_audioDevice = AudioDeviceModule::Create(
                 555, AudioDeviceModule::kPlatformDefaultAudio)) != NULL);
         }
 

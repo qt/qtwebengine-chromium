@@ -10,7 +10,6 @@
 #include <memory>
 #include <vector>
 
-#include "core/fpdfapi/fpdf_page/cpdf_parseoptions.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_image.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_imageobject.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
@@ -19,9 +18,9 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_safe_types.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 namespace {
 
@@ -38,8 +37,8 @@ unsigned int GetBits8(const uint8_t* pData, uint64_t bitpos, size_t nbits) {
   return (byte >> (8 - nbits - (bitpos % 8))) & ((1 << nbits) - 1);
 }
 
-FX_SAFE_DWORD CalculatePitch8(uint32_t bpc, uint32_t components, int width) {
-  FX_SAFE_DWORD pitch = bpc;
+FX_SAFE_UINT32 CalculatePitch8(uint32_t bpc, uint32_t components, int width) {
+  FX_SAFE_UINT32 pitch = bpc;
   pitch *= components;
   pitch *= width;
   pitch += 7;
@@ -47,8 +46,8 @@ FX_SAFE_DWORD CalculatePitch8(uint32_t bpc, uint32_t components, int width) {
   return pitch;
 }
 
-FX_SAFE_DWORD CalculatePitch32(int bpp, int width) {
-  FX_SAFE_DWORD pitch = bpp;
+FX_SAFE_UINT32 CalculatePitch32(int bpp, int width) {
+  FX_SAFE_UINT32 pitch = bpp;
   pitch *= width;
   pitch += 31;
   pitch /= 32;  // quantized to number of 32-bit words.
@@ -70,7 +69,7 @@ T ClampValue(T value, T max_value) {
 // Wrapper class to use with std::unique_ptr for CJPX_Decoder.
 class JpxBitMapContext {
  public:
-  explicit JpxBitMapContext(ICodec_JpxModule* jpx_module)
+  explicit JpxBitMapContext(CCodec_JpxModule* jpx_module)
       : jpx_module_(jpx_module), decoder_(nullptr) {}
 
   ~JpxBitMapContext() { jpx_module_->DestroyDecoder(decoder_); }
@@ -81,7 +80,7 @@ class JpxBitMapContext {
   CJPX_Decoder* decoder() { return decoder_; }
 
  private:
-  ICodec_JpxModule* const jpx_module_;  // Weak pointer.
+  CCodec_JpxModule* const jpx_module_;  // Weak pointer.
   CJPX_Decoder* decoder_;               // Decoder, owned.
 
   // Disallow evil constructors
@@ -129,7 +128,7 @@ CPDF_DIBSource::~CPDF_DIBSource() {
     m_pDocument->GetPageData()->ReleaseColorSpace(pCS->GetArray());
   }
   if (m_pJbig2Context) {
-    ICodec_Jbig2Module* pJbig2Module = CPDF_ModuleMgr::Get()->GetJbig2Module();
+    CCodec_Jbig2Module* pJbig2Module = CPDF_ModuleMgr::Get()->GetJbig2Module();
     pJbig2Module->DestroyJbig2Context(m_pJbig2Context);
   }
 }
@@ -177,7 +176,7 @@ FX_BOOL CPDF_DIBSource::Load(CPDF_Document* pDoc,
   if (m_bDoBpcCheck && (m_bpc == 0 || m_nComponents == 0)) {
     return FALSE;
   }
-  FX_SAFE_DWORD src_size =
+  FX_SAFE_UINT32 src_size =
       CalculatePitch8(m_bpc, m_nComponents, m_Width) * m_Height;
   if (!src_size.IsValid()) {
     return FALSE;
@@ -202,7 +201,7 @@ FX_BOOL CPDF_DIBSource::Load(CPDF_Document* pDoc,
   } else {
     m_bpp = 24;
   }
-  FX_SAFE_DWORD pitch = CalculatePitch32(m_bpp, m_Width);
+  FX_SAFE_UINT32 pitch = CalculatePitch32(m_bpp, m_Width);
   if (!pitch.IsValid()) {
     return FALSE;
   }
@@ -246,7 +245,7 @@ int CPDF_DIBSource::ContinueToLoadMask() {
   if (!m_bpc || !m_nComponents) {
     return 0;
   }
-  FX_SAFE_DWORD pitch = CalculatePitch32(m_bpp, m_Width);
+  FX_SAFE_UINT32 pitch = CalculatePitch32(m_bpp, m_Width);
   if (!pitch.IsValid()) {
     return 0;
   }
@@ -299,7 +298,7 @@ int CPDF_DIBSource::StartLoadDIBSource(CPDF_Document* pDoc,
   if (m_bDoBpcCheck && (m_bpc == 0 || m_nComponents == 0)) {
     return 0;
   }
-  FX_SAFE_DWORD src_size =
+  FX_SAFE_UINT32 src_size =
       CalculatePitch8(m_bpc, m_nComponents, m_Width) * m_Height;
   if (!src_size.IsValid()) {
     return 0;
@@ -344,7 +343,7 @@ int CPDF_DIBSource::ContinueLoadDIBSource(IFX_Pause* pPause) {
     if (decoder == "JPXDecode") {
       return 0;
     }
-    ICodec_Jbig2Module* pJbig2Module = CPDF_ModuleMgr::Get()->GetJbig2Module();
+    CCodec_Jbig2Module* pJbig2Module = CPDF_ModuleMgr::Get()->GetJbig2Module();
     if (!m_pJbig2Context) {
       m_pJbig2Context = pJbig2Module->CreateJbig2Context();
       if (m_pStreamAcc->GetImageParam()) {
@@ -527,14 +526,14 @@ DIB_COMP_DATA* CPDF_DIBSource::GetDecodeAndMaskArray(FX_BOOL& bDefaultDecode,
   return pCompData;
 }
 
-ICodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
+CCodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
     int height,
     const CPDF_Dictionary* pParams);
 
-ICodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
+CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -565,7 +564,7 @@ int CPDF_DIBSource::CreateDecoder() {
       FX_BOOL bTransform = FALSE;
       int comps;
       int bpc;
-      ICodec_JpegModule* pJpegModule = CPDF_ModuleMgr::Get()->GetJpegModule();
+      CCodec_JpegModule* pJpegModule = CPDF_ModuleMgr::Get()->GetJpegModule();
       if (pJpegModule->LoadInfo(src_data, src_size, m_Width, m_Height, comps,
                                 bpc, bTransform)) {
         if (m_nComponents != static_cast<uint32_t>(comps)) {
@@ -612,12 +611,12 @@ int CPDF_DIBSource::CreateDecoder() {
   if (!m_pDecoder)
     return 0;
 
-  FX_SAFE_DWORD requested_pitch =
+  FX_SAFE_UINT32 requested_pitch =
       CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!requested_pitch.IsValid()) {
     return 0;
   }
-  FX_SAFE_DWORD provided_pitch = CalculatePitch8(
+  FX_SAFE_UINT32 provided_pitch = CalculatePitch8(
       m_pDecoder->GetBPC(), m_pDecoder->CountComps(), m_pDecoder->GetWidth());
   if (!provided_pitch.IsValid()) {
     return 0;
@@ -629,7 +628,7 @@ int CPDF_DIBSource::CreateDecoder() {
 }
 
 void CPDF_DIBSource::LoadJpxBitmap() {
-  ICodec_JpxModule* pJpxModule = CPDF_ModuleMgr::Get()->GetJpxModule();
+  CCodec_JpxModule* pJpxModule = CPDF_ModuleMgr::Get()->GetJpxModule();
   if (!pJpxModule)
     return;
 
@@ -1034,7 +1033,7 @@ const uint8_t* CPDF_DIBSource::GetScanline(int line) const {
   if (m_bpc == 0) {
     return nullptr;
   }
-  FX_SAFE_DWORD src_pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
+  FX_SAFE_UINT32 src_pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!src_pitch.IsValid())
     return nullptr;
   uint32_t src_pitch_value = src_pitch.ValueOrDie();
@@ -1180,7 +1179,7 @@ void CPDF_DIBSource::DownSampleScanline(int line,
   }
 
   uint32_t src_width = m_Width;
-  FX_SAFE_DWORD pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
+  FX_SAFE_UINT32 pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!pitch.IsValid())
     return;
 
@@ -1476,20 +1475,6 @@ void CPDF_DIBSource::DownSampleScanline32Bit(int orig_Bpp,
 FX_BOOL CPDF_DIBSource::TransMask() const {
   return m_bLoadMask && m_GroupFamily == PDFCS_DEVICECMYK &&
          m_Family == PDFCS_DEVICECMYK;
-}
-
-void CPDF_DIBSource::SetDownSampleSize(int dest_width, int dest_height) {
-  if (m_pDecoder) {
-    m_pDecoder->DownScale(dest_width, dest_height);
-    m_Width = m_pDecoder->GetWidth();
-    m_Height = m_pDecoder->GetHeight();
-  }
-}
-
-void CPDF_DIBSource::ClearImageData() {
-  if (m_pDecoder) {
-    m_pDecoder->ClearImageData();
-  }
 }
 
 CPDF_ImageLoaderHandle::CPDF_ImageLoaderHandle() {

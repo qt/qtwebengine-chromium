@@ -8,7 +8,6 @@
 #include "SkBlurMask.h"
 #include "SkBlurMaskFilter.h"
 #include "SkCanvas.h"
-#include "SkDevice.h"
 #include "SkReadBuffer.h"
 #include "SkWriteBuffer.h"
 #include "SkGradientShader.h"
@@ -626,7 +625,7 @@ static void texteffect_slide(SkCanvas* canvas) {
     SkScalar x = 20;
     SkScalar y = 80;
     SkPaint paint;
-    paint.setTypeface(SkTypeface::CreateFromName("Georgia", SkTypeface::kItalic));
+    paint.setTypeface(SkTypeface::MakeFromName("Georgia", SkTypeface::kItalic));
     paint.setTextSize(75);
     paint.setAntiAlias(true);
     paint.setColor(SK_ColorBLUE);

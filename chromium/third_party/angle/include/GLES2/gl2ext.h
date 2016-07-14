@@ -821,6 +821,15 @@ GL_APICALL void GL_APIENTRY glBlitFramebufferANGLE (GLint srcX0, GLint srcY0, GL
 #endif
 #endif /* GL_ANGLE_framebuffer_blit */
 
+#ifndef GL_CHROMIUM_framebuffer_mixed_samples
+#define GL_CHROMIUM_frambuffer_mixed_samples 1
+#define GL_COVERAGE_MODULATION_CHROMIUM 0x9332
+typedef void (GL_APIENTRYP PFNGLCOVERAGEMODULATIONCHROMIUMPROC) (GLenum components);
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY glCoverageModulationCHROMIUM(GLenum components);
+#endif
+#endif /* GL_CHROMIUM_framebuffer_mixed_samples */
+
 #ifndef GL_ANGLE_framebuffer_multisample
 #define GL_ANGLE_framebuffer_multisample 1
 #define GL_RENDERBUFFER_SAMPLES_ANGLE     0x8CAB
@@ -1008,6 +1017,11 @@ GL_APICALL void GL_APIENTRY glGetSyncivAPPLE (GLsync sync, GLenum pname, GLsizei
 #ifndef GL_ARM_shader_framebuffer_fetch_depth_stencil
 #define GL_ARM_shader_framebuffer_fetch_depth_stencil 1
 #endif /* GL_ARM_shader_framebuffer_fetch_depth_stencil */
+
+#ifndef GL_CHROMIUM_sync_query
+#define GL_CHROMIUM_sync_query 1
+#define GL_COMMANDS_COMPLETED_CHROMIUM    0x84F7
+#endif  /* GL_CHROMIUM_sync_query */
 
 #ifndef GL_DMP_program_binary
 #define GL_DMP_program_binary 1

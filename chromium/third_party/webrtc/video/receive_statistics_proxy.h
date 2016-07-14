@@ -19,10 +19,10 @@
 #include "webrtc/base/ratetracker.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
-#include "webrtc/frame_callback.h"
+#include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/video/report_block_stats.h"
-#include "webrtc/video/vie_channel.h"
+#include "webrtc/video/video_stream_decoder.h"
 #include "webrtc/video_receive_stream.h"
 
 namespace webrtc {
@@ -108,6 +108,9 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   SampleCounter render_height_counter_ GUARDED_BY(crit_);
   SampleCounter sync_offset_counter_ GUARDED_BY(crit_);
   SampleCounter decode_time_counter_ GUARDED_BY(crit_);
+  SampleCounter jitter_buffer_delay_counter_ GUARDED_BY(crit_);
+  SampleCounter target_delay_counter_ GUARDED_BY(crit_);
+  SampleCounter current_delay_counter_ GUARDED_BY(crit_);
   SampleCounter delay_counter_ GUARDED_BY(crit_);
   ReportBlockStats report_block_stats_ GUARDED_BY(crit_);
   QpCounters qp_counters_;  // Only accessed on the decoding thread.

@@ -9,6 +9,7 @@
 #ifndef GrVkPipelineState_DEFINED
 #define GrVkPipelineState_DEFINED
 
+#include "GrStencilSettings.h"
 #include "GrVkImage.h"
 #include "GrVkProgramDesc.h"
 #include "GrVkPipelineStateDataManager.h"
@@ -149,7 +150,7 @@ private:
                       const GrVkPipelineState::Desc&,
                       GrVkPipeline* pipeline,
                       VkPipelineLayout layout,
-                      VkDescriptorSetLayout dsLayout[2],
+                      VkDescriptorSetLayout dsSamplerLayout,
                       const BuiltinUniformHandles& builtinUniformHandles,
                       const UniformInfoArray& uniforms,
                       uint32_t vertexUniformSize,
@@ -166,10 +167,11 @@ private:
                               uint32_t descCount, GrVkGpu* gpu)
             : fDescLayout(layout)
             , fDescType(type)
-            , fCurrentDescriptorSet(0)
+            , fDescCountPerSet(descCount)
+            , fCurrentDescriptorCount(0)
             , fPool(nullptr) {
-            SkASSERT(descCount < (kMaxDescSetLimit >> 2));
-            fMaxDescriptorSets = descCount << 2;
+            SkASSERT(descCount < kMaxDescLimit >> 2);
+            fMaxDescriptors = fDescCountPerSet << 2;
             this->getNewPool(gpu);
         }
 
@@ -185,19 +187,21 @@ private:
 
         VkDescriptorSetLayout  fDescLayout;
         VkDescriptorType       fDescType;
-        uint32_t               fMaxDescriptorSets;
-        uint32_t               fCurrentDescriptorSet;
+        uint32_t               fDescCountPerSet;
+        uint32_t               fMaxDescriptors;
+        uint32_t               fCurrentDescriptorCount;
         GrVkDescriptorPool*    fPool;
 
     private:
-        static const uint32_t kMaxDescSetLimit = 1 << 10;
+        static const uint32_t kMaxDescLimit = 1 << 10;
 
         void getNewPool(GrVkGpu* gpu);
     };
 
     void writeUniformBuffers(const GrVkGpu* gpu);
 
-    void writeSamplers(GrVkGpu* gpu, const SkTArray<const GrTextureAccess*>& textureBindings);
+    void writeSamplers(GrVkGpu* gpu, const SkTArray<const GrTextureAccess*>& textureBindings,
+                       bool allowSRGBInputs);
 
     /**
     * We use the RT's size and origin to adjust from Skia device space to vulkan normalized device
@@ -262,7 +266,7 @@ private:
     // GrVkResources used for sampling textures
     SkTDArray<GrVkSampler*> fSamplers;
     SkTDArray<const GrVkImageView*> fTextureViews;
-    SkTDArray<const GrVkImage::Resource*> fTextures;
+    SkTDArray<const GrVkResource*> fTextures;
 
     // Tracks the current render target uniforms stored in the vertex buffer.
     RenderTargetState fRenderTargetState;
@@ -278,7 +282,7 @@ private:
     GrVkPipelineStateDataManager fDataManager;
 
     DescriptorPoolManager fSamplerPoolManager;
-    DescriptorPoolManager fUniformPoolManager;
+    const GrVkDescriptorPool*   fCurrentUniformDescPool;
 
     int fNumSamplers;
 

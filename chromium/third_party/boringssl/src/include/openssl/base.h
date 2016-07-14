@@ -62,6 +62,10 @@
 
 #include <openssl/opensslconf.h>
 
+#if defined(BORINGSSL_PREFIX)
+#include <boringssl_prefix_symbols.h>
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -112,6 +116,16 @@ extern "C" {
 #define BORINGSSL_201603
 #define OPENSSL_VERSION_NUMBER 0x10002000
 #define SSLEAY_VERSION_NUMBER OPENSSL_VERSION_NUMBER
+
+/* BORINGSSL_API_VERSION is a positive integer that increments as BoringSSL
+ * changes over time. The value itself is not meaningful. It will be incremented
+ * whenever is convenient to coordinate an API change with consumers. This will
+ * not denote any special point in development.
+ *
+ * A consumer may use this symbol in the preprocessor to temporarily build
+ * against multiple revisions of BoringSSL at the same time. It is not
+ * recommended to do so for longer than is necessary. */
+#define BORINGSSL_API_VERSION 1
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 
@@ -232,6 +246,7 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct hmac_ctx_st HMAC_CTX;
 typedef struct md4_state_st MD4_CTX;
 typedef struct md5_state_st MD5_CTX;
+typedef struct newhope_poly_st NEWHOPE_POLY;
 typedef struct pkcs12_st PKCS12;
 typedef struct pkcs8_priv_key_info_st PKCS8_PRIV_KEY_INFO;
 typedef struct private_key_st X509_PKEY;

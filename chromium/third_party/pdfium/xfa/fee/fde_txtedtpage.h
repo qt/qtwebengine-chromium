@@ -7,6 +7,8 @@
 #ifndef XFA_FEE_FDE_TXTEDTPAGE_H_
 #define XFA_FEE_FDE_TXTEDTPAGE_H_
 
+#include <memory>
+
 #include "core/fxcrt/include/fx_coordinates.h"
 #include "core/fxcrt/include/fx_string.h"
 #include "xfa/fde/fde_visualset.h"
@@ -97,11 +99,11 @@ class CFDE_TxtEdtTextSet : public IFDE_TextSet {
 
 class CFDE_TxtEdtPage : public IFDE_TxtEdtPage {
  public:
-  CFDE_TxtEdtPage(IFDE_TxtEdtEngine* pEngine, int32_t nLineIndex);
+  CFDE_TxtEdtPage(CFDE_TxtEdtEngine* pEngine, int32_t nLineIndex);
 
   // IFDE_TxtEditPage:
   void Release() override;
-  IFDE_TxtEdtEngine* GetEngine() const override;
+  CFDE_TxtEdtEngine* GetEngine() const override;
   int32_t GetCharRect(int32_t nIndex,
                       CFX_RectF& rect,
                       FX_BOOL bBBox = FALSE) const override;
@@ -147,7 +149,7 @@ class CFDE_TxtEdtPage : public IFDE_TxtEdtPage {
                         const CFX_RectF& rtF,
                         FX_FLOAT fTolerance) const;
 
-  IFX_CharIter* m_pIter;
+  std::unique_ptr<IFX_CharIter> m_pIter;
   CFDE_TxtEdtTextSet* m_pTextSet;
   CFDE_TxtEdtEngine* m_pEditEngine;
   CFDE_TXTEDTPieceMassArray m_PieceMassArr;

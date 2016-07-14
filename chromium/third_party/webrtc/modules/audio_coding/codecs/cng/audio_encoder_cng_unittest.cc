@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/common_audio/vad/mock/mock_vad.h"
 #include "webrtc/modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "webrtc/modules/audio_coding/codecs/mock/mock_audio_encoder.h"
@@ -25,7 +26,6 @@ using ::testing::Invoke;
 namespace webrtc {
 
 namespace {
-static const size_t kMockMaxEncodedBytes = 1000;
 static const size_t kMaxNumSamples = 48 * 10 * 2;  // 10 ms @ 48 kHz stereo.
 static const size_t kMockReturnEncodedBytes = 17;
 static const int kCngPayloadType = 18;
@@ -74,8 +74,6 @@ class AudioEncoderCngTest : public ::testing::Test {
       // as long as it is smaller than 10.
       EXPECT_CALL(*mock_encoder_, Max10MsFramesInAPacket())
           .WillOnce(Return(1u));
-      EXPECT_CALL(*mock_encoder_, MaxEncodedBytes())
-          .WillRepeatedly(Return(kMockMaxEncodedBytes));
     }
     cng_.reset(new AudioEncoderCng(std::move(config)));
   }
@@ -90,8 +88,8 @@ class AudioEncoderCngTest : public ::testing::Test {
   }
 
   // Expect |num_calls| calls to the encoder, all successful. The last call
-  // claims to have encoded |kMockMaxEncodedBytes| bytes, and all the preceding
-  // ones 0 bytes.
+  // claims to have encoded |kMockReturnEncodedBytes| bytes, and all the
+  // preceding ones 0 bytes.
   void ExpectEncodeCalls(size_t num_calls) {
     InSequence s;
     AudioEncoder::EncodedInfo info;

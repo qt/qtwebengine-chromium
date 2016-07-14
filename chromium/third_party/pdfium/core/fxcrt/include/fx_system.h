@@ -95,13 +95,18 @@ static_assert(FALSE == false, "false_needs_to_be_false");
 #define NULL 0
 #endif
 
-#define FXSYS_assert assert
 #ifndef ASSERT
 #ifndef NDEBUG
-#define ASSERT FXSYS_assert
+#define ASSERT assert
 #else
 #define ASSERT(a)
 #endif
+#endif
+
+#if defined(__clang__) || defined(__GNUC__)
+#define PDFIUM_IMMEDIATE_CRASH() __builtin_trap()
+#else
+#define PDFIUM_IMMEDIATE_CRASH() ((void)(*(volatile char*)0 = 0))
 #endif
 
 // M_PI not universally present on all platforms.
@@ -124,7 +129,6 @@ void FXSYS_vsnprintf(char* str, size_t size, const char* fmt, va_list ap);
 
 #define FXSYS_sprintf DO_NOT_USE_SPRINTF_DIE_DIE_DIE
 #define FXSYS_vsprintf DO_NOT_USE_VSPRINTF_DIE_DIE_DIE
-#define FXSYS_strchr strchr
 #define FXSYS_strncmp strncmp
 #define FXSYS_strcmp strcmp
 #define FXSYS_strcpy strcpy
@@ -160,6 +164,31 @@ FXSYS_FILE* FXSYS_wfopen(const FX_WCHAR* filename, const FX_WCHAR* mode);
 #define FXSYS_strlen(ptr) pdfium::base::checked_cast<FX_STRSIZE>(strlen(ptr))
 #define FXSYS_wcslen(ptr) pdfium::base::checked_cast<FX_STRSIZE>(wcslen(ptr))
 
+// Overloaded functions for C++ templates
+inline FX_STRSIZE FXSYS_len(const FX_CHAR* ptr) {
+  return FXSYS_strlen(ptr);
+}
+
+inline FX_STRSIZE FXSYS_len(const FX_WCHAR* ptr) {
+  return FXSYS_wcslen(ptr);
+}
+
+inline int FXSYS_cmp(const FX_CHAR* ptr1, const FX_CHAR* ptr2, size_t len) {
+  return memcmp(ptr1, ptr2, len);
+}
+
+inline int FXSYS_cmp(const FX_WCHAR* ptr1, const FX_WCHAR* ptr2, size_t len) {
+  return wmemcmp(ptr1, ptr2, len);
+}
+
+inline const FX_CHAR* FXSYS_chr(const FX_CHAR* ptr, FX_CHAR ch, size_t len) {
+  return reinterpret_cast<const FX_CHAR*>(memchr(ptr, ch, len));
+}
+
+inline const FX_WCHAR* FXSYS_chr(const FX_WCHAR* ptr, FX_WCHAR ch, size_t len) {
+  return wmemchr(ptr, ch, len);
+}
+
 extern "C" {
 #else
 #define FXSYS_strlen(ptr) ((FX_STRSIZE)strlen(ptr))
@@ -167,7 +196,6 @@ extern "C" {
 #endif
 
 #define FXSYS_wcscmp wcscmp
-#define FXSYS_wcschr wcschr
 #define FXSYS_wcsstr wcsstr
 #define FXSYS_wcsncmp wcsncmp
 #define FXSYS_vswprintf vswprintf
@@ -177,7 +205,6 @@ extern "C" {
 #define FXSYS_memcpy memcpy
 #define FXSYS_memmove memmove
 #define FXSYS_memset memset
-#define FXSYS_memchr memchr
 #define FXSYS_qsort qsort
 #define FXSYS_bsearch bsearch
 

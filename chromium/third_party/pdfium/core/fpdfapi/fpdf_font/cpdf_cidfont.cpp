@@ -10,6 +10,7 @@
 #include "core/fpdfapi/fpdf_font/font_int.h"
 #include "core/fpdfapi/fpdf_font/include/cpdf_fontencoding.h"
 #include "core/fpdfapi/fpdf_font/ttgsubtable.h"
+#include "core/fpdfapi/fpdf_page/cpdf_pagemodule.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
@@ -401,7 +402,8 @@ FX_BOOL CPDF_CIDFont::Load() {
   if (m_Charset == CIDSET_UNKNOWN) {
     CPDF_Dictionary* pCIDInfo = pCIDFontDict->GetDictBy("CIDSystemInfo");
     if (pCIDInfo) {
-      m_Charset = CharsetFromOrdering(pCIDInfo->GetStringBy("Ordering"));
+      m_Charset =
+          CharsetFromOrdering(pCIDInfo->GetStringBy("Ordering").AsStringC());
     }
   }
   if (m_Charset != CIDSET_UNKNOWN)
@@ -817,8 +819,7 @@ void CPDF_CIDFont::LoadMetricsArray(CPDF_Array* pArray,
   int iCurElement = 0;
   int first_code = 0;
   int last_code = 0;
-  uint32_t count = pArray->GetCount();
-  for (uint32_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < pArray->GetCount(); i++) {
     CPDF_Object* pObj = pArray->GetDirectObjectAt(i);
     if (!pObj)
       continue;
@@ -827,8 +828,7 @@ void CPDF_CIDFont::LoadMetricsArray(CPDF_Array* pArray,
       if (width_status != 1)
         return;
 
-      uint32_t count = pArray->GetCount();
-      for (uint32_t j = 0; j < count; j += nElements) {
+      for (size_t j = 0; j < pArray->GetCount(); j += nElements) {
         result.Add(first_code);
         result.Add(first_code);
         for (int k = 0; k < nElements; k++) {

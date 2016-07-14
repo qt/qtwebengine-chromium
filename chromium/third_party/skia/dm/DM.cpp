@@ -17,6 +17,7 @@
 #include "SkColorPriv.h"
 #include "SkCommonFlags.h"
 #include "SkCommonFlagsConfig.h"
+#include "SkData.h"
 #include "SkFontMgr.h"
 #include "SkGraphics.h"
 #include "SkHalf.h"
@@ -30,6 +31,7 @@
 #include "SkThreadUtils.h"
 #include "Test.h"
 #include "Timer.h"
+#include "picture_utils.h"
 #include "sk_tool_utils.h"
 
 #ifdef SK_PDF_IMAGE_STATS
@@ -363,6 +365,9 @@ static void push_codec_src(Path path, CodecSrc::Mode mode, CodecSrc::DstColorTyp
         case CodecSrc::kIndex8_Always_DstColorType:
             folder.append("_kIndex8");
             break;
+        case CodecSrc::kNonNative8888_Always_DstColorType:
+            folder.append("_kNonNative");
+            break;
         default:
             break;
     }
@@ -389,17 +394,10 @@ static void push_codec_src(Path path, CodecSrc::Mode mode, CodecSrc::DstColorTyp
     push_src("image", folder, src);
 }
 
-static void push_android_codec_src(Path path, AndroidCodecSrc::Mode mode,
-        CodecSrc::DstColorType dstColorType, SkAlphaType dstAlphaType, int sampleSize) {
+static void push_android_codec_src(Path path, CodecSrc::DstColorType dstColorType,
+        SkAlphaType dstAlphaType, int sampleSize) {
     SkString folder;
-    switch (mode) {
-        case AndroidCodecSrc::kFullImage_Mode:
-            folder.append("scaled_codec");
-            break;
-        case AndroidCodecSrc::kDivisor_Mode:
-            folder.append("scaled_codec_divisor");
-            break;
-    }
+    folder.append("scaled_codec");
 
     switch (dstColorType) {
         case CodecSrc::kGrayscale_Always_DstColorType:
@@ -407,6 +405,9 @@ static void push_android_codec_src(Path path, AndroidCodecSrc::Mode mode,
             break;
         case CodecSrc::kIndex8_Always_DstColorType:
             folder.append("_kIndex8");
+            break;
+        case CodecSrc::kNonNative8888_Always_DstColorType:
+            folder.append("_kNonNative");
             break;
         default:
             break;
@@ -430,7 +431,7 @@ static void push_android_codec_src(Path path, AndroidCodecSrc::Mode mode,
         folder.appendf("_%.3f", 1.0f / (float) sampleSize);
     }
 
-    AndroidCodecSrc* src = new AndroidCodecSrc(path, mode, dstColorType, dstAlphaType, sampleSize);
+    AndroidCodecSrc* src = new AndroidCodecSrc(path, dstColorType, dstAlphaType, sampleSize);
     push_src("image", folder, src);
 }
 
@@ -500,12 +501,12 @@ static void push_codec_srcs(Path path) {
             break;
         default:
             nativeModes.push_back(CodecSrc::kScanline_Mode);
-            nativeModes.push_back(CodecSrc::kStripe_Mode);
             break;
     }
 
     SkTArray<CodecSrc::DstColorType> colorTypes;
     colorTypes.push_back(CodecSrc::kGetFromCanvas_DstColorType);
+    colorTypes.push_back(CodecSrc::kNonNative8888_Always_DstColorType);
     switch (codec->getInfo().colorType()) {
         case kGray_8_SkColorType:
             colorTypes.push_back(CodecSrc::kGrayscale_Always_DstColorType);
@@ -538,6 +539,13 @@ static void push_codec_srcs(Path path) {
                         continue;
                     }
 
+                    // Skip kNonNative on different native scales.  It won't be interestingly
+                    // different.
+                    if (CodecSrc::kNonNative8888_Always_DstColorType == colorType && 1.0f != scale)
+                    {
+                        continue;
+                    }
+
                     push_codec_src(path, mode, colorType, alphaType, scale);
                 }
             }
@@ -548,32 +556,18 @@ static void push_codec_srcs(Path path) {
         return;
     }
 
-    // https://bug.skia.org/4428
-    bool subset = false;
-    // The following image types are supported by BitmapRegionDecoder,
-    // so we will test full image decodes and subset decodes.
-    static const char* const exts[] = {
-        "jpg", "jpeg", "png", "webp",
-        "JPG", "JPEG", "PNG", "WEBP",
-    };
-    for (const char* ext : exts) {
-        if (path.endsWith(ext)) {
-            subset = true;
-            break;
-        }
-    }
-
     const int sampleSizes[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 
     for (int sampleSize : sampleSizes) {
         for (CodecSrc::DstColorType colorType : colorTypes) {
             for (SkAlphaType alphaType : alphaModes) {
-                push_android_codec_src(path, AndroidCodecSrc::kFullImage_Mode, colorType,
-                        alphaType, sampleSize);
-                if (subset) {
-                    push_android_codec_src(path, AndroidCodecSrc::kDivisor_Mode, colorType,
-                            alphaType, sampleSize);
+                // We can exercise all of the kNonNative support code in the swizzler with just a
+                // few sample sizes.  Skip the rest.
+                if (CodecSrc::kNonNative8888_Always_DstColorType == colorType && sampleSize > 3) {
+                    continue;
                 }
+
+                push_android_codec_src(path, colorType, alphaType, sampleSize);
             }
         }
     }
@@ -615,44 +609,9 @@ static void push_codec_srcs(Path path) {
     }
 }
 
-static bool brd_color_type_supported(SkBitmapRegionDecoder::Strategy strategy,
-        CodecSrc::DstColorType dstColorType) {
-    switch (strategy) {
-        case SkBitmapRegionDecoder::kCanvas_Strategy:
-            if (CodecSrc::kGetFromCanvas_DstColorType == dstColorType) {
-                return true;
-            }
-            return false;
-        case SkBitmapRegionDecoder::kAndroidCodec_Strategy:
-            switch (dstColorType) {
-                case CodecSrc::kGetFromCanvas_DstColorType:
-                case CodecSrc::kIndex8_Always_DstColorType:
-                case CodecSrc::kGrayscale_Always_DstColorType:
-                    return true;
-                default:
-                    return false;
-            }
-        default:
-            SkASSERT(false);
-            return false;
-    }
-}
-
-static void push_brd_src(Path path, SkBitmapRegionDecoder::Strategy strategy,
-        CodecSrc::DstColorType dstColorType, BRDSrc::Mode mode, uint32_t sampleSize) {
-    SkString folder;
-    switch (strategy) {
-        case SkBitmapRegionDecoder::kCanvas_Strategy:
-            folder.append("brd_canvas");
-            break;
-        case SkBitmapRegionDecoder::kAndroidCodec_Strategy:
-            folder.append("brd_android_codec");
-            break;
-        default:
-            SkASSERT(false);
-            return;
-    }
-
+static void push_brd_src(Path path, CodecSrc::DstColorType dstColorType, BRDSrc::Mode mode,
+        uint32_t sampleSize) {
+    SkString folder("brd_android_codec");
     switch (mode) {
         case BRDSrc::kFullImage_Mode:
             break;
@@ -682,17 +641,11 @@ static void push_brd_src(Path path, SkBitmapRegionDecoder::Strategy strategy,
         folder.appendf("_%.3f", 1.0f / (float) sampleSize);
     }
 
-    BRDSrc* src = new BRDSrc(path, strategy, mode, dstColorType, sampleSize);
+    BRDSrc* src = new BRDSrc(path, mode, dstColorType, sampleSize);
     push_src("image", folder, src);
 }
 
 static void push_brd_srcs(Path path) {
-
-    const SkBitmapRegionDecoder::Strategy strategies[] = {
-            SkBitmapRegionDecoder::kCanvas_Strategy,
-            SkBitmapRegionDecoder::kAndroidCodec_Strategy,
-    };
-
     // Test on a variety of sampleSizes, making sure to include:
     // - 2, 4, and 8, which are natively supported by jpeg
     // - multiples of 2 which are not divisible by 4 (analogous for 4)
@@ -713,14 +666,10 @@ static void push_brd_srcs(Path path) {
             BRDSrc::kDivisor_Mode,
     };
 
-    for (SkBitmapRegionDecoder::Strategy strategy : strategies) {
-        for (uint32_t sampleSize : sampleSizes) {
-            for (CodecSrc::DstColorType dstColorType : dstColorTypes) {
-                if (brd_color_type_supported(strategy, dstColorType)) {
-                    for (BRDSrc::Mode mode : modes) {
-                        push_brd_src(path, strategy, dstColorType, mode, sampleSize);
-                    }
-                }
+    for (uint32_t sampleSize : sampleSizes) {
+        for (CodecSrc::DstColorType dstColorType : dstColorTypes) {
+            for (BRDSrc::Mode mode : modes) {
+                push_brd_src(path, dstColorType, mode, sampleSize);
             }
         }
     }
@@ -757,7 +706,7 @@ static bool gather_srcs() {
     }
 
     SkTArray<SkString> images;
-    if (!CollectImages(&images)) {
+    if (!CollectImages(FLAGS_images, &images)) {
         return false;
     }
 
@@ -771,6 +720,16 @@ static bool gather_srcs() {
         if (ext && brd_supported(ext+1)) {
             push_brd_srcs(image);
         }
+    }
+
+    SkTArray<SkString> colorImages;
+    if (!CollectImages(FLAGS_colorImages, &colorImages)) {
+        return false;
+    }
+
+    for (auto colorImage : colorImages) {
+        ColorCodecSrc* src = new ColorCodecSrc(colorImage, ColorCodecSrc::kBaseline_Mode);
+        push_src("image", "color_codec_baseline", src);
     }
 
     return true;
@@ -856,6 +815,7 @@ static Sink* create_sink(const SkCommandLineConfig* config) {
         SINK("svg",  SVGSink);
         SINK("null", NullSink);
         SINK("xps",  XPSSink);
+        SINK("pdfa", PDFSink, true);
     }
 #undef SINK
     return nullptr;
@@ -870,7 +830,6 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
     VIA("sp",        ViaSingletonPictures, wrapped);
     VIA("tiles",     ViaTiles, 256, 256, nullptr,            wrapped);
     VIA("tiles_rt",  ViaTiles, 256, 256, new SkRTreeFactory, wrapped);
-    VIA("mojo",      ViaMojo,             wrapped);
 
     if (FLAGS_matrix.count() == 4) {
         SkMatrix m;
@@ -891,7 +850,7 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
     return nullptr;
 }
 
-static void gather_sinks() {
+static bool gather_sinks() {
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
     for (int i = 0; i < configs.count(); i++) {
@@ -920,72 +879,22 @@ static void gather_sinks() {
             push_sink(config, sink);
         }
     }
+
+    // If no configs were requested (just running tests, perhaps?), then we're okay.
+    // Otherwise, make sure that at least one sink was constructed correctly. This catches
+    // the case of bots without a GPU being assigned GPU configs.
+    return (configs.count() == 0) || (gSinks.count() > 0);
 }
 
 static bool dump_png(SkBitmap bitmap, const char* path, const char* md5) {
     const int w = bitmap.width(),
               h = bitmap.height();
-    // PNG wants unpremultiplied 8-bit RGBA pixels (16-bit could work fine too).
-    // We leave the gamma of these bytes unspecified, to continue the status quo,
-    // which we think generally is to interpret them as sRGB.
 
-    SkAutoTMalloc<uint32_t> rgba(w*h);
-
-    if (bitmap.  colorType() ==  kN32_SkColorType &&
-        bitmap.profileType() == kSRGB_SkColorProfileType) {
-        // These are premul sRGB 8-bit pixels in SkPMColor order.
-        // We want unpremul sRGB 8-bit pixels in RGBA order.  We'll get there via floats.
-        bitmap.lockPixels();
-        auto px = (const uint32_t*)bitmap.getPixels();
-        if (!px) {
-            return false;
-        }
-        for (int i = 0; i < w*h; i++) {
-            Sk4f fs = Sk4f_fromS32(px[i]);         // Convert up to linear floats.
-        #if defined(SK_PMCOLOR_IS_BGRA)
-            fs = SkNx_shuffle<2,1,0,3>(fs);        // Shuffle to RGBA, if not there already.
-        #endif
-            float invA = 1.0f / fs[3];
-            fs = fs * Sk4f(invA, invA, invA, 1);   // Unpremultiply.
-            rgba[i] = Sk4f_toS32(fs);              // Pack down to sRGB bytes.
-        }
-
-    } else if (bitmap.colorType() == kRGBA_F16_SkColorType) {
-        // These are premul linear half-float pixels in RGBA order.
-        // We want unpremul sRGB 8-bit pixels in RGBA order.  We'll get there via floats.
-        bitmap.lockPixels();
-        auto px = (const uint64_t*)bitmap.getPixels();
-        if (!px) {
-            return false;
-        }
-        for (int i = 0; i < w*h; i++) {
-            Sk4f fs = SkHalfToFloat_01(px[i]);    // Convert up to linear floats.
-            float invA = 1.0f / fs[3];
-            fs = fs * Sk4f(invA, invA, invA, 1);  // Unpremultiply.
-            rgba[i] = Sk4f_toS32(fs);             // Pack down to sRGB bytes.
-        }
-
-
-    } else {
-        // We "should" gamma correct in here but we don't.
-        // We want Gold to show exactly what our clients are seeing, broken gamma.
-
-        // Convert smaller formats up to premul linear 8-bit (in SkPMColor order).
-        if (bitmap.colorType() != kN32_SkColorType) {
-            SkBitmap n32;
-            if (!bitmap.copyTo(&n32, kN32_SkColorType)) {
-                return false;
-            }
-            bitmap = n32;
-        }
-
-        // Convert premul linear 8-bit to unpremul linear 8-bit RGBA.
-        if (!bitmap.readPixels(SkImageInfo::Make(w,h, kRGBA_8888_SkColorType,
-                                                      kUnpremul_SkAlphaType),
-                               rgba, 4*w, 0,0)) {
-            return false;
-        }
+    sk_sp<SkData> encodedBitmap = sk_tools::encode_bitmap_for_png(bitmap);
+    if (encodedBitmap.get() == nullptr) {
+        return false;
     }
+    uint32_t* rgba = static_cast<uint32_t*>(encodedBitmap.get()->writable_data());
 
     // We don't need bitmap anymore.  Might as well drop our ref.
     bitmap.reset();
@@ -1032,7 +941,7 @@ static bool dump_png(SkBitmap bitmap, const char* path, const char* md5) {
                  PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_write_info(png, info);
     for (int j = 0; j < h; j++) {
-        png_bytep row = (png_bytep)(rgba.get() + w*j);
+        png_bytep row = (png_bytep)(rgba + w*j);
         png_write_rows(png, &row, 1);
     }
     png_write_end(png, info);
@@ -1304,7 +1213,7 @@ SkThread* start_status_thread() {
 
 #define PORTABLE_FONT_PREFIX "Toy Liberation "
 
-static SkTypeface* create_from_name(const char familyName[], SkTypeface::Style style) {
+static sk_sp<SkTypeface> create_from_name(const char familyName[], SkTypeface::Style style) {
     if (familyName && strlen(familyName) > sizeof(PORTABLE_FONT_PREFIX)
             && !strncmp(familyName, PORTABLE_FONT_PREFIX, sizeof(PORTABLE_FONT_PREFIX) - 1)) {
         return sk_tool_utils::create_portable_typeface(familyName, style);
@@ -1314,10 +1223,11 @@ static SkTypeface* create_from_name(const char familyName[], SkTypeface::Style s
 
 #undef PORTABLE_FONT_PREFIX
 
-extern SkTypeface* (*gCreateTypefaceDelegate)(const char [], SkTypeface::Style );
+extern sk_sp<SkTypeface> (*gCreateTypefaceDelegate)(const char [], SkTypeface::Style );
 
 int dm_main();
 int dm_main() {
+    setbuf(stdout, nullptr);
     setup_crash_handler();
 
     if (FLAGS_verbose) {
@@ -1345,9 +1255,10 @@ int dm_main() {
     if (!gather_srcs()) {
         return 1;
     }
-    gather_sinks();
+    if (!gather_sinks()) {
+        return 1;
+    }
     gather_tests();
-
     gPending = gSrcs.count() * gSinks.count() + gParallelTests.count() + gSerialTests.count();
     info("%d srcs * %d sinks + %d tests == %d tasks",
          gSrcs.count(), gSinks.count(), gParallelTests.count() + gSerialTests.count(), gPending);
@@ -1420,6 +1331,9 @@ namespace skiatest {
 bool IsGLContextType(sk_gpu_test::GrContextFactory::ContextType type) {
     return kOpenGL_GrBackend == GrContextFactory::ContextTypeBackend(type);
 }
+bool IsVulkanContextType(sk_gpu_test::GrContextFactory::ContextType type) {
+    return kVulkan_GrBackend == GrContextFactory::ContextTypeBackend(type);
+}
 bool IsRenderingGLContextType(sk_gpu_test::GrContextFactory::ContextType type) {
     return IsGLContextType(type) && GrContextFactory::IsRenderingContext(type);
 }
@@ -1428,6 +1342,7 @@ bool IsNullGLContextType(sk_gpu_test::GrContextFactory::ContextType type) {
 }
 #else
 bool IsGLContextType(int) { return false; }
+bool IsVulkanContextType(int) { return false; }
 bool IsRenderingGLContextType(int) { return false; }
 bool IsNullGLContextType(int) { return false; }
 #endif
@@ -1439,7 +1354,7 @@ void RunWithGPUTestContexts(GrContextTestFn* test, GrContextTypeFilterFn* contex
     for (int typeInt = 0; typeInt < GrContextFactory::kContextTypeCnt; ++typeInt) {
         GrContextFactory::ContextType contextType = (GrContextFactory::ContextType) typeInt;
         ContextInfo ctxInfo = factory->getContextInfo(contextType);
-        if (!(*contextTypeFilter)(contextType)) {
+        if (contextTypeFilter && !(*contextTypeFilter)(contextType)) {
             continue;
         }
         // Use "native" instead of explicitly trying OpenGL and OpenGL ES. Do not use GLES on,
@@ -1450,12 +1365,12 @@ void RunWithGPUTestContexts(GrContextTestFn* test, GrContextTypeFilterFn* contex
                 continue;
             }
         }
-        if (ctxInfo.fGrContext) {
+        if (ctxInfo.grContext()) {
             (*test)(reporter, ctxInfo);
         }
         ctxInfo = factory->getContextInfo(contextType,
                                           GrContextFactory::kEnableNVPR_ContextOptions);
-        if (ctxInfo.fGrContext) {
+        if (ctxInfo.grContext()) {
             (*test)(reporter, ctxInfo);
         }
     }

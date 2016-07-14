@@ -4,10 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "core/fpdfdoc/include/cpdf_variabletext.h"
+
 #include "core/fpdfapi/fpdf_font/include/cpdf_font.h"
 #include "core/fpdfdoc/cpvt_wordinfo.h"
 #include "core/fpdfdoc/csection.h"
-#include "core/fpdfdoc/include/cpdf_variabletext.h"
 #include "core/fpdfdoc/include/cpvt_section.h"
 #include "core/fpdfdoc/include/cpvt_word.h"
 #include "core/fpdfdoc/include/ipvt_fontmap.h"
@@ -70,11 +71,8 @@ int32_t CPDF_VariableText::Provider::GetWordFontIndex(uint16_t word,
 }
 
 FX_BOOL CPDF_VariableText::Provider::IsLatinWord(uint16_t word) {
-  if ((word >= 0x61 && word <= 0x7A) || (word >= 0x41 && word <= 0x5A) ||
-      word == 0x2D || word == 0x27) {
-    return TRUE;
-  }
-  return FALSE;
+  return (word >= 0x61 && word <= 0x7A) || (word >= 0x41 && word <= 0x5A) ||
+         word == 0x2D || word == 0x27;
 }
 
 int32_t CPDF_VariableText::Provider::GetDefaultFontIndex() {
@@ -256,11 +254,9 @@ CPDF_VariableText::CPDF_VariableText()
       m_fFontSize(0.0f),
       m_bInitial(FALSE),
       m_bRichText(FALSE),
-      m_pVTProvider(nullptr),
-      m_pVTIterator(nullptr) {}
+      m_pVTProvider(nullptr) {}
 
 CPDF_VariableText::~CPDF_VariableText() {
-  delete m_pVTIterator;
   ResetAll();
 }
 
@@ -1053,22 +1049,20 @@ FX_FLOAT CPDF_VariableText::GetAutoFontSize() {
   return (FX_FLOAT)gFontSizeSteps[nMid];
 }
 
-FX_BOOL CPDF_VariableText::IsBigger(FX_FLOAT fFontSize) {
-  FX_BOOL bBigger = FALSE;
-  CPVT_Size szTotal;
+bool CPDF_VariableText::IsBigger(FX_FLOAT fFontSize) const {
+  CFX_SizeF szTotal;
   for (int32_t s = 0, sz = m_SectionArray.GetSize(); s < sz; s++) {
     if (CSection* pSection = m_SectionArray.GetAt(s)) {
-      CPVT_Size size = pSection->GetSectionSize(fFontSize);
+      CFX_SizeF size = pSection->GetSectionSize(fFontSize);
       szTotal.x = std::max(size.x, szTotal.x);
       szTotal.y += size.y;
       if (IsFloatBigger(szTotal.x, GetPlateWidth()) ||
           IsFloatBigger(szTotal.y, GetPlateHeight())) {
-        bBigger = TRUE;
-        break;
+        return true;
       }
     }
   }
-  return bBigger;
+  return false;
 }
 
 CPVT_FloatRect CPDF_VariableText::RearrangeSections(
@@ -1118,9 +1112,8 @@ int32_t CPDF_VariableText::GetCharWidth(int32_t nFontIndex,
                                         int32_t nWordStyle) {
   if (!m_pVTProvider)
     return 0;
-  if (SubWord > 0)
-    return m_pVTProvider->GetCharWidth(nFontIndex, SubWord, nWordStyle);
-  return m_pVTProvider->GetCharWidth(nFontIndex, Word, nWordStyle);
+  uint16_t word = SubWord ? SubWord : Word;
+  return m_pVTProvider->GetCharWidth(nFontIndex, word, nWordStyle);
 }
 
 int32_t CPDF_VariableText::GetTypeAscent(int32_t nFontIndex) {
@@ -1149,13 +1142,10 @@ FX_BOOL CPDF_VariableText::IsLatinWord(uint16_t word) {
 
 CPDF_VariableText::Iterator* CPDF_VariableText::GetIterator() {
   if (!m_pVTIterator)
-    m_pVTIterator = new CPDF_VariableText::Iterator(this);
-  return m_pVTIterator;
+    m_pVTIterator.reset(new CPDF_VariableText::Iterator(this));
+  return m_pVTIterator.get();
 }
 
-CPDF_VariableText::Provider* CPDF_VariableText::SetProvider(
-    CPDF_VariableText::Provider* pProvider) {
-  CPDF_VariableText::Provider* pOld = m_pVTProvider;
+void CPDF_VariableText::SetProvider(CPDF_VariableText::Provider* pProvider) {
   m_pVTProvider = pProvider;
-  return pOld;
 }

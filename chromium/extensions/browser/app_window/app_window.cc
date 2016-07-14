@@ -16,7 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner.h"
-#include "base/thread_task_runner_handle.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -53,8 +53,9 @@
 #include "extensions/grit/extensions_browser_resources.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
 #include "ui/events/keycodes/keyboard_codes.h"
-#include "ui/gfx/screen.h"
 
 #if !defined(OS_MACOSX)
 #include "components/prefs/pref_service.h"
@@ -88,7 +89,7 @@ void SetBoundsProperties(const gfx::Rect& bounds,
                          const gfx::Size& max_size,
                          const std::string& bounds_name,
                          base::DictionaryValue* window_properties) {
-  scoped_ptr<base::DictionaryValue> bounds_properties(
+  std::unique_ptr<base::DictionaryValue> bounds_properties(
       new base::DictionaryValue());
 
   bounds_properties->SetInteger("left", bounds.x());
@@ -583,7 +584,7 @@ void AppWindow::SetAppIconUrl(const GURL& url) {
                  image_loader_ptr_factory_.GetWeakPtr()));
 }
 
-void AppWindow::UpdateShape(scoped_ptr<SkRegion> region) {
+void AppWindow::UpdateShape(std::unique_ptr<SkRegion> region) {
   native_app_window_->UpdateShape(std::move(region));
 }
 
@@ -857,13 +858,12 @@ void AppWindow::SetNativeWindowFullscreen() {
 
 bool AppWindow::IntersectsWithTaskbar() const {
 #if defined(OS_WIN)
-  gfx::Screen* screen = gfx::Screen::GetScreen();
+  display::Screen* screen = display::Screen::GetScreen();
   gfx::Rect window_bounds = native_app_window_->GetRestoredBounds();
-  std::vector<gfx::Display> displays = screen->GetAllDisplays();
+  std::vector<display::Display> displays = screen->GetAllDisplays();
 
-  for (std::vector<gfx::Display>::const_iterator it = displays.begin();
-       it != displays.end();
-       ++it) {
+  for (std::vector<display::Display>::const_iterator it = displays.begin();
+       it != displays.end(); ++it) {
     gfx::Rect taskbar_bounds = it->bounds();
     taskbar_bounds.Subtract(it->work_area());
     if (taskbar_bounds.IsEmpty())
@@ -1018,7 +1018,7 @@ void AppWindow::SaveWindowPosition() {
 
   gfx::Rect bounds = native_app_window_->GetRestoredBounds();
   gfx::Rect screen_bounds =
-      gfx::Screen::GetScreen()->GetDisplayMatching(bounds).work_area();
+      display::Screen::GetScreen()->GetDisplayMatching(bounds).work_area();
   ui::WindowShowState window_state = native_app_window_->GetRestoredState();
   cache->SaveGeometry(
       extension_id(), window_key_, bounds, screen_bounds, window_state);
@@ -1084,8 +1084,8 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params)
                            &cached_state)) {
       // App window has cached screen bounds, make sure it fits on screen in
       // case the screen resolution changed.
-      gfx::Screen* screen = gfx::Screen::GetScreen();
-      gfx::Display display = screen->GetDisplayMatching(cached_bounds);
+      display::Screen* screen = display::Screen::GetScreen();
+      display::Display display = screen->GetDisplayMatching(cached_bounds);
       gfx::Rect current_screen_bounds = display.work_area();
       SizeConstraints constraints(params.GetWindowMinimumSize(gfx::Insets()),
                                   params.GetWindowMaximumSize(gfx::Insets()));

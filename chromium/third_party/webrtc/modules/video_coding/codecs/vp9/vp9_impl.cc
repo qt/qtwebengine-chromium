@@ -22,13 +22,13 @@
 #include "vpx/vp8dx.h"
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/base/keep_ref_until_done.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/video_coding/codecs/vp9/screenshare_layers.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -45,6 +45,10 @@ int GetCpuSpeed(int width, int height) {
   else
     return 7;
 #endif
+}
+
+bool VP9Encoder::IsSupported() {
+  return true;
 }
 
 VP9Encoder* VP9Encoder::Create() {
@@ -77,7 +81,7 @@ VP9EncoderImpl::VP9EncoderImpl()
       // Use two spatial when screensharing with flexible mode.
       spatial_layer_(new ScreenshareLayersVP9(2)) {
   memset(&codec_, 0, sizeof(codec_));
-  uint32_t seed = static_cast<uint32_t>(TickTime::MillisecondTimestamp());
+  uint32_t seed = rtc::Time32();
   srand(seed);
 }
 
@@ -500,12 +504,15 @@ int VP9EncoderImpl::Encode(const VideoFrame& input_image,
 
   // Image in vpx_image_t format.
   // Input image is const. VPX's raw image is not defined as const.
-  raw_->planes[VPX_PLANE_Y] = const_cast<uint8_t*>(input_image.buffer(kYPlane));
-  raw_->planes[VPX_PLANE_U] = const_cast<uint8_t*>(input_image.buffer(kUPlane));
-  raw_->planes[VPX_PLANE_V] = const_cast<uint8_t*>(input_image.buffer(kVPlane));
-  raw_->stride[VPX_PLANE_Y] = input_image.stride(kYPlane);
-  raw_->stride[VPX_PLANE_U] = input_image.stride(kUPlane);
-  raw_->stride[VPX_PLANE_V] = input_image.stride(kVPlane);
+  raw_->planes[VPX_PLANE_Y] =
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataY());
+  raw_->planes[VPX_PLANE_U] =
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataU());
+  raw_->planes[VPX_PLANE_V] =
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataV());
+  raw_->stride[VPX_PLANE_Y] = input_image.video_frame_buffer()->StrideY();
+  raw_->stride[VPX_PLANE_U] = input_image.video_frame_buffer()->StrideU();
+  raw_->stride[VPX_PLANE_V] = input_image.video_frame_buffer()->StrideV();
 
   vpx_enc_frame_flags_t flags = 0;
   bool send_keyframe = (frame_type == kVideoFrameKey);
@@ -692,8 +699,12 @@ int VP9EncoderImpl::GetEncodedLayerFrame(const vpx_codec_cx_pkt* pkt) {
     TRACE_COUNTER1("webrtc", "EncodedFrameSize", encoded_image_._length);
     encoded_image_._timeStamp = input_image_->timestamp();
     encoded_image_.capture_time_ms_ = input_image_->render_time_ms();
+    encoded_image_.rotation_ = input_image_->rotation();
     encoded_image_._encodedHeight = raw_->d_h;
     encoded_image_._encodedWidth = raw_->d_w;
+    int qp = -1;
+    vpx_codec_control(encoder_, VP8E_GET_LAST_QUANTIZER, &qp);
+    encoded_image_.qp_ = qp;
     encoded_complete_callback_->Encoded(encoded_image_, &codec_specific,
                                         &frag_info);
   }
@@ -814,6 +825,10 @@ int VP9EncoderImpl::RegisterEncodeCompleteCallback(
 
 const char* VP9EncoderImpl::ImplementationName() const {
   return "libvpx";
+}
+
+bool VP9Decoder::IsSupported() {
+  return true;
 }
 
 VP9Decoder* VP9Decoder::Create() {

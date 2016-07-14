@@ -23,6 +23,7 @@
 #include "webrtc/modules/audio_coding/acm2/acm_receiver.h"
 #include "webrtc/modules/audio_coding/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/acm2/codec_manager.h"
+#include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 
 namespace webrtc {
 
@@ -163,6 +164,9 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   // Get 10 milliseconds of raw audio data to play out, and
   // automatic resample to the requested frequency if > 0.
+  int PlayoutData10Ms(int desired_freq_hz,
+                      AudioFrame* audio_frame,
+                      bool* muted) override;
   int PlayoutData10Ms(int desired_freq_hz, AudioFrame* audio_frame) override;
 
   /////////////////////////////////////////
@@ -268,7 +272,8 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // RegisterEncoder.
   std::unique_ptr<AudioEncoder> encoder_stack_ GUARDED_BY(acm_crit_sect_);
 
-  std::unique_ptr<AudioDecoder> isac_decoder_ GUARDED_BY(acm_crit_sect_);
+  std::unique_ptr<AudioDecoder> isac_decoder_16k_ GUARDED_BY(acm_crit_sect_);
+  std::unique_ptr<AudioDecoder> isac_decoder_32k_ GUARDED_BY(acm_crit_sect_);
 
   // This is to keep track of CN instances where we can send DTMFs.
   uint8_t previous_pltype_ GUARDED_BY(acm_crit_sect_);
@@ -294,6 +299,10 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   AudioPacketizationCallback* packetization_callback_
       GUARDED_BY(callback_crit_sect_);
   ACMVADCallback* vad_callback_ GUARDED_BY(callback_crit_sect_);
+
+  int codec_histogram_bins_log_[static_cast<size_t>(
+      AudioEncoder::CodecType::kMaxLoggedAudioCodecTypes)];
+  int number_of_consecutive_empty_packets_;
 };
 
 }  // namespace acm2

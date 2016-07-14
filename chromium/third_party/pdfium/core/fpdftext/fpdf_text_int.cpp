@@ -4,8 +4,6 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/fpdftext/fpdf_text_int.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cwctype>
@@ -14,31 +12,50 @@
 #include <vector>
 
 #include "core/fpdfapi/fpdf_font/include/cpdf_font.h"
+#include "core/fpdfapi/fpdf_page/include/cpdf_form.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_formobject.h"
+#include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_pageobject.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_textobject.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
-#include "core/fpdftext/include/ipdf_linkextract.h"
-#include "core/fpdftext/include/ipdf_textpage.h"
-#include "core/fpdftext/include/ipdf_textpagefind.h"
-#include "core/fpdftext/unicodenormalization.h"
+#include "core/fpdftext/include/cpdf_linkextract.h"
+#include "core/fpdftext/include/cpdf_textpage.h"
+#include "core/fpdftext/include/cpdf_textpagefind.h"
+#include "core/fpdftext/unicodenormalizationdata.h"
 #include "core/fxcrt/fx_bidi.h"
 #include "core/fxcrt/include/fx_ext.h"
 #include "core/fxcrt/include/fx_ucd.h"
 #include "third_party/base/stl_util.h"
 
-#define FPDFTEXT_RLTB 1
-#define FPDFTEXT_LEFT -1
-#define FPDFTEXT_RIGHT 1
-
 #define FPDFTEXT_MATCHCASE 0x00000001
 #define FPDFTEXT_MATCHWHOLEWORD 0x00000002
 #define FPDFTEXT_CONSECUTIVE 0x00000004
 
+#define FPDFTEXT_CHAR_ERROR -1
+#define FPDFTEXT_CHAR_NORMAL 0
+#define FPDFTEXT_CHAR_GENERATED 1
+#define FPDFTEXT_CHAR_UNUNICODE 2
+#define FPDFTEXT_CHAR_HYPHEN 3
+#define FPDFTEXT_CHAR_PIECE 4
+
+#define TEXT_BLANK_CHAR L' '
+#define TEXT_LINEFEED_CHAR L'\n'
+#define TEXT_RETURN_CHAR L'\r'
+#define TEXT_EMPTY L""
+#define TEXT_BLANK L" "
+#define TEXT_RETURN_LINEFEED L"\r\n"
+#define TEXT_LINEFEED L"\n"
+#define TEXT_CHARRATIO_GAPDELTA 0.070
+
 namespace {
 
-FX_BOOL _IsIgnoreSpaceCharacter(FX_WCHAR curChar) {
+const FX_FLOAT kDefaultFontSize = 1.0f;
+const uint16_t* const g_UnicodeData_Normalization_Maps[5] = {
+    nullptr, g_UnicodeData_Normalization_Map1, g_UnicodeData_Normalization_Map2,
+    g_UnicodeData_Normalization_Map3, g_UnicodeData_Normalization_Map4};
+
+FX_BOOL IsIgnoreSpaceCharacter(FX_WCHAR curChar) {
   if (curChar < 255) {
     return FALSE;
   }
@@ -55,7 +72,7 @@ FX_BOOL _IsIgnoreSpaceCharacter(FX_WCHAR curChar) {
   return TRUE;
 }
 
-FX_FLOAT _NormalizeThreshold(FX_FLOAT threshold) {
+FX_FLOAT NormalizeThreshold(FX_FLOAT threshold) {
   if (threshold < 300) {
     return threshold / 2.0f;
   }
@@ -68,8 +85,8 @@ FX_FLOAT _NormalizeThreshold(FX_FLOAT threshold) {
   return threshold / 6.0f;
 }
 
-FX_FLOAT _CalculateBaseSpace(const CPDF_TextObject* pTextObj,
-                             const CFX_Matrix& matrix) {
+FX_FLOAT CalculateBaseSpace(const CPDF_TextObject* pTextObj,
+                            const CFX_Matrix& matrix) {
   FX_FLOAT baseSpace = 0.0;
   const int nItems = pTextObj->CountItems();
   if (pTextObj->m_TextState.GetObject()->m_CharSpace && nItems >= 3) {
@@ -94,34 +111,41 @@ FX_FLOAT _CalculateBaseSpace(const CPDF_TextObject* pTextObj,
   return baseSpace;
 }
 
-const FX_FLOAT kDefaultFontSize = 1.0f;
+FX_STRSIZE Unicode_GetNormalization(FX_WCHAR wch, FX_WCHAR* pDst) {
+  wch = wch & 0xFFFF;
+  FX_WCHAR wFind = g_UnicodeData_Normalization[wch];
+  if (!wFind) {
+    if (pDst) {
+      *pDst = wch;
+    }
+    return 1;
+  }
+  if (wFind >= 0x8000) {
+    wch = wFind - 0x8000;
+    wFind = 1;
+  } else {
+    wch = wFind & 0x0FFF;
+    wFind >>= 12;
+  }
+  const uint16_t* pMap = g_UnicodeData_Normalization_Maps[wFind];
+  if (pMap == g_UnicodeData_Normalization_Map4) {
+    pMap = g_UnicodeData_Normalization_Map4 + wch;
+    wFind = (FX_WCHAR)(*pMap++);
+  } else {
+    pMap += wch;
+  }
+  if (pDst) {
+    FX_WCHAR n = wFind;
+    while (n--) {
+      *pDst++ = *pMap++;
+    }
+  }
+  return (FX_STRSIZE)wFind;
+}
 
 }  // namespace
 
-IPDF_TextPage* IPDF_TextPage::CreateTextPage(const CPDF_Page* pPage,
-                                             int flags) {
-  return new CPDF_TextPage(pPage, flags);
-}
-
-IPDF_TextPageFind* IPDF_TextPageFind::CreatePageFind(
-    const IPDF_TextPage* pTextPage) {
-  return pTextPage ? new CPDF_TextPageFind(pTextPage) : nullptr;
-}
-
-IPDF_LinkExtract* IPDF_LinkExtract::CreateLinkExtract() {
-  return new CPDF_LinkExtract();
-}
-
-#define TEXT_BLANK_CHAR L' '
-#define TEXT_LINEFEED_CHAR L'\n'
-#define TEXT_RETURN_CHAR L'\r'
-#define TEXT_EMPTY L""
-#define TEXT_BLANK L" "
-#define TEXT_RETURN_LINEFEED L"\r\n"
-#define TEXT_LINEFEED L"\n"
-#define TEXT_CHARRATIO_GAPDELTA 0.070
-
-CPDF_TextPage::CPDF_TextPage(const CPDF_Page* pPage, int flags)
+CPDF_TextPage::CPDF_TextPage(const CPDF_Page* pPage, FPDFText_Direction flags)
     : m_pPage(pPage),
       m_parserflag(flags),
       m_pPreTextObj(nullptr),
@@ -229,23 +253,21 @@ int CPDF_TextPage::TextIndexFromCharIndex(int CharIndex) const {
   return -1;
 }
 
-void CPDF_TextPage::GetRectArray(int start,
-                                 int nCount,
-                                 CFX_RectArray& rectArray) const {
-  if (start < 0 || nCount == 0) {
-    return;
-  }
-  if (!m_bIsParsed) {
-    return;
-  }
-  CPDF_TextObject* pCurObj = NULL;
-  CFX_FloatRect rect;
-  int curPos = start;
-  FX_BOOL flagNewRect = TRUE;
+std::vector<CFX_FloatRect> CPDF_TextPage::GetRectArray(int start,
+                                                       int nCount) const {
+  if (start < 0 || nCount == 0 || !m_bIsParsed)
+    return std::vector<CFX_FloatRect>();
+
   if (nCount + start > pdfium::CollectionSize<int>(m_CharList) ||
       nCount == -1) {
     nCount = pdfium::CollectionSize<int>(m_CharList) - start;
   }
+
+  std::vector<CFX_FloatRect> rectArray;
+  CPDF_TextObject* pCurObj = nullptr;
+  CFX_FloatRect rect;
+  int curPos = start;
+  FX_BOOL flagNewRect = TRUE;
   while (nCount--) {
     PAGECHAR_INFO info_curchar = m_CharList[curPos++];
     if (info_curchar.m_Flag == FPDFTEXT_CHAR_GENERATED) {
@@ -259,7 +281,7 @@ void CPDF_TextPage::GetRectArray(int start,
       pCurObj = info_curchar.m_pTextObj;
     }
     if (pCurObj != info_curchar.m_pTextObj) {
-      rectArray.Add(rect);
+      rectArray.push_back(rect);
       pCurObj = info_curchar.m_pTextObj;
       flagNewRect = TRUE;
     }
@@ -312,7 +334,8 @@ void CPDF_TextPage::GetRectArray(int start,
       }
     }
   }
-  rectArray.Add(rect);
+  rectArray.push_back(rect);
+  return rectArray;
 }
 
 int CPDF_TextPage::GetIndexAtPos(CFX_FloatPoint point,
@@ -396,12 +419,13 @@ CFX_WideString CPDF_TextPage::GetTextByRect(const CFX_FloatRect& rect) const {
   return strText;
 }
 
-void CPDF_TextPage::GetRectsArrayByRect(const CFX_FloatRect& rect,
-                                        CFX_RectArray& resRectArray) const {
+std::vector<CFX_FloatRect> CPDF_TextPage::GetRectsArrayByRect(
+    const CFX_FloatRect& rect) const {
   if (!m_bIsParsed)
-    return;
+    return std::vector<CFX_FloatRect>();
 
   CFX_FloatRect curRect;
+  std::vector<CFX_FloatRect> result;
   bool flagNewRect = true;
   CPDF_TextObject* pCurObj = nullptr;
   for (auto info_curchar : m_CharList) {
@@ -415,7 +439,7 @@ void CPDF_TextPage::GetRectsArrayByRect(const CFX_FloatRect& rect,
       pCurObj = info_curchar.m_pTextObj;
     }
     if (pCurObj != info_curchar.m_pTextObj) {
-      resRectArray.Add(curRect);
+      result.push_back(curRect);
       pCurObj = info_curchar.m_pTextObj;
       flagNewRect = true;
     }
@@ -431,7 +455,8 @@ void CPDF_TextPage::GetRectsArrayByRect(const CFX_FloatRect& rect,
       curRect.top = std::max(curRect.top, info_curchar.m_CharBox.top);
     }
   }
-  resRectArray.Add(curRect);
+  result.push_back(curRect);
+  return result;
 }
 
 int CPDF_TextPage::GetIndexAtPos(FX_FLOAT x,
@@ -512,8 +537,8 @@ CFX_WideString CPDF_TextPage::GetPageText(int start, int nCount) const {
 
   if (nCount == -1) {
     nCount = pdfium::CollectionSize<int>(m_CharList) - start;
-    return m_TextBuf.GetWideString().Mid(start,
-                                         m_TextBuf.GetWideString().GetLength());
+    return CFX_WideString(
+        m_TextBuf.AsStringC().Mid(start, m_TextBuf.AsStringC().GetLength()));
   }
   if (nCount <= 0 || m_CharList.empty()) {
     return L"";
@@ -550,7 +575,7 @@ CFX_WideString CPDF_TextPage::GetPageText(int start, int nCount) const {
   if (nCount <= 0) {
     return L"";
   }
-  return m_TextBuf.GetWideString().Mid(startindex, nCount);
+  return CFX_WideString(m_TextBuf.AsStringC().Mid(startindex, nCount));
 }
 
 int CPDF_TextPage::CountRects(int start, int nCount) {
@@ -561,9 +586,8 @@ int CPDF_TextPage::CountRects(int start, int nCount) {
       nCount + start > pdfium::CollectionSize<int>(m_CharList)) {
     nCount = pdfium::CollectionSize<int>(m_CharList) - start;
   }
-  m_SelRects.RemoveAll();
-  GetRectArray(start, nCount, m_SelRects);
-  return m_SelRects.GetSize();
+  m_SelRects = GetRectArray(start, nCount);
+  return pdfium::CollectionSize<int>(m_SelRects);
 }
 
 void CPDF_TextPage::GetRect(int rectIndex,
@@ -574,78 +598,13 @@ void CPDF_TextPage::GetRect(int rectIndex,
   if (!m_bIsParsed)
     return;
 
-  if (rectIndex < 0 || rectIndex >= m_SelRects.GetSize())
+  if (rectIndex < 0 || rectIndex >= pdfium::CollectionSize<int>(m_SelRects))
     return;
 
-  left = m_SelRects.GetAt(rectIndex).left;
-  top = m_SelRects.GetAt(rectIndex).top;
-  right = m_SelRects.GetAt(rectIndex).right;
-  bottom = m_SelRects.GetAt(rectIndex).bottom;
-}
-
-FX_BOOL CPDF_TextPage::GetBaselineRotate(int start, int end, int& Rotate) {
-  if (end == start) {
-    return FALSE;
-  }
-  FPDF_CHAR_INFO info_start;
-  FPDF_CHAR_INFO info_end;
-  GetCharInfo(start, &info_start);
-  GetCharInfo(end, &info_end);
-  while (info_end.m_CharBox.Width() == 0 || info_end.m_CharBox.Height() == 0) {
-    if (--end <= start)
-      return FALSE;
-
-    GetCharInfo(end, &info_end);
-  }
-  FX_FLOAT dx = (info_end.m_OriginX - info_start.m_OriginX);
-  FX_FLOAT dy = (info_end.m_OriginY - info_start.m_OriginY);
-  if (dx == 0) {
-    if (dy > 0) {
-      Rotate = 90;
-    } else if (dy < 0) {
-      Rotate = 270;
-    } else {
-      Rotate = 0;
-    }
-  } else {
-    float a = FXSYS_atan2(dy, dx);
-    Rotate = (int)(a * 180 / FX_PI + 0.5);
-  }
-  if (Rotate < 0) {
-    Rotate = -Rotate;
-  } else if (Rotate > 0) {
-    Rotate = 360 - Rotate;
-  }
-  return TRUE;
-}
-
-FX_BOOL CPDF_TextPage::GetBaselineRotate(const CFX_FloatRect& rect,
-                                         int& Rotate) {
-  int start, end, count,
-      n = CountBoundedSegments(rect.left, rect.top, rect.right, rect.bottom,
-                               TRUE);
-  if (n < 1) {
-    return FALSE;
-  }
-  if (n > 1) {
-    GetBoundedSegment(n - 1, start, count);
-    end = start + count - 1;
-    GetBoundedSegment(0, start, count);
-  } else {
-    GetBoundedSegment(0, start, count);
-    end = start + count - 1;
-  }
-  return GetBaselineRotate(start, end, Rotate);
-}
-FX_BOOL CPDF_TextPage::GetBaselineRotate(int rectIndex, int& Rotate) {
-  if (!m_bIsParsed)
-    return FALSE;
-
-  if (rectIndex < 0 || rectIndex >= m_SelRects.GetSize())
-    return FALSE;
-
-  CFX_FloatRect rect = m_SelRects.GetAt(rectIndex);
-  return GetBaselineRotate(rect, Rotate);
+  left = m_SelRects[rectIndex].left;
+  top = m_SelRects[rectIndex].top;
+  right = m_SelRects[rectIndex].right;
+  bottom = m_SelRects[rectIndex].bottom;
 }
 
 int CPDF_TextPage::CountBoundedSegments(FX_FLOAT left,
@@ -724,46 +683,6 @@ int CPDF_TextPage::CountBoundedSegments(FX_FLOAT left,
     segment.m_nCount = 0;
   }
   return m_Segments.GetSize();
-}
-
-void CPDF_TextPage::GetBoundedSegment(int index, int& start, int& count) const {
-  if (index < 0 || index >= m_Segments.GetSize()) {
-    return;
-  }
-  start = m_Segments.GetAt(index).m_Start;
-  count = m_Segments.GetAt(index).m_nCount;
-}
-
-int CPDF_TextPage::GetWordBreak(int index, int direction) const {
-  if (!m_bIsParsed)
-    return -1;
-
-  if (direction != FPDFTEXT_LEFT && direction != FPDFTEXT_RIGHT)
-    return -1;
-
-  if (index < 0 || index >= pdfium::CollectionSize<int>(m_CharList))
-    return -1;
-
-  const PAGECHAR_INFO& charinfo = m_CharList[index];
-  if (charinfo.m_Index == -1 || charinfo.m_Flag == FPDFTEXT_CHAR_GENERATED) {
-    return index;
-  }
-  if (!IsLetter(charinfo.m_Unicode)) {
-    return index;
-  }
-  int breakPos = index;
-  if (direction == FPDFTEXT_LEFT) {
-    while (--breakPos > 0) {
-      if (!IsLetter(m_CharList[breakPos].m_Unicode))
-        break;
-    }
-  } else if (direction == FPDFTEXT_RIGHT) {
-    while (++breakPos < pdfium::CollectionSize<int>(m_CharList)) {
-      if (!IsLetter(m_CharList[breakPos].m_Unicode))
-        break;
-    }
-  }
-  return breakPos;
 }
 
 int32_t CPDF_TextPage::FindTextlineFlowDirection() {
@@ -906,25 +825,10 @@ int CPDF_TextPage::GetCharWidth(uint32_t charCode, CPDF_Font* pFont) const {
 
   CFX_ByteString str;
   pFont->AppendChar(str, charCode);
-  if (int w = pFont->GetStringWidth(str, 1))
+  if (int w = pFont->GetStringWidth(str.c_str(), 1))
     return w;
 
   return pFont->GetCharBBox(charCode).Width();
-}
-
-void CPDF_TextPage::OnPiece(CFX_BidiChar* pBidi, CFX_WideString& str) {
-  CFX_BidiChar::Segment seg = pBidi->GetSegmentInfo();
-  if (seg.direction == CFX_BidiChar::RIGHT) {
-    for (int i = seg.start + seg.count; i > seg.start; i--) {
-      m_TextBuf.AppendChar(str.GetAt(i - i));
-      m_CharList.push_back(m_TempCharList[i - 1]);
-    }
-  } else {
-    for (int i = seg.start; i < seg.start + seg.count; i++) {
-      m_TextBuf.AppendChar(str.GetAt(i));
-      m_CharList.push_back(m_TempCharList[i]);
-    }
-  }
 }
 
 void CPDF_TextPage::AddCharInfoByLRDirection(FX_WCHAR wChar,
@@ -933,10 +837,10 @@ void CPDF_TextPage::AddCharInfoByLRDirection(FX_WCHAR wChar,
     info.m_Index = m_TextBuf.GetLength();
     if (wChar >= 0xFB00 && wChar <= 0xFB06) {
       FX_WCHAR* pDst = NULL;
-      FX_STRSIZE nCount = FX_Unicode_GetNormalization(wChar, pDst);
+      FX_STRSIZE nCount = Unicode_GetNormalization(wChar, pDst);
       if (nCount >= 1) {
         pDst = FX_Alloc(FX_WCHAR, nCount);
-        FX_Unicode_GetNormalization(wChar, pDst);
+        Unicode_GetNormalization(wChar, pDst);
         for (int nIndex = 0; nIndex < nCount; nIndex++) {
           PAGECHAR_INFO info2 = info;
           info2.m_Unicode = pDst[nIndex];
@@ -961,10 +865,10 @@ void CPDF_TextPage::AddCharInfoByRLDirection(FX_WCHAR wChar,
     info.m_Index = m_TextBuf.GetLength();
     wChar = FX_GetMirrorChar(wChar, TRUE, FALSE);
     FX_WCHAR* pDst = NULL;
-    FX_STRSIZE nCount = FX_Unicode_GetNormalization(wChar, pDst);
+    FX_STRSIZE nCount = Unicode_GetNormalization(wChar, pDst);
     if (nCount >= 1) {
       pDst = FX_Alloc(FX_WCHAR, nCount);
-      FX_Unicode_GetNormalization(wChar, pDst);
+      Unicode_GetNormalization(wChar, pDst);
       for (int nIndex = 0; nIndex < nCount; nIndex++) {
         PAGECHAR_INFO info2 = info;
         info2.m_Unicode = pDst[nIndex];
@@ -987,7 +891,7 @@ void CPDF_TextPage::CloseTempLine() {
   if (m_TempCharList.empty())
     return;
 
-  CFX_WideString str = m_TempTextBuf.GetWideString();
+  CFX_WideString str = m_TempTextBuf.MakeString();
   FX_BOOL bPrevSpace = FALSE;
   for (int i = 0; i < str.GetLength(); i++) {
     if (str.GetAt(i) != ' ') {
@@ -1003,7 +907,7 @@ void CPDF_TextPage::CloseTempLine() {
     bPrevSpace = TRUE;
   }
   CFX_BidiString bidi(str);
-  if (m_parserflag == FPDFTEXT_RLTB)
+  if (m_parserflag == FPDFText_Direction::Right)
     bidi.SetOverallDirectionRight();
   CFX_BidiChar::Direction eCurrentDirection = bidi.OverallDirection();
   for (const auto& segment : bidi) {
@@ -1105,16 +1009,17 @@ void CPDF_TextPage::ProcessTextObject(
   }
 }
 
-int32_t CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
+FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   CPDF_TextObject* pTextObj = Obj.m_pTextObj;
   CPDF_ContentMarkData* pMarkData =
       (CPDF_ContentMarkData*)pTextObj->m_ContentMark.GetObject();
   if (!pMarkData)
-    return FPDFTEXT_MC_PASS;
+    return FPDFText_MarkedContent::Pass;
 
   int nContentMark = pMarkData->CountItems();
   if (nContentMark < 1)
-    return FPDFTEXT_MC_PASS;
+    return FPDFText_MarkedContent::Pass;
+
   CFX_WideString actText;
   FX_BOOL bExist = FALSE;
   CPDF_Dictionary* pDict = NULL;
@@ -1132,19 +1037,19 @@ int32_t CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
     }
   }
   if (!bExist)
-    return FPDFTEXT_MC_PASS;
+    return FPDFText_MarkedContent::Pass;
 
   if (m_pPreTextObj) {
     CPDF_ContentMarkData* pPreMarkData =
         (CPDF_ContentMarkData*)m_pPreTextObj->m_ContentMark.GetObject();
     if (pPreMarkData && pPreMarkData->CountItems() == n &&
         pDict == pPreMarkData->GetItem(n - 1).GetParam()) {
-      return FPDFTEXT_MC_DONE;
+      return FPDFText_MarkedContent::Done;
     }
   }
   FX_STRSIZE nItems = actText.GetLength();
   if (nItems < 1)
-    return FPDFTEXT_MC_PASS;
+    return FPDFText_MarkedContent::Pass;
 
   CPDF_Font* pFont = pTextObj->GetFont();
   bExist = FALSE;
@@ -1156,7 +1061,7 @@ int32_t CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
     }
   }
   if (!bExist)
-    return FPDFTEXT_MC_PASS;
+    return FPDFText_MarkedContent::Pass;
 
   bExist = FALSE;
   for (FX_STRSIZE i = 0; i < nItems; i++) {
@@ -1167,9 +1072,9 @@ int32_t CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
     }
   }
   if (!bExist)
-    return FPDFTEXT_MC_DONE;
+    return FPDFText_MarkedContent::Done;
 
-  return FPDFTEXT_MC_DELAY;
+  return FPDFText_MarkedContent::Delay;
 }
 
 void CPDF_TextPage::ProcessMarkedContent(PDFTEXT_Obj Obj) {
@@ -1292,8 +1197,8 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
   CFX_Matrix matrix;
   pTextObj->GetTextMatrix(&matrix);
   matrix.Concat(formMatrix);
-  int32_t bPreMKC = PreMarkedContent(Obj);
-  if (FPDFTEXT_MC_DONE == bPreMKC) {
+  FPDFText_MarkedContent ePreMKC = PreMarkedContent(Obj);
+  if (ePreMKC == FPDFText_MarkedContent::Done) {
     m_pPreTextObj = pTextObj;
     m_perMatrix.Copy(formMatrix);
     return;
@@ -1353,8 +1258,8 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
         }
       }
       while (m_TempTextBuf.GetSize() > 0 &&
-             m_TempTextBuf.GetWideString().GetAt(m_TempTextBuf.GetLength() -
-                                                 1) == 0x20) {
+             m_TempTextBuf.AsStringC().GetAt(m_TempTextBuf.GetLength() - 1) ==
+                 0x20) {
         m_TempTextBuf.Delete(m_TempTextBuf.GetLength() - 1, 1);
         m_TempCharList.pop_back();
       }
@@ -1369,7 +1274,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
         CFX_FloatRect(Obj.m_pTextObj->m_Left, Obj.m_pTextObj->m_Bottom,
                       Obj.m_pTextObj->m_Right, Obj.m_pTextObj->m_Top);
   }
-  if (FPDFTEXT_MC_DELAY == bPreMKC) {
+  if (ePreMKC == FPDFText_MarkedContent::Delay) {
     ProcessMarkedContent(Obj);
     m_pPreTextObj = pTextObj;
     m_perMatrix.Copy(formMatrix);
@@ -1378,7 +1283,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
   m_pPreTextObj = pTextObj;
   m_perMatrix.Copy(formMatrix);
   int nItems = pTextObj->CountItems();
-  FX_FLOAT baseSpace = _CalculateBaseSpace(pTextObj, matrix);
+  FX_FLOAT baseSpace = CalculateBaseSpace(pTextObj, matrix);
 
   const FX_BOOL bR2L = IsRightToLeft(pTextObj, pFont, nItems);
   const FX_BOOL bIsBidiAndMirrorInverse =
@@ -1395,9 +1300,9 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
     charinfo.m_OriginY = 0;
     pTextObj->GetItemInfo(i, &item);
     if (item.m_CharCode == (uint32_t)-1) {
-      CFX_WideString str = m_TempTextBuf.GetWideString();
+      CFX_WideString str = m_TempTextBuf.MakeString();
       if (str.IsEmpty()) {
-        str = m_TextBuf.GetWideString();
+        str = m_TextBuf.AsStringC();
       }
       if (str.IsEmpty() || str.GetAt(str.GetLength() - 1) == TEXT_BLANK_CHAR) {
         continue;
@@ -1431,7 +1336,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
         int this_width = FXSYS_abs(GetCharWidth(item.m_CharCode, pFont));
         threshold = this_width > last_width ? (FX_FLOAT)this_width
                                             : (FX_FLOAT)last_width;
-        threshold = _NormalizeThreshold(threshold);
+        threshold = NormalizeThreshold(threshold);
         threshold = fontsize_h * threshold / 1000;
       }
       if (threshold && (spacing && spacing >= threshold)) {
@@ -1531,7 +1436,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
           m_TempCharList.push_back(charinfo);
         }
       } else if (i == 0) {
-        CFX_WideString str = m_TempTextBuf.GetWideString();
+        CFX_WideString str = m_TempTextBuf.MakeString();
         if (!str.IsEmpty() &&
             str.GetAt(str.GetLength() - 1) == TEXT_BLANK_CHAR) {
           m_TempTextBuf.Delete(m_TempTextBuf.GetLength() - 1, 1);
@@ -1574,9 +1479,9 @@ int32_t CPDF_TextPage::GetTextObjectWritingMode(
   return m_TextlineDir;
 }
 FX_BOOL CPDF_TextPage::IsHyphen(FX_WCHAR curChar) {
-  CFX_WideString strCurText = m_TempTextBuf.GetWideString();
+  CFX_WideString strCurText = m_TempTextBuf.MakeString();
   if (strCurText.GetLength() == 0) {
-    strCurText = m_TextBuf.GetWideString();
+    strCurText = m_TextBuf.AsStringC();
   }
   FX_STRSIZE nCount = strCurText.GetLength();
   int nIndex = nCount - 1;
@@ -1886,20 +1791,7 @@ FX_BOOL CPDF_TextPage::IsRectIntersect(const CFX_FloatRect& rect1,
   return !rect.IsEmpty();
 }
 
-FX_BOOL CPDF_TextPage::IsLetter(FX_WCHAR unicode) {
-  if (unicode < L'A') {
-    return FALSE;
-  }
-  if (unicode > L'Z' && unicode < L'a') {
-    return FALSE;
-  }
-  if (unicode > L'z') {
-    return FALSE;
-  }
-  return TRUE;
-}
-
-CPDF_TextPageFind::CPDF_TextPageFind(const IPDF_TextPage* pTextPage)
+CPDF_TextPageFind::CPDF_TextPageFind(const CPDF_TextPage* pTextPage)
     : m_pTextPage(pTextPage),
       m_flags(0),
       m_findNextStart(-1),
@@ -2004,7 +1896,7 @@ FX_BOOL CPDF_TextPageFind::FindNext() {
   if (!m_pTextPage) {
     return FALSE;
   }
-  m_resArray.RemoveAll();
+  m_resArray.clear();
   if (m_findNextStart == -1) {
     return FALSE;
   }
@@ -2055,8 +1947,8 @@ FX_BOOL CPDF_TextPageFind::FindNext() {
       CFX_WideString lastWord = m_csFindWhatArray[iWord - 1];
       int lastChar = lastWord.GetAt(lastWord.GetLength() - 1);
       if (nStartPos == nResultPos &&
-          !(_IsIgnoreSpaceCharacter(lastChar) ||
-            _IsIgnoreSpaceCharacter(curChar))) {
+          !(IsIgnoreSpaceCharacter(lastChar) ||
+            IsIgnoreSpaceCharacter(curChar))) {
         bMatch = FALSE;
       }
       for (int d = PreResEndPos; d < nResultPos; d++) {
@@ -2096,7 +1988,7 @@ FX_BOOL CPDF_TextPageFind::FindNext() {
   m_IsFind = TRUE;
   int resStart = GetCharIndex(m_resStart);
   int resEnd = GetCharIndex(m_resEnd);
-  m_pTextPage->GetRectArray(resStart, resEnd - resStart + 1, m_resArray);
+  m_resArray = m_pTextPage->GetRectArray(resStart, resEnd - resStart + 1);
   if (m_flags & FPDFTEXT_CONSECUTIVE) {
     m_findNextStart = m_resStart + 1;
     m_findPreStart = m_resEnd - 1;
@@ -2111,7 +2003,7 @@ FX_BOOL CPDF_TextPageFind::FindPrev() {
   if (!m_pTextPage) {
     return FALSE;
   }
-  m_resArray.RemoveAll();
+  m_resArray.clear();
   if (m_strText.IsEmpty() || m_findPreStart < 0) {
     m_IsFind = FALSE;
     return m_IsFind;
@@ -2142,7 +2034,7 @@ FX_BOOL CPDF_TextPageFind::FindPrev() {
   m_resStart = m_pTextPage->TextIndexFromCharIndex(order);
   m_resEnd = m_pTextPage->TextIndexFromCharIndex(order + MatchedCount - 1);
   m_IsFind = TRUE;
-  m_pTextPage->GetRectArray(order, MatchedCount, m_resArray);
+  m_resArray = m_pTextPage->GetRectArray(order, MatchedCount);
   if (m_flags & FPDFTEXT_CONSECUTIVE) {
     m_findNextStart = m_resStart + 1;
     m_findPreStart = m_resEnd - 1;
@@ -2175,7 +2067,7 @@ void CPDF_TextPageFind::ExtractFindWhat(const CFX_WideString& findwhat) {
     while (pos < csWord.GetLength()) {
       CFX_WideString curStr = csWord.Mid(pos, 1);
       FX_WCHAR curChar = csWord.GetAt(pos);
-      if (_IsIgnoreSpaceCharacter(curChar)) {
+      if (IsIgnoreSpaceCharacter(curChar)) {
         if (pos > 0 && curChar == 0x2019) {
           pos++;
           continue;
@@ -2185,7 +2077,7 @@ void CPDF_TextPageFind::ExtractFindWhat(const CFX_WideString& findwhat) {
         }
         m_csFindWhatArray.push_back(curStr);
         if (pos == csWord.GetLength() - 1) {
-          csWord.Empty();
+          csWord.clear();
           break;
         }
         csWord = csWord.Right(csWord.GetLength() - pos - 1);
@@ -2256,9 +2148,9 @@ FX_BOOL CPDF_TextPageFind::ExtractSubString(CFX_WideString& rString,
     return FALSE;
   }
   while (iSubString--) {
-    lpszFullString = FXSYS_wcschr(lpszFullString, chSep);
+    lpszFullString = wcschr(lpszFullString, chSep);
     if (!lpszFullString) {
-      rString.Empty();
+      rString.clear();
       return FALSE;
     }
     lpszFullString++;
@@ -2266,7 +2158,7 @@ FX_BOOL CPDF_TextPageFind::ExtractSubString(CFX_WideString& rString,
       lpszFullString++;
     }
   }
-  const FX_WCHAR* lpchEnd = FXSYS_wcschr(lpszFullString, chSep);
+  const FX_WCHAR* lpchEnd = wcschr(lpszFullString, chSep);
   int nLen = lpchEnd ? (int)(lpchEnd - lpszFullString)
                      : (int)FXSYS_wcslen(lpszFullString);
   ASSERT(nLen >= 0);
@@ -2278,16 +2170,12 @@ FX_BOOL CPDF_TextPageFind::ExtractSubString(CFX_WideString& rString,
 
 CFX_WideString CPDF_TextPageFind::MakeReverse(const CFX_WideString& str) {
   CFX_WideString str2;
-  str2.Empty();
+  str2.clear();
   int nlen = str.GetLength();
   for (int i = nlen - 1; i >= 0; i--) {
     str2 += str.GetAt(i);
   }
   return str2;
-}
-
-void CPDF_TextPageFind::GetRectArray(CFX_RectArray& rects) const {
-  rects.Copy(m_resArray);
 }
 
 int CPDF_TextPageFind::GetCurOrder() const {
@@ -2300,43 +2188,22 @@ int CPDF_TextPageFind::GetMatchedCount() const {
   return resEnd - resStart + 1;
 }
 
-CPDF_LinkExtract::CPDF_LinkExtract()
-    : m_pTextPage(nullptr), m_bIsParsed(false) {}
+CPDF_LinkExtract::CPDF_LinkExtract(const CPDF_TextPage* pTextPage)
+    : m_pTextPage(pTextPage) {}
 
 CPDF_LinkExtract::~CPDF_LinkExtract() {
-  DeleteLinkList();
 }
 
-FX_BOOL CPDF_LinkExtract::ExtractLinks(const IPDF_TextPage* pTextPage) {
-  if (!pTextPage || !pTextPage->IsParsed())
-    return FALSE;
+void CPDF_LinkExtract::ExtractLinks() {
+  m_LinkArray.clear();
+  if (!m_pTextPage->IsParsed())
+    return;
 
-  m_pTextPage = (const CPDF_TextPage*)pTextPage;
   m_strPageText = m_pTextPage->GetPageText(0, -1);
-  DeleteLinkList();
-  if (m_strPageText.IsEmpty()) {
-    return FALSE;
-  }
+  if (m_strPageText.IsEmpty())
+    return;
+
   ParseLink();
-  m_bIsParsed = true;
-  return TRUE;
-}
-
-void CPDF_LinkExtract::DeleteLinkList() {
-  while (m_LinkList.GetSize()) {
-    CPDF_LinkExt* linkinfo = NULL;
-    linkinfo = m_LinkList.GetAt(0);
-    m_LinkList.RemoveAt(0);
-    delete linkinfo;
-  }
-  m_LinkList.RemoveAll();
-}
-
-int CPDF_LinkExtract::CountLinks() const {
-  if (!m_bIsParsed) {
-    return -1;
-  }
-  return m_LinkList.GetSize();
 }
 
 void CPDF_LinkExtract::ParseLink() {
@@ -2365,7 +2232,7 @@ void CPDF_LinkExtract::ParseLink() {
         }
         if (nCount > 5 &&
             (CheckWebLink(strBeCheck) || CheckMailLink(strBeCheck))) {
-          AppendToLinkList(start, nCount, strBeCheck);
+          m_LinkArray.push_back({start, nCount, strBeCheck});
         }
       }
       start = ++pos;
@@ -2375,47 +2242,46 @@ void CPDF_LinkExtract::ParseLink() {
   }
 }
 
-FX_BOOL CPDF_LinkExtract::CheckWebLink(CFX_WideString& strBeCheck) {
+bool CPDF_LinkExtract::CheckWebLink(CFX_WideString& strBeCheck) {
   CFX_WideString str = strBeCheck;
   str.MakeLower();
   if (str.Find(L"http://www.") != -1) {
     strBeCheck = strBeCheck.Right(str.GetLength() - str.Find(L"http://www."));
-    return TRUE;
+    return true;
   }
   if (str.Find(L"http://") != -1) {
     strBeCheck = strBeCheck.Right(str.GetLength() - str.Find(L"http://"));
-    return TRUE;
+    return true;
   }
   if (str.Find(L"https://www.") != -1) {
     strBeCheck = strBeCheck.Right(str.GetLength() - str.Find(L"https://www."));
-    return TRUE;
+    return true;
   }
   if (str.Find(L"https://") != -1) {
     strBeCheck = strBeCheck.Right(str.GetLength() - str.Find(L"https://"));
-    return TRUE;
+    return true;
   }
   if (str.Find(L"www.") != -1) {
     strBeCheck = strBeCheck.Right(str.GetLength() - str.Find(L"www."));
     strBeCheck = L"http://" + strBeCheck;
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
 
 bool CPDF_LinkExtract::CheckMailLink(CFX_WideString& str) {
   int aPos = str.Find(L'@');
   // Invalid when no '@'.
-  if (aPos < 1) {
-    return FALSE;
-  }
+  if (aPos < 1)
+    return false;
 
   // Check the local part.
   int pPos = aPos;  // Used to track the position of '@' or '.'.
   for (int i = aPos - 1; i >= 0; i--) {
     FX_WCHAR ch = str.GetAt(i);
-    if (ch == L'_' || ch == L'-' || FXSYS_iswalnum(ch)) {
+    if (ch == L'_' || ch == L'-' || FXSYS_iswalnum(ch))
       continue;
-    }
+
     if (ch != L'.' || i == pPos - 1 || i == 0) {
       if (i == aPos - 1) {
         // There is '.' or invalid char before '@'.
@@ -2433,25 +2299,25 @@ bool CPDF_LinkExtract::CheckMailLink(CFX_WideString& str) {
 
   // Check the domain name part.
   aPos = str.Find(L'@');
-  if (aPos < 1) {
-    return FALSE;
-  }
+  if (aPos < 1)
+    return false;
+
   str.TrimRight(L'.');
   // At least one '.' in domain name, but not at the beginning.
   // TODO(weili): RFC5322 allows domain names to be a local name without '.'.
   // Check whether we should remove this check.
   int ePos = str.Find(L'.', aPos + 1);
-  if (ePos == -1 || ePos == aPos + 1) {
-    return FALSE;
-  }
+  if (ePos == -1 || ePos == aPos + 1)
+    return false;
+
   // Validate all other chars in domain name.
   int nLen = str.GetLength();
   pPos = 0;  // Used to track the position of '.'.
   for (int i = aPos + 1; i < nLen; i++) {
     FX_WCHAR wch = str.GetAt(i);
-    if (wch == L'-' || FXSYS_iswalnum(wch)) {
+    if (wch == L'-' || FXSYS_iswalnum(wch))
       continue;
-    }
+
     if (wch != L'.' || i == pPos + 1) {
       // Domain name should end before invalid char.
       int host_end = i == pPos + 1 ? i - 2 : i - 1;
@@ -2460,61 +2326,25 @@ bool CPDF_LinkExtract::CheckMailLink(CFX_WideString& str) {
         str = str.Left(host_end + 1);
         break;
       }
-      return FALSE;
+      return false;
     }
     pPos = i;
   }
 
-  if (str.Find(L"mailto:") == -1) {
+  if (str.Find(L"mailto:") == -1)
     str = L"mailto:" + str;
-  }
-  return TRUE;
+
+  return true;
 }
 
-void CPDF_LinkExtract::AppendToLinkList(int start,
-                                        int count,
-                                        const CFX_WideString& strUrl) {
-  CPDF_LinkExt* linkInfo = new CPDF_LinkExt;
-  linkInfo->m_strUrl = strUrl;
-  linkInfo->m_Start = start;
-  linkInfo->m_Count = count;
-  m_LinkList.Add(linkInfo);
+CFX_WideString CPDF_LinkExtract::GetURL(size_t index) const {
+  return index < m_LinkArray.size() ? m_LinkArray[index].m_strUrl : L"";
 }
 
-CFX_WideString CPDF_LinkExtract::GetURL(int index) const {
-  if (!m_bIsParsed || index < 0 || index >= m_LinkList.GetSize()) {
-    return L"";
-  }
-  CPDF_LinkExt* link = NULL;
-  link = m_LinkList.GetAt(index);
-  if (!link) {
-    return L"";
-  }
-  return link->m_strUrl;
-}
-void CPDF_LinkExtract::GetBoundedSegment(int index,
-                                         int& start,
-                                         int& count) const {
-  if (!m_bIsParsed || index < 0 || index >= m_LinkList.GetSize()) {
-    return;
-  }
-  CPDF_LinkExt* link = NULL;
-  link = m_LinkList.GetAt(index);
-  if (!link) {
-    return;
-  }
-  start = link->m_Start;
-  count = link->m_Count;
-}
+std::vector<CFX_FloatRect> CPDF_LinkExtract::GetRects(size_t index) const {
+  if (index >= m_LinkArray.size())
+    return std::vector<CFX_FloatRect>();
 
-void CPDF_LinkExtract::GetRects(int index, CFX_RectArray& rects) const {
-  if (!m_bIsParsed || index < 0 || index >= m_LinkList.GetSize()) {
-    return;
-  }
-  CPDF_LinkExt* link = NULL;
-  link = m_LinkList.GetAt(index);
-  if (!link) {
-    return;
-  }
-  m_pTextPage->GetRectArray(link->m_Start, link->m_Count, rects);
+  return m_pTextPage->GetRectArray(m_LinkArray[index].m_Start,
+                                   m_LinkArray[index].m_Count);
 }

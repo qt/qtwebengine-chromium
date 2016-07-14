@@ -535,7 +535,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     }
 
     if (kGL_GrGLStandard == standard) {
-        if (version >= GR_GL_VER(4, 0) || ctxInfo.hasExtension("GL_ARB_sample_shading")) {
+        if ((version >= GR_GL_VER(4, 0) || ctxInfo.hasExtension("GL_ARB_sample_shading")) && 
+            ctxInfo.vendor() != kIntel_GrGLVendor) {
             fSampleShadingSupport = true;
         }
     } else if (ctxInfo.hasExtension("GL_OES_sample_shading")) {
@@ -736,18 +737,27 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo) {
     }
 
     if (kGL_GrGLStandard == standard) {
-        glslCaps->fBufferTextureSupport = ctxInfo.version() > GR_GL_VER(3, 1) &&
-                                          ctxInfo.glslGeneration() >= k330_GrGLSLGeneration;
+        glslCaps->fTexelFetchSupport = ctxInfo.glslGeneration() >= k130_GrGLSLGeneration;
     } else {
-        if (ctxInfo.version() > GR_GL_VER(3, 2) &&
-            ctxInfo.glslGeneration() >= k320es_GrGLSLGeneration) {
-            glslCaps->fBufferTextureSupport = true;
-        } else if (ctxInfo.hasExtension("GL_OES_texture_buffer")) {
-            glslCaps->fBufferTextureSupport = true;
-            glslCaps->fBufferTextureExtensionString = "GL_OES_texture_buffer";
-        } else if (ctxInfo.hasExtension("GL_EXT_texture_buffer")) {
-            glslCaps->fBufferTextureSupport = true;
-            glslCaps->fBufferTextureExtensionString = "GL_EXT_texture_buffer";
+        glslCaps->fTexelFetchSupport =
+            ctxInfo.glslGeneration() >= k330_GrGLSLGeneration; // We use this value for GLSL ES 3.0.
+    }
+
+    if (glslCaps->fTexelFetchSupport) {
+        if (kGL_GrGLStandard == standard) {
+            glslCaps->fTexelBufferSupport = ctxInfo.version() >= GR_GL_VER(4, 3) &&
+                                            ctxInfo.glslGeneration() >= k330_GrGLSLGeneration;
+        } else {
+            if (ctxInfo.version() >= GR_GL_VER(3, 2) &&
+                ctxInfo.glslGeneration() >= k320es_GrGLSLGeneration) {
+                glslCaps->fTexelBufferSupport = true;
+            } else if (ctxInfo.hasExtension("GL_OES_texture_buffer")) {
+                glslCaps->fTexelBufferSupport = true;
+                glslCaps->fTexelBufferExtensionString = "GL_OES_texture_buffer";
+            } else if (ctxInfo.hasExtension("GL_EXT_texture_buffer")) {
+                glslCaps->fTexelBufferSupport = true;
+                glslCaps->fTexelBufferExtensionString = "GL_EXT_texture_buffer";
+            }
         }
     }
 
@@ -1197,6 +1207,7 @@ void GrGLCaps::initShaderPrecisionTable(const GrGLContextInfo& ctxInfo,
                                                glslCaps->fFloatPrecisions[kVertex_GrShaderType][p];
         }
     }
+    glslCaps->initSamplerPrecisionTable();
 }
 
 bool GrGLCaps::bgraIsInternalFormat() const {
@@ -1372,6 +1383,8 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         texStorageSupported = false;
     }
 
+    bool texelBufferSupport = this->shaderCaps()->texelBufferSupport();
+
     fConfigTable[kUnknown_GrPixelConfig].fFormats.fBaseInternalFormat = 0;
     fConfigTable[kUnknown_GrPixelConfig].fFormats.fSizedInternalFormat = 0;
     fConfigTable[kUnknown_GrPixelConfig].fFormats.fExternalFormat[kOther_ExternalFormatUsage] = 0;
@@ -1397,6 +1410,9 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
     }
     if (texStorageSupported) {
         fConfigTable[kRGBA_8888_GrPixelConfig].fFlags |= ConfigInfo::kCanUseTexStorage_Flag;
+    }
+    if (texelBufferSupport) {
+        fConfigTable[kRGBA_8888_GrPixelConfig].fFlags |= ConfigInfo::kCanUseWithTexelBuffer_Flag;
     }
     fConfigTable[kRGBA_8888_GrPixelConfig].fSwizzle = GrSwizzle::RGBA();
 
@@ -1441,8 +1457,7 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
     fConfigTable[kBGRA_8888_GrPixelConfig].fSwizzle = GrSwizzle::RGBA();
 
     // We only enable srgb support if both textures and FBOs support srgb,
-    // *and* we can disable sRGB decode-on-read, to support "legacy" mode,
-    // *and* we can disable sRGB encode-on-write.
+    // *and* we can disable sRGB decode-on-read, to support "legacy" mode.
     if (kGL_GrGLStandard == standard) {
         if (ctxInfo.version() >= GR_GL_VER(3,0)) {
             fSRGBSupport = true;
@@ -1453,13 +1468,16 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
             }
         }
         // All the above srgb extensions support toggling srgb writes
+        if (fSRGBSupport) {
+            fSRGBWriteControl = true;
+        }
     } else {
         // See https://bug.skia.org/4148 for PowerVR issue.
         fSRGBSupport = kPowerVRRogue_GrGLRenderer != ctxInfo.renderer() &&
             (ctxInfo.version() >= GR_GL_VER(3,0) || ctxInfo.hasExtension("GL_EXT_sRGB"));
         // ES through 3.1 requires EXT_srgb_write_control to support toggling
         // sRGB writing for destinations.
-        fSRGBSupport = fSRGBSupport && ctxInfo.hasExtension("GL_EXT_sRGB_write_control");
+        fSRGBWriteControl = ctxInfo.hasExtension("GL_EXT_sRGB_write_control");
     }
     if (!ctxInfo.hasExtension("GL_EXT_texture_sRGB_decode")) {
         // To support "legacy" L32 mode, we require the ability to turn off sRGB decode:
@@ -1557,6 +1575,9 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         fConfigTable[kAlpha_8_GrPixelConfig].fFormats.fExternalFormat[kOther_ExternalFormatUsage] =
             GR_GL_RED;
         fConfigTable[kAlpha_8_GrPixelConfig].fSwizzle = GrSwizzle::RRRR();
+        if (texelBufferSupport) {
+            fConfigTable[kAlpha_8_GrPixelConfig].fFlags |= ConfigInfo::kCanUseWithTexelBuffer_Flag;
+        }
     } else {
         fConfigTable[kAlpha_8_GrPixelConfig].fFormats.fBaseInternalFormat = GR_GL_ALPHA;
         fConfigTable[kAlpha_8_GrPixelConfig].fFormats.fSizedInternalFormat = GR_GL_ALPHA8;
@@ -1567,8 +1588,11 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
     fConfigTable[kAlpha_8_GrPixelConfig].fFormats.fExternalType = GR_GL_UNSIGNED_BYTE;
     fConfigTable[kAlpha_8_GrPixelConfig].fFormatType = kNormalizedFixedPoint_FormatType;
     fConfigTable[kAlpha_8_GrPixelConfig].fFlags = ConfigInfo::kTextureable_Flag;
-    if (this->textureRedSupport() || kDesktop_ARB_MSFBOType == this->msFBOType()) {
+    if (this->textureRedSupport() ||
+        (kDesktop_ARB_MSFBOType == this->msFBOType() &&
+         ctxInfo.renderer() != kOSMesa_GrGLRenderer)) {
         // desktop ARB extension/3.0+ supports ALPHA8 as renderable.
+        // However, osmesa fails if it used even when GL_ARB_framebuffer_object is present.
         // Core profile removes ALPHA8 support, but we should have chosen R8 in that case.
         fConfigTable[kAlpha_8_GrPixelConfig].fFlags |= allRenderFlags;
     }
@@ -1625,6 +1649,9 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
     if (texStorageSupported) {
         fConfigTable[kRGBA_float_GrPixelConfig].fFlags |= ConfigInfo::kCanUseTexStorage_Flag;
     }
+    if (texelBufferSupport) {
+        fConfigTable[kRGBA_float_GrPixelConfig].fFlags |= ConfigInfo::kCanUseWithTexelBuffer_Flag;
+    }
     fConfigTable[kRGBA_float_GrPixelConfig].fSwizzle = GrSwizzle::RGBA();
 
     if (this->textureRedSupport()) {
@@ -1633,6 +1660,10 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         fConfigTable[kAlpha_half_GrPixelConfig].fFormats.fExternalFormat[kOther_ExternalFormatUsage]
             = GR_GL_RED;
         fConfigTable[kAlpha_half_GrPixelConfig].fSwizzle = GrSwizzle::RRRR();
+        if (texelBufferSupport) {
+            fConfigTable[kAlpha_half_GrPixelConfig].fFlags |=
+                ConfigInfo::kCanUseWithTexelBuffer_Flag;
+        }
     } else {
         fConfigTable[kAlpha_half_GrPixelConfig].fFormats.fBaseInternalFormat = GR_GL_ALPHA;
         fConfigTable[kAlpha_half_GrPixelConfig].fFormats.fSizedInternalFormat = GR_GL_ALPHA16F;
@@ -1680,6 +1711,9 @@ void GrGLCaps::initConfigTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
     }
     if (texStorageSupported) {
         fConfigTable[kRGBA_half_GrPixelConfig].fFlags |= ConfigInfo::kCanUseTexStorage_Flag;
+    }
+    if (texelBufferSupport) {
+        fConfigTable[kRGBA_half_GrPixelConfig].fFlags |= ConfigInfo::kCanUseWithTexelBuffer_Flag;
     }
     fConfigTable[kRGBA_half_GrPixelConfig].fSwizzle = GrSwizzle::RGBA();
 

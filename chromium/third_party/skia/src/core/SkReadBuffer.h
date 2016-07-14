@@ -8,7 +8,6 @@
 #ifndef SkReadBuffer_DEFINED
 #define SkReadBuffer_DEFINED
 
-#include "SkBitmapHeap.h"
 #include "SkColorFilter.h"
 #include "SkData.h"
 #include "SkDrawLooper.h"
@@ -22,6 +21,7 @@
 #include "SkReader32.h"
 #include "SkRefCnt.h"
 #include "SkShader.h"
+#include "SkTHash.h"
 #include "SkWriteBuffer.h"
 #include "SkXfermode.h"
 
@@ -38,6 +38,10 @@ public:
     SkReadBuffer(const void* data, size_t size);
     SkReadBuffer(SkStream* stream);
     virtual ~SkReadBuffer();
+
+    virtual SkReadBuffer* clone(const void* data, size_t size) const {
+        return new SkReadBuffer(data, size);
+    }
 
     enum Version {
         /*
@@ -61,6 +65,7 @@ public:
         kPictureShaderHasPictureBool_Version = 42,
         kHasDrawImageOpCodes_Version       = 43,
         kAnnotationsMovedToCanvas_Version  = 44,
+        kLightingShaderWritesInvNormRotation = 45,
     };
 
     /**
@@ -100,7 +105,6 @@ public:
     size_t offset() { return fReader.offset(); }
     bool eof() { return fReader.eof(); }
     virtual const void* skip(size_t size) { return fReader.skip(size); }
-    void* readFunctionPtr() { return fReader.readPtr(); }
 
     // primitives
     virtual bool readBool();
@@ -110,9 +114,11 @@ public:
     virtual uint32_t readUInt();
     virtual int32_t read32();
 
+    // peek
+    virtual uint8_t peekByte();
+
     // strings -- the caller is responsible for freeing the string contents
     virtual void readString(SkString* string);
-    virtual void* readEncodedString(size_t* length, SkPaint::TextEncoding encoding);
 
     // common data structures
     virtual void readPoint(SkPoint* point);
@@ -120,6 +126,7 @@ public:
     virtual void readMatrix(SkMatrix* matrix);
     virtual void readIRect(SkIRect* rect);
     virtual void readRect(SkRect* rect);
+    virtual void readRRect(SkRRect* rrect);
     virtual void readRegion(SkRegion* region);
 
     virtual void readPath(SkPath* path);
@@ -137,12 +144,6 @@ public:
     sk_sp<SkRasterizer> readRasterizer() { return this->readFlattenable<SkRasterizer>(); }
     sk_sp<SkShader> readShader() { return this->readFlattenable<SkShader>(); }
     sk_sp<SkXfermode> readXfermode() { return this->readFlattenable<SkXfermode>(); }
-
-    /**
-     *  Like readFlattenable() but explicitly just skips the data that was written for the
-     *  flattenable (or the sentinel that there wasn't one).
-     */
-    virtual void skipFlattenable();
 
     // binary data and arrays
     virtual bool readByteArray(void* value, size_t size);
@@ -174,10 +175,6 @@ public:
 
     virtual SkTypeface* readTypeface();
 
-    void setBitmapStorage(SkBitmapHeapReader* bitmapStorage) {
-        SkRefCnt_SafeAssign(fBitmapStorage, bitmapStorage);
-    }
-
     void setTypefaceArray(SkTypeface* array[], int count) {
         fTFArray = array;
         fTFCount = count;
@@ -193,6 +190,20 @@ public:
     }
 
     /**
+     *  For an input flattenable (specified by name), set a custom factory proc
+     *  to use when unflattening.  Will make a copy of |name|.
+     *
+     *  If the global registry already has a default factory for the flattenable,
+     *  this will override that factory.  If a custom factory has already been
+     *  set for the flattenable, this will override that factory.
+     *
+     *  Custom factories can be removed by calling setCustomFactory("...", nullptr).
+     */
+    void setCustomFactory(const SkString& name, SkFlattenable::Factory factory) {
+        fCustomFactory.set(name, factory);
+    }
+
+    /**
      *  Provide a function to decode an SkBitmap from encoded data. Only used if the writer
      *  encoded the SkBitmap. If the proper decoder cannot be used, a red bitmap with the
      *  appropriate size will be used.
@@ -202,12 +213,34 @@ public:
     }
 
     // Default impelementations don't check anything.
-    virtual bool validate(bool isValid) { return true; }
+    virtual bool validate(bool isValid) { return isValid; }
     virtual bool isValid() const { return true; }
     virtual bool validateAvailable(size_t size) { return true; }
+    bool validateIndex(int index, int count) {
+        return this->validate(index >= 0 && index < count);
+    }
 
 protected:
+    /**
+     *  Allows subclass to check if we are using factories for expansion
+     *  of flattenables.
+     */
+    int factoryCount() { return fFactoryCount; }
+
+
+    /**
+     *  Checks if a custom factory has been set for a given flattenable.
+     *  Returns the custom factory if it exists, or nullptr otherwise.
+     */
+    SkFlattenable::Factory getCustomFactory(const SkString& name) {
+        SkFlattenable::Factory* factoryPtr = fCustomFactory.find(name);
+        return factoryPtr ? *factoryPtr : nullptr;
+    }
+
     SkReader32 fReader;
+
+    // Only used if we do not have an fFactoryArray.
+    SkTHashMap<uint32_t, SkString> fFlattenableDict;
 
 private:
     bool readArray(void* value, size_t size, size_t elementSize);
@@ -217,12 +250,14 @@ private:
 
     void* fMemoryPtr;
 
-    SkBitmapHeapReader* fBitmapStorage;
     SkTypeface** fTFArray;
     int        fTFCount;
 
     SkFlattenable::Factory* fFactoryArray;
     int                     fFactoryCount;
+
+    // Only used if we do not have an fFactoryArray.
+    SkTHashMap<SkString, SkFlattenable::Factory> fCustomFactory;
 
     SkPicture::InstallPixelRefProc fBitmapDecoder;
 

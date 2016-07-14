@@ -25,7 +25,7 @@ ShadingType ToShadingType(int type) {
 CPDF_ShadingPattern::CPDF_ShadingPattern(CPDF_Document* pDoc,
                                          CPDF_Object* pPatternObj,
                                          FX_BOOL bShading,
-                                         const CFX_Matrix* parentMatrix)
+                                         const CFX_Matrix& parentMatrix)
     : CPDF_Pattern(SHADING,
                    pDoc,
                    bShading ? nullptr : pPatternObj,
@@ -40,15 +40,14 @@ CPDF_ShadingPattern::CPDF_ShadingPattern(CPDF_Document* pDoc,
     CPDF_Dictionary* pDict = m_pPatternObj->GetDict();
     m_Pattern2Form = pDict->GetMatrixBy("Matrix");
     m_pShadingObj = pDict->GetDirectObjectBy("Shading");
-    if (parentMatrix)
-      m_Pattern2Form.Concat(*parentMatrix);
+    m_Pattern2Form.Concat(parentMatrix);
   }
   for (size_t i = 0; i < FX_ArraySize(m_pFunctions); ++i)
     m_pFunctions[i] = nullptr;
 }
 
 CPDF_ShadingPattern::~CPDF_ShadingPattern() {
-  for (int i = 0; i < m_nFuncs; ++i)
+  for (size_t i = 0; i < m_nFuncs; ++i)
     delete m_pFunctions[i];
 
   CPDF_ColorSpace* pCS = m_pCountedCS ? m_pCountedCS->get() : nullptr;
@@ -66,16 +65,16 @@ FX_BOOL CPDF_ShadingPattern::Load() {
     return FALSE;
 
   if (m_nFuncs) {
-    for (int i = 0; i < m_nFuncs; i++)
+    for (size_t i = 0; i < m_nFuncs; i++)
       delete m_pFunctions[i];
     m_nFuncs = 0;
   }
   CPDF_Object* pFunc = pShadingDict->GetDirectObjectBy("Function");
   if (pFunc) {
     if (CPDF_Array* pArray = pFunc->AsArray()) {
-      m_nFuncs = std::min<int>(pArray->GetCount(), 4);
+      m_nFuncs = std::min<size_t>(pArray->GetCount(), 4);
 
-      for (int i = 0; i < m_nFuncs; i++)
+      for (size_t i = 0; i < m_nFuncs; i++)
         m_pFunctions[i] = CPDF_Function::Load(pArray->GetDirectObjectAt(i));
     } else {
       m_pFunctions[0] = CPDF_Function::Load(pFunc);

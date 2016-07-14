@@ -369,6 +369,10 @@ SSL *SSL_new(SSL_CTX *ctx) {
   ssl->min_version = ctx->min_version;
   ssl->max_version = ctx->max_version;
 
+  /* RFC 6347 states that implementations SHOULD use an initial timer value of
+   * 1 second. */
+  ssl->initial_timeout_duration_ms = 1000;
+
   ssl->options = ctx->options;
   ssl->mode = ctx->mode;
   ssl->max_cert_list = ctx->max_cert_list;
@@ -512,14 +516,12 @@ void SSL_free(SSL *ssl) {
 
 void SSL_set_connect_state(SSL *ssl) {
   ssl->server = 0;
-  ssl->shutdown = 0;
   ssl->state = SSL_ST_CONNECT;
   ssl->handshake_func = ssl->method->ssl_connect;
 }
 
 void SSL_set_accept_state(SSL *ssl) {
   ssl->server = 1;
-  ssl->shutdown = 0;
   ssl->state = SSL_ST_ACCEPT;
   ssl->handshake_func = ssl->method->ssl_accept;
 }
@@ -548,11 +550,17 @@ BIO *SSL_get_rbio(const SSL *ssl) { return ssl->rbio; }
 BIO *SSL_get_wbio(const SSL *ssl) { return ssl->wbio; }
 
 int SSL_do_handshake(SSL *ssl) {
+  ssl->rwstate = SSL_NOTHING;
   /* Functions which use SSL_get_error must clear the error queue on entry. */
   ERR_clear_error();
 
   if (ssl->handshake_func == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_CONNECTION_TYPE_NOT_SET);
+    return -1;
+  }
+
+  if (ssl->s3->send_shutdown != ssl_shutdown_none) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
     return -1;
   }
 
@@ -586,6 +594,7 @@ int SSL_accept(SSL *ssl) {
 }
 
 static int ssl_read_impl(SSL *ssl, void *buf, int num, int peek) {
+  ssl->rwstate = SSL_NOTHING;
   /* Functions which use SSL_get_error must clear the error queue on entry. */
   ERR_clear_error();
   ERR_clear_system_error();
@@ -595,9 +604,9 @@ static int ssl_read_impl(SSL *ssl, void *buf, int num, int peek) {
     return -1;
   }
 
-  if (ssl->shutdown & SSL_RECEIVED_SHUTDOWN) {
-    ssl->rwstate = SSL_NOTHING;
-    return 0;
+  if (ssl->s3->send_shutdown != ssl_shutdown_none) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
+    return -1;
   }
 
   /* This may require multiple iterations. False Start will cause
@@ -626,6 +635,7 @@ int SSL_peek(SSL *ssl, void *buf, int num) {
 }
 
 int SSL_write(SSL *ssl, const void *buf, int num) {
+  ssl->rwstate = SSL_NOTHING;
   /* Functions which use SSL_get_error must clear the error queue on entry. */
   ERR_clear_error();
   ERR_clear_system_error();
@@ -635,8 +645,7 @@ int SSL_write(SSL *ssl, const void *buf, int num) {
     return -1;
   }
 
-  if (ssl->shutdown & SSL_SENT_SHUTDOWN) {
-    ssl->rwstate = SSL_NOTHING;
+  if (ssl->s3->send_shutdown != ssl_shutdown_none) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
     return -1;
   }
@@ -657,13 +666,9 @@ int SSL_write(SSL *ssl, const void *buf, int num) {
 }
 
 int SSL_shutdown(SSL *ssl) {
+  ssl->rwstate = SSL_NOTHING;
   /* Functions which use SSL_get_error must clear the error queue on entry. */
   ERR_clear_error();
-
-  /* Note that this function behaves differently from what one might expect.
-   * Return values are 0 for no success (yet), 1 for success; but calling it
-   * once is usually not enough, even if blocking I/O is used (see
-   * ssl3_shutdown). */
 
   if (ssl->handshake_func == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_UNINITIALIZED);
@@ -676,44 +681,37 @@ int SSL_shutdown(SSL *ssl) {
     return -1;
   }
 
-  /* Do nothing if configured not to send a close_notify. */
   if (ssl->quiet_shutdown) {
-    ssl->shutdown = SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN;
+    /* Do nothing if configured not to send a close_notify. */
+    ssl->s3->send_shutdown = ssl_shutdown_close_notify;
+    ssl->s3->recv_shutdown = ssl_shutdown_close_notify;
     return 1;
   }
 
-  if (!(ssl->shutdown & SSL_SENT_SHUTDOWN)) {
-    ssl->shutdown |= SSL_SENT_SHUTDOWN;
-    ssl3_send_alert(ssl, SSL3_AL_WARNING, SSL_AD_CLOSE_NOTIFY);
+  /* This function completes in two stages. It sends a close_notify and then it
+   * waits for a close_notify to come in. Perform exactly one action and return
+   * whether or not it succeeds. */
 
-    /* our shutdown alert has been sent now, and if it still needs to be
-     * written, ssl->s3->alert_dispatch will be true */
-    if (ssl->s3->alert_dispatch) {
-      return -1; /* return WANT_WRITE */
+  if (ssl->s3->send_shutdown != ssl_shutdown_close_notify) {
+    /* Send a close_notify. */
+    if (ssl3_send_alert(ssl, SSL3_AL_WARNING, SSL_AD_CLOSE_NOTIFY) <= 0) {
+      return -1;
     }
   } else if (ssl->s3->alert_dispatch) {
-    /* resend it if not sent */
-    int ret = ssl->method->ssl_dispatch_alert(ssl);
-    if (ret == -1) {
-      /* we only get to return -1 here the 2nd/Nth invocation, we must  have
-       * already signalled return 0 upon a previous invoation, return
-       * WANT_WRITE */
-      return ret;
+    /* Finish sending the close_notify. */
+    if (ssl->method->ssl_dispatch_alert(ssl) <= 0) {
+      return -1;
     }
-  } else if (!(ssl->shutdown & SSL_RECEIVED_SHUTDOWN)) {
-    /* If we are waiting for a close from our peer, we are closed */
+  } else if (ssl->s3->recv_shutdown != ssl_shutdown_close_notify) {
+    /* Wait for the peer's close_notify. */
     ssl->method->ssl_read_close_notify(ssl);
-    if (!(ssl->shutdown & SSL_RECEIVED_SHUTDOWN)) {
-      return -1; /* return WANT_READ */
+    if (ssl->s3->recv_shutdown != ssl_shutdown_close_notify) {
+      return -1;
     }
   }
 
-  if (ssl->shutdown == (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN) &&
-      !ssl->s3->alert_dispatch) {
-    return 1;
-  } else {
-    return 0;
-  }
+  /* Return 0 for unidirectional shutdown and 1 for bidirectional shutdown. */
+  return ssl->s3->recv_shutdown == ssl_shutdown_close_notify;
 }
 
 int SSL_get_error(const SSL *ssl, int ret_code) {
@@ -736,8 +734,7 @@ int SSL_get_error(const SSL *ssl, int ret_code) {
   }
 
   if (ret_code == 0) {
-    if ((ssl->shutdown & SSL_RECEIVED_SHUTDOWN) && ssl->s3->clean_shutdown) {
-      /* The socket was cleanly shut down with a close_notify. */
+    if (ssl->s3->recv_shutdown == ssl_shutdown_close_notify) {
       return SSL_ERROR_ZERO_RETURN;
     }
     /* An EOF was observed which violates the protocol, and the underlying
@@ -1699,52 +1696,33 @@ void SSL_set_cert_cb(SSL *ssl, int (*cb)(SSL *ssl, void *arg), void *arg) {
 
 void ssl_get_compatible_server_ciphers(SSL *ssl, uint32_t *out_mask_k,
                                        uint32_t *out_mask_a) {
-  CERT *c = ssl->cert;
-  int have_rsa_cert = 0, dh_tmp;
-  uint32_t mask_k, mask_a;
-  int have_ecc_cert = 0, ecdsa_ok;
-  X509 *x;
-
-  dh_tmp = (c->dh_tmp != NULL || c->dh_tmp_cb != NULL);
+  uint32_t mask_k = 0;
+  uint32_t mask_a = 0;
 
   if (ssl->cert->x509 != NULL && ssl_has_private_key(ssl)) {
     if (ssl_private_key_type(ssl) == EVP_PKEY_RSA) {
-      have_rsa_cert = 1;
+      mask_k |= SSL_kRSA;
+      mask_a |= SSL_aRSA;
     } else if (ssl_private_key_type(ssl) == EVP_PKEY_EC) {
-      have_ecc_cert = 1;
+      /* An ECC certificate may be usable for ECDSA cipher suites depending on
+       * the key usage extension and on the client's curve preferences. */
+      X509 *x = ssl->cert->x509;
+      /* This call populates extension flags (ex_flags). */
+      X509_check_purpose(x, -1, 0);
+      int ecdsa_ok = (x->ex_flags & EXFLAG_KUSAGE)
+                         ? (x->ex_kusage & X509v3_KU_DIGITAL_SIGNATURE)
+                         : 1;
+      if (ecdsa_ok && tls1_check_ec_cert(ssl, x)) {
+        mask_a |= SSL_aECDSA;
+      }
     }
   }
 
-  mask_k = 0;
-  mask_a = 0;
-
-  if (dh_tmp) {
+  if (ssl->cert->dh_tmp != NULL || ssl->cert->dh_tmp_cb != NULL) {
     mask_k |= SSL_kDHE;
   }
-  if (have_rsa_cert) {
-    mask_k |= SSL_kRSA;
-    mask_a |= SSL_aRSA;
-  }
 
-  /* An ECC certificate may be usable for ECDSA cipher suites depending on the
-   * key usage extension and on the client's curve preferences. */
-  if (have_ecc_cert) {
-    x = c->x509;
-    /* This call populates extension flags (ex_flags). */
-    X509_check_purpose(x, -1, 0);
-    ecdsa_ok = (x->ex_flags & EXFLAG_KUSAGE)
-                   ? (x->ex_kusage & X509v3_KU_DIGITAL_SIGNATURE)
-                   : 1;
-    if (!tls1_check_ec_cert(ssl, x)) {
-      ecdsa_ok = 0;
-    }
-    if (ecdsa_ok) {
-      mask_a |= SSL_aECDSA;
-    }
-  }
-
-  /* If we are considering an ECC cipher suite that uses an ephemeral EC
-   * key, check for a shared curve. */
+  /* Check for a shared curve to consider ECDHE ciphers. */
   uint16_t unused;
   if (tls1_get_shared_curve(ssl, &unused)) {
     mask_k |= SSL_kECDHE;
@@ -1882,7 +1860,11 @@ const COMP_METHOD *SSL_get_current_expansion(SSL *ssl) { return NULL; }
 
 int *SSL_get_server_tmp_key(SSL *ssl, EVP_PKEY **out_key) { return 0; }
 
-int ssl_init_wbio_buffer(SSL *ssl, int push) {
+int ssl_is_wbio_buffered(const SSL *ssl) {
+  return ssl->bbio != NULL && ssl->wbio == ssl->bbio;
+}
+
+int ssl_init_wbio_buffer(SSL *ssl) {
   BIO *bbio;
 
   if (ssl->bbio == NULL) {
@@ -1904,14 +1886,8 @@ int ssl_init_wbio_buffer(SSL *ssl, int push) {
     return 0;
   }
 
-  if (push) {
-    if (ssl->wbio != bbio) {
-      ssl->wbio = BIO_push(bbio, ssl->wbio);
-    }
-  } else {
-    if (ssl->wbio == bbio) {
-      ssl->wbio = BIO_pop(bbio);
-    }
+  if (ssl->wbio != bbio) {
+    ssl->wbio = BIO_push(bbio, ssl->wbio);
   }
 
   return 1;
@@ -1948,12 +1924,32 @@ int SSL_get_quiet_shutdown(const SSL *ssl) { return ssl->quiet_shutdown; }
 void SSL_set_shutdown(SSL *ssl, int mode) {
   /* It is an error to clear any bits that have already been set. (We can't try
    * to get a second close_notify or send two.) */
-  assert((ssl->shutdown & mode) == ssl->shutdown);
+  assert((SSL_get_shutdown(ssl) & mode) == SSL_get_shutdown(ssl));
 
-  ssl->shutdown |= mode;
+  if (mode & SSL_RECEIVED_SHUTDOWN &&
+      ssl->s3->recv_shutdown == ssl_shutdown_none) {
+    ssl->s3->recv_shutdown = ssl_shutdown_close_notify;
+  }
+
+  if (mode & SSL_SENT_SHUTDOWN &&
+      ssl->s3->send_shutdown == ssl_shutdown_none) {
+    ssl->s3->send_shutdown = ssl_shutdown_close_notify;
+  }
 }
 
-int SSL_get_shutdown(const SSL *ssl) { return ssl->shutdown; }
+int SSL_get_shutdown(const SSL *ssl) {
+  int ret = 0;
+  if (ssl->s3->recv_shutdown != ssl_shutdown_none) {
+    /* Historically, OpenSSL set |SSL_RECEIVED_SHUTDOWN| on both close_notify
+     * and fatal alert. */
+    ret |= SSL_RECEIVED_SHUTDOWN;
+  }
+  if (ssl->s3->send_shutdown == ssl_shutdown_close_notify) {
+    /* Historically, OpenSSL set |SSL_SENT_SHUTDOWN| on only close_notify. */
+    ret |= SSL_SENT_SHUTDOWN;
+  }
+  return ret;
+}
 
 int SSL_version(const SSL *ssl) { return ssl->version; }
 
@@ -2661,7 +2657,6 @@ int SSL_clear(SSL *ssl) {
   }
 
   ssl->hit = 0;
-  ssl->shutdown = 0;
 
   /* SSL_clear may be called before or after the |ssl| is initialized in either
    * accept or connect state. In the latter case, SSL_clear should preserve the

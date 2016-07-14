@@ -8,10 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
-/*
- * This file includes unit tests for the RTCPSender.
- */
+#include <memory>
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -261,9 +258,9 @@ class RtcpSenderTest : public ::testing::Test {
 
   SimulatedClock clock_;
   TestTransport test_transport_;
-  rtc::scoped_ptr<ReceiveStatistics> receive_statistics_;
-  rtc::scoped_ptr<ModuleRtpRtcpImpl> rtp_rtcp_impl_;
-  rtc::scoped_ptr<RTCPSender> rtcp_sender_;
+  std::unique_ptr<ReceiveStatistics> receive_statistics_;
+  std::unique_ptr<ModuleRtpRtcpImpl> rtp_rtcp_impl_;
+  std::unique_ptr<RTCPSender> rtcp_sender_;
 };
 
 TEST_F(RtcpSenderTest, SetRtcpStatus) {
@@ -691,13 +688,14 @@ TEST_F(RtcpSenderTest, TmmbrIncludedInCompoundPacketIfEnabled) {
 
 TEST_F(RtcpSenderTest, SendTmmbn) {
   rtcp_sender_->SetRTCPStatus(RtcpMode::kCompound);
-  TMMBRSet bounding_set;
-  bounding_set.VerifyAndAllocateSet(1);
+  std::vector<rtcp::TmmbItem> bounding_set;
   const uint32_t kBitrateKbps = 32768;
   const uint32_t kPacketOh = 40;
   const uint32_t kSourceSsrc = 12345;
-  bounding_set.AddEntry(kBitrateKbps, kPacketOh, kSourceSsrc);
-  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set));
+  const rtcp::TmmbItem tmmbn(kSourceSsrc, kBitrateKbps * 1000, kPacketOh);
+  bounding_set.push_back(tmmbn);
+  rtcp_sender_->SetTMMBN(&bounding_set);
+
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpSr));
   EXPECT_EQ(1, parser()->sender_report()->num_packets());
   EXPECT_EQ(1, parser()->tmmbn()->num_packets());
@@ -716,8 +714,8 @@ TEST_F(RtcpSenderTest, SendTmmbn) {
 // situation where this caused confusion.
 TEST_F(RtcpSenderTest, SendsTmmbnIfSetAndEmpty) {
   rtcp_sender_->SetRTCPStatus(RtcpMode::kCompound);
-  TMMBRSet bounding_set;
-  EXPECT_EQ(0, rtcp_sender_->SetTMMBN(&bounding_set));
+  std::vector<rtcp::TmmbItem> bounding_set;
+  rtcp_sender_->SetTMMBN(&bounding_set);
   EXPECT_EQ(0, rtcp_sender_->SendRTCP(feedback_state(), kRtcpSr));
   EXPECT_EQ(1, parser()->sender_report()->num_packets());
   EXPECT_EQ(1, parser()->tmmbn()->num_packets());

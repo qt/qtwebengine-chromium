@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 #if defined(_SKIA_SUPPORT_)
-#include "core/include/fxcodec/fx_codec.h"
+#include "core/fxcodec/include/fx_codec.h"
 
 #include "core/fpdfapi/fpdf_page/cpdf_shadingpattern.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
-#include "core/fxge/agg/fx_agg_driver.h"
+#include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fxge/skia/fx_skia_device.h"
 
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -178,6 +178,90 @@ bool AddColors(const CPDF_Function* pFunc, SkTDArray<SkColor>* skColors) {
   return true;
 }
 
+uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits) {
+  ASSERT(0 < nbits && nbits <= 32);
+  const uint8_t* dataPtr = &pData[bitpos / 8];
+  int bitShift;
+  int bitMask;
+  int dstShift;
+  int bitCount = bitpos & 0x07;
+  if (nbits < 8 && nbits + bitCount <= 8) {
+    bitShift = 8 - nbits - bitCount;
+    bitMask = (1 << nbits) - 1;
+    dstShift = 0;
+  } else {
+    bitShift = 0;
+    int bitOffset = 8 - bitCount;
+    bitMask = (1 << SkTMin(bitOffset, nbits)) - 1;
+    dstShift = nbits - bitOffset;
+  }
+  uint32_t result = (uint32_t)(*dataPtr++ >> bitShift & bitMask) << dstShift;
+  while (dstShift >= 8) {
+    dstShift -= 8;
+    result |= *dataPtr++ << dstShift;
+  }
+  if (dstShift > 0) {
+    bitShift = 8 - dstShift;
+    bitMask = (1 << dstShift) - 1;
+    result |= *dataPtr++ >> bitShift & bitMask;
+  }
+  return result;
+}
+
+uint8_t FloatToByte(FX_FLOAT f) {
+  ASSERT(0 <= f && f <= 1);
+  return (uint8_t)(f * 255.99f);
+}
+
+bool AddSamples(const CPDF_Function* pFunc,
+                SkTDArray<SkColor>* skColors,
+                SkTDArray<SkScalar>* skPos) {
+  if (pFunc->CountInputs() != 1)
+    return false;
+  if (pFunc->CountOutputs() != 3)  // expect rgb
+    return false;
+  ASSERT(CPDF_Function::Type::kType0Sampled == pFunc->GetType());
+  const CPDF_SampledFunc* sampledFunc =
+      static_cast<const CPDF_SampledFunc*>(pFunc);
+  if (!sampledFunc->m_pEncodeInfo)
+    return false;
+  const CPDF_SampledFunc::SampleEncodeInfo& encodeInfo =
+      sampledFunc->m_pEncodeInfo[0];
+  if (encodeInfo.encode_min != 0)
+    return false;
+  if (encodeInfo.encode_max != encodeInfo.sizes - 1)
+    return false;
+  uint32_t sampleSize = sampledFunc->m_nBitsPerSample;
+  uint32_t sampleCount = encodeInfo.sizes;
+  if (sampleCount != 1 << sampleSize)
+    return false;
+  if (sampledFunc->m_pSampleStream->GetSize() <
+      sampleCount * 3 * sampleSize / 8) {
+    return false;
+  }
+  FX_FLOAT colorsMin[3];
+  FX_FLOAT colorsMax[3];
+  for (int i = 0; i < 3; ++i) {
+    colorsMin[i] = sampledFunc->GetRange(i * 2);
+    colorsMax[i] = sampledFunc->GetRange(i * 2 + 1);
+  }
+  const uint8_t* pSampleData = sampledFunc->m_pSampleStream->GetData();
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    FX_FLOAT floatColors[3];
+    for (uint32_t j = 0; j < 3; ++j) {
+      int sample = GetBits32(pSampleData, (i * 3 + j) * sampleSize, sampleSize);
+      FX_FLOAT interp = (FX_FLOAT)sample / (sampleCount - 1);
+      floatColors[j] = colorsMin[j] + (colorsMax[j] - colorsMin[j]) * interp;
+    }
+    SkColor color =
+        SkPackARGB32(0xFF, FloatToByte(floatColors[0]),
+                     FloatToByte(floatColors[1]), FloatToByte(floatColors[2]));
+    skColors->push(color);
+    skPos->push((FX_FLOAT)i / (sampleCount - 1));
+  }
+  return true;
+}
+
 bool AddStitching(const CPDF_Function* pFunc,
                   SkTDArray<SkColor>* skColors,
                   SkTDArray<SkScalar>* skPos) {
@@ -201,6 +285,201 @@ bool AddStitching(const CPDF_Function* pFunc,
     boundsStart = boundsEnd;
   }
   return true;
+}
+
+void RgbByteOrderTransferBitmap(CFX_DIBitmap* pBitmap,
+                                int dest_left,
+                                int dest_top,
+                                int width,
+                                int height,
+                                const CFX_DIBSource* pSrcBitmap,
+                                int src_left,
+                                int src_top) {
+  if (!pBitmap)
+    return;
+  pBitmap->GetOverlapRect(dest_left, dest_top, width, height,
+                          pSrcBitmap->GetWidth(), pSrcBitmap->GetHeight(),
+                          src_left, src_top, NULL);
+  if (width == 0 || height == 0)
+    return;
+  int Bpp = pBitmap->GetBPP() / 8;
+  FXDIB_Format dest_format = pBitmap->GetFormat();
+  FXDIB_Format src_format = pSrcBitmap->GetFormat();
+  int pitch = pBitmap->GetPitch();
+  uint8_t* buffer = pBitmap->GetBuffer();
+  if (dest_format == src_format) {
+    for (int row = 0; row < height; row++) {
+      uint8_t* dest_scan = buffer + (dest_top + row) * pitch + dest_left * Bpp;
+      uint8_t* src_scan =
+          (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * Bpp;
+      if (Bpp == 4) {
+        for (int col = 0; col < width; col++) {
+          FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_scan[3], src_scan[0],
+                                               src_scan[1], src_scan[2]));
+          dest_scan += 4;
+          src_scan += 4;
+        }
+      } else {
+        for (int col = 0; col < width; col++) {
+          *dest_scan++ = src_scan[2];
+          *dest_scan++ = src_scan[1];
+          *dest_scan++ = src_scan[0];
+          src_scan += 3;
+        }
+      }
+    }
+    return;
+  }
+  uint8_t* dest_buf = buffer + dest_top * pitch + dest_left * Bpp;
+  if (dest_format == FXDIB_Rgb) {
+    if (src_format == FXDIB_Rgb32) {
+      for (int row = 0; row < height; row++) {
+        uint8_t* dest_scan = dest_buf + row * pitch;
+        uint8_t* src_scan =
+            (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
+        for (int col = 0; col < width; col++) {
+          *dest_scan++ = src_scan[2];
+          *dest_scan++ = src_scan[1];
+          *dest_scan++ = src_scan[0];
+          src_scan += 4;
+        }
+      }
+    } else {
+      ASSERT(FALSE);
+    }
+  } else if (dest_format == FXDIB_Argb || dest_format == FXDIB_Rgb32) {
+    if (src_format == FXDIB_Rgb) {
+      for (int row = 0; row < height; row++) {
+        uint8_t* dest_scan = (uint8_t*)(dest_buf + row * pitch);
+        uint8_t* src_scan =
+            (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * 3;
+        if (src_format == FXDIB_Argb) {
+          for (int col = 0; col < width; col++) {
+            FXARGB_SETDIB(dest_scan, FXARGB_MAKE(0xff, FX_GAMMA(src_scan[0]),
+                                                 FX_GAMMA(src_scan[1]),
+                                                 FX_GAMMA(src_scan[2])));
+            dest_scan += 4;
+            src_scan += 3;
+          }
+        } else {
+          for (int col = 0; col < width; col++) {
+            FXARGB_SETDIB(dest_scan, FXARGB_MAKE(0xff, src_scan[0], src_scan[1],
+                                                 src_scan[2]));
+            dest_scan += 4;
+            src_scan += 3;
+          }
+        }
+      }
+    } else if (src_format == FXDIB_Rgb32) {
+      ASSERT(dest_format == FXDIB_Argb);
+      for (int row = 0; row < height; row++) {
+        uint8_t* dest_scan = dest_buf + row * pitch;
+        uint8_t* src_scan =
+            (uint8_t*)(pSrcBitmap->GetScanline(src_top + row) + src_left * 4);
+        for (int col = 0; col < width; col++) {
+          FXARGB_SETDIB(dest_scan, FXARGB_MAKE(0xff, src_scan[0], src_scan[1],
+                                               src_scan[2]));
+          src_scan += 4;
+          dest_scan += 4;
+        }
+      }
+    }
+  } else {
+    ASSERT(FALSE);
+  }
+}
+
+// see https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+SkScalar LineSide(const SkPoint line[2], const SkPoint& pt) {
+  return (line[1].fY - line[0].fY) * pt.fX - (line[1].fX - line[0].fX) * pt.fY +
+         line[1].fX * line[0].fY - line[1].fY * line[0].fX;
+}
+
+SkPoint IntersectSides(const SkPoint& parallelPt,
+                       const SkVector& paraRay,
+                       const SkPoint& perpendicularPt) {
+  SkVector perpRay = {paraRay.fY, -paraRay.fX};
+  SkScalar denom = perpRay.fY * paraRay.fX - paraRay.fY * perpRay.fX;
+  if (!denom) {
+    SkPoint zeroPt = {0, 0};
+    return zeroPt;
+  }
+  SkVector ab0 = parallelPt - perpendicularPt;
+  SkScalar numerA = ab0.fY * perpRay.fX - perpRay.fY * ab0.fX;
+  numerA /= denom;
+  SkPoint result = {parallelPt.fX + paraRay.fX * numerA,
+                    parallelPt.fY + paraRay.fY * numerA};
+  return result;
+}
+
+void ClipAngledGradient(const SkPoint pts[2],
+                        SkPoint rectPts[4],
+                        bool clipStart,
+                        bool clipEnd,
+                        SkPath* clip) {
+  // find the corners furthest from the gradient perpendiculars
+  SkScalar minPerpDist = SK_ScalarMax;
+  SkScalar maxPerpDist = SK_ScalarMin;
+  int minPerpPtIndex = -1;
+  int maxPerpPtIndex = -1;
+  SkVector slope = pts[1] - pts[0];
+  SkPoint startPerp[2] = {pts[0], {pts[0].fX + slope.fY, pts[0].fY - slope.fX}};
+  SkPoint endPerp[2] = {pts[1], {pts[1].fX + slope.fY, pts[1].fY - slope.fX}};
+  for (int i = 0; i < 4; ++i) {
+    SkScalar sDist = LineSide(startPerp, rectPts[i]);
+    SkScalar eDist = LineSide(endPerp, rectPts[i]);
+    if (sDist * eDist <= 0)  // if the signs are different,
+      continue;              // the point is inside the gradient
+    if (sDist < 0) {
+      SkScalar smaller = SkTMin(sDist, eDist);
+      if (minPerpDist > smaller) {
+        minPerpDist = smaller;
+        minPerpPtIndex = i;
+      }
+    } else {
+      SkScalar larger = SkTMax(sDist, eDist);
+      if (maxPerpDist < larger) {
+        maxPerpDist = larger;
+        maxPerpPtIndex = i;
+      }
+    }
+  }
+  if (minPerpPtIndex < 0 && maxPerpPtIndex < 0)  // nothing's outside
+    return;
+  // determine if negative distances are before start or after end
+  SkPoint beforeStart = {pts[0].fX * 2 - pts[1].fX, pts[0].fY * 2 - pts[1].fY};
+  bool beforeNeg = LineSide(startPerp, beforeStart) < 0;
+  const SkPoint& startEdgePt =
+      clipStart ? pts[0] : beforeNeg ? rectPts[minPerpPtIndex]
+                                     : rectPts[maxPerpPtIndex];
+  const SkPoint& endEdgePt = clipEnd ? pts[1] : beforeNeg
+                                                    ? rectPts[maxPerpPtIndex]
+                                                    : rectPts[minPerpPtIndex];
+  // find the corners that bound the gradient
+  SkScalar minDist = SK_ScalarMax;
+  SkScalar maxDist = SK_ScalarMin;
+  int minBounds = -1;
+  int maxBounds = -1;
+  for (int i = 0; i < 4; ++i) {
+    SkScalar dist = LineSide(pts, rectPts[i]);
+    if (minDist > dist) {
+      minDist = dist;
+      minBounds = i;
+    }
+    if (maxDist < dist) {
+      maxDist = dist;
+      maxBounds = i;
+    }
+  }
+  ASSERT(minBounds >= 0);
+  ASSERT(maxBounds != minBounds && maxBounds >= 0);
+  // construct a clip parallel to the gradient that goes through
+  // rectPts[minBounds] and rectPts[maxBounds] and perpendicular to the
+  // gradient that goes through startEdgePt, endEdgePt.
+  clip->moveTo(IntersectSides(rectPts[minBounds], slope, startEdgePt));
+  clip->lineTo(IntersectSides(rectPts[minBounds], slope, endEdgePt));
+  clip->lineTo(IntersectSides(rectPts[maxBounds], slope, endEdgePt));
+  clip->lineTo(IntersectSides(rectPts[maxBounds], slope, startEdgePt));
 }
 
 }  // namespace
@@ -275,40 +554,48 @@ CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(CFX_DIBitmap* pBitmap,
                                            FX_BOOL bRgbByteOrder,
                                            CFX_DIBitmap* pOriDevice,
                                            FX_BOOL bGroupKnockout)
-    : m_pRecorder(nullptr) {
-  m_pAggDriver = new CFX_AggDeviceDriver(pBitmap, dither_bits, bRgbByteOrder,
-                                         pOriDevice, bGroupKnockout);
+    : m_pBitmap(pBitmap),
+      m_pOriDevice(pOriDevice),
+      m_pRecorder(nullptr),
+      m_ditherBits(dither_bits),
+      m_bRgbByteOrder(bRgbByteOrder),
+      m_bGroupKnockout(bGroupKnockout) {
   SkBitmap skBitmap;
-  const CFX_DIBitmap* bitmap = m_pAggDriver->GetBitmap();
   SkImageInfo imageInfo =
-      SkImageInfo::Make(bitmap->GetWidth(), bitmap->GetHeight(),
+      SkImageInfo::Make(pBitmap->GetWidth(), pBitmap->GetHeight(),
                         kN32_SkColorType, kOpaque_SkAlphaType);
-  skBitmap.installPixels(imageInfo, bitmap->GetBuffer(), bitmap->GetPitch(),
+  skBitmap.installPixels(imageInfo, pBitmap->GetBuffer(), pBitmap->GetPitch(),
                          nullptr, /* to do : set color table */
                          nullptr, nullptr);
   m_pCanvas = new SkCanvas(skBitmap);
-  m_ditherBits = dither_bits;
+  if (m_bGroupKnockout)
+    SkDebugf("");  // FIXME(caryclark) suppress 'm_bGroupKnockout is unused'
 }
 
 CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(int size_x, int size_y)
-    : m_pRecorder(new SkPictureRecorder) {
-  m_pAggDriver = nullptr;
+    : m_pBitmap(nullptr),
+      m_pOriDevice(nullptr),
+      m_pRecorder(new SkPictureRecorder),
+      m_ditherBits(0),
+      m_bRgbByteOrder(FALSE),
+      m_bGroupKnockout(FALSE) {
   m_pRecorder->beginRecording(SkIntToScalar(size_x), SkIntToScalar(size_y));
   m_pCanvas = m_pRecorder->getRecordingCanvas();
-  m_ditherBits = 0;
 }
 
 CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(SkPictureRecorder* recorder)
-    : m_pRecorder(recorder) {
-  m_pAggDriver = nullptr;
+    : m_pBitmap(nullptr),
+      m_pOriDevice(nullptr),
+      m_pRecorder(recorder),
+      m_ditherBits(0),
+      m_bRgbByteOrder(FALSE),
+      m_bGroupKnockout(FALSE) {
   m_pCanvas = m_pRecorder->getRecordingCanvas();
-  m_ditherBits = 0;
 }
 
 CFX_SkiaDeviceDriver::~CFX_SkiaDeviceDriver() {
   if (!m_pRecorder)
     delete m_pCanvas;
-  delete m_pAggDriver;
 }
 
 FX_BOOL CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
@@ -438,7 +725,11 @@ FX_BOOL CFX_SkiaDeviceDriver::DrawPath(
   SkIRect rect;
   rect.set(0, 0, GetDeviceCaps(FXDC_PIXEL_WIDTH),
            GetDeviceCaps(FXDC_PIXEL_HEIGHT));
-  SkMatrix skMatrix = ToSkMatrix(*pObject2Device);
+  SkMatrix skMatrix;
+  if (pObject2Device)
+    skMatrix = ToSkMatrix(*pObject2Device);
+  else
+    skMatrix.setIdentity();
   SkPaint skPaint;
   skPaint.setAntiAlias(true);
   int stroke_alpha = FXGETFLAG_COLORTYPE(alpha_flag)
@@ -497,11 +788,17 @@ FX_BOOL CFX_SkiaDeviceDriver::FillRect(const FX_RECT* pRect,
   return TRUE;
 }
 
-FX_BOOL CFX_SkiaDeviceDriver::DrawShading(CPDF_ShadingPattern* pPattern,
-                                          CFX_Matrix* pMatrix,
+FX_BOOL CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern* pPattern,
+                                          const CFX_Matrix* pMatrix,
+                                          const FX_RECT& clip_rect,
                                           int alpha,
                                           FX_BOOL bAlphaMode) {
-  CPDF_Function** pFuncs = pPattern->m_pFunctions;
+  if (kAxialShading != pPattern->m_ShadingType &&
+      kRadialShading != pPattern->m_ShadingType) {
+    // TODO(caryclark) more types
+    return false;
+  }
+  CPDF_Function* const* pFuncs = pPattern->m_pFunctions;
   int nFuncs = pPattern->m_nFuncs;
   if (nFuncs != 1)  // TODO(caryclark) remove this restriction
     return false;
@@ -509,23 +806,8 @@ FX_BOOL CFX_SkiaDeviceDriver::DrawShading(CPDF_ShadingPattern* pPattern,
   CPDF_Array* pCoords = pDict->GetArrayBy("Coords");
   if (!pCoords)
     return true;
-  FX_FLOAT start_x = pCoords->GetNumberAt(0);
-  FX_FLOAT start_y = pCoords->GetNumberAt(1);
-  FX_FLOAT end_x = pCoords->GetNumberAt(2);
-  FX_FLOAT end_y = pCoords->GetNumberAt(3);
-  FX_FLOAT t_min = 0;
-  FX_FLOAT t_max = 1;
-  CPDF_Array* pArray = pDict->GetArrayBy("Domain");
-  if (pArray) {
-    t_min = pArray->GetNumberAt(0);
-    t_max = pArray->GetNumberAt(1);
-  }
-  FX_BOOL bStartExtend = FALSE, bEndExtend = FALSE;
-  pArray = pDict->GetArrayBy("Extend");
-  if (pArray) {
-    bStartExtend = pArray->GetIntegerAt(0);
-    bEndExtend = pArray->GetIntegerAt(1);
-  }
+  // TODO(caryclark) Respect Domain[0], Domain[1]. (Don't know what they do
+  // yet.)
   SkTDArray<SkColor> skColors;
   SkTDArray<SkScalar> skPos;
   for (int j = 0; j < nFuncs; j++) {
@@ -533,6 +815,14 @@ FX_BOOL CFX_SkiaDeviceDriver::DrawShading(CPDF_ShadingPattern* pPattern,
     if (!pFunc)
       continue;
     switch (pFunc->GetType()) {
+      case CPDF_Function::Type::kType0Sampled:
+        /* TODO(caryclark)
+           Type 0 Sampled Functions in PostScript can also have an Order integer
+           in the dictionary. PDFium doesn't appear to check for this anywhere.
+         */
+        if (!AddSamples(pFunc, &skColors, &skPos))
+          return false;
+        break;
       case CPDF_Function::Type::kType2ExpotentialInterpolation:
         if (!AddColors(pFunc, &skColors))
           return false;
@@ -547,17 +837,90 @@ FX_BOOL CFX_SkiaDeviceDriver::DrawShading(CPDF_ShadingPattern* pPattern,
         return false;
     }
   }
-  SkMatrix skMatrix = ToSkMatrix(*pMatrix);
-  SkPoint pts[] = {{start_x, start_y}, {end_x, end_y}};
+  CPDF_Array* pArray = pDict->GetArrayBy("Extend");
+  bool clipStart = !pArray || !pArray->GetIntegerAt(0);
+  bool clipEnd = !pArray || !pArray->GetIntegerAt(1);
   SkPaint paint;
   paint.setAntiAlias(true);
-  paint.setShader(SkGradientShader::MakeLinear(pts, skColors.begin(),
-                                               skPos.begin(), skColors.count(),
-                                               SkShader::kClamp_TileMode));
   paint.setAlpha(alpha);
+  SkMatrix skMatrix = ToSkMatrix(*pMatrix);
+  SkRect skRect = SkRect::MakeLTRB(clip_rect.left, clip_rect.top,
+                                   clip_rect.right, clip_rect.bottom);
+  SkPath skClip;
+  SkPath skPath;
+  if (kAxialShading == pPattern->m_ShadingType) {
+    FX_FLOAT start_x = pCoords->GetNumberAt(0);
+    FX_FLOAT start_y = pCoords->GetNumberAt(1);
+    FX_FLOAT end_x = pCoords->GetNumberAt(2);
+    FX_FLOAT end_y = pCoords->GetNumberAt(3);
+    SkPoint pts[] = {{start_x, start_y}, {end_x, end_y}};
+    skMatrix.mapPoints(pts, SK_ARRAY_COUNT(pts));
+    paint.setShader(SkGradientShader::MakeLinear(
+        pts, skColors.begin(), skPos.begin(), skColors.count(),
+        SkShader::kClamp_TileMode));
+    if (clipStart || clipEnd) {
+      // if the gradient is horizontal or vertical, modify the draw rectangle
+      if (pts[0].fX == pts[1].fX) {  // vertical
+        if (pts[0].fY > pts[1].fY) {
+          SkTSwap(pts[0].fY, pts[1].fY);
+          SkTSwap(clipStart, clipEnd);
+        }
+        if (clipStart)
+          skRect.fTop = SkTMax(skRect.fTop, pts[0].fY);
+        if (clipEnd)
+          skRect.fBottom = SkTMin(skRect.fBottom, pts[1].fY);
+      } else if (pts[0].fY == pts[1].fY) {  // horizontal
+        if (pts[0].fX > pts[1].fX) {
+          SkTSwap(pts[0].fX, pts[1].fX);
+          SkTSwap(clipStart, clipEnd);
+        }
+        if (clipStart)
+          skRect.fLeft = SkTMax(skRect.fLeft, pts[0].fX);
+        if (clipEnd)
+          skRect.fRight = SkTMin(skRect.fRight, pts[1].fX);
+      } else {  // if the gradient is angled and contained by the rect, clip
+        SkPoint rectPts[4] = {{skRect.fLeft, skRect.fTop},
+                              {skRect.fRight, skRect.fTop},
+                              {skRect.fRight, skRect.fBottom},
+                              {skRect.fLeft, skRect.fBottom}};
+        ClipAngledGradient(pts, rectPts, clipStart, clipEnd, &skClip);
+      }
+    }
+    skPath.addRect(skRect);
+    skMatrix.setIdentity();
+  } else {
+    ASSERT(kRadialShading == pPattern->m_ShadingType);
+    FX_FLOAT start_x = pCoords->GetNumberAt(0);
+    FX_FLOAT start_y = pCoords->GetNumberAt(1);
+    FX_FLOAT start_r = pCoords->GetNumberAt(2);
+    FX_FLOAT end_x = pCoords->GetNumberAt(3);
+    FX_FLOAT end_y = pCoords->GetNumberAt(4);
+    FX_FLOAT end_r = pCoords->GetNumberAt(5);
+    SkPoint pts[] = {{start_x, start_y}, {end_x, end_y}};
+
+    paint.setShader(SkGradientShader::MakeTwoPointConical(
+        pts[0], start_r, pts[1], end_r, skColors.begin(), skPos.begin(),
+        skColors.count(), SkShader::kClamp_TileMode));
+    if (clipStart || clipEnd) {
+      if (clipStart && start_r)
+        skClip.addCircle(pts[0].fX, pts[0].fY, start_r);
+      if (clipEnd)
+        skClip.addCircle(pts[1].fX, pts[1].fY, end_r, SkPath::kCCW_Direction);
+      else
+        skClip.setFillType(SkPath::kInverseWinding_FillType);
+      skClip.transform(skMatrix);
+    }
+    SkMatrix inverse;
+    if (!skMatrix.invert(&inverse))
+      return false;
+    skPath.addRect(skRect);
+    skPath.transform(inverse);
+  }
   m_pCanvas->save();
+  if (!skClip.isEmpty())
+    m_pCanvas->clipPath(skClip);
   m_pCanvas->concat(skMatrix);
-  m_pCanvas->drawRect(SkRect::MakeWH(1, 1), paint);
+  m_pCanvas->drawPath(skPath, paint);
   m_pCanvas->restore();
   return true;
 }
@@ -577,8 +940,45 @@ FX_BOOL CFX_SkiaDeviceDriver::GetDIBits(CFX_DIBitmap* pBitmap,
                                         int top,
                                         void* pIccTransform,
                                         FX_BOOL bDEdge) {
-  return m_pAggDriver &&
-         m_pAggDriver->GetDIBits(pBitmap, left, top, pIccTransform, bDEdge);
+  if (!m_pBitmap || !m_pBitmap->GetBuffer())
+    return TRUE;
+  if (bDEdge) {
+    if (m_bRgbByteOrder) {
+      RgbByteOrderTransferBitmap(pBitmap, 0, 0, pBitmap->GetWidth(),
+                                 pBitmap->GetHeight(), m_pBitmap, left, top);
+    } else {
+      return pBitmap->TransferBitmap(0, 0, pBitmap->GetWidth(),
+                                     pBitmap->GetHeight(), m_pBitmap, left, top,
+                                     pIccTransform);
+    }
+    return TRUE;
+  }
+  FX_RECT rect(left, top, left + pBitmap->GetWidth(),
+               top + pBitmap->GetHeight());
+  CFX_DIBitmap* pBack;
+  if (m_pOriDevice) {
+    pBack = m_pOriDevice->Clone(&rect);
+    if (!pBack)
+      return TRUE;
+    pBack->CompositeBitmap(0, 0, pBack->GetWidth(), pBack->GetHeight(),
+                           m_pBitmap, 0, 0);
+  } else {
+    pBack = m_pBitmap->Clone(&rect);
+    if (!pBack)
+      return TRUE;
+  }
+  FX_BOOL bRet = TRUE;
+  left = left >= 0 ? 0 : left;
+  top = top >= 0 ? 0 : top;
+  if (m_bRgbByteOrder) {
+    RgbByteOrderTransferBitmap(pBitmap, 0, 0, rect.Width(), rect.Height(),
+                               pBack, left, top);
+  } else {
+    bRet = pBitmap->TransferBitmap(0, 0, rect.Width(), rect.Height(), pBack,
+                                   left, top, pIccTransform);
+  }
+  delete pBack;
+  return bRet;
 }
 
 FX_BOOL CFX_SkiaDeviceDriver::SetDIBits(const CFX_DIBSource* pBitmap,
@@ -589,9 +989,17 @@ FX_BOOL CFX_SkiaDeviceDriver::SetDIBits(const CFX_DIBSource* pBitmap,
                                         int blend_type,
                                         int alpha_flag,
                                         void* pIccTransform) {
-  return m_pAggDriver &&
-         m_pAggDriver->SetDIBits(pBitmap, argb, pSrcRect, left, top, blend_type,
-                                 alpha_flag, pIccTransform);
+  if (!m_pBitmap || !m_pBitmap->GetBuffer())
+    return TRUE;
+  if (pBitmap->IsAlphaMask()) {
+    return m_pBitmap->CompositeMask(
+        left, top, pSrcRect->Width(), pSrcRect->Height(), pBitmap, argb,
+        pSrcRect->left, pSrcRect->top, blend_type, nullptr, m_bRgbByteOrder,
+        alpha_flag, pIccTransform);
+  }
+  return m_pBitmap->CompositeBitmap(
+      left, top, pSrcRect->Width(), pSrcRect->Height(), pBitmap, pSrcRect->left,
+      pSrcRect->top, blend_type, nullptr, m_bRgbByteOrder, pIccTransform);
 }
 
 FX_BOOL CFX_SkiaDeviceDriver::StretchDIBits(const CFX_DIBSource* pSource,
@@ -605,10 +1013,29 @@ FX_BOOL CFX_SkiaDeviceDriver::StretchDIBits(const CFX_DIBSource* pSource,
                                             int alpha_flag,
                                             void* pIccTransform,
                                             int blend_type) {
-  return m_pAggDriver &&
-         m_pAggDriver->StretchDIBits(pSource, argb, dest_left, dest_top,
-                                     dest_width, dest_height, pClipRect, flags,
-                                     alpha_flag, pIccTransform, blend_type);
+  if (!m_pBitmap->GetBuffer())
+    return TRUE;
+  if (dest_width == pSource->GetWidth() &&
+      dest_height == pSource->GetHeight()) {
+    FX_RECT rect(0, 0, dest_width, dest_height);
+    return SetDIBits(pSource, argb, &rect, dest_left, dest_top, blend_type,
+                     alpha_flag, pIccTransform);
+  }
+  FX_RECT dest_rect(dest_left, dest_top, dest_left + dest_width,
+                    dest_top + dest_height);
+  dest_rect.Normalize();
+  FX_RECT dest_clip = dest_rect;
+  dest_clip.Intersect(*pClipRect);
+  CFX_BitmapComposer composer;
+  composer.Compose(m_pBitmap, nullptr, 255, argb, dest_clip, FALSE, FALSE,
+                   FALSE, m_bRgbByteOrder, alpha_flag, pIccTransform,
+                   blend_type);
+  dest_clip.Offset(-dest_rect.left, -dest_rect.top);
+  CFX_ImageStretcher stretcher(&composer, pSource, dest_width, dest_height,
+                               dest_clip, flags);
+  if (stretcher.Start())
+    stretcher.Continue(nullptr);
+  return TRUE;
 }
 
 FX_BOOL CFX_SkiaDeviceDriver::StartDIBits(const CFX_DIBSource* pSource,
@@ -644,6 +1071,9 @@ FX_BOOL CFX_SkiaDeviceDriver::StartDIBits(const CFX_DIBSource* pSource,
       rowBytes = width;
       colorType = SkColorType::kGray_8_SkColorType;
     } break;
+    case 8:
+      colorType = SkColorType::kGray_8_SkColorType;
+      break;
     case 24: {
       dst32Storage.reset(FX_Alloc2D(uint32_t, width, height));
       uint32_t* dst32Pixels = dst32Storage.get();
@@ -698,63 +1128,66 @@ FX_BOOL CFX_SkiaDeviceDriver::StartDIBits(const CFX_DIBSource* pSource,
 }
 
 FX_BOOL CFX_SkiaDeviceDriver::ContinueDIBits(void* pHandle, IFX_Pause* pPause) {
-  return m_pAggDriver && m_pAggDriver->ContinueDIBits(pHandle, pPause);
+  if (!m_pBitmap->GetBuffer())
+    return TRUE;
+  return ((CFX_ImageRenderer*)pHandle)->Continue(pPause);
 }
 
 void CFX_SkiaDeviceDriver::CancelDIBits(void* pHandle) {
-  if (m_pAggDriver)
-    m_pAggDriver->CancelDIBits(pHandle);
+  if (!m_pBitmap->GetBuffer())
+    return;
+  delete (CFX_ImageRenderer*)pHandle;
 }
 
-CFX_SkiaDevice::CFX_SkiaDevice() {
+CFX_FxgeDevice::CFX_FxgeDevice() {
   m_bOwnedBitmap = FALSE;
 }
 
-SkPictureRecorder* CFX_SkiaDevice::CreateRecorder(int size_x, int size_y) {
+SkPictureRecorder* CFX_FxgeDevice::CreateRecorder(int size_x, int size_y) {
   CFX_SkiaDeviceDriver* skDriver = new CFX_SkiaDeviceDriver(size_x, size_y);
   SetDeviceDriver(skDriver);
   return skDriver->GetRecorder();
 }
 
-FX_BOOL CFX_SkiaDevice::Attach(CFX_DIBitmap* pBitmap,
-                               int dither_bits,
-                               FX_BOOL bRgbByteOrder,
-                               CFX_DIBitmap* pOriDevice,
-                               FX_BOOL bGroupKnockout) {
+bool CFX_FxgeDevice::Attach(CFX_DIBitmap* pBitmap,
+                            int dither_bits,
+                            bool bRgbByteOrder,
+                            CFX_DIBitmap* pOriDevice,
+                            bool bGroupKnockout) {
   if (!pBitmap)
-    return FALSE;
+    return false;
   SetBitmap(pBitmap);
   SetDeviceDriver(new CFX_SkiaDeviceDriver(pBitmap, dither_bits, bRgbByteOrder,
                                            pOriDevice, bGroupKnockout));
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CFX_SkiaDevice::AttachRecorder(SkPictureRecorder* recorder) {
+bool CFX_FxgeDevice::AttachRecorder(SkPictureRecorder* recorder) {
   if (!recorder)
-    return FALSE;
+    return false;
   SetDeviceDriver(new CFX_SkiaDeviceDriver(recorder));
-  return TRUE;
+  return true;
 }
 
-FX_BOOL CFX_SkiaDevice::Create(int width,
-                               int height,
-                               FXDIB_Format format,
-                               int dither_bits,
-                               CFX_DIBitmap* pOriDevice) {
+bool CFX_FxgeDevice::Create(int width,
+                            int height,
+                            FXDIB_Format format,
+                            int dither_bits,
+                            CFX_DIBitmap* pOriDevice) {
   m_bOwnedBitmap = TRUE;
   CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
   if (!pBitmap->Create(width, height, format)) {
     delete pBitmap;
-    return FALSE;
+    return false;
   }
   SetBitmap(pBitmap);
   CFX_SkiaDeviceDriver* pDriver =
       new CFX_SkiaDeviceDriver(pBitmap, dither_bits, FALSE, pOriDevice, FALSE);
   SetDeviceDriver(pDriver);
-  return TRUE;
+  return true;
 }
 
-CFX_SkiaDevice::~CFX_SkiaDevice() {
+CFX_FxgeDevice::~CFX_FxgeDevice() {
   if (m_bOwnedBitmap && GetBitmap())
     delete GetBitmap();
 }

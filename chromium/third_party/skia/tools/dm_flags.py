@@ -88,11 +88,18 @@ def get_args(bot):
   if 'GalaxyS3' in bot:
       configs.append('gpudft')
 
+  # CommandBuffer bot *only* runs the command_buffer config.
+  if 'CommandBuffer' in bot:
+    configs = ['commandbuffer']
+
+  # Vulkan bot *only* runs the vk config.
+  if 'Vulkan' in bot:
+    configs = ['vk']
+
   args.append('--config')
   args.extend(configs)
 
   # Run tests, gms, and image decoding tests everywhere.
-  # TODO: remove skp from default --src list?
   args.extend('--src tests gm image'.split(' '))
 
   if 'GalaxyS' in bot:
@@ -151,6 +158,13 @@ def get_args(bot):
     blacklist.extend('_ image gen_platf 4bpp-pixeldata-cropped.bmp'.split(' '))
     blacklist.extend('_ image gen_platf 32bpp-pixeldata-cropped.bmp'.split(' '))
     blacklist.extend('_ image gen_platf 24bpp-pixeldata-cropped.bmp'.split(' '))
+    if 'CPU' in bot:
+      if 'x86_64' in bot:
+        # This GM triggers a SkSmallAllocator assert. skia:5315
+        blacklist.extend('_ gm _ composeshader_bitmap'.split(' '))
+      elif '-x86-' in bot:
+        # This image flakily fails to decode due to memory usage. skia:5318
+        blacklist.extend('_ image _ HTC.dng'.split(' '))
 
   # skia:4095
   for test in ['not_native32_bitmap_config',
@@ -160,14 +174,12 @@ def get_args(bot):
                'c_gms',
                'colortype',
                'colortype_xfermodes',
-               'colorwheelnative',
                'drawfilter',
                'fontmgr_bounds_0.75_0',
                'fontmgr_bounds_1_-0.25',
                'fontmgr_bounds',
                'fontmgr_match',
                'fontmgr_iter',
-               'lightingshader',
                'verylargebitmap',              # Windows only.
                'verylarge_picture_image']:     # Windows only.
     blacklist.extend(['serialize-8888', 'gm', '_', test])
@@ -229,6 +241,9 @@ def get_args(bot):
   if 'MSAN' in bot:
     match.extend(['~Once', '~Shared'])  # Not sure what's up with these tests.
 
+  if 'TSAN' in bot:
+    match.extend(['~ReadWriteAlpha'])   # Flaky on TSAN-covered on nvidia bots. 
+
   if blacklist:
     args.append('--blacklist')
     args.extend(blacklist)
@@ -239,7 +254,8 @@ def get_args(bot):
 
   # These bots run out of memory running RAW codec tests. Do not run them in
   # parallel
-  if 'NexusPlayer' in bot or 'Nexus5' in bot or 'Nexus9' in bot:
+  if ('NexusPlayer' in bot or 'Nexus5' in bot or 'Nexus9' in bot
+      or 'Win8-MSVC-ShuttleB' in bot):
     args.append('--noRAW_threading')
 
   return args
@@ -252,19 +268,23 @@ def self_test():
   cases = [
     'Pretend-iOS-Bot',
     'Test-Android-GCC-AndroidOne-GPU-Mali400MP2-Arm7-Release',
-    'Test-Android-GCC-Nexus9-GPU-TegraK1-Arm64-Debug',
     'Test-Android-GCC-GalaxyS3-GPU-Mali400-Arm7-Debug',
     'Test-Android-GCC-GalaxyS4-GPU-SGX544-Arm7-Release',
     'Test-Android-GCC-Nexus7-GPU-Tegra3-Arm7-Release',
+    'Test-Android-GCC-Nexus9-GPU-TegraK1-Arm64-Debug',
     'Test-Android-GCC-NexusPlayer-CPU-SSSE3-x86-Release',
-    'Test-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind',
+    'Test-Android-GCC-NVIDIA_Shield-GPU-TegraX1-Arm64-Release',
+    'Test-Mac-Clang-MacMini4.1-GPU-GeForce320M-x86_64-Release',
+    'Test-Mac-Clang-MacMini6.2-GPU-HD4000-x86_64-Debug-CommandBuffer',
+    'Test-Mac10.8-Clang-MacMini4.1-CPU-SSE4-x86_64-Release',
     'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Debug-MSAN',
     'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-TSAN',
     'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-Valgrind',
+    'Test-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind',
+    'Test-Win-MSVC-GCE-CPU-AVX2-x86-Release',
+    'Test-Win-MSVC-GCE-CPU-AVX2-x86_64-Debug',
+    'Test-Win10-MSVC-ShuttleA-GPU-GTX660-x86_64-Debug-Vulkan',
     'Test-Win7-MSVC-ShuttleA-GPU-HD2000-x86-Debug-ANGLE',
-    'Test-Mac10.8-Clang-MacMini4.1-CPU-SSE4-x86_64-Release',
-    'Test-Mac-Clang-MacMini4.1-GPU-GeForce320M-x86_64-Release',
-    'Test-Android-GCC-NVIDIA_Shield-GPU-TegraX1-Arm64-Release',
   ]
 
   cov = coverage.coverage()

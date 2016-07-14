@@ -7,9 +7,9 @@
 #ifndef XFA_FXFA_PARSER_XFA_DOCUMENT_H_
 #define XFA_FXFA_PARSER_XFA_DOCUMENT_H_
 
+#include "xfa/fxfa/include/fxfa.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/include/fxfa/fxfa.h"
 
 class CXFA_Document;
 class CXFA_LayoutItem;
@@ -39,26 +39,6 @@ enum XFA_VERSION {
   XFA_VERSION_MAX = 400,
 };
 
-#define XFA_LAYOUTSTATUS_Visible 0x0001
-#define XFA_LAYOUTSTATUS_Viewable 0x0010
-#define XFA_LAYOUTSTATUS_Printable 0x0020
-enum XFA_NODEEVENT {
-  XFA_NODEEVENT_Ready,
-  XFA_NODEEVENT_ValueChanging,
-  XFA_NODEEVENT_ValueChanged,
-  XFA_NODEEVENT_ChildAdded,
-  XFA_NODEEVENT_ChildRemoved,
-};
-enum XFA_PAGEEVENT {
-  XFA_PAGEEVENT_PageAdded,
-  XFA_PAGEEVENT_PageRemoved,
-};
-enum XFA_LAYOUTEVENT {
-  XFA_LAYOUTEVENT_ItemAdded,
-  XFA_LAYOUTEVENT_ItemRemoving,
-  XFA_LAYOUTEVENT_RectChanged,
-  XFA_LAYOUTEVENT_StatusChanged,
-};
 enum XFA_LAYOUTRESULT {
   XFA_LAYOUTRESULT_Continue,
   XFA_LAYOUTRESULT_Done,
@@ -131,7 +111,7 @@ class CXFA_Document {
   CScript_LogPseudoModel* m_pScriptLog;
   CScript_LayoutPseudoModel* m_pScriptLayout;
   CScript_SignaturePseudoModel* m_pScriptSignature;
-  CXFA_NodeSet m_rgPurgeNodes;
+  CXFA_NodeSet m_PurgeNodes;
   XFA_VERSION m_eCurVersionMode;
   uint32_t m_dwDocFlags;
   friend class CXFA_SimpleParser;

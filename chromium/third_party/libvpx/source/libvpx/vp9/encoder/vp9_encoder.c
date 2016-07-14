@@ -375,6 +375,9 @@ static void dealloc_compressor_data(VP9_COMP *cpi) {
   vpx_free(cpi->active_map.map);
   cpi->active_map.map = NULL;
 
+  vpx_free(cpi->consec_zero_mv);
+  cpi->consec_zero_mv = NULL;
+
   vp9_free_ref_frame_buffers(cm->buffer_pool);
 #if CONFIG_VP9_POSTPROC
   vp9_free_postproc_buffers(cm);
@@ -1549,9 +1552,12 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
 
   update_frame_size(cpi);
 
-  if ((last_w != cpi->oxcf.width || last_h != cpi->oxcf.height) &&
-      cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ)
-    vp9_cyclic_refresh_reset_resize(cpi);
+  if (last_w != cpi->oxcf.width || last_h != cpi->oxcf.height) {
+    memset(cpi->consec_zero_mv, 0,
+               cm->mi_rows * cm->mi_cols * sizeof(*cpi->consec_zero_mv));
+    if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ)
+      vp9_cyclic_refresh_reset_resize(cpi);
+  }
 
   if ((cpi->svc.number_temporal_layers > 1 &&
       cpi->oxcf.rc_mode == VPX_CBR) ||
@@ -1686,8 +1692,6 @@ VP9_COMP *vp9_create_compressor(VP9EncoderConfig *oxcf,
   cpi->use_skin_detection = 0;
   cpi->common.buffer_pool = pool;
 
-  cpi->rc.high_source_sad = 0;
-
   init_config(cpi, oxcf);
   vp9_rc_init(&cpi->oxcf, oxcf->pass, &cpi->rc);
 
@@ -1696,6 +1700,10 @@ VP9_COMP *vp9_create_compressor(VP9EncoderConfig *oxcf,
   cpi->tile_data = NULL;
 
   realloc_segmentation_maps(cpi);
+
+  CHECK_MEM_ERROR(cm, cpi->consec_zero_mv,
+                  vpx_calloc(cm->mi_rows * cm->mi_cols,
+                             sizeof(*cpi->consec_zero_mv)));
 
   CHECK_MEM_ERROR(cm, cpi->nmvcosts[0],
                   vpx_calloc(MV_VALS, sizeof(*cpi->nmvcosts[0])));
@@ -2839,7 +2847,8 @@ void vp9_update_reference_frames(VP9_COMP *cpi) {
              sizeof(cpi->interp_filter_selected[0]));
   }
 #if CONFIG_VP9_TEMPORAL_DENOISING
-  if (cpi->oxcf.noise_sensitivity > 0) {
+  if (cpi->oxcf.noise_sensitivity > 0 &&
+      cpi->denoiser.denoising_level > kDenLowLow) {
     vp9_denoiser_update_frame_info(&cpi->denoiser,
                                    *cpi->Source,
                                    cpi->common.frame_type,
@@ -3125,7 +3134,7 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
        "%7.2lf %7.2lf %7.2lf %7.2lf %7.2lf"
         "%6d %6d %5d %5d %5d "
         "%10"PRId64" %10.3lf"
-        "%10lf %8u %10"PRId64" %10d %10d %10d %10d\n",
+        "%10lf %8u %10"PRId64" %10d %10d %10d %10d %10d\n",
         cpi->common.current_video_frame,
         cm->width, cm->height,
         cpi->td.rd_counts.m_search_count,
@@ -3159,7 +3168,8 @@ static void output_frame_level_debug_stats(VP9_COMP *cpi) {
         cpi->tot_recode_hits, recon_err, cpi->rc.kf_boost,
         cpi->twopass.kf_zeromotion_pct,
         cpi->twopass.fr_content_type,
-        cm->lf.filter_level);
+        cm->lf.filter_level,
+        cm->seg.aq_av_offset);
   }
   fclose(f);
 
@@ -3428,6 +3438,12 @@ static void encode_without_recode_loop(VP9_COMP *cpi,
                                              cpi->unscaled_last_source,
                                              &cpi->scaled_last_source,
                                              (cpi->oxcf.pass == 0));
+
+  if (cm->frame_type == KEY_FRAME || cpi->resize_pending != 0) {
+    memset(cpi->consec_zero_mv, 0,
+           cm->mi_rows * cm->mi_cols * sizeof(*cpi->consec_zero_mv));
+  }
+
   vp9_update_noise_estimate(cpi);
 
   if (cpi->oxcf.pass == 0 &&

@@ -16,8 +16,83 @@
 #include "xfa/fxgraphics/include/cfx_graphics.h"
 #include "xfa/fwl/theme/cfwl_utils.h"
 
+enum class CFWL_WidgetCapacity {
+  None = 0,
+
+  Today,
+  Sun,
+  Mon,
+  Tue,
+  Wed,
+  Thu,
+  Fri,
+  Sat,
+
+  January,
+  February,
+  March,
+  April,
+  May,
+  June,
+  July,
+  August,
+  September,
+  October,
+  November,
+  December,
+
+  BigIcon,
+  ComboFormHandler,
+  CXBorder,
+  CYBorder,
+  CYCaption,
+  CYNarrowCaption,
+  DatesCellHeight,
+  DatesCellWidth,
+  EdgeFlat,
+  EdgeRaised,
+  EdgeSunken,
+  Font,
+  FontSize,
+  HeaderBtnHeight,
+  HeaderBtnHMargin,
+  HeaderBtnVMargin,
+  HeaderBtnWidth,
+  HeaderHeight,
+  HeaderTextHeight,
+  HeaderTextHMargin,
+  HeaderTextVMargin,
+  HeaderTextWidth,
+  HeaderWidth,
+  Height,
+  HSepHeight,
+  HSepWidth,
+  LineHeight,
+  Margin,
+  ScrollBarWidth,
+  SepDOffset,
+  SepX,
+  SepY,
+  Size,
+  SmallIcon,
+  SpaceAboveBelow,
+  TextColor,
+  TextSelColor,
+  TodayFlagWidth,
+  TodayHeight,
+  TodayWidth,
+  UIMargin,
+  VSepHeight,
+  VSepWidth,
+  WeekHeight,
+  WeekNumHeight,
+  WeekNumWidth,
+  WeekWidth,
+  Width
+};
+
 class IFWL_Widget;
-class IFDE_TextOut;
+class CFDE_TextOut;
 class IFX_Font;
 class IFX_FontMgr;
 class CFWL_ArrowData;
@@ -26,45 +101,49 @@ class CFWL_ThemePart;
 class CFWL_ThemeText;
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-class IFX_FontSourceEnum;
+class CFX_FontSourceEnum_File;
 #endif
 
 class CFWL_WidgetTP {
  public:
-  virtual FX_BOOL IsValidWidget(IFWL_Widget* pWidget);
+  virtual ~CFWL_WidgetTP();
+
+  virtual FWL_Error Initialize();
+  virtual FWL_Error Finalize();
+
+  virtual bool IsValidWidget(IFWL_Widget* pWidget);
   virtual uint32_t GetThemeID(IFWL_Widget* pWidget);
   virtual uint32_t SetThemeID(IFWL_Widget* pWidget,
                               uint32_t dwThemeID,
                               FX_BOOL bChildren = TRUE);
-  virtual FWL_ERR GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix);
-  virtual FWL_ERR SetThemeMatrix(IFWL_Widget* pWidget,
-                                 const CFX_Matrix& matrix);
+  virtual FWL_Error GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix);
+  virtual FWL_Error SetThemeMatrix(IFWL_Widget* pWidget,
+                                   const CFX_Matrix& matrix);
   virtual FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams);
   virtual FX_BOOL DrawText(CFWL_ThemeText* pParams);
-  virtual void* GetCapacity(CFWL_ThemePart* pThemePart, uint32_t dwCapacity);
+  virtual void* GetCapacity(CFWL_ThemePart* pThemePart,
+                            CFWL_WidgetCapacity dwCapacity);
   virtual FX_BOOL IsCustomizedLayout(IFWL_Widget* pWidget);
-  virtual FWL_ERR GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart);
+  virtual FWL_Error GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart);
   virtual FX_BOOL IsInPart(CFWL_ThemePart* pThemePart,
                            FX_FLOAT fx,
                            FX_FLOAT fy);
   virtual FX_BOOL CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect);
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
-  virtual ~CFWL_WidgetTP();
-  FWL_ERR SetFont(IFWL_Widget* pWidget,
-                  const FX_WCHAR* strFont,
-                  FX_FLOAT fFontSize,
-                  FX_ARGB rgbFont);
-  FWL_ERR SetFont(IFWL_Widget* pWidget,
-                  IFX_Font* pFont,
-                  FX_FLOAT fFontSize,
-                  FX_ARGB rgbFont);
+
+  FWL_Error SetFont(IFWL_Widget* pWidget,
+                    const FX_WCHAR* strFont,
+                    FX_FLOAT fFontSize,
+                    FX_ARGB rgbFont);
+  FWL_Error SetFont(IFWL_Widget* pWidget,
+                    IFX_Font* pFont,
+                    FX_FLOAT fFontSize,
+                    FX_ARGB rgbFont);
   IFX_Font* GetFont(IFWL_Widget* pWidget);
 
  protected:
   CFWL_WidgetTP();
-  FX_ERR InitTTO();
-  FX_ERR FinalizeTTO();
+  FWL_Error InitTTO();
+  FWL_Error FinalizeTTO();
   void DrawEdge(CFX_Graphics* pGraphics,
                 uint32_t dwStyles,
                 const CFX_RectF* pRect,
@@ -140,9 +219,8 @@ class CFWL_WidgetTP {
                     FWLTHEME_DIRECTION eDict,
                     FWLTHEME_STATE eState,
                     CFX_Matrix* pMatrix = NULL);
-  FWLCOLOR BlendColor(FWLCOLOR srcColor, FWLCOLOR renderColor, uint8_t scale);
   uint32_t m_dwRefCount;
-  IFDE_TextOut* m_pTextOut;
+  std::unique_ptr<CFDE_TextOut> m_pTextOut;
   IFX_Font* m_pFDEFont;
   FX_FLOAT m_fValue;
   uint32_t m_dwValue;
@@ -154,7 +232,6 @@ FX_BOOL FWLTHEME_Init();
 void FWLTHEME_Release();
 uint32_t FWL_GetThemeLayout(uint32_t dwThemeID);
 uint32_t FWL_GetThemeColor(uint32_t dwThemeID);
-uint32_t FWL_MakeThemeID(uint32_t dwLayout, uint32_t dwColor);
 
 class CFWL_ArrowData {
  public:
@@ -196,7 +273,7 @@ class CFWL_FontData {
   IFX_Font* m_pFont;
   IFX_FontMgr* m_pFontMgr;
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-  IFX_FontSourceEnum* m_pFontSource;
+  CFX_FontSourceEnum_File* m_pFontSource;
 #endif
 };
 

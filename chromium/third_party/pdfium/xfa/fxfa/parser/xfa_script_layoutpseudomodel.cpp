@@ -8,7 +8,6 @@
 
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_document_layout_imp.h"
@@ -66,7 +65,7 @@ void CScript_LayoutPseudoModel::Script_LayoutPseudoModel_HWXY(
     return;
   }
   CXFA_Node* pNode = NULL;
-  CFX_WideString wsUnit = FX_WSTRC(L"pt");
+  CFX_WideString wsUnit(L"pt");
   int32_t iIndex = 0;
   if (iLength >= 1) {
     pNode = static_cast<CXFA_Node*>(pArguments->GetObject(0));
@@ -74,7 +73,7 @@ void CScript_LayoutPseudoModel::Script_LayoutPseudoModel_HWXY(
   if (iLength >= 2) {
     CFX_ByteString bsUnit = pArguments->GetUTF8String(1);
     if (!bsUnit.IsEmpty()) {
-      wsUnit = CFX_WideString::FromUTF8(bsUnit, bsUnit.GetLength());
+      wsUnit = CFX_WideString::FromUTF8(bsUnit.AsStringC());
     }
   }
   if (iLength >= 3) {
@@ -117,7 +116,7 @@ void CScript_LayoutPseudoModel::Script_LayoutPseudoModel_HWXY(
       measure.Set(rtRect.top, XFA_UNIT_Pt);
       break;
   }
-  XFA_UNIT unit = measure.GetUnit(wsUnit.AsWideStringC());
+  XFA_UNIT unit = measure.GetUnit(wsUnit.AsStringC());
   FX_FLOAT fValue = measure.ToUnit(unit);
   fValue = FXSYS_round(fValue * 1000) / 1000.0f;
   if (hValue) {
@@ -367,7 +366,7 @@ void CScript_LayoutPseudoModel::Script_LayoutPseudoModel_PageContent(
   }
   if (iLength >= 2) {
     CFX_ByteString bsType = pArguments->GetUTF8String(1);
-    wsType = CFX_WideString::FromUTF8(bsType, bsType.GetLength());
+    wsType = CFX_WideString::FromUTF8(bsType.AsStringC());
   }
   if (iLength >= 3) {
     bOnPageArea = pArguments->GetInt32(2) == 0 ? FALSE : TRUE;
@@ -423,7 +422,7 @@ void CScript_LayoutPseudoModel::Script_LayoutPseudoModel_Relayout(
     CFXJSE_Arguments* pArguments) {
   CXFA_Node* pRootNode = m_pDocument->GetRoot();
   CXFA_Node* pFormRoot = pRootNode->GetFirstChildByClass(XFA_ELEMENT_Form);
-  FXSYS_assert(pFormRoot);
+  ASSERT(pFormRoot);
   CXFA_Node* pContentRootNode = pFormRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
   CXFA_LayoutProcessor* pLayoutProcessor = m_pDocument->GetLayoutProcessor();
   if (pContentRootNode) {

@@ -7,17 +7,23 @@
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 
 #include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
 
-FWL_ERR CXFA_FWLAdapterWidgetMgr::RepaintWidget(IFWL_Widget* pWidget,
-                                                const CFX_RectF* pRect) {
+CXFA_FWLAdapterWidgetMgr::CXFA_FWLAdapterWidgetMgr() {}
+
+CXFA_FWLAdapterWidgetMgr::~CXFA_FWLAdapterWidgetMgr() {}
+
+FWL_Error CXFA_FWLAdapterWidgetMgr::RepaintWidget(IFWL_Widget* pWidget,
+                                                  const CFX_RectF* pRect) {
   if (!pWidget)
-    return FWL_ERR_Indefinite;
+    return FWL_Error::Indefinite;
+
   CXFA_FFField* pField = (CXFA_FFField*)pWidget->GetPrivateData(pWidget);
   if (!pField)
-    return FWL_ERR_Indefinite;
+    return FWL_Error::Indefinite;
+
   pField->AddInvalidateRect(nullptr);
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
 
 FX_BOOL CXFA_FWLAdapterWidgetMgr::GetPopupPos(IFWL_Widget* pWidget,

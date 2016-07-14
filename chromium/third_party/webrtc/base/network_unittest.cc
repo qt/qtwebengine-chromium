@@ -12,6 +12,7 @@
 
 #include "webrtc/base/nethelpers.h"
 #include "webrtc/base/networkmonitor.h"
+#include <memory>
 #include <vector>
 #if defined(WEBRTC_POSIX)
 #include <sys/types.h>
@@ -108,7 +109,7 @@ class NetworkTest : public testing::Test, public sigslot::has_slots<>  {
                                  bool include_ignored,
                                  NetworkManager::NetworkList* networks) {
     // Use the base IfAddrsConverter for test cases.
-    rtc::scoped_ptr<IfAddrsConverter> ifaddrs_converter(new IfAddrsConverter());
+    std::unique_ptr<IfAddrsConverter> ifaddrs_converter(new IfAddrsConverter());
     network_manager.ConvertIfAddrs(interfaces, ifaddrs_converter.get(),
                                    include_ignored, networks);
   }
@@ -1006,6 +1007,35 @@ TEST_F(NetworkTest, DefaultLocalAddress) {
   EXPECT_EQ(ip, GetLoopbackIP(AF_INET));
   EXPECT_TRUE(manager.GetDefaultLocalAddress(AF_INET6, &ip));
   EXPECT_EQ(ip, GetLoopbackIP(AF_INET6));
+
+  // More tests on GetDefaultLocalAddress with ipv6 addresses where the set
+  // default address may be different from the best IP address of any network.
+  InterfaceAddress ip1;
+  EXPECT_TRUE(IPFromString("abcd::1234:5678:abcd:1111",
+                           IPV6_ADDRESS_FLAG_TEMPORARY, &ip1));
+  // Create a network with a prefix of ip1.
+  Network ipv6_network("test_eth0", "Test NetworkAdapter", TruncateIP(ip1, 64),
+                       64);
+  IPAddress ip2;
+  EXPECT_TRUE(IPFromString("abcd::1234:5678:abcd:2222", &ip2));
+  ipv6_network.AddIP(ip1);
+  ipv6_network.AddIP(ip2);
+  BasicNetworkManager::NetworkList list(1, new Network(ipv6_network));
+  bool changed;
+  MergeNetworkList(manager, list, &changed);
+  // If the set default address is not in any network, GetDefaultLocalAddress
+  // should return it.
+  IPAddress ip3;
+  EXPECT_TRUE(IPFromString("abcd::1234:5678:abcd:3333", &ip3));
+  manager.set_default_local_addresses(GetLoopbackIP(AF_INET), ip3);
+  EXPECT_TRUE(manager.GetDefaultLocalAddress(AF_INET6, &ip));
+  EXPECT_EQ(ip3, ip);
+  // If the set default address is in a network, GetDefaultLocalAddress will
+  // return the best IP in that network.
+  manager.set_default_local_addresses(GetLoopbackIP(AF_INET), ip2);
+  EXPECT_TRUE(manager.GetDefaultLocalAddress(AF_INET6, &ip));
+  EXPECT_EQ(static_cast<IPAddress>(ip1), ip);
+
   manager.StopUpdating();
 }
 

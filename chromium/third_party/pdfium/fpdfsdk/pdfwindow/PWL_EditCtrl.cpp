@@ -21,15 +21,12 @@
 #define IsFloatEqual(fa, fb) IsFloatZero((fa) - (fb))
 
 CPWL_EditCtrl::CPWL_EditCtrl()
-    : m_pEdit(NULL),
+    : m_pEdit(IFX_Edit::NewEdit()),
       m_pEditCaret(NULL),
       m_bMouseDown(FALSE),
       m_pEditNotify(NULL),
       m_nCharSet(DEFAULT_CHARSET),
-      m_nCodePage(0) {
-  m_pEdit = IFX_Edit::NewEdit();
-  ASSERT(m_pEdit);
-}
+      m_nCodePage(0) {}
 
 CPWL_EditCtrl::~CPWL_EditCtrl() {
   IFX_Edit::DelEdit(m_pEdit);
@@ -60,7 +57,7 @@ FX_BOOL CPWL_EditCtrl::IsWndHorV() {
 
 void CPWL_EditCtrl::SetCursor() {
   if (IsValid()) {
-    if (IFX_SystemHandler* pSH = GetSystemHandler()) {
+    if (CFX_SystemHandler* pSH = GetSystemHandler()) {
       if (IsWndHorV())
         pSH->SetCursor(FXCT_VBEAM);
       else
@@ -121,19 +118,20 @@ void CPWL_EditCtrl::CreateChildWnd(const PWL_CREATEPARAM& cp) {
 }
 
 void CPWL_EditCtrl::CreateEditCaret(const PWL_CREATEPARAM& cp) {
-  if (!m_pEditCaret) {
-    m_pEditCaret = new CPWL_Caret;
-    m_pEditCaret->SetInvalidRect(GetClientRect());
+  if (m_pEditCaret)
+    return;
 
-    PWL_CREATEPARAM ecp = cp;
-    ecp.pParentWnd = this;
-    ecp.dwFlags = PWS_CHILD | PWS_NOREFRESHCLIP;
-    ecp.dwBorderWidth = 0;
-    ecp.nBorderStyle = PBS_SOLID;
-    ecp.rcRectWnd = CFX_FloatRect(0, 0, 0, 0);
+  m_pEditCaret = new CPWL_Caret;
+  m_pEditCaret->SetInvalidRect(GetClientRect());
 
-    m_pEditCaret->Create(ecp);
-  }
+  PWL_CREATEPARAM ecp = cp;
+  ecp.pParentWnd = this;
+  ecp.dwFlags = PWS_CHILD | PWS_NOREFRESHCLIP;
+  ecp.dwBorderWidth = 0;
+  ecp.nBorderStyle = BorderStyle::SOLID;
+  ecp.rcRectWnd = CFX_FloatRect(0, 0, 0, 0);
+
+  m_pEditCaret->Create(ecp);
 }
 
 void CPWL_EditCtrl::SetFontSize(FX_FLOAT fFontSize) {
@@ -175,10 +173,8 @@ FX_BOOL CPWL_EditCtrl::OnKeyDown(uint16_t nChar, uint32_t nFlag) {
       break;
   }
 
-  if (nChar == FWL_VKEY_Delete) {
-    if (m_pEdit->IsSelected())
-      nChar = FWL_VKEY_Unknown;
-  }
+  if (nChar == FWL_VKEY_Delete && m_pEdit->IsSelected())
+    nChar = FWL_VKEY_Unknown;
 
   switch (nChar) {
     case FWL_VKEY_Delete:
@@ -284,8 +280,6 @@ FX_BOOL CPWL_EditCtrl::OnChar(uint16_t nChar, uint32_t nFlag) {
     case FWL_VKEY_Unknown:
       break;
     default:
-      if (IsINSERTpressed(nFlag))
-        Delete();
       InsertWord(word, GetCharSet());
       break;
   }
@@ -353,21 +347,20 @@ void CPWL_EditCtrl::SetEditCaret(FX_BOOL bVisible) {
 
 void CPWL_EditCtrl::GetCaretInfo(CFX_FloatPoint& ptHead,
                                  CFX_FloatPoint& ptFoot) const {
-  if (IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator()) {
-    pIterator->SetAt(m_pEdit->GetCaret());
-    CPVT_Word word;
-    CPVT_Line line;
-    if (pIterator->GetWord(word)) {
-      ptHead.x = word.ptWord.x + word.fWidth;
-      ptHead.y = word.ptWord.y + word.fAscent;
-      ptFoot.x = word.ptWord.x + word.fWidth;
-      ptFoot.y = word.ptWord.y + word.fDescent;
-    } else if (pIterator->GetLine(line)) {
-      ptHead.x = line.ptLine.x;
-      ptHead.y = line.ptLine.y + line.fLineAscent;
-      ptFoot.x = line.ptLine.x;
-      ptFoot.y = line.ptLine.y + line.fLineDescent;
-    }
+  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  pIterator->SetAt(m_pEdit->GetCaret());
+  CPVT_Word word;
+  CPVT_Line line;
+  if (pIterator->GetWord(word)) {
+    ptHead.x = word.ptWord.x + word.fWidth;
+    ptHead.y = word.ptWord.y + word.fAscent;
+    ptFoot.x = word.ptWord.x + word.fWidth;
+    ptFoot.y = word.ptWord.y + word.fDescent;
+  } else if (pIterator->GetLine(line)) {
+    ptHead.x = line.ptLine.x;
+    ptHead.y = line.ptLine.y + line.fLineAscent;
+    ptFoot.x = line.ptLine.x;
+    ptFoot.y = line.ptLine.y + line.fLineDescent;
   }
 }
 
@@ -412,59 +405,45 @@ void CPWL_EditCtrl::SelectAll() {
 }
 
 void CPWL_EditCtrl::Paint() {
-  if (m_pEdit)
-    m_pEdit->Paint();
+  m_pEdit->Paint();
 }
 
 void CPWL_EditCtrl::EnableRefresh(FX_BOOL bRefresh) {
-  if (m_pEdit)
-    m_pEdit->EnableRefresh(bRefresh);
+  m_pEdit->EnableRefresh(bRefresh);
 }
 
 int32_t CPWL_EditCtrl::GetCaret() const {
-  if (m_pEdit)
-    return m_pEdit->GetCaret();
-
-  return -1;
+  return m_pEdit->GetCaret();
 }
 
 void CPWL_EditCtrl::SetCaret(int32_t nPos) {
-  if (m_pEdit)
-    m_pEdit->SetCaret(nPos);
+  m_pEdit->SetCaret(nPos);
 }
 
 int32_t CPWL_EditCtrl::GetTotalWords() const {
-  if (m_pEdit)
-    return m_pEdit->GetTotalWords();
-
-  return 0;
+  return m_pEdit->GetTotalWords();
 }
 
 void CPWL_EditCtrl::SetScrollPos(const CFX_FloatPoint& point) {
-  if (m_pEdit)
-    m_pEdit->SetScrollPos(point);
+  m_pEdit->SetScrollPos(point);
 }
 
 CFX_FloatPoint CPWL_EditCtrl::GetScrollPos() const {
-  if (m_pEdit)
-    return m_pEdit->GetScrollPos();
-
-  return CFX_FloatPoint(0.0f, 0.0f);
+  return m_pEdit->GetScrollPos();
 }
 
 CPDF_Font* CPWL_EditCtrl::GetCaretFont() const {
   int32_t nFontIndex = 0;
 
-  if (IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator()) {
-    pIterator->SetAt(m_pEdit->GetCaret());
-    CPVT_Word word;
-    CPVT_Section section;
-    if (pIterator->GetWord(word)) {
-      nFontIndex = word.nFontIndex;
-    } else if (HasFlag(PES_RICH)) {
-      if (pIterator->GetSection(section)) {
-        nFontIndex = section.WordProps.nFontIndex;
-      }
+  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  pIterator->SetAt(m_pEdit->GetCaret());
+  CPVT_Word word;
+  CPVT_Section section;
+  if (pIterator->GetWord(word)) {
+    nFontIndex = word.nFontIndex;
+  } else if (HasFlag(PES_RICH)) {
+    if (pIterator->GetSection(section)) {
+      nFontIndex = section.WordProps.nFontIndex;
     }
   }
 
@@ -477,16 +456,15 @@ CPDF_Font* CPWL_EditCtrl::GetCaretFont() const {
 FX_FLOAT CPWL_EditCtrl::GetCaretFontSize() const {
   FX_FLOAT fFontSize = GetFontSize();
 
-  if (IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator()) {
-    pIterator->SetAt(m_pEdit->GetCaret());
-    CPVT_Word word;
-    CPVT_Section section;
-    if (pIterator->GetWord(word)) {
-      fFontSize = word.fFontSize;
-    } else if (HasFlag(PES_RICH)) {
-      if (pIterator->GetSection(section)) {
-        fFontSize = section.WordProps.fFontSize;
-      }
+  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  pIterator->SetAt(m_pEdit->GetCaret());
+  CPVT_Word word;
+  CPVT_Section section;
+  if (pIterator->GetWord(word)) {
+    fFontSize = word.fFontSize;
+  } else if (HasFlag(PES_RICH)) {
+    if (pIterator->GetSection(section)) {
+      fFontSize = section.WordProps.fFontSize;
     }
   }
 

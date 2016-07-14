@@ -22,19 +22,17 @@
 #endif
 
 #include "webrtc/base/platform_thread.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/common_video/video_render_frames.h"
 #include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/include/event_wrapper.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 
-IncomingVideoStream::IncomingVideoStream(uint32_t stream_id,
-                                         bool disable_prerenderer_smoothing)
-    : stream_id_(stream_id),
-      disable_prerenderer_smoothing_(disable_prerenderer_smoothing),
+IncomingVideoStream::IncomingVideoStream(bool disable_prerenderer_smoothing)
+    : disable_prerenderer_smoothing_(disable_prerenderer_smoothing),
       incoming_render_thread_(),
       deliver_buffer_event_(EventTimerWrapper::Create()),
       running_(false),
@@ -43,32 +41,22 @@ IncomingVideoStream::IncomingVideoStream(uint32_t stream_id,
       render_buffers_(new VideoRenderFrames()),
       incoming_rate_(0),
       last_rate_calculation_time_ms_(0),
-      num_frames_since_last_calculation_(0),
-      last_render_time_ms_(0),
-      temp_frame_(),
-      start_image_(),
-      timeout_image_(),
-      timeout_time_() {}
+      num_frames_since_last_calculation_(0) {}
 
 IncomingVideoStream::~IncomingVideoStream() {
   Stop();
 }
 
-VideoRenderCallback* IncomingVideoStream::ModuleCallback() {
-  return this;
-}
-
-int32_t IncomingVideoStream::RenderFrame(const uint32_t stream_id,
-                                         const VideoFrame& video_frame) {
+void IncomingVideoStream::OnFrame(const VideoFrame& video_frame) {
   rtc::CritScope csS(&stream_critsect_);
 
   if (!running_) {
-    return -1;
+    return;
   }
 
   // Rate statistics.
   num_frames_since_last_calculation_++;
-  int64_t now_ms = TickTime::MillisecondTimestamp();
+  int64_t now_ms = rtc::TimeMillis();
   if (now_ms >= last_rate_calculation_time_ms_ + kFrameRatePeriodMs) {
     incoming_rate_ =
         static_cast<uint32_t>(1000 * num_frames_since_last_calculation_ /
@@ -86,23 +74,10 @@ int32_t IncomingVideoStream::RenderFrame(const uint32_t stream_id,
       deliver_buffer_event_->Set();
     }
   }
-  return 0;
-}
-
-void IncomingVideoStream::SetStartImage(const VideoFrame& video_frame) {
-  rtc::CritScope csS(&thread_critsect_);
-  start_image_.CopyFrame(video_frame);
-}
-
-void IncomingVideoStream::SetTimeoutImage(const VideoFrame& video_frame,
-                                          const uint32_t timeout) {
-  rtc::CritScope csS(&thread_critsect_);
-  timeout_time_ = timeout;
-  timeout_image_.CopyFrame(video_frame);
 }
 
 void IncomingVideoStream::SetRenderCallback(
-    VideoRenderCallback* render_callback) {
+    rtc::VideoSinkInterface<VideoFrame>* render_callback) {
   rtc::CritScope cs(&thread_critsect_);
   render_callback_ = render_callback;
 }
@@ -118,7 +93,7 @@ int32_t IncomingVideoStream::SetExpectedRenderDelay(
 }
 
 void IncomingVideoStream::SetExternalCallback(
-    VideoRenderCallback* external_callback) {
+    rtc::VideoSinkInterface<VideoFrame>* external_callback) {
   rtc::CritScope cs(&thread_critsect_);
   external_callback_ = external_callback;
 }
@@ -182,10 +157,6 @@ int32_t IncomingVideoStream::Reset() {
   return 0;
 }
 
-uint32_t IncomingVideoStream::StreamId() const {
-  return stream_id_;
-}
-
 uint32_t IncomingVideoStream::IncomingRate() const {
   rtc::CritScope cs(&stream_critsect_);
   return incoming_rate_;
@@ -226,33 +197,16 @@ bool IncomingVideoStream::IncomingVideoStreamProcess() {
 void IncomingVideoStream::DeliverFrame(const VideoFrame& video_frame) {
   rtc::CritScope cs(&thread_critsect_);
   if (video_frame.IsZeroSize()) {
-    if (render_callback_) {
-      if (last_render_time_ms_ == 0 && !start_image_.IsZeroSize()) {
-        // We have not rendered anything and have a start image.
-        temp_frame_.CopyFrame(start_image_);
-        render_callback_->RenderFrame(stream_id_, temp_frame_);
-      } else if (!timeout_image_.IsZeroSize() &&
-                 last_render_time_ms_ + timeout_time_ <
-                     TickTime::MillisecondTimestamp()) {
-        // Render a timeout image.
-        temp_frame_.CopyFrame(timeout_image_);
-        render_callback_->RenderFrame(stream_id_, temp_frame_);
-      }
-    }
-
     // No frame.
     return;
   }
 
   // Send frame for rendering.
   if (external_callback_) {
-    external_callback_->RenderFrame(stream_id_, video_frame);
+    external_callback_->OnFrame(video_frame);
   } else if (render_callback_) {
-    render_callback_->RenderFrame(stream_id_, video_frame);
+    render_callback_->OnFrame(video_frame);
   }
-
-  // We're done with this frame.
-  last_render_time_ms_ = video_frame.render_time_ms();
 }
 
 }  // namespace webrtc

@@ -11,8 +11,8 @@
 # Fail-fast if anything in the script fails.
 set -e
 
-BUILDTYPE=${BUILDTYPE-Debug}
-USE_CLANG="false"
+BUILDTYPE=${BUILDTYPE-Release_Developer}
+USE_CLANG="true"
 
 while (( "$#" )); do
   if [[ "$1" == "-d" ]]; then
@@ -28,16 +28,20 @@ while (( "$#" )); do
   elif [[ "$1" == "-t" ]]; then
     BUILDTYPE=$2
     shift
+  elif [[ "$1" == "--debug" ]]; then
+    BUILDTYPE=Debug
   elif [[ "$1" == "--release" ]]; then
     BUILDTYPE=Release
   elif [[ "$1" == "--gcc" ]]; then
     USE_CLANG="false"
   elif [[ "$1" == "--clang" ]]; then
-    USE_CLANG="true" 
+    USE_CLANG="true"
   elif [[ "$1" == "--logcat" ]]; then
     LOGCAT=1
   elif [[ "$1" == "--verbose" ]]; then
     VERBOSE="true"
+  elif [[ "$1" == "--vulkan" ]]; then
+    SKIA_VULKAN="true"
   else
     APP_ARGS=("${APP_ARGS[@]}" "${1}")
   fi
@@ -81,6 +85,17 @@ if [ -z "$ANDROID_HOME" ]; then
   exportVar ANDROID_HOME $ANDROID_SDK_ROOT
 fi
 
+if [ "$SKIA_VULKAN" == "true" ]; then
+  export GYP_DEFINES="skia_vulkan=1 $GYP_DEFINES"
+  # add cmake from the SDK to your path if it doesn't exist
+  if [ ! -d "${ANDROID_SDK_ROOT}/cmake" ]; then
+     echo "The Android SDK Tools version of CMake is required to build Vulkan. ${ANDROID_SDK_ROOT}/cmake"
+     exit 1
+  else
+    export PATH=${ANDROID_SDK_ROOT}/cmake/bin:$PATH
+  fi
+fi
+
 # Helper function to configure the GYP defines to the appropriate values
 # based on the target device.
 setup_device() {
@@ -111,7 +126,7 @@ setup_device() {
       ANDROID_ARCH="arm"
       ;;
     arm_v7 | xoom)
-      DEFINES="${DEFINES} skia_arch_type=arm arm_neon_optional=1 arm_version=7"
+      DEFINES="${DEFINES} skia_arch_type=arm arm_neon=0 arm_version=7"
       ANDROID_ARCH="arm"
       ;;
     arm_v7_neon | nexus_4 | nexus_5 | nexus_6 | nexus_7 | nexus_10)
@@ -167,7 +182,7 @@ setup_device() {
     source $SCRIPT_DIR/utils/setup_toolchain.sh
   fi
 
-  DEFINES="${DEFINES} android_toolchain=${TOOLCHAIN_TYPE}"
+  DEFINES="${DEFINES} android_toolchain=${ANDROID_TOOLCHAIN}"
   DEFINES="${DEFINES} android_buildtype=${BUILDTYPE}"
   exportVar GYP_DEFINES "$DEFINES $GYP_DEFINES"
 

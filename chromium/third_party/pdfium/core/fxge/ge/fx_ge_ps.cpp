@@ -4,10 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxge/ge/fx_text_int.h"
-#include "core/include/fxcodec/fx_codec.h"
 
 struct PSGlyph {
   CFX_Font* m_pFont;
@@ -506,7 +506,7 @@ void CFX_PSRenderer::SetColor(uint32_t color,
   }
   FX_BOOL bCMYK = FALSE;
   if (pIccTransform) {
-    ICodec_IccModule* pIccModule =
+    CCodec_IccModule* pIccModule =
         CFX_GEModule::Get()->GetCodecModule()->GetIccModule();
     color = FXGETFLAG_COLORTYPE(alpha_flag) ? FXCMYK_TODIB(color)
                                             : FXARGB_TODIB(color);
@@ -680,7 +680,7 @@ FX_BOOL CFX_PSRenderer::DrawText(int nChars,
     buf << pCharPos[i].m_OriginX << " " << pCharPos[i].m_OriginY << " m";
     CFX_ByteString hex;
     hex.Format("<%02X>", ps_glyphindex);
-    buf << hex.AsByteStringC() << "Tj\n";
+    buf << hex.AsStringC() << "Tj\n";
   }
   buf << "Q\n";
   m_pOutput->OutputPS((const FX_CHAR*)buf.GetBuffer(), buf.GetSize());

@@ -20,6 +20,7 @@
 #include "libyuv/convert.h"  // NOLINT
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
@@ -29,7 +30,6 @@
 #include "webrtc/modules/video_coding/codecs/vp8/screenshare_layers.h"
 #include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 namespace {
@@ -166,7 +166,7 @@ VP8EncoderImpl::VP8EncoderImpl()
       tl1_frame_dropper_(kTl1MaxTimeToDropFrames),
       key_frame_request_(kMaxSimulcastStreams, false),
       quality_scaler_enabled_(false) {
-  uint32_t seed = static_cast<uint32_t>(TickTime::MillisecondTimestamp());
+  uint32_t seed = rtc::Time32();
   srand(seed);
 
   picture_id_.reserve(kMaxSimulcastStreams);
@@ -598,14 +598,9 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   }
 
   rps_.Init();
-  // Disable both high-QP limits and framedropping. Both are handled by libvpx
-  // internally.
-  const int kDisabledBadQpThreshold = 64;
-  // TODO(glaznev/sprang): consider passing codec initial bitrate to quality
-  // scaler to avoid starting with HD for low initial bitrates.
-  quality_scaler_.Init(codec_.qpMax / QualityScaler::kDefaultLowQpDenominator,
-                       kDisabledBadQpThreshold, false, 0, 0, 0,
-                       codec_.maxFramerate);
+  quality_scaler_.Init(QualityScaler::kLowVp8QpThreshold,
+                       QualityScaler::kBadVp8QpThreshold, codec_.startBitrate,
+                       codec_.width, codec_.height, codec_.maxFramerate);
 
   // Only apply scaling to improve for single-layer streams. The scaling metrics
   // use frame drops as a signal and is only applicable when we drop frames.
@@ -751,15 +746,18 @@ int VP8EncoderImpl::Encode(const VideoFrame& frame,
   // Image in vpx_image_t format.
   // Input image is const. VP8's raw image is not defined as const.
   raw_images_[0].planes[VPX_PLANE_Y] =
-      const_cast<uint8_t*>(input_image.buffer(kYPlane));
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataY());
   raw_images_[0].planes[VPX_PLANE_U] =
-      const_cast<uint8_t*>(input_image.buffer(kUPlane));
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataU());
   raw_images_[0].planes[VPX_PLANE_V] =
-      const_cast<uint8_t*>(input_image.buffer(kVPlane));
+      const_cast<uint8_t*>(input_image.video_frame_buffer()->DataV());
 
-  raw_images_[0].stride[VPX_PLANE_Y] = input_image.stride(kYPlane);
-  raw_images_[0].stride[VPX_PLANE_U] = input_image.stride(kUPlane);
-  raw_images_[0].stride[VPX_PLANE_V] = input_image.stride(kVPlane);
+  raw_images_[0].stride[VPX_PLANE_Y] =
+      input_image.video_frame_buffer()->StrideY();
+  raw_images_[0].stride[VPX_PLANE_U] =
+      input_image.video_frame_buffer()->StrideU();
+  raw_images_[0].stride[VPX_PLANE_V] =
+      input_image.video_frame_buffer()->StrideV();
 
   for (size_t i = 1; i < encoders_.size(); ++i) {
     // Scale the image down a number of times by downsampling factor
@@ -1020,6 +1018,7 @@ int VP8EncoderImpl::GetEncodedPartitions(const VideoFrame& input_image,
     encoded_images_[encoder_idx]._timeStamp = input_image.timestamp();
     encoded_images_[encoder_idx].capture_time_ms_ =
         input_image.render_time_ms();
+    encoded_images_[encoder_idx].rotation_ = input_image.rotation();
 
     int qp = -1;
     vpx_codec_control(&encoders_[encoder_idx], VP8E_GET_LAST_QUANTIZER_64, &qp);
@@ -1053,9 +1052,9 @@ int VP8EncoderImpl::GetEncodedPartitions(const VideoFrame& input_image,
   }
   if (encoders_.size() == 1 && send_stream_[0]) {
     if (encoded_images_[0]._length > 0) {
-      int qp;
-      vpx_codec_control(&encoders_[0], VP8E_GET_LAST_QUANTIZER_64, &qp);
-      quality_scaler_.ReportQP(qp);
+      int qp_128;
+      vpx_codec_control(&encoders_[0], VP8E_GET_LAST_QUANTIZER, &qp_128);
+      quality_scaler_.ReportQP(qp_128);
     } else {
       quality_scaler_.ReportDroppedFrame();
     }
@@ -1355,9 +1354,12 @@ int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img,
   libyuv::I420Copy(img->planes[VPX_PLANE_Y], img->stride[VPX_PLANE_Y],
                    img->planes[VPX_PLANE_U], img->stride[VPX_PLANE_U],
                    img->planes[VPX_PLANE_V], img->stride[VPX_PLANE_V],
-                   decoded_image.buffer(kYPlane), decoded_image.stride(kYPlane),
-                   decoded_image.buffer(kUPlane), decoded_image.stride(kUPlane),
-                   decoded_image.buffer(kVPlane), decoded_image.stride(kVPlane),
+                   decoded_image.video_frame_buffer()->MutableDataY(),
+                   decoded_image.video_frame_buffer()->StrideY(),
+                   decoded_image.video_frame_buffer()->MutableDataU(),
+                   decoded_image.video_frame_buffer()->StrideU(),
+                   decoded_image.video_frame_buffer()->MutableDataV(),
+                   decoded_image.video_frame_buffer()->StrideV(),
                    img->d_w, img->d_h);
   decoded_image.set_ntp_time_ms(ntp_time_ms);
   int ret = decode_complete_callback_->Decoded(decoded_image);

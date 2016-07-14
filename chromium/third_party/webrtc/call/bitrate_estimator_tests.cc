@@ -302,7 +302,8 @@ TEST_F(BitrateEstimatorTest, SwitchesToASTForVideo) {
   EXPECT_TRUE(receiver_log_.Wait());
 }
 
-TEST_F(BitrateEstimatorTest, SwitchesToASTThenBackToTOFForVideo) {
+// This test is flaky. See webrtc:5790.
+TEST_F(BitrateEstimatorTest, DISABLED_SwitchesToASTThenBackToTOFForVideo) {
   video_send_config_.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
   receiver_log_.PushExpectedLogLine(kSingleStreamLog);

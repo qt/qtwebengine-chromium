@@ -30,7 +30,7 @@ CFX_FloatRect FDE_CSSBoundaryToRect(IFDE_CSSBoundaryStyle* pBoundStyle,
                                     FX_BOOL bPadding,
                                     FX_BOOL bBorder,
                                     FX_BOOL bMargin) {
-  FXSYS_assert(pBoundStyle != NULL);
+  ASSERT(pBoundStyle != NULL);
   FX_FLOAT fResult;
   const FDE_CSSRECT* pRect;
   CFX_FloatRect rect(0, 0, 0, 0);
@@ -88,7 +88,7 @@ CFX_FloatRect FDE_CSSBoundaryToRect(IFDE_CSSBoundaryStyle* pBoundStyle,
   return rect;
 }
 uint32_t FDE_CSSFontStyleToFDE(IFDE_CSSFontStyle* pFontStyle) {
-  FXSYS_assert(pFontStyle != NULL);
+  ASSERT(pFontStyle != NULL);
   uint32_t dwFontStyle = FX_FONTSTYLE_Normal;
   if (pFontStyle->GetFontStyle() == FDE_CSSFONTSTYLE_Italic) {
     dwFontStyle |= FX_FONTSTYLE_Italic;
@@ -557,10 +557,10 @@ FDE_LPCCSSPERSUDOTABLE FDE_GetCSSPersudoByEnum(FDE_CSSPERSUDO ePersudo) {
   return (ePersudo < FDE_CSSPERSUDO_NONE) ? (g_FDE_CSSPersudoType + ePersudo)
                                           : NULL;
 }
-FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByName(const FX_WCHAR* pszName,
-                                                 int32_t iLength) {
-  FXSYS_assert(pszName != NULL && iLength > 0);
-  uint32_t dwHash = FX_HashCode_String_GetW(pszName, iLength, TRUE);
+FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByName(
+    const CFX_WideStringC& wsName) {
+  ASSERT(!wsName.IsEmpty());
+  uint32_t dwHash = FX_HashCode_GetW(wsName, true);
   int32_t iEnd = FDE_CSSPROPERTY_MAX - 1;
   int32_t iMid, iStart = 0;
   uint32_t dwMid;
@@ -581,10 +581,9 @@ FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByEnum(FDE_CSSPROPERTY eName) {
   return (eName < FDE_CSSPROPERTY_MAX) ? (g_FDE_CSSProperties + eName) : NULL;
 }
 FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByName(
-    const FX_WCHAR* pszName,
-    int32_t iLength) {
-  FXSYS_assert(pszName != NULL && iLength > 0);
-  uint32_t dwHash = FX_HashCode_String_GetW(pszName, iLength, TRUE);
+    const CFX_WideStringC& wsName) {
+  ASSERT(!wsName.IsEmpty());
+  uint32_t dwHash = FX_HashCode_GetW(wsName, true);
   int32_t iEnd = FDE_CSSPROPERTYVALUE_MAX - 1;
   int32_t iMid, iStart = 0;
   uint32_t dwMid;
@@ -606,10 +605,10 @@ FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByEnum(
   return (eName < FDE_CSSPROPERTYVALUE_MAX) ? (g_FDE_CSSPropertyValues + eName)
                                             : NULL;
 }
-FDE_LPCCSSMEDIATYPETABLE FDE_GetCSSMediaTypeByName(const FX_WCHAR* pszName,
-                                                   int32_t iLength) {
-  FXSYS_assert(pszName != NULL && iLength > 0);
-  uint16_t wHash = (uint16_t)FX_HashCode_String_GetW(pszName, iLength, TRUE);
+FDE_LPCCSSMEDIATYPETABLE FDE_GetCSSMediaTypeByName(
+    const CFX_WideStringC& wsName) {
+  ASSERT(!wsName.IsEmpty());
+  uint16_t wHash = FX_HashCode_GetW(wsName, true);
   int32_t iEnd =
       sizeof(g_FDE_CSSMediaTypes) / sizeof(FDE_CSSMEDIATYPETABLE) - 1;
   int32_t iMid, iStart = 0;
@@ -627,10 +626,10 @@ FDE_LPCCSSMEDIATYPETABLE FDE_GetCSSMediaTypeByName(const FX_WCHAR* pszName,
   } while (iStart <= iEnd);
   return NULL;
 }
-FDE_LPCCSSLENGTHUNITTABLE FDE_GetCSSLengthUnitByName(const FX_WCHAR* pszName,
-                                                     int32_t iLength) {
-  FXSYS_assert(pszName != NULL && iLength > 0);
-  uint16_t wHash = (uint16_t)FX_HashCode_String_GetW(pszName, iLength, TRUE);
+FDE_LPCCSSLENGTHUNITTABLE FDE_GetCSSLengthUnitByName(
+    const CFX_WideStringC& wsName) {
+  ASSERT(!wsName.IsEmpty());
+  uint16_t wHash = FX_HashCode_GetW(wsName, true);
   int32_t iEnd =
       sizeof(g_FDE_CSSLengthUnits) / sizeof(FDE_CSSLENGTHUNITTABLE) - 1;
   int32_t iMid, iStart = 0;
@@ -648,10 +647,9 @@ FDE_LPCCSSLENGTHUNITTABLE FDE_GetCSSLengthUnitByName(const FX_WCHAR* pszName,
   } while (iStart <= iEnd);
   return NULL;
 }
-FDE_LPCCSSCOLORTABLE FDE_GetCSSColorByName(const FX_WCHAR* pszName,
-                                           int32_t iLength) {
-  FXSYS_assert(pszName != NULL && iLength > 0);
-  uint32_t dwHash = FX_HashCode_String_GetW(pszName, iLength, TRUE);
+FDE_LPCCSSCOLORTABLE FDE_GetCSSColorByName(const CFX_WideStringC& wsName) {
+  ASSERT(!wsName.IsEmpty());
+  uint32_t dwHash = FX_HashCode_GetW(wsName, true);
   int32_t iEnd = sizeof(g_FDE_CSSColors) / sizeof(FDE_CSSCOLORTABLE) - 1;
   int32_t iMid, iStart = 0;
   uint32_t dwMid;
@@ -672,7 +670,7 @@ FX_BOOL FDE_ParseCSSNumber(const FX_WCHAR* pszValue,
                            int32_t iValueLen,
                            FX_FLOAT& fValue,
                            FDE_CSSPRIMITIVETYPE& eUnit) {
-  FXSYS_assert(pszValue != NULL && iValueLen > 0);
+  ASSERT(pszValue != NULL && iValueLen > 0);
   int32_t iUsedLen = 0;
   fValue = FX_wcstof(pszValue, iValueLen, &iUsedLen);
   if (iUsedLen <= 0) {
@@ -684,7 +682,8 @@ FX_BOOL FDE_ParseCSSNumber(const FX_WCHAR* pszValue,
   if (iValueLen >= 1 && *pszValue == '%') {
     eUnit = FDE_CSSPRIMITIVETYPE_Percent;
   } else if (iValueLen == 2) {
-    FDE_LPCCSSLENGTHUNITTABLE pUnit = FDE_GetCSSLengthUnitByName(pszValue, 2);
+    FDE_LPCCSSLENGTHUNITTABLE pUnit =
+        FDE_GetCSSLengthUnitByName(CFX_WideStringC(pszValue, 2));
     if (pUnit != NULL) {
       eUnit = (FDE_CSSPRIMITIVETYPE)pUnit->wValue;
     }
@@ -696,7 +695,7 @@ FX_BOOL FDE_ParseCSSString(const FX_WCHAR* pszValue,
                            int32_t iValueLen,
                            int32_t& iOffset,
                            int32_t& iLength) {
-  FXSYS_assert(pszValue != NULL && iValueLen > 0);
+  ASSERT(pszValue != NULL && iValueLen > 0);
   iOffset = 0;
   iLength = iValueLen;
   if (iValueLen >= 2) {
@@ -712,7 +711,7 @@ FX_BOOL FDE_ParseCSSURI(const FX_WCHAR* pszValue,
                         int32_t iValueLen,
                         int32_t& iOffset,
                         int32_t& iLength) {
-  FXSYS_assert(pszValue != NULL && iValueLen > 0);
+  ASSERT(pszValue != NULL && iValueLen > 0);
   if (iValueLen < 6 || pszValue[iValueLen - 1] != ')' ||
       FX_wcsnicmp(L"url(", pszValue, 4)) {
     return FALSE;
@@ -727,7 +726,7 @@ FX_BOOL FDE_ParseCSSURI(const FX_WCHAR* pszValue,
 FX_BOOL FDE_ParseCSSColor(const FX_WCHAR* pszValue,
                           int32_t iValueLen,
                           FX_ARGB& dwColor) {
-  FXSYS_assert(pszValue != NULL && iValueLen > 0);
+  ASSERT(pszValue != NULL && iValueLen > 0);
   if (*pszValue == '#') {
     switch (iValueLen) {
       case 4: {
@@ -770,7 +769,8 @@ FX_BOOL FDE_ParseCSSColor(const FX_WCHAR* pszValue,
     dwColor = ArgbEncode(255, rgb[0], rgb[1], rgb[2]);
     return TRUE;
   } else {
-    FDE_LPCCSSCOLORTABLE pColor = FDE_GetCSSColorByName(pszValue, iValueLen);
+    FDE_LPCCSSCOLORTABLE pColor =
+        FDE_GetCSSColorByName(CFX_WideStringC(pszValue, iValueLen));
     if (pColor != NULL) {
       dwColor = pColor->dwValue;
       return TRUE;
@@ -779,7 +779,7 @@ FX_BOOL FDE_ParseCSSColor(const FX_WCHAR* pszValue,
   return FALSE;
 }
 
-CFDE_CSSValueList::CFDE_CSSValueList(IFX_MEMAllocator* pStaticStore,
+CFDE_CSSValueList::CFDE_CSSValueList(IFX_MemoryAllocator* pStaticStore,
                                      const CFDE_CSSValueArray& list) {
   m_iCount = list.GetSize();
   int32_t iByteCount = m_iCount * sizeof(IFDE_CSSValue*);

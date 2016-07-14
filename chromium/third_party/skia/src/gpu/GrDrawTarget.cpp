@@ -16,6 +16,7 @@
 #include "GrRenderTarget.h"
 #include "GrResourceProvider.h"
 #include "GrRenderTargetPriv.h"
+#include "GrStencilAttachment.h"
 #include "GrSurfacePriv.h"
 #include "GrTexture.h"
 #include "gl/GrGLRenderTarget.h"
@@ -45,8 +46,9 @@ GrDrawTarget::GrDrawTarget(GrRenderTarget* rt, GrGpu* gpu, GrResourceProvider* r
     , fRenderTarget(rt) {
     // TODO: Stop extracting the context (currently needed by GrClipMaskManager)
     fContext = fGpu->getContext();
-    fClipMaskManager.reset(new GrClipMaskManager(this, options.fClipBatchToBounds));
+    fClipMaskManager.reset(new GrClipMaskManager(this));
 
+    fClipBatchToBounds = options.fClipBatchToBounds;
     fDrawBatchBounds = options.fDrawBatchBounds;
     fMaxBatchLookback = (options.fMaxBatchLookback < 0) ? kDefaultMaxBatchLookback :
                                                           options.fMaxBatchLookback;
@@ -128,6 +130,7 @@ void GrDrawTarget::dump() const {
 #endif
 
 bool GrDrawTarget::setupDstReadIfNecessary(const GrPipelineBuilder& pipelineBuilder,
+                                           const GrClip& clip,
                                            const GrPipelineOptimizations& optimizations,
                                            GrXferProcessor::DstTexture* dstTexture,
                                            const SkRect& batchBounds) {
@@ -151,7 +154,7 @@ bool GrDrawTarget::setupDstReadIfNecessary(const GrPipelineBuilder& pipelineBuil
     }
 
     SkIRect copyRect;
-    pipelineBuilder.clip().getConservativeBounds(rt->width(), rt->height(), &copyRect);
+    clip.getConservativeBounds(rt->width(), rt->height(), &copyRect);
 
     SkIRect drawIBounds;
     bounds.roundOut(&drawIBounds);
@@ -232,32 +235,69 @@ void GrDrawTarget::reset() {
 }
 
 void GrDrawTarget::drawBatch(const GrPipelineBuilder& pipelineBuilder,
-                             GrDrawBatch* batch,
-                             const SkIRect* scissorRect) {
+                             const GrClip& clip,
+                             GrDrawBatch* batch) {
     // Setup clip
-    GrPipelineBuilder::AutoRestoreStencil ars;
-    GrAppliedClip clip;
-
-    if (scissorRect) {
-        SkASSERT(GrClip::kWideOpen_ClipType == pipelineBuilder.clip().clipType());
-        if (!fClipMaskManager->setupScissorClip(pipelineBuilder, &ars, *scissorRect,
-                                                &batch->bounds(), &clip)) {
-            return;
-        }
-    } else {
-        if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, &batch->bounds(), &clip)) {
-            return;
-        }
+    GrAppliedClip appliedClip;
+    if (!clip.apply(fClipMaskManager, pipelineBuilder, &batch->bounds(), &appliedClip)) {
+        return;
     }
 
     GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
-    if (clip.clipCoverageFragmentProcessor()) {
+    if (appliedClip.clipCoverageFragmentProcessor()) {
         arfps.set(&pipelineBuilder);
-        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
+        arfps.addCoverageFragmentProcessor(appliedClip.clipCoverageFragmentProcessor());
     }
 
     GrPipeline::CreateArgs args;
-    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &clip.scissorState(), batch)) {
+    args.fPipelineBuilder = &pipelineBuilder;
+    args.fCaps = this->caps();
+    args.fScissor = &appliedClip.scissorState();
+    args.fHasStencilClip = appliedClip.hasStencilClip();
+    if (pipelineBuilder.hasUserStencilSettings() || appliedClip.hasStencilClip()) {
+        if (!fResourceProvider->attachStencilAttachment(pipelineBuilder.getRenderTarget())) {
+            SkDebugf("ERROR creating stencil attachment. Draw skipped.\n");
+            return;
+        }
+    }
+    batch->getPipelineOptimizations(&args.fOpts);
+    GrScissorState finalScissor;
+    if (args.fOpts.fOverrides.fUsePLSDstRead || fClipBatchToBounds) {
+        GrRenderTarget* rt = pipelineBuilder.getRenderTarget();
+        GrGLIRect viewport;
+        viewport.fLeft = 0;
+        viewport.fBottom = 0;
+        viewport.fWidth = rt->width();
+        viewport.fHeight = rt->height();
+        SkIRect ibounds;
+        ibounds.fLeft = SkTPin(SkScalarFloorToInt(batch->bounds().fLeft), viewport.fLeft,
+                              viewport.fWidth);
+        ibounds.fTop = SkTPin(SkScalarFloorToInt(batch->bounds().fTop), viewport.fBottom,
+                             viewport.fHeight);
+        ibounds.fRight = SkTPin(SkScalarCeilToInt(batch->bounds().fRight), viewport.fLeft,
+                               viewport.fWidth);
+        ibounds.fBottom = SkTPin(SkScalarCeilToInt(batch->bounds().fBottom), viewport.fBottom,
+                                viewport.fHeight);
+        if (appliedClip.scissorState().enabled()) {
+            const SkIRect& scissorRect = appliedClip.scissorState().rect();
+            if (!ibounds.intersect(scissorRect)) {
+                return;
+            }
+        }
+        finalScissor.set(ibounds);
+        args.fScissor = &finalScissor;
+    }
+    args.fOpts.fColorPOI.completeCalculations(pipelineBuilder.fColorFragmentProcessors.begin(),
+                                              pipelineBuilder.numColorFragmentProcessors());
+    args.fOpts.fCoveragePOI.completeCalculations(
+                                               pipelineBuilder.fCoverageFragmentProcessors.begin(),
+                                               pipelineBuilder.numCoverageFragmentProcessors());
+    if (!this->setupDstReadIfNecessary(pipelineBuilder, clip, args.fOpts, &args.fDstTexture,
+                                       batch->bounds())) {
+        return;
+    }
+
+    if (!batch->installPipeline(args)) {
         return;
     }
 
@@ -269,42 +309,8 @@ void GrDrawTarget::drawBatch(const GrPipelineBuilder& pipelineBuilder,
     this->recordBatch(batch);
 }
 
-static const GrStencilSettings& winding_path_stencil_settings() {
-    GR_STATIC_CONST_SAME_STENCIL_STRUCT(gSettings,
-        kIncClamp_StencilOp,
-        kIncClamp_StencilOp,
-        kAlwaysIfInClip_StencilFunc,
-        0xFFFF, 0xFFFF, 0xFFFF);
-    return *GR_CONST_STENCIL_SETTINGS_PTR_FROM_STRUCT_PTR(&gSettings);
-}
-
-static const GrStencilSettings& even_odd_path_stencil_settings() {
-    GR_STATIC_CONST_SAME_STENCIL_STRUCT(gSettings,
-        kInvert_StencilOp,
-        kInvert_StencilOp,
-        kAlwaysIfInClip_StencilFunc,
-        0xFFFF, 0xFFFF, 0xFFFF);
-    return *GR_CONST_STENCIL_SETTINGS_PTR_FROM_STRUCT_PTR(&gSettings);
-}
-
-void GrDrawTarget::getPathStencilSettingsForFilltype(GrPathRendering::FillType fill,
-                                                     const GrStencilAttachment* sb,
-                                                     GrStencilSettings* outStencilSettings) {
-
-    switch (fill) {
-        default:
-            SkFAIL("Unexpected path fill.");
-        case GrPathRendering::kWinding_FillType:
-            *outStencilSettings = winding_path_stencil_settings();
-            break;
-        case GrPathRendering::kEvenOdd_FillType:
-            *outStencilSettings = even_odd_path_stencil_settings();
-            break;
-    }
-    fClipMaskManager->adjustPathStencilParams(sb, outStencilSettings);
-}
-
 void GrDrawTarget::stencilPath(const GrPipelineBuilder& pipelineBuilder,
+                               const GrClip& clip,
                                const SkMatrix& viewMatrix,
                                const GrPath* path,
                                GrPathRendering::FillType fill) {
@@ -313,66 +319,33 @@ void GrDrawTarget::stencilPath(const GrPipelineBuilder& pipelineBuilder,
     SkASSERT(this->caps()->shaderCaps()->pathRenderingSupport());
 
     // Setup clip
-    GrPipelineBuilder::AutoRestoreStencil ars;
-    GrAppliedClip clip;
-    if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, nullptr, &clip)) {
+    GrAppliedClip appliedClip;
+    if (!clip.apply(fClipMaskManager, pipelineBuilder, nullptr, &appliedClip)) {
+        return;
+    }
+    // TODO: respect fClipBatchToBounds if we ever start computing bounds here.
+
+    // Coverage AA does not make sense when rendering to the stencil buffer. The caller should never
+    // attempt this in a situation that would require coverage AA.
+    SkASSERT(!appliedClip.clipCoverageFragmentProcessor());
+
+    GrRenderTarget* rt = pipelineBuilder.getRenderTarget();
+    GrStencilAttachment* stencilAttachment = fResourceProvider->attachStencilAttachment(rt);
+    if (!stencilAttachment) {
+        SkDebugf("ERROR creating stencil attachment. Draw skipped.\n");
         return;
     }
 
-    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
-    if (clip.clipCoverageFragmentProcessor()) {
-        arfps.set(&pipelineBuilder);
-        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
-    }
-
-    // set stencil settings for path
-    GrStencilSettings stencilSettings;
-    GrRenderTarget* rt = pipelineBuilder.getRenderTarget();
-    GrStencilAttachment* sb = fResourceProvider->attachStencilAttachment(rt);
-    this->getPathStencilSettingsForFilltype(fill, sb, &stencilSettings);
-
     GrBatch* batch = GrStencilPathBatch::Create(viewMatrix,
                                                 pipelineBuilder.isHWAntialias(),
-                                                stencilSettings, clip.scissorState(),
+                                                fill,
+                                                appliedClip.hasStencilClip(),
+                                                stencilAttachment->bits(),
+                                                appliedClip.scissorState(),
                                                 pipelineBuilder.getRenderTarget(),
                                                 path);
     this->recordBatch(batch);
     batch->unref();
-}
-
-void GrDrawTarget::drawPathBatch(const GrPipelineBuilder& pipelineBuilder,
-                                 GrDrawPathBatchBase* batch) {
-    // This looks like drawBatch() but there is an added wrinkle that stencil settings get inserted
-    // after setting up clipping but before onDrawBatch(). TODO: Figure out a better model for
-    // handling stencil settings WRT interactions between pipeline(builder), clipmaskmanager, and
-    // batches.
-    SkASSERT(this->caps()->shaderCaps()->pathRenderingSupport());
-
-    GrPipelineBuilder::AutoRestoreStencil ars;
-    GrAppliedClip clip;
-    if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, &batch->bounds(), &clip)) {
-        return;
-    }
-
-    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
-    if (clip.clipCoverageFragmentProcessor()) {
-        arfps.set(&pipelineBuilder);
-        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
-    }
-
-    // Ensure the render target has a stencil buffer and get the stencil settings.
-    GrStencilSettings stencilSettings;
-    GrRenderTarget* rt = pipelineBuilder.getRenderTarget();
-    GrStencilAttachment* sb = fResourceProvider->attachStencilAttachment(rt);
-    this->getPathStencilSettingsForFilltype(batch->fillType(), sb, &stencilSettings);
-    batch->setStencilSettings(stencilSettings);
-
-    GrPipeline::CreateArgs args;
-    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &clip.scissorState(), batch)) {
-        return;
-    }
-
-    this->recordBatch(batch);
 }
 
 void GrDrawTarget::clear(const SkIRect* rect,
@@ -410,7 +383,7 @@ void GrDrawTarget::clear(const SkIRect* rect,
         SkAutoTUnref<GrDrawBatch> batch(
                 GrRectBatchFactory::CreateNonAAFill(color, SkMatrix::I(), scalarRect,
                                                     nullptr, nullptr));
-        this->drawBatch(pipelineBuilder, batch);
+        this->drawBatch(pipelineBuilder, GrNoClip(), batch);
     } else {
         GrBatch* batch = new GrClearBatch(*rect, color, renderTarget);
         this->recordBatch(batch);
@@ -549,56 +522,6 @@ void GrDrawTarget::forwardCombine() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-bool GrDrawTarget::installPipelineInDrawBatch(const GrPipelineBuilder* pipelineBuilder,
-                                              const GrScissorState* scissor,
-                                              GrDrawBatch* batch) {
-    GrPipeline::CreateArgs args;
-    args.fPipelineBuilder = pipelineBuilder;
-    args.fCaps = this->caps();
-    args.fScissor = scissor;
-    batch->getPipelineOptimizations(&args.fOpts);
-    GrScissorState finalScissor;
-    if (args.fOpts.fOverrides.fUsePLSDstRead) {
-        GrRenderTarget* rt = pipelineBuilder->getRenderTarget();
-        GrGLIRect viewport;
-        viewport.fLeft = 0;
-        viewport.fBottom = 0;
-        viewport.fWidth = rt->width();
-        viewport.fHeight = rt->height();
-        SkIRect ibounds;
-        ibounds.fLeft = SkTPin(SkScalarFloorToInt(batch->bounds().fLeft), viewport.fLeft,
-                              viewport.fWidth);
-        ibounds.fTop = SkTPin(SkScalarFloorToInt(batch->bounds().fTop), viewport.fBottom,
-                             viewport.fHeight);
-        ibounds.fRight = SkTPin(SkScalarCeilToInt(batch->bounds().fRight), viewport.fLeft,
-                               viewport.fWidth);
-        ibounds.fBottom = SkTPin(SkScalarCeilToInt(batch->bounds().fBottom), viewport.fBottom,
-                                viewport.fHeight);
-        if (scissor != nullptr && scissor->enabled()) {
-            if (!ibounds.intersect(scissor->rect())) {
-                ibounds = scissor->rect();
-            }
-        }
-        finalScissor.set(ibounds);
-        args.fScissor = &finalScissor;
-    }
-    args.fOpts.fColorPOI.completeCalculations(pipelineBuilder->fColorFragmentProcessors.begin(),
-                                              pipelineBuilder->numColorFragmentProcessors());
-    args.fOpts.fCoveragePOI.completeCalculations(
-                                               pipelineBuilder->fCoverageFragmentProcessors.begin(),
-                                               pipelineBuilder->numCoverageFragmentProcessors());
-    if (!this->setupDstReadIfNecessary(*pipelineBuilder, args.fOpts, &args.fDstTexture,
-                                       batch->bounds())) {
-        return false;
-    }
-
-    if (!batch->installPipeline(args)) {
-        return false;
-    }
-
-    return true;
-}
 
 void GrDrawTarget::clearStencilClip(const SkIRect& rect, bool insideClip, GrRenderTarget* rt) {
     GrBatch* batch = new GrClearStencilClipBatch(rect, insideClip, rt);

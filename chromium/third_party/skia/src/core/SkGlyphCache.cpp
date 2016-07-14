@@ -8,7 +8,7 @@
 #include "SkGlyphCache.h"
 #include "SkGlyphCache_Globals.h"
 #include "SkGraphics.h"
-#include "SkOncePtr.h"
+#include "SkOnce.h"
 #include "SkPath.h"
 #include "SkTemplates.h"
 #include "SkTraceMemoryDump.h"
@@ -23,9 +23,12 @@ const char gGlyphCacheDumpName[] = "skia/sk_glyph_cache";
 }  // namespace
 
 // Returns the shared globals
-SK_DECLARE_STATIC_ONCE_PTR(SkGlyphCache_Globals, globals);
 static SkGlyphCache_Globals& get_globals() {
-    return *globals.get([]{ return new SkGlyphCache_Globals; });
+    static SkOnce once;
+    static SkGlyphCache_Globals* globals;
+
+    once([]{ globals = new SkGlyphCache_Globals; });
+    return *globals;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -508,9 +511,10 @@ void SkGlyphCache_Globals::purgeAll() {
     - call a fontscaler (which might call into the cache)
 */
 SkGlyphCache* SkGlyphCache::VisitCache(SkTypeface* typeface,
-                              const SkDescriptor* desc,
-                              bool (*proc)(const SkGlyphCache*, void*),
-                              void* context) {
+                                       const SkScalerContextEffects& effects,
+                                       const SkDescriptor* desc,
+                                       bool (*proc)(const SkGlyphCache*, void*),
+                                       void* context) {
     if (!typeface) {
         typeface = SkTypeface::GetDefaultTypeface();
     }
@@ -525,7 +529,7 @@ SkGlyphCache* SkGlyphCache::VisitCache(SkTypeface* typeface,
         globals.validate();
 
         for (cache = globals.internalGetHead(); cache != nullptr; cache = cache->fNext) {
-            if (cache->fDesc->equals(*desc)) {
+            if (*cache->fDesc == *desc) {
                 globals.internalDetachCache(cache);
                 if (!proc(cache, context)) {
                     globals.internalAttachCacheToHead(cache);
@@ -542,10 +546,10 @@ SkGlyphCache* SkGlyphCache::VisitCache(SkTypeface* typeface,
     {
         // pass true the first time, to notice if the scalercontext failed,
         // so we can try the purge.
-        SkScalerContext* ctx = typeface->createScalerContext(desc, true);
+        SkScalerContext* ctx = typeface->createScalerContext(effects, desc, true);
         if (!ctx) {
             get_globals().purgeAll();
-            ctx = typeface->createScalerContext(desc, false);
+            ctx = typeface->createScalerContext(effects, desc, false);
             SkASSERT(ctx);
         }
         cache = new SkGlyphCache(typeface, desc, ctx);

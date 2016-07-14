@@ -13,8 +13,8 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_simple_parser.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
 #include "core/fxcrt/include/fx_ext.h"
-#include "core/include/fxge/fx_freetype.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_freetype.h"
+#include "core/fxge/include/fx_ge.h"
 
 namespace {
 
@@ -190,8 +190,10 @@ CIDSet CIDSetFromSizeT(size_t index) {
   return static_cast<CIDSet>(index);
 }
 
-CFX_ByteString CMap_GetString(const CFX_ByteStringC& word) {
-  return word.Mid(1, word.GetLength() - 2);
+CFX_ByteStringC CMap_GetString(const CFX_ByteStringC& word) {
+  if (word.GetLength() <= 2)
+    return CFX_ByteStringC();
+  return CFX_ByteStringC(&word[1], word.GetLength() - 2);
 }
 
 int CompareDWORD(const void* data1, const void* data2) {
@@ -304,7 +306,7 @@ CPDF_CMap* CPDF_CMapManager::GetPredefinedCMap(const CFX_ByteString& name,
 CPDF_CMap* CPDF_CMapManager::LoadPredefinedCMap(const CFX_ByteString& name,
                                                 FX_BOOL bPromptCJK) {
   CPDF_CMap* pCMap = new CPDF_CMap;
-  const FX_CHAR* pname = name;
+  const FX_CHAR* pname = name.c_str();
   if (*pname == '/') {
     pname++;
   }
@@ -315,7 +317,7 @@ CPDF_CMap* CPDF_CMapManager::LoadPredefinedCMap(const CFX_ByteString& name,
 void CPDF_CMapManager::ReloadAll() {
   for (const auto& pair : m_CMaps) {
     CPDF_CMap* pCMap = pair.second;
-    pCMap->LoadPredefined(this, pair.first, FALSE);
+    pCMap->LoadPredefined(this, pair.first.c_str(), FALSE);
   }
   for (size_t i = 0; i < FX_ArraySize(m_CID2UnicodeMaps); ++i) {
     if (CPDF_CID2UnicodeMap* pMap = m_CID2UnicodeMaps[i]) {
@@ -407,13 +409,11 @@ void CPDF_CMapParser::ParseWord(const CFX_ByteStringC& word) {
     }
     m_CodeSeq = 0;
   } else if (m_Status == 3) {
-    CMap_GetString(word);
     m_Status = 0;
   } else if (m_Status == 4) {
     m_pCMap->m_Charset = CharsetFromOrdering(CMap_GetString(word));
     m_Status = 0;
   } else if (m_Status == 5) {
-    CMap_GetCode(word);
     m_Status = 0;
   } else if (m_Status == 6) {
     m_pCMap->m_bVertical = CMap_GetCode(word);
@@ -440,7 +440,7 @@ void CPDF_CMapParser::ParseWord(const CFX_ByteStringC& word) {
       }
       if (m_CodeSeq % 2) {
         CMap_CodeRange range;
-        if (CMap_GetCodeRange(range, m_LastWord.AsByteStringC(), word)) {
+        if (CMap_GetCodeRange(range, m_LastWord.AsStringC(), word)) {
           m_CodeRanges.Add(range);
         }
       }
@@ -788,9 +788,9 @@ void CPDF_CID2UnicodeMap::Load(CPDF_CMapManager* pMgr,
   FPDFAPI_LoadCID2UnicodeMap(charset, m_pEmbeddedMap, m_EmbeddedCount);
 }
 
-CIDSet CharsetFromOrdering(const CFX_ByteString& ordering) {
+CIDSet CharsetFromOrdering(const CFX_ByteStringC& ordering) {
   for (size_t charset = 1; charset < FX_ArraySize(g_CharsetNames); ++charset) {
-    if (ordering == CFX_ByteStringC(g_CharsetNames[charset]))
+    if (ordering == g_CharsetNames[charset])
       return CIDSetFromSizeT(charset);
   }
   return CIDSET_UNKNOWN;

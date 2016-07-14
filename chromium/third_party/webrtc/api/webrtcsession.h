@@ -11,6 +11,7 @@
 #ifndef WEBRTC_API_WEBRTCSESSION_H_
 #define WEBRTC_API_WEBRTCSESSION_H_
 
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "webrtc/api/mediastreamprovider.h"
 #include "webrtc/api/peerconnectioninterface.h"
 #include "webrtc/api/statstypes.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/sigslot.h"
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/base/thread.h"
@@ -34,7 +36,6 @@ namespace cricket {
 class ChannelManager;
 class DataChannel;
 class StatsReport;
-class VideoCapturer;
 class VideoChannel;
 class VoiceChannel;
 
@@ -137,22 +138,22 @@ class WebRtcSession : public AudioProviderInterface,
   };
 
   WebRtcSession(webrtc::MediaControllerInterface* media_controller,
-                rtc::Thread* signaling_thread,
+                rtc::Thread* network_thread,
                 rtc::Thread* worker_thread,
+                rtc::Thread* signaling_thread,
                 cricket::PortAllocator* port_allocator);
   virtual ~WebRtcSession();
 
   // These are const to allow them to be called from const methods.
-  rtc::Thread* signaling_thread() const { return signaling_thread_; }
   rtc::Thread* worker_thread() const { return worker_thread_; }
-  cricket::PortAllocator* port_allocator() const { return port_allocator_; }
+  rtc::Thread* signaling_thread() const { return signaling_thread_; }
 
   // The ID of this session.
   const std::string& id() const { return sid_; }
 
   bool Initialize(
       const PeerConnectionFactoryInterface::Options& options,
-      rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
       const PeerConnectionInterface::RTCConfiguration& rtc_configuration);
   // Deletes the voice, video and data channel and changes the session state
   // to STATE_CLOSED.
@@ -213,8 +214,6 @@ class WebRtcSession : public AudioProviderInterface,
   bool RemoveRemoteIceCandidates(
       const std::vector<cricket::Candidate>& candidates);
 
-  bool SetIceTransports(PeerConnectionInterface::IceTransportsType type);
-
   cricket::IceConfig ParseIceConfig(
       const PeerConnectionInterface::RTCConfiguration& config) const;
 
@@ -243,14 +242,19 @@ class WebRtcSession : public AudioProviderInterface,
                     cricket::AudioSource* source) override;
   void SetAudioPlayoutVolume(uint32_t ssrc, double volume) override;
   void SetRawAudioSink(uint32_t ssrc,
-                       rtc::scoped_ptr<AudioSinkInterface> sink) override;
+                       std::unique_ptr<AudioSinkInterface> sink) override;
 
-  RtpParameters GetAudioRtpParameters(uint32_t ssrc) const override;
-  bool SetAudioRtpParameters(uint32_t ssrc,
-                             const RtpParameters& parameters) override;
+  RtpParameters GetAudioRtpSendParameters(uint32_t ssrc) const override;
+  bool SetAudioRtpSendParameters(uint32_t ssrc,
+                                 const RtpParameters& parameters) override;
+  RtpParameters GetAudioRtpReceiveParameters(uint32_t ssrc) const override;
+  bool SetAudioRtpReceiveParameters(uint32_t ssrc,
+                                    const RtpParameters& parameters) override;
 
   // Implements VideoMediaProviderInterface.
-  bool SetCaptureDevice(uint32_t ssrc, cricket::VideoCapturer* camera) override;
+  bool SetSource(
+      uint32_t ssrc,
+      rtc::VideoSourceInterface<cricket::VideoFrame>* source) override;
   void SetVideoPlayout(
       uint32_t ssrc,
       bool enable,
@@ -259,15 +263,18 @@ class WebRtcSession : public AudioProviderInterface,
                     bool enable,
                     const cricket::VideoOptions* options) override;
 
-  RtpParameters GetVideoRtpParameters(uint32_t ssrc) const override;
-  bool SetVideoRtpParameters(uint32_t ssrc,
-                             const RtpParameters& parameters) override;
+  RtpParameters GetVideoRtpSendParameters(uint32_t ssrc) const override;
+  bool SetVideoRtpSendParameters(uint32_t ssrc,
+                                 const RtpParameters& parameters) override;
+  RtpParameters GetVideoRtpReceiveParameters(uint32_t ssrc) const override;
+  bool SetVideoRtpReceiveParameters(uint32_t ssrc,
+                                    const RtpParameters& parameters) override;
 
   // Implements DtmfProviderInterface.
-  virtual bool CanInsertDtmf(const std::string& track_id);
-  virtual bool InsertDtmf(const std::string& track_id,
-                          int code, int duration);
-  virtual sigslot::signal0<>* GetOnDestroyedSignal();
+  bool CanInsertDtmf(const std::string& track_id) override;
+  bool InsertDtmf(const std::string& track_id,
+                  int code, int duration) override;
+  sigslot::signal0<>* GetOnDestroyedSignal() override;
 
   // Implements DataChannelProviderInterface.
   bool SendData(const cricket::SendDataParams& params,
@@ -292,7 +299,7 @@ class WebRtcSession : public AudioProviderInterface,
       rtc::scoped_refptr<rtc::RTCCertificate>* certificate);
 
   // Caller owns returned certificate
-  virtual rtc::scoped_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate(
+  virtual std::unique_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate(
       const std::string& transport_name);
 
   cricket::DataChannelType data_channel_type() const;
@@ -379,6 +386,12 @@ class WebRtcSession : public AudioProviderInterface,
       const std::string& content_name,
       cricket::TransportDescription* info);
 
+  // Returns the name of the transport channel when BUNDLE is enabled, or
+  // nullptr if the channel is not part of any bundle.
+  const std::string* GetBundleTransportName(
+      const cricket::ContentInfo* content,
+      const cricket::ContentGroup* bundle);
+
   // Cause all the BaseChannels in the bundle group to have the same
   // transport channel.
   bool EnableBundle(const cricket::ContentGroup& bundle);
@@ -405,9 +418,12 @@ class WebRtcSession : public AudioProviderInterface,
   bool CreateChannels(const cricket::SessionDescription* desc);
 
   // Helper methods to create media channels.
-  bool CreateVoiceChannel(const cricket::ContentInfo* content);
-  bool CreateVideoChannel(const cricket::ContentInfo* content);
-  bool CreateDataChannel(const cricket::ContentInfo* content);
+  bool CreateVoiceChannel(const cricket::ContentInfo* content,
+                          const std::string* bundle_transport);
+  bool CreateVideoChannel(const cricket::ContentInfo* content,
+                          const std::string* bundle_transport);
+  bool CreateDataChannel(const cricket::ContentInfo* content,
+                         const std::string* bundle_transport);
 
   // Listens to SCTP CONTROL messages on unused SIDs and process them as OPEN
   // messages.
@@ -462,12 +478,10 @@ class WebRtcSession : public AudioProviderInterface,
 
   void ReportNegotiatedCiphers(const cricket::TransportStats& stats);
 
-  void OnSentPacket_w(cricket::TransportChannel* channel,
-                      const rtc::SentPacket& sent_packet);
+  void OnSentPacket_w(const rtc::SentPacket& sent_packet);
 
-  rtc::Thread* const signaling_thread_;
   rtc::Thread* const worker_thread_;
-  cricket::PortAllocator* const port_allocator_;
+  rtc::Thread* const signaling_thread_;
 
   State state_ = STATE_INIT;
   Error error_ = ERROR_NONE;
@@ -476,17 +490,17 @@ class WebRtcSession : public AudioProviderInterface,
   const std::string sid_;
   bool initial_offerer_ = false;
 
-  rtc::scoped_ptr<cricket::TransportController> transport_controller_;
+  std::unique_ptr<cricket::TransportController> transport_controller_;
   MediaControllerInterface* media_controller_;
-  rtc::scoped_ptr<cricket::VoiceChannel> voice_channel_;
-  rtc::scoped_ptr<cricket::VideoChannel> video_channel_;
-  rtc::scoped_ptr<cricket::DataChannel> data_channel_;
+  std::unique_ptr<cricket::VoiceChannel> voice_channel_;
+  std::unique_ptr<cricket::VideoChannel> video_channel_;
+  std::unique_ptr<cricket::DataChannel> data_channel_;
   cricket::ChannelManager* channel_manager_;
   IceObserver* ice_observer_;
   PeerConnectionInterface::IceConnectionState ice_connection_state_;
   bool ice_connection_receiving_;
-  rtc::scoped_ptr<SessionDescriptionInterface> local_desc_;
-  rtc::scoped_ptr<SessionDescriptionInterface> remote_desc_;
+  std::unique_ptr<SessionDescriptionInterface> local_desc_;
+  std::unique_ptr<SessionDescriptionInterface> remote_desc_;
   // If the remote peer is using a older version of implementation.
   bool older_version_remote_peer_;
   bool dtls_enabled_;
@@ -501,8 +515,7 @@ class WebRtcSession : public AudioProviderInterface,
   // List of content names for which the remote side triggered an ICE restart.
   std::set<std::string> pending_ice_restarts_;
 
-  rtc::scoped_ptr<WebRtcSessionDescriptionFactory>
-      webrtc_session_desc_factory_;
+  std::unique_ptr<WebRtcSessionDescriptionFactory> webrtc_session_desc_factory_;
 
   // Member variables for caching global options.
   cricket::AudioOptions audio_options_;

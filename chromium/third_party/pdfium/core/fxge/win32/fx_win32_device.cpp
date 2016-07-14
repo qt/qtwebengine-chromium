@@ -4,19 +4,19 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #include <crtdbg.h>
 
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxge/agg/fx_agg_driver.h"
 #include "core/fxge/dib/dib_int.h"
 #include "core/fxge/ge/fx_text_int.h"
+#include "core/fxge/include/fx_freetype.h"
+#include "core/fxge/include/fx_ge_win32.h"
 #include "core/fxge/win32/dwrite_int.h"
 #include "core/fxge/win32/win32_int.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_freetype.h"
-#include "core/include/fxge/fx_ge_win32.h"
 #include "third_party/base/stl_util.h"
 
 class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
@@ -147,9 +147,6 @@ static int CALLBACK FontEnumProc(const LOGFONTA* plf,
                                  uint32_t FontType,
                                  LPARAM lParam) {
   CFX_Win32FontInfo* pFontInfo = (CFX_Win32FontInfo*)lParam;
-  if (pFontInfo->m_pMapper->GetFontEnumerator()) {
-    pFontInfo->m_pMapper->GetFontEnumerator()->HitFont();
-  }
   pFontInfo->AddInstalledFont(plf, FontType);
   return 1;
 }
@@ -162,9 +159,6 @@ FX_BOOL CFX_Win32FontInfo::EnumFontList(CFX_FontMapper* pMapper) {
   lf.lfPitchAndFamily = 0;
   EnumFontFamiliesExA(m_hDC, &lf, (FONTENUMPROCA)FontEnumProc, (uintptr_t) this,
                       0);
-  if (pMapper->GetFontEnumerator()) {
-    pMapper->GetFontEnumerator()->Finish();
-  }
   return TRUE;
 }
 static const struct {
@@ -356,7 +350,7 @@ void* CFX_Win32FontInfo::MapFont(int weight,
   }
   HFONT hFont =
       ::CreateFontA(-10, 0, 0, 0, weight, bItalic, 0, 0, charset,
-                    OUT_TT_ONLY_PRECIS, 0, 0, subst_pitch_family, face);
+                    OUT_TT_ONLY_PRECIS, 0, 0, subst_pitch_family, face.c_str());
   char facebuf[100];
   HFONT hOldFont = (HFONT)::SelectObject(m_hDC, hFont);
   ::GetTextFaceA(m_hDC, 100, facebuf);
@@ -399,8 +393,9 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       }
       break;
   }
-  hFont = ::CreateFontA(-10, 0, 0, 0, weight, bItalic, 0, 0, charset,
-                        OUT_TT_ONLY_PRECIS, 0, 0, subst_pitch_family, face);
+  hFont =
+      ::CreateFontA(-10, 0, 0, 0, weight, bItalic, 0, 0, charset,
+                    OUT_TT_ONLY_PRECIS, 0, 0, subst_pitch_family, face.c_str());
   return hFont;
 }
 void CFX_Win32FontInfo::DeleteFont(void* hFont) {
@@ -460,7 +455,7 @@ IFX_SystemFontInfo* IFX_SystemFontInfo::CreateDefault(const char** pUnused) {
   if (path_len > 0 && path_len < MAX_PATH) {
     CFX_ByteString fonts_path(windows_path);
     fonts_path += "\\Fonts";
-    pInfoFallback->AddPath(fonts_path.AsByteStringC());
+    pInfoFallback->AddPath(fonts_path.AsStringC());
   }
   return pInfoFallback;
 }

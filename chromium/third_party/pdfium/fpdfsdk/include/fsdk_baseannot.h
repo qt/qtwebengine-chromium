@@ -13,10 +13,11 @@
 #include <ctime>
 #endif
 
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "core/fxcrt/include/fx_basic.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "fpdfsdk/cfx_systemhandler.h"
+#include "fpdfsdk/include/fsdk_common.h"
 #include "fpdfsdk/include/fsdk_define.h"
-#include "fpdfsdk/include/fx_systemhandler.h"
 
 class CPDFSDK_PageView;
 class CPDF_Annot;
@@ -24,8 +25,6 @@ class CPDF_Page;
 class CFX_Matrix;
 class CPDF_RenderOptions;
 class CFX_RenderDevice;
-
-#define CFX_IntArray CFX_ArrayTemplate<int>
 
 class CPDFSDK_DateTime {
  public:
@@ -157,32 +156,17 @@ class CPDFSDK_BAAnnot : public CPDFSDK_Annot {
   void SetStructParent(int key);
   int GetStructParent() const;
 
-  // border
   void SetBorderWidth(int nWidth);
   int GetBorderWidth() const;
 
-  // BBS_SOLID
-  // BBS_DASH
-  // BBS_BEVELED
-  // BBS_INSET
-  // BBS_UNDERLINE
-
-  void SetBorderStyle(int nStyle);
-  int GetBorderStyle() const;
-
-  void SetBorderDash(const CFX_IntArray& array);
-  void GetBorderDash(CFX_IntArray& array) const;
-
-  // The background of the annotation's icon when closed
-  // The title bar of the annotation's pop-up window
-  // The border of a link annotation
+  void SetBorderStyle(BorderStyle nStyle);
+  BorderStyle GetBorderStyle() const;
 
   void SetColor(FX_COLORREF color);
   void RemoveColor();
   FX_BOOL GetColor(FX_COLORREF& color) const;
 
   FX_BOOL IsVisible() const;
-  // action
 
   CPDF_Action GetAction() const;
   void SetAction(const CPDF_Action& a);

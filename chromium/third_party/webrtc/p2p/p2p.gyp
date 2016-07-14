@@ -16,9 +16,6 @@
         '<(webrtc_root)/base/base.gyp:rtc_base',
         '<(webrtc_root)/common.gyp:webrtc_common',
       ],
-      'cflags_cc!': [
-        '-Wnon-virtual-dtor',
-      ],
       'sources': [
         'base/asyncstuntcpsocket.cc',
         'base/asyncstuntcpsocket.h',
@@ -84,9 +81,6 @@
         'client/socketmonitor.h',
       ],
       'direct_dependent_settings': {
-        'cflags_cc!': [
-          '-Wnon-virtual-dtor',
-        ],
         'defines': [
           'FEATURE_ENABLE_VOICEMAIL',
         ],
@@ -107,6 +101,8 @@
             'quic/quicconnectionhelper.h',
             'quic/quicsession.cc',
             'quic/quicsession.h',
+            'quic/quictransport.cc',
+            'quic/quictransport.h',
             'quic/quictransportchannel.cc',
             'quic/quictransportchannel.h',
             'quic/reliablequicstream.cc',
@@ -125,9 +121,6 @@
         '<(webrtc_root)/base/base.gyp:rtc_base',
         '<(webrtc_root)/common.gyp:webrtc_common',
       ],
-      'cflags_cc!': [
-        '-Wnon-virtual-dtor',
-      ],
       'sources': [
         'stunprober/stunprober.cc',
       ],
@@ -138,9 +131,6 @@
       'dependencies': [
         'libstunprober',
         'rtc_p2p'
-      ],
-      'cflags_cc!': [
-        '-Wnon-virtual-dtor',
       ],
       'sources': [
         'stunprober/main.cc',
@@ -156,9 +146,11 @@
           'direct_dependent_settings': {
             'sources': [
               'base/dtlstransportchannel_unittest.cc',
+              'base/fakeportallocator.h',
               'base/faketransportcontroller.h',
               'base/p2ptransportchannel_unittest.cc',
               'base/port_unittest.cc',
+              'base/portallocator_unittest.cc',
               'base/pseudotcp_unittest.cc',
               'base/relayport_unittest.cc',
               'base/relayserver_unittest.cc',
@@ -172,9 +164,9 @@
               'base/transport_unittest.cc',
               'base/transportcontroller_unittest.cc',
               'base/transportdescriptionfactory_unittest.cc',
+              'base/tcpport_unittest.cc',
               'base/turnport_unittest.cc',
-              'client/fakeportallocator.h',
-              'client/portallocator_unittest.cc',
+              'client/basicportallocator_unittest.cc',
               'stunprober/stunprober_unittest.cc',
             ],
             'conditions': [
@@ -182,6 +174,7 @@
                 'sources': [
                   'quic/quicconnectionhelper_unittest.cc',
                   'quic/quicsession_unittest.cc',
+		  'quic/quictransport_unittest.cc',
                   'quic/quictransportchannel_unittest.cc',
                   'quic/reliablequicstream_unittest.cc',
                 ],

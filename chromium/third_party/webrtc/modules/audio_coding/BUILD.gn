@@ -39,6 +39,33 @@ if (!build_with_mozilla && !build_with_chromium) {
   audio_codec_deps += [ ":red" ]
 }
 
+source_set("audio_decoder_factory_interface") {
+  sources = [
+    "codecs/audio_decoder_factory.h",
+    "codecs/audio_format.cc",
+    "codecs/audio_format.h",
+  ]
+  configs += [ "../..:common_config" ]
+  public_configs = [ "../..:common_inherited_config" ]
+  deps = [
+    "../..:webrtc_common",
+  ]
+}
+
+source_set("builtin_audio_decoder_factory") {
+  sources = [
+    "codecs/builtin_audio_decoder_factory.cc",
+    "codecs/builtin_audio_decoder_factory.h",
+  ]
+  configs += [ "../..:common_config" ]
+  public_configs = [ "../..:common_inherited_config" ]
+  deps = [
+           "../..:webrtc_common",
+           ":audio_decoder_factory_interface",
+         ] + audio_codec_deps
+  defines = audio_codec_defines
+}
+
 source_set("rent_a_codec") {
   sources = [
     "acm2/acm_codec_database.cc",
@@ -121,6 +148,7 @@ source_set("audio_decoder_interface") {
   public_configs = [ "../..:common_inherited_config" ]
   deps = [
     "../..:webrtc_common",
+    "../../base:rtc_base_approved",
   ]
 }
 
@@ -133,6 +161,7 @@ source_set("audio_encoder_interface") {
   public_configs = [ "../..:common_inherited_config" ]
   deps = [
     "../..:webrtc_common",
+    "../../base:rtc_base_approved",
   ]
 }
 
@@ -147,9 +176,7 @@ source_set("cng") {
   sources = [
     "codecs/cng/audio_encoder_cng.cc",
     "codecs/cng/audio_encoder_cng.h",
-    "codecs/cng/cng_helpfuns.c",
-    "codecs/cng/cng_helpfuns.h",
-    "codecs/cng/webrtc_cng.c",
+    "codecs/cng/webrtc_cng.cc",
     "codecs/cng/webrtc_cng.h",
   ]
 
@@ -760,6 +787,8 @@ source_set("neteq") {
     "neteq/buffer_level_filter.h",
     "neteq/comfort_noise.cc",
     "neteq/comfort_noise.h",
+    "neteq/cross_correlation.cc",
+    "neteq/cross_correlation.h",
     "neteq/decision_logic.cc",
     "neteq/decision_logic.h",
     "neteq/decision_logic_fax.cc",
@@ -791,6 +820,8 @@ source_set("neteq") {
     "neteq/neteq_impl.h",
     "neteq/normal.cc",
     "neteq/normal.h",
+    "neteq/packet.cc",
+    "neteq/packet.h",
     "neteq/packet_buffer.cc",
     "neteq/packet_buffer.h",
     "neteq/payload_splitter.cc",
@@ -807,6 +838,8 @@ source_set("neteq") {
     "neteq/statistics_calculator.h",
     "neteq/sync_buffer.cc",
     "neteq/sync_buffer.h",
+    "neteq/tick_timer.cc",
+    "neteq/tick_timer.h",
     "neteq/time_stretch.cc",
     "neteq/time_stretch.h",
     "neteq/timestamp_scaler.cc",
@@ -822,9 +855,11 @@ source_set("neteq") {
 
   deps = [
     ":audio_decoder_interface",
+    ":builtin_audio_decoder_factory",
     ":cng",
     ":g711",
     ":pcm16b",
+    ":rent_a_codec",
     "../..:webrtc_common",
     "../../common_audio",
     "../../system_wrappers",

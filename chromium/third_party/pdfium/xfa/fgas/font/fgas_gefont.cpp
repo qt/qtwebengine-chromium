@@ -8,6 +8,7 @@
 
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
+#include "xfa/fxfa/include/xfa_fontmgr.h"
 
 IFX_Font* IFX_Font::LoadFont(const FX_WCHAR* pszFontFamily,
                              uint32_t dwFontStyles,
@@ -105,7 +106,6 @@ CFX_GEFont::CFX_GEFont(IFX_FontMgr* pFontMgr)
       m_pBBoxMap(NULL),
       m_pProvider(NULL),
       m_wCharSet(0xFFFF),
-      m_SubstFonts(),
       m_FontMapper(16) {
 }
 
@@ -127,11 +127,10 @@ CFX_GEFont::CFX_GEFont(const CFX_GEFont& src, uint32_t dwFontStyles)
       m_pBBoxMap(NULL),
       m_pProvider(NULL),
       m_wCharSet(0xFFFF),
-      m_SubstFonts(),
       m_FontMapper(16) {
   m_pFont = new CFX_Font;
-  FXSYS_assert(m_pFont != NULL);
-  FXSYS_assert(src.m_pFont != NULL);
+  ASSERT(m_pFont != NULL);
+  ASSERT(src.m_pFont != NULL);
   m_pFont->LoadClone(src.m_pFont);
   CFX_SubstFont* pSubst = m_pFont->GetSubstFont();
   if (!pSubst) {
@@ -145,36 +144,27 @@ CFX_GEFont::CFX_GEFont(const CFX_GEFont& src, uint32_t dwFontStyles)
   }
   InitFont();
 }
+
 CFX_GEFont::~CFX_GEFont() {
-  int32_t iCount = m_SubstFonts.GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
-    IFX_Font* pFont = (IFX_Font*)m_SubstFonts[i];
-    pFont->Release();
-  }
+  for (int32_t i = 0; i < m_SubstFonts.GetSize(); i++)
+    m_SubstFonts[i]->Release();
+
   m_SubstFonts.RemoveAll();
   m_FontMapper.RemoveAll();
-  if (m_pFileRead != NULL) {
+  if (m_pFileRead)
     m_pFileRead->Release();
-  }
-  if (m_pStream != NULL) {
+
+  if (m_pStream)
     m_pStream->Release();
-  }
-  if (m_pFontEncoding != NULL) {
-    delete m_pFontEncoding;
-  }
-  if (m_pCharWidthMap != NULL) {
-    delete m_pCharWidthMap;
-  }
-  if (m_pRectArray != NULL) {
-    delete m_pRectArray;
-  }
-  if (m_pBBoxMap != NULL) {
-    delete m_pBBoxMap;
-  }
-  if (m_pFont != NULL && !m_bExtFont) {
+
+  delete m_pFontEncoding;
+  delete m_pCharWidthMap;
+  delete m_pRectArray;
+  delete m_pBBoxMap;
+  if (!m_bExtFont)
     delete m_pFont;
-  }
 }
+
 void CFX_GEFont::Release() {
   if (--m_iRefCount < 1) {
     if (m_pFontMgr != NULL) {
@@ -347,16 +337,17 @@ uint8_t CFX_GEFont::GetCharSet() const {
 void CFX_GEFont::GetFamilyName(CFX_WideString& wsFamily) const {
   if (!m_pFont->GetSubstFont() ||
       m_pFont->GetSubstFont()->m_Family.GetLength() == 0) {
-    wsFamily = CFX_WideString::FromLocal(m_pFont->GetFamilyName());
+    wsFamily = CFX_WideString::FromLocal(m_pFont->GetFamilyName().AsStringC());
   } else {
-    wsFamily = CFX_WideString::FromLocal(m_pFont->GetSubstFont()->m_Family);
+    wsFamily = CFX_WideString::FromLocal(
+        m_pFont->GetSubstFont()->m_Family.AsStringC());
   }
 }
 void CFX_GEFont::GetPsName(CFX_WideString& wsName) const {
   wsName = m_pFont->GetPsName();
 }
 uint32_t CFX_GEFont::GetFontStyles() const {
-  FXSYS_assert(m_pFont != NULL);
+  ASSERT(m_pFont != NULL);
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   if (m_bUseLogFontStyle) {
     return m_dwLogFontStyle;
@@ -389,7 +380,7 @@ FX_BOOL CFX_GEFont::GetCharWidth(FX_WCHAR wUnicode,
                                  int32_t& iWidth,
                                  FX_BOOL bRecursive,
                                  FX_BOOL bCharCode) {
-  FXSYS_assert(m_pCharWidthMap != NULL);
+  ASSERT(m_pCharWidthMap != NULL);
   iWidth = m_pCharWidthMap->GetAt(wUnicode, 0);
   if (iWidth < 1) {
     if (!m_pProvider ||
@@ -425,8 +416,8 @@ FX_BOOL CFX_GEFont::GetCharBBox(FX_WCHAR wUnicode,
                                 CFX_Rect& bbox,
                                 FX_BOOL bRecursive,
                                 FX_BOOL bCharCode) {
-  FXSYS_assert(m_pRectArray != NULL);
-  FXSYS_assert(m_pBBoxMap != NULL);
+  ASSERT(m_pRectArray != NULL);
+  ASSERT(m_pBBoxMap != NULL);
   void* pRect = NULL;
   if (!m_pBBoxMap->Lookup((void*)(uintptr_t)wUnicode, pRect)) {
     IFX_Font* pFont = NULL;
@@ -477,7 +468,7 @@ int32_t CFX_GEFont::GetGlyphIndex(FX_WCHAR wUnicode,
                                   FX_BOOL bRecursive,
                                   IFX_Font** ppFont,
                                   FX_BOOL bCharCode) {
-  FXSYS_assert(m_pFontEncoding != NULL);
+  ASSERT(m_pFontEncoding != NULL);
   int32_t iGlyphIndex = m_pFontEncoding->GlyphFromCharCode(wUnicode);
   if (iGlyphIndex > 0) {
     if (ppFont != NULL) {
@@ -513,11 +504,11 @@ int32_t CFX_GEFont::GetGlyphIndex(FX_WCHAR wUnicode,
     CFX_WideString wsFamily;
     GetFamilyName(wsFamily);
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    IFX_Font* pFont = m_pFontMgr->GetDefFontByUnicode(
-        wUnicode, GetFontStyles(), (const FX_WCHAR*)wsFamily);
+    IFX_Font* pFont = m_pFontMgr->GetDefFontByUnicode(wUnicode, GetFontStyles(),
+                                                      wsFamily.c_str());
 #else
     IFX_Font* pFont = m_pFontMgr->GetFontByUnicode(wUnicode, GetFontStyles(),
-                                                   (const FX_WCHAR*)wsFamily);
+                                                   wsFamily.c_str());
     if (NULL == pFont) {
       pFont = m_pFontMgr->GetFontByUnicode(wUnicode, GetFontStyles(), NULL);
     }
@@ -552,7 +543,7 @@ int32_t CFX_GEFont::GetDescent() const {
 void CFX_GEFont::Reset() {
   int32_t iCount = m_SubstFonts.GetSize();
   for (int32_t i = 0; i < iCount; i++) {
-    IFX_Font* pFont = (IFX_Font*)m_SubstFonts[i];
+    IFX_Font* pFont = m_SubstFonts[i];
     ((CFX_GEFont*)pFont)->Reset();
   }
   if (m_pCharWidthMap != NULL) {
@@ -567,6 +558,6 @@ void CFX_GEFont::Reset() {
 }
 IFX_Font* CFX_GEFont::GetSubstFont(int32_t iGlyphIndex) const {
   iGlyphIndex = ((uint32_t)iGlyphIndex) >> 24;
-  return iGlyphIndex == 0 ? (IFX_Font*)this
-                          : (IFX_Font*)m_SubstFonts[iGlyphIndex - 1];
+  return iGlyphIndex == 0 ? const_cast<CFX_GEFont*>(this)
+                          : m_SubstFonts[iGlyphIndex - 1];
 }

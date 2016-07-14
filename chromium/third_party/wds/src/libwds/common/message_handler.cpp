@@ -30,7 +30,7 @@ using rtsp::Message;
 using rtsp::Request;
 using rtsp::Reply;
 
-bool MessageHandler::HandleTimeoutEvent(uint timer_id) const {
+bool MessageHandler::HandleTimeoutEvent(unsigned timer_id) const {
   return false;
 }
 
@@ -107,7 +107,7 @@ void MessageSequenceHandler::OnError(MessageHandlerPtr handler) {
   observer_->OnError(shared_from_this());
 }
 
-bool MessageSequenceHandler::HandleTimeoutEvent(uint timer_id) const {
+bool MessageSequenceHandler::HandleTimeoutEvent(unsigned timer_id) const {
   return current_handler_->HandleTimeoutEvent(timer_id);
 }
 
@@ -210,7 +210,7 @@ void MessageSequenceWithOptionalSetHandler::OnError(MessageHandlerPtr handler) {
   observer_->OnError(shared_from_this());
 }
 
-bool MessageSequenceWithOptionalSetHandler::HandleTimeoutEvent(uint timer_id) const {
+bool MessageSequenceWithOptionalSetHandler::HandleTimeoutEvent(unsigned timer_id) const {
   for (MessageHandlerPtr handler : optional_handlers_)
     if (handler->HandleTimeoutEvent(timer_id))
       return true;
@@ -272,7 +272,7 @@ void MessageSenderBase::Send(std::unique_ptr<Message> message) {
     observer_->OnError(shared_from_this());
     return;
   }
-  parcel_queue_.push_front(
+  parcel_queue_.push_back(
       {message->cseq(), sender_->CreateTimer(GetResponseTimeout())});
   sender_->SendRTSPData(message->ToString());
 }
@@ -302,7 +302,7 @@ void MessageSenderBase::Handle(std::unique_ptr<Message> message) {
   }
 }
 
-bool MessageSenderBase::HandleTimeoutEvent(uint timer_id) const {
+bool MessageSenderBase::HandleTimeoutEvent(unsigned timer_id) const {
   for (const ParcelData& data : parcel_queue_)
     if (data.timer_id == timer_id)
       return true;

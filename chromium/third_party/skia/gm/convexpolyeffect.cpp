@@ -17,7 +17,6 @@
 #include "GrPathUtils.h"
 #include "GrTest.h"
 #include "SkColorPriv.h"
-#include "SkDevice.h"
 #include "SkGeometry.h"
 #include "SkTLList.h"
 
@@ -154,18 +153,9 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        GrRenderTarget* rt = canvas->internal_private_accessTopLayerRenderTarget();
-        if (nullptr == rt) {
-            skiagm::GM::DrawGpuOnlyMessage(canvas);
-            return;
-        }
-        GrContext* context = rt->getContext();
-        if (nullptr == context) {
-            return;
-        }
-
-        SkAutoTUnref<GrDrawContext> drawContext(context->drawContext(rt));
+        GrDrawContext* drawContext = canvas->internal_private_accessTopLayerDrawContext();
         if (!drawContext) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
             return;
         }
 
@@ -192,7 +182,7 @@ protected:
                 pipelineBuilder.setXPFactory(
                     GrPorterDuffXPFactory::Create(SkXfermode::kSrc_Mode))->unref();
                 pipelineBuilder.addCoverageFragmentProcessor(fp);
-                pipelineBuilder.setRenderTarget(rt);
+                pipelineBuilder.setRenderTarget(drawContext->accessRenderTarget());
 
                 SkAutoTUnref<GrDrawBatch> batch(new PolyBoundsBatch(p.getBounds(), 0xff000000));
 
@@ -233,7 +223,7 @@ protected:
                 pipelineBuilder.setXPFactory(
                     GrPorterDuffXPFactory::Create(SkXfermode::kSrc_Mode))->unref();
                 pipelineBuilder.addCoverageFragmentProcessor(fp);
-                pipelineBuilder.setRenderTarget(rt);
+                pipelineBuilder.setRenderTarget(drawContext->accessRenderTarget());
 
                 SkAutoTUnref<GrDrawBatch> batch(new PolyBoundsBatch(rect, 0xff000000));
 

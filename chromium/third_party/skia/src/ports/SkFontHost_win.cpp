@@ -86,8 +86,6 @@ static bool needToRenderWithSkia(const SkScalerContext::Rec& rec) {
     return rec.getHinting() == SkPaint::kNo_Hinting || rec.getHinting() == SkPaint::kSlight_Hinting;
 }
 
-using namespace skia_advanced_typeface_metrics_utils;
-
 static void tchar_to_skstring(const TCHAR t[], SkString* s) {
 #ifdef UNICODE
     size_t sSize = WideCharToMultiByte(CP_UTF8, 0, t, -1, nullptr, 0, nullptr, nullptr);
@@ -257,7 +255,8 @@ public:
 
 protected:
     SkStreamAsset* onOpenStream(int* ttcIndex) const override;
-    SkScalerContext* onCreateScalerContext(const SkDescriptor*) const override;
+    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
+                                           const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
     SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
                                 PerGlyphInfo, const uint32_t*, uint32_t) const override;
@@ -307,13 +306,11 @@ static const LOGFONT& get_default_font() {
     return gDefaultFont;
 }
 
-static bool FindByLogFont(SkTypeface* face, const SkFontStyle& requestedStyle, void* ctx) {
+static bool FindByLogFont(SkTypeface* face, void* ctx) {
     LogFontTypeface* lface = static_cast<LogFontTypeface*>(face);
     const LOGFONT* lf = reinterpret_cast<const LOGFONT*>(ctx);
 
-    return lface &&
-           get_style(lface->fLogFont) == requestedStyle &&
-           !memcmp(&lface->fLogFont, lf, sizeof(LOGFONT));
+    return !memcmp(&lface->fLogFont, lf, sizeof(LOGFONT));
 }
 
 /**
@@ -326,7 +323,7 @@ SkTypeface* SkCreateTypefaceFromLOGFONT(const LOGFONT& origLF) {
     SkTypeface* face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
     if (nullptr == face) {
         face = LogFontTypeface::Create(lf);
-        SkTypefaceCache::Add(face, get_style(lf));
+        SkTypefaceCache::Add(face);
     }
     return face;
 }
@@ -533,7 +530,7 @@ const void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW,
 
 class SkScalerContext_GDI : public SkScalerContext {
 public:
-    SkScalerContext_GDI(SkTypeface*, const SkDescriptor* desc);
+    SkScalerContext_GDI(SkTypeface*, const SkScalerContextEffects&, const SkDescriptor* desc);
     virtual ~SkScalerContext_GDI();
 
     // Returns true if the constructor was able to complete all of its
@@ -604,8 +601,9 @@ static BYTE compute_quality(const SkScalerContext::Rec& rec) {
 }
 
 SkScalerContext_GDI::SkScalerContext_GDI(SkTypeface* rawTypeface,
-                                                 const SkDescriptor* desc)
-        : SkScalerContext(rawTypeface, desc)
+                                         const SkScalerContextEffects& effects,
+                                         const SkDescriptor* desc)
+        : SkScalerContext(rawTypeface, effects, desc)
         , fDDC(0)
         , fSavefont(0)
         , fFont(0)
@@ -1719,20 +1717,6 @@ void LogFontTypeface::onGetFontDescriptor(SkFontDescriptor* desc,
     *isLocalStream = this->fSerializeAsStream;
 }
 
-static bool getWidthAdvance(HDC hdc, int gId, int16_t* advance) {
-    // Initialize the MAT2 structure to the identify transformation matrix.
-    static const MAT2 mat2 = {SkScalarToFIXED(1), SkScalarToFIXED(0),
-                        SkScalarToFIXED(0), SkScalarToFIXED(1)};
-    int flags = GGO_METRICS | GGO_GLYPH_INDEX;
-    GLYPHMETRICS gm;
-    if (GDI_ERROR == GetGlyphOutline(hdc, gId, flags, &gm, 0, nullptr, &mat2)) {
-        return false;
-    }
-    SkASSERT(advance);
-    *advance = gm.gmCellIncX;
-    return true;
-}
-
 SkAdvancedTypefaceMetrics* LogFontTypeface::onGetAdvancedTypefaceMetrics(
         PerGlyphInfo perGlyphInfo,
         const uint32_t* glyphIDs,
@@ -1835,17 +1819,32 @@ SkAdvancedTypefaceMetrics* LogFontTypeface::onGetAdvancedTypefaceMetrics(
 
     if (perGlyphInfo & kHAdvance_PerGlyphInfo) {
         if (info->fStyle & SkAdvancedTypefaceMetrics::kFixedPitch_Style) {
-            appendRange(&info->fGlyphWidths, 0);
-            info->fGlyphWidths->fAdvance.append(1, &min_width);
-            finishRange(info->fGlyphWidths.get(), 0,
-                        SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            SkAdvancedTypefaceMetrics::WidthRange range(0);
+            range.fAdvance.append(1, &min_width);
+            SkAdvancedTypefaceMetrics::FinishRange(
+                    &range, 0, SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            info->fGlyphWidths.emplace_back(std::move(range));
         } else {
-            info->fGlyphWidths.reset(
-                getAdvanceData(hdc,
-                               glyphCount,
-                               glyphIDs,
-                               glyphIDsCount,
-                               &getWidthAdvance));
+            info->setGlyphWidths(
+                glyphCount,
+                glyphIDs,
+                glyphIDsCount,
+                SkAdvancedTypefaceMetrics::GetAdvance([hdc](int gId, int16_t* advance) {
+                    // Initialize the MAT2 structure to
+                    // the identify transformation matrix.
+                    static const MAT2 mat2 = {
+                        SkScalarToFIXED(1), SkScalarToFIXED(0),
+                        SkScalarToFIXED(0), SkScalarToFIXED(1)};
+                    int flags = GGO_METRICS | GGO_GLYPH_INDEX;
+                    GLYPHMETRICS gm;
+                    if (GDI_ERROR == GetGlyphOutline(hdc, gId, flags, &gm, 0, nullptr, &mat2)) {
+                        return false;
+                    }
+                    SkASSERT(advance);
+                    *advance = gm.gmCellIncX;
+                    return true;
+                })
+            );
         }
     }
 
@@ -2285,8 +2284,10 @@ size_t LogFontTypeface::onGetTableData(SkFontTableTag tag, size_t offset,
     return bufferSize == GDI_ERROR ? 0 : bufferSize;
 }
 
-SkScalerContext* LogFontTypeface::onCreateScalerContext(const SkDescriptor* desc) const {
-    SkScalerContext_GDI* ctx = new SkScalerContext_GDI(const_cast<LogFontTypeface*>(this), desc);
+SkScalerContext* LogFontTypeface::onCreateScalerContext(const SkScalerContextEffects& effects,
+                                                        const SkDescriptor* desc) const {
+    SkScalerContext_GDI* ctx = new SkScalerContext_GDI(const_cast<LogFontTypeface*>(this),
+                                                       effects, desc);
     if (!ctx->isValid()) {
         delete ctx;
         ctx = nullptr;
@@ -2497,8 +2498,7 @@ protected:
         return this->createFromStream(SkStream::NewFromFile(path));
     }
 
-    virtual SkTypeface* onLegacyCreateTypeface(const char familyName[],
-                                               unsigned styleBits) const override {
+    SkTypeface* onLegacyCreateTypeface(const char familyName[], SkFontStyle style) const override {
         LOGFONT lf;
         if (nullptr == familyName) {
             lf = get_default_font();
@@ -2506,9 +2506,8 @@ protected:
             logfont_for_name(familyName, &lf);
         }
 
-        SkTypeface::Style style = (SkTypeface::Style)styleBits;
-        lf.lfWeight = (style & SkTypeface::kBold) != 0 ? FW_BOLD : FW_NORMAL;
-        lf.lfItalic = ((style & SkTypeface::kItalic) != 0);
+        lf.lfWeight = style.weight();
+        lf.lfItalic = style.slant() == SkFontStyle::kUpright_Slant ? FALSE : TRUE;
         return SkCreateTypefaceFromLOGFONT(lf);
     }
 

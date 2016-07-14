@@ -7,42 +7,48 @@
 #ifndef XFA_FXFA_APP_XFA_TEXTLAYOUT_H_
 #define XFA_FXFA_APP_XFA_TEXTLAYOUT_H_
 
+#include <map>
+#include <memory>
+
 #include "xfa/fde/css/fde_css.h"
-#include "xfa/fde/fde_brush.h"
-#include "xfa/fde/fde_renderdevice.h"
+#include "xfa/fde/fde_gedevice.h"
 #include "xfa/fgas/layout/fgas_rtfbreak.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
 
 #define XFA_LOADERCNTXTFLG_FILTERSPACE 0x001
 
+class CFDE_CSSStyleSelector;
 class CXFA_Para;
 class CXFA_Font;
 class CXFA_TextProvider;
 class CXFA_TextTabstopsContext;
 
-class CXFA_CSSTagProvider : public IFDE_CSSTagProvider {
+class CXFA_CSSTagProvider {
  public:
   CXFA_CSSTagProvider() : m_bTagAviliable(FALSE), m_bContent(FALSE) {}
-  virtual ~CXFA_CSSTagProvider();
+  ~CXFA_CSSTagProvider() {}
 
-  // Note: |this| must outlive the use of GetTagName()'s result.
-  virtual CFX_WideStringC GetTagName() { return m_wsTagName.AsWideStringC(); }
-  virtual FX_POSITION GetFirstAttribute() {
-    return m_Attributes.GetStartPosition();
-  }
-  virtual void GetNextAttribute(FX_POSITION& pos,
-                                CFX_WideStringC& wsAttr,
-                                CFX_WideStringC& wsValue);
+  CFX_WideString GetTagName() { return m_wsTagName; }
+
+  using AttributeMap = std::map<CFX_WideString, CFX_WideString>;
+  AttributeMap::iterator begin() { return m_Attributes.begin(); }
+  AttributeMap::iterator end() { return m_Attributes.end(); }
+
+  bool empty() const { return m_Attributes.empty(); }
+
   void SetTagNameObj(const CFX_WideString& wsName) { m_wsTagName = wsName; }
   void SetAttribute(const CFX_WideString& wsAttr,
-                    const CFX_WideString& wsValue);
+                    const CFX_WideString& wsValue) {
+    m_Attributes.insert({wsAttr, wsValue});
+  }
+
   FX_BOOL m_bTagAviliable;
   FX_BOOL m_bContent;
 
  protected:
   CFX_WideString m_wsTagName;
-  CFX_MapPtrToPtr m_Attributes;
+  AttributeMap m_Attributes;
 };
 
 class CXFA_TextParseContext : public CFX_Target {
@@ -59,22 +65,22 @@ class CXFA_TextParseContext : public CFX_Target {
   }
   void SetDisplay(FDE_CSSDISPLAY eDisplay) { m_eDisplay = eDisplay; }
   FDE_CSSDISPLAY GetDisplay() const { return m_eDisplay; }
-  void SetDecls(const IFDE_CSSDeclaration** ppDeclArray, int32_t iDeclCount);
-  const IFDE_CSSDeclaration** GetDecls() {
-    return (const IFDE_CSSDeclaration**)m_ppMatchedDecls;
+  void SetDecls(const CFDE_CSSDeclaration** ppDeclArray, int32_t iDeclCount);
+  const CFDE_CSSDeclaration** GetDecls() {
+    return const_cast<const CFDE_CSSDeclaration**>(m_ppMatchedDecls);
   }
   uint32_t CountDecls() const { return m_dwMatchedDecls; }
   IFDE_CSSComputedStyle* m_pParentStyle;
 
  protected:
-  IFDE_CSSDeclaration** m_ppMatchedDecls;
+  CFDE_CSSDeclaration** m_ppMatchedDecls;
   uint32_t m_dwMatchedDecls;
   FDE_CSSDISPLAY m_eDisplay;
 };
 
 class CXFA_TextParser {
  public:
-  CXFA_TextParser() : m_pAllocator(NULL), m_pSelector(NULL), m_pUASheet(NULL) {}
+  CXFA_TextParser();
   virtual ~CXFA_TextParser();
   void Reset();
   void DoParse(CFDE_XMLNode* pXMLContainer, CXFA_TextProvider* pTextProvider);
@@ -83,7 +89,7 @@ class CXFA_TextParser {
                                       IFDE_CSSComputedStyle* pParentStyle);
   FX_BOOL IsParsed() const { return m_pAllocator != NULL; }
 
-  int32_t GetVAlgin(CXFA_TextProvider* pTextProvider) const;
+  int32_t GetVAlign(CXFA_TextProvider* pTextProvider) const;
   FX_FLOAT GetTabInterval(IFDE_CSSComputedStyle* pStyle) const;
   int32_t CountTabs(IFDE_CSSComputedStyle* pStyle) const;
   FX_BOOL IsSpaceRun(IFDE_CSSComputedStyle* pStyle) const;
@@ -125,8 +131,8 @@ class CXFA_TextParser {
   void ParseTagInfo(CFDE_XMLNode* pXMLNode, CXFA_CSSTagProvider& tagProvider);
   IFDE_CSSStyleSheet* LoadDefaultSheetStyle();
   IFDE_CSSComputedStyle* CreateStyle(IFDE_CSSComputedStyle* pParentStyle);
-  IFX_MEMAllocator* m_pAllocator;
-  IFDE_CSSStyleSelector* m_pSelector;
+  IFX_MemoryAllocator* m_pAllocator;
+  std::unique_ptr<CFDE_CSSStyleSelector> m_pSelector;
   IFDE_CSSStyleSheet* m_pUASheet;
   CFX_MapPtrTemplate<CFDE_XMLNode*, CXFA_TextParseContext*>
       m_mapXMLNodeToParseContext;
@@ -164,7 +170,7 @@ class CXFA_LoaderContext {
 
 class CXFA_LinkUserData : public IFX_Unknown, public CFX_Target {
  public:
-  CXFA_LinkUserData(IFX_MEMAllocator* pAllocator, FX_WCHAR* pszText)
+  CXFA_LinkUserData(IFX_MemoryAllocator* pAllocator, FX_WCHAR* pszText)
       : m_pAllocator(pAllocator), m_dwRefCount(1) {
     m_pszURLContent = pszText;
   }
@@ -178,34 +184,34 @@ class CXFA_LinkUserData : public IFX_Unknown, public CFX_Target {
   }
   virtual uint32_t AddRef() { return ++m_dwRefCount; }
 
- public:
-  const FX_WCHAR* GetLinkURL() { return m_pszURLContent; }
+  const FX_WCHAR* GetLinkURL() { return m_pszURLContent.c_str(); }
 
  protected:
-  IFX_MEMAllocator* m_pAllocator;
+  IFX_MemoryAllocator* m_pAllocator;
   uint32_t m_dwRefCount;
   CFX_WideString m_pszURLContent;
 };
 
 class CXFA_TextUserData : public IFX_Unknown, public CFX_Target {
  public:
-  CXFA_TextUserData(IFX_MEMAllocator* pAllocator, IFDE_CSSComputedStyle* pStyle)
+  CXFA_TextUserData(IFX_MemoryAllocator* pAllocator,
+                    IFDE_CSSComputedStyle* pStyle)
       : m_pStyle(pStyle),
         m_pLinkData(nullptr),
         m_pAllocator(pAllocator),
         m_dwRefCount(0) {
-    FXSYS_assert(m_pAllocator);
+    ASSERT(m_pAllocator);
     if (m_pStyle)
       m_pStyle->AddRef();
   }
-  CXFA_TextUserData(IFX_MEMAllocator* pAllocator,
+  CXFA_TextUserData(IFX_MemoryAllocator* pAllocator,
                     IFDE_CSSComputedStyle* pStyle,
                     CXFA_LinkUserData* pLinkData)
       : m_pStyle(pStyle),
         m_pLinkData(pLinkData),
         m_pAllocator(pAllocator),
         m_dwRefCount(0) {
-    FXSYS_assert(m_pAllocator);
+    ASSERT(m_pAllocator);
     if (m_pStyle)
       m_pStyle->AddRef();
   }
@@ -228,7 +234,7 @@ class CXFA_TextUserData : public IFX_Unknown, public CFX_Target {
   CXFA_LinkUserData* m_pLinkData;
 
  protected:
-  IFX_MEMAllocator* m_pAllocator;
+  IFX_MemoryAllocator* m_pAllocator;
   uint32_t m_dwRefCount;
 };
 
@@ -342,7 +348,7 @@ class CXFA_TextLayout {
  private:
   void GetTextDataNode();
   CFDE_XMLNode* GetXMLContainerNode();
-  IFX_RTFBreak* CreateBreak(FX_BOOL bDefault);
+  CFX_RTFBreak* CreateBreak(FX_BOOL bDefault);
   void InitBreak(FX_FLOAT fLineWidth);
   void InitBreak(IFDE_CSSComputedStyle* pStyle,
                  FDE_CSSDISPLAY eDisplay,
@@ -377,14 +383,14 @@ class CXFA_TextLayout {
   FX_BOOL IsEnd(FX_BOOL bSavePieces);
   void ProcessText(CFX_WideString& wsText);
   void UpdateAlign(FX_FLOAT fHeight, FX_FLOAT fBottom);
-  void RenderString(IFDE_RenderDevice* pDevice,
-                    IFDE_SolidBrush* pBrush,
+  void RenderString(CFDE_RenderDevice* pDevice,
+                    CFDE_Brush* pBrush,
                     CXFA_PieceLine* pPieceLine,
                     int32_t iPiece,
                     FXTEXT_CHARPOS* pCharPos,
                     const CFX_Matrix& tmDoc2Device);
-  void RenderPath(IFDE_RenderDevice* pDevice,
-                  IFDE_Pen* pPen,
+  void RenderPath(CFDE_RenderDevice* pDevice,
+                  CFDE_Pen* pPen,
                   CXFA_PieceLine* pPieceLine,
                   int32_t iPiece,
                   FXTEXT_CHARPOS* pCharPos,
@@ -400,8 +406,8 @@ class CXFA_TextLayout {
   CXFA_TextProvider* m_pTextProvider;
   CXFA_Node* m_pTextDataNode;
   FX_BOOL m_bRichText;
-  IFX_MEMAllocator* m_pAllocator;
-  IFX_RTFBreak* m_pBreak;
+  IFX_MemoryAllocator* m_pAllocator;
+  CFX_RTFBreak* m_pBreak;
   CXFA_LoaderContext* m_pLoader;
   int32_t m_iLines;
   FX_FLOAT m_fMaxWidth;

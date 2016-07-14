@@ -42,18 +42,29 @@ class ChannelManager {
   // ownership of these objects.
   ChannelManager(MediaEngineInterface* me,
                  DataEngineInterface* dme,
-                 rtc::Thread* worker);
+                 rtc::Thread* worker_and_network);
   // Same as above, but gives an easier default DataEngine.
   ChannelManager(MediaEngineInterface* me,
-                 rtc::Thread* worker);
+                 rtc::Thread* worker,
+                 rtc::Thread* network);
   ~ChannelManager();
 
   // Accessors for the worker thread, allowing it to be set after construction,
   // but before Init. set_worker_thread will return false if called after Init.
   rtc::Thread* worker_thread() const { return worker_thread_; }
   bool set_worker_thread(rtc::Thread* thread) {
-    if (initialized_) return false;
+    if (initialized_) {
+      return false;
+    }
     worker_thread_ = thread;
+    return true;
+  }
+  rtc::Thread* network_thread() const { return network_thread_; }
+  bool set_network_thread(rtc::Thread* thread) {
+    if (initialized_) {
+      return false;
+    }
+    network_thread_ = thread;
     return true;
   }
 
@@ -80,6 +91,7 @@ class ChannelManager {
       webrtc::MediaControllerInterface* media_controller,
       TransportController* transport_controller,
       const std::string& content_name,
+      const std::string* bundle_transport_name,
       bool rtcp,
       const AudioOptions& options);
   // Destroys a voice channel created with the Create API.
@@ -90,12 +102,14 @@ class ChannelManager {
       webrtc::MediaControllerInterface* media_controller,
       TransportController* transport_controller,
       const std::string& content_name,
+      const std::string* bundle_transport_name,
       bool rtcp,
       const VideoOptions& options);
   // Destroys a video channel created with the Create API.
   void DestroyVideoChannel(VideoChannel* video_channel);
   DataChannel* CreateDataChannel(TransportController* transport_controller,
                                  const std::string& content_name,
+                                 const std::string* bundle_transport_name,
                                  bool rtcp,
                                  DataChannelType data_channel_type);
   // Destroys a data channel created with the Create API.
@@ -126,7 +140,7 @@ class ChannelManager {
   void StopAecDump();
 
   // Starts RtcEventLog using existing file.
-  bool StartRtcEventLog(rtc::PlatformFile file);
+  bool StartRtcEventLog(rtc::PlatformFile file, int64_t max_size_bytes);
 
   // Stops logging RtcEventLog.
   void StopRtcEventLog();
@@ -138,7 +152,8 @@ class ChannelManager {
 
   void Construct(MediaEngineInterface* me,
                  DataEngineInterface* dme,
-                 rtc::Thread* worker_thread);
+                 rtc::Thread* worker_thread,
+                 rtc::Thread* network_thread);
   bool InitMediaEngine_w();
   void DestructorDeletes_w();
   void Terminate_w();
@@ -146,6 +161,7 @@ class ChannelManager {
       webrtc::MediaControllerInterface* media_controller,
       TransportController* transport_controller,
       const std::string& content_name,
+      const std::string* bundle_transport_name,
       bool rtcp,
       const AudioOptions& options);
   void DestroyVoiceChannel_w(VoiceChannel* voice_channel);
@@ -153,11 +169,13 @@ class ChannelManager {
       webrtc::MediaControllerInterface* media_controller,
       TransportController* transport_controller,
       const std::string& content_name,
+      const std::string* bundle_transport_name,
       bool rtcp,
       const VideoOptions& options);
   void DestroyVideoChannel_w(VideoChannel* video_channel);
   DataChannel* CreateDataChannel_w(TransportController* transport_controller,
                                    const std::string& content_name,
+                                   const std::string* bundle_transport_name,
                                    bool rtcp,
                                    DataChannelType data_channel_type);
   void DestroyDataChannel_w(DataChannel* data_channel);
@@ -167,6 +185,7 @@ class ChannelManager {
   bool initialized_;
   rtc::Thread* main_thread_;
   rtc::Thread* worker_thread_;
+  rtc::Thread* network_thread_;
 
   VoiceChannels voice_channels_;
   VideoChannels video_channels_;

@@ -10,6 +10,8 @@
 
 #include "webrtc/api/androidvideocapturer.h"
 
+#include <memory>
+
 #include "webrtc/api/java/jni/native_handle_impl.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/timeutils.h"
@@ -70,11 +72,11 @@ class AndroidVideoCapturer::FrameFactory : public cricket::VideoFrameFactory {
     RTC_CHECK(captured_frame == &captured_frame_);
     RTC_CHECK(buffer_->native_handle() == nullptr);
 
-    rtc::scoped_ptr<cricket::VideoFrame> frame(new cricket::WebRtcVideoFrame(
+    std::unique_ptr<cricket::VideoFrame> frame(new cricket::WebRtcVideoFrame(
         ShallowCenterCrop(buffer_, dst_width, dst_height),
         captured_frame->time_stamp, captured_frame->rotation));
     // Caller takes ownership.
-    // TODO(magjed): Change CreateAliasedFrame() to return a rtc::scoped_ptr.
+    // TODO(magjed): Change CreateAliasedFrame() to return a std::unique_ptr.
     return apply_rotation_ ? frame->GetCopyWithRotationApplied()->Copy()
                            : frame.release();
   }
@@ -86,14 +88,12 @@ class AndroidVideoCapturer::FrameFactory : public cricket::VideoFrameFactory {
       int output_width,
       int output_height) const override {
     if (buffer_->native_handle() != nullptr) {
-      // TODO(perkj) Implement cropping.
-      RTC_CHECK_EQ(cropped_input_width, buffer_->width());
-      RTC_CHECK_EQ(cropped_input_height, buffer_->height());
       rtc::scoped_refptr<webrtc::VideoFrameBuffer> scaled_buffer(
           static_cast<webrtc_jni::AndroidTextureBuffer*>(buffer_.get())
-              ->ScaleAndRotate(output_width, output_height,
-                               apply_rotation_ ? input_frame->rotation :
-                                   webrtc::kVideoRotation_0));
+              ->CropScaleAndRotate(cropped_input_width, cropped_input_height,
+                                   output_width, output_height,
+                                   apply_rotation_ ? input_frame->rotation
+                                                   : webrtc::kVideoRotation_0));
       return new cricket::WebRtcVideoFrame(
           scaled_buffer, input_frame->time_stamp,
           apply_rotation_ ? webrtc::kVideoRotation_0 : input_frame->rotation);

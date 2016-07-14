@@ -7,6 +7,8 @@
 #ifndef CORE_FPDFDOC_INCLUDE_CPDF_VARIABLETEXT_H_
 #define CORE_FPDFDOC_INCLUDE_CPDF_VARIABLETEXT_H_
 
+#include <memory>
+
 #include "core/fpdfdoc/cpvt_floatrect.h"
 #include "core/fpdfdoc/cpvt_lineinfo.h"
 #include "core/fpdfdoc/include/cpvt_line.h"
@@ -24,8 +26,8 @@ struct CPVT_SecProps;
 struct CPVT_Section;
 struct CPVT_SectionInfo;
 struct CPVT_Word;
-struct CPVT_WordProps;
 struct CPVT_WordInfo;
+struct CPVT_WordProps;
 
 #define VARIABLETEXT_HALF 0.5f
 
@@ -60,7 +62,7 @@ class CPDF_VariableText : private CPDF_EditContainer {
 
   class Provider {
    public:
-    Provider(IPVT_FontMap* pFontMap);
+    explicit Provider(IPVT_FontMap* pFontMap);
     virtual ~Provider();
 
     virtual int32_t GetCharWidth(int32_t nFontIndex,
@@ -75,14 +77,13 @@ class CPDF_VariableText : private CPDF_EditContainer {
     virtual int32_t GetDefaultFontIndex();
 
    private:
-    IPVT_FontMap* m_pFontMap;
+    IPVT_FontMap* const m_pFontMap;
   };
 
   CPDF_VariableText();
-  virtual ~CPDF_VariableText();
+  ~CPDF_VariableText() override;
 
-  CPDF_VariableText::Provider* SetProvider(
-      CPDF_VariableText::Provider* pProvider);
+  void SetProvider(CPDF_VariableText::Provider* pProvider);
   CPDF_VariableText::Iterator* GetIterator();
 
   // CPDF_EditContainer.
@@ -227,7 +228,7 @@ class CPDF_VariableText : private CPDF_EditContainer {
 
   CPVT_FloatRect Rearrange(const CPVT_WordRange& PlaceRange);
   FX_FLOAT GetAutoFontSize();
-  FX_BOOL IsBigger(FX_FLOAT fFontSize);
+  bool IsBigger(FX_FLOAT fFontSize) const;
   CPVT_FloatRect RearrangeSections(const CPVT_WordRange& PlaceRange);
 
   void ResetSectionArray();
@@ -247,7 +248,7 @@ class CPDF_VariableText : private CPDF_EditContainer {
   FX_BOOL m_bInitial;
   FX_BOOL m_bRichText;
   CPDF_VariableText::Provider* m_pVTProvider;
-  CPDF_VariableText::Iterator* m_pVTIterator;
+  std::unique_ptr<CPDF_VariableText::Iterator> m_pVTIterator;
 };
 
 #endif  // CORE_FPDFDOC_INCLUDE_CPDF_VARIABLETEXT_H_

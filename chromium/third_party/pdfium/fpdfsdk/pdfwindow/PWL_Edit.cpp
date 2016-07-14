@@ -12,7 +12,7 @@
 #include "core/fpdfdoc/include/cpvt_word.h"
 #include "core/fxcrt/include/fx_safe_types.h"
 #include "core/fxcrt/include/fx_xml.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/pdfwindow/PWL_Caret.h"
 #include "fpdfsdk/pdfwindow/PWL_EditCtrl.h"
 #include "fpdfsdk/pdfwindow/PWL_FontMap.h"
@@ -23,9 +23,7 @@
 #include "third_party/base/stl_util.h"
 
 CPWL_Edit::CPWL_Edit()
-    : m_pFillerNotify(NULL), m_pSpellCheck(NULL), m_bFocus(FALSE) {
-  m_pFormFiller = NULL;
-}
+    : m_pFillerNotify(nullptr), m_bFocus(FALSE), m_pFormFiller(nullptr) {}
 
 CPWL_Edit::~CPWL_Edit() {
   ASSERT(m_bFocus == FALSE);
@@ -48,7 +46,7 @@ void CPWL_Edit::SetText(const FX_WCHAR* csText) {
       int32_t nCount = pXML->CountChildren();
       FX_BOOL bFirst = TRUE;
 
-      swText.Empty();
+      swText.clear();
 
       for (int32_t i = 0; i < nCount; i++) {
         if (CXML_Element* pSubElement = pXML->GetElement(i)) {
@@ -131,67 +129,9 @@ FX_BOOL CPWL_Edit::CanCopy() const {
 FX_BOOL CPWL_Edit::CanCut() const {
   return CanCopy() && !IsReadOnly();
 }
-
-FX_BOOL CPWL_Edit::CanPaste() const {
-  if (IsReadOnly())
-    return FALSE;
-
-  CFX_WideString swClipboard;
-  if (IFX_SystemHandler* pSH = GetSystemHandler())
-    swClipboard = pSH->GetClipboardText(GetAttachedHWnd());
-
-  return !swClipboard.IsEmpty();
-}
-
-void CPWL_Edit::CopyText() {
-  if (!CanCopy())
-    return;
-
-  CFX_WideString str = m_pEdit->GetSelText();
-
-  if (IFX_SystemHandler* pSH = GetSystemHandler())
-    pSH->SetClipboardText(GetAttachedHWnd(), str);
-}
-
-void CPWL_Edit::PasteText() {
-  if (!CanPaste())
-    return;
-
-  CFX_WideString swClipboard;
-  if (IFX_SystemHandler* pSH = GetSystemHandler())
-    swClipboard = pSH->GetClipboardText(GetAttachedHWnd());
-
-  if (m_pFillerNotify) {
-    FX_BOOL bRC = TRUE;
-    FX_BOOL bExit = FALSE;
-    CFX_WideString strChangeEx;
-    int nSelStart = 0;
-    int nSelEnd = 0;
-    GetSel(nSelStart, nSelEnd);
-    m_pFillerNotify->OnBeforeKeyStroke(GetAttachedData(), swClipboard,
-                                       strChangeEx, nSelStart, nSelEnd, TRUE,
-                                       bRC, bExit, 0);
-    if (!bRC)
-      return;
-    if (bExit)
-      return;
-  }
-
-  if (swClipboard.GetLength() > 0) {
-    Clear();
-    InsertText(swClipboard.c_str());
-  }
-}
-
 void CPWL_Edit::CutText() {
   if (!CanCut())
     return;
-
-  CFX_WideString str = m_pEdit->GetSelText();
-
-  if (IFX_SystemHandler* pSH = GetSystemHandler())
-    pSH->SetClipboardText(GetAttachedHWnd(), str);
-
   m_pEdit->Clear();
 }
 
@@ -247,10 +187,6 @@ void CPWL_Edit::SetParamByFlag() {
           GetClientRect(), 1.0f));  // +1 for caret beside border
     }
   }
-
-  if (HasFlag(PES_SPELLCHECK)) {
-    m_pSpellCheck = GetCreationParam().pSpellCheck;
-  }
 }
 
 void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
@@ -263,10 +199,10 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
 
   if (nCharArray > 0) {
     switch (GetBorderStyle()) {
-      case PBS_SOLID: {
+      case BorderStyle::SOLID: {
         sLine << "q\n" << GetBorderWidth() << " w\n"
               << CPWL_Utils::GetColorAppStream(GetBorderColor(), FALSE)
-                     .AsByteStringC()
+                     .AsStringC()
               << " 2 J 0 j\n";
 
         for (int32_t i = 1; i < nCharArray; i++) {
@@ -279,11 +215,12 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
         }
 
         sLine << "Q\n";
-      } break;
-      case PBS_DASH: {
+        break;
+      }
+      case BorderStyle::DASH: {
         sLine << "q\n" << GetBorderWidth() << " w\n"
               << CPWL_Utils::GetColorAppStream(GetBorderColor(), FALSE)
-                     .AsByteStringC()
+                     .AsStringC()
               << " 2 J 0 j\n"
               << "[" << GetBorderDash().nDash << " " << GetBorderDash().nGap
               << "] " << GetBorderDash().nPhase << " d\n";
@@ -298,7 +235,10 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
         }
 
         sLine << "Q\n";
-      } break;
+        break;
+      }
+      default:
+        break;
     }
   }
 
@@ -321,9 +261,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       CPWL_Utils::GetEditSelAppStream(m_pEdit, ptOffset, &wrTemp);
 
   if (sEditSel.GetLength() > 0)
-    sText << CPWL_Utils::GetColorAppStream(PWL_DEFAULT_SELBACKCOLOR)
-                 .AsByteStringC()
-          << sEditSel.AsByteStringC();
+    sText << CPWL_Utils::GetColorAppStream(PWL_DEFAULT_SELBACKCOLOR).AsStringC()
+          << sEditSel.AsStringC();
 
   wrTemp = CPWL_Utils::OverlapWordRange(wrVisible, wrSelBefore);
   CFX_ByteString sEditBefore = CPWL_Utils::GetEditAppStream(
@@ -331,9 +270,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       m_pEdit->GetPasswordChar());
 
   if (sEditBefore.GetLength() > 0)
-    sText << "BT\n"
-          << CPWL_Utils::GetColorAppStream(GetTextColor()).AsByteStringC()
-          << sEditBefore.AsByteStringC() << "ET\n";
+    sText << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+          << sEditBefore.AsStringC() << "ET\n";
 
   wrTemp = CPWL_Utils::OverlapWordRange(wrVisible, wrSelect);
   CFX_ByteString sEditMid = CPWL_Utils::GetEditAppStream(
@@ -343,8 +281,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
   if (sEditMid.GetLength() > 0)
     sText << "BT\n"
           << CPWL_Utils::GetColorAppStream(CPWL_Color(COLORTYPE_GRAY, 1))
-                 .AsByteStringC()
-          << sEditMid.AsByteStringC() << "ET\n";
+                 .AsStringC()
+          << sEditMid.AsStringC() << "ET\n";
 
   wrTemp = CPWL_Utils::OverlapWordRange(wrVisible, wrSelAfter);
   CFX_ByteString sEditAfter = CPWL_Utils::GetEditAppStream(
@@ -352,19 +290,8 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       m_pEdit->GetPasswordChar());
 
   if (sEditAfter.GetLength() > 0)
-    sText << "BT\n"
-          << CPWL_Utils::GetColorAppStream(GetTextColor()).AsByteStringC()
-          << sEditAfter.AsByteStringC() << "ET\n";
-
-  if (HasFlag(PES_SPELLCHECK)) {
-    CFX_ByteString sSpellCheck = CPWL_Utils::GetSpellCheckAppStream(
-        m_pEdit, m_pSpellCheck, ptOffset, &wrVisible);
-    if (sSpellCheck.GetLength() > 0)
-      sText << CPWL_Utils::GetColorAppStream(CPWL_Color(COLORTYPE_RGB, 1, 0, 0),
-                                             FALSE)
-                   .AsByteStringC()
-            << sSpellCheck.AsByteStringC();
-  }
+    sText << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+          << sEditAfter.AsStringC() << "ET\n";
 
   if (sText.GetLength() > 0) {
     CFX_FloatRect rcClient = GetClientRect();
@@ -395,7 +322,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
 
   if (nCharArray > 0 && nCharArraySafe.IsValid()) {
     switch (GetBorderStyle()) {
-      case PBS_SOLID: {
+      case BorderStyle::SOLID: {
         CFX_GraphStateData gsd;
         gsd.m_LineWidth = (FX_FLOAT)GetBorderWidth();
 
@@ -414,13 +341,15 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
                   ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
               rcClient.top, FXPT_LINETO);
         }
-        if (path.GetPointCount() > 0)
+        if (path.GetPointCount() > 0) {
           pDevice->DrawPath(
               &path, pUser2Device, &gsd, 0,
               CPWL_Utils::PWLColorToFXColor(GetBorderColor(), 255),
               FXFILL_ALTERNATE);
-      } break;
-      case PBS_DASH: {
+        }
+        break;
+      }
+      case BorderStyle::DASH: {
         CFX_GraphStateData gsd;
         gsd.m_LineWidth = (FX_FLOAT)GetBorderWidth();
 
@@ -444,12 +373,16 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
                   ((rcClient.right - rcClient.left) / nCharArray) * (i + 1),
               rcClient.top, FXPT_LINETO);
         }
-        if (path.GetPointCount() > 0)
+        if (path.GetPointCount() > 0) {
           pDevice->DrawPath(
               &path, pUser2Device, &gsd, 0,
               CPWL_Utils::PWLColorToFXColor(GetBorderColor(), 255),
               FXFILL_ALTERNATE);
-      } break;
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
 
@@ -461,18 +394,12 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
     rcClip = GetClientRect();
     pRange = &wrRange;
   }
-  IFX_SystemHandler* pSysHandler = GetSystemHandler();
+  CFX_SystemHandler* pSysHandler = GetSystemHandler();
   IFX_Edit::DrawEdit(
       pDevice, pUser2Device, m_pEdit,
       CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
       CPWL_Utils::PWLColorToFXColor(GetTextStrokeColor(), GetTransparency()),
       rcClip, CFX_FloatPoint(0.0f, 0.0f), pRange, pSysHandler, m_pFormFiller);
-
-  if (HasFlag(PES_SPELLCHECK)) {
-    CPWL_Utils::DrawEditSpellCheck(pDevice, pUser2Device, m_pEdit, rcClip,
-                                   CFX_FloatPoint(0.0f, 0.0f), pRange,
-                                   GetCreationParam().pSpellCheck);
-  }
 }
 
 FX_BOOL CPWL_Edit::OnLButtonDown(const CFX_FloatPoint& point, uint32_t nFlag) {
@@ -502,15 +429,6 @@ FX_BOOL CPWL_Edit::OnLButtonDblClk(const CFX_FloatPoint& point,
   return TRUE;
 }
 
-#define WM_PWLEDIT_UNDO 0x01
-#define WM_PWLEDIT_REDO 0x02
-#define WM_PWLEDIT_CUT 0x03
-#define WM_PWLEDIT_COPY 0x04
-#define WM_PWLEDIT_PASTE 0x05
-#define WM_PWLEDIT_DELETE 0x06
-#define WM_PWLEDIT_SELECTALL 0x07
-#define WM_PWLEDIT_SUGGEST 0x08
-
 FX_BOOL CPWL_Edit::OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag) {
   if (m_bMouseDown)
     return FALSE;
@@ -520,166 +438,13 @@ FX_BOOL CPWL_Edit::OnRButtonUp(const CFX_FloatPoint& point, uint32_t nFlag) {
   if (!HasFlag(PES_TEXTOVERFLOW) && !ClientHitTest(point))
     return TRUE;
 
-  IFX_SystemHandler* pSH = GetSystemHandler();
+  CFX_SystemHandler* pSH = GetSystemHandler();
   if (!pSH)
     return FALSE;
 
   SetFocus();
 
-  CPVT_WordRange wrLatin = GetLatinWordsRange(point);
-  CFX_WideString swLatin = m_pEdit->GetRangeText(wrLatin);
-
-  FX_HMENU hPopup = pSH->CreatePopupMenu();
-  if (!hPopup)
-    return FALSE;
-
-  std::vector<CFX_ByteString> sSuggestWords;
-  CFX_FloatPoint ptPopup = point;
-
-  if (!IsReadOnly()) {
-    if (HasFlag(PES_SPELLCHECK) && !swLatin.IsEmpty()) {
-      if (m_pSpellCheck) {
-        CFX_ByteString sLatin = CFX_ByteString::FromUnicode(swLatin);
-        if (!m_pSpellCheck->CheckWord(sLatin)) {
-          m_pSpellCheck->SuggestWords(sLatin, sSuggestWords);
-
-          int32_t nSuggest = pdfium::CollectionSize<int32_t>(sSuggestWords);
-          for (int32_t nWord = 0; nWord < nSuggest; nWord++) {
-            pSH->AppendMenuItem(hPopup, WM_PWLEDIT_SUGGEST + nWord,
-                                sSuggestWords[nWord].UTF8Decode());
-          }
-          if (nSuggest > 0)
-            pSH->AppendMenuItem(hPopup, 0, L"");
-
-          ptPopup = GetWordRightBottomPoint(wrLatin.EndPos);
-        }
-      }
-    }
-  }
-
-  IPWL_Provider* pProvider = GetProvider();
-
-  if (HasFlag(PES_UNDO)) {
-    pSH->AppendMenuItem(
-        hPopup, WM_PWLEDIT_UNDO,
-        pProvider ? pProvider->LoadPopupMenuString(0) : L"&Undo");
-    pSH->AppendMenuItem(
-        hPopup, WM_PWLEDIT_REDO,
-        pProvider ? pProvider->LoadPopupMenuString(1) : L"&Redo");
-    pSH->AppendMenuItem(hPopup, 0, L"");
-
-    if (!m_pEdit->CanUndo())
-      pSH->EnableMenuItem(hPopup, WM_PWLEDIT_UNDO, FALSE);
-    if (!m_pEdit->CanRedo())
-      pSH->EnableMenuItem(hPopup, WM_PWLEDIT_REDO, FALSE);
-  }
-
-  pSH->AppendMenuItem(hPopup, WM_PWLEDIT_CUT,
-                      pProvider ? pProvider->LoadPopupMenuString(2) : L"Cu&t");
-  pSH->AppendMenuItem(hPopup, WM_PWLEDIT_COPY,
-                      pProvider ? pProvider->LoadPopupMenuString(3) : L"&Copy");
-  pSH->AppendMenuItem(
-      hPopup, WM_PWLEDIT_PASTE,
-      pProvider ? pProvider->LoadPopupMenuString(4) : L"&Paste");
-  pSH->AppendMenuItem(
-      hPopup, WM_PWLEDIT_DELETE,
-      pProvider ? pProvider->LoadPopupMenuString(5) : L"&Delete");
-
-  CFX_WideString swText = pSH->GetClipboardText(GetAttachedHWnd());
-  if (swText.IsEmpty())
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_PASTE, FALSE);
-
-  if (!m_pEdit->IsSelected()) {
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_CUT, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_COPY, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_DELETE, FALSE);
-  }
-
-  if (IsReadOnly()) {
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_CUT, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_DELETE, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_PASTE, FALSE);
-  }
-
-  if (HasFlag(PES_PASSWORD)) {
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_CUT, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_COPY, FALSE);
-  }
-
-  if (HasFlag(PES_NOREAD)) {
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_CUT, FALSE);
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_COPY, FALSE);
-  }
-
-  pSH->AppendMenuItem(hPopup, 0, L"");
-  pSH->AppendMenuItem(
-      hPopup, WM_PWLEDIT_SELECTALL,
-      pProvider ? pProvider->LoadPopupMenuString(6) : L"&Select All");
-
-  if (m_pEdit->GetTotalWords() == 0) {
-    pSH->EnableMenuItem(hPopup, WM_PWLEDIT_SELECTALL, FALSE);
-  }
-
-  int32_t x, y;
-  PWLtoWnd(ptPopup, x, y);
-  pSH->ClientToScreen(GetAttachedHWnd(), x, y);
-  pSH->SetCursor(FXCT_ARROW);
-  int32_t nCmd = pSH->TrackPopupMenu(hPopup, x, y, GetAttachedHWnd());
-
-  switch (nCmd) {
-    case WM_PWLEDIT_UNDO:
-      Undo();
-      break;
-    case WM_PWLEDIT_REDO:
-      Redo();
-      break;
-    case WM_PWLEDIT_CUT:
-      CutText();
-      break;
-    case WM_PWLEDIT_COPY:
-      CopyText();
-      break;
-    case WM_PWLEDIT_PASTE:
-      PasteText();
-      break;
-    case WM_PWLEDIT_DELETE:
-      Clear();
-      break;
-    case WM_PWLEDIT_SELECTALL:
-      SelectAll();
-      break;
-    case WM_PWLEDIT_SUGGEST + 0:
-      SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),
-             m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-      ReplaceSel(sSuggestWords[0].UTF8Decode().c_str());
-      break;
-    case WM_PWLEDIT_SUGGEST + 1:
-      SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),
-             m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-      ReplaceSel(sSuggestWords[1].UTF8Decode().c_str());
-      break;
-    case WM_PWLEDIT_SUGGEST + 2:
-      SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),
-             m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-      ReplaceSel(sSuggestWords[2].UTF8Decode().c_str());
-      break;
-    case WM_PWLEDIT_SUGGEST + 3:
-      SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),
-             m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-      ReplaceSel(sSuggestWords[3].UTF8Decode().c_str());
-      break;
-    case WM_PWLEDIT_SUGGEST + 4:
-      SetSel(m_pEdit->WordPlaceToWordIndex(wrLatin.BeginPos),
-             m_pEdit->WordPlaceToWordIndex(wrLatin.EndPos));
-      ReplaceSel(sSuggestWords[4].UTF8Decode().c_str());
-      break;
-    default:
-      break;
-  }
-
-  pSH->DestroyMenu(hPopup);
-
-  return TRUE;
+  return FALSE;
 }
 
 void CPWL_Edit::OnSetFocus() {
@@ -748,14 +513,11 @@ CFX_ByteString CPWL_Edit::GetTextAppearanceStream(
     const CFX_FloatPoint& ptOffset) const {
   CFX_ByteTextBuf sRet;
   CFX_ByteString sEdit = CPWL_Utils::GetEditAppStream(m_pEdit, ptOffset);
-
   if (sEdit.GetLength() > 0) {
-    sRet << "BT\n"
-         << CPWL_Utils::GetColorAppStream(GetTextColor()).AsByteStringC()
-         << sEdit.AsByteStringC() << "ET\n";
+    sRet << "BT\n" << CPWL_Utils::GetColorAppStream(GetTextColor()).AsStringC()
+         << sEdit.AsStringC() << "ET\n";
   }
-
-  return sRet.GetByteString();
+  return sRet.MakeString();
 }
 
 CFX_ByteString CPWL_Edit::GetCaretAppearanceStream(
@@ -770,17 +532,16 @@ CFX_FloatPoint CPWL_Edit::GetWordRightBottomPoint(
     const CPVT_WordPlace& wpWord) {
   CFX_FloatPoint pt(0.0f, 0.0f);
 
-  if (IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator()) {
-    CPVT_WordPlace wpOld = pIterator->GetAt();
-    pIterator->SetAt(wpWord);
-    CPVT_Word word;
-    if (pIterator->GetWord(word)) {
-      pt = CFX_FloatPoint(word.ptWord.x + word.fWidth,
-                          word.ptWord.y + word.fDescent);
-    }
-
-    pIterator->SetAt(wpOld);
+  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  CPVT_WordPlace wpOld = pIterator->GetAt();
+  pIterator->SetAt(wpWord);
+  CPVT_Word word;
+  if (pIterator->GetWord(word)) {
+    pt = CFX_FloatPoint(word.ptWord.x + word.fWidth,
+                        word.ptWord.y + word.fDescent);
   }
+
+  pIterator->SetAt(wpOld);
 
   return pt;
 }
@@ -862,13 +623,6 @@ FX_BOOL CPWL_Edit::IsVScrollBarVisible() const {
   }
 
   return FALSE;
-}
-
-void CPWL_Edit::EnableSpellCheck(FX_BOOL bEnabled) {
-  if (bEnabled)
-    AddFlag(PES_SPELLCHECK);
-  else
-    RemoveFlag(PES_SPELLCHECK);
 }
 
 FX_BOOL CPWL_Edit::OnKeyDown(uint16_t nChar, uint32_t nFlag) {
@@ -1132,52 +886,50 @@ CPVT_WordRange CPWL_Edit::GetSameWordsRange(const CPVT_WordPlace& place,
                                             FX_BOOL bArabic) const {
   CPVT_WordRange range;
 
-  if (IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator()) {
-    CPVT_Word wordinfo;
-    CPVT_WordPlace wpStart(place), wpEnd(place);
-    pIterator->SetAt(place);
+  IFX_Edit_Iterator* pIterator = m_pEdit->GetIterator();
+  CPVT_Word wordinfo;
+  CPVT_WordPlace wpStart(place), wpEnd(place);
+  pIterator->SetAt(place);
 
-    if (bLatin) {
-      while (pIterator->NextWord()) {
-        if (!pIterator->GetWord(wordinfo) ||
-            !FX_EDIT_ISLATINWORD(wordinfo.Word)) {
-          break;
-        }
-
-        wpEnd = pIterator->GetAt();
+  if (bLatin) {
+    while (pIterator->NextWord()) {
+      if (!pIterator->GetWord(wordinfo) ||
+          !FX_EDIT_ISLATINWORD(wordinfo.Word)) {
+        break;
       }
-    } else if (bArabic) {
-      while (pIterator->NextWord()) {
-        if (!pIterator->GetWord(wordinfo) || !PWL_ISARABICWORD(wordinfo.Word))
-          break;
 
-        wpEnd = pIterator->GetAt();
-      }
+      wpEnd = pIterator->GetAt();
     }
+  } else if (bArabic) {
+    while (pIterator->NextWord()) {
+      if (!pIterator->GetWord(wordinfo) || !PWL_ISARABICWORD(wordinfo.Word))
+        break;
 
-    pIterator->SetAt(place);
-
-    if (bLatin) {
-      do {
-        if (!pIterator->GetWord(wordinfo) ||
-            !FX_EDIT_ISLATINWORD(wordinfo.Word)) {
-          break;
-        }
-
-        wpStart = pIterator->GetAt();
-      } while (pIterator->PrevWord());
-    } else if (bArabic) {
-      do {
-        if (!pIterator->GetWord(wordinfo) || !PWL_ISARABICWORD(wordinfo.Word))
-          break;
-
-        wpStart = pIterator->GetAt();
-      } while (pIterator->PrevWord());
+      wpEnd = pIterator->GetAt();
     }
-
-    range.Set(wpStart, wpEnd);
   }
 
+  pIterator->SetAt(place);
+
+  if (bLatin) {
+    do {
+      if (!pIterator->GetWord(wordinfo) ||
+          !FX_EDIT_ISLATINWORD(wordinfo.Word)) {
+        break;
+      }
+
+      wpStart = pIterator->GetAt();
+    } while (pIterator->PrevWord());
+  } else if (bArabic) {
+    do {
+      if (!pIterator->GetWord(wordinfo) || !PWL_ISARABICWORD(wordinfo.Word))
+        break;
+
+      wpStart = pIterator->GetAt();
+    } while (pIterator->PrevWord());
+  }
+
+  range.Set(wpStart, wpEnd);
   return range;
 }
 

@@ -4,19 +4,19 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/include/fxfa/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
 
 #include <vector>
 
 #include "xfa/fxfa/app/xfa_ffchoicelist.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #include "xfa/fxfa/parser/xfa_document_layout_imp.h"
 #include "xfa/fxfa/parser/xfa_parser.h"
 #include "xfa/fxfa/parser/xfa_parser_imp.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
 
 CXFA_FFWidgetHandler::CXFA_FFWidgetHandler(CXFA_FFDocView* pDocView)
     : m_pDocView(pDocView) {}
@@ -160,11 +160,11 @@ FX_BOOL CXFA_FFWidgetHandler::OnChar(CXFA_FFWidget* hWidget,
   return bRet;
 }
 
-uint32_t CXFA_FFWidgetHandler::OnHitTest(CXFA_FFWidget* hWidget,
-                                         FX_FLOAT fx,
-                                         FX_FLOAT fy) {
-  if (!(hWidget->GetStatus() & XFA_WIDGETSTATUS_Visible))
-    return FWL_WGTHITTEST_Unknown;
+FWL_WidgetHit CXFA_FFWidgetHandler::OnHitTest(CXFA_FFWidget* hWidget,
+                                              FX_FLOAT fx,
+                                              FX_FLOAT fy) {
+  if (!(hWidget->GetStatus() & XFA_WidgetStatus_Visible))
+    return FWL_WidgetHit::Unknown;
 
   hWidget->Rotate2Normal(fx, fy);
   return hWidget->OnHitTest(fx, fy);
@@ -182,7 +182,7 @@ void CXFA_FFWidgetHandler::RenderWidget(CXFA_FFWidget* hWidget,
                                         CFX_Matrix* pMatrix,
                                         FX_BOOL bHighlight) {
   hWidget->RenderWidget(pGS, pMatrix,
-                        bHighlight ? XFA_WIDGETSTATUS_Highlight : 0, 0);
+                        bHighlight ? XFA_WidgetStatus_Highlight : 0, 0);
 }
 
 FX_BOOL CXFA_FFWidgetHandler::HasEvent(CXFA_WidgetAcc* pWidgetAcc,
@@ -264,8 +264,8 @@ CXFA_FFWidget* CXFA_FFWidgetHandler::CreateWidget(CXFA_FFWidget* hParent,
   if (!pNewFormItem)
     return nullptr;
 
-  pNewFormItem->GetTemplateNode()->SetFlag(XFA_NODEFLAG_Initialized);
-  pNewFormItem->SetFlag(XFA_NODEFLAG_Initialized);
+  pNewFormItem->GetTemplateNode()->SetFlag(XFA_NODEFLAG_Initialized, true);
+  pNewFormItem->SetFlag(XFA_NODEFLAG_Initialized, true);
   m_pDocView->RunLayout();
   CXFA_LayoutItem* pLayout =
       m_pDocView->GetXFALayout()->GetLayoutItem(pNewFormItem);
@@ -328,7 +328,7 @@ CXFA_Node* CXFA_FFWidgetHandler::CreatePushButton(CXFA_Node* pParent,
   CXFA_Node* pCaption = CreateCopyNode(XFA_ELEMENT_Caption, pField);
   CXFA_Node* pValue = CreateCopyNode(XFA_ELEMENT_Value, pCaption);
   CXFA_Node* pText = CreateCopyNode(XFA_ELEMENT_Text, pValue);
-  pText->SetContent(FX_WSTRC(L"Button"), FX_WSTRC(L"Button"), FALSE);
+  pText->SetContent(L"Button", L"Button", FALSE);
 
   CXFA_Node* pPara = CreateCopyNode(XFA_ELEMENT_Para, pCaption);
   pPara->SetEnum(XFA_ATTRIBUTE_VAlign, XFA_ATTRIBUTEENUM_Middle, FALSE);
@@ -343,7 +343,7 @@ CXFA_Node* CXFA_FFWidgetHandler::CreatePushButton(CXFA_Node* pParent,
 
   CXFA_Node* pFill = CreateCopyNode(XFA_ELEMENT_Fill, pBorder);
   CXFA_Node* pColor = CreateCopyNode(XFA_ELEMENT_Color, pFill);
-  pColor->SetCData(XFA_ATTRIBUTE_Value, FX_WSTRC(L"212, 208, 200"), FALSE);
+  pColor->SetCData(XFA_ATTRIBUTE_Value, L"212, 208, 200", FALSE);
 
   CXFA_Node* pBind = CreateCopyNode(XFA_ELEMENT_Bind, pField);
   pBind->SetEnum(XFA_ATTRIBUTE_Match, XFA_ATTRIBUTEENUM_None);
@@ -515,7 +515,7 @@ CXFA_Node* CXFA_FFWidgetHandler::CreateTemplateNode(XFA_ELEMENT eElement,
 
 CXFA_Node* CXFA_FFWidgetHandler::CreateFontNode(CXFA_Node* pParent) const {
   CXFA_Node* pFont = CreateCopyNode(XFA_ELEMENT_Font, pParent);
-  pFont->SetCData(XFA_ATTRIBUTE_Typeface, FX_WSTRC(L"Myriad Pro"), FALSE);
+  pFont->SetCData(XFA_ATTRIBUTE_Typeface, L"Myriad Pro", FALSE);
   return pFont;
 }
 

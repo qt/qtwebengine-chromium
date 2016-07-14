@@ -420,7 +420,7 @@ CodePath Font::codePath(const TextRunPaintInfo& runInfo) const
 
     const TextRun& run = runInfo.run;
 
-    if (getFontDescription().getTypesettingFeatures() && (runInfo.from || runInfo.to != run.length()))
+    if (getFontDescription().getTypesettingFeatures())
         return ComplexPath;
 
     if (m_fontDescription.featureSettings() && m_fontDescription.featureSettings()->size() > 0)
@@ -430,9 +430,6 @@ CodePath Font::codePath(const TextRunPaintInfo& runInfo) const
         return ComplexPath;
 
     if (m_fontDescription.widthVariant() != RegularWidth)
-        return ComplexPath;
-
-    if (run.length() > 1 && getFontDescription().getTypesettingFeatures())
         return ComplexPath;
 
     // FIXME: This really shouldn't be needed but for some reason the
@@ -461,6 +458,9 @@ bool Font::computeCanShapeWordByWord() const
 {
     if (!getFontDescription().getTypesettingFeatures())
         return true;
+
+    if (!primaryFont())
+        return false;
 
     const FontPlatformData& platformData = primaryFont()->platformData();
     TypesettingFeatures features = getFontDescription().getTypesettingFeatures();
@@ -521,7 +521,7 @@ GlyphData Font::glyphDataForCharacter(UChar32& c, bool mirror, bool normalizeSpa
     ASSERT(isMainThread());
 
     if (variant == AutoVariant) {
-        if (m_fontDescription.variant() == FontVariantSmallCaps) {
+        if (m_fontDescription.variantCaps() == FontDescription::SmallCaps) {
             bool includeDefault = false;
             UChar32 upperC = toUpper(c, m_fontDescription.locale(includeDefault));
             if (upperC != c) {
@@ -739,7 +739,7 @@ int Font::offsetForPositionForComplexText(const TextRun& run, float xFloat,
     bool includePartialGlyphs) const
 {
     CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
-    return shaper.offsetForPosition(this, run, xFloat);
+    return shaper.offsetForPosition(this, run, xFloat, includePartialGlyphs);
 }
 
 // Return the rectangle for selecting the given range of code-points in the TextRun.
@@ -749,6 +749,13 @@ FloatRect Font::selectionRectForComplexText(const TextRun& run,
     CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
     CharacterRange range = shaper.getCharacterRange(this, run, from, to);
     return FloatRect(point.x() + range.start, point.y(), range.width(), height);
+}
+
+CharacterRange Font::getCharacterRange(const TextRun& run, unsigned from, unsigned to) const
+{
+    FontCachePurgePreventer purgePreventer;
+    CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
+    return shaper.getCharacterRange(this, run, from, to);
 }
 
 Vector<CharacterRange> Font::individualCharacterRanges(const TextRun& run) const

@@ -19,7 +19,7 @@
 #include "SkXfermode.h"
 
 class GrContext;
-class GrRenderTarget;
+class GrDrawContext;
 class SkBaseDevice;
 class SkCanvasClipVisitor;
 class SkClipStack;
@@ -32,6 +32,7 @@ class SkMetaData;
 class SkPath;
 class SkPicture;
 class SkPixmap;
+class SkRasterClip;
 class SkRRect;
 struct SkRSXform;
 class SkSurface;
@@ -1220,13 +1221,37 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
 
+    // don't call
+    GrDrawContext* internal_private_accessTopLayerDrawContext();
+
+    // don't call
+    static void Internal_Private_SetIgnoreSaveLayerBounds(bool);
+    static bool Internal_Private_GetIgnoreSaveLayerBounds();
+    static void Internal_Private_SetTreatSpriteAsBitmap(bool);
+    static bool Internal_Private_GetTreatSpriteAsBitmap();
+
+    // TEMP helpers until we switch virtual over to const& for src-rect
+    void legacy_drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
+                              const SkPaint* paint,
+                              SrcRectConstraint constraint = kStrict_SrcRectConstraint);
+    void legacy_drawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst,
+                               const SkPaint* paint,
+                               SrcRectConstraint constraint = kStrict_SrcRectConstraint);
+
+    // expose minimum amount of information necessary for transitional refactoring
+    /**
+     * Returns CTM and clip bounds, translated from canvas coordinates to top layer coordinates.
+     */
+    void temporary_internal_describeTopLayer(SkMatrix* matrix, SkIRect* clip_bounds);
+
+protected:
     /** After calling saveLayer(), there can be any number of devices that make
         up the top-most drawing area. LayerIter can be used to iterate through
         those devices. Note that the iterator is only valid until the next API
         call made on the canvas. Ownership of all pointers in the iterator stays
         with the canvas, so none of them should be modified or deleted.
     */
-    class SK_API LayerIter /*: SkNoncopyable*/ {
+    class LayerIter /*: SkNoncopyable*/ {
     public:
         /** Initialize iterator with canvas, and set values for 1st device */
         LayerIter(SkCanvas*, bool skipEmptyClips);
@@ -1241,7 +1266,7 @@ public:
 
         SkBaseDevice*   device() const;
         const SkMatrix& matrix() const;
-        const SkRegion& clip() const;
+        const SkRasterClip& clip() const;
         const SkPaint&  paint() const;
         int             x() const;
         int             y() const;
@@ -1258,24 +1283,6 @@ public:
         bool              fDone;
     };
 
-    // don't call
-    GrRenderTarget* internal_private_accessTopLayerRenderTarget();
-
-    // don't call
-    static void Internal_Private_SetIgnoreSaveLayerBounds(bool);
-    static bool Internal_Private_GetIgnoreSaveLayerBounds();
-    static void Internal_Private_SetTreatSpriteAsBitmap(bool);
-    static bool Internal_Private_GetTreatSpriteAsBitmap();
-
-    // TEMP helpers until we switch virtual over to const& for src-rect
-    void legacy_drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
-                              const SkPaint* paint,
-                              SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-    void legacy_drawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst,
-                               const SkPaint* paint,
-                               SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-
-protected:
     // default impl defers to getDevice()->newSurface(info)
     virtual sk_sp<SkSurface> onNewSurface(const SkImageInfo&, const SkSurfaceProps&);
 
@@ -1406,7 +1413,7 @@ private:
     enum {
         kMCRecSize      = 128,  // most recent measurement
         kMCRecCount     = 32,   // common depth for save/restores
-        kDeviceCMSize   = 136,  // most recent measurement
+        kDeviceCMSize   = 176,  // most recent measurement
     };
     intptr_t fMCRecStorage[kMCRecSize * kMCRecCount / sizeof(intptr_t)];
     intptr_t fDeviceCMStorage[kDeviceCMSize / sizeof(intptr_t)];
@@ -1430,7 +1437,9 @@ private:
 
     void doSave();
     void checkForDeferredSave();
+    void internalSetMatrix(const SkMatrix&);
 
+    friend class CanvasTestingAccess; // for testing
     friend class SkDrawIter;        // needs setupDrawForLayerDevice()
     friend class AutoDrawLooper;
     friend class SkLua;             // needs top layer size and offset

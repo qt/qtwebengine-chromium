@@ -195,7 +195,7 @@ class ProcessThreadMock : public ProcessThread {
   MOCK_METHOD1(WakeUp, void(Module* module));
   MOCK_METHOD1(RegisterModule, void(Module* module));
   MOCK_METHOD1(DeRegisterModule, void(Module* module));
-  void PostTask(rtc::scoped_ptr<ProcessTask> task) {}
+  void PostTask(std::unique_ptr<ProcessTask> task) {}
 };
 
 class TestBasicJitterBuffer : public ::testing::TestWithParam<std::string>,
@@ -215,7 +215,7 @@ class TestBasicJitterBuffer : public ::testing::TestWithParam<std::string>,
 
  protected:
   TestBasicJitterBuffer() : scoped_field_trial_(GetParam()) {}
-  virtual void SetUp() {
+  void SetUp() override {
     clock_.reset(new SimulatedClock(0));
     jitter_buffer_.reset(new VCMJitterBuffer(
         clock_.get(),

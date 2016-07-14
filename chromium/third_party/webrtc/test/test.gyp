@@ -301,10 +301,9 @@
        '<(DEPTH)/testing/gmock.gyp:gmock',
        '<(DEPTH)/testing/gtest.gyp:gtest',
        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-       '<(webrtc_root)/base/base.gyp:rtc_base',
+       '<(webrtc_root)/base/base.gyp:rtc_base_approved',
        '<(webrtc_root)/common.gyp:webrtc_common',
        '<(webrtc_root)/modules/modules.gyp:media_file',
-       '<(webrtc_root)/modules/modules.gyp:video_render',
        '<(webrtc_root)/webrtc.gyp:webrtc',
        'rtp_test_utils',
        'test_support',
@@ -401,7 +400,7 @@
     },
   ],
   'conditions': [
-    ['include_tests==1 and OS=="android"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'test_support_unittests_apk_target',
@@ -411,7 +410,28 @@
           ],
         },
       ],
-    }],
+      'conditions': [
+        ['test_isolation_mode != "noop"',
+          {
+            'targets': [
+              {
+                'target_name': 'test_support_unittests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):test_support_unittests_apk',
+                ],
+                'includes': [
+                  '../build/isolate.gypi',
+                ],
+                'sources': [
+                  'test_support_unittests_apk.isolate',
+                ],
+              },
+            ],
+          },
+        ],
+      ],
+    }],  # OS=="android"
     ['test_isolation_mode != "noop"', {
       'targets': [
         {

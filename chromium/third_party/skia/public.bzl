@@ -52,13 +52,25 @@ def skia_glob(srcs):
   return []
 
 ################################################################################
+## PRIVATE_HDRS
+################################################################################
+
+PRIVATE_HDRS_LIST = [
+    "include/private/**/*",
+    "src/utils/SkWhitelistChecksums.cpp",
+]
+
+PRIVATE_HDRS = struct(
+    include = PRIVATE_HDRS_LIST,
+)
+
+################################################################################
 ## BASE_SRCS
 ################################################################################
 
 # All platform-independent SRCS.
 BASE_SRCS_ALL = struct(
     include = [
-        "include/private/*.h",
         "src/**/*.h",
         "src/**/*.cpp",
 
@@ -68,7 +80,7 @@ BASE_SRCS_ALL = struct(
         "third_party/ktx/*.cpp",
         "third_party/ktx/*.h",
     ],
-    exclude = [
+    exclude = PRIVATE_HDRS_LIST + [
         # Exclude platform-dependent files.
         "src/android/*",
         "src/codec/*",
@@ -308,11 +320,8 @@ AVX2_SRCS = struct(
 BASE_HDRS = struct(
     include = [
         "include/**/*.h",
-        "src/utils/SkWhitelistChecksums.cpp",
     ],
-    exclude = [
-        "include/private/**/*",
-
+    exclude = PRIVATE_HDRS_LIST + [
         # Not used.
         "include/animator/**/*",
         "include/views/**/*",
@@ -399,6 +408,7 @@ DM_SRCS_ALL = struct(
         "tools/flags/*.h",
         "tools/gpu/**/*.cpp",
         "tools/gpu/**/*.h",
+        "tools/picture_utils.cpp",
         "tools/random_parse_path.cpp",
         "tools/random_parse_path.h",
         "tools/sk_tool_utils.cpp",
@@ -474,15 +484,48 @@ DM_INCLUDES = [
 ## DM_ARGS
 ################################################################################
 
-def DM_ARGS(base_dir):
-    return [
-        "--nogpu",
-        "--verbose",
-        # TODO(mtklein): maybe investigate why these fail?
-        "--match ~FontMgr ~Scalar ~Canvas ~Codec_stripes ~Codec_Dimensions ~Codec ~Stream ~skps ~RecordDraw_TextBounds ~PaintBreakText",
-        "--resourcePath %s/resources" % base_dir,
-        "--images %s/resources" % base_dir,
+def DM_ARGS(base_dir, asan):
+  source = ["tests", "gm", "image"]
+  # TODO(benjaminwagner): f16 and serialize-8888 fail.
+  config = ["565", "8888", "pdf", "srgb", "tiles_rt", "pic"]
+  # TODO(mtklein): maybe investigate why these fail?
+  match = [
+      "~Canvas",
+      "~Codec",
+      "~Codec_Dimensions",
+      "~Codec_stripes",
+      "~FontMgr",
+      "~PaintBreakText",
+      "~RecordDraw_TextBounds",
+      "~Scalar",
+      "~skps",
+      "~Stream",
+  ]
+  if asan:
+    # Running all sources and configs under ASAN causes the test to exceed
+    # "large" size and time out.
+    source = ["tests", "gm"]
+    config = ["8888"]
+    match += [
+        "~clippedcubic2",
+        "~conicpaths",
+        "~gradients_2pt_conical",
+        "~Math",
+        "~Matrix",
+        "~PathOpsCubic",
+        "~PathOpsOpLoopsThreaded",
+        "~PathOpsSimplify",
+        "~PathOpsTightBoundsQuads",
+        "~Point",
     ]
+  return [
+      "--src %s" % " ".join(source),
+      "--config %s" % " ".join(config),
+      "--verbose",
+      "--match %s" % " ".join(match),
+      "--resourcePath %s/resources" % base_dir,
+      "--images %s/resources" % base_dir,
+  ]
 
 ################################################################################
 ## COPTS
@@ -508,20 +551,20 @@ DEFINES_UNIX = [
     "SK_BUILD_FOR_UNIX",
     "SK_SAMPLES_FOR_X",
     "SK_SFNTLY_SUBSETTER",
-    "SK_CODEC_DECODES_GIF",
-    "SK_CODEC_DECODES_JPEG",
-    "SK_CODEC_DECODES_PNG",
     "SK_CODEC_DECODES_RAW",
-    "SK_CODEC_DECODES_WEBP",
+    "SK_HAS_GIF_LIBRARY",
+    "SK_HAS_JPEG_LIBRARY",
+    "SK_HAS_PNG_LIBRARY",
+    "SK_HAS_WEBP_LIBRARY",
 ]
 
 DEFINES_ANDROID = [
     "SK_BUILD_FOR_ANDROID",
-    "SK_CODEC_DECODES_GIF",
-    "SK_CODEC_DECODES_JPEG",
-    "SK_CODEC_DECODES_PNG",
     "SK_CODEC_DECODES_RAW",
-    "SK_CODEC_DECODES_WEBP",
+    "SK_HAS_GIF_LIBRARY",
+    "SK_HAS_JPEG_LIBRARY",
+    "SK_HAS_PNG_LIBRARY",
+    "SK_HAS_WEBP_LIBRARY",
 ]
 
 DEFINES_IOS = [
@@ -545,7 +588,9 @@ DEFINES_ALL = [
     "SK_SUPPORT_LEGACY_PATHEFFECT_PTR",
     "SK_SUPPORT_LEGACY_PICTURE_PTR",
     "SK_SUPPORT_LEGACY_MASKFILTER_PTR",
+    "SK_SUPPORT_LEGACY_IMAGEFACTORY",
     "SK_SUPPORT_LEGACY_XFERMODE_PTR",
+    "SK_SUPPORT_LEGACY_TYPEFACE_PTR",
 ]
 
 ################################################################################

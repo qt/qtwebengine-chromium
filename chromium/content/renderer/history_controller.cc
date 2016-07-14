@@ -37,6 +37,7 @@
 
 #include <utility>
 
+#include "base/memory/ptr_util.h"
 #include "content/common/navigation_params.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/renderer/render_frame_impl.h"
@@ -63,8 +64,8 @@ HistoryController::~HistoryController() {
 
 bool HistoryController::GoToEntry(
     blink::WebLocalFrame* main_frame,
-    scoped_ptr<HistoryEntry> target_entry,
-    scoped_ptr<NavigationParams> navigation_params,
+    std::unique_ptr<HistoryEntry> target_entry,
+    std::unique_ptr<NavigationParams> navigation_params,
     WebCachePolicy cache_policy) {
   DCHECK(!main_frame->parent());
   HistoryFrameLoadVector same_document_loads;
@@ -96,8 +97,8 @@ bool HistoryController::GoToEntry(
     RenderFrameImpl* render_frame = RenderFrameImpl::FromWebFrame(frame);
     if (!render_frame)
       continue;
-    render_frame->SetPendingNavigationParams(make_scoped_ptr(
-        new NavigationParams(*navigation_params_.get())));
+    render_frame->SetPendingNavigationParams(
+        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
     WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
         item.second, cache_policy);
     frame->toWebLocalFrame()->load(
@@ -111,8 +112,8 @@ bool HistoryController::GoToEntry(
     RenderFrameImpl* render_frame = RenderFrameImpl::FromWebFrame(frame);
     if (!render_frame)
       continue;
-    render_frame->SetPendingNavigationParams(make_scoped_ptr(
-        new NavigationParams(*navigation_params_.get())));
+    render_frame->SetPendingNavigationParams(
+        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
     WebURLRequest request = frame->toWebLocalFrame()->requestFromHistoryItem(
         item.second, cache_policy);
     frame->toWebLocalFrame()->load(
@@ -134,8 +135,12 @@ void HistoryController::RecursiveGoToEntry(
   RenderFrameImpl* render_frame = RenderFrameImpl::FromWebFrame(frame);
   const WebHistoryItem& new_item =
       provisional_entry_->GetItemForFrame(render_frame);
-  const WebHistoryItem& old_item =
-      current_entry_->GetItemForFrame(render_frame);
+
+  // Use the last committed history item for the frame rather than
+  // current_entry_, since the latter may not accurately reflect which URL is
+  // currently committed in the frame.  See https://crbug.com/612713#c12.
+  const WebHistoryItem& old_item = render_frame->current_history_item();
+
   if (new_item.isNull())
     return;
 
@@ -260,8 +265,8 @@ HistoryEntry* HistoryController::GetCurrentEntry() {
 WebHistoryItem HistoryController::GetItemForNewChildFrame(
     RenderFrameImpl* frame) const {
   if (navigation_params_.get()) {
-    frame->SetPendingNavigationParams(make_scoped_ptr(
-        new NavigationParams(*navigation_params_.get())));
+    frame->SetPendingNavigationParams(
+        base::WrapUnique(new NavigationParams(*navigation_params_.get())));
   }
 
   if (!current_entry_)

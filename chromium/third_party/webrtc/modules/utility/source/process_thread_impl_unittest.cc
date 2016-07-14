@@ -13,9 +13,9 @@
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/include/module.h"
 #include "webrtc/modules/utility/source/process_thread_impl.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -51,7 +51,7 @@ ACTION_P(Increment, counter) {
 }
 
 ACTION_P(SetTimestamp, ptr) {
-  *ptr = TickTime::MillisecondTimestamp();
+  *ptr = rtc::TimeMillis();
 }
 
 TEST(ProcessThreadImpl, StartStop) {
@@ -297,7 +297,7 @@ TEST(ProcessThreadImpl, PostTask) {
   std::unique_ptr<EventWrapper> task_ran(EventWrapper::Create());
   std::unique_ptr<RaiseEventTask> task(new RaiseEventTask(task_ran.get()));
   thread.Start();
-  thread.PostTask(rtc::UniqueToScoped(std::move(task)));
+  thread.PostTask(std::move(task));
   EXPECT_EQ(kEventSignaled, task_ran->Wait(100));
   thread.Stop();
 }

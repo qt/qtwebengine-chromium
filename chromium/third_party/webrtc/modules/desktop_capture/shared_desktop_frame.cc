@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/system_wrappers/include/atomic32.h"
 
 namespace webrtc {
@@ -48,8 +49,7 @@ class SharedDesktopFrame::Core {
 SharedDesktopFrame::~SharedDesktopFrame() {}
 
 // static
-SharedDesktopFrame* SharedDesktopFrame::Wrap(
-    DesktopFrame* desktop_frame) {
+SharedDesktopFrame* SharedDesktopFrame::Wrap(DesktopFrame* desktop_frame) {
   rtc::scoped_refptr<Core> core(new Core(desktop_frame));
   return new SharedDesktopFrame(core);
 }

@@ -12,7 +12,7 @@
 
 #include "webrtc/modules/audio_device/ios/audio_session_observer.h"
 
-#import "webrtc/base/objc/RTCLogging.h"
+#import "WebRTC/RTCLogging.h"
 
 @implementation RTCAudioSessionDelegateAdapter {
   webrtc::AudioSessionObserver *_observer;
@@ -70,14 +70,15 @@
 - (void)audioSessionMediaServicesWereReset:(RTCAudioSession *)session {
 }
 
-- (void)audioSessionShouldConfigure:(RTCAudioSession *)session {
+- (void)audioSession:(RTCAudioSession *)session
+    didChangeCanPlayOrRecord:(BOOL)canPlayOrRecord {
+  _observer->OnCanPlayOrRecordChange(canPlayOrRecord);
 }
 
-- (void)audioSessionShouldUnconfigure:(RTCAudioSession *)session {
+- (void)audioSessionDidStartPlayOrRecord:(RTCAudioSession *)session {
 }
 
-- (void)audioSessionDidConfigure:(RTCAudioSession *)session {
-  _observer->OnConfiguredForWebRTC();
+- (void)audioSessionDidStopPlayOrRecord:(RTCAudioSession *)session {
 }
 
 @end

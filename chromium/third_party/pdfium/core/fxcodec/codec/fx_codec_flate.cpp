@@ -9,9 +9,9 @@
 #include <algorithm>
 #include <memory>
 
+#include "core/fxcodec/include/fx_codec.h"
+#include "core/fxcodec/include/fx_codec_flate.h"
 #include "core/fxcrt/include/fx_ext.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxcodec/fx_codec_flate.h"
 #include "third_party/zlib_v128/zlib.h"
 
 extern "C" {
@@ -750,10 +750,8 @@ class CCodec_FlateScanlineDecoder : public CCodec_ScanlineDecoder {
               int Colors,
               int BitsPerComponent,
               int Columns);
-  void Destroy() { delete this; }
 
   // CCodec_ScanlineDecoder
-  void v_DownScale(int dest_width, int dest_height) override {}
   FX_BOOL v_Rewind() override;
   uint8_t* v_GetNextLine() override;
   uint32_t GetSrcOffset() override;
@@ -806,7 +804,6 @@ void CCodec_FlateScanlineDecoder::Create(const uint8_t* src_buf,
   m_OutputHeight = m_OrigHeight = height;
   m_nComps = nComps;
   m_bpc = bpc;
-  m_bColorTransformed = FALSE;
   m_Pitch = (static_cast<uint32_t>(width) * nComps * bpc + 7) / 8;
   m_pScanline = FX_Alloc(uint8_t, m_Pitch);
   m_Predictor = 0;
@@ -899,7 +896,7 @@ uint32_t CCodec_FlateScanlineDecoder::GetSrcOffset() {
   return FPDFAPI_FlateGetTotalIn(m_pFlate);
 }
 
-ICodec_ScanlineDecoder* CCodec_FlateModule::CreateDecoder(
+CCodec_ScanlineDecoder* CCodec_FlateModule::CreateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,

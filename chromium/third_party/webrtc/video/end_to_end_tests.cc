@@ -19,10 +19,9 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/event.h"
-#include "webrtc/base/timeutils.h"
 #include "webrtc/call.h"
 #include "webrtc/call/transport_adapter.h"
-#include "webrtc/frame_callback.h"
+#include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/include/module_common_types.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
@@ -266,107 +265,103 @@ TEST_F(EndToEndTest, TransmitsFirstFrame) {
   DestroyStreams();
 }
 
-TEST_F(EndToEndTest, SendsAndReceivesVP9) {
-  class VP9Observer : public test::EndToEndTest,
+class CodecObserver : public test::EndToEndTest,
                       public rtc::VideoSinkInterface<VideoFrame> {
-   public:
-    VP9Observer()
-        : EndToEndTest(2 * kDefaultTimeoutMs),
-          encoder_(VideoEncoder::Create(VideoEncoder::kVp9)),
-          decoder_(VP9Decoder::Create()),
-          frame_counter_(0) {}
+ public:
+  CodecObserver(int no_frames_to_wait_for,
+                VideoRotation rotation_to_test,
+                const std::string& payload_name,
+                webrtc::VideoEncoder* encoder,
+                webrtc::VideoDecoder* decoder)
+      : EndToEndTest(2 * webrtc::EndToEndTest::kDefaultTimeoutMs),
+        no_frames_to_wait_for_(no_frames_to_wait_for),
+        expected_rotation_(rotation_to_test),
+        payload_name_(payload_name),
+        encoder_(encoder),
+        decoder_(decoder),
+        frame_counter_(0) {}
 
-    void PerformTest() override {
-      EXPECT_TRUE(Wait())
-          << "Timed out while waiting for enough frames to be decoded.";
-    }
+  void PerformTest() override {
+    EXPECT_TRUE(Wait())
+        << "Timed out while waiting for enough frames to be decoded.";
+  }
 
-    void ModifyVideoConfigs(
-        VideoSendStream::Config* send_config,
-        std::vector<VideoReceiveStream::Config>* receive_configs,
-        VideoEncoderConfig* encoder_config) override {
-      send_config->encoder_settings.encoder = encoder_.get();
-      send_config->encoder_settings.payload_name = "VP9";
-      send_config->encoder_settings.payload_type = 124;
-      encoder_config->streams[0].min_bitrate_bps = 50000;
-      encoder_config->streams[0].target_bitrate_bps =
-          encoder_config->streams[0].max_bitrate_bps = 2000000;
+  void ModifyVideoConfigs(
+      VideoSendStream::Config* send_config,
+      std::vector<VideoReceiveStream::Config>* receive_configs,
+      VideoEncoderConfig* encoder_config) override {
+    send_config->encoder_settings.encoder = encoder_.get();
+    send_config->encoder_settings.payload_name = payload_name_;
+    send_config->encoder_settings.payload_type = 126;
+    encoder_config->streams[0].min_bitrate_bps = 50000;
+    encoder_config->streams[0].target_bitrate_bps =
+        encoder_config->streams[0].max_bitrate_bps = 2000000;
 
-      (*receive_configs)[0].renderer = this;
-      (*receive_configs)[0].decoders.resize(1);
-      (*receive_configs)[0].decoders[0].payload_type =
-          send_config->encoder_settings.payload_type;
-      (*receive_configs)[0].decoders[0].payload_name =
-          send_config->encoder_settings.payload_name;
-      (*receive_configs)[0].decoders[0].decoder = decoder_.get();
-    }
+    (*receive_configs)[0].renderer = this;
+    (*receive_configs)[0].decoders.resize(1);
+    (*receive_configs)[0].decoders[0].payload_type =
+        send_config->encoder_settings.payload_type;
+    (*receive_configs)[0].decoders[0].payload_name =
+        send_config->encoder_settings.payload_name;
+    (*receive_configs)[0].decoders[0].decoder = decoder_.get();
+  }
 
-    void OnFrame(const VideoFrame& video_frame) override {
-      const int kRequiredFrames = 500;
-      if (++frame_counter_ == kRequiredFrames)
-        observation_complete_.Set();
-    }
+  void OnFrame(const VideoFrame& video_frame) override {
+    EXPECT_EQ(expected_rotation_, video_frame.rotation());
+    if (++frame_counter_ == no_frames_to_wait_for_)
+      observation_complete_.Set();
+  }
 
-   private:
-    std::unique_ptr<webrtc::VideoEncoder> encoder_;
-    std::unique_ptr<webrtc::VideoDecoder> decoder_;
-    int frame_counter_;
-  } test;
+  void OnFrameGeneratorCapturerCreated(
+      test::FrameGeneratorCapturer* frame_generator_capturer) override {
+    frame_generator_capturer->SetFakeRotation(expected_rotation_);
+  }
 
+ private:
+  int no_frames_to_wait_for_;
+  VideoRotation expected_rotation_;
+  std::string payload_name_;
+  std::unique_ptr<webrtc::VideoEncoder> encoder_;
+  std::unique_ptr<webrtc::VideoDecoder> decoder_;
+  int frame_counter_;
+};
+
+TEST_F(EndToEndTest, SendsAndReceivesVP8Rotation90) {
+  CodecObserver test(5, kVideoRotation_90, "VP8",
+                     VideoEncoder::Create(VideoEncoder::kVp8),
+                     VP8Decoder::Create());
   RunBaseTest(&test);
 }
+
+#if !defined(RTC_DISABLE_VP9)
+TEST_F(EndToEndTest, SendsAndReceivesVP9) {
+  CodecObserver test(500, kVideoRotation_0, "VP9",
+                     VideoEncoder::Create(VideoEncoder::kVp9),
+                     VP9Decoder::Create());
+  RunBaseTest(&test);
+}
+
+TEST_F(EndToEndTest, SendsAndReceivesVP9VideoRotation90) {
+  CodecObserver test(5, kVideoRotation_90, "VP9",
+                     VideoEncoder::Create(VideoEncoder::kVp9),
+                     VP9Decoder::Create());
+  RunBaseTest(&test);
+}
+#endif  // !defined(RTC_DISABLE_VP9)
 
 #if defined(WEBRTC_END_TO_END_H264_TESTS)
 
 TEST_F(EndToEndTest, SendsAndReceivesH264) {
-  class H264Observer : public test::EndToEndTest,
-                       public rtc::VideoSinkInterface<VideoFrame> {
-   public:
-    H264Observer()
-        : EndToEndTest(2 * kDefaultTimeoutMs),
-          encoder_(VideoEncoder::Create(VideoEncoder::kH264)),
-          decoder_(H264Decoder::Create()),
-          frame_counter_(0) {}
+  CodecObserver test(500, kVideoRotation_0, "H264",
+                     VideoEncoder::Create(VideoEncoder::kH264),
+                     H264Decoder::Create());
+  RunBaseTest(&test);
+}
 
-    void PerformTest() override {
-      EXPECT_TRUE(Wait())
-          << "Timed out while waiting for enough frames to be decoded.";
-    }
-
-    void ModifyVideoConfigs(
-        VideoSendStream::Config* send_config,
-        std::vector<VideoReceiveStream::Config>* receive_configs,
-        VideoEncoderConfig* encoder_config) override {
-      send_config->rtp.nack.rtp_history_ms =
-          (*receive_configs)[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
-      send_config->encoder_settings.encoder = encoder_.get();
-      send_config->encoder_settings.payload_name = "H264";
-      send_config->encoder_settings.payload_type = 126;
-      encoder_config->streams[0].min_bitrate_bps = 50000;
-      encoder_config->streams[0].target_bitrate_bps =
-          encoder_config->streams[0].max_bitrate_bps = 2000000;
-
-      (*receive_configs)[0].renderer = this;
-      (*receive_configs)[0].decoders.resize(1);
-      (*receive_configs)[0].decoders[0].payload_type =
-          send_config->encoder_settings.payload_type;
-      (*receive_configs)[0].decoders[0].payload_name =
-          send_config->encoder_settings.payload_name;
-      (*receive_configs)[0].decoders[0].decoder = decoder_.get();
-    }
-
-    void OnFrame(const VideoFrame& video_frame) override {
-      const int kRequiredFrames = 500;
-      if (++frame_counter_ == kRequiredFrames)
-        observation_complete_.Set();
-    }
-
-   private:
-    std::unique_ptr<webrtc::VideoEncoder> encoder_;
-    std::unique_ptr<webrtc::VideoDecoder> decoder_;
-    int frame_counter_;
-  } test;
-
+TEST_F(EndToEndTest, SendsAndReceivesH264VideoRotation90) {
+  CodecObserver test(5, kVideoRotation_90, "H264",
+                     VideoEncoder::Create(VideoEncoder::kH264),
+                     H264Decoder::Create());
   RunBaseTest(&test);
 }
 
@@ -862,107 +857,6 @@ TEST_F(EndToEndTest, DecodesRetransmittedFrameByRed) {
 
 TEST_F(EndToEndTest, DecodesRetransmittedFrameByRedOverRtx) {
   DecodesRetransmittedFrame(true, true);
-}
-
-TEST_F(EndToEndTest, UsesFrameCallbacks) {
-  static const int kWidth = 320;
-  static const int kHeight = 240;
-
-  class Renderer : public rtc::VideoSinkInterface<VideoFrame> {
-   public:
-    Renderer() : event_(false, false) {}
-
-    void OnFrame(const VideoFrame& video_frame) override {
-      EXPECT_EQ(0, *video_frame.buffer(kYPlane))
-          << "Rendered frame should have zero luma which is applied by the "
-             "pre-render callback.";
-      event_.Set();
-    }
-
-    bool Wait() { return event_.Wait(kDefaultTimeoutMs); }
-    rtc::Event event_;
-  } renderer;
-
-  class TestFrameCallback : public I420FrameCallback {
-   public:
-    TestFrameCallback(int expected_luma_byte, int next_luma_byte)
-        : event_(false, false),
-          expected_luma_byte_(expected_luma_byte),
-          next_luma_byte_(next_luma_byte) {}
-
-    bool Wait() { return event_.Wait(kDefaultTimeoutMs); }
-
-   private:
-    virtual void FrameCallback(VideoFrame* frame) {
-      EXPECT_EQ(kWidth, frame->width())
-          << "Width not as expected, callback done before resize?";
-      EXPECT_EQ(kHeight, frame->height())
-          << "Height not as expected, callback done before resize?";
-
-      // Previous luma specified, observed luma should be fairly close.
-      if (expected_luma_byte_ != -1) {
-        EXPECT_NEAR(expected_luma_byte_, *frame->buffer(kYPlane), 10);
-      }
-
-      memset(frame->buffer(kYPlane),
-             next_luma_byte_,
-             frame->allocated_size(kYPlane));
-
-      event_.Set();
-    }
-
-    rtc::Event event_;
-    int expected_luma_byte_;
-    int next_luma_byte_;
-  };
-
-  TestFrameCallback pre_encode_callback(-1, 255);  // Changes luma to 255.
-  TestFrameCallback pre_render_callback(255, 0);  // Changes luma from 255 to 0.
-
-  CreateCalls(Call::Config(), Call::Config());
-
-  test::DirectTransport sender_transport(sender_call_.get());
-  test::DirectTransport receiver_transport(receiver_call_.get());
-  sender_transport.SetReceiver(receiver_call_->Receiver());
-  receiver_transport.SetReceiver(sender_call_->Receiver());
-
-  CreateSendConfig(1, 0, &sender_transport);
-  std::unique_ptr<VideoEncoder> encoder(
-      VideoEncoder::Create(VideoEncoder::kVp8));
-  video_send_config_.encoder_settings.encoder = encoder.get();
-  video_send_config_.encoder_settings.payload_name = "VP8";
-  ASSERT_EQ(1u, video_encoder_config_.streams.size()) << "Test setup error.";
-  video_encoder_config_.streams[0].width = kWidth;
-  video_encoder_config_.streams[0].height = kHeight;
-  video_send_config_.pre_encode_callback = &pre_encode_callback;
-
-  CreateMatchingReceiveConfigs(&receiver_transport);
-  video_receive_configs_[0].pre_render_callback = &pre_render_callback;
-  video_receive_configs_[0].renderer = &renderer;
-
-  CreateVideoStreams();
-  Start();
-
-  // Create frames that are smaller than the send width/height, this is done to
-  // check that the callbacks are done after processing video.
-  std::unique_ptr<test::FrameGenerator> frame_generator(
-      test::FrameGenerator::CreateChromaGenerator(kWidth / 2, kHeight / 2));
-  video_send_stream_->Input()->IncomingCapturedFrame(
-      *frame_generator->NextFrame());
-
-  EXPECT_TRUE(pre_encode_callback.Wait())
-      << "Timed out while waiting for pre-encode callback.";
-  EXPECT_TRUE(pre_render_callback.Wait())
-      << "Timed out while waiting for pre-render callback.";
-  EXPECT_TRUE(renderer.Wait())
-      << "Timed out while waiting for the frame to render.";
-
-  Stop();
-
-  sender_transport.StopSending();
-  receiver_transport.StopSending();
-
-  DestroyStreams();
 }
 
 void EndToEndTest::ReceivesPliAndRecovers(int rtp_history_ms) {
@@ -1872,7 +1766,7 @@ TEST_F(EndToEndTest, RembWithSendSideBwe) {
 
     ~BweObserver() {}
 
-    test::PacketTransport* CreateReceiveTransport() {
+    test::PacketTransport* CreateReceiveTransport() override {
       receive_transport_ = new test::PacketTransport(
           nullptr, this, test::PacketTransport::kReceiver,
           FakeNetworkPipe::Config());
@@ -2254,6 +2148,9 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
       "WebRTC.Video.DecodedFramesPerSecond"));
   EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.RenderFramesPerSecond"));
 
+  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.JitterBufferDelayInMs"));
+  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.TargetDelayInMs"));
+  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.CurrentDelayInMs"));
   EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.OnewayDelayInMs"));
   EXPECT_EQ(
       1, test::NumHistogramSamples("WebRTC.Video.RenderSqrtPixelsPerSecond"));
@@ -2280,6 +2177,7 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
   EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "SendSideDelayInMs"));
   EXPECT_EQ(1,
             test::NumHistogramSamples(video_prefix + "SendSideDelayMaxInMs"));
+  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.SendDelayInMs"));
 
   int num_rtx_samples = use_rtx ? 1 : 0;
   EXPECT_EQ(num_rtx_samples, test::NumHistogramSamples(
@@ -2352,7 +2250,7 @@ void EndToEndTest::TestXrReceiverReferenceTimeReport(bool enable_rrtr) {
       return SEND_PACKET;
     }
     // Send stream should send SR packets (and DLRR packets if enabled).
-    virtual Action OnSendRtcp(const uint8_t* packet, size_t length) {
+    Action OnSendRtcp(const uint8_t* packet, size_t length) override {
       rtc::CritScope lock(&crit_);
       RTCPUtility::RTCPParserV2 parser(packet, length, true);
       EXPECT_TRUE(parser.IsValid());
@@ -2571,7 +2469,8 @@ TEST_F(EndToEndTest, ReportsSetEncoderRates) {
 TEST_F(EndToEndTest, GetStats) {
   static const int kStartBitrateBps = 3000000;
   static const int kExpectedRenderDelayMs = 20;
-  class StatsObserver : public test::EndToEndTest, public I420FrameCallback {
+  class StatsObserver : public test::EndToEndTest,
+                        public rtc::VideoSinkInterface<VideoFrame> {
    public:
     StatsObserver()
         : EndToEndTest(kLongTimeoutMs),
@@ -2601,11 +2500,9 @@ TEST_F(EndToEndTest, GetStats) {
       return SEND_PACKET;
     }
 
-    void FrameCallback(VideoFrame* video_frame) override {
+    void OnFrame(const VideoFrame& video_frame) override {
       // Ensure that we have at least 5ms send side delay.
-      int64_t render_time = video_frame->render_time_ms();
-      if (render_time > 0)
-        video_frame->set_render_time_ms(render_time - 5);
+      SleepMs(5);
     }
 
     bool CheckReceiveStats() {
@@ -3038,7 +2935,9 @@ void EndToEndTest::TestRtpStatePreservation(bool use_rtx) {
       } else {
         // Verify timestamps are reasonably close.
         uint32_t latest_observed = timestamp_it->second;
-        int32_t timestamp_gap = rtc::TimeDiff(timestamp, latest_observed);
+        // Wraparound handling is unnecessary here as long as an int variable
+        // is used to store the result.
+        int32_t timestamp_gap = timestamp - latest_observed;
         EXPECT_LE(std::abs(timestamp_gap), kMaxTimestampGap)
             << "Gap in timestamps (" << latest_observed << " -> "
             << timestamp << ") too large for SSRC: " << ssrc << ".";
@@ -3442,6 +3341,13 @@ TEST_F(EndToEndTest, NewVideoSendStreamsRespectVideoNetworkDown) {
   class UnusedEncoder : public test::FakeEncoder {
    public:
     UnusedEncoder() : FakeEncoder(Clock::GetRealTimeClock()) {}
+
+    int32_t InitEncode(const VideoCodec* config,
+                       int32_t number_of_cores,
+                       size_t max_payload_size) override {
+      EXPECT_GT(config->startBitrate, 0u);
+      return 0;
+    }
     int32_t Encode(const VideoFrame& input_image,
                    const CodecSpecificInfo* codec_specific_info,
                    const std::vector<FrameType>* frame_types) override {

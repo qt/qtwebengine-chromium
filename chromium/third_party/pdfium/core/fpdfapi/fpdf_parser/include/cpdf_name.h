@@ -12,14 +12,11 @@
 class CPDF_Name : public CPDF_Object {
  public:
   explicit CPDF_Name(const CFX_ByteString& str);
-  explicit CPDF_Name(const CFX_ByteStringC& str);
-  explicit CPDF_Name(const FX_CHAR* str);
 
   // CPDF_Object.
   Type GetType() const override;
   CPDF_Object* Clone(FX_BOOL bDirect = FALSE) const override;
   CFX_ByteString GetString() const override;
-  CFX_ByteStringC GetConstString() const override;
   CFX_WideString GetUnicodeText() const override;
   void SetString(const CFX_ByteString& str) override;
   bool IsName() const override;

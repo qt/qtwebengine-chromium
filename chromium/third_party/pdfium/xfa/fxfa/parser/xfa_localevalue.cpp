@@ -6,8 +6,8 @@
 
 #include "xfa/fxfa/parser/xfa_localevalue.h"
 
+#include "xfa/fgas/localization/fgas_localeimp.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -105,7 +105,10 @@ FX_BOOL CXFA_LocaleValue::ValidateValue(const CFX_WideString& wsValue,
   if (pLocale) {
     m_pLocaleMgr->SetDefLocale(pLocale);
   }
-  IFX_FormatString* pFormat = IFX_FormatString::Create(m_pLocaleMgr, FALSE);
+  CFX_FormatString* pFormat = nullptr;
+  if (m_pLocaleMgr)
+    pFormat = new CFX_FormatString(m_pLocaleMgr, FALSE);
+
   CFX_WideStringArray wsPatterns;
   pFormat->SplitFormatString(wsPattern, wsPatterns);
   FX_BOOL bRet = FALSE;
@@ -138,7 +141,7 @@ FX_BOOL CXFA_LocaleValue::ValidateValue(const CFX_WideString& wsValue,
       }
       case FX_LOCALECATEGORY_Text:
         bRet = pFormat->ParseText(wsValue, wsFormat, wsOutput);
-        wsOutput.Empty();
+        wsOutput.clear();
         if (!bRet) {
           bRet = pFormat->FormatText(wsValue, wsFormat, wsOutput);
         }
@@ -215,7 +218,7 @@ FX_FLOAT CXFA_LocaleValue::GetNum() const {
     int32_t nExponent = 0;
     int cc = 0;
     FX_BOOL bNegative = FALSE, bExpSign = FALSE;
-    const FX_WCHAR* str = (const FX_WCHAR*)m_wsValue;
+    const FX_WCHAR* str = m_wsValue.c_str();
     int len = m_wsValue.GetLength();
     while (XFA_IsSpace(str[cc]) && cc < len) {
       cc++;
@@ -290,7 +293,7 @@ FX_DOUBLE CXFA_LocaleValue::GetDoubleNum() const {
     int32_t nExponent = 0;
     int32_t cc = 0;
     FX_BOOL bNegative = FALSE, bExpSign = FALSE;
-    const FX_WCHAR* str = (const FX_WCHAR*)m_wsValue;
+    const FX_WCHAR* str = m_wsValue.c_str();
     int len = m_wsValue.GetLength();
     while (XFA_IsSpace(str[cc]) && cc < len) {
       cc++;
@@ -368,8 +371,8 @@ CFX_Unitime CXFA_LocaleValue::GetDate() const {
 CFX_Unitime CXFA_LocaleValue::GetTime() const {
   if (m_bValid && m_dwType == XFA_VT_TIME) {
     CFX_Unitime dt(0);
-    FXSYS_assert(m_pLocaleMgr);
-    FX_TimeFromCanonical(m_wsValue.AsWideStringC(), dt,
+    ASSERT(m_pLocaleMgr);
+    FX_TimeFromCanonical(m_wsValue.AsStringC(), dt,
                          m_pLocaleMgr->GetDefLocale());
     return dt;
   }
@@ -380,9 +383,9 @@ CFX_Unitime CXFA_LocaleValue::GetDateTime() const {
     int32_t index = m_wsValue.Find('T');
     CFX_Unitime dt;
     FX_DateFromCanonical(m_wsValue.Left(index), dt);
-    FXSYS_assert(m_pLocaleMgr);
+    ASSERT(m_pLocaleMgr);
     FX_TimeFromCanonical(
-        m_wsValue.Right(m_wsValue.GetLength() - index - 1).AsWideStringC(), dt,
+        m_wsValue.Right(m_wsValue.GetLength() - index - 1).AsStringC(), dt,
         m_pLocaleMgr->GetDefLocale());
     return dt;
   }
@@ -460,9 +463,13 @@ FX_BOOL CXFA_LocaleValue::FormatPatterns(CFX_WideString& wsResult,
                                          const CFX_WideString& wsFormat,
                                          IFX_Locale* pLocale,
                                          XFA_VALUEPICTURE eValueType) const {
-  wsResult.Empty();
+  wsResult.clear();
   FX_BOOL bRet = FALSE;
-  IFX_FormatString* pFormat = IFX_FormatString::Create(m_pLocaleMgr, FALSE);
+
+  CFX_FormatString* pFormat = nullptr;
+  if (m_pLocaleMgr)
+    pFormat = new CFX_FormatString(m_pLocaleMgr, FALSE);
+
   CFX_WideStringArray wsPatterns;
   pFormat->SplitFormatString(wsFormat, wsPatterns);
   int32_t iCount = wsPatterns.GetSize();
@@ -484,9 +491,13 @@ FX_BOOL CXFA_LocaleValue::FormatSinglePattern(
   if (pLocale) {
     m_pLocaleMgr->SetDefLocale(pLocale);
   }
-  wsResult.Empty();
+  wsResult.clear();
   FX_BOOL bRet = FALSE;
-  IFX_FormatString* pFormat = IFX_FormatString::Create(m_pLocaleMgr, FALSE);
+
+  CFX_FormatString* pFormat = nullptr;
+  if (m_pLocaleMgr)
+    pFormat = new CFX_FormatString(m_pLocaleMgr, FALSE);
+
   FX_LOCALECATEGORY eCategory = pFormat->GetCategory(wsFormat);
   eCategory = XFA_ValugeCategory(eCategory, m_dwType);
   switch (eCategory) {
@@ -603,7 +614,7 @@ FX_BOOL CXFA_LocaleValue::ValidateCanonicalDate(const CFX_WideString& wsDate,
   uint16_t wYear = 0;
   uint16_t wMonth = 0;
   uint16_t wDay = 0;
-  const FX_WCHAR* pDate = (const FX_WCHAR*)wsDate;
+  const FX_WCHAR* pDate = wsDate.c_str();
   int nIndex = 0, nStart = 0;
   while (pDate[nIndex] != '\0' && nIndex < wCountY) {
     if (!XFA_IsDigit(pDate[nIndex])) {
@@ -689,7 +700,7 @@ FX_BOOL CXFA_LocaleValue::ValidateCanonicalTime(const CFX_WideString& wsTime) {
   uint16_t wMinute = 0;
   uint16_t wSecond = 0;
   uint16_t wFraction = 0;
-  const FX_WCHAR* pTime = (const FX_WCHAR*)wsTime;
+  const FX_WCHAR* pTime = wsTime.c_str();
   int nIndex = 0;
   int nStart = 0;
   while (nIndex - nStart < wCountH && pTime[nIndex]) {
@@ -793,7 +804,11 @@ FX_BOOL CXFA_LocaleValue::ParsePatternValue(const CFX_WideString& wsValue,
   if (pLocale) {
     m_pLocaleMgr->SetDefLocale(pLocale);
   }
-  IFX_FormatString* pFormat = IFX_FormatString::Create(m_pLocaleMgr, FALSE);
+
+  CFX_FormatString* pFormat = nullptr;
+  if (m_pLocaleMgr)
+    pFormat = new CFX_FormatString(m_pLocaleMgr, FALSE);
+
   CFX_WideStringArray wsPatterns;
   pFormat->SplitFormatString(wsPattern, wsPatterns);
   FX_BOOL bRet = FALSE;
@@ -806,7 +821,7 @@ FX_BOOL CXFA_LocaleValue::ParsePatternValue(const CFX_WideString& wsValue,
       case FX_LOCALECATEGORY_Null:
         bRet = pFormat->ParseNull(wsValue, wsFormat);
         if (bRet) {
-          m_wsValue.Empty();
+          m_wsValue.clear();
         }
         break;
       case FX_LOCALECATEGORY_Zero:
@@ -875,8 +890,8 @@ void CXFA_LocaleValue::GetNumbericFormat(CFX_WideString& wsFormat,
                                          int32_t nIntLen,
                                          int32_t nDecLen,
                                          FX_BOOL bSign) {
-  FXSYS_assert(wsFormat.IsEmpty());
-  FXSYS_assert(nIntLen >= -1 && nDecLen >= -1);
+  ASSERT(wsFormat.IsEmpty());
+  ASSERT(nIntLen >= -1 && nDecLen >= -1);
   int32_t nTotalLen = (nIntLen >= 0 ? nIntLen : 2) + (bSign ? 1 : 0) +
                       (nDecLen >= 0 ? nDecLen : 2) + (nDecLen == 0 ? 0 : 1);
   FX_WCHAR* lpBuf = wsFormat.GetBuffer(nTotalLen);
@@ -948,7 +963,7 @@ FX_BOOL CXFA_LocaleValue::ValidateNumericTemp(CFX_WideString& wsNumeric,
     return FALSE;
   }
   while (nf < nCountFmt && (cf = pFmt[nf]) != L'.') {
-    FXSYS_assert(cf == L'z' || cf == L'*');
+    ASSERT(cf == L'z' || cf == L'*');
     ++nf;
   }
   CFX_WideString wsDecimalSymbol;

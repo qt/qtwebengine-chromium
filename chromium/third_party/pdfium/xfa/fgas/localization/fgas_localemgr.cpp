@@ -29,7 +29,7 @@ IFX_LocaleMgr* FX_LocaleMgr_Create(const FX_WCHAR* pszLocalPath,
       }
       CFX_WideString wsFullPath(pszLocalPath);
       wsFullPath += L"\\" + wsFileName;
-      IFX_FileRead* pRead = FX_CreateFileRead(wsFullPath);
+      IFX_FileRead* pRead = FX_CreateFileRead(wsFullPath.c_str());
       if (!pRead) {
         continue;
       }
@@ -39,7 +39,7 @@ IFX_LocaleMgr* FX_LocaleMgr_Create(const FX_WCHAR* pszLocalPath,
       if (bssp == "http://www.foxitsoftware.com/localization") {
         CFX_WideString wsLCID = pXmlLocale->GetAttrValue("", "lcid");
         wchar_t* pEnd = NULL;
-        uint32_t dwLCID = wcstol(wsLCID, &pEnd, 16);
+        uint32_t dwLCID = wcstol(wsLCID.c_str(), &pEnd, 16);
         if (pLocaleMgr->m_lcid2xml.GetValueAt((void*)(uintptr_t)dwLCID)) {
           delete pXmlLocale;
         } else {
@@ -91,7 +91,6 @@ IFX_Locale* CFX_LocaleMgr::GetLocale(uint16_t lcid) {
   }
   return pLocale;
 }
-IFX_Locale* CFX_LocaleMgr::GetLocaleByName(
-    const CFX_WideStringC& wsLocaleName) {
-  return NULL;
+IFX_Locale* CFX_LocaleMgr::GetLocaleByName(const CFX_WideString& wsLocaleName) {
+  return nullptr;
 }

@@ -196,7 +196,8 @@ Clear11::~Clear11()
     SafeRelease(mRasterizerState);
 }
 
-gl::Error Clear11::clearFramebuffer(const ClearParameters &clearParams, const gl::Framebuffer::Data &fboData)
+gl::Error Clear11::clearFramebuffer(const ClearParameters &clearParams,
+                                    const gl::FramebufferState &fboData)
 {
     const auto &colorAttachments = fboData.getColorAttachments();
     const auto &drawBufferStates = fboData.getDrawBufferStates();
@@ -434,7 +435,7 @@ gl::Error Clear11::clearFramebuffer(const ClearParameters &clearParams, const gl
         // be a compatible clear type.
 
         // Bind all the render targets which need clearing
-        ASSERT(maskedClearRenderTargets.size() <= mRenderer->getRendererCaps().maxDrawBuffers);
+        ASSERT(maskedClearRenderTargets.size() <= mRenderer->getNativeCaps().maxDrawBuffers);
         std::vector<ID3D11RenderTargetView*> rtvs(maskedClearRenderTargets.size());
         for (unsigned int i = 0; i < maskedClearRenderTargets.size(); i++)
         {

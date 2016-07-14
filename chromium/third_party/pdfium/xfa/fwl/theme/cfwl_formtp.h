@@ -13,18 +13,20 @@
 class CFWL_FormTP : public CFWL_WidgetTP {
  public:
   CFWL_FormTP();
-  virtual ~CFWL_FormTP();
+  ~CFWL_FormTP() override;
 
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
-  virtual FX_BOOL IsValidWidget(IFWL_Widget* pWidget);
-  virtual uint32_t SetThemeID(IFWL_Widget* pWidget,
-                              uint32_t dwThemeID,
-                              FX_BOOL bChildren = TRUE);
-  virtual FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams);
-  virtual FX_BOOL DrawText(CFWL_ThemeText* pParams);
-  virtual void* GetCapacity(CFWL_ThemePart* pThemePart, uint32_t dwCapacity);
-  virtual FWL_ERR GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart);
+  // CFWL_WidgetTP
+  FWL_Error Initialize() override;
+  FWL_Error Finalize() override;
+  bool IsValidWidget(IFWL_Widget* pWidget) override;
+  uint32_t SetThemeID(IFWL_Widget* pWidget,
+                      uint32_t dwThemeID,
+                      FX_BOOL bChildren = TRUE) override;
+  FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams) override;
+  FX_BOOL DrawText(CFWL_ThemeText* pParams) override;
+  void* GetCapacity(CFWL_ThemePart* pThemePart,
+                    CFWL_WidgetCapacity dwCapacity) override;
+  FWL_Error GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart) override;
 
  protected:
   void CalCloseBox(IFWL_Widget* pWidget, CFX_RectF& rect);
@@ -66,7 +68,7 @@ class CFWL_FormTP : public CFWL_WidgetTP {
   void DrawMaximizeBox(CFX_Graphics* pGraphics,
                        const CFX_RectF* pRect,
                        FWLTHEME_STATE eState,
-                       FX_BOOL bMax,
+                       bool bMax,
                        CFX_Matrix* pMatrix,
                        int32_t iActive = 0);
   void DrawIconImage(CFX_Graphics* pGraphics,

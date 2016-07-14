@@ -9,6 +9,7 @@
 #include "core/fdrm/crypto/include/fx_crypt.h"
 #include "core/fpdfapi/fpdf_font/cpdf_type1font.h"
 #include "core/fpdfapi/fpdf_font/font_int.h"
+#include "core/fpdfapi/fpdf_page/cpdf_pagemodule.h"
 #include "core/fpdfapi/fpdf_page/cpdf_pattern.h"
 #include "core/fpdfapi/fpdf_page/cpdf_shadingpattern.h"
 #include "core/fpdfapi/fpdf_page/cpdf_tilingpattern.h"
@@ -18,110 +19,11 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
-#include "core/fpdfapi/ipdf_pagemodule.h"
-
-namespace {
-
-class CPDF_PageModule : public IPDF_PageModule {
- public:
-  CPDF_PageModule()
-      : m_StockGrayCS(nullptr, PDFCS_DEVICEGRAY),
-        m_StockRGBCS(nullptr, PDFCS_DEVICERGB),
-        m_StockCMYKCS(nullptr, PDFCS_DEVICECMYK),
-        m_StockPatternCS(nullptr) {}
-
- private:
-  ~CPDF_PageModule() override {}
-
-  CPDF_DocPageData* CreateDocData(CPDF_Document* pDoc) override {
-    return new CPDF_DocPageData(pDoc);
-  }
-
-  void ReleaseDoc(CPDF_Document* pDoc) override;
-  void ClearDoc(CPDF_Document* pDoc) override;
-
-  CPDF_FontGlobals* GetFontGlobals() override { return &m_FontGlobals; }
-
-  void ClearStockFont(CPDF_Document* pDoc) override {
-    m_FontGlobals.Clear(pDoc);
-  }
-
-  CPDF_ColorSpace* GetStockCS(int family) override;
-  void NotifyCJKAvailable() override;
-
-  CPDF_FontGlobals m_FontGlobals;
-  CPDF_DeviceCS m_StockGrayCS;
-  CPDF_DeviceCS m_StockRGBCS;
-  CPDF_DeviceCS m_StockCMYKCS;
-  CPDF_PatternCS m_StockPatternCS;
-};
-
-}  // namespace
-
-CPDF_ColorSpace* CPDF_PageModule::GetStockCS(int family) {
-  if (family == PDFCS_DEVICEGRAY) {
-    return &m_StockGrayCS;
-  }
-  if (family == PDFCS_DEVICERGB) {
-    return &m_StockRGBCS;
-  }
-  if (family == PDFCS_DEVICECMYK) {
-    return &m_StockCMYKCS;
-  }
-  if (family == PDFCS_PATTERN) {
-    return &m_StockPatternCS;
-  }
-  return NULL;
-}
 
 void CPDF_ModuleMgr::InitPageModule() {
   m_pPageModule.reset(new CPDF_PageModule);
 }
 
-void CPDF_PageModule::ReleaseDoc(CPDF_Document* pDoc) {
-  delete pDoc->GetPageData();
-}
-void CPDF_PageModule::ClearDoc(CPDF_Document* pDoc) {
-  pDoc->GetPageData()->Clear(FALSE);
-}
-void CPDF_PageModule::NotifyCJKAvailable() {
-  m_FontGlobals.m_CMapManager.ReloadAll();
-}
-
-CPDF_Font* CPDF_Document::LoadFont(CPDF_Dictionary* pFontDict) {
-  ASSERT(pFontDict);
-  return GetValidatePageData()->GetFont(pFontDict, FALSE);
-}
-
-CPDF_StreamAcc* CPDF_Document::LoadFontFile(CPDF_Stream* pStream) {
-  return GetValidatePageData()->GetFontFileStreamAcc(pStream);
-}
-
-CPDF_ColorSpace* CPDF_Document::LoadColorSpace(CPDF_Object* pCSObj,
-                                               CPDF_Dictionary* pResources) {
-  return GetValidatePageData()->GetColorSpace(pCSObj, pResources);
-}
-CPDF_Pattern* CPDF_Document::LoadPattern(CPDF_Object* pPatternObj,
-                                         FX_BOOL bShading,
-                                         const CFX_Matrix* matrix) {
-  return GetValidatePageData()->GetPattern(pPatternObj, bShading, matrix);
-}
-CPDF_IccProfile* CPDF_Document::LoadIccProfile(CPDF_Stream* pStream) {
-  return GetValidatePageData()->GetIccProfile(pStream);
-}
-CPDF_Image* CPDF_Document::LoadImageF(CPDF_Object* pObj) {
-  if (!pObj) {
-    return NULL;
-  }
-  FXSYS_assert(pObj->GetObjNum());
-  return GetValidatePageData()->GetImage(pObj);
-}
-void CPDF_Document::RemoveColorSpaceFromPageData(CPDF_Object* pCSObj) {
-  if (!pCSObj) {
-    return;
-  }
-  GetPageData()->ReleaseColorSpace(pCSObj);
-}
 CPDF_DocPageData::CPDF_DocPageData(CPDF_Document* pPDFDoc)
     : m_pPDFDoc(pPDFDoc), m_bForceClear(FALSE) {}
 
@@ -150,10 +52,8 @@ void CPDF_DocPageData::Clear(FX_BOOL bForceRelease) {
     if (!ptData->get())
       continue;
 
-    if (bForceRelease || ptData->use_count() < 2) {
-      ptData->get()->SetForceClear(bForceRelease);
+    if (bForceRelease || ptData->use_count() < 2)
       ptData->clear();
-    }
   }
 
   for (auto& it : m_FontMap) {
@@ -259,7 +159,7 @@ CPDF_Font* CPDF_DocPageData::GetFont(CPDF_Dictionary* pFontDict,
   return fontData->AddRef();
 }
 
-CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteStringC& fontName,
+CPDF_Font* CPDF_DocPageData::GetStandardFont(const CFX_ByteString& fontName,
                                              CPDF_FontEncoding* pEncoding) {
   if (fontName.IsEmpty())
     return nullptr;
@@ -326,12 +226,12 @@ CPDF_ColorSpace* CPDF_DocPageData::GetColorSpace(
     return nullptr;
 
   if (pCSObj->IsName()) {
-    CFX_ByteString name = pCSObj->GetConstString();
+    CFX_ByteString name = pCSObj->GetString();
     CPDF_ColorSpace* pCS = CPDF_ColorSpace::ColorspaceFromName(name);
     if (!pCS && pResources) {
       CPDF_Dictionary* pList = pResources->GetDictBy("ColorSpace");
       if (pList) {
-        pCSObj = pList->GetDirectObjectBy(name.AsByteStringC());
+        pCSObj = pList->GetDirectObjectBy(name);
         return GetColorSpace(pCSObj, nullptr);
       }
     }
@@ -416,7 +316,7 @@ void CPDF_DocPageData::ReleaseColorSpace(CPDF_Object* pColorSpace) {
 
 CPDF_Pattern* CPDF_DocPageData::GetPattern(CPDF_Object* pPatternObj,
                                            FX_BOOL bShading,
-                                           const CFX_Matrix* matrix) {
+                                           const CFX_Matrix& matrix) {
   if (!pPatternObj)
     return nullptr;
 
@@ -436,9 +336,9 @@ CPDF_Pattern* CPDF_DocPageData::GetPattern(CPDF_Object* pPatternObj,
     CPDF_Dictionary* pDict = pPatternObj ? pPatternObj->GetDict() : nullptr;
     if (pDict) {
       int type = pDict->GetIntegerBy("PatternType");
-      if (type == 1) {
+      if (type == CPDF_Pattern::TILING) {
         pPattern = new CPDF_TilingPattern(m_pPDFDoc, pPatternObj, matrix);
-      } else if (type == 2) {
+      } else if (type == CPDF_Pattern::SHADING) {
         pPattern =
             new CPDF_ShadingPattern(m_pPDFDoc, pPatternObj, FALSE, matrix);
       }
@@ -525,7 +425,8 @@ CPDF_IccProfile* CPDF_DocPageData::GetIccProfile(
   stream.LoadAllData(pIccProfileStream, FALSE);
   uint8_t digest[20];
   CRYPT_SHA1Generate(stream.GetData(), stream.GetSize(), digest);
-  auto hash_it = m_HashProfileMap.find(CFX_ByteStringC(digest, 20));
+  CFX_ByteString bsDigest(digest, 20);
+  auto hash_it = m_HashProfileMap.find(bsDigest);
   if (hash_it != m_HashProfileMap.end()) {
     auto it_copied_stream = m_IccProfileMap.find(hash_it->second);
     return it_copied_stream->second->AddRef();
@@ -534,7 +435,7 @@ CPDF_IccProfile* CPDF_DocPageData::GetIccProfile(
       new CPDF_IccProfile(stream.GetData(), stream.GetSize());
   CPDF_CountedIccProfile* ipData = new CPDF_CountedIccProfile(pProfile);
   m_IccProfileMap[pIccProfileStream] = ipData;
-  m_HashProfileMap[CFX_ByteStringC(digest, 20)] = pIccProfileStream;
+  m_HashProfileMap[bsDigest] = pIccProfileStream;
   return ipData->AddRef();
 }
 

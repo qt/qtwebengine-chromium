@@ -25,29 +25,30 @@ class FDE_CSSCustomProperty : public CFX_Target {
 };
 
 struct FDE_CSSPROPERTYARGS {
-  IFX_MEMAllocator* pStaticStore;
+  IFX_MemoryAllocator* pStaticStore;
   CFX_MapPtrToPtr* pStringCache;
   FDE_LPCCSSPROPERTYTABLE pProperty;
 };
 
-class CFDE_CSSDeclaration : public IFDE_CSSDeclaration, public CFX_Target {
+class CFDE_CSSDeclaration : public CFX_Target {
  public:
   CFDE_CSSDeclaration()
-      : m_pFirstProperty(NULL),
-        m_pLastProperty(NULL),
-        m_pFirstCustom(NULL),
-        m_pLastCustom(NULL) {}
-  virtual IFDE_CSSValue* GetProperty(FDE_CSSPROPERTY eProperty,
-                                     FX_BOOL& bImportant) const;
-  virtual FX_POSITION GetStartPosition() const;
-  virtual void GetNextProperty(FX_POSITION& pos,
-                               FDE_CSSPROPERTY& eProperty,
-                               IFDE_CSSValue*& pValue,
-                               FX_BOOL& bImportant) const;
-  virtual FX_POSITION GetStartCustom() const;
-  virtual void GetNextCustom(FX_POSITION& pos,
-                             CFX_WideString& wsName,
-                             CFX_WideString& wsValue) const;
+      : m_pFirstProperty(nullptr),
+        m_pLastProperty(nullptr),
+        m_pFirstCustom(nullptr),
+        m_pLastCustom(nullptr) {}
+
+  IFDE_CSSValue* GetProperty(FDE_CSSPROPERTY eProperty,
+                             FX_BOOL& bImportant) const;
+  FX_POSITION GetStartPosition() const;
+  void GetNextProperty(FX_POSITION& pos,
+                       FDE_CSSPROPERTY& eProperty,
+                       IFDE_CSSValue*& pValue,
+                       FX_BOOL& bImportant) const;
+  FX_POSITION GetStartCustom() const;
+  void GetNextCustom(FX_POSITION& pos,
+                     CFX_WideString& wsName,
+                     CFX_WideString& wsValue) const;
   FX_BOOL AddProperty(const FDE_CSSPROPERTYARGS* pArgs,
                       const FX_WCHAR* pszValue,
                       int32_t iValueLen);
@@ -86,13 +87,13 @@ class CFDE_CSSDeclaration : public IFDE_CSSDeclaration, public CFX_Target {
                                  const FX_WCHAR* pszValue,
                                  int32_t iValueLen,
                                  FX_BOOL bImportant);
-  FX_BOOL ParseBorderPropoerty(IFX_MEMAllocator* pStaticStore,
+  FX_BOOL ParseBorderPropoerty(IFX_MemoryAllocator* pStaticStore,
                                const FX_WCHAR* pszValue,
                                int32_t iValueLen,
                                IFDE_CSSValue*& pColor,
                                IFDE_CSSValue*& pStyle,
                                IFDE_CSSValue*& pWidth) const;
-  void AddBorderProperty(IFX_MEMAllocator* pStaticStore,
+  void AddBorderProperty(IFX_MemoryAllocator* pStaticStore,
                          IFDE_CSSValue* pColor,
                          IFDE_CSSValue* pStyle,
                          IFDE_CSSValue* pWidth,
@@ -112,7 +113,7 @@ class CFDE_CSSDeclaration : public IFDE_CSSDeclaration, public CFX_Target {
                                  const FX_WCHAR* pszValue,
                                  int32_t iValueLen,
                                  FX_BOOL bImportant);
-  FX_BOOL Add4ValuesProperty(IFX_MEMAllocator* pStaticStore,
+  FX_BOOL Add4ValuesProperty(IFX_MemoryAllocator* pStaticStore,
                              const CFDE_CSSValueArray& list,
                              FX_BOOL bImportant,
                              FDE_CSSPROPERTY eLeft,
@@ -140,19 +141,21 @@ class CFDE_CSSDeclaration : public IFDE_CSSDeclaration, public CFX_Target {
   const FX_WCHAR* CopyToLocal(const FDE_CSSPROPERTYARGS* pArgs,
                               const FX_WCHAR* pszValue,
                               int32_t iValueLen);
-  void AddPropertyHolder(IFX_MEMAllocator* pStaticStore,
+  void AddPropertyHolder(IFX_MemoryAllocator* pStaticStore,
                          FDE_CSSPROPERTY eProperty,
                          IFDE_CSSValue* pValue,
                          FX_BOOL bImportant);
-  IFDE_CSSPrimitiveValue* NewNumberValue(IFX_MEMAllocator* pStaticStore,
+  IFDE_CSSPrimitiveValue* NewNumberValue(IFX_MemoryAllocator* pStaticStore,
                                          FDE_CSSPRIMITIVETYPE eUnit,
                                          FX_FLOAT fValue) const;
-  IFDE_CSSPrimitiveValue* NewEnumValue(IFX_MEMAllocator* pStaticStore,
+  IFDE_CSSPrimitiveValue* NewEnumValue(IFX_MemoryAllocator* pStaticStore,
                                        FDE_CSSPROPERTYVALUE eValue) const;
+
   FDE_CSSPropertyHolder* m_pFirstProperty;
   FDE_CSSPropertyHolder* m_pLastProperty;
   FDE_CSSCustomProperty* m_pFirstCustom;
   FDE_CSSCustomProperty* m_pLastCustom;
 };
+using CFDE_CSSDeclarationArray = CFX_ArrayTemplate<CFDE_CSSDeclaration*>;
 
 #endif  // XFA_FDE_CSS_FDE_CSSDECLARATION_H_

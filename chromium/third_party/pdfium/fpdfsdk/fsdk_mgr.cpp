@@ -12,6 +12,7 @@
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
+#include "core/fxcrt/include/cfx_retain_ptr.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/javascript/ijs_runtime.h"
@@ -19,12 +20,12 @@
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
+#include "xfa/fxfa/include/xfa_rendercontext.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
-#include "xfa/include/fxfa/xfa_rendercontext.h"
 #endif  // PDF_ENABLE_XFA
 
 #if _FX_OS_ == _FX_ANDROID_
@@ -33,192 +34,9 @@
 #include <ctime>
 #endif
 
-namespace {
-
-int CharSet2CP(int charset) {
-  if (charset == 128)
-    return 932;
-  if (charset == 134)
-    return 936;
-  if (charset == 129)
-    return 949;
-  if (charset == 136)
-    return 950;
-  return 0;
-}
-
-}  // namespace
-
 FPDF_WIDESTRING AsFPDFWideString(CFX_ByteString* bsUTF16LE) {
   return reinterpret_cast<FPDF_WIDESTRING>(
       bsUTF16LE->GetBuffer(bsUTF16LE->GetLength()));
-}
-
-class CFX_SystemHandler : public IFX_SystemHandler {
- public:
-  explicit CFX_SystemHandler(CPDFDoc_Environment* pEnv)
-      : m_pEnv(pEnv), m_nCharSet(-1) {}
-  ~CFX_SystemHandler() override {}
-
- public:
-  // IFX_SystemHandler
-  void InvalidateRect(FX_HWND hWnd, FX_RECT rect) override;
-  void OutputSelectedRect(void* pFormFiller, CFX_FloatRect& rect) override;
-  FX_BOOL IsSelectionImplemented() override;
-  CFX_WideString GetClipboardText(FX_HWND hWnd) override { return L""; }
-  FX_BOOL SetClipboardText(FX_HWND hWnd, CFX_WideString str) override {
-    return FALSE;
-  }
-  void ClientToScreen(FX_HWND hWnd, int32_t& x, int32_t& y) override {}
-  void ScreenToClient(FX_HWND hWnd, int32_t& x, int32_t& y) override {}
-  void SetCursor(int32_t nCursorType) override;
-  FX_HMENU CreatePopupMenu() override { return NULL; }
-  FX_BOOL AppendMenuItem(FX_HMENU hMenu,
-                         int32_t nIDNewItem,
-                         CFX_WideString str) override {
-    return FALSE;
-  }
-  FX_BOOL EnableMenuItem(FX_HMENU hMenu,
-                         int32_t nIDItem,
-                         FX_BOOL bEnabled) override {
-    return FALSE;
-  }
-  int32_t TrackPopupMenu(FX_HMENU hMenu,
-                         int32_t x,
-                         int32_t y,
-                         FX_HWND hParent) override {
-    return -1;
-  }
-  void DestroyMenu(FX_HMENU hMenu) override {}
-  CFX_ByteString GetNativeTrueTypeFont(int32_t nCharset) override;
-  FX_BOOL FindNativeTrueTypeFont(int32_t nCharset,
-                                 CFX_ByteString sFontFaceName) override;
-  CPDF_Font* AddNativeTrueTypeFontToPDF(CPDF_Document* pDoc,
-                                        CFX_ByteString sFontFaceName,
-                                        uint8_t nCharset) override;
-  int32_t SetTimer(int32_t uElapse, TimerCallback lpTimerFunc) override;
-  void KillTimer(int32_t nID) override;
-  FX_BOOL IsSHIFTKeyDown(uint32_t nFlag) override {
-    return m_pEnv->FFI_IsSHIFTKeyDown(nFlag);
-  }
-  FX_BOOL IsCTRLKeyDown(uint32_t nFlag) override {
-    return m_pEnv->FFI_IsCTRLKeyDown(nFlag);
-  }
-  FX_BOOL IsALTKeyDown(uint32_t nFlag) override {
-    return m_pEnv->FFI_IsALTKeyDown(nFlag);
-  }
-  FX_BOOL IsINSERTKeyDown(uint32_t nFlag) override {
-    return m_pEnv->FFI_IsINSERTKeyDown(nFlag);
-  }
-  FX_SYSTEMTIME GetLocalTime() override;
-  int32_t GetCharSet() override { return m_nCharSet; }
-  void SetCharSet(int32_t nCharSet) override { m_nCharSet = nCharSet; }
-
- private:
-  CPDFDoc_Environment* m_pEnv;
-  int m_nCharSet;
-};
-
-void CFX_SystemHandler::SetCursor(int32_t nCursorType) {
-  m_pEnv->FFI_SetCursor(nCursorType);
-}
-
-void CFX_SystemHandler::InvalidateRect(FX_HWND hWnd, FX_RECT rect) {
-  CPDFSDK_Annot* pSDKAnnot = (CPDFSDK_Annot*)hWnd;
-  CPDFSDK_PageView* pPageView = pSDKAnnot->GetPageView();
-  UnderlyingPageType* pPage = pSDKAnnot->GetUnderlyingPage();
-  if (!pPage || !pPageView)
-    return;
-  CFX_Matrix page2device;
-  pPageView->GetCurrentMatrix(page2device);
-  CFX_Matrix device2page;
-  device2page.SetReverse(page2device);
-  FX_FLOAT left, top, right, bottom;
-  device2page.Transform((FX_FLOAT)rect.left, (FX_FLOAT)rect.top, left, top);
-  device2page.Transform((FX_FLOAT)rect.right, (FX_FLOAT)rect.bottom, right,
-                        bottom);
-  CFX_FloatRect rcPDF(left, bottom, right, top);
-  rcPDF.Normalize();
-
-  m_pEnv->FFI_Invalidate(pPage, rcPDF.left, rcPDF.top, rcPDF.right,
-                         rcPDF.bottom);
-}
-void CFX_SystemHandler::OutputSelectedRect(void* pFormFiller,
-                                           CFX_FloatRect& rect) {
-  CFFL_FormFiller* pFFL = (CFFL_FormFiller*)pFormFiller;
-  if (pFFL) {
-    CFX_FloatPoint leftbottom = CFX_FloatPoint(rect.left, rect.bottom);
-    CFX_FloatPoint righttop = CFX_FloatPoint(rect.right, rect.top);
-    CFX_FloatPoint ptA = pFFL->PWLtoFFL(leftbottom);
-    CFX_FloatPoint ptB = pFFL->PWLtoFFL(righttop);
-    CPDFSDK_Annot* pAnnot = pFFL->GetSDKAnnot();
-    UnderlyingPageType* pPage = pAnnot->GetUnderlyingPage();
-    ASSERT(pPage);
-    m_pEnv->FFI_OutputSelectedRect(pPage, ptA.x, ptB.y, ptB.x, ptA.y);
-  }
-}
-
-FX_BOOL CFX_SystemHandler::IsSelectionImplemented() {
-  if (m_pEnv) {
-    FPDF_FORMFILLINFO* pInfo = m_pEnv->GetFormFillInfo();
-    if (pInfo && pInfo->FFI_OutputSelectedRect)
-      return TRUE;
-  }
-  return FALSE;
-}
-
-CFX_ByteString CFX_SystemHandler::GetNativeTrueTypeFont(int32_t nCharset) {
-  return "";
-}
-
-FX_BOOL CFX_SystemHandler::FindNativeTrueTypeFont(
-    int32_t nCharset,
-    CFX_ByteString sFontFaceName) {
-  CFX_FontMgr* pFontMgr = CFX_GEModule::Get()->GetFontMgr();
-  if (!pFontMgr)
-    return FALSE;
-
-  CFX_FontMapper* pFontMapper = pFontMgr->GetBuiltinMapper();
-  if (!pFontMapper)
-    return FALSE;
-
-  if (pFontMapper->m_InstalledTTFonts.empty())
-    pFontMapper->LoadInstalledFonts();
-
-  for (const auto& font : pFontMapper->m_InstalledTTFonts) {
-    if (font.Compare(sFontFaceName.AsByteStringC()))
-      return TRUE;
-  }
-
-  return FALSE;
-}
-
-CPDF_Font* CFX_SystemHandler::AddNativeTrueTypeFontToPDF(
-    CPDF_Document* pDoc,
-    CFX_ByteString sFontFaceName,
-    uint8_t nCharset) {
-  if (pDoc) {
-    CFX_Font* pFXFont = new CFX_Font();
-    pFXFont->LoadSubst(sFontFaceName, TRUE, 0, 0, 0, CharSet2CP(nCharset),
-                       FALSE);
-    CPDF_Font* pFont = pDoc->AddFont(pFXFont, nCharset, FALSE);
-    delete pFXFont;
-    return pFont;
-  }
-
-  return NULL;
-}
-
-int32_t CFX_SystemHandler::SetTimer(int32_t uElapse,
-                                    TimerCallback lpTimerFunc) {
-  return m_pEnv->FFI_SetTimer(uElapse, lpTimerFunc);
-}
-void CFX_SystemHandler::KillTimer(int32_t nID) {
-  m_pEnv->FFI_KillTimer(nID);
-}
-
-FX_SYSTEMTIME CFX_SystemHandler::GetLocalTime() {
-  return m_pEnv->FFI_GetLocalTime();
 }
 
 CPDFDoc_Environment::CPDFDoc_Environment(UnderlyingDocumentType* pDoc,
@@ -296,7 +114,7 @@ CFX_WideString CPDFDoc_Environment::JS_fieldBrowse() {
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return CFX_WideString();
 
-  return CFX_WideString::FromLocal(CFX_ByteString(pBuff.get(), nActualLen));
+  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff.get(), nActualLen));
 }
 
 CFX_WideString CPDFDoc_Environment::JS_docGetFilePath() {
@@ -316,7 +134,7 @@ CFX_WideString CPDFDoc_Environment::JS_docGetFilePath() {
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return CFX_WideString();
 
-  return CFX_WideString::FromLocal(CFX_ByteString(pBuff.get(), nActualLen));
+  return CFX_WideString::FromLocal(CFX_ByteStringC(pBuff.get(), nActualLen));
 }
 
 void CPDFDoc_Environment::JS_docSubmitForm(void* formData,
@@ -476,7 +294,7 @@ void CPDFSDK_Document::ProcJavascriptFun() {
     CPDF_Action jsAction = docJS.GetJSAction(i, csJSName);
     if (m_pEnv->GetActionHander())
       m_pEnv->GetActionHander()->DoAction_JavaScript(
-          jsAction, CFX_WideString::FromLocal(csJSName), this);
+          jsAction, CFX_WideString::FromLocal(csJSName.AsStringC()), this);
   }
 }
 
@@ -840,7 +658,8 @@ CPDFSDK_Annot* CPDFSDK_PageView::AddAnnot(CXFA_FFWidget* pPDFAnnot) {
 #endif  // PDF_ENABLE_XFA
 
 CPDFSDK_Annot* CPDFSDK_PageView::AddAnnot(CPDF_Dictionary* pDict) {
-  return pDict ? AddAnnot(pDict->GetStringBy("Subtype"), pDict) : nullptr;
+  return pDict ? AddAnnot(pDict->GetStringBy("Subtype").c_str(), pDict)
+               : nullptr;
 }
 
 CPDFSDK_Annot* CPDFSDK_PageView::AddAnnot(const FX_CHAR* lpSubType,
@@ -1084,15 +903,14 @@ void CPDFSDK_PageView::LoadFXAnnots() {
   SetLock(TRUE);
 
 #ifdef PDF_ENABLE_XFA
-  m_page->AddRef();
+  CFX_RetainPtr<CPDFXFA_Page> protector(m_page);
   if (m_pSDKDoc->GetXFADocument()->GetDocType() == DOCTYPE_DYNAMIC_XFA) {
     CXFA_FFPageView* pageView = m_page->GetXFAPageView();
-    IXFA_WidgetIterator* pWidgetHander = pageView->CreateWidgetIterator(
-        XFA_TRAVERSEWAY_Form, XFA_WIDGETFILTER_Visible |
-                                  XFA_WIDGETFILTER_Viewable |
-                                  XFA_WIDGETFILTER_AllType);
+    std::unique_ptr<IXFA_WidgetIterator> pWidgetHander(
+        pageView->CreateWidgetIterator(
+            XFA_TRAVERSEWAY_Form,
+            XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable));
     if (!pWidgetHander) {
-      m_page->Release();
       SetLock(FALSE);
       return;
     }
@@ -1101,11 +919,9 @@ void CPDFSDK_PageView::LoadFXAnnots() {
       CPDFSDK_Annot* pAnnot = pAnnotHandlerMgr->NewAnnot(pXFAAnnot, this);
       if (!pAnnot)
         continue;
-
       m_fxAnnotArray.push_back(pAnnot);
       pAnnotHandlerMgr->Annot_OnLoad(pAnnot);
     }
-    pWidgetHander->Release();
   } else {
     CPDF_Page* pPage = m_page->GetPDFPage();
     ASSERT(pPage);
@@ -1127,7 +943,6 @@ void CPDFSDK_PageView::LoadFXAnnots() {
       pAnnotHandlerMgr->Annot_OnLoad(pAnnot);
     }
   }
-  m_page->Release();
 #else   // PDF_ENABLE_XFA
   for (size_t i = 0; i < nCount; ++i) {
     CPDF_Annot* pPDFAnnot = m_pAnnotList->GetAt(i);
@@ -1157,12 +972,10 @@ void CPDFSDK_PageView::ClearFXAnnots() {
   SetLock(FALSE);
 }
 
-void CPDFSDK_PageView::UpdateRects(CFX_RectArray& rects) {
-  for (int i = 0; i < rects.GetSize(); i++) {
-    CFX_FloatRect rc = rects.GetAt(i);
-    CPDFDoc_Environment* pEnv = m_pSDKDoc->GetEnv();
+void CPDFSDK_PageView::UpdateRects(const std::vector<CFX_FloatRect>& rects) {
+  CPDFDoc_Environment* pEnv = m_pSDKDoc->GetEnv();
+  for (const auto& rc : rects)
     pEnv->FFI_Invalidate(m_page, rc.left, rc.top, rc.right, rc.bottom);
-  }
 }
 
 void CPDFSDK_PageView::UpdateView(CPDFSDK_Annot* pAnnot) {

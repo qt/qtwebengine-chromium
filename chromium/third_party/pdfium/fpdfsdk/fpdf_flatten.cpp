@@ -45,9 +45,8 @@ FX_BOOL IsValiableRect(CFX_FloatRect rect, CFX_FloatRect rcPage) {
 void GetContentsRect(CPDF_Document* pDoc,
                      CPDF_Dictionary* pDict,
                      CPDF_RectArray* pRectArray) {
-  std::unique_ptr<CPDF_Page> pPDFPage(new CPDF_Page);
-  pPDFPage->Load(pDoc, pDict, FALSE);
-  pPDFPage->ParseContent(nullptr);
+  std::unique_ptr<CPDF_Page> pPDFPage(new CPDF_Page(pDoc, pDict, false));
+  pPDFPage->ParseContent();
 
   for (auto& pPageObject : *pPDFPage->GetPageObjectList()) {
     if (!pPageObject)
@@ -201,7 +200,7 @@ void SetPageContents(CFX_ByteString key,
 
       CFX_ByteString sStream;
       sStream.Format("q 1 0 0 1 0 0 cm /%s Do Q", key.c_str());
-      pNewContents->SetData((const uint8_t*)sStream, sStream.GetLength(), FALSE,
+      pNewContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE,
                             FALSE);
     }
     return;
@@ -220,8 +219,7 @@ void SetPageContents(CFX_ByteString key,
       CFX_ByteString sBody =
           CFX_ByteString((const FX_CHAR*)acc.GetData(), acc.GetSize());
       sStream = sStream + sBody + "\nQ";
-      pContents->SetData((const uint8_t*)sStream, sStream.GetLength(), FALSE,
-                         FALSE);
+      pContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
       pContentsArray->AddReference(pDocument, dwObjNum);
       break;
     }
@@ -247,8 +245,7 @@ void SetPageContents(CFX_ByteString key,
 
     CFX_ByteString sStream;
     sStream.Format("q 1 0 0 1 0 0 cm /%s Do Q", key.c_str());
-    pNewContents->SetData((const uint8_t*)sStream, sStream.GetLength(), FALSE,
-                          FALSE);
+    pNewContents->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
   }
 }
 
@@ -395,7 +392,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
       char sExtend[5] = {};
       FXSYS_itoa(iKey, sExtend, 10);
       key = CFX_ByteString("FFT") + CFX_ByteString(sExtend);
-      if (!pPageXObject->KeyExist(key.AsByteStringC()))
+      if (!pPageXObject->KeyExist(key))
         break;
     }
   }
@@ -405,7 +402,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
   CPDF_Dictionary* pNewXORes = NULL;
 
   if (!key.IsEmpty()) {
-    pPageXObject->SetAtReference(key.AsByteStringC(), pDocument, dwObjNum);
+    pPageXObject->SetAtReference(key, pDocument, dwObjNum);
     CPDF_Dictionary* pNewOXbjectDic = pNewXObject->GetDict();
     pNewXORes = new CPDF_Dictionary;
     pNewOXbjectDic->SetAt("Resources", pNewXORes);
@@ -437,7 +434,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
         continue;
 
       if (!sAnnotState.IsEmpty()) {
-        pAPStream = pAPDic->GetStreamBy(sAnnotState.AsByteStringC());
+        pAPStream = pAPDic->GetStreamBy(sAnnotState);
       } else {
         auto it = pAPDic->begin();
         if (it != pAPDic->end()) {
@@ -486,7 +483,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     CFX_ByteString sFormName;
     sFormName.Format("F%d", i);
     uint32_t dwObjNum = pDocument->AddIndirectObject(pObj);
-    pXObject->SetAtReference(sFormName.AsByteStringC(), pDocument, dwObjNum);
+    pXObject->SetAtReference(sFormName, pDocument, dwObjNum);
 
     CPDF_StreamAcc acc;
     acc.LoadAllData(pNewXObject);
@@ -508,9 +505,7 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     sTemp.Format("q %f 0 0 %f %f %f cm /%s Do Q\n", m.a, m.d, m.e, m.f,
                  sFormName.c_str());
     sStream += sTemp;
-
-    pNewXObject->SetData((const uint8_t*)sStream, sStream.GetLength(), FALSE,
-                         FALSE);
+    pNewXObject->SetData(sStream.raw_str(), sStream.GetLength(), FALSE, FALSE);
   }
   pPageDict->RemoveAt("Annots");
 

@@ -13,9 +13,7 @@
 #include "xfa/fwl/core/cfwl_widgetimpproperties.h"
 
 #define FWL_CLASS_ListBox L"FWL_LISTBOX"
-#define FWL_CLASSHASH_ListBox 1777358317
 #define FWL_STYLEEXT_LTB_MultiSelection (1L << 0)
-#define FWL_STYLEEXT_LTB_Sort (1L << 1)
 #define FWL_STYLEEXT_LTB_ShowScrollBarAlaways (1L << 2)
 #define FWL_STYLEEXT_LTB_MultiColumn (1L << 3)
 #define FWL_STYLEEXT_LTB_LeftAlign (0L << 4)
@@ -30,42 +28,16 @@
 #define FWL_ITEMSTATE_LTB_Selected (1L << 0)
 #define FWL_ITEMSTATE_LTB_Focused (1L << 1)
 #define FWL_ITEMSTATE_LTB_Checked (1L << 2)
-#define FWL_PART_LTB_Border 1
-#define FWL_PART_LTB_Edge 2
-#define FWL_PART_LTB_Background 3
-#define FWL_PART_LTB_ListItem 4
-#define FWL_PART_LTB_Check 5
-#define FWL_PART_LTB_Icon 6
-#define FWL_PARTSTATE_LTB_Normal (0L << 0)
-#define FWL_PARTSTATE_LTB_Selected (1L << 0)
-#define FWL_PARTSTATE_LTB_Disabled (2L << 0)
-#define FWL_PARTSTATE_LTB_Focused (1L << 2)
-#define FWL_PARTSTATE_LTB_UnChecked (0L << 3)
-#define FWL_PARTSTATE_LTB_Checked (1L << 3)
-#define FWL_PARTSTATE_LTB_Mask (3L << 0)
-#define FWL_WGTHITTEST_LTB_Item FWL_WGTHITTEST_MAX + 1
-#define FWL_WGTHITTEST_LTB_HScrollBar FWL_WGTHITTEST_MAX + 2
-#define FWL_WGTHITTEST_LTB_VScrollBar FWL_WGTHITTEST_MAX + 3
-#define FWL_EVT_LTB_SelChanged L"FWL_EVENT_LTB_SelChanged"
-#define FWL_EVT_LTB_DrawItem L"FWL_EVENT_LTB_DrawItem"
-#define FWL_EVTHASH_LTB_SelChanged 1701781688
-#define FWL_EVTHASH_LTB_DrawItem 1050853991
 
 typedef struct FWL_HLISTITEM_ { void* pData; } * FWL_HLISTITEM;
 
 class CFX_DIBitmap;
-class IFWL_ListBoxDP;
 
-struct FWL_ListBoxItemData {
-  IFWL_ListBoxDP* pDataProvider;
-  int32_t iIndex;
-};
-
-BEGIN_FWL_EVENT_DEF(CFWL_EvtLtbSelChanged, FWL_EVTHASH_LTB_SelChanged)
+BEGIN_FWL_EVENT_DEF(CFWL_EvtLtbSelChanged, CFWL_EventType::SelectChanged)
 CFX_Int32Array iarraySels;
 END_FWL_EVENT_DEF
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtLtbDrawItem, FWL_EVTHASH_LTB_DrawItem)
+BEGIN_FWL_EVENT_DEF(CFWL_EvtLtbDrawItem, CFWL_EventType::DrawItem)
 CFX_Graphics* m_pGraphics;
 CFX_Matrix m_matrix;
 int32_t m_index;
@@ -81,36 +53,36 @@ class IFWL_ListBoxDP : public IFWL_DataProvider {
                                FWL_HLISTITEM hItem,
                                int32_t nIndex) = 0;
   virtual uint32_t GetItemStyles(IFWL_Widget* pWidget, FWL_HLISTITEM hItem) = 0;
-  virtual FWL_ERR GetItemText(IFWL_Widget* pWidget,
-                              FWL_HLISTITEM hItem,
-                              CFX_WideString& wsText) = 0;
-  virtual FWL_ERR GetItemRect(IFWL_Widget* pWidget,
-                              FWL_HLISTITEM hItem,
-                              CFX_RectF& rtItem) = 0;
-  virtual void* GetItemData(IFWL_Widget* pWidget, FWL_HLISTITEM hItem) = 0;
-  virtual FWL_ERR SetItemStyles(IFWL_Widget* pWidget,
+  virtual FWL_Error GetItemText(IFWL_Widget* pWidget,
                                 FWL_HLISTITEM hItem,
-                                uint32_t dwStyle) = 0;
-  virtual FWL_ERR SetItemText(IFWL_Widget* pWidget,
-                              FWL_HLISTITEM hItem,
-                              const FX_WCHAR* pszText) = 0;
-  virtual FWL_ERR SetItemRect(IFWL_Widget* pWidget,
-                              FWL_HLISTITEM hItem,
-                              const CFX_RectF& rtItem) = 0;
+                                CFX_WideString& wsText) = 0;
+  virtual FWL_Error GetItemRect(IFWL_Widget* pWidget,
+                                FWL_HLISTITEM hItem,
+                                CFX_RectF& rtItem) = 0;
+  virtual void* GetItemData(IFWL_Widget* pWidget, FWL_HLISTITEM hItem) = 0;
+  virtual FWL_Error SetItemStyles(IFWL_Widget* pWidget,
+                                  FWL_HLISTITEM hItem,
+                                  uint32_t dwStyle) = 0;
+  virtual FWL_Error SetItemText(IFWL_Widget* pWidget,
+                                FWL_HLISTITEM hItem,
+                                const FX_WCHAR* pszText) = 0;
+  virtual FWL_Error SetItemRect(IFWL_Widget* pWidget,
+                                FWL_HLISTITEM hItem,
+                                const CFX_RectF& rtItem) = 0;
   virtual FX_FLOAT GetItemHeight(IFWL_Widget* pWidget) = 0;
   virtual CFX_DIBitmap* GetItemIcon(IFWL_Widget* pWidget,
                                     FWL_HLISTITEM hItem) = 0;
-  virtual FWL_ERR GetItemCheckRect(IFWL_Widget* pWidget,
-                                   FWL_HLISTITEM hItem,
-                                   CFX_RectF& rtCheck) = 0;
-  virtual FWL_ERR SetItemCheckRect(IFWL_Widget* pWidget,
-                                   FWL_HLISTITEM hItem,
-                                   const CFX_RectF& rtCheck) = 0;
+  virtual FWL_Error GetItemCheckRect(IFWL_Widget* pWidget,
+                                     FWL_HLISTITEM hItem,
+                                     CFX_RectF& rtCheck) = 0;
+  virtual FWL_Error SetItemCheckRect(IFWL_Widget* pWidget,
+                                     FWL_HLISTITEM hItem,
+                                     const CFX_RectF& rtCheck) = 0;
   virtual uint32_t GetItemCheckState(IFWL_Widget* pWidget,
                                      FWL_HLISTITEM hItem) = 0;
-  virtual FWL_ERR SetItemCheckState(IFWL_Widget* pWidget,
-                                    FWL_HLISTITEM hItem,
-                                    uint32_t dwCheckState) = 0;
+  virtual FWL_Error SetItemCheckState(IFWL_Widget* pWidget,
+                                      FWL_HLISTITEM hItem,
+                                      uint32_t dwCheckState) = 0;
 };
 
 class IFWL_ListBoxCompare {
@@ -130,10 +102,9 @@ class IFWL_ListBox : public IFWL_Widget {
   int32_t CountSelItems();
   FWL_HLISTITEM GetSelItem(int32_t nIndexSel);
   int32_t GetSelIndex(int32_t nIndex);
-  FWL_ERR SetSelItem(FWL_HLISTITEM hItem, FX_BOOL bSelect = TRUE);
-  FWL_ERR GetItemText(FWL_HLISTITEM hItem, CFX_WideString& wsText);
-  FWL_ERR GetScrollPos(FX_FLOAT& fPos, FX_BOOL bVert = TRUE);
-  FWL_ERR* Sort(IFWL_ListBoxCompare* pCom);
+  FWL_Error SetSelItem(FWL_HLISTITEM hItem, FX_BOOL bSelect = TRUE);
+  FWL_Error GetItemText(FWL_HLISTITEM hItem, CFX_WideString& wsText);
+  FWL_Error GetScrollPos(FX_FLOAT& fPos, FX_BOOL bVert = TRUE);
 
  protected:
   IFWL_ListBox();

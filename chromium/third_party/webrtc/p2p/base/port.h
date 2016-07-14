@@ -12,6 +12,7 @@
 #define WEBRTC_P2P_BASE_PORT_H_
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -106,6 +107,11 @@ struct ProtocolAddress {
       : address(a), proto(p), secure(false) { }
   ProtocolAddress(const rtc::SocketAddress& a, ProtocolType p, bool sec)
       : address(a), proto(p), secure(sec) { }
+
+  bool operator==(const ProtocolAddress& o) const {
+    return address == o.address && proto == o.proto && secure == o.secure;
+  }
+  bool operator!=(const ProtocolAddress& o) const { return !(*this == o); }
 };
 
 typedef std::set<rtc::SocketAddress> ServerAddresses;
@@ -175,22 +181,15 @@ class Port : public PortInterface, public rtc::MessageHandler,
   uint32_t generation() { return generation_; }
   void set_generation(uint32_t generation) { generation_ = generation; }
 
-  // ICE requires a single username/password per content/media line. So the
-  // |ice_username_fragment_| of the ports that belongs to the same content will
-  // be the same. However this causes a small complication with our relay
-  // server, which expects different username for RTP and RTCP.
-  //
-  // To resolve this problem, we implemented the username_fragment(),
-  // which returns a different username (calculated from
-  // |ice_username_fragment_|) for RTCP in the case of ICEPROTO_GOOGLE. And the
-  // username_fragment() simply returns |ice_username_fragment_| when running
-  // in ICEPROTO_RFC5245.
-  //
-  // As a result the ICEPROTO_GOOGLE will use different usernames for RTP and
-  // RTCP. And the ICEPROTO_RFC5245 will use same username for both RTP and
-  // RTCP.
   const std::string username_fragment() const;
   const std::string& password() const { return password_; }
+
+  // May be called when this port was initially created by a pooled
+  // PortAllocatorSession, and is now being assigned to an ICE transport.
+  // Updates the information for candidates as well.
+  void SetIceParameters(int component,
+                        const std::string& username_fragment,
+                        const std::string& password);
 
   // Fired when candidates are discovered by the port. When all candidates
   // are discovered that belong to port SignalAddressReady is fired.
@@ -336,7 +335,7 @@ class Port : public PortInterface, public rtc::MessageHandler,
   bool GetStunMessage(const char* data,
                       size_t size,
                       const rtc::SocketAddress& addr,
-                      rtc::scoped_ptr<IceMessage>* out_msg,
+                      std::unique_ptr<IceMessage>* out_msg,
                       std::string* out_username);
 
   // Checks if the address in addr is compatible with the port's ip.
@@ -574,10 +573,14 @@ class Connection : public CandidatePairInterface,
 
   uint32_t ComputeNetworkCost() const;
 
-  // Update the ICE password of the remote candidate if |ice_ufrag| matches
-  // the candidate's ufrag, and the candidate's passwrod has not been set.
-  void MaybeSetRemoteIceCredentials(const std::string& ice_ufrag,
-                                    const std::string& ice_pwd);
+  // Update the ICE password and/or generation of the remote candidate if a
+  // ufrag in |remote_ice_parameters| matches the candidate's ufrag, and the
+  // candidate's password and/or ufrag has not been set.
+  // |remote_ice_parameters| should be a list of known ICE parameters ordered
+  // by generation.
+  void MaybeSetRemoteIceCredentialsAndGeneration(const std::string& ice_ufrag,
+                                                 const std::string& ice_pwd,
+                                                 int generation);
 
   // If |remote_candidate_| is peer reflexive and is equivalent to
   // |new_candidate| except the type, update |remote_candidate_| to

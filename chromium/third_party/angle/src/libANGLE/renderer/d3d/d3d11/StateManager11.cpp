@@ -11,6 +11,7 @@
 #include "common/BitSetIterator.h"
 #include "common/utilities.h"
 #include "libANGLE/Query.h"
+#include "libANGLE/VertexArray.h"
 #include "libANGLE/renderer/d3d/d3d11/Framebuffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Renderer11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderTarget11.h"
@@ -130,7 +131,8 @@ void StateManager11::SRVCache::clear()
 }
 
 static const GLenum QueryTypes[] = {GL_ANY_SAMPLES_PASSED, GL_ANY_SAMPLES_PASSED_CONSERVATIVE,
-                                    GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, GL_TIME_ELAPSED_EXT};
+                                    GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, GL_TIME_ELAPSED_EXT,
+                                    GL_COMMANDS_COMPLETED_CHROMIUM};
 
 StateManager11::StateManager11(Renderer11 *renderer)
     : mRenderer(renderer),
@@ -839,7 +841,7 @@ void StateManager11::onDeleteQueryObject(Query11 *query)
     mCurrentQueries.erase(query);
 }
 
-gl::Error StateManager11::onMakeCurrent(const gl::Data &data)
+gl::Error StateManager11::onMakeCurrent(const gl::ContextState &data)
 {
     const gl::State &state = *data.state;
 
@@ -1083,7 +1085,7 @@ gl::Error StateManager11::syncFramebuffer(const gl::Framebuffer *framebuffer)
     }
 
     // TODO(jmadill): Use context caps?
-    UINT drawBuffers = mRenderer->getRendererCaps().maxDrawBuffers;
+    UINT drawBuffers = mRenderer->getNativeCaps().maxDrawBuffers;
 
     // Apply the render target and depth stencil
     mRenderer->getDeviceContext()->OMSetRenderTargets(drawBuffers, framebufferRTVs.data(),

@@ -31,6 +31,7 @@
 #include "public/web/WebInputEvent.h"
 
 #include "platform/KeyboardCodes.h"
+#include "wtf/ASCIICType.h"
 #include "wtf/Assertions.h"
 #include "wtf/StringExtras.h"
 #include <ctype.h>
@@ -54,7 +55,7 @@ struct SameSizeAsWebMouseWheelEvent : public SameSizeAsWebMouseEvent {
 };
 
 struct SameSizeAsWebGestureEvent : public SameSizeAsWebInputEvent {
-    int gestureData[12];
+    int gestureData[13];
 };
 
 struct SameSizeAsWebTouchEvent : public SameSizeAsWebInputEvent {
@@ -193,8 +194,9 @@ void WebKeyboardEvent::setKeyIdentifierFromWindowsKeyCode()
     if (id) {
         strncpy(keyIdentifier, id, sizeof(keyIdentifier) - 1);
         keyIdentifier[sizeof(keyIdentifier) - 1] = '\0';
-    } else
-        snprintf(keyIdentifier, sizeof(keyIdentifier), "U+%04X", toupper(windowsKeyCode));
+    } else {
+        snprintf(keyIdentifier, sizeof(keyIdentifier), "U+%04X", toASCIIUpper(windowsKeyCode));
+    }
 }
 
 } // namespace blink

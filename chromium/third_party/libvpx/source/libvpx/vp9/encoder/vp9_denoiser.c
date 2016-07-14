@@ -21,12 +21,6 @@
 #include "vp9/encoder/vp9_denoiser.h"
 #include "vp9/encoder/vp9_encoder.h"
 
-/* The VP9 denoiser is similar to that of the VP8 denoiser. While
- * choosing the motion vectors / reference frames, the denoiser is run, and if
- * it did not modify the signal to much, the denoised block is copied to the
- * signal.
- */
-
 #ifdef OUTPUT_YUV_DENOISED
 static void make_grayscale(YV12_BUFFER_CONFIG *yuv);
 #endif
@@ -49,16 +43,19 @@ static int noise_motion_thresh(BLOCK_SIZE bs, int increase_denoising) {
 }
 
 static unsigned int sse_thresh(BLOCK_SIZE bs, int increase_denoising) {
-  return (1 << num_pels_log2_lookup[bs]) * (increase_denoising ? 60 : 40);
+  return (1 << num_pels_log2_lookup[bs]) * (increase_denoising ? 80 : 40);
 }
 
 static int sse_diff_thresh(BLOCK_SIZE bs, int increase_denoising,
                            int motion_magnitude) {
   if (motion_magnitude >
       noise_motion_thresh(bs, increase_denoising)) {
-    return 0;
+    if (increase_denoising)
+      return (1 << num_pels_log2_lookup[bs]) << 2;
+    else
+      return 0;
   } else {
-    return (1 << num_pels_log2_lookup[bs]) * 20;
+    return (1 << num_pels_log2_lookup[bs]) << 4;
   }
 }
 
@@ -183,7 +180,7 @@ int vp9_denoiser_filter_c(const uint8_t *sig, int sig_stride,
 
 static uint8_t *block_start(uint8_t *framebuf, int stride,
                             int mi_row, int mi_col) {
-  return framebuf + (stride * mi_row * 8) + (mi_col * 8);
+  return framebuf + (stride * mi_row  << 3) + (mi_col << 3);
 }
 
 static VP9_DENOISER_DECISION perform_motion_compensation(VP9_DENOISER *denoiser,
@@ -195,29 +192,34 @@ static VP9_DENOISER_DECISION perform_motion_compensation(VP9_DENOISER *denoiser,
                                                          PICK_MODE_CONTEXT *ctx,
                                                          int motion_magnitude,
                                                          int is_skin,
-                                                         int *zeromv_filter) {
-  int mv_col, mv_row;
+                                                         int *zeromv_filter,
+                                                         int consec_zeromv) {
   int sse_diff = ctx->zeromv_sse - ctx->newmv_sse;
   MV_REFERENCE_FRAME frame;
   MACROBLOCKD *filter_mbd = &mb->e_mbd;
   MODE_INFO *mi = filter_mbd->mi[0];
   MODE_INFO saved_mi;
-  int i, j;
+  int i;
   struct buf_2d saved_dst[MAX_MB_PLANE];
-  struct buf_2d saved_pre[MAX_MB_PLANE][2];  // 2 pre buffers
+  struct buf_2d saved_pre[MAX_MB_PLANE];
 
-  mv_col = ctx->best_sse_mv.as_mv.col;
-  mv_row = ctx->best_sse_mv.as_mv.row;
   frame = ctx->best_reference_frame;
-
   saved_mi = *mi;
 
-  if (is_skin && motion_magnitude > 0)
+  if (is_skin && (motion_magnitude > 0 || consec_zeromv < 4))
+    return COPY_BLOCK;
+
+  // Avoid denoising for small block (unless motion is small).
+  // Small blocks are selected in variance partition (before encoding) and
+  // will typically lie on moving areas.
+  if (denoiser->denoising_level < kDenHigh &&
+      motion_magnitude > 16 && bs <= BLOCK_8X8)
     return COPY_BLOCK;
 
   // If the best reference frame uses inter-prediction and there is enough of a
   // difference in sum-squared-error, use it.
   if (frame != INTRA_FRAME &&
+      ctx->newmv_sse != UINT_MAX &&
       sse_diff > sse_diff_thresh(bs, increase_denoising, motion_magnitude)) {
     mi->ref_frame[0] = ctx->best_reference_frame;
     mi->mode = ctx->best_sse_inter_mode;
@@ -239,6 +241,9 @@ static VP9_DENOISER_DECISION perform_motion_compensation(VP9_DENOISER *denoiser,
     ctx->best_sse_inter_mode = ZEROMV;
     ctx->best_sse_mv.as_int = 0;
     *zeromv_filter = 1;
+    if (denoiser->denoising_level > kDenMedium) {
+      motion_magnitude = 0;
+    }
   }
 
   if (ctx->newmv_sse > sse_thresh(bs, increase_denoising)) {
@@ -255,34 +260,31 @@ static VP9_DENOISER_DECISION perform_motion_compensation(VP9_DENOISER *denoiser,
 
   // We will restore these after motion compensation.
   for (i = 0; i < MAX_MB_PLANE; ++i) {
-    for (j = 0; j < 2; ++j) {
-      saved_pre[i][j] = filter_mbd->plane[i].pre[j];
-    }
+    saved_pre[i] = filter_mbd->plane[i].pre[0];
     saved_dst[i] = filter_mbd->plane[i].dst;
   }
 
   // Set the pointers in the MACROBLOCKD to point to the buffers in the denoiser
   // struct.
-  for (j = 0; j < 2; ++j) {
-    filter_mbd->plane[0].pre[j].buf =
-        block_start(denoiser->running_avg_y[frame].y_buffer,
-                    denoiser->running_avg_y[frame].y_stride,
-                    mi_row, mi_col);
-    filter_mbd->plane[0].pre[j].stride =
-        denoiser->running_avg_y[frame].y_stride;
-    filter_mbd->plane[1].pre[j].buf =
-        block_start(denoiser->running_avg_y[frame].u_buffer,
-                    denoiser->running_avg_y[frame].uv_stride,
-                    mi_row, mi_col);
-    filter_mbd->plane[1].pre[j].stride =
-        denoiser->running_avg_y[frame].uv_stride;
-    filter_mbd->plane[2].pre[j].buf =
-        block_start(denoiser->running_avg_y[frame].v_buffer,
-                    denoiser->running_avg_y[frame].uv_stride,
-                    mi_row, mi_col);
-    filter_mbd->plane[2].pre[j].stride =
-        denoiser->running_avg_y[frame].uv_stride;
-  }
+  filter_mbd->plane[0].pre[0].buf =
+      block_start(denoiser->running_avg_y[frame].y_buffer,
+                  denoiser->running_avg_y[frame].y_stride,
+                  mi_row, mi_col);
+  filter_mbd->plane[0].pre[0].stride =
+      denoiser->running_avg_y[frame].y_stride;
+  filter_mbd->plane[1].pre[0].buf =
+       block_start(denoiser->running_avg_y[frame].u_buffer,
+                  denoiser->running_avg_y[frame].uv_stride,
+                  mi_row, mi_col);
+  filter_mbd->plane[1].pre[0].stride =
+      denoiser->running_avg_y[frame].uv_stride;
+  filter_mbd->plane[2].pre[0].buf =
+      block_start(denoiser->running_avg_y[frame].v_buffer,
+                  denoiser->running_avg_y[frame].uv_stride,
+                  mi_row, mi_col);
+  filter_mbd->plane[2].pre[0].stride =
+      denoiser->running_avg_y[frame].uv_stride;
+
   filter_mbd->plane[0].dst.buf =
       block_start(denoiser->mc_running_avg_y.y_buffer,
                   denoiser->mc_running_avg_y.y_stride,
@@ -299,19 +301,14 @@ static VP9_DENOISER_DECISION perform_motion_compensation(VP9_DENOISER *denoiser,
                   mi_row, mi_col);
   filter_mbd->plane[2].dst.stride = denoiser->mc_running_avg_y.uv_stride;
 
-  vp9_build_inter_predictors_sby(filter_mbd, mv_row, mv_col, bs);
+  vp9_build_inter_predictors_sby(filter_mbd, mi_row, mi_col, bs);
 
   // Restore everything to its original state
   *mi = saved_mi;
   for (i = 0; i < MAX_MB_PLANE; ++i) {
-    for (j = 0; j < 2; ++j) {
-      filter_mbd->plane[i].pre[j] = saved_pre[i][j];
-    }
+    filter_mbd->plane[i].pre[0] = saved_pre[i];
     filter_mbd->plane[i].dst = saved_dst[i];
   }
-
-  mv_row = ctx->best_sse_mv.as_mv.row;
-  mv_col = ctx->best_sse_mv.as_mv.col;
 
   return FILTER_BLOCK;
 }
@@ -332,20 +329,20 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb,
                                           mi_row, mi_col);
   struct buf_2d src = mb->plane[0].src;
   int is_skin = 0;
+  int consec_zeromv = 0;
   mv_col = ctx->best_sse_mv.as_mv.col;
   mv_row = ctx->best_sse_mv.as_mv.row;
   motion_magnitude = mv_row * mv_row + mv_col * mv_col;
 
   if (cpi->use_skin_detection &&
       bs <= BLOCK_32X32 &&
-      denoiser->denoising_level >= kDenLow) {
+      denoiser->denoising_level < kDenHigh) {
     int motion_level = (motion_magnitude < 16) ? 0 : 1;
     // If motion for current block is small/zero, compute consec_zeromv for
     // skin detection (early exit in skin detection is done for large
     // consec_zeromv when current block has small/zero motion).
-    int consec_zeromv = 0;
+    consec_zeromv = 0;
     if (motion_level == 0) {
-      CYCLIC_REFRESH *const cr = cpi->cyclic_refresh;
       VP9_COMMON * const cm = &cpi->common;
       int j, i;
       // Loop through the 8x8 sub-blocks.
@@ -358,11 +355,11 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb,
       for (i = 0; i < ymis; i++) {
         for (j = 0; j < xmis; j++) {
           int bl_index = block_index + i * cm->mi_cols + j;
-          consec_zeromv = VPXMIN(cr->consec_zero_mv[bl_index], consec_zeromv);
+          consec_zeromv = VPXMIN(cpi->consec_zero_mv[bl_index], consec_zeromv);
           // No need to keep checking 8x8 blocks if any of the sub-blocks
           // has small consec_zeromv (since threshold for no_skin based on
-          // zero/small motion in skin detection is high, i.e, > 5).
-          if (consec_zeromv < 5) {
+          // zero/small motion in skin detection is high, i.e, > 4).
+          if (consec_zeromv < 4) {
             i = ymis;
             j = xmis;
           }
@@ -380,8 +377,7 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb,
                                      motion_level);
   }
   if (!is_skin &&
-      denoiser->denoising_level == kDenHigh &&
-      motion_magnitude < 16) {
+      denoiser->denoising_level == kDenHigh) {
     denoiser->increase_denoising = 1;
   } else {
     denoiser->increase_denoising = 0;
@@ -393,7 +389,8 @@ void vp9_denoiser_denoise(VP9_COMP *cpi, MACROBLOCK *mb,
                                            mi_row, mi_col, ctx,
                                            motion_magnitude,
                                            is_skin,
-                                           &zeromv_filter);
+                                           &zeromv_filter,
+                                           consec_zeromv);
 
   if (decision == FILTER_BLOCK) {
     decision = vp9_denoiser_filter(src.buf, src.stride,
@@ -453,11 +450,12 @@ void vp9_denoiser_update_frame_info(VP9_DENOISER *denoiser,
                                     int resized) {
   // Copy source into denoised reference buffers on KEY_FRAME or
   // if the just encoded frame was resized.
-  if (frame_type == KEY_FRAME || resized != 0) {
+  if (frame_type == KEY_FRAME || resized != 0 || denoiser->reset) {
     int i;
     // Start at 1 so as not to overwrite the INTRA_FRAME
     for (i = 1; i < MAX_REF_FRAMES; ++i)
       copy_frame(&denoiser->running_avg_y[i], &src);
+    denoiser->reset = 0;
     return;
   }
 
@@ -496,12 +494,12 @@ void vp9_denoiser_reset_frame_stats(PICK_MODE_CONTEXT *ctx) {
   ctx->zeromv_sse = UINT_MAX;
   ctx->newmv_sse = UINT_MAX;
   ctx->zeromv_lastref_sse = UINT_MAX;
+  ctx->best_sse_mv.as_int = 0;
 }
 
 void vp9_denoiser_update_frame_stats(MODE_INFO *mi, unsigned int sse,
                                      PREDICTION_MODE mode,
                                      PICK_MODE_CONTEXT *ctx) {
-  // TODO(tkopp): Use both MVs if possible
   if (mi->mv[0].as_int == 0 && sse < ctx->zeromv_sse) {
     ctx->zeromv_sse = sse;
     ctx->best_zeromv_reference_frame = mi->ref_frame[0];
@@ -570,6 +568,8 @@ int vp9_denoiser_alloc(VP9_DENOISER *denoiser, int width, int height,
   denoiser->increase_denoising = 0;
   denoiser->frame_buffer_initialized = 1;
   denoiser->denoising_level = kDenLow;
+  denoiser->prev_denoising_level = kDenLow;
+  denoiser->reset = 0;
   return 0;
 }
 
@@ -589,6 +589,12 @@ void vp9_denoiser_free(VP9_DENOISER *denoiser) {
 void vp9_denoiser_set_noise_level(VP9_DENOISER *denoiser,
                                   int noise_level) {
   denoiser->denoising_level = noise_level;
+  if (denoiser->denoising_level > kDenLowLow &&
+      denoiser->prev_denoising_level == kDenLowLow)
+    denoiser->reset = 1;
+  else
+    denoiser->reset = 0;
+  denoiser->prev_denoising_level = denoiser->denoising_level;
 }
 
 #ifdef OUTPUT_YUV_DENOISED

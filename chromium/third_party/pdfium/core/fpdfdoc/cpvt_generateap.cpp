@@ -14,8 +14,8 @@
 #include "core/fpdfdoc/cpvt_color.h"
 #include "core/fpdfdoc/cpvt_fontmap.h"
 #include "core/fpdfdoc/include/cpvt_word.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "core/fpdfdoc/pdf_vt.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
 
 namespace {
 
@@ -36,9 +36,9 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
   if (DA.IsEmpty())
     return FALSE;
 
-  CPDF_SimpleParser syntax(DA.AsByteStringC());
+  CPDF_SimpleParser syntax(DA.AsStringC());
   syntax.FindTagParamFromStart("Tf", 2);
-  CFX_ByteString sFontName = syntax.GetWord();
+  CFX_ByteString sFontName(syntax.GetWord());
   sFontName = PDF_NameDecode(sFontName);
   if (sFontName.IsEmpty())
     return FALSE;
@@ -54,12 +54,12 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
   }
   CPDF_Dictionary* pDRFontDict = pDRDict ? pDRDict->GetDictBy("Font") : nullptr;
   if (pDRFontDict) {
-    pFontDict = pDRFontDict->GetDictBy(sFontName.Mid(1).AsByteStringC());
+    pFontDict = pDRFontDict->GetDictBy(sFontName.Mid(1));
     if (!pFontDict && !bUseFormRes) {
       pDRDict = pFormDict->GetDictBy("DR");
       pDRFontDict = pDRDict->GetDictBy("Font");
       if (pDRFontDict)
-        pFontDict = pDRFontDict->GetDictBy(sFontName.Mid(1).AsByteStringC());
+        pFontDict = pDRFontDict->GetDictBy(sFontName.Mid(1));
     }
   }
   if (!pDRFontDict)
@@ -72,8 +72,7 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
     pFontDict->SetAtName("BaseFont", "Helvetica");
     pFontDict->SetAtName("Encoding", "WinAnsiEncoding");
     pDoc->AddIndirectObject(pFontDict);
-    pDRFontDict->SetAtReference(sFontName.Mid(1).AsByteStringC(), pDoc,
-                                pFontDict);
+    pDRFontDict->SetAtReference(sFontName.Mid(1), pDoc, pFontDict);
   }
   CPDF_Font* pDefFont = pDoc->LoadFont(pFontDict);
   if (!pDefFont)
@@ -108,7 +107,8 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
                              rcAnnot.right - rcAnnot.left);
       break;
   }
-  int32_t nBorderStyle = PBS_SOLID;
+
+  BorderStyle nBorderStyle = BorderStyle::SOLID;
   FX_FLOAT fBorderWidth = 1;
   CPVT_Dash dsBorder(3, 0, 0);
   CPVT_Color crLeftTop, crRightBottom;
@@ -122,25 +122,25 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
     }
     switch (pBSDict->GetStringBy("S").GetAt(0)) {
       case 'S':
-        nBorderStyle = PBS_SOLID;
+        nBorderStyle = BorderStyle::SOLID;
         break;
       case 'D':
-        nBorderStyle = PBS_DASH;
+        nBorderStyle = BorderStyle::DASH;
         break;
       case 'B':
-        nBorderStyle = PBS_BEVELED;
+        nBorderStyle = BorderStyle::BEVELED;
         fBorderWidth *= 2;
         crLeftTop = CPVT_Color(CPVT_Color::kGray, 1);
         crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.5);
         break;
       case 'I':
-        nBorderStyle = PBS_INSET;
+        nBorderStyle = BorderStyle::INSET;
         fBorderWidth *= 2;
         crLeftTop = CPVT_Color(CPVT_Color::kGray, 0.5);
         crRightBottom = CPVT_Color(CPVT_Color::kGray, 0.75);
         break;
       case 'U':
-        nBorderStyle = PBS_UNDERLINED;
+        nBorderStyle = BorderStyle::UNDERLINE;
         break;
     }
   }
@@ -190,9 +190,8 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
         pStreamResFontList = new CPDF_Dictionary;
         pStreamResList->SetAt("Font", pStreamResFontList);
       }
-      if (!pStreamResFontList->KeyExist(sFontName.AsByteStringC()))
-        pStreamResFontList->SetAtReference(sFontName.AsByteStringC(), pDoc,
-                                           pFontDict);
+      if (!pStreamResFontList->KeyExist(sFontName))
+        pStreamResFontList->SetAtReference(sFontName, pDoc, pFontDict);
     } else {
       pStreamDict->SetAt("Resources", pFormDict->GetDictBy("DR")->Clone());
       pStreamResList = pStreamDict->GetDictBy("Resources");
@@ -320,7 +319,7 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
         CFX_ByteString sButtonBorder = CPVT_GenerateAP::GenerateBorderAP(
             rcButton, 2, CPVT_Color(CPVT_Color::kGray, 0),
             CPVT_Color(CPVT_Color::kGray, 1),
-            CPVT_Color(CPVT_Color::kGray, 0.5), PBS_BEVELED,
+            CPVT_Color(CPVT_Color::kGray, 0.5), BorderStyle::BEVELED,
             CPVT_Dash(3, 0, 0));
         if (sButtonBorder.GetLength() > 0)
           sAppStream << "q\n" << sButtonBorder << "Q\n";
@@ -357,7 +356,7 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
       CFX_ByteTextBuf sBody;
       if (pOpts) {
         FX_FLOAT fy = rcBody.top;
-        for (int32_t i = nTop, sz = pOpts->GetCount(); i < sz; i++) {
+        for (size_t i = nTop, sz = pOpts->GetCount(); i < sz; i++) {
           if (IsFloatSmaller(fy, rcBody.bottom))
             break;
 
@@ -370,8 +369,9 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
 
             FX_BOOL bSelected = FALSE;
             if (pSels) {
-              for (uint32_t s = 0, ssz = pSels->GetCount(); s < ssz; s++) {
-                if (i == pSels->GetIntegerAt(s)) {
+              for (size_t s = 0, ssz = pSels->GetCount(); s < ssz; s++) {
+                int value = pSels->GetIntegerAt(s);
+                if (value >= 0 && i == static_cast<size_t>(value)) {
                   bSelected = TRUE;
                   break;
                 }
@@ -419,7 +419,7 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
                    << "q\n";
         sAppStream << rcBody.left << " " << rcBody.bottom << " "
                    << rcBody.Width() << " " << rcBody.Height() << " re\nW\nn\n";
-        sAppStream << sBody.GetByteString() << "Q\nEMC\n";
+        sAppStream << sBody.AsStringC() << "Q\nEMC\n";
       }
     } break;
   }
@@ -437,9 +437,8 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
           pStreamResFontList = new CPDF_Dictionary;
           pStreamResList->SetAt("Font", pStreamResFontList);
         }
-        if (!pStreamResFontList->KeyExist(sFontName.AsByteStringC()))
-          pStreamResFontList->SetAtReference(sFontName.AsByteStringC(), pDoc,
-                                             pFontDict);
+        if (!pStreamResFontList->KeyExist(sFontName))
+          pStreamResFontList->SetAtReference(sFontName, pDoc, pFontDict);
       } else {
         pStreamDict->SetAt("Resources", pFormDict->GetDictBy("DR")->Clone());
         pStreamResList = pStreamDict->GetDictBy("Resources");
@@ -452,7 +451,7 @@ FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
 }  // namespace
 
 FX_BOOL FPDF_GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
-  if (!pAnnotDict || pAnnotDict->GetConstStringBy("Subtype") != "Widget") {
+  if (!pAnnotDict || pAnnotDict->GetStringBy("Subtype") != "Widget") {
     return FALSE;
   }
   CFX_ByteString field_type = FPDF_GetFieldAttr(pAnnotDict, "FT")->GetString();
@@ -505,89 +504,83 @@ CFX_ByteString CPVT_GenerateAP::GenerateEditAP(
     CPDF_VariableText::Iterator* pIterator,
     const CFX_FloatPoint& ptOffset,
     FX_BOOL bContinuous,
-    uint16_t SubWord,
-    const CPVT_WordRange* pVisible) {
-  CFX_ByteTextBuf sEditStream, sLineStream, sWords;
-  CFX_FloatPoint ptOld(0.0f, 0.0f), ptNew(0.0f, 0.0f);
+    uint16_t SubWord) {
+  CFX_ByteTextBuf sEditStream;
+  CFX_ByteTextBuf sLineStream;
+  CFX_ByteTextBuf sWords;
+  CFX_FloatPoint ptOld(0.0f, 0.0f);
+  CFX_FloatPoint ptNew(0.0f, 0.0f);
   int32_t nCurFontIndex = -1;
-  if (pIterator) {
-    if (pVisible)
-      pIterator->SetAt(pVisible->BeginPos);
-    else
-      pIterator->SetAt(0);
 
-    CPVT_WordPlace oldplace;
-    while (pIterator->NextWord()) {
-      CPVT_WordPlace place = pIterator->GetAt();
-      if (pVisible && place.WordCmp(pVisible->EndPos) > 0)
-        break;
+  pIterator->SetAt(0);
 
-      if (bContinuous) {
-        if (place.LineCmp(oldplace) != 0) {
-          if (sWords.GetSize() > 0) {
-            sLineStream << GetWordRenderString(sWords.GetByteString());
-            sEditStream << sLineStream;
-            sLineStream.Clear();
-            sWords.Clear();
-          }
-          CPVT_Word word;
-          if (pIterator->GetWord(word)) {
-            ptNew = CFX_FloatPoint(word.ptWord.x + ptOffset.x,
-                                   word.ptWord.y + ptOffset.y);
-          } else {
-            CPVT_Line line;
-            pIterator->GetLine(line);
-            ptNew = CFX_FloatPoint(line.ptLine.x + ptOffset.x,
-                                   line.ptLine.y + ptOffset.y);
-          }
-          if (ptNew.x != ptOld.x || ptNew.y != ptOld.y) {
-            sLineStream << ptNew.x - ptOld.x << " " << ptNew.y - ptOld.y
-                        << " Td\n";
-            ptOld = ptNew;
-          }
+  CPVT_WordPlace oldplace;
+  while (pIterator->NextWord()) {
+    CPVT_WordPlace place = pIterator->GetAt();
+    if (bContinuous) {
+      if (place.LineCmp(oldplace) != 0) {
+        if (sWords.GetSize() > 0) {
+          sLineStream << GetWordRenderString(sWords.MakeString());
+          sEditStream << sLineStream;
+          sLineStream.Clear();
+          sWords.Clear();
         }
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          if (word.nFontIndex != nCurFontIndex) {
-            if (sWords.GetSize() > 0) {
-              sLineStream << GetWordRenderString(sWords.GetByteString());
-              sWords.Clear();
-            }
-            sLineStream << GetFontSetString(pFontMap, word.nFontIndex,
-                                            word.fFontSize);
-            nCurFontIndex = word.nFontIndex;
-          }
-          sWords << GetPDFWordString(pFontMap, nCurFontIndex, word.Word,
-                                     SubWord);
-        }
-        oldplace = place;
-      } else {
         CPVT_Word word;
         if (pIterator->GetWord(word)) {
           ptNew = CFX_FloatPoint(word.ptWord.x + ptOffset.x,
                                  word.ptWord.y + ptOffset.y);
-          if (ptNew.x != ptOld.x || ptNew.y != ptOld.y) {
-            sEditStream << ptNew.x - ptOld.x << " " << ptNew.y - ptOld.y
-                        << " Td\n";
-            ptOld = ptNew;
-          }
-          if (word.nFontIndex != nCurFontIndex) {
-            sEditStream << GetFontSetString(pFontMap, word.nFontIndex,
-                                            word.fFontSize);
-            nCurFontIndex = word.nFontIndex;
-          }
-          sEditStream << GetWordRenderString(
-              GetPDFWordString(pFontMap, nCurFontIndex, word.Word, SubWord));
+        } else {
+          CPVT_Line line;
+          pIterator->GetLine(line);
+          ptNew = CFX_FloatPoint(line.ptLine.x + ptOffset.x,
+                                 line.ptLine.y + ptOffset.y);
+        }
+        if (ptNew.x != ptOld.x || ptNew.y != ptOld.y) {
+          sLineStream << ptNew.x - ptOld.x << " " << ptNew.y - ptOld.y
+                      << " Td\n";
+          ptOld = ptNew;
         }
       }
-    }
-    if (sWords.GetSize() > 0) {
-      sLineStream << GetWordRenderString(sWords.GetByteString());
-      sEditStream << sLineStream;
-      sWords.Clear();
+      CPVT_Word word;
+      if (pIterator->GetWord(word)) {
+        if (word.nFontIndex != nCurFontIndex) {
+          if (sWords.GetSize() > 0) {
+            sLineStream << GetWordRenderString(sWords.MakeString());
+            sWords.Clear();
+          }
+          sLineStream << GetFontSetString(pFontMap, word.nFontIndex,
+                                          word.fFontSize);
+          nCurFontIndex = word.nFontIndex;
+        }
+        sWords << GetPDFWordString(pFontMap, nCurFontIndex, word.Word, SubWord);
+      }
+      oldplace = place;
+    } else {
+      CPVT_Word word;
+      if (pIterator->GetWord(word)) {
+        ptNew = CFX_FloatPoint(word.ptWord.x + ptOffset.x,
+                               word.ptWord.y + ptOffset.y);
+        if (ptNew.x != ptOld.x || ptNew.y != ptOld.y) {
+          sEditStream << ptNew.x - ptOld.x << " " << ptNew.y - ptOld.y
+                      << " Td\n";
+          ptOld = ptNew;
+        }
+        if (word.nFontIndex != nCurFontIndex) {
+          sEditStream << GetFontSetString(pFontMap, word.nFontIndex,
+                                          word.fFontSize);
+          nCurFontIndex = word.nFontIndex;
+        }
+        sEditStream << GetWordRenderString(
+            GetPDFWordString(pFontMap, nCurFontIndex, word.Word, SubWord));
+      }
     }
   }
-  return sEditStream.GetByteString();
+  if (sWords.GetSize() > 0) {
+    sLineStream << GetWordRenderString(sWords.MakeString());
+    sEditStream << sLineStream;
+    sWords.Clear();
+  }
+  return sEditStream.MakeString();
 }
 
 // Static.
@@ -597,7 +590,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
     const CPVT_Color& color,
     const CPVT_Color& crLeftTop,
     const CPVT_Color& crRightBottom,
-    int32_t nStyle,
+    BorderStyle nStyle,
     const CPVT_Dash& dash) {
   CFX_ByteTextBuf sAppStream;
   CFX_ByteString sColor;
@@ -609,7 +602,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
     FX_FLOAT fHalfWidth = fWidth / 2.0f;
     switch (nStyle) {
       default:
-      case PBS_SOLID:
+      case BorderStyle::SOLID:
         sColor = GenerateColorAP(color, TRUE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -621,7 +614,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
           sAppStream << "f*\n";
         }
         break;
-      case PBS_DASH:
+      case BorderStyle::DASH:
         sColor = GenerateColorAP(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -640,8 +633,8 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
                      << " l S\n";
         }
         break;
-      case PBS_BEVELED:
-      case PBS_INSET:
+      case BorderStyle::BEVELED:
+      case BorderStyle::INSET:
         sColor = GenerateColorAP(crLeftTop, TRUE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -684,7 +677,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
                      << fTop - fBottom - fHalfWidth * 2 << " re f*\n";
         }
         break;
-      case PBS_UNDERLINED:
+      case BorderStyle::UNDERLINE:
         sColor = GenerateColorAP(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -695,7 +688,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateBorderAP(
         break;
     }
   }
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 // Static.
@@ -720,7 +713,7 @@ CFX_ByteString CPVT_GenerateAP::GenerateColorAP(const CPVT_Color& color,
     case CPVT_Color::kTransparent:
       break;
   }
-  return sColorStream.GetByteString();
+  return sColorStream.MakeString();
 }
 
 // Static.
@@ -768,5 +761,5 @@ CFX_ByteString CPVT_GenerateAP::GetFontSetString(IPVT_FontMap* pFontMap,
     if (sFontAlias.GetLength() > 0 && fFontSize > 0)
       sRet << "/" << sFontAlias << " " << fFontSize << " Tf\n";
   }
-  return sRet.GetByteString();
+  return sRet.MakeString();
 }

@@ -10,13 +10,13 @@
 
 
 #include <algorithm>
+#include <memory>
 #include <set>
 #include <string>
 
 #include "webrtc/base/bufferqueue.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/helpers.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/ssladapter.h"
 #include "webrtc/base/sslconfig.h"
 #include "webrtc/base/sslidentity.h"
@@ -474,7 +474,7 @@ class SSLStreamAdapterTestBase : public testing::Test,
       return server_ssl_->GetDtlsSrtpCryptoSuite(retval);
   }
 
-  rtc::scoped_ptr<rtc::SSLCertificate> GetPeerCertificate(bool client) {
+  std::unique_ptr<rtc::SSLCertificate> GetPeerCertificate(bool client) {
     if (client)
       return client_ssl_->GetPeerCertificate();
     else
@@ -526,8 +526,8 @@ class SSLStreamAdapterTestBase : public testing::Test,
   rtc::KeyParams server_key_type_;
   SSLDummyStreamBase *client_stream_;  // freed by client_ssl_ destructor
   SSLDummyStreamBase *server_stream_;  // freed by server_ssl_ destructor
-  rtc::scoped_ptr<rtc::SSLStreamAdapter> client_ssl_;
-  rtc::scoped_ptr<rtc::SSLStreamAdapter> server_ssl_;
+  std::unique_ptr<rtc::SSLStreamAdapter> client_ssl_;
+  std::unique_ptr<rtc::SSLStreamAdapter> server_ssl_;
   rtc::SSLIdentity *client_identity_;  // freed by client_ssl_ destructor
   rtc::SSLIdentity *server_identity_;  // freed by server_ssl_ destructor
   int delay_;
@@ -562,7 +562,7 @@ class SSLStreamAdapterTestTLS
   }
 
   // Test data transfer for TLS
-  virtual void TestTransfer(int size) {
+  void TestTransfer(int size) override {
     LOG(LS_INFO) << "Starting transfer test with " << size << " bytes";
     // Create some dummy data to send.
     size_t received;
@@ -591,7 +591,7 @@ class SSLStreamAdapterTestTLS
                         recv_stream_.GetBuffer(), size));
   }
 
-  void WriteData() {
+  void WriteData() override {
     size_t position, tosend, size;
     rtc::StreamResult rv;
     size_t sent;
@@ -627,7 +627,7 @@ class SSLStreamAdapterTestTLS
     }
   };
 
-  virtual void ReadData(rtc::StreamInterface *stream) {
+  void ReadData(rtc::StreamInterface *stream) override {
     char buffer[1600];
     size_t bread;
     int err2;
@@ -691,7 +691,7 @@ class SSLStreamAdapterTestDTLS
         new SSLDummyStreamDTLS(this, "s2c", &server_buffer_, &client_buffer_);
   }
 
-  virtual void WriteData() {
+  void WriteData() override {
     unsigned char *packet = new unsigned char[1600];
 
     while (sent_ < count_) {
@@ -720,7 +720,7 @@ class SSLStreamAdapterTestDTLS
     delete [] packet;
   }
 
-  virtual void ReadData(rtc::StreamInterface *stream) {
+  void ReadData(rtc::StreamInterface *stream) override {
     unsigned char buffer[2000];
     size_t bread;
     int err2;
@@ -756,7 +756,7 @@ class SSLStreamAdapterTestDTLS
     }
   }
 
-  virtual void TestTransfer(int count) {
+  void TestTransfer(int count) override {
     count_ = count;
 
     WriteData();
@@ -1043,7 +1043,7 @@ TEST_F(SSLStreamAdapterTestDTLSFromPEMStrings, TestDTLSGetPeerCertificate) {
   TestHandshake();
 
   // The client should have a peer certificate after the handshake.
-  rtc::scoped_ptr<rtc::SSLCertificate> client_peer_cert =
+  std::unique_ptr<rtc::SSLCertificate> client_peer_cert =
       GetPeerCertificate(true);
   ASSERT_TRUE(client_peer_cert);
 
@@ -1055,7 +1055,7 @@ TEST_F(SSLStreamAdapterTestDTLSFromPEMStrings, TestDTLSGetPeerCertificate) {
   ASSERT_FALSE(client_peer_cert->GetChain());
 
   // The server should have a peer certificate after the handshake.
-  rtc::scoped_ptr<rtc::SSLCertificate> server_peer_cert =
+  std::unique_ptr<rtc::SSLCertificate> server_peer_cert =
       GetPeerCertificate(false);
   ASSERT_TRUE(server_peer_cert);
 

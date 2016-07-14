@@ -14,6 +14,8 @@
 #include <netinet/in.h>
 #endif
 
+#include <memory>
+
 #include "webrtc/base/arraysize.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/gunit.h"
@@ -33,7 +35,7 @@ struct Sender : public MessageHandler {
         done(false),
         rate(rt),
         count(0) {
-    last_send = rtc::Time();
+    last_send = rtc::TimeMillis();
     thread->PostDelayed(NextDelay(), this, 1);
   }
 
@@ -48,9 +50,9 @@ struct Sender : public MessageHandler {
     if (done)
       return;
 
-    uint32_t cur_time = rtc::Time();
-    uint32_t delay = cur_time - last_send;
-    uint32_t size = rate * delay / 1000;
+    int64_t cur_time = rtc::TimeMillis();
+    int64_t delay = cur_time - last_send;
+    uint32_t size = static_cast<uint32_t>(rate * delay / 1000);
     size = std::min<uint32_t>(size, 4096);
     size = std::max<uint32_t>(size, sizeof(uint32_t));
 
@@ -63,12 +65,12 @@ struct Sender : public MessageHandler {
   }
 
   Thread* thread;
-  scoped_ptr<AsyncUDPSocket> socket;
+  std::unique_ptr<AsyncUDPSocket> socket;
   rtc::PacketOptions options;
   bool done;
   uint32_t rate;  // bytes per second
   uint32_t count;
-  uint32_t last_send;
+  int64_t last_send;
   char dummy[4096];
 };
 
@@ -101,7 +103,7 @@ struct Receiver : public MessageHandler, public sigslot::has_slots<> {
     sec_count += size;
 
     uint32_t send_time = *reinterpret_cast<const uint32_t*>(data);
-    uint32_t recv_time = rtc::Time();
+    uint32_t recv_time = rtc::TimeMillis();
     uint32_t delay = recv_time - send_time;
     sum += delay;
     sum_sq += delay * delay;
@@ -123,7 +125,7 @@ struct Receiver : public MessageHandler, public sigslot::has_slots<> {
   }
 
   Thread* thread;
-  scoped_ptr<AsyncUDPSocket> socket;
+  std::unique_ptr<AsyncUDPSocket> socket;
   uint32_t bandwidth;
   bool done;
   size_t count;
@@ -345,11 +347,11 @@ class VirtualSocketServerTest : public testing::Test {
         EmptySocketAddressWithFamily(initial_addr.family());
 
     // Create client and server
-    scoped_ptr<AsyncSocket> client(ss_->CreateAsyncSocket(initial_addr.family(),
-                                                          SOCK_STREAM));
+    std::unique_ptr<AsyncSocket> client(
+        ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM));
     sink.Monitor(client.get());
-    scoped_ptr<AsyncSocket> server(ss_->CreateAsyncSocket(initial_addr.family(),
-                                                          SOCK_STREAM));
+    std::unique_ptr<AsyncSocket> server(
+        ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM));
     sink.Monitor(server.get());
 
     // Initiate connect
@@ -406,7 +408,7 @@ class VirtualSocketServerTest : public testing::Test {
 
     // Server accepts connection
     EXPECT_TRUE(sink.Check(server.get(), testing::SSE_READ));
-    scoped_ptr<AsyncSocket> accepted(server->Accept(&accept_addr));
+    std::unique_ptr<AsyncSocket> accepted(server->Accept(&accept_addr));
     ASSERT_TRUE(NULL != accepted.get());
     sink.Monitor(accepted.get());
 
@@ -435,9 +437,8 @@ class VirtualSocketServerTest : public testing::Test {
     a->Bind(initial_addr);
     EXPECT_EQ(a->GetLocalAddress().family(), initial_addr.family());
 
-
-    scoped_ptr<AsyncSocket> b(ss_->CreateAsyncSocket(initial_addr.family(),
-                                                     SOCK_STREAM));
+    std::unique_ptr<AsyncSocket> b(
+        ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM));
     sink.Monitor(b.get());
     b->Bind(initial_addr);
     EXPECT_EQ(b->GetLocalAddress().family(), initial_addr.family());

@@ -29,7 +29,6 @@ class Query;
 class VertexArray;
 class Context;
 struct Caps;
-struct Data;
 
 typedef std::map<GLenum, BindingPointer<Texture>> TextureMap;
 
@@ -119,6 +118,12 @@ class State : angle::NonCopyable
     GLclampf getSampleCoverageValue() const;
     bool getSampleCoverageInvert() const;
 
+    // Multisampling/alpha to one manipulation.
+    void setSampleAlphaToOne(bool enabled);
+    bool isSampleAlphaToOneEnabled() const;
+    void setMultisampling(bool enabled);
+    bool isMultisamplingEnabled() const;
+
     // Scissor test state toggle & query
     bool isScissorTestEnabled() const;
     void setScissorTest(bool enabled);
@@ -192,10 +197,10 @@ class State : angle::NonCopyable
     void setTransformFeedbackBinding(TransformFeedback *transformFeedback);
     TransformFeedback *getCurrentTransformFeedback() const;
     bool isTransformFeedbackActiveUnpaused() const;
-    void detachTransformFeedback(GLuint transformFeedback);
+    bool removeTransformFeedbackBinding(GLuint transformFeedback);
 
     // Query binding manipulation
-    bool isQueryActive() const;
+    bool isQueryActive(GLenum type) const;
     bool isQueryActive(Query *query) const;
     void setActiveQuery(GLenum target, Query *query);
     GLuint getActiveQueryId(GLenum target) const;
@@ -269,10 +274,14 @@ class State : angle::NonCopyable
     const Debug &getDebug() const;
     Debug &getDebug();
 
+    // CHROMIUM_framebuffer_mixed_samples coverage modulation
+    void setCoverageModulation(GLenum components);
+    GLenum getCoverageModulation() const;
+
     // State query functions
     void getBooleanv(GLenum pname, GLboolean *params);
     void getFloatv(GLenum pname, GLfloat *params);
-    void getIntegerv(const gl::Data &data, GLenum pname, GLint *params);
+    void getIntegerv(const ContextState &data, GLenum pname, GLint *params);
     void getPointerv(GLenum pname, void **params) const;
     bool getIndexedIntegerv(GLenum target, GLuint index, GLint *data);
     bool getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data);
@@ -320,11 +329,13 @@ class State : angle::NonCopyable
         DIRTY_BIT_UNPACK_SKIP_IMAGES,
         DIRTY_BIT_UNPACK_SKIP_ROWS,
         DIRTY_BIT_UNPACK_SKIP_PIXELS,
+        DIRTY_BIT_UNPACK_BUFFER_BINDING,
         DIRTY_BIT_PACK_ALIGNMENT,
         DIRTY_BIT_PACK_REVERSE_ROW_ORDER,
         DIRTY_BIT_PACK_ROW_LENGTH,
         DIRTY_BIT_PACK_SKIP_ROWS,
         DIRTY_BIT_PACK_SKIP_PIXELS,
+        DIRTY_BIT_PACK_BUFFER_BINDING,
         DIRTY_BIT_DITHER_ENABLED,
         DIRTY_BIT_GENERATE_MIPMAP_HINT,
         DIRTY_BIT_SHADER_DERIVATIVE_HINT,
@@ -333,6 +344,9 @@ class State : angle::NonCopyable
         DIRTY_BIT_RENDERBUFFER_BINDING,
         DIRTY_BIT_VERTEX_ARRAY_BINDING,
         DIRTY_BIT_PROGRAM_BINDING,
+        DIRTY_BIT_MULTISAMPLING,
+        DIRTY_BIT_SAMPLE_ALPHA_TO_ONE,
+        DIRTY_BIT_COVERAGE_MODULATION, // CHROMIUM_framebuffer_mixed_samples
         DIRTY_BIT_CURRENT_VALUE_0,
         DIRTY_BIT_CURRENT_VALUE_MAX = DIRTY_BIT_CURRENT_VALUE_0 + MAX_VERTEX_ATTRIBS,
         DIRTY_BIT_INVALID           = DIRTY_BIT_CURRENT_VALUE_MAX,
@@ -434,6 +448,11 @@ class State : angle::NonCopyable
     bool mPrimitiveRestart;
 
     Debug mDebug;
+
+    bool mMultiSampling;
+    bool mSampleAlphaToOne;
+
+    GLenum mCoverageModulation;
 
     DirtyBits mDirtyBits;
     DirtyObjects mDirtyObjects;

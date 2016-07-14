@@ -9,9 +9,6 @@
 #include <stdint.h>
 
 #include <CoreFoundation/CFTimeZone.h>
-extern "C" {
-#include <sandbox.h>
-}
 #include <signal.h>
 #include <sys/param.h>
 
@@ -35,22 +32,18 @@ extern "C" {
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "content/common/gpu/media/vt_video_decode_accelerator_mac.h"
 #include "content/grit/content_resources.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "media/gpu/vt_video_decode_accelerator_mac.h"
+#include "sandbox/mac/seatbelt.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/layout.h"
-#include "ui/gl/gl_surface.h"
+#include "ui/gl/init/gl_factory.h"
 
 extern "C" {
 void CGSSetDenyWindowServerConnections(bool);
 void CGSShutdownServerConnections();
-
-int sandbox_init_with_parameters(const char* profile,
-                                 uint64_t flags,
-                                 const char* const parameters[],
-                                 char** errorbuf);
 };
 
 namespace content {
@@ -152,13 +145,10 @@ bool SandboxCompiler::CompileAndApplyProfile(std::string* error) {
   // The parameters array must be null terminated.
   params.push_back(static_cast<const char*>(0));
 
-  if (sandbox_init_with_parameters(profile_str_.c_str(), 0, params.data(),
-                                   &error_internal)) {
+  if (sandbox::Seatbelt::InitWithParams(profile_str_.c_str(), 0, params.data(),
+                                        &error_internal)) {
     error->assign(error_internal);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    sandbox_free_error(error_internal);
-#pragma clang diagnostic pop
+    sandbox::Seatbelt::FreeError(error_internal);
     return false;
   }
   return true;
@@ -339,10 +329,10 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
   if (sandbox_type == SANDBOX_TYPE_GPU) {
     // Preload either the desktop GL or the osmesa so, depending on the
     // --use-gl flag.
-    gfx::GLSurface::InitializeOneOff();
+    gl::init::InitializeGLOneOff();
 
     // Preload VideoToolbox.
-    InitializeVideoToolbox();
+    media::InitializeVideoToolbox();
   }
 
   if (sandbox_type == SANDBOX_TYPE_PPAPI) {
@@ -484,9 +474,6 @@ bool Sandbox::EnableSandbox(int sandbox_type,
   if (!compiler.InsertStringParam("USER_HOMEDIR_AS_LITERAL", quoted_home_dir))
     return false;
 
-  bool lion_or_later = base::mac::IsOSLionOrLater();
-  if (!compiler.InsertBooleanParam("LION_OR_LATER", lion_or_later))
-    return false;
   bool elcap_or_later = base::mac::IsOSElCapitanOrLater();
   if (!compiler.InsertBooleanParam("ELCAP_OR_LATER", elcap_or_later))
     return false;

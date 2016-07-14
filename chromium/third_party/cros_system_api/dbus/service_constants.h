@@ -281,10 +281,6 @@ const char kConnectProfile[] = "ConnectProfile";
 const char kDisconnectProfile[] = "DisconnectProfile";
 const char kPair[] = "Pair";
 const char kCancelPairing[] = "CancelPairing";
-// TODO(tengs): Remove deprecated constants after they are removed in the Chrome
-// codebase. (See crbug.com/430665).
-const char kStartConnectionMonitor[] = "StartConnectionMonitor";  // DEPRECATED
-const char kStopConnectionMonitor[] = "StopConnectionMonitor";    // DEPRECATED
 
 // Bluetooth Device properties.
 const char kAddressProperty[] = "Address";
@@ -305,12 +301,8 @@ const char kRSSIProperty[] = "RSSI";
 const char kTxPowerProperty[] = "TxPower";
 const char kManufacturerDataProperty[] = "ManufacturerData";
 const char kServiceDataProperty[] = "ServiceData";
-const char kGattServicesProperty[] = "GattServices";
-// TODO(tengs): Remove deprecated constants after they are removed in the Chrome
-// codebase. (See crbug.com/430665).
-const char kConnectionRSSI[] = "ConnectionRSSI";             // DEPRECATED
-const char kConnectionTXPower[] = "ConnectionTXPower";       // DEPRECATED
-const char kConnectionTXPowerMax[] = "ConnectionTXPowerMax"; // DEPRECATED
+const char kGattServicesProperty[] = "GattServices";         // DEPRECATED
+const char kServicesResolvedProperty[] = "ServicesResolved";
 
 // Bluetooth Device errors.
 const char kErrorNotReady[] = "org.bluez.Error.NotReady";
@@ -359,7 +351,7 @@ const char kFlagsProperty[] = "Flags";
 const char kNotifyingProperty[] = "Notifying";
 const char kDescriptorsProperty[] = "Descriptors";
 
-// Possible values for the "Flags" property.
+// Possible values for Bluetooth GATT Characteristic "Flags" property.
 const char kFlagBroadcast[] = "broadcast";
 const char kFlagRead[] = "read";
 const char kFlagWriteWithoutResponse[] = "write-without-response";
@@ -370,6 +362,10 @@ const char kFlagAuthenticatedSignedWrites[] = "authenticated-signed-writes";
 const char kFlagExtendedProperties[] = "extended-properties";
 const char kFlagReliableWrite[] = "reliable-write";
 const char kFlagWritableAuxiliaries[] = "writable-auxiliaries";
+const char kFlagEncryptRead[] = "encrypt-read";
+const char kFlagEncryptWrite[] = "encrypt-write";
+const char kFlagEncryptAuthenticatedRead[] = "encrypt-authenticated-read";
+const char kFlagEncryptAuthenticatedWrite[] = "encrypt-authenticated-write";
 }  // namespace bluetooth_gatt_characteristic
 
 namespace bluetooth_gatt_descriptor {
@@ -386,6 +382,15 @@ const char kWriteValue[] = "WriteValue";
 const char kUUIDProperty[] = "UUID";
 const char kCharacteristicProperty[] = "Characteristic";
 const char kValueProperty[] = "Value";
+const char kFlagsProperty[] = "Flags";
+
+// Possible values for Bluetooth GATT Descriptor "Flags" property.
+const char kFlagRead[] = "read";
+const char kFlagWrite[] = "write";
+const char kFlagEncryptRead[] = "encrypt-read";
+const char kFlagEncryptWrite[] = "encrypt-write";
+const char kFlagEncryptAuthenticatedRead[] = "encrypt-authenticated-read";
+const char kFlagEncryptAuthenticatedWrite[] = "encrypt-authenticated-write";
 }  // namespace bluetooth_gatt_descriptor
 
 namespace bluetooth_gatt_manager {
@@ -394,6 +399,8 @@ const char kBluetoothGattManagerServiceName[] = "org.bluez";
 const char kBluetoothGattManagerInterface[] = "org.bluez.GattManager1";
 
 // Bluetooth GATT Manager methods.
+const char kRegisterApplication[] = "RegisterApplication";
+const char kUnregisterApplication[] = "UnregisterApplication";
 const char kRegisterService[] = "RegisterService";
 const char kUnregisterService[] = "UnregisterService";
 
@@ -875,6 +882,7 @@ const char kStableDeviceIdProperty[] = "StableDeviceId";
 // Signals.
 const char kOutputVolumeChanged[] = "OutputVolumeChanged";
 const char kOutputMuteChanged[] = "OutputMuteChanged";
+const char kOutputNodeVolumeChanged[] = "OutputNodeVolumeChanged";
 const char kNodeLeftRightSwappedChanged[] = "NodeLeftRightSwappedChanged";
 const char kInputGainChanged[] = "InputGainChanged";
 const char kInputMuteChanged[] = "InputMuteChanged";

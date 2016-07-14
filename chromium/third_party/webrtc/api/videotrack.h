@@ -33,11 +33,11 @@ class VideoTrack : public MediaStreamTrack<VideoTrackInterface>,
                        const rtc::VideoSinkWants& wants) override;
   void RemoveSink(rtc::VideoSinkInterface<cricket::VideoFrame>* sink) override;
 
-  virtual VideoTrackSourceInterface* GetSource() const {
+  VideoTrackSourceInterface* GetSource() const override {
     return video_source_.get();
   }
-  virtual bool set_enabled(bool enable);
-  virtual std::string kind() const;
+  bool set_enabled(bool enable) override;
+  std::string kind() const override;
 
  protected:
   VideoTrack(const std::string& id, VideoTrackSourceInterface* video_source);
@@ -47,7 +47,8 @@ class VideoTrack : public MediaStreamTrack<VideoTrackInterface>,
   // Implements ObserverInterface. Observes |video_source_| state.
   void OnChanged() override;
 
-  rtc::ThreadChecker thread_checker_;
+  rtc::ThreadChecker signaling_thread_checker_;
+  rtc::ThreadChecker worker_thread_checker_;
   rtc::scoped_refptr<VideoTrackSourceInterface> video_source_;
 };
 

@@ -10,7 +10,6 @@
 #include "xfa/fgas/localization/fgas_datetime.h"
 #include "xfa/fgas/localization/fgas_locale.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
-#include "xfa/include/fxfa/fxfa_objectacc.h"
 
 class CXFA_Node;
 class IFX_Locale;
@@ -34,18 +33,20 @@ class IFX_Locale;
 class CXFA_LocaleMgr : public IFX_LocaleMgr {
  public:
   CXFA_LocaleMgr(CXFA_Node* pLocaleSet, CFX_WideString wsDeflcid);
-  virtual void Release();
-  virtual uint16_t GetDefLocaleID();
-  virtual IFX_Locale* GetDefLocale();
-  virtual IFX_Locale* GetLocale(uint16_t lcid);
-  virtual IFX_Locale* GetLocaleByName(const CFX_WideStringC& wsLocaleName);
+
+  void Release() override;
+  uint16_t GetDefLocaleID() override;
+  IFX_Locale* GetDefLocale() override;
+  IFX_Locale* GetLocale(uint16_t lcid) override;
+  IFX_Locale* GetLocaleByName(const CFX_WideString& wsLocaleName) override;
+
   ~CXFA_LocaleMgr();
   void SetDefLocale(IFX_Locale* pLocale);
   CFX_WideStringC GetConfigLocaleName(CXFA_Node* pConfig);
 
  protected:
-  CFX_PtrArray m_LocaleArray;
-  CFX_PtrArray m_XMLLocaleArray;
+  CFX_ArrayTemplate<IFX_Locale*> m_LocaleArray;
+  CFX_ArrayTemplate<IFX_Locale*> m_XMLLocaleArray;
   IFX_Locale* m_pDefLocale;
   CFX_WideString m_wsConfigLocale;
   uint16_t m_dwDeflcid;

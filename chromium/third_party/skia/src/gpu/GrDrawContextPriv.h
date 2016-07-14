@@ -10,23 +10,24 @@
 
 #include "GrDrawContext.h"
 
-class GrStencilSettings;
+class GrFixedClip;
+struct GrUserStencilSettings;
 
 /** Class that adds methods to GrDrawContext that are only intended for use internal to Skia.
     This class is purely a privileged window into GrDrawContext. It should never have additional
     data members or virtual methods. */
 class GrDrawContextPriv {
 public:
-    bool drawAndStencilRect(const SkIRect* scissorRect,
-                            const GrStencilSettings&,
+    bool drawAndStencilRect(const GrFixedClip&,
+                            const GrUserStencilSettings*,
                             SkRegion::Op op,
                             bool invert,
                             bool doAA,
                             const SkMatrix& viewMatrix,
                             const SkRect&);
 
-    bool drawAndStencilPath(const SkIRect* scissorRect,
-                            const GrStencilSettings&,
+    bool drawAndStencilPath(const GrFixedClip&,
+                            const GrUserStencilSettings*,
                             SkRegion::Op op,
                             bool invert,
                             bool doAA,
@@ -34,7 +35,8 @@ public:
                             const SkPath&);
 
     void testingOnly_drawBatch(const GrPipelineBuilder& pipelineBuilder,
-                               GrDrawBatch* batch);
+                               GrDrawBatch* batch,
+                               const GrClip* = nullptr);
 
 private:
     explicit GrDrawContextPriv(GrDrawContext* drawContext) : fDrawContext(drawContext) {}

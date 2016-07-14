@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <tuple>
@@ -20,7 +21,6 @@
 #include "base/containers/stack_container.h"
 #include "base/files/file.h"
 #include "base/format_macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
@@ -554,6 +554,7 @@ struct IPC_EXPORT ParamTraits<base::DictionaryValue> {
 template<>
 struct IPC_EXPORT ParamTraits<base::FileDescriptor> {
   typedef base::FileDescriptor param_type;
+  static void GetSize(base::PickleSizer* sizer, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -566,6 +567,7 @@ struct IPC_EXPORT ParamTraits<base::FileDescriptor> {
 template <>
 struct IPC_EXPORT ParamTraits<base::SharedMemoryHandle> {
   typedef base::SharedMemoryHandle param_type;
+  static void GetSize(base::PickleSizer* sizer, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,
@@ -941,8 +943,8 @@ struct ParamTraits<base::SmallMap<NormalMap, kArraySize, EqualKey, MapInit> > {
 };
 
 template <class P>
-struct ParamTraits<scoped_ptr<P> > {
-  typedef scoped_ptr<P> param_type;
+struct ParamTraits<std::unique_ptr<P>> {
+  typedef std::unique_ptr<P> param_type;
   static void GetSize(base::PickleSizer* sizer, const param_type& p) {
     bool valid = !!p;
     GetParamSize(sizer, valid);
@@ -990,6 +992,7 @@ struct ParamTraits<scoped_ptr<P> > {
 template<>
 struct IPC_EXPORT ParamTraits<IPC::ChannelHandle> {
   typedef ChannelHandle param_type;
+  static void GetSize(base::PickleSizer* sizer, const param_type& p);
   static void Write(base::Pickle* m, const param_type& p);
   static bool Read(const base::Pickle* m,
                    base::PickleIterator* iter,

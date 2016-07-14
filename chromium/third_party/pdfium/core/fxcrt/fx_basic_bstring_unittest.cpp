@@ -333,6 +333,35 @@ TEST(fxcrt, ByteStringRemove) {
   EXPECT_EQ("", empty);
 }
 
+TEST(fxcrt, ByteStringRemoveCopies) {
+  CFX_ByteString freed("FREED");
+  const FX_CHAR* old_buffer = freed.c_str();
+
+  // No change with single reference - no copy.
+  freed.Remove('Q');
+  EXPECT_EQ("FREED", freed);
+  EXPECT_EQ(old_buffer, freed.c_str());
+
+  // Change with single reference - no copy.
+  freed.Remove('E');
+  EXPECT_EQ("FRD", freed);
+  EXPECT_EQ(old_buffer, freed.c_str());
+
+  // No change with multiple references - no copy.
+  CFX_ByteString shared(freed);
+  freed.Remove('Q');
+  EXPECT_EQ("FRD", freed);
+  EXPECT_EQ(old_buffer, freed.c_str());
+  EXPECT_EQ(old_buffer, shared.c_str());
+
+  // Change with multiple references -- must copy.
+  freed.Remove('D');
+  EXPECT_EQ("FR", freed);
+  EXPECT_NE(old_buffer, freed.c_str());
+  EXPECT_EQ("FRD", shared);
+  EXPECT_EQ(old_buffer, shared.c_str());
+}
+
 TEST(fxcrt, ByteStringReplace) {
   CFX_ByteString fred("FRED");
   fred.Replace("FR", "BL");
@@ -505,6 +534,37 @@ TEST(fxcrt, ByteStringTrimRight) {
   EXPECT_EQ("", empty);
 }
 
+TEST(fxcrt, ByteStringTrimRightCopies) {
+  {
+    // With a single reference, no copy takes place.
+    CFX_ByteString fred("  FRED  ");
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimRight();
+    EXPECT_EQ("  FRED", fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, we must copy.
+    CFX_ByteString fred("  FRED  ");
+    CFX_ByteString other_fred = fred;
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimRight();
+    EXPECT_EQ("  FRED", fred);
+    EXPECT_EQ("  FRED  ", other_fred);
+    EXPECT_NE(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, but no modifications, no copy.
+    CFX_ByteString fred("FRED");
+    CFX_ByteString other_fred = fred;
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimRight();
+    EXPECT_EQ("FRED", fred);
+    EXPECT_EQ("FRED", other_fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+}
+
 TEST(fxcrt, ByteStringTrimLeft) {
   CFX_ByteString fred("  FRED  ");
   fred.TrimLeft();
@@ -531,6 +591,114 @@ TEST(fxcrt, ByteStringTrimLeft) {
   EXPECT_EQ("", empty);
   empty.TrimLeft();
   EXPECT_EQ("", empty);
+}
+
+TEST(fxcrt, ByteStringTrimLeftCopies) {
+  {
+    // With a single reference, no copy takes place.
+    CFX_ByteString fred("  FRED  ");
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimLeft();
+    EXPECT_EQ("FRED  ", fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, we must copy.
+    CFX_ByteString fred("  FRED  ");
+    CFX_ByteString other_fred = fred;
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimLeft();
+    EXPECT_EQ("FRED  ", fred);
+    EXPECT_EQ("  FRED  ", other_fred);
+    EXPECT_NE(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, but no modifications, no copy.
+    CFX_ByteString fred("FRED");
+    CFX_ByteString other_fred = fred;
+    const FX_CHAR* old_buffer = fred.c_str();
+    fred.TrimLeft();
+    EXPECT_EQ("FRED", fred);
+    EXPECT_EQ("FRED", other_fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+}
+
+TEST(fxcrt, ByteStringReserve) {
+  {
+    CFX_ByteString str;
+    str.Reserve(6);
+    const FX_CHAR* old_buffer = str.c_str();
+    str += "ABCDEF";
+    EXPECT_EQ(old_buffer, str.c_str());
+    str += "Blah Blah Blah Blah Blah Blah";
+    EXPECT_NE(old_buffer, str.c_str());
+  }
+  {
+    CFX_ByteString str("A");
+    str.Reserve(6);
+    const FX_CHAR* old_buffer = str.c_str();
+    str += "BCDEF";
+    EXPECT_EQ(old_buffer, str.c_str());
+    str += "Blah Blah Blah Blah Blah Blah";
+    EXPECT_NE(old_buffer, str.c_str());
+  }
+}
+
+TEST(fxcrt, ByteStringGetBuffer) {
+  {
+    CFX_ByteString str;
+    FX_CHAR* buffer = str.GetBuffer(12);
+    strcpy(buffer, "clams");
+    str.ReleaseBuffer();
+    EXPECT_EQ("clams", str);
+  }
+  {
+    CFX_ByteString str("cl");
+    FX_CHAR* buffer = str.GetBuffer(12);
+    strcpy(buffer + 2, "ams");
+    str.ReleaseBuffer();
+    EXPECT_EQ("clams", str);
+  }
+}
+
+TEST(fxcrt, ByteStringReleaseBuffer) {
+  {
+    CFX_ByteString str;
+    str.Reserve(12);
+    str += "clams";
+    const FX_CHAR* old_buffer = str.c_str();
+    str.ReleaseBuffer(4);
+    EXPECT_EQ(old_buffer, str.c_str());
+    EXPECT_EQ("clam", str);
+  }
+  {
+    CFX_ByteString str("c");
+    str.Reserve(12);
+    str += "lams";
+    const FX_CHAR* old_buffer = str.c_str();
+    str.ReleaseBuffer(4);
+    EXPECT_EQ(old_buffer, str.c_str());
+    EXPECT_EQ("clam", str);
+  }
+  {
+    CFX_ByteString str;
+    str.Reserve(200);
+    str += "clams";
+    const FX_CHAR* old_buffer = str.c_str();
+    str.ReleaseBuffer(4);
+    EXPECT_NE(old_buffer, str.c_str());
+    EXPECT_EQ("clam", str);
+  }
+  {
+    CFX_ByteString str("c");
+    str.Reserve(200);
+    str += "lams";
+    const FX_CHAR* old_buffer = str.c_str();
+    str.ReleaseBuffer(4);
+    EXPECT_NE(old_buffer, str.c_str());
+    EXPECT_EQ("clam", str);
+  }
 }
 
 TEST(fxcrt, ByteStringCNotNull) {
@@ -632,6 +800,31 @@ TEST(fxcrt, ByteStringCGetID) {
   EXPECT_EQ(0u, longer_string.GetID(6));
   EXPECT_EQ(0u, longer_string.GetID(-1));
   EXPECT_EQ(0u, longer_string.GetID(-1000000));
+}
+
+TEST(fxcrt, ByteStringCFind) {
+  CFX_ByteStringC null_string;
+  EXPECT_EQ(-1, null_string.Find('a'));
+  EXPECT_EQ(-1, null_string.Find(0));
+
+  CFX_ByteStringC empty_string("");
+  EXPECT_EQ(-1, empty_string.Find('a'));
+  EXPECT_EQ(-1, empty_string.Find(0));
+
+  CFX_ByteStringC single_string("a");
+  EXPECT_EQ(0, single_string.Find('a'));
+  EXPECT_EQ(-1, single_string.Find('b'));
+  EXPECT_EQ(-1, single_string.Find(0));
+
+  CFX_ByteStringC longer_string("abccc");
+  EXPECT_EQ(0, longer_string.Find('a'));
+  EXPECT_EQ(2, longer_string.Find('c'));
+  EXPECT_EQ(-1, longer_string.Find(0));
+
+  CFX_ByteStringC hibyte_string(
+      "ab\x8c"
+      "def");
+  EXPECT_EQ(2, hibyte_string.Find('\x8c'));
 }
 
 TEST(fxcrt, ByteStringCMid) {

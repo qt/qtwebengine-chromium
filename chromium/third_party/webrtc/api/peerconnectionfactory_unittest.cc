@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -19,12 +20,11 @@
 #include "webrtc/api/test/fakedtlsidentitystore.h"
 #include "webrtc/api/test/fakevideotrackrenderer.h"
 #include "webrtc/base/gunit.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/media/base/fakevideocapturer.h"
 #include "webrtc/media/engine/webrtccommon.h"
 #include "webrtc/media/engine/webrtcvoe.h"
-#include "webrtc/p2p/client/fakeportallocator.h"
+#include "webrtc/p2p/base/fakeportallocator.h"
 
 using webrtc::DataChannelInterface;
 using webrtc::DtlsIdentityStoreInterface;
@@ -64,6 +64,7 @@ static const char kTurnIceServerWithIPv6Address[] =
 
 class NullPeerConnectionObserver : public PeerConnectionObserver {
  public:
+  virtual ~NullPeerConnectionObserver() = default;
   virtual void OnMessage(const std::string& msg) {}
   virtual void OnSignalingMessage(const std::string& msg) {}
   virtual void OnSignalingChange(
@@ -86,11 +87,9 @@ class PeerConnectionFactoryTest : public testing::Test {
 #ifdef WEBRTC_ANDROID
     webrtc::InitializeAndroidObjects();
 #endif
-    factory_ = webrtc::CreatePeerConnectionFactory(rtc::Thread::Current(),
-                                                   rtc::Thread::Current(),
-                                                   NULL,
-                                                   NULL,
-                                                   NULL);
+    factory_ = webrtc::CreatePeerConnectionFactory(
+        rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
+        nullptr, nullptr, nullptr);
 
     ASSERT_TRUE(factory_.get() != NULL);
     port_allocator_.reset(
@@ -122,7 +121,7 @@ class PeerConnectionFactoryTest : public testing::Test {
 
   rtc::scoped_refptr<PeerConnectionFactoryInterface> factory_;
   NullPeerConnectionObserver observer_;
-  rtc::scoped_ptr<cricket::FakePortAllocator> port_allocator_;
+  std::unique_ptr<cricket::FakePortAllocator> port_allocator_;
   // Since the PC owns the port allocator after it's been initialized,
   // this should only be used when known to be safe.
   cricket::FakePortAllocator* raw_port_allocator_;
@@ -141,7 +140,7 @@ TEST(PeerConnectionFactoryTestInternal, CreatePCUsingInternalModules) {
   NullPeerConnectionObserver observer;
   webrtc::PeerConnectionInterface::RTCConfiguration config;
 
-  rtc::scoped_ptr<FakeDtlsIdentityStore> dtls_identity_store(
+  std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory->CreatePeerConnection(
       config, nullptr, nullptr, std::move(dtls_identity_store), &observer));
@@ -162,7 +161,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServers) {
   ice_server.uri = kTurnIceServerWithTransport;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),
@@ -192,7 +191,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIceServersUrls) {
   ice_server.urls.push_back(kTurnIceServerWithTransport);
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),
@@ -221,7 +220,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingNoUsernameInUri) {
   ice_server.username = kTurnUsername;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),
@@ -242,7 +241,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingTurnUrlWithTransportParam) {
   ice_server.uri = kTurnIceServerWithTransport;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),
@@ -267,7 +266,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingSecureTurnUrl) {
   ice_server.uri = kSecureTurnIceServerWithoutTransportAndPortParam;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),
@@ -302,7 +301,7 @@ TEST_F(PeerConnectionFactoryTest, CreatePCUsingIPLiteralAddress) {
   ice_server.uri = kTurnIceServerWithIPv6Address;
   ice_server.password = kTurnPassword;
   config.servers.push_back(ice_server);
-  rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
+  std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store(
       new FakeDtlsIdentityStore());
   rtc::scoped_refptr<PeerConnectionInterface> pc(factory_->CreatePeerConnection(
       config, nullptr, std::move(port_allocator_),

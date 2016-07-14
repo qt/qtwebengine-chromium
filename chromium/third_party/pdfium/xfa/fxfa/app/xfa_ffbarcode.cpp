@@ -7,14 +7,14 @@
 #include "xfa/fxfa/app/xfa_ffbarcode.h"
 
 #include "core/fxcrt/include/fx_ext.h"
+#include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
-#include "xfa/fwl/core/ifwl_notedriver.h"
 #include "xfa/fwl/lightwidget/cfwl_barcode.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fftextedit.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 
 namespace {
 
@@ -94,12 +94,12 @@ const int32_t g_iXFABarcodeTypeCount =
 
 XFA_LPCBARCODETYPEENUMINFO XFA_GetBarcodeTypeByName(
     const CFX_WideStringC& wsName) {
-  int32_t iLength = wsName.GetLength();
-  if (iLength == 0) {
-    return NULL;
-  }
-  uint32_t uHash = FX_HashCode_String_GetW(wsName.raw_str(), iLength, TRUE);
-  int32_t iStart = 0, iEnd = g_iXFABarcodeTypeCount - 1;
+  if (wsName.IsEmpty())
+    return nullptr;
+
+  uint32_t uHash = FX_HashCode_GetW(wsName, true);
+  int32_t iStart = 0;
+  int32_t iEnd = g_iXFABarcodeTypeCount - 1;
   do {
     int32_t iMid = (iStart + iEnd) / 2;
     XFA_LPCBARCODETYPEENUMINFO pInfo = g_XFABarCodeTypeEnumData + iMid;
@@ -128,7 +128,7 @@ FX_BOOL CXFA_FFBarcode::LoadWidget() {
   m_pNormalWidget = pFWLBarcode;
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
   m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
-  IFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
@@ -167,7 +167,7 @@ void CXFA_FFBarcode::UpdateWidgetProperty() {
   CFWL_Barcode* pBarCodeWidget = (CFWL_Barcode*)m_pNormalWidget;
   CFX_WideString wsType = GetDataAcc()->GetBarcodeType();
   XFA_LPCBARCODETYPEENUMINFO pBarcodeTypeInfo =
-      XFA_GetBarcodeTypeByName(wsType.AsWideStringC());
+      XFA_GetBarcodeTypeByName(wsType.AsStringC());
   pBarCodeWidget->SetType(pBarcodeTypeInfo->eBCType);
   CXFA_WidgetAcc* pAcc = GetDataAcc();
   int32_t intVal;

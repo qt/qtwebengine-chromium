@@ -24,9 +24,9 @@
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
 
 #if _FX_OS_ == _FX_ANDROID_
@@ -36,7 +36,7 @@
 #endif
 
 DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
-  CPDF_Document* pDoc = new CPDF_Document;
+  CPDF_Document* pDoc = new CPDF_Document(nullptr);
   pDoc->CreateNewDoc();
   time_t currentTime;
 
@@ -100,9 +100,8 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
       new CPDFXFA_Page((CPDFXFA_Document*)document, page_index);
   pPage->LoadPDFPage(pPageDict);
 #else   // PDF_ENABLE_XFA
-  CPDF_Page* pPage = new CPDF_Page;
-  pPage->Load(pDoc, pPageDict);
-  pPage->ParseContent(nullptr);
+  CPDF_Page* pPage = new CPDF_Page(pDoc, pPageDict, true);
+  pPage->ParseContent();
 #endif  // PDF_ENABLE_XFA
 
   return pPage;

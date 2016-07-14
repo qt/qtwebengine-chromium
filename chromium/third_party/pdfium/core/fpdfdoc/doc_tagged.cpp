@@ -12,46 +12,62 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_reference.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream.h"
 #include "core/fpdfdoc/doc_utils.h"
+#include "core/fpdfdoc/include/fpdf_tagged.h"
 #include "core/fpdfdoc/tagged_int.h"
-#include "core/include/fpdfdoc/fpdf_tagged.h"
+
+namespace {
 
 const int nMaxRecursion = 32;
-static FX_BOOL IsTagged(const CPDF_Document* pDoc) {
+
+bool IsTagged(const CPDF_Document* pDoc) {
   CPDF_Dictionary* pCatalog = pDoc->GetRoot();
   CPDF_Dictionary* pMarkInfo = pCatalog->GetDictBy("MarkInfo");
   return pMarkInfo && pMarkInfo->GetIntegerBy("Marked");
 }
-CPDF_StructTree* CPDF_StructTree::LoadPage(const CPDF_Document* pDoc,
+
+}  // namespace
+
+// static
+IPDF_StructTree* IPDF_StructTree::LoadPage(const CPDF_Document* pDoc,
                                            const CPDF_Dictionary* pPageDict) {
-  if (!IsTagged(pDoc)) {
-    return NULL;
-  }
+  if (!IsTagged(pDoc))
+    return nullptr;
+
   CPDF_StructTreeImpl* pTree = new CPDF_StructTreeImpl(pDoc);
   pTree->LoadPageTree(pPageDict);
   return pTree;
 }
-CPDF_StructTree* CPDF_StructTree::LoadDoc(const CPDF_Document* pDoc) {
-  if (!IsTagged(pDoc)) {
-    return NULL;
-  }
+
+// static.
+IPDF_StructTree* IPDF_StructTree::LoadDoc(const CPDF_Document* pDoc) {
+  if (!IsTagged(pDoc))
+    return nullptr;
+
   CPDF_StructTreeImpl* pTree = new CPDF_StructTreeImpl(pDoc);
   pTree->LoadDocTree();
   return pTree;
 }
-CPDF_StructTreeImpl::CPDF_StructTreeImpl(const CPDF_Document* pDoc) {
-  CPDF_Dictionary* pCatalog = pDoc->GetRoot();
-  m_pTreeRoot = pCatalog->GetDictBy("StructTreeRoot");
-  if (!m_pTreeRoot) {
-    return;
-  }
-  m_pRoleMap = m_pTreeRoot->GetDictBy("RoleMap");
-}
+
+CPDF_StructTreeImpl::CPDF_StructTreeImpl(const CPDF_Document* pDoc)
+    : m_pTreeRoot(pDoc->GetRoot()->GetDictBy("StructTreeRoot")),
+      m_pRoleMap(m_pTreeRoot ? m_pTreeRoot->GetDictBy("RoleMap") : nullptr),
+      m_pPage(nullptr) {}
+
 CPDF_StructTreeImpl::~CPDF_StructTreeImpl() {
-  for (int i = 0; i < m_Kids.GetSize(); i++)
-    if (m_Kids[i]) {
+  for (int i = 0; i < m_Kids.GetSize(); i++) {
+    if (m_Kids[i])
       m_Kids[i]->Release();
-    }
+  }
 }
+
+int CPDF_StructTreeImpl::CountTopElements() const {
+  return m_Kids.GetSize();
+}
+
+IPDF_StructElement* CPDF_StructTreeImpl::GetTopElement(int i) const {
+  return m_Kids.GetAt(i);
+}
+
 void CPDF_StructTreeImpl::LoadDocTree() {
   m_pPage = nullptr;
   if (!m_pTreeRoot)
@@ -70,7 +86,7 @@ void CPDF_StructTreeImpl::LoadDocTree() {
   if (!pArray)
     return;
 
-  for (uint32_t i = 0; i < pArray->GetCount(); i++) {
+  for (size_t i = 0; i < pArray->GetCount(); i++) {
     CPDF_Dictionary* pKid = pArray->GetDictAt(i);
     CPDF_StructElementImpl* pStructElementImpl =
         new CPDF_StructElementImpl(this, nullptr, pKid);
@@ -197,23 +213,23 @@ FX_BOOL CPDF_StructTreeImpl::AddTopLevelNode(CPDF_Dictionary* pDict,
   }
   return TRUE;
 }
+
 CPDF_StructElementImpl::CPDF_StructElementImpl(CPDF_StructTreeImpl* pTree,
                                                CPDF_StructElementImpl* pParent,
                                                CPDF_Dictionary* pDict)
-    : m_RefCount(0) {
-  m_pTree = pTree;
-  m_pDict = pDict;
-  m_Type = pDict->GetStringBy("S");
+    : m_RefCount(0),
+      m_pTree(pTree),
+      m_pParent(pParent),
+      m_pDict(pDict),
+      m_Type(pDict->GetStringBy("S")) {
   if (pTree->m_pRoleMap) {
-    CFX_ByteString mapped =
-        pTree->m_pRoleMap->GetStringBy(m_Type.AsByteStringC());
-    if (!mapped.IsEmpty()) {
+    CFX_ByteString mapped = pTree->m_pRoleMap->GetStringBy(m_Type);
+    if (!mapped.IsEmpty())
       m_Type = mapped;
-    }
   }
-  m_pParent = pParent;
   LoadKids(pDict);
 }
+
 CPDF_StructElementImpl::~CPDF_StructElementImpl() {
   for (int i = 0; i < m_Kids.GetSize(); i++) {
     if (m_Kids[i].m_Type == CPDF_StructKid::Element &&
@@ -357,7 +373,7 @@ CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
   if (pA) {
     CPDF_Dictionary* pAttrDict = FindAttrDict(pA, owner);
     if (pAttrDict) {
-      CPDF_Object* pAttr = pAttrDict->GetDirectObjectBy(name);
+      CPDF_Object* pAttr = pAttrDict->GetDirectObjectBy(CFX_ByteString(name));
       if (pAttr) {
         return pAttr;
       }
@@ -374,18 +390,16 @@ CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
   if (CPDF_Array* pArray = pC->AsArray()) {
     for (uint32_t i = 0; i < pArray->GetCount(); i++) {
       CFX_ByteString class_name = pArray->GetStringAt(i);
-      CPDF_Dictionary* pClassDict =
-          pClassMap->GetDictBy(class_name.AsByteStringC());
+      CPDF_Dictionary* pClassDict = pClassMap->GetDictBy(class_name);
       if (pClassDict && pClassDict->GetStringBy("O") == owner)
-        return pClassDict->GetDirectObjectBy(name);
+        return pClassDict->GetDirectObjectBy(CFX_ByteString(name));
     }
     return nullptr;
   }
   CFX_ByteString class_name = pC->GetString();
-  CPDF_Dictionary* pClassDict =
-      pClassMap->GetDictBy(class_name.AsByteStringC());
+  CPDF_Dictionary* pClassDict = pClassMap->GetDictBy(class_name);
   if (pClassDict && pClassDict->GetStringBy("O") == owner)
-    return pClassDict->GetDirectObjectBy(name);
+    return pClassDict->GetDirectObjectBy(CFX_ByteString(name));
   return nullptr;
 }
 CPDF_Object* CPDF_StructElementImpl::GetAttr(const CFX_ByteStringC& owner,
@@ -410,7 +424,7 @@ CFX_ByteString CPDF_StructElementImpl::GetName(
   CPDF_Object* pAttr = GetAttr(owner, name, bInheritable, subindex);
   if (ToName(pAttr))
     return pAttr->GetString();
-  return default_value;
+  return CFX_ByteString(default_value);
 }
 
 FX_ARGB CPDF_StructElementImpl::GetColor(const CFX_ByteStringC& owner,

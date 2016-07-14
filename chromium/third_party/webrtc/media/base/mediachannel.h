@@ -17,6 +17,7 @@
 
 #include "webrtc/api/rtpparameters.h"
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/buffer.h"
 #include "webrtc/base/copyonwritebuffer.h"
 #include "webrtc/base/dscp.h"
 #include "webrtc/base/logging.h"
@@ -29,11 +30,11 @@
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/streamparams.h"
 #include "webrtc/media/base/videosinkinterface.h"
+#include "webrtc/media/base/videosourceinterface.h"
 // TODO(juberti): re-evaluate this include
 #include "webrtc/pc/audiomonitor.h"
 
 namespace rtc {
-class Buffer;
 class RateLimiter;
 class Timing;
 }
@@ -156,6 +157,7 @@ struct AudioOptions {
     SetFrom(&extended_filter_aec, change.extended_filter_aec);
     SetFrom(&delay_agnostic_aec, change.delay_agnostic_aec);
     SetFrom(&experimental_ns, change.experimental_ns);
+    SetFrom(&intelligibility_enhancer, change.intelligibility_enhancer);
     SetFrom(&tx_agc_target_dbov, change.tx_agc_target_dbov);
     SetFrom(&tx_agc_digital_compression_gain,
             change.tx_agc_digital_compression_gain);
@@ -180,6 +182,7 @@ struct AudioOptions {
         extended_filter_aec == o.extended_filter_aec &&
         delay_agnostic_aec == o.delay_agnostic_aec &&
         experimental_ns == o.experimental_ns &&
+        intelligibility_enhancer == o.intelligibility_enhancer &&
         adjust_agc_delta == o.adjust_agc_delta &&
         tx_agc_target_dbov == o.tx_agc_target_dbov &&
         tx_agc_digital_compression_gain == o.tx_agc_digital_compression_gain &&
@@ -209,6 +212,7 @@ struct AudioOptions {
     ost << ToStringIfSet("extended_filter_aec", extended_filter_aec);
     ost << ToStringIfSet("delay_agnostic_aec", delay_agnostic_aec);
     ost << ToStringIfSet("experimental_ns", experimental_ns);
+    ost << ToStringIfSet("intelligibility_enhancer", intelligibility_enhancer);
     ost << ToStringIfSet("tx_agc_target_dbov", tx_agc_target_dbov);
     ost << ToStringIfSet("tx_agc_digital_compression_gain",
         tx_agc_digital_compression_gain);
@@ -243,6 +247,7 @@ struct AudioOptions {
   rtc::Optional<bool> extended_filter_aec;
   rtc::Optional<bool> delay_agnostic_aec;
   rtc::Optional<bool> experimental_ns;
+  rtc::Optional<bool> intelligibility_enhancer;
   // Note that tx_agc_* only applies to non-experimental AGC.
   rtc::Optional<uint16_t> tx_agc_target_dbov;
   rtc::Optional<uint16_t> tx_agc_digital_compression_gain;
@@ -391,8 +396,9 @@ class MediaChannel : public sigslot::has_slots<> {
   // Called when the socket's ability to send has changed.
   virtual void OnReadyToSend(bool ready) = 0;
   // Called when the network route used for sending packets changed.
-  virtual void OnNetworkRouteChanged(const std::string& transport_name,
-                                     const NetworkRoute& network_route) = 0;
+  virtual void OnNetworkRouteChanged(
+      const std::string& transport_name,
+      const rtc::NetworkRoute& network_route) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
   // by sp.
   virtual bool AddSendStream(const StreamParams& sp) = 0;
@@ -839,6 +845,7 @@ struct RtpParameters {
   std::vector<RtpHeaderExtension> extensions;
   // TODO(pthatcher): Add streams.
   RtcpParameters rtcp;
+  virtual ~RtpParameters() = default;
 };
 
 // TODO(deadbeef): Rename to RtpSenderParameters, since they're intended to
@@ -904,6 +911,15 @@ class VoiceMediaChannel : public MediaChannel {
   virtual ~VoiceMediaChannel() {}
   virtual bool SetSendParameters(const AudioSendParameters& params) = 0;
   virtual bool SetRecvParameters(const AudioRecvParameters& params) = 0;
+  virtual webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const = 0;
+  virtual bool SetRtpSendParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) = 0;
+  virtual webrtc::RtpParameters GetRtpReceiveParameters(
+      uint32_t ssrc) const = 0;
+  virtual bool SetRtpReceiveParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) = 0;
   // Starts or stops playout of received audio.
   virtual bool SetPlayout(bool playout) = 0;
   // Starts or stops sending (and potentially capture) of local audio.
@@ -980,9 +996,15 @@ class VideoMediaChannel : public MediaChannel {
 
   virtual bool SetSendParameters(const VideoSendParameters& params) = 0;
   virtual bool SetRecvParameters(const VideoRecvParameters& params) = 0;
-  virtual webrtc::RtpParameters GetRtpParameters(uint32_t ssrc) const = 0;
-  virtual bool SetRtpParameters(uint32_t ssrc,
-                                const webrtc::RtpParameters& parameters) = 0;
+  virtual webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const = 0;
+  virtual bool SetRtpSendParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) = 0;
+  virtual webrtc::RtpParameters GetRtpReceiveParameters(
+      uint32_t ssrc) const = 0;
+  virtual bool SetRtpReceiveParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) = 0;
   // Gets the currently set codecs/payload types to be used for outgoing media.
   virtual bool GetSendCodec(VideoCodec* send_codec) = 0;
   // Starts or stops transmission (and potentially capture) of local video.
@@ -995,9 +1017,10 @@ class VideoMediaChannel : public MediaChannel {
   // If SSRC is 0, the renderer is used for the 'default' stream.
   virtual bool SetSink(uint32_t ssrc,
                        rtc::VideoSinkInterface<cricket::VideoFrame>* sink) = 0;
-  // If |ssrc| is 0, replace the default capturer (engine capturer) with
-  // |capturer|. If |ssrc| is non zero create a new stream with |ssrc| as SSRC.
-  virtual bool SetCapturer(uint32_t ssrc, VideoCapturer* capturer) = 0;
+  // Register a source. The |ssrc| must correspond to a registered send stream.
+  virtual void SetSource(
+      uint32_t ssrc,
+      rtc::VideoSourceInterface<cricket::VideoFrame>* source) = 0;
   // Gets quality stats for the channel.
   virtual bool GetStats(VideoMediaInfo* info) = 0;
 };
@@ -1107,7 +1130,7 @@ class DataMediaChannel : public MediaChannel {
   virtual bool SetReceive(bool receive) = 0;
 
   virtual void OnNetworkRouteChanged(const std::string& transport_name,
-                                     const NetworkRoute& network_route) {}
+                                     const rtc::NetworkRoute& network_route) {}
 
   virtual bool SendData(
       const SendDataParams& params,

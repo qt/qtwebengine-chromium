@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "webrtc/p2p/quic/quicconnectionhelper.h"
 
 #include "net/quic/quic_time.h"
 #include "webrtc/base/gunit.h"
-#include "webrtc/base/scoped_ptr.h"
 
 using cricket::QuicAlarm;
 using cricket::QuicConnectionHelper;
@@ -52,10 +53,7 @@ class MockAlarmDelegate : public QuicAlarm::Delegate {
  public:
   MockAlarmDelegate() : fired_(false) {}
 
-  QuicTime OnAlarm() override {
-    fired_ = true;
-    return QuicTime::Zero();
-  }
+  void OnAlarm() override { fired_ = true; }
 
   bool fired() const { return fired_; }
   void Clear() { fired_ = false; }
@@ -89,7 +87,7 @@ class QuicAlarmTest : public ::testing::Test {
   // Used for setting clock time relative to alarm.
   MockClock clock_;
 
-  rtc::scoped_ptr<QuicAlarm> alarm_;
+  std::unique_ptr<QuicAlarm> alarm_;
 };
 
 // Test that the alarm is fired.

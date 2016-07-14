@@ -8,10 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 
-/*
- * This file includes unit tests for the RTCPReceiver.
- */
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -136,7 +134,7 @@ class RtcpReceiverTest : public ::testing::Test {
     rtcp_packet_info_.rtp_timestamp = rtcpPacketInformation.rtp_timestamp;
     rtcp_packet_info_.xr_dlrr_item = rtcpPacketInformation.xr_dlrr_item;
     if (rtcpPacketInformation.VoIPMetric)
-      rtcp_packet_info_.AddVoIPMetric(rtcpPacketInformation.VoIPMetric);
+      rtcp_packet_info_.AddVoIPMetric(rtcpPacketInformation.VoIPMetric.get());
     rtcp_packet_info_.transport_feedback_.reset(
         rtcpPacketInformation.transport_feedback_.release());
     return 0;
@@ -149,7 +147,7 @@ class RtcpReceiverTest : public ::testing::Test {
   TestTransport* test_transport_;
   RTCPHelp::RTCPPacketInformation rtcp_packet_info_;
   MockRemoteBitrateObserver remote_bitrate_observer_;
-  rtc::scoped_ptr<RemoteBitrateEstimator> remote_bitrate_estimator_;
+  std::unique_ptr<RemoteBitrateEstimator> remote_bitrate_estimator_;
 };
 
 
@@ -1244,6 +1242,20 @@ TEST_F(RtcpReceiverTest, ReceivesTransportFeedback) {
   EXPECT_TRUE(rtcp_packet_info_.transport_feedback_.get() != nullptr);
 }
 
+TEST_F(RtcpReceiverTest, ReceivesRemb) {
+  const uint32_t kSenderSsrc = 0x123456;
+  const uint32_t kBitrateBps = 500000;
+  rtcp::Remb remb;
+  remb.From(kSenderSsrc);
+  remb.WithBitrateBps(kBitrateBps);
+  rtc::Buffer built_packet = remb.Build();
+
+  EXPECT_EQ(0, InjectRtcpPacket(built_packet.data(), built_packet.size()));
+
+  EXPECT_EQ(kRtcpRemb, rtcp_packet_info_.rtcpPacketTypeFlags & kRtcpRemb);
+  EXPECT_EQ(kBitrateBps, rtcp_packet_info_.receiverEstimatedMaxBitrate);
+}
+
 TEST_F(RtcpReceiverTest, HandlesInvalidTransportFeedback) {
   const uint32_t kSenderSsrc = 0x10203;
   const uint32_t kSourceSsrc = 0x123456;
@@ -1261,7 +1273,7 @@ TEST_F(RtcpReceiverTest, HandlesInvalidTransportFeedback) {
 
   static uint32_t kBitrateBps = 50000;
   rtcp::Remb remb;
-  remb.From(kSourceSsrc);
+  remb.From(kSenderSsrc);
   remb.WithBitrateBps(kBitrateBps);
   rtcp::CompoundPacket compound;
   compound.Append(&packet);

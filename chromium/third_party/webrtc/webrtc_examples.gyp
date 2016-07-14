@@ -154,7 +154,7 @@
           'target_name': 'apprtc_common',
           'type': 'static_library',
           'dependencies': [
-            '<(webrtc_root)/base/base.gyp:rtc_base_objc',
+            '<(webrtc_root)/sdk/sdk.gyp:rtc_sdk_common_objc',
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:field_trial_default',
           ],
           'sources': [
@@ -201,8 +201,7 @@
           'target_name': 'apprtc_signaling',
           'type': 'static_library',
           'dependencies': [
-            '<(webrtc_root)/api/api.gyp:rtc_api_objc',
-            '<(webrtc_root)/base/base.gyp:rtc_base_objc',
+            '<(webrtc_root)/sdk/sdk.gyp:rtc_sdk_peerconnection_objc',
             'apprtc_common',
             'socketrocket',
           ],
@@ -251,7 +250,7 @@
             ],
           },
           'export_dependent_settings': [
-            '<(webrtc_root)/api/api.gyp:rtc_api_objc',
+            '<(webrtc_root)/sdk/sdk.gyp:rtc_sdk_peerconnection_objc',
           ],
           'conditions': [
             ['OS=="ios"', {
@@ -409,6 +408,7 @@
           'type': 'none',
           'dependencies': [
             'api/api.gyp:libjingle_peerconnection_java',
+            '<(DEPTH)/third_party/android_tools/android_tools.gyp:android_support_design_javalib'
           ],
           'variables': {
             'apk_name': 'AppRTCDemo',
@@ -419,9 +419,11 @@
             'R_package_relpath': 'org/appspot/apprtc',
             'input_jars_paths': [
               'examples/androidapp/third_party/autobanh/autobanh.jar',
+              '<(DEPTH)/third_party/android_tools/sdk/extras/android/support/v4/android-support-v4.jar',
              ],
             'library_dexed_jars_paths': [
               'examples/androidapp/third_party/autobanh/autobanh.jar',
+              '<(DEPTH)/third_party/android_tools/sdk/extras/android/support/v4/android-support-v4.jar',
              ],
             'native_lib_target': 'libjingle_peerconnection_so',
             'add_to_dependents_classpaths':1,
@@ -454,8 +456,36 @@
             'apk_name': 'AppRTCDemoTest',
             'java_in_dir': 'examples/androidtests',
             'is_test_apk': 1,
+            'test_type': 'instrumentation',
+            'test_runner_path': '<(DEPTH)/webrtc/build/android/test_runner.py',
           },
-          'includes': [ '../build/java_apk.gypi' ],
+          'includes': [
+            '../build/java_apk.gypi',
+            '../build/android/test_runner.gypi',
+          ],
+        },
+
+        {
+          'target_name': 'AppRTCDemoJUnitTest',
+          'type': 'none',
+          'dependencies': [
+            'AppRTCDemo_apk',
+            '<(DEPTH)/base/base.gyp:base_java',
+            '<(DEPTH)/base/base.gyp:base_java_test_support',
+            '<(DEPTH)/base/base.gyp:base_junit_test_support',
+          ],
+          'variables': {
+            'main_class': 'org.chromium.testing.local.JunitTestMain',
+            'src_paths': [
+              'examples/androidjunit/',
+            ],
+            'test_type': 'junit',
+            'wrapper_script_name': 'helper/<(_target_name)',
+          },
+          'includes': [
+            '../build/host_jar.gypi',
+            '../build/android/test_runner.gypi',
+          ],
         },
       ],  # targets
     }],  # OS=="android"

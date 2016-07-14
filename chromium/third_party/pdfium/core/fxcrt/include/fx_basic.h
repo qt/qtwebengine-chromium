@@ -56,10 +56,15 @@ class CFX_BinaryBuf {
 
 class CFX_ByteTextBuf : public CFX_BinaryBuf {
  public:
-  void AppendChar(int ch) { AppendByte((uint8_t)ch); }
   FX_STRSIZE GetLength() const { return m_DataSize; }
-  CFX_ByteStringC GetByteString() const;
+  CFX_ByteString MakeString() const {
+    return CFX_ByteString(m_pBuffer.get(), m_DataSize);
+  }
+  CFX_ByteStringC AsStringC() const {
+    return CFX_ByteStringC(m_pBuffer.get(), m_DataSize);
+  }
 
+  void AppendChar(int ch) { AppendByte(static_cast<uint8_t>(ch)); }
   CFX_ByteTextBuf& operator<<(int i);
   CFX_ByteTextBuf& operator<<(uint32_t i);
   CFX_ByteTextBuf& operator<<(double f);
@@ -67,7 +72,7 @@ class CFX_ByteTextBuf : public CFX_BinaryBuf {
     return *this << CFX_ByteStringC(pStr);
   }
   CFX_ByteTextBuf& operator<<(const CFX_ByteString& str) {
-    return *this << str.AsByteStringC();
+    return *this << str.AsStringC();
   }
   CFX_ByteTextBuf& operator<<(const CFX_ByteStringC& lpsz);
   CFX_ByteTextBuf& operator<<(const CFX_ByteTextBuf& buf);
@@ -80,7 +85,15 @@ class CFX_WideTextBuf : public CFX_BinaryBuf {
   FX_WCHAR* GetBuffer() const {
     return reinterpret_cast<FX_WCHAR*>(m_pBuffer.get());
   }
-  CFX_WideStringC GetWideString() const;
+
+  CFX_WideStringC AsStringC() const {
+    return CFX_WideStringC(reinterpret_cast<const FX_WCHAR*>(m_pBuffer.get()),
+                           m_DataSize / sizeof(FX_WCHAR));
+  }
+  CFX_WideString MakeString() const {
+    return CFX_WideString(reinterpret_cast<const FX_WCHAR*>(m_pBuffer.get()),
+                          m_DataSize / sizeof(FX_WCHAR));
+  }
 
   void Delete(int start_index, int count) {
     CFX_BinaryBuf::Delete(start_index * sizeof(FX_WCHAR),
@@ -186,10 +199,10 @@ class CFX_FileBufferArchive {
 class CFX_CharMap {
  public:
   static CFX_ByteString GetByteString(uint16_t codepage,
-                                      const CFX_WideString& wstr);
+                                      const CFX_WideStringC& wstr);
 
   static CFX_WideString GetWideString(uint16_t codepage,
-                                      const CFX_ByteString& bstr);
+                                      const CFX_ByteStringC& bstr);
 
   CFX_CharMap() = delete;
 };
@@ -206,7 +219,7 @@ class CFX_UTF8Decoder {
 
   void ClearStatus() { m_PendingBytes = 0; }
 
-  CFX_WideStringC GetResult() const { return m_Buffer.GetWideString(); }
+  CFX_WideStringC GetResult() const { return m_Buffer.AsStringC(); }
 
  protected:
   int m_PendingBytes;
@@ -222,7 +235,7 @@ class CFX_UTF8Encoder {
 
   void Input(FX_WCHAR unicode);
   void AppendStr(const CFX_ByteStringC& str) { m_Buffer << str; }
-  CFX_ByteStringC GetResult() const { return m_Buffer.GetByteString(); }
+  CFX_ByteStringC GetResult() const { return m_Buffer.AsStringC(); }
 
  protected:
   CFX_ByteTextBuf m_Buffer;
@@ -231,32 +244,24 @@ class CFX_UTF8Encoder {
 class CFX_BasicArray {
  protected:
   CFX_BasicArray(int unit_size);
-
+  CFX_BasicArray(const CFX_BasicArray&) = delete;
   ~CFX_BasicArray();
 
   FX_BOOL SetSize(int nNewSize);
-
   FX_BOOL Append(const CFX_BasicArray& src);
-
   FX_BOOL Copy(const CFX_BasicArray& src);
-
   uint8_t* InsertSpaceAt(int nIndex, int nCount);
-
   FX_BOOL RemoveAt(int nIndex, int nCount);
-
   FX_BOOL InsertAt(int nStartIndex, const CFX_BasicArray* pNewArray);
-
   const void* GetDataPtr(int index) const;
 
  protected:
   uint8_t* m_pData;
-
   int m_nSize;
-
   int m_nMaxSize;
-
   int m_nUnitSize;
 };
+
 template <class TYPE>
 class CFX_ArrayTemplate : public CFX_BasicArray {
  public:
@@ -272,7 +277,7 @@ class CFX_ArrayTemplate : public CFX_BasicArray {
 
   const TYPE GetAt(int nIndex) const {
     if (nIndex < 0 || nIndex >= m_nSize) {
-      return (const TYPE&)(*(volatile const TYPE*)NULL);
+      PDFIUM_IMMEDIATE_CRASH();
     }
     return ((const TYPE*)m_pData)[nIndex];
   }
@@ -287,7 +292,7 @@ class CFX_ArrayTemplate : public CFX_BasicArray {
 
   TYPE& ElementAt(int nIndex) {
     if (nIndex < 0 || nIndex >= m_nSize) {
-      return *(TYPE*)NULL;
+      PDFIUM_IMMEDIATE_CRASH();
     }
     return ((TYPE*)m_pData)[nIndex];
   }
@@ -384,7 +389,6 @@ typedef CFX_ArrayTemplate<CFX_WideStringC> CFX_WideStringCArray;
 typedef CFX_ArrayTemplate<FX_FLOAT> CFX_FloatArray;
 typedef CFX_ArrayTemplate<uint8_t> CFX_ByteArray;
 typedef CFX_ArrayTemplate<int32_t> CFX_Int32Array;
-typedef CFX_ArrayTemplate<void*> CFX_PtrArray;
 #endif  // PDF_ENABLE_XFA
 
 #ifdef PDF_ENABLE_XFA
@@ -415,7 +419,7 @@ class CFX_ObjectArray : public CFX_BasicArray {
     if (!nSize) {
       return 0;
     }
-    FXSYS_assert(nStart > -1 && nStart < nSize);
+    ASSERT(nStart > -1 && nStart < nSize);
     if (nCount < 0) {
       nCount = nSize;
     }
@@ -445,7 +449,7 @@ class CFX_ObjectArray : public CFX_BasicArray {
     if (!nSize) {
       return 0;
     }
-    FXSYS_assert(nStart > -1 && nStart < nSize);
+    ASSERT(nStart > -1 && nStart < nSize);
     if (nCount < 0) {
       nCount = nSize;
     }
@@ -468,7 +472,7 @@ class CFX_ObjectArray : public CFX_BasicArray {
   int GetSize() const { return m_nSize; }
 
   ObjectClass& operator[](int index) const {
-    FXSYS_assert(index < m_nSize);
+    ASSERT(index < m_nSize);
     return *(ObjectClass*)CFX_BasicArray::GetDataPtr(index);
   }
 
@@ -477,7 +481,7 @@ class CFX_ObjectArray : public CFX_BasicArray {
   }
 
   void RemoveAt(int index) {
-    FXSYS_assert(index < m_nSize);
+    ASSERT(index < m_nSize);
     ((ObjectClass*)GetDataPtr(index))->~ObjectClass();
     CFX_BasicArray::RemoveAt(index, 1);
   }
@@ -491,71 +495,6 @@ class CFX_ObjectArray : public CFX_BasicArray {
 };
 typedef CFX_ObjectArray<CFX_ByteString> CFX_ByteStringArray;
 typedef CFX_ObjectArray<CFX_WideString> CFX_WideStringArray;
-class CFX_BaseSegmentedArray {
- public:
-  CFX_BaseSegmentedArray(int unit_size = 1,
-                         int segment_units = 512,
-                         int index_size = 8);
-
-  ~CFX_BaseSegmentedArray();
-
-  void SetUnitSize(int unit_size, int segment_units, int index_size = 8);
-
-  void* Add();
-
-  void* GetAt(int index) const;
-
-  void RemoveAll();
-
-  void Delete(int index, int count = 1);
-
-  int GetSize() const { return m_DataSize; }
-
-  int GetSegmentSize() const { return m_SegmentSize; }
-
-  int GetUnitSize() const { return m_UnitSize; }
-
-  void* Iterate(FX_BOOL (*callback)(void* param, void* pData),
-                void* param) const;
-
- private:
-  int m_UnitSize;
-
-  short m_SegmentSize;
-
-  uint8_t m_IndexSize;
-
-  uint8_t m_IndexDepth;
-
-  int m_DataSize;
-
-  void* m_pIndex;
-  void** GetIndex(int seg_index) const;
-  void* IterateIndex(int level,
-                     int& start,
-                     void** pIndex,
-                     FX_BOOL (*callback)(void* param, void* pData),
-                     void* param) const;
-  void* IterateSegment(const uint8_t* pSegment,
-                       int count,
-                       FX_BOOL (*callback)(void* param, void* pData),
-                       void* param) const;
-};
-template <class ElementType>
-class CFX_SegmentedArray : public CFX_BaseSegmentedArray {
- public:
-  CFX_SegmentedArray(int segment_units, int index_size = 8)
-      : CFX_BaseSegmentedArray(sizeof(ElementType), segment_units, index_size) {
-  }
-
-  void Add(ElementType data) {
-    *(ElementType*)CFX_BaseSegmentedArray::Add() = data;
-  }
-
-  ElementType& operator[](int index) {
-    return *(ElementType*)CFX_BaseSegmentedArray::GetAt(index);
-  }
-};
 #endif  // PDF_ENABLE_XFA
 
 template <class DataType, int FixedSize>
@@ -879,7 +818,7 @@ class CFX_CountRef {
   }
 
   void operator=(void* p) {
-    FXSYS_assert(p == 0);
+    ASSERT(p == 0);
     if (!m_pObject) {
       return;
     }
@@ -1055,7 +994,7 @@ class CFX_ListArrayTemplate {
 
   T2& operator[](int32_t nIndex) {
     uint8_t* data = m_Data.GetAt(nIndex);
-    FXSYS_assert(data);
+    ASSERT(data);
     return (T2&)(*(volatile T2*)data);
   }
 

@@ -27,7 +27,6 @@ public:
 
 protected:
     void onOnceBeforeDraw() override {
-        SkAutoTUnref<SkTypeface> typeface(GetResourceAsTypeface("/fonts/HangingS.ttf"));
         SkTextBlobBuilder builder;
 
         // make textblob.  To stress distance fields, we choose sizes appropriately
@@ -35,7 +34,7 @@ protected:
         paint.setAntiAlias(true);
         paint.setSubpixelText(true);
         paint.setLCDRenderText(true);
-        paint.setTypeface(typeface);
+        paint.setTypeface(MakeResourceAsTypeface("/fonts/HangingS.ttf"));
 
         const char* text = "Skia";
 
@@ -106,9 +105,9 @@ protected:
             SkImageInfo info = SkImageInfo::MakeN32Premul(onISize(),
                                                           inputCanvas->imageInfo().profileType());
             SkSurfaceProps canvasProps(SkSurfaceProps::kLegacyFontHost_InitType);
-            uint32_t allowSRGBInputs = inputCanvas->getProps(&canvasProps)
-                ? canvasProps.flags() & SkSurfaceProps::kAllowSRGBInputs_Flag : 0;
-            SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag | allowSRGBInputs,
+            uint32_t gammaCorrect = inputCanvas->getProps(&canvasProps)
+                ? canvasProps.flags() & SkSurfaceProps::kGammaCorrect_Flag : 0;
+            SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag | gammaCorrect,
                                  SkSurfaceProps::kLegacyFontHost_InitType);
             surface = SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props);
             canvas = surface.get() ? surface->getCanvas() : inputCanvas;
@@ -181,8 +180,8 @@ protected:
 private:
     SkAutoTUnref<const SkTextBlob> fBlob;
 
-    static const int kWidth = 2000;
-    static const int kHeight = 2000;
+    static const int kWidth = 2100;
+    static const int kHeight = 1900;
 
     bool fUseDFT;
 

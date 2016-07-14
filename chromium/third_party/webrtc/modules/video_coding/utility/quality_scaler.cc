@@ -11,29 +11,39 @@
 
 namespace webrtc {
 
+namespace {
 static const int kMinFps = 5;
-static const int kMeasureSecondsDownscale = 3;
 // Threshold constant used until first downscale (to permit fast rampup).
 static const int kMeasureSecondsFastUpscale = 2;
 static const int kMeasureSecondsUpscale = 5;
+static const int kMeasureSecondsDownscale = 5;
 static const int kFramedropPercentThreshold = 60;
-static const int kHdResolutionThreshold = 700 * 500;
-static const int kHdBitrateThresholdKbps = 500;
+// Min width/height to downscale to, set to not go below QVGA, but with some
+// margin to permit "almost-QVGA" resolutions, such as QCIF.
+static const int kMinDownscaleDimension = 140;
+// Initial resolutions corresponding to a bitrate. Aa bit above their actual
+// values to permit near-VGA and near-QVGA resolutions to use the same
+// mechanism.
+static const int kVgaBitrateThresholdKbps = 500;
+static const int kVgaNumPixels = 700 * 500;  // 640x480
+static const int kQvgaBitrateThresholdKbps = 250;
+static const int kQvgaNumPixels = 400 * 300;  // 320x240
+}  // namespace
 
-const int QualityScaler::kDefaultLowQpDenominator = 3;
-// Note that this is the same for width and height to permit 120x90 in both
-// portrait and landscape mode.
-const int QualityScaler::kDefaultMinDownscaleDimension = 90;
+// QP thresholds are chosen to be high enough to be hit in practice when quality
+// is good, but also low enough to not cause a flip-flop behavior (e.g. going up
+// in resolution shouldn't give so bad quality that we should go back down).
 
-QualityScaler::QualityScaler()
-    : low_qp_threshold_(-1),
-      framerate_down_(false),
-      min_width_(kDefaultMinDownscaleDimension),
-      min_height_(kDefaultMinDownscaleDimension) {}
+const int QualityScaler::kLowVp8QpThreshold = 29;
+const int QualityScaler::kBadVp8QpThreshold = 95;
+
+const int QualityScaler::kLowH264QpThreshold = 22;
+const int QualityScaler::kBadH264QpThreshold = 35;
+
+QualityScaler::QualityScaler() : low_qp_threshold_(-1) {}
 
 void QualityScaler::Init(int low_qp_threshold,
                          int high_qp_threshold,
-                         bool use_framerate_reduction,
                          int initial_bitrate_kbps,
                          int width,
                          int height,
@@ -41,7 +51,6 @@ void QualityScaler::Init(int low_qp_threshold,
   ClearSamples();
   low_qp_threshold_ = low_qp_threshold;
   high_qp_threshold_ = high_qp_threshold;
-  use_framerate_reduction_ = use_framerate_reduction;
   downscale_shift_ = 0;
   // Use a faster window for upscaling initially (but be more graceful later).
   // This enables faster initial rampups without risking strong up-down
@@ -49,25 +58,24 @@ void QualityScaler::Init(int low_qp_threshold,
   measure_seconds_upscale_ = kMeasureSecondsFastUpscale;
   const int init_width = width;
   const int init_height = height;
-  // TODO(glaznev): Investigate using thresholds for other resolutions
-  // or threshold tables.
-  if (initial_bitrate_kbps > 0 &&
-      initial_bitrate_kbps < kHdBitrateThresholdKbps) {
-    // Start scaling to roughly VGA.
-    while (width * height > kHdResolutionThreshold) {
+  if (initial_bitrate_kbps > 0) {
+    int init_num_pixels = width * height;
+    if (initial_bitrate_kbps < kVgaBitrateThresholdKbps)
+      init_num_pixels = kVgaNumPixels;
+    if (initial_bitrate_kbps < kQvgaBitrateThresholdKbps)
+      init_num_pixels = kQvgaNumPixels;
+    while (width * height > init_num_pixels) {
       ++downscale_shift_;
       width /= 2;
       height /= 2;
     }
   }
+
+  // Zero out width/height so they can be checked against inside
+  // UpdateTargetResolution.
+  res_.width = res_.height = 0;
   UpdateTargetResolution(init_width, init_height);
   ReportFramerate(fps);
-  target_framerate_ = -1;
-}
-
-void QualityScaler::SetMinResolution(int min_width, int min_height) {
-  min_width_ = min_width;
-  min_height_ = min_height;
 }
 
 // Report framerate(fps) to estimate # of samples.
@@ -96,44 +104,20 @@ void QualityScaler::OnEncodeFrame(const VideoFrame& frame) {
   int avg_drop = 0;
   int avg_qp = 0;
 
-  // When encoder consistently overshoots, framerate reduction and spatial
-  // resizing will be triggered to get a smoother video.
   if ((framedrop_percent_.GetAverage(num_samples_downscale_, &avg_drop) &&
        avg_drop >= kFramedropPercentThreshold) ||
       (average_qp_downscale_.GetAverage(num_samples_downscale_, &avg_qp) &&
        avg_qp > high_qp_threshold_)) {
-    // Reducing frame rate before spatial resolution change.
-    // Reduce frame rate only when it is above a certain number.
-    // Only one reduction is allowed for now.
-    // TODO(jackychen): Allow more than one framerate reduction.
-    if (use_framerate_reduction_ && !framerate_down_ && framerate_ >= 20) {
-      target_framerate_ = framerate_ / 2;
-      framerate_down_ = true;
-      // If frame rate has been updated, clear the buffer. We don't want
-      // spatial resolution to change right after frame rate change.
-      ClearSamples();
-    } else {
-      AdjustScale(false);
-    }
+    AdjustScale(false);
   } else if (average_qp_upscale_.GetAverage(num_samples_upscale_, &avg_qp) &&
              avg_qp <= low_qp_threshold_) {
-    if (use_framerate_reduction_ && framerate_down_) {
-      target_framerate_ = -1;
-      framerate_down_ = false;
-      ClearSamples();
-    } else {
-      AdjustScale(true);
-    }
+    AdjustScale(true);
   }
   UpdateTargetResolution(frame.width(), frame.height());
 }
 
 QualityScaler::Resolution QualityScaler::GetScaledResolution() const {
   return res_;
-}
-
-int QualityScaler::GetTargetFramerate() const {
-  return target_framerate_;
 }
 
 const VideoFrame& QualityScaler::GetScaledFrame(const VideoFrame& frame) {
@@ -146,24 +130,39 @@ const VideoFrame& QualityScaler::GetScaledFrame(const VideoFrame& frame) {
   if (scaler_.Scale(frame, &scaled_frame_) != 0)
     return frame;
 
+  // TODO(perkj): Refactor the scaler to not own |scaled_frame|. VideoFrame are
+  // just thin wrappers so instead the scaler should return a
+  // rtc::scoped_refptr<VideoFrameBuffer> and a new VideoFrame be created with
+  // the meta data from |frame|. That way we would not have to set all these
+  // meta data.
   scaled_frame_.set_ntp_time_ms(frame.ntp_time_ms());
   scaled_frame_.set_timestamp(frame.timestamp());
   scaled_frame_.set_render_time_ms(frame.render_time_ms());
+  scaled_frame_.set_rotation(frame.rotation());
 
   return scaled_frame_;
 }
 
 void QualityScaler::UpdateTargetResolution(int frame_width, int frame_height) {
   assert(downscale_shift_ >= 0);
+  int shifts_performed = 0;
+  for (int shift = downscale_shift_;
+       shift > 0 && (frame_width / 2 >= kMinDownscaleDimension) &&
+       (frame_height / 2 >= kMinDownscaleDimension);
+       --shift, ++shifts_performed) {
+    frame_width /= 2;
+    frame_height /= 2;
+  }
+  // Clamp to number of shifts actually performed to not be stuck trying to
+  // scale way beyond QVGA.
+  downscale_shift_ = shifts_performed;
+  if (res_.width == frame_width && res_.height == frame_height) {
+    // No reset done/needed, using same resolution.
+    return;
+  }
   res_.width = frame_width;
   res_.height = frame_height;
-  for (int shift = downscale_shift_;
-       shift > 0 && (res_.width / 2 >= min_width_) &&
-       (res_.height / 2 >= min_height_);
-       --shift) {
-    res_.width /= 2;
-    res_.height /= 2;
-  }
+  ClearSamples();
 }
 
 void QualityScaler::ClearSamples() {
@@ -184,11 +183,10 @@ void QualityScaler::AdjustScale(bool up) {
   if (downscale_shift_ < 0)
     downscale_shift_ = 0;
   if (!up) {
-    // Hit first downscale, start using a slower threshold for going up.
+    // First downscale hit, start using a slower threshold for going up.
     measure_seconds_upscale_ = kMeasureSecondsUpscale;
     UpdateSampleCounts();
   }
-  ClearSamples();
 }
 
 }  // namespace webrtc

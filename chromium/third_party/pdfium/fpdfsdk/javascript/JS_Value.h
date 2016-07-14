@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "core/fxcrt/include/fx_basic.h"
-#include "fpdfsdk/include/jsapi/fxjs_v8.h"
+#include "fpdfsdk/jsapi/include/fxjs_v8.h"
 
 class CJS_Array;
 class CJS_Date;
@@ -208,7 +208,7 @@ int JS_GetDayFromTime(double dt);
 int JS_GetHourFromTime(double dt);
 int JS_GetMinFromTime(double dt);
 int JS_GetSecFromTime(double dt);
-double JS_DateParse(const wchar_t* str);
+double JS_DateParse(const CFX_WideString& str);
 double JS_MakeDay(int nYear, int nMonth, int nDay);
 double JS_MakeTime(int nHour, int nMin, int nSec, int nMs);
 double JS_MakeDate(double day, double time);

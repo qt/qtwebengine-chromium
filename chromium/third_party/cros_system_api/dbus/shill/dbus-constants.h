@@ -178,6 +178,7 @@ const char kForceWakeToScanTimerProperty[] = "ForceWakeToScanTimer";
 const char kInterfaceProperty[] = "Interface";
 const char kSelectedServiceProperty[] = "SelectedService";
 const char kIPConfigsProperty[] = "IPConfigs";
+const char kMACAddressRandomizationProperty[] = "MACAddressRandomization";
 
 // Flimflam Cellular Device property names.
 const char kCarrierProperty[] = "Cellular.Carrier";
@@ -402,9 +403,21 @@ const char kGatewayProperty[] = "Gateway";
 const char kDomainNameProperty[] = "DomainName";
 const char kAcceptedHostnameProperty[] = "AcceptedHostname";
 const char kNameServersProperty[] = "NameServers";
+const char kDhcpv6AddressesProperty[] = "Dhcpv6Addresses";
+const char kDhcpv6DelegatedPrefixesProperty[] = "Dhcpv6DelegatedPrefixes";
+const char kLeaseDurationSecondsProperty[] = "LeaseDurationSeconds";
+
+// These constants are deprecated in favor of kDhcpv6DelegatedPrefixesProperty.
+// TODO(tjennison): Remove when shill no longer uses them b/26778228
 const char kDelegatedPrefixProperty[] = "DelegatedPrefix";
 const char kDelegatedPrefixLengthProperty[] = "DelegatedPrefixLength";
-const char kLeaseDurationSecondsProperty[] = "LeaseDurationSeconds";
+
+// IPConfig DHCPv6 address/prefix property names.
+const char kDhcpv6AddressProperty[] = "Address";
+const char kDhcpv6LengthProperty[] = "Length";
+const char kDhcpv6LeaseDurationSecondsProperty[] = "LeaseDurationSeconds";
+const char kDhcpv6PreferredLeaseDurationSecondsProperty[] =
+    "PreferredLeaseDurationSeconds";
 
 // IPConfig type options.
 const char kTypeIPv4[] = "ipv4";
@@ -425,14 +438,17 @@ const char kErrorDNSLookupFailed[] = "dns-lookup-failed";
 const char kErrorDhcpFailed[] = "dhcp-failed";
 const char kErrorHTTPGetFailed[] = "http-get-failed";
 const char kErrorInternal[] = "internal-error";
+const char kErrorInvalidFailure[] = "invalid-failure";
 const char kErrorIpsecCertAuthFailed[] = "ipsec-cert-auth-failed";
 const char kErrorIpsecPskAuthFailed[] = "ipsec-psk-auth-failed";
 const char kErrorNeedEvdo[] = "need-evdo";
 const char kErrorNeedHomeNetwork[] = "need-home-network";
+const char kErrorNoFailure[] = "no-failure";
 const char kErrorOtaspFailed[] = "otasp-failed";
 const char kErrorOutOfRange[] = "out-of-range";
 const char kErrorPinMissing[] = "pin-missing";
 const char kErrorPppAuthFailed[] = "ppp-auth-failed";
+const char kErrorUnknownFailure[] = "unknown-failure";
 
 // Flimflam error result codes.
 const char kErrorResultSuccess[] = "org.chromium.flimflam.Error.Success";

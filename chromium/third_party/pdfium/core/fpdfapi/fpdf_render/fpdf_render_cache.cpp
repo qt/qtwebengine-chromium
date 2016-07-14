@@ -6,13 +6,12 @@
 
 #include "core/fpdfapi/fpdf_render/cpdf_pagerendercache.h"
 
-#include "core/fpdfapi/fpdf_page/cpdf_parseoptions.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_rendercontext.h"
 #include "core/fpdfapi/fpdf_render/render_int.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 struct CACHEINFO {
   uint32_t time;
@@ -188,15 +187,7 @@ void CPDF_ImageCacheEntry::Reset(const CFX_DIBitmap* pBitmap) {
   }
   CalcSize();
 }
-void CPDF_PageRenderCache::ClearImageData() {
-  for (const auto& it : m_ImageCache)
-    it.second->ClearImageData();
-}
-void CPDF_ImageCacheEntry::ClearImageData() {
-  if (m_pCachedBitmap && !m_pCachedBitmap->GetBuffer()) {
-    ((CPDF_DIBSource*)m_pCachedBitmap)->ClearImageData();
-  }
-}
+
 static uint32_t FPDF_ImageCache_EstimateImageSize(const CFX_DIBSource* pDIB) {
   return pDIB && pDIB->GetBuffer()
              ? (uint32_t)pDIB->GetHeight() * pDIB->GetPitch() +

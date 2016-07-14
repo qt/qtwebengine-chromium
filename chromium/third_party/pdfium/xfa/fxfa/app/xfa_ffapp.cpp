@@ -4,17 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/include/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
 
 #include <algorithm>
 
-#include "xfa/fwl/core/ifwl_widgetmgrdelegate.h"
+#include "xfa/fgas/font/fgas_stdfontmgr.h"
+#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffdochandler.h"
-#include "xfa/include/fxfa/xfa_ffwidgethandler.h"
-#include "xfa/include/fxfa/xfa_fontmgr.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdochandler.h"
+#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/include/xfa_fontmgr.h"
 
 CXFA_FileRead::CXFA_FileRead(const CFX_ArrayTemplate<CPDF_Stream*>& streams) {
   int32_t iCount = streams.GetSize();
@@ -72,8 +73,7 @@ CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider)
 #endif
       m_pAdapterWidgetMgr(nullptr),
       m_pWidgetMgrDelegate(nullptr),
-      m_pFDEFontMgr(nullptr),
-      m_pAdapterThreadMgr(nullptr) {
+      m_pFDEFontMgr(nullptr) {
   m_pFWLApp = IFWL_App::Create(this);
   FWL_SetApp(m_pFWLApp);
   m_pFWLApp->Initialize();
@@ -89,7 +89,6 @@ CXFA_FFApp::~CXFA_FFApp() {
   if (m_pFWLTheme)
     m_pFWLTheme->Release();
   delete m_pAdapterWidgetMgr;
-  delete m_pAdapterThreadMgr;
 
   CXFA_TimeZoneProvider::Destroy();
   delete m_pFontMgr;
@@ -146,7 +145,7 @@ IFX_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
     m_pFDEFontMgr = IFX_FontMgr::Create(FX_GetDefFontEnumerator());
 #else
-    m_pFontSource = FX_CreateDefaultFontSourceEnum();
+    m_pFontSource = new CFX_FontSourceEnum_File;
     m_pFDEFontMgr = IFX_FontMgr::Create(m_pFontSource);
 #endif
   }
@@ -158,8 +157,8 @@ CXFA_FWLTheme* CXFA_FFApp::GetFWLTheme() {
   }
   return m_pFWLTheme;
 }
-IFWL_AdapterWidgetMgr* CXFA_FFApp::GetWidgetMgr(
-    IFWL_WidgetMgrDelegate* pDelegate) {
+CXFA_FWLAdapterWidgetMgr* CXFA_FFApp::GetWidgetMgr(
+    CFWL_WidgetMgrDelegate* pDelegate) {
   if (!m_pAdapterWidgetMgr) {
     m_pAdapterWidgetMgr = new CXFA_FWLAdapterWidgetMgr;
     pDelegate->OnSetCapability(FWL_WGTMGR_DisableThread |
@@ -167,12 +166,6 @@ IFWL_AdapterWidgetMgr* CXFA_FFApp::GetWidgetMgr(
     m_pWidgetMgrDelegate = pDelegate;
   }
   return m_pAdapterWidgetMgr;
-}
-IFWL_AdapterThreadMgr* CXFA_FFApp::GetThreadMgr() {
-  if (!m_pAdapterThreadMgr) {
-    m_pAdapterThreadMgr = new CFWL_SDAdapterThreadMgr;
-  }
-  return m_pAdapterThreadMgr;
 }
 IFWL_AdapterTimerMgr* CXFA_FFApp::GetTimerMgr() {
   return m_pProvider->GetTimerMgr();

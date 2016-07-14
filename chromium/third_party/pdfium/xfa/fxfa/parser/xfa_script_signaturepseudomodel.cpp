@@ -8,7 +8,6 @@
 
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -68,16 +67,14 @@ void CScript_SignaturePseudoModel::Script_SignaturePseudoModel_Sign(
   }
   if (iLength >= 2) {
     CFX_ByteString bsExpression = pArguments->GetUTF8String(1);
-    wsExpression =
-        CFX_WideString::FromUTF8(bsExpression, bsExpression.GetLength());
+    wsExpression = CFX_WideString::FromUTF8(bsExpression.AsStringC());
   }
   if (iLength >= 3) {
     CFX_ByteString bsXMLIdent = pArguments->GetUTF8String(2);
-    wsXMLIdent = CFX_WideString::FromUTF8(bsXMLIdent, bsXMLIdent.GetLength());
+    wsXMLIdent = CFX_WideString::FromUTF8(bsXMLIdent.AsStringC());
   }
-  FX_BOOL bSign = pNotify->GetDocProvider()->Sign(hDoc, pNodeList,
-                                                  wsExpression.AsWideStringC(),
-                                                  wsXMLIdent.AsWideStringC());
+  FX_BOOL bSign = pNotify->GetDocProvider()->Sign(
+      hDoc, pNodeList, wsExpression.AsStringC(), wsXMLIdent.AsStringC());
   FXJSE_HVALUE hValue = pArguments->GetReturnValue();
   if (hValue) {
     FXJSE_Value_SetBoolean(hValue, bSign);

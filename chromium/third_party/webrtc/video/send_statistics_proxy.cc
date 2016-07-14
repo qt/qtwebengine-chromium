@@ -17,6 +17,7 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/modules/video_coding/include/video_codec_interface.h"
 #include "webrtc/system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -96,8 +97,8 @@ SendStatisticsProxy::UmaSamplesContainer::UmaSamplesContainer(
       clock_(clock),
       max_sent_width_per_timestamp_(0),
       max_sent_height_per_timestamp_(0),
-      input_frame_rate_tracker_(100u, 10u),
-      sent_frame_rate_tracker_(100u, 10u),
+      input_frame_rate_tracker_(100, 10u),
+      sent_frame_rate_tracker_(100, 10u),
       first_rtcp_stats_time_ms_(-1),
       first_rtp_stats_time_ms_(-1),
       start_stats_(stats) {}
@@ -194,23 +195,43 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   }
 
   for (const auto& it : qp_counters_) {
-    int qp = it.second.vp8.Avg(kMinRequiredSamples);
-    if (qp != -1) {
+    int qp_vp8 = it.second.vp8.Avg(kMinRequiredSamples);
+    if (qp_vp8 != -1) {
       int spatial_idx = it.first;
       if (spatial_idx == -1) {
         RTC_LOGGED_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.Vp8",
-                                         qp);
+                                         qp_vp8);
       } else if (spatial_idx == 0) {
-        RTC_LOGGED_HISTOGRAMS_COUNTS_200(kIndex,
-                                         uma_prefix_ + "Encoded.Qp.Vp8.S0", qp);
+        RTC_LOGGED_HISTOGRAMS_COUNTS_200(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp8.S0", qp_vp8);
       } else if (spatial_idx == 1) {
-        RTC_LOGGED_HISTOGRAMS_COUNTS_200(kIndex,
-                                         uma_prefix_ + "Encoded.Qp.Vp8.S1", qp);
+        RTC_LOGGED_HISTOGRAMS_COUNTS_200(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp8.S1", qp_vp8);
       } else if (spatial_idx == 2) {
-        RTC_LOGGED_HISTOGRAMS_COUNTS_200(kIndex,
-                                         uma_prefix_ + "Encoded.Qp.Vp8.S2", qp);
+        RTC_LOGGED_HISTOGRAMS_COUNTS_200(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp8.S2", qp_vp8);
       } else {
         LOG(LS_WARNING) << "QP stats not recorded for VP8 spatial idx "
+                        << spatial_idx;
+      }
+    }
+    int qp_vp9 = it.second.vp9.Avg(kMinRequiredSamples);
+    if (qp_vp9 != -1) {
+      int spatial_idx = it.first;
+      if (spatial_idx == -1) {
+        RTC_LOGGED_HISTOGRAMS_COUNTS_500(kIndex, uma_prefix_ + "Encoded.Qp.Vp9",
+                                         qp_vp9);
+      } else if (spatial_idx == 0) {
+        RTC_LOGGED_HISTOGRAMS_COUNTS_500(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp9.S0", qp_vp9);
+      } else if (spatial_idx == 1) {
+        RTC_LOGGED_HISTOGRAMS_COUNTS_500(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp9.S1", qp_vp9);
+      } else if (spatial_idx == 2) {
+        RTC_LOGGED_HISTOGRAMS_COUNTS_500(
+            kIndex, uma_prefix_ + "Encoded.Qp.Vp9.S2", qp_vp9);
+      } else {
+        LOG(LS_WARNING) << "QP stats not recorded for VP9 spatial layer "
                         << spatial_idx;
       }
     }
@@ -321,16 +342,14 @@ void SendStatisticsProxy::SetContentType(
   }
 }
 
-void SendStatisticsProxy::OnEncoderImplementationName(
-    const char* implementation_name) {
-  rtc::CritScope lock(&crit_);
-  stats_.encoder_implementation_name = implementation_name;
-}
-
-void SendStatisticsProxy::OnOutgoingRate(uint32_t framerate, uint32_t bitrate) {
+void SendStatisticsProxy::OnEncoderStatsUpdate(
+    uint32_t framerate,
+    uint32_t bitrate,
+    const std::string& encoder_name) {
   rtc::CritScope lock(&crit_);
   stats_.encode_frame_rate = framerate;
   stats_.media_bitrate_bps = bitrate;
+  stats_.encoder_implementation_name = encoder_name;
 }
 
 void SendStatisticsProxy::OnEncodedFrameTimeMeasured(
@@ -406,8 +425,17 @@ void SendStatisticsProxy::OnSetRates(uint32_t bitrate_bps, int framerate) {
 
 void SendStatisticsProxy::OnSendEncodedImage(
     const EncodedImage& encoded_image,
-    const RTPVideoHeader* rtp_video_header) {
-  size_t simulcast_idx = rtp_video_header ? rtp_video_header->simulcastIdx : 0;
+    const CodecSpecificInfo* codec_info) {
+  size_t simulcast_idx = 0;
+
+  if (codec_info) {
+    if (codec_info->codecType == kVideoCodecVP8) {
+      simulcast_idx = codec_info->codecSpecific.VP8.simulcastIdx;
+    } else if (codec_info->codecType == kVideoCodecGeneric) {
+      simulcast_idx = codec_info->codecSpecific.generic.simulcast_idx;
+    }
+  }
+
   if (simulcast_idx >= config_.rtp.ssrcs.size()) {
     LOG(LS_ERROR) << "Encoded image outside simulcast range (" << simulcast_idx
                   << " >= " << config_.rtp.ssrcs.size() << ").";
@@ -449,11 +477,18 @@ void SendStatisticsProxy::OnSendEncodedImage(
     }
   }
 
-  if (encoded_image.qp_ != -1 && rtp_video_header &&
-      rtp_video_header->codec == kRtpVideoVp8) {
-    int spatial_idx =
-        (config_.rtp.ssrcs.size() == 1) ? -1 : static_cast<int>(simulcast_idx);
-    uma_container_->qp_counters_[spatial_idx].vp8.Add(encoded_image.qp_);
+  if (encoded_image.qp_ != -1 && codec_info) {
+    if (codec_info->codecType == kVideoCodecVP8) {
+      int spatial_idx = (config_.rtp.ssrcs.size() == 1)
+                            ? -1
+                            : static_cast<int>(simulcast_idx);
+      uma_container_->qp_counters_[spatial_idx].vp8.Add(encoded_image.qp_);
+    } else if (codec_info->codecType == kVideoCodecVP9) {
+      int spatial_idx = (codec_info->codecSpecific.VP9.num_spatial_layers == 1)
+                            ? -1
+                            : codec_info->codecSpecific.VP9.spatial_idx;
+      uma_container_->qp_counters_[spatial_idx].vp9.Add(encoded_image.qp_);
+    }
   }
 
   // TODO(asapersson): This is incorrect if simulcast layers are encoded on

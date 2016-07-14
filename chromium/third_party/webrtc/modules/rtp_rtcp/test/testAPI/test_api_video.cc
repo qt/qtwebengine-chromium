@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,7 +56,6 @@ class RtpRtcpVideoTest : public ::testing::Test {
 
     video_module_->SetRTCPStatus(RtcpMode::kCompound);
     video_module_->SetSSRC(test_ssrc_);
-    rtp_receiver_->SetNACKStatus(kNackRtcp);
     video_module_->SetStorePacketsStatus(true, 600);
     EXPECT_EQ(0, video_module_->SetSendingStatus(true));
 
@@ -127,9 +127,9 @@ class RtpRtcpVideoTest : public ::testing::Test {
   }
 
   int test_id_;
-  rtc::scoped_ptr<ReceiveStatistics> receive_statistics_;
+  std::unique_ptr<ReceiveStatistics> receive_statistics_;
   RTPPayloadRegistry rtp_payload_registry_;
-  rtc::scoped_ptr<RtpReceiver> rtp_receiver_;
+  std::unique_ptr<RtpReceiver> rtp_receiver_;
   RtpRtcp* video_module_;
   LoopBackTransport* transport_;
   TestRtpReceiver* receiver_;
@@ -170,7 +170,7 @@ TEST_F(RtpRtcpVideoTest, PaddingOnlyFrames) {
                                          kPadSize);
       ++seq_num;
       RTPHeader header;
-      rtc::scoped_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
+      std::unique_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
       EXPECT_TRUE(parser->Parse(padding_packet, packet_size, &header));
       PayloadUnion payload_specific;
       EXPECT_TRUE(rtp_payload_registry_.GetPayloadSpecifics(header.payloadType,

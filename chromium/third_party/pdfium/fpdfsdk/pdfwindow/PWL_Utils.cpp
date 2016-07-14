@@ -9,8 +9,8 @@
 #include <algorithm>
 
 #include "core/fpdfdoc/include/cpvt_word.h"
-#include "core/include/fxge/fx_ge.h"
-#include "fpdfsdk/include/fxedit/fx_edit.h"
+#include "core/fxge/include/fx_ge.h"
+#include "fpdfsdk/fxedit/include/fx_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_Icon.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
@@ -44,7 +44,7 @@ CFX_ByteString CPWL_Utils::GetAppStreamFromArray(const CPWL_PathData* pPathData,
     }
   }
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 void CPWL_Utils::GetPathDataFromArray(CFX_PathData& path,
@@ -185,7 +185,7 @@ CFX_ByteString CPWL_Utils::GetAP_Check(const CFX_FloatRect& crBBox) {
          << pts[nNext][0].y << " c\n";
   }
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_Circle(const CFX_FloatRect& crBBox) {
@@ -227,7 +227,7 @@ CFX_ByteString CPWL_Utils::GetAP_Circle(const CFX_FloatRect& crBBox) {
   csAP << pt4.x - px * FX_BEZIER << " " << pt4.y << " " << pt1.x << " "
        << pt1.y - py * FX_BEZIER << " " << pt1.x << " " << pt1.y << " c\n";
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_Cross(const CFX_FloatRect& crBBox) {
@@ -238,7 +238,7 @@ CFX_ByteString CPWL_Utils::GetAP_Cross(const CFX_FloatRect& crBBox) {
   csAP << crBBox.left << " " << crBBox.bottom << " m\n";
   csAP << crBBox.right << " " << crBBox.top << " l\n";
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_Diamond(const CFX_FloatRect& crBBox) {
@@ -258,7 +258,7 @@ CFX_ByteString CPWL_Utils::GetAP_Diamond(const CFX_FloatRect& crBBox) {
   csAP << pt4.x << " " << pt4.y << " l\n";
   csAP << pt1.x << " " << pt1.y << " l\n";
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_Square(const CFX_FloatRect& crBBox) {
@@ -270,7 +270,7 @@ CFX_ByteString CPWL_Utils::GetAP_Square(const CFX_FloatRect& crBBox) {
   csAP << crBBox.left << " " << crBBox.bottom << " l\n";
   csAP << crBBox.left << " " << crBBox.top << " l\n";
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_Star(const CFX_FloatRect& crBBox) {
@@ -302,7 +302,7 @@ CFX_ByteString CPWL_Utils::GetAP_Star(const CFX_FloatRect& crBBox) {
     csAP << px[nNext] << " " << py[nNext] << " l\n";
   }
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAP_HalfCircle(const CFX_FloatRect& crBBox,
@@ -337,7 +337,7 @@ CFX_ByteString CPWL_Utils::GetAP_HalfCircle(const CFX_FloatRect& crBBox,
   csAP << pt2.x + px * FX_BEZIER << " " << pt2.y << " " << pt3.x << " "
        << pt3.y + py * FX_BEZIER << " " << pt3.x << " " << pt3.y << " c\n";
 
-  return csAP.GetByteString();
+  return csAP.MakeString();
 }
 
 CFX_FloatRect CPWL_Utils::InflateRect(const CFX_FloatRect& rcRect,
@@ -378,7 +378,6 @@ CFX_FloatRect CPWL_Utils::ScaleRect(const CFX_FloatRect& rcRect,
 CFX_ByteString CPWL_Utils::GetRectFillAppStream(const CFX_FloatRect& rect,
                                                 const CPWL_Color& color) {
   CFX_ByteTextBuf sAppStream;
-
   CFX_ByteString sColor = GetColorAppStream(color, TRUE);
   if (sColor.GetLength() > 0) {
     sAppStream << "q\n" << sColor;
@@ -387,19 +386,17 @@ CFX_ByteString CPWL_Utils::GetRectFillAppStream(const CFX_FloatRect& rect,
                << " re f\nQ\n";
   }
 
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetCircleFillAppStream(const CFX_FloatRect& rect,
                                                   const CPWL_Color& color) {
   CFX_ByteTextBuf sAppStream;
-
   CFX_ByteString sColor = GetColorAppStream(color, TRUE);
   if (sColor.GetLength() > 0) {
     sAppStream << "q\n" << sColor << CPWL_Utils::GetAP_Circle(rect) << "f\nQ\n";
   }
-
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 CFX_FloatRect CPWL_Utils::GetCenterSquare(const CFX_FloatRect& rect) {
@@ -430,152 +427,6 @@ CFX_ByteString CPWL_Utils::GetEditSelAppStream(IFX_Edit* pEdit,
   return IFX_Edit::GetSelectAppearanceStream(pEdit, ptOffset, pRange);
 }
 
-static CFX_ByteString GetSquigglyAppearanceStream(FX_FLOAT fStartX,
-                                                  FX_FLOAT fEndX,
-                                                  FX_FLOAT fY,
-                                                  FX_FLOAT fStep) {
-  CFX_ByteTextBuf sRet;
-
-  sRet << "0 w\n" << fStartX << " " << fY << " m\n";
-
-  FX_FLOAT fx;
-  int32_t i;
-
-  for (i = 1, fx = fStartX + fStep; fx < fEndX; fx += fStep, i++) {
-    sRet << fx << " " << fY + (i & 1) * fStep << " l\n";
-  }
-
-  sRet << "S\n";
-
-  return sRet.GetByteString();
-}
-
-static CFX_ByteString GetWordSpellCheckAppearanceStream(
-    IFX_Edit_Iterator* pIterator,
-    const CFX_FloatPoint& ptOffset,
-    const CPVT_WordRange& wrWord) {
-  CFX_ByteTextBuf sRet;
-
-  FX_FLOAT fStartX = 0.0f;
-  FX_FLOAT fEndX = 0.0f;
-  FX_FLOAT fY = 0.0f;
-  FX_FLOAT fStep = 0.0f;
-
-  FX_BOOL bBreak = FALSE;
-
-  if (pIterator) {
-    pIterator->SetAt(wrWord.BeginPos);
-
-    do {
-      CPVT_WordPlace place = pIterator->GetAt();
-
-      CPVT_Line line;
-      if (pIterator->GetLine(line)) {
-        fY = line.ptLine.y;
-        fStep = (line.fLineAscent - line.fLineDescent) / 16.0f;
-      }
-
-      if (place.LineCmp(wrWord.BeginPos) == 0) {
-        pIterator->SetAt(wrWord.BeginPos);
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          fStartX = word.ptWord.x;
-        }
-      } else {
-        fStartX = line.ptLine.x;
-      }
-
-      if (place.LineCmp(wrWord.EndPos) == 0) {
-        pIterator->SetAt(wrWord.EndPos);
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          fEndX = word.ptWord.x + word.fWidth;
-        }
-
-        bBreak = TRUE;
-      } else {
-        fEndX = line.ptLine.x + line.fLineWidth;
-      }
-
-      sRet << GetSquigglyAppearanceStream(
-          fStartX + ptOffset.x, fEndX + ptOffset.x, fY + ptOffset.y, fStep);
-
-      if (bBreak)
-        break;
-    } while (pIterator->NextLine());
-  }
-
-  return sRet.GetByteString();
-}
-
-CFX_ByteString CPWL_Utils::GetSpellCheckAppStream(
-    IFX_Edit* pEdit,
-    IPWL_SpellCheck* pSpellCheck,
-    const CFX_FloatPoint& ptOffset,
-    const CPVT_WordRange* pRange) {
-  CFX_ByteTextBuf sRet;
-
-  if (pRange && pRange->IsExist()) {
-    if (IFX_Edit_Iterator* pIterator = pEdit->GetIterator()) {
-      pIterator->SetAt(pRange->BeginPos);
-
-      FX_BOOL bLatinWord = FALSE;
-      CPVT_WordPlace wpWordStart;
-      CFX_ByteString sWord;
-
-      CPVT_WordPlace oldplace;
-      while (pIterator->NextWord()) {
-        CPVT_WordPlace place = pIterator->GetAt();
-        if (pRange && place.WordCmp(pRange->EndPos) > 0)
-          break;
-
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          if (FX_EDIT_ISLATINWORD(word.Word)) {
-            if (!bLatinWord) {
-              wpWordStart = place;
-              bLatinWord = TRUE;
-            }
-
-            sWord += (char)word.Word;
-            oldplace = place;
-          } else {
-            if (bLatinWord) {
-              if (!pSpellCheck->CheckWord(sWord)) {
-                sRet << GetWordSpellCheckAppearanceStream(
-                    pIterator, ptOffset, CPVT_WordRange(wpWordStart, oldplace));
-                pIterator->SetAt(place);
-              }
-              bLatinWord = FALSE;
-            }
-
-            sWord.Empty();
-          }
-        } else {
-          if (bLatinWord) {
-            if (!pSpellCheck->CheckWord(sWord))
-              sRet << GetWordSpellCheckAppearanceStream(
-                  pIterator, ptOffset, CPVT_WordRange(wpWordStart, oldplace));
-            bLatinWord = FALSE;
-            sWord.Empty();
-          }
-        }
-      }
-
-      if (bLatinWord) {
-        if (!pSpellCheck->CheckWord(sWord))
-          sRet << GetWordSpellCheckAppearanceStream(
-              pIterator, ptOffset, CPVT_WordRange(wpWordStart, oldplace));
-
-        bLatinWord = FALSE;
-        sWord.Empty();
-      }
-    }
-  }
-
-  return sRet.GetByteString();
-}
-
 CFX_ByteString CPWL_Utils::GetTextAppStream(const CFX_FloatRect& rcBBox,
                                             IPVT_FontMap* pFontMap,
                                             const CFX_WideString& sText,
@@ -587,31 +438,28 @@ CFX_ByteString CPWL_Utils::GetTextAppStream(const CFX_FloatRect& rcBBox,
                                             const CPWL_Color& crText) {
   CFX_ByteTextBuf sRet;
 
-  if (IFX_Edit* pEdit = IFX_Edit::NewEdit()) {
-    pEdit->SetFontMap(pFontMap);
-    pEdit->SetPlateRect(rcBBox);
-    pEdit->SetAlignmentH(nAlignmentH);
-    pEdit->SetAlignmentV(nAlignmentV);
-    pEdit->SetMultiLine(bMultiLine);
-    pEdit->SetAutoReturn(bAutoReturn);
-    if (IsFloatZero(fFontSize))
-      pEdit->SetAutoFontSize(TRUE);
-    else
-      pEdit->SetFontSize(fFontSize);
+  IFX_Edit* pEdit = IFX_Edit::NewEdit();
+  pEdit->SetFontMap(pFontMap);
+  pEdit->SetPlateRect(rcBBox);
+  pEdit->SetAlignmentH(nAlignmentH);
+  pEdit->SetAlignmentV(nAlignmentV);
+  pEdit->SetMultiLine(bMultiLine);
+  pEdit->SetAutoReturn(bAutoReturn);
+  if (IsFloatZero(fFontSize))
+    pEdit->SetAutoFontSize(TRUE);
+  else
+    pEdit->SetFontSize(fFontSize);
 
-    pEdit->Initialize();
-    pEdit->SetText(sText.c_str());
+  pEdit->Initialize();
+  pEdit->SetText(sText.c_str());
 
-    CFX_ByteString sEdit =
-        CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
-    if (sEdit.GetLength() > 0) {
-      sRet << "BT\n" << CPWL_Utils::GetColorAppStream(crText) << sEdit
-           << "ET\n";
-    }
-    IFX_Edit::DelEdit(pEdit);
-  }
+  CFX_ByteString sEdit =
+      CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
+  if (sEdit.GetLength() > 0)
+    sRet << "BT\n" << CPWL_Utils::GetColorAppStream(crText) << sEdit << "ET\n";
+  IFX_Edit::DelEdit(pEdit);
 
-  return sRet.GetByteString();
+  return sRet.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
@@ -624,222 +472,217 @@ CFX_ByteString CPWL_Utils::GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
                                                   int32_t nLayOut) {
   const FX_FLOAT fAutoFontScale = 1.0f / 3.0f;
 
-  if (IFX_Edit* pEdit = IFX_Edit::NewEdit()) {
-    pEdit->SetFontMap(pFontMap);
-    pEdit->SetAlignmentH(1);
-    pEdit->SetAlignmentV(1);
-    pEdit->SetMultiLine(FALSE);
-    pEdit->SetAutoReturn(FALSE);
-    if (IsFloatZero(fFontSize))
-      pEdit->SetAutoFontSize(TRUE);
-    else
-      pEdit->SetFontSize(fFontSize);
+  IFX_Edit* pEdit = IFX_Edit::NewEdit();
+  pEdit->SetFontMap(pFontMap);
+  pEdit->SetAlignmentH(1);
+  pEdit->SetAlignmentV(1);
+  pEdit->SetMultiLine(FALSE);
+  pEdit->SetAutoReturn(FALSE);
+  if (IsFloatZero(fFontSize))
+    pEdit->SetAutoFontSize(TRUE);
+  else
+    pEdit->SetFontSize(fFontSize);
 
-    pEdit->Initialize();
-    pEdit->SetText(sLabel.c_str());
+  pEdit->Initialize();
+  pEdit->SetText(sLabel.c_str());
 
-    CFX_FloatRect rcLabelContent = pEdit->GetContentRect();
-    CPWL_Icon Icon;
-    PWL_CREATEPARAM cp;
-    cp.dwFlags = PWS_VISIBLE;
-    Icon.Create(cp);
-    Icon.SetIconFit(&IconFit);
-    Icon.SetPDFStream(pIconStream);
+  CFX_FloatRect rcLabelContent = pEdit->GetContentRect();
+  CPWL_Icon Icon;
+  PWL_CREATEPARAM cp;
+  cp.dwFlags = PWS_VISIBLE;
+  Icon.Create(cp);
+  Icon.SetIconFit(&IconFit);
+  Icon.SetPDFStream(pIconStream);
 
-    CFX_FloatRect rcLabel = CFX_FloatRect(0, 0, 0, 0);
-    CFX_FloatRect rcIcon = CFX_FloatRect(0, 0, 0, 0);
-    FX_FLOAT fWidth = 0.0f;
-    FX_FLOAT fHeight = 0.0f;
+  CFX_FloatRect rcLabel = CFX_FloatRect(0, 0, 0, 0);
+  CFX_FloatRect rcIcon = CFX_FloatRect(0, 0, 0, 0);
+  FX_FLOAT fWidth = 0.0f;
+  FX_FLOAT fHeight = 0.0f;
 
-    switch (nLayOut) {
-      case PPBL_LABEL:
-        rcLabel = rcBBox;
-        rcIcon = CFX_FloatRect(0, 0, 0, 0);
-        break;
-      case PPBL_ICON:
-        rcIcon = rcBBox;
-        rcLabel = CFX_FloatRect(0, 0, 0, 0);
-        break;
-      case PPBL_ICONTOPLABELBOTTOM:
+  switch (nLayOut) {
+    case PPBL_LABEL:
+      rcLabel = rcBBox;
+      rcIcon = CFX_FloatRect(0, 0, 0, 0);
+      break;
+    case PPBL_ICON:
+      rcIcon = rcBBox;
+      rcLabel = CFX_FloatRect(0, 0, 0, 0);
+      break;
+    case PPBL_ICONTOPLABELBOTTOM:
 
-        if (pIconStream) {
-          if (IsFloatZero(fFontSize)) {
-            fHeight = rcBBox.top - rcBBox.bottom;
+      if (pIconStream) {
+        if (IsFloatZero(fFontSize)) {
+          fHeight = rcBBox.top - rcBBox.bottom;
+          rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
+                                  rcBBox.bottom + fHeight * fAutoFontScale);
+          rcIcon =
+              CFX_FloatRect(rcBBox.left, rcLabel.top, rcBBox.right, rcBBox.top);
+        } else {
+          fHeight = rcLabelContent.Height();
+
+          if (rcBBox.bottom + fHeight > rcBBox.top) {
+            rcIcon = CFX_FloatRect(0, 0, 0, 0);
+            rcLabel = rcBBox;
+          } else {
             rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
-                                    rcBBox.bottom + fHeight * fAutoFontScale);
+                                    rcBBox.bottom + fHeight);
             rcIcon = CFX_FloatRect(rcBBox.left, rcLabel.top, rcBBox.right,
                                    rcBBox.top);
-          } else {
-            fHeight = rcLabelContent.Height();
-
-            if (rcBBox.bottom + fHeight > rcBBox.top) {
-              rcIcon = CFX_FloatRect(0, 0, 0, 0);
-              rcLabel = rcBBox;
-            } else {
-              rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
-                                      rcBBox.bottom + fHeight);
-              rcIcon = CFX_FloatRect(rcBBox.left, rcLabel.top, rcBBox.right,
-                                     rcBBox.top);
-            }
           }
-        } else {
-          rcLabel = rcBBox;
-          rcIcon = CFX_FloatRect(0, 0, 0, 0);
         }
+      } else {
+        rcLabel = rcBBox;
+        rcIcon = CFX_FloatRect(0, 0, 0, 0);
+      }
 
-        break;
-      case PPBL_LABELTOPICONBOTTOM:
+      break;
+    case PPBL_LABELTOPICONBOTTOM:
 
-        if (pIconStream) {
-          if (IsFloatZero(fFontSize)) {
-            fHeight = rcBBox.top - rcBBox.bottom;
-            rcLabel = CFX_FloatRect(rcBBox.left,
-                                    rcBBox.top - fHeight * fAutoFontScale,
+      if (pIconStream) {
+        if (IsFloatZero(fFontSize)) {
+          fHeight = rcBBox.top - rcBBox.bottom;
+          rcLabel =
+              CFX_FloatRect(rcBBox.left, rcBBox.top - fHeight * fAutoFontScale,
+                            rcBBox.right, rcBBox.top);
+          rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
+                                 rcLabel.bottom);
+        } else {
+          fHeight = rcLabelContent.Height();
+
+          if (rcBBox.bottom + fHeight > rcBBox.top) {
+            rcIcon = CFX_FloatRect(0, 0, 0, 0);
+            rcLabel = rcBBox;
+          } else {
+            rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.top - fHeight,
                                     rcBBox.right, rcBBox.top);
             rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
                                    rcLabel.bottom);
-          } else {
-            fHeight = rcLabelContent.Height();
-
-            if (rcBBox.bottom + fHeight > rcBBox.top) {
-              rcIcon = CFX_FloatRect(0, 0, 0, 0);
-              rcLabel = rcBBox;
-            } else {
-              rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.top - fHeight,
-                                      rcBBox.right, rcBBox.top);
-              rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcBBox.right,
-                                     rcLabel.bottom);
-            }
           }
-        } else {
-          rcLabel = rcBBox;
-          rcIcon = CFX_FloatRect(0, 0, 0, 0);
         }
+      } else {
+        rcLabel = rcBBox;
+        rcIcon = CFX_FloatRect(0, 0, 0, 0);
+      }
 
-        break;
-      case PPBL_ICONLEFTLABELRIGHT:
+      break;
+    case PPBL_ICONLEFTLABELRIGHT:
 
-        if (pIconStream) {
-          if (IsFloatZero(fFontSize)) {
-            fWidth = rcBBox.right - rcBBox.left;
-            rcLabel = CFX_FloatRect(rcBBox.right - fWidth * fAutoFontScale,
-                                    rcBBox.bottom, rcBBox.right, rcBBox.top);
-            rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcLabel.left,
-                                   rcBBox.top);
-
-            if (rcLabelContent.Width() < fWidth * fAutoFontScale) {
-            } else {
-              if (rcLabelContent.Width() < fWidth) {
-                rcLabel =
-                    CFX_FloatRect(rcBBox.right - rcLabelContent.Width(),
+      if (pIconStream) {
+        if (IsFloatZero(fFontSize)) {
+          fWidth = rcBBox.right - rcBBox.left;
+          rcLabel = CFX_FloatRect(rcBBox.right - fWidth * fAutoFontScale,
                                   rcBBox.bottom, rcBBox.right, rcBBox.top);
-                rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcLabel.left,
-                                       rcBBox.top);
-              } else {
-                rcLabel = rcBBox;
-                rcIcon = CFX_FloatRect(0, 0, 0, 0);
-              }
-            }
-          } else {
-            fWidth = rcLabelContent.Width();
+          rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcLabel.left,
+                                 rcBBox.top);
 
-            if (rcBBox.left + fWidth > rcBBox.right) {
-              rcLabel = rcBBox;
-              rcIcon = CFX_FloatRect(0, 0, 0, 0);
-            } else {
-              rcLabel = CFX_FloatRect(rcBBox.right - fWidth, rcBBox.bottom,
-                                      rcBBox.right, rcBBox.top);
+          if (rcLabelContent.Width() < fWidth * fAutoFontScale) {
+          } else {
+            if (rcLabelContent.Width() < fWidth) {
+              rcLabel = CFX_FloatRect(rcBBox.right - rcLabelContent.Width(),
+                                      rcBBox.bottom, rcBBox.right, rcBBox.top);
               rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcLabel.left,
                                      rcBBox.top);
-            }
-          }
-        } else {
-          rcLabel = rcBBox;
-          rcIcon = CFX_FloatRect(0, 0, 0, 0);
-        }
-
-        break;
-      case PPBL_LABELLEFTICONRIGHT:
-
-        if (pIconStream) {
-          if (IsFloatZero(fFontSize)) {
-            fWidth = rcBBox.right - rcBBox.left;
-            rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom,
-                                    rcBBox.left + fWidth * fAutoFontScale,
-                                    rcBBox.top);
-            rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom, rcBBox.right,
-                                   rcBBox.top);
-
-            if (rcLabelContent.Width() < fWidth * fAutoFontScale) {
             } else {
-              if (rcLabelContent.Width() < fWidth) {
-                rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom,
-                                        rcBBox.left + rcLabelContent.Width(),
-                                        rcBBox.top);
-                rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom,
-                                       rcBBox.right, rcBBox.top);
-              } else {
-                rcLabel = rcBBox;
-                rcIcon = CFX_FloatRect(0, 0, 0, 0);
-              }
-            }
-          } else {
-            fWidth = rcLabelContent.Width();
-
-            if (rcBBox.left + fWidth > rcBBox.right) {
               rcLabel = rcBBox;
               rcIcon = CFX_FloatRect(0, 0, 0, 0);
-            } else {
-              rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom,
-                                      rcBBox.left + fWidth, rcBBox.top);
-              rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom, rcBBox.right,
-                                     rcBBox.top);
             }
           }
         } else {
-          rcLabel = rcBBox;
-          rcIcon = CFX_FloatRect(0, 0, 0, 0);
+          fWidth = rcLabelContent.Width();
+
+          if (rcBBox.left + fWidth > rcBBox.right) {
+            rcLabel = rcBBox;
+            rcIcon = CFX_FloatRect(0, 0, 0, 0);
+          } else {
+            rcLabel = CFX_FloatRect(rcBBox.right - fWidth, rcBBox.bottom,
+                                    rcBBox.right, rcBBox.top);
+            rcIcon = CFX_FloatRect(rcBBox.left, rcBBox.bottom, rcLabel.left,
+                                   rcBBox.top);
+          }
         }
-
-        break;
-      case PPBL_LABELOVERICON:
+      } else {
         rcLabel = rcBBox;
-        rcIcon = rcBBox;
-        break;
-    }
-
-    CFX_ByteTextBuf sAppStream, sTemp;
-
-    if (!rcIcon.IsEmpty()) {
-      Icon.Move(rcIcon, FALSE, FALSE);
-      sTemp << Icon.GetImageAppStream();
-    }
-
-    Icon.Destroy();
-
-    if (!rcLabel.IsEmpty()) {
-      pEdit->SetPlateRect(rcLabel);
-      CFX_ByteString sEdit =
-          CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
-      if (sEdit.GetLength() > 0) {
-        sTemp << "BT\n" << CPWL_Utils::GetColorAppStream(crText) << sEdit
-              << "ET\n";
+        rcIcon = CFX_FloatRect(0, 0, 0, 0);
       }
-    }
 
-    IFX_Edit::DelEdit(pEdit);
+      break;
+    case PPBL_LABELLEFTICONRIGHT:
 
-    if (sTemp.GetSize() > 0) {
-      sAppStream << "q\n" << rcBBox.left << " " << rcBBox.bottom << " "
-                 << rcBBox.right - rcBBox.left << " "
-                 << rcBBox.top - rcBBox.bottom << " re W n\n";
-      sAppStream << sTemp << "Q\n";
-    }
+      if (pIconStream) {
+        if (IsFloatZero(fFontSize)) {
+          fWidth = rcBBox.right - rcBBox.left;
+          rcLabel =
+              CFX_FloatRect(rcBBox.left, rcBBox.bottom,
+                            rcBBox.left + fWidth * fAutoFontScale, rcBBox.top);
+          rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom, rcBBox.right,
+                                 rcBBox.top);
 
-    return sAppStream.GetByteString();
+          if (rcLabelContent.Width() < fWidth * fAutoFontScale) {
+          } else {
+            if (rcLabelContent.Width() < fWidth) {
+              rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom,
+                                      rcBBox.left + rcLabelContent.Width(),
+                                      rcBBox.top);
+              rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom, rcBBox.right,
+                                     rcBBox.top);
+            } else {
+              rcLabel = rcBBox;
+              rcIcon = CFX_FloatRect(0, 0, 0, 0);
+            }
+          }
+        } else {
+          fWidth = rcLabelContent.Width();
+
+          if (rcBBox.left + fWidth > rcBBox.right) {
+            rcLabel = rcBBox;
+            rcIcon = CFX_FloatRect(0, 0, 0, 0);
+          } else {
+            rcLabel = CFX_FloatRect(rcBBox.left, rcBBox.bottom,
+                                    rcBBox.left + fWidth, rcBBox.top);
+            rcIcon = CFX_FloatRect(rcLabel.right, rcBBox.bottom, rcBBox.right,
+                                   rcBBox.top);
+          }
+        }
+      } else {
+        rcLabel = rcBBox;
+        rcIcon = CFX_FloatRect(0, 0, 0, 0);
+      }
+
+      break;
+    case PPBL_LABELOVERICON:
+      rcLabel = rcBBox;
+      rcIcon = rcBBox;
+      break;
   }
 
-  return "";
+  CFX_ByteTextBuf sAppStream, sTemp;
+
+  if (!rcIcon.IsEmpty()) {
+    Icon.Move(rcIcon, FALSE, FALSE);
+    sTemp << Icon.GetImageAppStream();
+  }
+
+  Icon.Destroy();
+
+  if (!rcLabel.IsEmpty()) {
+    pEdit->SetPlateRect(rcLabel);
+    CFX_ByteString sEdit =
+        CPWL_Utils::GetEditAppStream(pEdit, CFX_FloatPoint(0.0f, 0.0f));
+    if (sEdit.GetLength() > 0) {
+      sTemp << "BT\n"
+            << CPWL_Utils::GetColorAppStream(crText) << sEdit << "ET\n";
+    }
+  }
+
+  IFX_Edit::DelEdit(pEdit);
+  if (sTemp.GetSize() > 0) {
+    sAppStream << "q\n"
+               << rcBBox.left << " " << rcBBox.bottom << " "
+               << rcBBox.right - rcBBox.left << " "
+               << rcBBox.top - rcBBox.bottom << " re W n\n";
+    sAppStream << sTemp << "Q\n";
+  }
+  return sAppStream.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetColorAppStream(const CPWL_Color& color,
@@ -863,7 +706,7 @@ CFX_ByteString CPWL_Utils::GetColorAppStream(const CPWL_Color& color,
       break;
   }
 
-  return sColorStream.GetByteString();
+  return sColorStream.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
@@ -871,7 +714,7 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
                                               const CPWL_Color& color,
                                               const CPWL_Color& crLeftTop,
                                               const CPWL_Color& crRightBottom,
-                                              int32_t nStyle,
+                                              BorderStyle nStyle,
                                               const CPWL_Dash& dash) {
   CFX_ByteTextBuf sAppStream;
   CFX_ByteString sColor;
@@ -888,7 +731,7 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
 
     switch (nStyle) {
       default:
-      case PBS_SOLID:
+      case BorderStyle::SOLID:
         sColor = CPWL_Utils::GetColorAppStream(color, TRUE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -900,7 +743,7 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
           sAppStream << "f*\n";
         }
         break;
-      case PBS_DASH:
+      case BorderStyle::DASH:
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -919,8 +762,8 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
                      << " l S\n";
         }
         break;
-      case PBS_BEVELED:
-      case PBS_INSET:
+      case BorderStyle::BEVELED:
+      case BorderStyle::INSET:
         sColor = CPWL_Utils::GetColorAppStream(crLeftTop, TRUE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -965,7 +808,7 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
                      << fTop - fBottom - fHalfWidth * 2 << " re f*\n";
         }
         break;
-      case PBS_UNDERLINED:
+      case BorderStyle::UNDERLINE:
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << sColor;
@@ -979,7 +822,7 @@ CFX_ByteString CPWL_Utils::GetBorderAppStream(const CFX_FloatRect& rect,
     sAppStream << "Q\n";
   }
 
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
@@ -988,7 +831,7 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
     const CPWL_Color& color,
     const CPWL_Color& crLeftTop,
     const CPWL_Color& crRightBottom,
-    int32_t nStyle,
+    BorderStyle nStyle,
     const CPWL_Dash& dash) {
   CFX_ByteTextBuf sAppStream;
   CFX_ByteString sColor;
@@ -998,8 +841,8 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
 
     switch (nStyle) {
       default:
-      case PBS_SOLID:
-      case PBS_UNDERLINED: {
+      case BorderStyle::SOLID:
+      case BorderStyle::UNDERLINE: {
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << "q\n" << fWidth << " w\n" << sColor
@@ -1008,7 +851,7 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
                      << " S\nQ\n";
         }
       } break;
-      case PBS_DASH: {
+      case BorderStyle::DASH: {
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
         if (sColor.GetLength() > 0) {
           sAppStream << "q\n" << fWidth << " w\n"
@@ -1019,7 +862,7 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
                      << " S\nQ\n";
         }
       } break;
-      case PBS_BEVELED: {
+      case BorderStyle::BEVELED: {
         FX_FLOAT fHalfWidth = fWidth / 2.0f;
 
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
@@ -1046,7 +889,7 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
                      << " S\nQ\n";
         }
       } break;
-      case PBS_INSET: {
+      case BorderStyle::INSET: {
         FX_FLOAT fHalfWidth = fWidth / 2.0f;
 
         sColor = CPWL_Utils::GetColorAppStream(color, FALSE);
@@ -1078,7 +921,7 @@ CFX_ByteString CPWL_Utils::GetCircleBorderAppStream(
     sAppStream << "Q\n";
   }
 
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 CPWL_Color CPWL_Utils::SubstractColor(const CPWL_Color& sColor,
@@ -1137,7 +980,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Check(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n" << CPWL_Utils::GetColorAppStream(crText, TRUE)
       << CPWL_Utils::GetAP_Check(rcBBox) << "f\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAppStream_Circle(const CFX_FloatRect& rcBBox,
@@ -1145,7 +988,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Circle(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n" << CPWL_Utils::GetColorAppStream(crText, TRUE)
       << CPWL_Utils::GetAP_Circle(rcBBox) << "f\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAppStream_Cross(const CFX_FloatRect& rcBBox,
@@ -1153,7 +996,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Cross(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n" << CPWL_Utils::GetColorAppStream(crText, FALSE)
       << CPWL_Utils::GetAP_Cross(rcBBox) << "S\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAppStream_Diamond(const CFX_FloatRect& rcBBox,
@@ -1161,7 +1004,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Diamond(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n1 w\n" << CPWL_Utils::GetColorAppStream(crText, TRUE)
       << CPWL_Utils::GetAP_Diamond(rcBBox) << "f\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAppStream_Square(const CFX_FloatRect& rcBBox,
@@ -1169,7 +1012,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Square(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n" << CPWL_Utils::GetColorAppStream(crText, TRUE)
       << CPWL_Utils::GetAP_Square(rcBBox) << "f\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetAppStream_Star(const CFX_FloatRect& rcBBox,
@@ -1177,7 +1020,7 @@ CFX_ByteString CPWL_Utils::GetAppStream_Star(const CFX_FloatRect& rcBBox,
   CFX_ByteTextBuf sAP;
   sAP << "q\n" << CPWL_Utils::GetColorAppStream(crText, TRUE)
       << CPWL_Utils::GetAP_Star(rcBBox) << "f\nQ\n";
-  return sAP.GetByteString();
+  return sAP.MakeString();
 }
 
 CFX_ByteString CPWL_Utils::GetCheckBoxAppStream(const CFX_FloatRect& rcBBox,
@@ -1235,11 +1078,12 @@ CFX_ByteString CPWL_Utils::GetDropButtonAppStream(const CFX_FloatRect& rcBBox) {
                << rcBBox.top - rcBBox.bottom << " re f\n";
     sAppStream << "Q\n";
 
-    sAppStream << "q\n" << CPWL_Utils::GetBorderAppStream(
-                               rcBBox, 2, CPWL_Color(COLORTYPE_GRAY, 0),
-                               CPWL_Color(COLORTYPE_GRAY, 1),
-                               CPWL_Color(COLORTYPE_GRAY, 0.5), PBS_BEVELED,
-                               CPWL_Dash(3, 0, 0))
+    sAppStream << "q\n"
+               << CPWL_Utils::GetBorderAppStream(
+                      rcBBox, 2, CPWL_Color(COLORTYPE_GRAY, 0),
+                      CPWL_Color(COLORTYPE_GRAY, 1),
+                      CPWL_Color(COLORTYPE_GRAY, 0.5), BorderStyle::BEVELED,
+                      CPWL_Dash(3, 0, 0))
                << "Q\n";
 
     CFX_FloatPoint ptCenter = CFX_FloatPoint((rcBBox.left + rcBBox.right) / 2,
@@ -1256,7 +1100,7 @@ CFX_ByteString CPWL_Utils::GetDropButtonAppStream(const CFX_FloatRect& rcBBox) {
     }
   }
 
-  return sAppStream.GetByteString();
+  return sAppStream.MakeString();
 }
 
 void CPWL_Utils::ConvertCMYK2GRAY(FX_FLOAT dC,
@@ -1479,7 +1323,7 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
                             const CPWL_Color& color,
                             const CPWL_Color& crLeftTop,
                             const CPWL_Color& crRightBottom,
-                            int32_t nStyle,
+                            BorderStyle nStyle,
                             int32_t nTransparancy) {
   FX_FLOAT fLeft = rect.left;
   FX_FLOAT fRight = rect.right;
@@ -1491,7 +1335,7 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
 
     switch (nStyle) {
       default:
-      case PBS_SOLID: {
+      case BorderStyle::SOLID: {
         CFX_PathData path;
         path.AppendRect(fLeft, fBottom, fRight, fTop);
         path.AppendRect(fLeft + fWidth, fBottom + fWidth, fRight - fWidth,
@@ -1499,8 +1343,9 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
         pDevice->DrawPath(&path, pUser2Device, NULL,
                           PWLColorToFXColor(color, nTransparancy), 0,
                           FXFILL_ALTERNATE);
-      } break;
-      case PBS_DASH: {
+        break;
+      }
+      case BorderStyle::DASH: {
         CFX_PathData path;
 
         path.SetPointCount(5);
@@ -1525,9 +1370,10 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
         pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
                           PWLColorToFXColor(color, nTransparancy),
                           FXFILL_WINDING);
-      } break;
-      case PBS_BEVELED:
-      case PBS_INSET: {
+        break;
+      }
+      case BorderStyle::BEVELED:
+      case BorderStyle::INSET: {
         CFX_GraphStateData gsd;
         gsd.m_LineWidth = fHalfWidth;
 
@@ -1580,8 +1426,9 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
         pDevice->DrawPath(&path, pUser2Device, &gsd,
                           PWLColorToFXColor(color, nTransparancy), 0,
                           FXFILL_ALTERNATE);
-      } break;
-      case PBS_UNDERLINED: {
+        break;
+      }
+      case BorderStyle::UNDERLINE: {
         CFX_PathData path;
 
         path.SetPointCount(2);
@@ -1594,185 +1441,10 @@ void CPWL_Utils::DrawBorder(CFX_RenderDevice* pDevice,
         pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
                           PWLColorToFXColor(color, nTransparancy),
                           FXFILL_ALTERNATE);
-      } break;
-      case PBS_SHADOW: {
-        CFX_PathData path;
-        path.AppendRect(fLeft, fBottom, fRight, fTop);
-        path.AppendRect(fLeft + fWidth, fBottom + fWidth, fRight - fWidth,
-                        fTop - fWidth);
-        pDevice->DrawPath(&path, pUser2Device, NULL,
-                          PWLColorToFXColor(color, nTransparancy / 2), 0,
-                          FXFILL_ALTERNATE);
-      } break;
-    }
-  }
-}
-
-static void AddSquigglyPath(CFX_PathData& PathData,
-                            FX_FLOAT fStartX,
-                            FX_FLOAT fEndX,
-                            FX_FLOAT fY,
-                            FX_FLOAT fStep) {
-  PathData.AddPointCount(1);
-  PathData.SetPoint(PathData.GetPointCount() - 1, fStartX, fY, FXPT_MOVETO);
-
-  FX_FLOAT fx;
-  int32_t i;
-
-  for (i = 1, fx = fStartX + fStep; fx < fEndX; fx += fStep, i++) {
-    PathData.AddPointCount(1);
-    PathData.SetPoint(PathData.GetPointCount() - 1, fx, fY + (i & 1) * fStep,
-                      FXPT_LINETO);
-  }
-}
-
-static void AddSpellCheckObj(CFX_PathData& PathData,
-                             IFX_Edit* pEdit,
-                             const CPVT_WordRange& wrWord) {
-  FX_FLOAT fStartX = 0.0f;
-  FX_FLOAT fEndX = 0.0f;
-  FX_FLOAT fY = 0.0f;
-  FX_FLOAT fStep = 0.0f;
-
-  FX_BOOL bBreak = FALSE;
-
-  if (IFX_Edit_Iterator* pIterator = pEdit->GetIterator()) {
-    pIterator->SetAt(wrWord.BeginPos);
-
-    do {
-      CPVT_WordPlace place = pIterator->GetAt();
-
-      CPVT_Line line;
-      if (pIterator->GetLine(line)) {
-        fY = line.ptLine.y;
-        fStep = (line.fLineAscent - line.fLineDescent) / 16.0f;
-      }
-
-      if (place.LineCmp(wrWord.BeginPos) == 0) {
-        pIterator->SetAt(wrWord.BeginPos);
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          fStartX = word.ptWord.x;
-        }
-      } else {
-        fStartX = line.ptLine.x;
-      }
-
-      if (place.LineCmp(wrWord.EndPos) == 0) {
-        pIterator->SetAt(wrWord.EndPos);
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          fEndX = word.ptWord.x + word.fWidth;
-        }
-
-        bBreak = TRUE;
-      } else {
-        fEndX = line.ptLine.x + line.fLineWidth;
-      }
-
-      AddSquigglyPath(PathData, fStartX, fEndX, fY, fStep);
-
-      if (bBreak)
         break;
-    } while (pIterator->NextLine());
-  }
-}
-
-void CPWL_Utils::DrawEditSpellCheck(CFX_RenderDevice* pDevice,
-                                    CFX_Matrix* pUser2Device,
-                                    IFX_Edit* pEdit,
-                                    const CFX_FloatRect& rcClip,
-                                    const CFX_FloatPoint& ptOffset,
-                                    const CPVT_WordRange* pRange,
-                                    IPWL_SpellCheck* pSpellCheck) {
-  const FX_COLORREF crSpell = ArgbEncode(255, 255, 0, 0);
-
-  // for spellcheck
-  FX_BOOL bLatinWord = FALSE;
-  CPVT_WordPlace wpWordStart;
-  CFX_ByteString sLatinWord;
-
-  CFX_PathData pathSpell;
-
-  pDevice->SaveState();
-
-  if (!rcClip.IsEmpty()) {
-    CFX_FloatRect rcTemp = rcClip;
-    pUser2Device->TransformRect(rcTemp);
-    pDevice->SetClip_Rect(rcTemp.ToFxRect());
-  }
-
-  if (IFX_Edit_Iterator* pIterator = pEdit->GetIterator()) {
-    if (pEdit->GetFontMap()) {
-      if (pRange)
-        pIterator->SetAt(pRange->BeginPos);
-      else
-        pIterator->SetAt(0);
-
-      CPVT_WordPlace oldplace;
-
-      while (pIterator->NextWord()) {
-        CPVT_WordPlace place = pIterator->GetAt();
-        if (pRange && place.WordCmp(pRange->EndPos) > 0)
-          break;
-
-        CPVT_Word word;
-        if (pIterator->GetWord(word)) {
-          if (FX_EDIT_ISLATINWORD(word.Word)) {
-            if (!bLatinWord) {
-              wpWordStart = place;
-              bLatinWord = TRUE;
-            }
-
-            sLatinWord += (char)word.Word;
-          } else {
-            if (bLatinWord) {
-              if (!sLatinWord.IsEmpty()) {
-                if (pSpellCheck && !pSpellCheck->CheckWord(sLatinWord)) {
-                  AddSpellCheckObj(pathSpell, pEdit,
-                                   CPVT_WordRange(wpWordStart, oldplace));
-                  pIterator->SetAt(place);
-                }
-              }
-              bLatinWord = FALSE;
-            }
-
-            sLatinWord.Empty();
-          }
-
-          oldplace = place;
-        } else {
-          if (bLatinWord) {
-            if (!sLatinWord.IsEmpty()) {
-              if (pSpellCheck && !pSpellCheck->CheckWord(sLatinWord)) {
-                AddSpellCheckObj(pathSpell, pEdit,
-                                 CPVT_WordRange(wpWordStart, oldplace));
-                pIterator->SetAt(place);
-              }
-            }
-            bLatinWord = FALSE;
-          }
-
-          sLatinWord.Empty();
-        }
-      }
-
-      if (!sLatinWord.IsEmpty()) {
-        if (pSpellCheck && !pSpellCheck->CheckWord(sLatinWord)) {
-          AddSpellCheckObj(pathSpell, pEdit,
-                           CPVT_WordRange(wpWordStart, oldplace));
-        }
       }
     }
   }
-
-  CFX_GraphStateData gsd;
-  gsd.m_LineWidth = 0;
-  if (pathSpell.GetPointCount() > 0)
-    pDevice->DrawPath(&pathSpell, pUser2Device, &gsd, 0, crSpell,
-                      FXFILL_ALTERNATE);
-
-  pDevice->RestoreState();
 }
 
 FX_BOOL CPWL_Utils::IsBlackOrWhite(const CPWL_Color& color) {

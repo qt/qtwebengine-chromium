@@ -24,6 +24,7 @@ import dm_flags
 import nanobench_flags
 
 
+CONFIG_COVERAGE = 'Coverage'
 CONFIG_DEBUG = 'Debug'
 CONFIG_RELEASE = 'Release'
 
@@ -78,6 +79,9 @@ def gyp_defines(builder_dict):
         werr = True
     elif ('Mac' in builder_dict.get('os', '') and
           'Android' in builder_dict.get('extra_config', '')):
+      werr = False
+    elif 'Fast' in builder_dict.get('extra_config', ''):
+      # See https://bugs.chromium.org/p/skia/issues/detail?id=5257
       werr = False
     else:
       werr = True
@@ -160,13 +164,21 @@ def gyp_defines(builder_dict):
       builder_dict.get('role') == 'Perf'):
       gyp_defs['skia_dump_stats'] = '1'
 
+  # CommandBuffer.
+  if builder_dict.get('extra_config') == 'CommandBuffer':
+    gyp_defs['skia_command_buffer'] = '1'
+
+  # Vulkan.
+  if builder_dict.get('extra_config') == 'Vulkan':
+    gyp_defs['skia_vulkan'] = '1'
+
   return gyp_defs
 
 
 cov_skip.extend([lineno(), lineno() + 1])
 def get_extra_env_vars(builder_dict):
   env = {}
-  if builder_dict.get('configuration') == 'Coverage':
+  if builder_dict.get('configuration') == CONFIG_COVERAGE:
     # We have to use Clang 3.6 because earlier versions do not support the
     # compile flags we use and 3.7 and 3.8 hit asserts during compilation.
     env['CC'] = '/usr/bin/clang-3.6'
@@ -190,13 +202,16 @@ def build_targets_from_builder_dict(builder_dict, do_test_steps, do_perf_steps):
     return ['iOSShell']
   if builder_dict.get('extra_config') == 'Appurify':
     return ['VisualBenchTest_APK']
+  if 'SAN' in builder_dict.get('extra_config', ''):
+    # 'most' does not compile under MSAN.
+    return ['dm', 'nanobench']
   t = []
   if do_test_steps:
     t.append('dm')
-  if do_perf_steps and builder_dict.get('extra_config') == 'VisualBench':
-      t.append('visualbench')
+  if builder_dict.get('extra_config') == 'VisualBench':
+    t.append('visualbench')
   elif do_perf_steps:
-      t.append('nanobench')
+    t.append('nanobench')
   if t:
     return t
   else:
@@ -230,18 +245,6 @@ def device_cfg(builder_dict):
       'Nexus7v2':      'arm_v7_neon',
       'Nexus9':        'arm64',
       'NexusPlayer':   'x86',
-    }[builder_dict['model']]
-
-  # ChromeOS.
-  if 'CrOS' in builder_dict.get('extra_config', ''):
-    if 'Link' in builder_dict['extra_config']:
-      return 'link'
-    if 'Daisy' in builder_dict['extra_config']:
-      return 'daisy'
-  elif builder_dict.get('os') == 'ChromeOS':
-    return {
-      'Link': 'link',
-      'Daisy': 'daisy',
     }[builder_dict['model']]
 
   # iOS.
@@ -303,6 +306,8 @@ def get_builder_spec(builder_name):
   if ('Win' in builder_dict.get('os', '') and arch == 'x86_64'):
     configuration += '_x64'
   rv['configuration'] = configuration
+  if configuration == CONFIG_COVERAGE:
+    rv['do_compile_steps'] = False
   rv['do_test_steps'] = role == builder_name_schema.BUILDER_ROLE_TEST
   rv['do_perf_steps'] = (role == builder_name_schema.BUILDER_ROLE_PERF or
                          (role == builder_name_schema.BUILDER_ROLE_TEST and
@@ -353,26 +358,27 @@ def self_test():
         'Build-Win-MSVC-x86-Debug-Exceptions',
         'Build-Ubuntu-GCC-Arm7-Debug-Android_FrameworkDefs',
         'Build-Ubuntu-GCC-Arm7-Debug-Android_NoNeon',
-        'Build-Ubuntu-GCC-Arm7-Debug-CrOS_Daisy',
-        'Build-Ubuntu-GCC-x86_64-Debug-CrOS_Link',
-        'Build-Ubuntu-GCC-x86_64-Release-Mesa',
         'Build-Ubuntu-GCC-x86_64-Release-ANGLE',
+        'Build-Ubuntu-GCC-x64_64-Release-Fast',
+        'Build-Ubuntu-GCC-x86_64-Release-Mesa',
         'Housekeeper-PerCommit',
         'Perf-Win8-MSVC-ShuttleB-GPU-HD4600-x86_64-Release-Trybot',
         'Perf-Ubuntu-GCC-ShuttleA-GPU-GTX660-x86_64-Release-VisualBench',
         'Test-Android-GCC-GalaxyS4-GPU-SGX544-Arm7-Debug',
         'Perf-Android-GCC-Nexus5-GPU-Adreno330-Arm7-Release-Appurify',
         'Test-Android-GCC-Nexus6-GPU-Adreno420-Arm7-Debug',
-        'Test-ChromeOS-GCC-Link-CPU-AVX-x86_64-Debug',
         'Test-iOS-Clang-iPad4-GPU-SGX554-Arm7-Debug',
+        'Test-Mac-Clang-MacMini6.2-GPU-HD4000-x86_64-Debug-CommandBuffer',
         'Test-Mac10.8-Clang-MacMini4.1-GPU-GeForce320M-x86_64-Release',
         'Test-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Coverage',
+        'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Debug-MSAN',
         ('Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-'
          'SK_USE_DISCARDABLE_SCALEDIMAGECACHE'),
         'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-SKNX_NO_SIMD',
         'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-Fast',
         'Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Release-Shared',
         'Test-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind',
+        'Test-Win10-MSVC-ShuttleA-GPU-GTX660-x86_64-Debug-Vulkan',
         'Test-Win8-MSVC-ShuttleB-GPU-HD4600-x86-Release-ANGLE',
         'Test-Win8-MSVC-ShuttleA-CPU-AVX-x86_64-Debug',
   ]

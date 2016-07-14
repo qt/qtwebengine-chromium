@@ -1013,6 +1013,9 @@
                 [
                     '<(deqp_path)/framework/platform/x11',
                 ],
+            }],
+            ['OS=="linux"',
+            {
                 'deqp_defines':
                 [
                     # Ask the system headers to expose all the regular function otherwise
@@ -1034,6 +1037,13 @@
                     # dEQP doesn't compile and produces warnings about implicitly defined
                     # functions.
                     '_XOPEN_SOURCE=600',
+                ],
+            }],
+            ['use_ozone==1',
+            {
+                'deqp_defines':
+                [
+                    'ANGLE_USE_OZONE',
                 ],
             }],
         ],
@@ -1373,7 +1383,7 @@
                         {
                             'sources': [ '<@(deqp_libtester_sources_win)', ],
                         }],
-                        ['(OS=="linux" and use_x11==1) or OS=="mac"',
+                        ['OS=="linux" or OS=="mac"',
                         {
                             'sources': [ '<@(deqp_libtester_sources_unix)', ],
                         }],

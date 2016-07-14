@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "SkAtomics.h"
 #include "SkSurface_Base.h"
 #include "SkImagePriv.h"
 #include "SkCanvas.h"
@@ -227,7 +228,7 @@ sk_sp<SkSurface> SkSurface::MakeRenderTargetDirect(GrRenderTarget*, const SkSurf
 }
 
 sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrContext*, SkBudgeted, const SkImageInfo&, int,
-                                             const SkSurfaceProps*, GrTextureStorageAllocator) {
+                                             const SkSurfaceProps*) {
     return nullptr;
 }
 

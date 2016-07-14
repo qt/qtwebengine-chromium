@@ -20,14 +20,15 @@
 
 #include "batches/GrCopySurfaceBatch.h"
 #include "effects/GrConfigConversionEffect.h"
+#include "effects/GrGammaEffect.h"
 #include "text/GrTextBlobCache.h"
 
 #define ASSERT_OWNED_RESOURCE(R) SkASSERT(!(R) || (R)->getContext() == this)
 #define ASSERT_SINGLE_OWNER \
     SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(&fSingleOwner);)
-#define RETURN_IF_ABANDONED if (fDrawingManager->abandoned()) { return; }
-#define RETURN_FALSE_IF_ABANDONED if (fDrawingManager->abandoned()) { return false; }
-#define RETURN_NULL_IF_ABANDONED if (fDrawingManager->abandoned()) { return nullptr; }
+#define RETURN_IF_ABANDONED if (fDrawingManager->wasAbandoned()) { return; }
+#define RETURN_FALSE_IF_ABANDONED if (fDrawingManager->wasAbandoned()) { return false; }
+#define RETURN_NULL_IF_ABANDONED if (fDrawingManager->wasAbandoned()) { return nullptr; }
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -362,7 +363,7 @@ bool GrContext::writeSurfacePixels(GrSurface* surface,
             }
             SkMatrix matrix;
             matrix.setTranslate(SkIntToScalar(left), SkIntToScalar(top));
-            SkAutoTUnref<GrDrawContext> drawContext(this->drawContext(renderTarget));
+            sk_sp<GrDrawContext> drawContext(this->drawContext(sk_ref_sp(renderTarget)));
             if (!drawContext) {
                 return false;
             }
@@ -372,7 +373,7 @@ bool GrContext::writeSurfacePixels(GrSurface* surface,
             paint.addColorFragmentProcessor(fp);
             paint.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
             SkRect rect = SkRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height));
-            drawContext->drawRect(GrClip::WideOpen(), paint, matrix, rect, nullptr);
+            drawContext->drawRect(GrNoClip(), paint, matrix, rect, nullptr);
 
             if (kFlushWrites_PixelOp & pixelOpsFlags) {
                 this->flushSurfaceWrites(surface);
@@ -484,8 +485,9 @@ bool GrContext::readSurfacePixels(GrSurface* src,
                 paint.addColorFragmentProcessor(fp);
                 paint.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
                 SkRect rect = SkRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height));
-                SkAutoTUnref<GrDrawContext> drawContext(this->drawContext(temp->asRenderTarget()));
-                drawContext->drawRect(GrClip::WideOpen(), paint, SkMatrix::I(), rect, nullptr);
+                sk_sp<GrDrawContext> drawContext(
+                                            this->drawContext(sk_ref_sp(temp->asRenderTarget())));
+                drawContext->drawRect(GrNoClip(), paint, SkMatrix::I(), rect, nullptr);
                 surfaceToRead.reset(SkRef(temp.get()));
                 left = 0;
                 top = 0;
@@ -525,6 +527,41 @@ bool GrContext::readSurfacePixels(GrSurface* src,
 
         return srcPI.convertPixelsTo(&dstPI, width, height);
     }
+    return true;
+}
+
+bool GrContext::applyGamma(GrRenderTarget* dst, GrTexture* src, SkScalar gamma){
+    ASSERT_SINGLE_OWNER
+    RETURN_FALSE_IF_ABANDONED
+    ASSERT_OWNED_RESOURCE(dst);
+    ASSERT_OWNED_RESOURCE(src);
+    GR_AUDIT_TRAIL_AUTO_FRAME(&fAuditTrail, "GrContext::applyGamma");
+
+    // Dimensions must match exactly.
+    if (dst->width() != src->width() || dst->height() != src->height()) {
+        return false;
+    }
+
+    SkSurfaceProps props(SkSurfaceProps::kGammaCorrect_Flag,
+                         SkSurfaceProps::kLegacyFontHost_InitType);
+    sk_sp<GrDrawContext> drawContext(this->drawContext(sk_ref_sp(dst), &props));
+    if (!drawContext) {
+        return false;
+    }
+
+    GrPaint paint;
+    paint.addColorTextureProcessor(src, GrCoordTransform::MakeDivByTextureWHMatrix(src));
+    if (!SkScalarNearlyEqual(gamma, 1.0f)) {
+        paint.addColorFragmentProcessor(GrGammaEffect::Create(gamma))->unref();
+    }
+    paint.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
+    paint.setGammaCorrect(true);
+
+    SkRect rect;
+    src->getBoundsRect(&rect);
+    drawContext->drawRect(GrNoClip(), paint, SkMatrix::I(), rect);
+
+    this->flushSurfaceWrites(dst);
     return true;
 }
 
@@ -569,7 +606,7 @@ bool GrContext::copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRe
         src->flushWrites();
         return fGpu->copySurface(dst, src, clippedSrcRect, clippedDstPoint);
     }
-    SkAutoTUnref<GrDrawContext> drawContext(this->drawContext(dst->asRenderTarget()));
+    sk_sp<GrDrawContext> drawContext(this->drawContext(sk_ref_sp(dst->asRenderTarget())));
     if (!drawContext) {
         return false;
     }
@@ -608,14 +645,49 @@ int GrContext::getRecommendedSampleCount(GrPixelConfig config,
 }
 
 
-GrDrawContext* GrContext::drawContext(GrRenderTarget* rt, const SkSurfaceProps* surfaceProps) {
+sk_sp<GrDrawContext> GrContext::drawContext(sk_sp<GrRenderTarget> rt,
+                                            const SkSurfaceProps* surfaceProps) {
     ASSERT_SINGLE_OWNER
-    return fDrawingManager->drawContext(rt, surfaceProps);
+    return fDrawingManager->drawContext(std::move(rt), surfaceProps);
+}
+
+sk_sp<GrDrawContext> GrContext::newDrawContext(SkBackingFit fit,
+                                               int width, int height,
+                                               GrPixelConfig config,
+                                               int sampleCnt,
+                                               GrSurfaceOrigin origin,
+                                               const SkSurfaceProps* surfaceProps,
+                                               SkBudgeted budgeted) {
+    GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fOrigin = origin;
+    desc.fWidth = width;
+    desc.fHeight = height;
+    desc.fConfig = config;
+    desc.fSampleCnt = sampleCnt;
+
+    sk_sp<GrTexture> tex;
+    if (SkBackingFit::kExact == fit) {
+        tex.reset(this->textureProvider()->createTexture(desc, budgeted));
+    } else {
+        tex.reset(this->textureProvider()->createApproxTexture(desc));
+    }
+    if (!tex) {
+        return nullptr;
+    }
+
+    sk_sp<GrDrawContext> drawContext(this->drawContext(sk_ref_sp(tex->asRenderTarget()),
+                                                       surfaceProps));
+    if (!drawContext) {
+        return nullptr;
+    }
+
+    return drawContext;
 }
 
 bool GrContext::abandoned() const {
     ASSERT_SINGLE_OWNER
-    return fDrawingManager->abandoned();
+    return fDrawingManager->wasAbandoned();
 }
 
 namespace {

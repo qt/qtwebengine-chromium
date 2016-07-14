@@ -131,6 +131,16 @@ static int do_dtls1_write(SSL *ssl, int type, const uint8_t *buf,
  * more data is needed. */
 static int dtls1_get_record(SSL *ssl) {
 again:
+  switch (ssl->s3->recv_shutdown) {
+    case ssl_shutdown_none:
+      break;
+    case ssl_shutdown_fatal_alert:
+      OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
+      return -1;
+    case ssl_shutdown_close_notify:
+      return 0;
+  }
+
   /* Read a new packet if there is no unconsumed one. */
   if (ssl_read_buffer_len(ssl) == 0) {
     int ret = ssl_read_buffer_extend_to(ssl, 0 /* unused */);
@@ -217,7 +227,9 @@ void dtls1_read_close_notify(SSL *ssl) {
    * alerts also aren't delivered reliably, so we may even time out because the
    * peer never received our close_notify. Report to the caller that the channel
    * has fully shut down. */
-  ssl->shutdown |= SSL_RECEIVED_SHUTDOWN;
+  if (ssl->s3->recv_shutdown == ssl_shutdown_none) {
+    ssl->s3->recv_shutdown = ssl_shutdown_close_notify;
+  }
 }
 
 /* Return up to 'len' payload bytes received in 'type' records.
@@ -246,8 +258,6 @@ int dtls1_read_bytes(SSL *ssl, int type, unsigned char *buf, int len, int peek) 
   }
 
 start:
-  ssl->rwstate = SSL_NOTHING;
-
   /* ssl->s3->rrec.type     - is the type of record
    * ssl->s3->rrec.data     - data
    * ssl->s3->rrec.off      - offset into 'data' for next read
@@ -275,27 +285,7 @@ start:
 
   /* we now have a packet which can be read and processed */
 
-  /* If the other end has shut down, throw anything we read away (even in
-   * 'peek' mode) */
-  if (ssl->shutdown & SSL_RECEIVED_SHUTDOWN) {
-    rr->length = 0;
-    ssl->rwstate = SSL_NOTHING;
-    return 0;
-  }
-
-
   if (type == rr->type) {
-    /* Make sure that we are not getting application data when we
-     * are doing a handshake for the first time. */
-    if (SSL_in_init(ssl) && (type == SSL3_RT_APPLICATION_DATA) &&
-        (ssl->s3->aead_read_ctx == NULL)) {
-      /* TODO(davidben): Is this check redundant with the handshake_func
-       * check? */
-      al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_APP_DATA_IN_HANDSHAKE);
-      goto f_err;
-    }
-
     /* Discard empty records. */
     if (rr->length == 0) {
       goto start;
@@ -326,11 +316,10 @@ start:
 
   /* If we get here, then type != rr->type. */
 
-  /* If an alert record, process one alert out of the record. Note that we allow
-   * a single record to contain multiple alerts. */
+  /* If an alert record, process the alert. */
   if (rr->type == SSL3_RT_ALERT) {
-    /* Alerts may not be fragmented. */
-    if (rr->length < 2) {
+    /* Alerts records may not contain fragmented or multiple alerts. */
+    if (rr->length != 2) {
       al = SSL_AD_DECODE_ERROR;
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ALERT);
       goto f_err;
@@ -358,18 +347,16 @@ start:
 
     if (alert_level == SSL3_AL_WARNING) {
       if (alert_descr == SSL_AD_CLOSE_NOTIFY) {
-        ssl->s3->clean_shutdown = 1;
-        ssl->shutdown |= SSL_RECEIVED_SHUTDOWN;
+        ssl->s3->recv_shutdown = ssl_shutdown_close_notify;
         return 0;
       }
     } else if (alert_level == SSL3_AL_FATAL) {
       char tmp[16];
 
-      ssl->rwstate = SSL_NOTHING;
       OPENSSL_PUT_ERROR(SSL, SSL_AD_REASON_OFFSET + alert_descr);
       BIO_snprintf(tmp, sizeof tmp, "%d", alert_descr);
       ERR_add_error_data(2, "SSL alert number ", tmp);
-      ssl->shutdown |= SSL_RECEIVED_SHUTDOWN;
+      ssl->s3->recv_shutdown = ssl_shutdown_fatal_alert;
       SSL_CTX_remove_session(ssl->ctx, ssl->session);
       return 0;
     } else {
@@ -463,7 +450,6 @@ int dtls1_write_app_data(SSL *ssl, const void *buf_, int len) {
 int dtls1_write_bytes(SSL *ssl, int type, const void *buf, int len,
                       enum dtls1_use_epoch_t use_epoch) {
   assert(len <= SSL3_RT_MAX_PLAIN_LENGTH);
-  ssl->rwstate = SSL_NOTHING;
   return do_dtls1_write(ssl, type, buf, len, use_epoch);
 }
 

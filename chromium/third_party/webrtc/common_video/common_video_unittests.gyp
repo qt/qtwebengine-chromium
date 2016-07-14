@@ -20,6 +20,7 @@
          '<(webrtc_root)/test/test.gyp:video_test_common',
       ],
       'sources': [
+        'bitrate_adjuster_unittest.cc',
         'i420_buffer_pool_unittest.cc',
         'i420_video_frame_unittest.cc',
         'libyuv/libyuv_unittest.cc',
@@ -54,7 +55,28 @@
           ],
         },
       ],
-    }],
+      'conditions': [
+        ['test_isolation_mode != "noop"',
+          {
+            'targets': [
+              {
+                'target_name': 'common_video_unittests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):common_video_unittests_apk',
+                ],
+                'includes': [
+                  '../build/isolate.gypi',
+                ],
+                'sources': [
+                  'common_video_unittests_apk.isolate',
+                ],
+              },
+            ],
+          },
+        ],
+      ],
+    }],  # OS=="android"
     ['test_isolation_mode != "noop"', {
       'targets': [
         {

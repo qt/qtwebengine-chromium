@@ -13,6 +13,7 @@
 #include "webrtc/api/localaudiosource.h"
 #include "webrtc/api/mediastreaminterface.h"
 #include "webrtc/base/helpers.h"
+#include "webrtc/base/trace_event.h"
 
 namespace webrtc {
 
@@ -86,6 +87,7 @@ AudioRtpSender::~AudioRtpSender() {
 }
 
 void AudioRtpSender::OnChanged() {
+  TRACE_EVENT0("webrtc", "AudioRtpSender::OnChanged");
   RTC_DCHECK(!stopped_);
   if (cached_track_enabled_ != track_->enabled()) {
     cached_track_enabled_ = track_->enabled();
@@ -96,6 +98,7 @@ void AudioRtpSender::OnChanged() {
 }
 
 bool AudioRtpSender::SetTrack(MediaStreamTrackInterface* track) {
+  TRACE_EVENT0("webrtc", "AudioRtpSender::SetTrack");
   if (stopped_) {
     LOG(LS_ERROR) << "SetTrack can't be called on a stopped RtpSender.";
     return false;
@@ -119,6 +122,9 @@ bool AudioRtpSender::SetTrack(MediaStreamTrackInterface* track) {
 
   // Attach to new track.
   bool prev_can_send_track = can_send_track();
+  // Keep a reference to the old track to keep it alive until we call
+  // SetAudioSend.
+  rtc::scoped_refptr<AudioTrackInterface> old_track = track_;
   track_ = audio_track;
   if (track_) {
     cached_track_enabled_ = track_->enabled();
@@ -140,6 +146,7 @@ bool AudioRtpSender::SetTrack(MediaStreamTrackInterface* track) {
 }
 
 void AudioRtpSender::SetSsrc(uint32_t ssrc) {
+  TRACE_EVENT0("webrtc", "AudioRtpSender::SetSsrc");
   if (stopped_ || ssrc == ssrc_) {
     return;
   }
@@ -161,6 +168,7 @@ void AudioRtpSender::SetSsrc(uint32_t ssrc) {
 }
 
 void AudioRtpSender::Stop() {
+  TRACE_EVENT0("webrtc", "AudioRtpSender::Stop");
   // TODO(deadbeef): Need to do more here to fully stop sending packets.
   if (stopped_) {
     return;
@@ -200,11 +208,12 @@ void AudioRtpSender::SetAudioSend() {
 }
 
 RtpParameters AudioRtpSender::GetParameters() const {
-  return provider_->GetAudioRtpParameters(ssrc_);
+  return provider_->GetAudioRtpSendParameters(ssrc_);
 }
 
 bool AudioRtpSender::SetParameters(const RtpParameters& parameters) {
-  return provider_->SetAudioRtpParameters(ssrc_, parameters);
+  TRACE_EVENT0("webrtc", "AudioRtpSender::SetParameters");
+  return provider_->SetAudioRtpSendParameters(ssrc_, parameters);
 }
 
 VideoRtpSender::VideoRtpSender(VideoTrackInterface* track,
@@ -240,6 +249,7 @@ VideoRtpSender::~VideoRtpSender() {
 }
 
 void VideoRtpSender::OnChanged() {
+  TRACE_EVENT0("webrtc", "VideoRtpSender::OnChanged");
   RTC_DCHECK(!stopped_);
   if (cached_track_enabled_ != track_->enabled()) {
     cached_track_enabled_ = track_->enabled();
@@ -250,6 +260,7 @@ void VideoRtpSender::OnChanged() {
 }
 
 bool VideoRtpSender::SetTrack(MediaStreamTrackInterface* track) {
+  TRACE_EVENT0("webrtc", "VideoRtpSender::SetTrack");
   if (stopped_) {
     LOG(LS_ERROR) << "SetTrack can't be called on a stopped RtpSender.";
     return false;
@@ -268,6 +279,9 @@ bool VideoRtpSender::SetTrack(MediaStreamTrackInterface* track) {
 
   // Attach to new track.
   bool prev_can_send_track = can_send_track();
+  // Keep a reference to the old track to keep it alive until we call
+  // SetSource.
+  rtc::scoped_refptr<VideoTrackInterface> old_track = track_;
   track_ = video_track;
   if (track_) {
     cached_track_enabled_ = track_->enabled();
@@ -276,42 +290,40 @@ bool VideoRtpSender::SetTrack(MediaStreamTrackInterface* track) {
 
   // Update video provider.
   if (can_send_track()) {
-    VideoTrackSourceInterface* source = track_->GetSource();
     // TODO(deadbeef): If SetTrack is called with a disabled track, and the
     // previous track was enabled, this could cause a frame from the new track
-    // to slip out. Really, what we need is for SetCaptureDevice and
-    // SetVideoSend
+    // to slip out. Really, what we need is for SetSource and SetVideoSend
     // to be combined into one atomic operation, all the way down to
     // WebRtcVideoSendStream.
-    provider_->SetCaptureDevice(ssrc_,
-                                source ? source->GetVideoCapturer() : nullptr);
+
+    provider_->SetSource(ssrc_, track_);
     SetVideoSend();
   } else if (prev_can_send_track) {
-    provider_->SetCaptureDevice(ssrc_, nullptr);
+    provider_->SetSource(ssrc_, nullptr);
     provider_->SetVideoSend(ssrc_, false, nullptr);
   }
   return true;
 }
 
 void VideoRtpSender::SetSsrc(uint32_t ssrc) {
+  TRACE_EVENT0("webrtc", "VideoRtpSender::SetSsrc");
   if (stopped_ || ssrc == ssrc_) {
     return;
   }
   // If we are already sending with a particular SSRC, stop sending.
   if (can_send_track()) {
-    provider_->SetCaptureDevice(ssrc_, nullptr);
+    provider_->SetSource(ssrc_, nullptr);
     provider_->SetVideoSend(ssrc_, false, nullptr);
   }
   ssrc_ = ssrc;
   if (can_send_track()) {
-    VideoTrackSourceInterface* source = track_->GetSource();
-    provider_->SetCaptureDevice(ssrc_,
-                                source ? source->GetVideoCapturer() : nullptr);
+    provider_->SetSource(ssrc_, track_);
     SetVideoSend();
   }
 }
 
 void VideoRtpSender::Stop() {
+  TRACE_EVENT0("webrtc", "VideoRtpSender::Stop");
   // TODO(deadbeef): Need to do more here to fully stop sending packets.
   if (stopped_) {
     return;
@@ -320,7 +332,7 @@ void VideoRtpSender::Stop() {
     track_->UnregisterObserver(this);
   }
   if (can_send_track()) {
-    provider_->SetCaptureDevice(ssrc_, nullptr);
+    provider_->SetSource(ssrc_, nullptr);
     provider_->SetVideoSend(ssrc_, false, nullptr);
   }
   stopped_ = true;
@@ -338,11 +350,12 @@ void VideoRtpSender::SetVideoSend() {
 }
 
 RtpParameters VideoRtpSender::GetParameters() const {
-  return provider_->GetVideoRtpParameters(ssrc_);
+  return provider_->GetVideoRtpSendParameters(ssrc_);
 }
 
 bool VideoRtpSender::SetParameters(const RtpParameters& parameters) {
-  return provider_->SetVideoRtpParameters(ssrc_, parameters);
+  TRACE_EVENT0("webrtc", "VideoRtpSender::SetParameters");
+  return provider_->SetVideoRtpSendParameters(ssrc_, parameters);
 }
 
 }  // namespace webrtc

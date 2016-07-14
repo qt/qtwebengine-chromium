@@ -66,7 +66,7 @@ public:
 
     bool externalTextureSupport() const { return fExternalTextureSupport; }
 
-    bool bufferTextureSupport() const { return fBufferTextureSupport; }
+    bool texelFetchSupport() const { return fTexelFetchSupport; }
 
     AdvBlendEqInteraction advBlendEqInteraction() const { return fAdvBlendEqInteraction; }
 
@@ -120,9 +120,9 @@ public:
         return fExternalTextureExtensionString;
     }
 
-    const char* bufferTextureExtensionString() const {
-        SkASSERT(this->bufferTextureSupport());
-        return fBufferTextureExtensionString;
+    const char* texelBufferExtensionString() const {
+        SkASSERT(this->texelBufferSupport());
+        return fTexelBufferExtensionString;
     }
 
     const char* noperspectiveInterpolationExtensionString() const {
@@ -162,6 +162,11 @@ public:
         return fConfigOutputSwizzle[config];
     }
 
+    /** Precision qualifier that should be used with a sampler, given its config and visibility. */
+    GrSLPrecision samplerPrecision(GrPixelConfig config, GrShaderFlags visibility) const {
+        return static_cast<GrSLPrecision>(fSamplerPrecisions[visibility][config]);
+    }
+
     GrGLSLGeneration generation() const { return fGLSLGeneration; }
 
     /**
@@ -170,6 +175,9 @@ public:
     SkString dump() const override;
 
 private:
+    /** GrCaps subclasses must call this after filling in the shader precision table. */
+    void initSamplerPrecisionTable();
+
     void onApplyOptionsOverrides(const GrContextOptions& options) override;
 
     GrGLSLGeneration fGLSLGeneration;
@@ -186,7 +194,7 @@ private:
     bool fSampleVariablesSupport : 1;
     bool fSampleMaskOverrideCoverageSupport : 1;
     bool fExternalTextureSupport : 1;
-    bool fBufferTextureSupport : 1;
+    bool fTexelFetchSupport : 1;
 
     // Used for specific driver bug work arounds
     bool fCanUseMinAndAbsTogether : 1;
@@ -198,7 +206,7 @@ private:
     const char* fFragCoordConventionsExtensionString;
     const char* fSecondaryOutputExtensionString;
     const char* fExternalTextureExtensionString;
-    const char* fBufferTextureExtensionString;
+    const char* fTexelBufferExtensionString;
     const char* fNoPerspectiveInterpolationExtensionString;
     const char* fMultisampleInterpolationExtensionString;
     const char* fSampleVariablesExtensionString;
@@ -215,6 +223,8 @@ private:
 
     GrSwizzle fConfigTextureSwizzle[kGrPixelConfigCnt];
     GrSwizzle fConfigOutputSwizzle[kGrPixelConfigCnt];
+
+    uint8_t fSamplerPrecisions[(1 << kGrShaderTypeCount)][kGrPixelConfigCnt];
 
     friend class GrGLCaps;  // For initialization.
     friend class GrVkCaps;

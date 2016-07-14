@@ -42,7 +42,7 @@ uint32_t FGAS_GetFontFamilyHash(const FX_WCHAR* pszFontFamily,
     wsFont += L"Italic";
   }
   wsFont += wCodePage;
-  return FX_HashCode_String_GetW((const FX_WCHAR*)wsFont, wsFont.GetLength());
+  return FX_HashCode_GetW(wsFont.AsStringC(), false);
 }
 static const FGAS_FONTUSB g_FXGdiFontUSBTable[] = {
     {0x0000, 0x007F, 0, 1252},     {0x0080, 0x00FF, 1, 1252},
@@ -136,7 +136,7 @@ static const FGAS_FONTUSB g_FXGdiFontUSBTable[] = {
 
 const FGAS_FONTUSB* FGAS_GetUnicodeBitField(FX_WCHAR wUnicode) {
   int32_t iEnd = sizeof(g_FXGdiFontUSBTable) / sizeof(FGAS_FONTUSB) - 1;
-  FXSYS_assert(iEnd >= 0);
+  ASSERT(iEnd >= 0);
   int32_t iStart = 0, iMid;
   do {
     iMid = (iStart + iEnd) / 2;

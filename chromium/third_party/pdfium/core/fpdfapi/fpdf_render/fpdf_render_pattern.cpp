@@ -8,7 +8,6 @@
 
 #include "core/fpdfapi/fpdf_page/cpdf_graphicstates.h"
 #include "core/fpdfapi/fpdf_page/cpdf_meshstream.h"
-#include "core/fpdfapi/fpdf_page/cpdf_parseoptions.h"
 #include "core/fpdfapi/fpdf_page/cpdf_shadingpattern.h"
 #include "core/fpdfapi/fpdf_page/cpdf_tilingpattern.h"
 #include "core/fpdfapi/fpdf_page/include/cpdf_form.h"
@@ -20,7 +19,7 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_rendercontext.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_renderoptions.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 #define SHADING_STEPS 256
 static void DrawAxialShading(CFX_DIBitmap* pBitmap,
@@ -653,7 +652,10 @@ struct CPDF_PatchDrawer {
     FX_BOOL bSmall = C1.Distance() < 2 && C2.Distance() < 2 &&
                      D1.Distance() < 2 && D2.Distance() < 2;
     Coon_Color div_colors[4];
-    int d_bottom, d_left, d_top, d_right;
+    int d_bottom = 0;
+    int d_left = 0;
+    int d_top = 0;
+    int d_right = 0;
     div_colors[0].BiInterpol(patch_colors, left, bottom, x_scale, y_scale);
     if (!bSmall) {
       div_colors[1].BiInterpol(patch_colors, left, bottom + 1, x_scale,
@@ -855,8 +857,8 @@ void CPDF_RenderStatus::DrawShading(CPDF_ShadingPattern* pPattern,
     clip_rect.Intersect(rect.GetOutterRect());
   }
   if (m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING &&
-      m_pDevice->GetDeviceDriver()->DrawShading(pPattern, pMatrix, alpha,
-                                                bAlphaMode)) {
+      m_pDevice->GetDeviceDriver()->DrawShading(pPattern, pMatrix, clip_rect,
+                                                alpha, bAlphaMode)) {
     return;
   }
   CPDF_DeviceBuffer buffer;
@@ -886,21 +888,31 @@ void CPDF_RenderStatus::DrawShading(CPDF_ShadingPattern* pPattern,
                         pColorSpace, alpha);
       break;
     case kFreeFormGouraudTriangleMeshShading: {
-      DrawFreeGouraudShading(pBitmap, &FinalMatrix,
-                             ToStream(pPattern->m_pShadingObj), pFuncs, nFuncs,
-                             pColorSpace, alpha);
+      // The shading object can be a stream or a dictionary. We do not handle
+      // the case of dictionary at the moment.
+      if (CPDF_Stream* pStream = ToStream(pPattern->m_pShadingObj)) {
+        DrawFreeGouraudShading(pBitmap, &FinalMatrix, pStream, pFuncs, nFuncs,
+                               pColorSpace, alpha);
+      }
     } break;
     case kLatticeFormGouraudTriangleMeshShading: {
-      DrawLatticeGouraudShading(pBitmap, &FinalMatrix,
-                                ToStream(pPattern->m_pShadingObj), pFuncs,
-                                nFuncs, pColorSpace, alpha);
+      // The shading object can be a stream or a dictionary. We do not handle
+      // the case of dictionary at the moment.
+      if (CPDF_Stream* pStream = ToStream(pPattern->m_pShadingObj)) {
+        DrawLatticeGouraudShading(pBitmap, &FinalMatrix, pStream, pFuncs,
+                                  nFuncs, pColorSpace, alpha);
+      }
     } break;
     case kCoonsPatchMeshShading:
     case kTensorProductPatchMeshShading: {
-      DrawCoonPatchMeshes(
-          pPattern->m_ShadingType == kTensorProductPatchMeshShading, pBitmap,
-          &FinalMatrix, ToStream(pPattern->m_pShadingObj), pFuncs, nFuncs,
-          pColorSpace, fill_mode, alpha);
+      // The shading object can be a stream or a dictionary. We do not handle
+      // the case of dictionary at the moment.
+      if (CPDF_Stream* pStream = ToStream(pPattern->m_pShadingObj)) {
+        DrawCoonPatchMeshes(
+            pPattern->m_ShadingType == kTensorProductPatchMeshShading, pBitmap,
+            &FinalMatrix, pStream, pFuncs, nFuncs, pColorSpace, fill_mode,
+            alpha);
+      }
     } break;
   }
   if (bAlphaMode) {
@@ -934,7 +946,7 @@ void CPDF_RenderStatus::DrawShadingPattern(CPDF_ShadingPattern* pattern,
     m_pDevice->RestoreState();
     return;
   }
-  CFX_Matrix matrix = pattern->m_Pattern2Form;
+  CFX_Matrix matrix = *pattern->pattern_to_form();
   matrix.Concat(*pObj2Device);
   GetScaledMatrix(matrix);
   int alpha = pPageObj->m_GeneralState.GetAlpha(bStroke);
@@ -966,15 +978,15 @@ static CFX_DIBitmap* DrawPatternBitmap(CPDF_Document* pDoc,
                                        int flags) {
   CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
   if (!pBitmap->Create(width, height,
-                       pPattern->m_bColored ? FXDIB_Argb : FXDIB_8bppMask)) {
+                       pPattern->colored() ? FXDIB_Argb : FXDIB_8bppMask)) {
     delete pBitmap;
     return NULL;
   }
   CFX_FxgeDevice bitmap_device;
   bitmap_device.Attach(pBitmap);
   pBitmap->Clear(0);
-  CFX_FloatRect cell_bbox = pPattern->m_BBox;
-  pPattern->m_Pattern2Form.TransformRect(cell_bbox);
+  CFX_FloatRect cell_bbox = pPattern->bbox();
+  pPattern->pattern_to_form()->TransformRect(cell_bbox);
   pObject2Device->TransformRect(cell_bbox);
   CFX_FloatRect bitmap_rect(0.0f, 0.0f, (FX_FLOAT)width, (FX_FLOAT)height);
   CFX_Matrix mtAdjust;
@@ -982,13 +994,13 @@ static CFX_DIBitmap* DrawPatternBitmap(CPDF_Document* pDoc,
   CFX_Matrix mtPattern2Bitmap = *pObject2Device;
   mtPattern2Bitmap.Concat(mtAdjust);
   CPDF_RenderOptions options;
-  if (!pPattern->m_bColored) {
+  if (!pPattern->colored())
     options.m_ColorMode = RENDER_COLOR_ALPHA;
-  }
+
   flags |= RENDER_FORCE_HALFTONE;
   options.m_Flags = flags;
   CPDF_RenderContext context(pDoc, pCache);
-  context.AppendLayer(pPattern->m_pForm, &mtPattern2Bitmap);
+  context.AppendLayer(pPattern->form(), &mtPattern2Bitmap);
   context.Render(&bitmap_device, &options, nullptr);
   return pBitmap;
 }
@@ -1020,17 +1032,17 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   FX_FLOAT sd = FXSYS_fabs(dCTM.d);
   clip_box.right = clip_box.left + (int32_t)FXSYS_ceil(clip_box.Width() * sa);
   clip_box.bottom = clip_box.top + (int32_t)FXSYS_ceil(clip_box.Height() * sd);
-  CFX_Matrix mtPattern2Device = pPattern->m_Pattern2Form;
+  CFX_Matrix mtPattern2Device = *pPattern->pattern_to_form();
   mtPattern2Device.Concat(*pObj2Device);
   GetScaledMatrix(mtPattern2Device);
   FX_BOOL bAligned = FALSE;
-  if (pPattern->m_BBox.left == 0 && pPattern->m_BBox.bottom == 0 &&
-      pPattern->m_BBox.right == pPattern->m_XStep &&
-      pPattern->m_BBox.top == pPattern->m_YStep &&
+  if (pPattern->bbox().left == 0 && pPattern->bbox().bottom == 0 &&
+      pPattern->bbox().right == pPattern->x_step() &&
+      pPattern->bbox().top == pPattern->y_step() &&
       (mtPattern2Device.IsScaled() || mtPattern2Device.Is90Rotated())) {
     bAligned = TRUE;
   }
-  CFX_FloatRect cell_bbox = pPattern->m_BBox;
+  CFX_FloatRect cell_bbox = pPattern->bbox();
   mtPattern2Device.TransformRect(cell_bbox);
   int width = (int)FXSYS_ceil(cell_bbox.Width());
   int height = (int)FXSYS_ceil(cell_bbox.Height());
@@ -1046,40 +1058,40 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   CFX_FloatRect clip_box_p(clip_box);
   clip_box_p.Transform(&mtDevice2Pattern);
 
-  min_col = (int)FXSYS_ceil((clip_box_p.left - pPattern->m_BBox.right) /
-                            pPattern->m_XStep);
-  max_col = (int)FXSYS_floor((clip_box_p.right - pPattern->m_BBox.left) /
-                             pPattern->m_XStep);
-  min_row = (int)FXSYS_ceil((clip_box_p.bottom - pPattern->m_BBox.top) /
-                            pPattern->m_YStep);
-  max_row = (int)FXSYS_floor((clip_box_p.top - pPattern->m_BBox.bottom) /
-                             pPattern->m_YStep);
+  min_col = (int)FXSYS_ceil((clip_box_p.left - pPattern->bbox().right) /
+                            pPattern->x_step());
+  max_col = (int)FXSYS_floor((clip_box_p.right - pPattern->bbox().left) /
+                             pPattern->x_step());
+  min_row = (int)FXSYS_ceil((clip_box_p.bottom - pPattern->bbox().top) /
+                            pPattern->y_step());
+  max_row = (int)FXSYS_floor((clip_box_p.top - pPattern->bbox().bottom) /
+                             pPattern->y_step());
 
   if (width > clip_box.Width() || height > clip_box.Height() ||
       width * height > clip_box.Width() * clip_box.Height()) {
     CPDF_GraphicStates* pStates = NULL;
-    if (!pPattern->m_bColored) {
+    if (!pPattern->colored())
       pStates = CloneObjStates(pPageObj, bStroke);
-    }
-    CPDF_Dictionary* pFormResource = NULL;
-    if (pPattern->m_pForm->m_pFormDict) {
-      pFormResource = pPattern->m_pForm->m_pFormDict->GetDictBy("Resources");
-    }
+
+    CPDF_Dictionary* pFormResource = nullptr;
+    if (pPattern->form()->m_pFormDict)
+      pFormResource = pPattern->form()->m_pFormDict->GetDictBy("Resources");
+
     for (int col = min_col; col <= max_col; col++)
       for (int row = min_row; row <= max_row; row++) {
         FX_FLOAT orig_x, orig_y;
-        orig_x = col * pPattern->m_XStep;
-        orig_y = row * pPattern->m_YStep;
+        orig_x = col * pPattern->x_step();
+        orig_y = row * pPattern->y_step();
         mtPattern2Device.Transform(orig_x, orig_y);
         CFX_Matrix matrix = *pObj2Device;
         matrix.Translate(orig_x - mtPattern2Device.e,
                          orig_y - mtPattern2Device.f);
         m_pDevice->SaveState();
         CPDF_RenderStatus status;
-        status.Initialize(m_pContext, m_pDevice, NULL, NULL, this, pStates,
-                          &m_Options, pPattern->m_pForm->m_Transparency,
+        status.Initialize(m_pContext, m_pDevice, nullptr, nullptr, this,
+                          pStates, &m_Options, pPattern->form()->m_Transparency,
                           m_bDropObjects, pFormResource);
-        status.RenderObjectList(pPattern->m_pForm, &matrix);
+        status.RenderObjectList(pPattern->form(), &matrix);
         m_pDevice->RestoreState();
       }
     m_pDevice->RestoreState();
@@ -1144,8 +1156,8 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
         start_x = FXSYS_round(mtPattern2Device.e) + col * width - clip_box.left;
         start_y = FXSYS_round(mtPattern2Device.f) + row * height - clip_box.top;
       } else {
-        FX_FLOAT orig_x = col * pPattern->m_XStep;
-        FX_FLOAT orig_y = row * pPattern->m_YStep;
+        FX_FLOAT orig_x = col * pPattern->x_step();
+        FX_FLOAT orig_y = row * pPattern->y_step();
         mtPattern2Device.Transform(orig_x, orig_y);
         start_x = FXSYS_round(orig_x + left_offset) - clip_box.left;
         start_y = FXSYS_round(orig_y + top_offset) - clip_box.top;
@@ -1158,13 +1170,12 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
         uint32_t* dest_buf =
             (uint32_t*)(screen.GetBuffer() + screen.GetPitch() * start_y +
                         start_x * 4);
-        if (pPattern->m_bColored) {
+        if (pPattern->colored())
           *dest_buf = *src_buf;
-        } else {
+        else
           *dest_buf = (*(uint8_t*)src_buf << 24) | (fill_argb & 0xffffff);
-        }
       } else {
-        if (pPattern->m_bColored) {
+        if (pPattern->colored()) {
           screen.CompositeBitmap(start_x, start_y, width, height,
                                  pPatternBitmap, 0, 0);
         } else {
@@ -1179,36 +1190,35 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   m_pDevice->RestoreState();
   delete pPatternBitmap;
 }
+
 void CPDF_RenderStatus::DrawPathWithPattern(const CPDF_PathObject* pPathObj,
                                             const CFX_Matrix* pObj2Device,
                                             CPDF_Color* pColor,
                                             FX_BOOL bStroke) {
   CPDF_Pattern* pattern = pColor->GetPattern();
-  if (!pattern) {
+  if (!pattern)
     return;
-  }
-  if (pattern->m_PatternType == CPDF_Pattern::TILING) {
-    DrawTilingPattern(static_cast<CPDF_TilingPattern*>(pattern), pPathObj,
-                      pObj2Device, bStroke);
-  } else {
-    DrawShadingPattern(static_cast<CPDF_ShadingPattern*>(pattern), pPathObj,
-                       pObj2Device, bStroke);
-  }
+
+  if (CPDF_TilingPattern* pTilingPattern = pattern->AsTilingPattern())
+    DrawTilingPattern(pTilingPattern, pPathObj, pObj2Device, bStroke);
+  else if (CPDF_ShadingPattern* pShadingPattern = pattern->AsShadingPattern())
+    DrawShadingPattern(pShadingPattern, pPathObj, pObj2Device, bStroke);
 }
+
 void CPDF_RenderStatus::ProcessPathPattern(const CPDF_PathObject* pPathObj,
                                            const CFX_Matrix* pObj2Device,
                                            int& filltype,
                                            FX_BOOL& bStroke) {
   if (filltype) {
     CPDF_Color& FillColor = *pPathObj->m_ColorState.GetFillColor();
-    if (FillColor.m_pCS && FillColor.m_pCS->GetFamily() == PDFCS_PATTERN) {
+    if (FillColor.IsPattern()) {
       DrawPathWithPattern(pPathObj, pObj2Device, &FillColor, FALSE);
       filltype = 0;
     }
   }
   if (bStroke) {
     CPDF_Color& StrokeColor = *pPathObj->m_ColorState.GetStrokeColor();
-    if (StrokeColor.m_pCS && StrokeColor.m_pCS->GetFamily() == PDFCS_PATTERN) {
+    if (StrokeColor.IsPattern()) {
       DrawPathWithPattern(pPathObj, pObj2Device, &StrokeColor, TRUE);
       bStroke = FALSE;
     }

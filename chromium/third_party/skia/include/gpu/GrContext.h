@@ -43,7 +43,6 @@ class GrTextBlobCache;
 class GrTextContext;
 class GrTextureParams;
 class GrVertexBuffer;
-class GrStrokeInfo;
 class GrSwizzle;
 class SkTraceMemoryDump;
 
@@ -192,7 +191,20 @@ public:
      *
      * @return a draw context
      */
-    GrDrawContext* drawContext(GrRenderTarget* rt, const SkSurfaceProps* surfaceProps = NULL);
+    sk_sp<GrDrawContext> drawContext(sk_sp<GrRenderTarget> rt, const SkSurfaceProps* = nullptr);
+
+    /**
+     * Create both a GrRenderTarget and a matching GrDrawContext to wrap it.
+     * We guarantee that "asTexture" will succeed for drawContexts created
+     * via this entry point.
+     */
+    sk_sp<GrDrawContext> newDrawContext(SkBackingFit fit, 
+                                        int width, int height,
+                                        GrPixelConfig config,
+                                        int sampleCnt = 0,
+                                        GrSurfaceOrigin origin = kDefault_GrSurfaceOrigin,
+                                        const SkSurfaceProps* surfaceProps = nullptr,
+                                        SkBudgeted = SkBudgeted::kYes);
 
     ///////////////////////////////////////////////////////////////////////////
     // Misc.
@@ -283,8 +295,16 @@ public:
                             uint32_t pixelOpsFlags = 0);
 
     /**
+     * Copies contents of src to dst, while applying a gamma curve. Fails if the two surfaces
+     * are not identically sized.
+     * @param dst           the surface to copy to.
+     * @param src           the texture to copy from.
+     * @param gamma         the gamma value to apply.
+     */
+    bool applyGamma(GrRenderTarget* dst, GrTexture* src, SkScalar gamma);
+
+    /**
      * Copies a rectangle of texels from src to dst.
-     * bounds.
      * @param dst           the surface to copy to.
      * @param src           the surface to copy from.
      * @param srcRect       the rectangle of the src that should be copied.

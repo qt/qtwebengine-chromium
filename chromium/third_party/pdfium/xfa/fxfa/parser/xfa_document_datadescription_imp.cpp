@@ -5,7 +5,6 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -30,7 +29,7 @@ class CXFA_TraverseStrategy_DDGroup {
 };
 void XFA_DataDescription_UpdateDataRelation(CXFA_Node* pDataNode,
                                             CXFA_Node* pDataDescriptionNode) {
-  FXSYS_assert(pDataDescriptionNode);
+  ASSERT(pDataDescriptionNode);
   for (CXFA_Node* pDataChild = pDataNode->GetNodeItem(XFA_NODEITEM_FirstChild);
        pDataChild;
        pDataChild = pDataChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
@@ -70,7 +69,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
     CXFA_Document* pDocument,
     CXFA_Node* pDataParent,
     XFA_ELEMENT eNodeType,
-    const CFX_WideStringC& wsName) {
+    const CFX_WideString& wsName) {
   if (!pDataParent) {
     return NULL;
   }
@@ -78,11 +77,11 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
   if (!pParentDDNode) {
     CXFA_Node* pDataNode =
         pDocument->CreateNode(XFA_XDPPACKET_Datasets, eNodeType);
-    FXSYS_assert(pDataNode);
+    ASSERT(pDataNode);
     pDataNode->SetCData(XFA_ATTRIBUTE_Name, wsName);
     pDataNode->CreateXMLMappingNode();
     pDataParent->InsertChild(pDataNode);
-    pDataNode->SetFlag(XFA_NODEFLAG_Initialized, TRUE, FALSE);
+    pDataNode->SetFlag(XFA_NODEFLAG_Initialized, false);
     return pDataNode;
   } else {
     CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_DDGroup>
@@ -99,7 +98,8 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
           continue;
         }
       }
-      CXFA_Node* pDDNode = pDDGroupNode->GetFirstChildByName(wsName);
+      CXFA_Node* pDDNode =
+          pDDGroupNode->GetFirstChildByName(wsName.AsStringC());
       if (!pDDNode) {
         continue;
       }
@@ -108,7 +108,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
       }
       CXFA_Node* pDataNode =
           pDocument->CreateNode(XFA_XDPPACKET_Datasets, eNodeType);
-      FXSYS_assert(pDataNode);
+      ASSERT(pDataNode);
       pDataNode->SetCData(XFA_ATTRIBUTE_Name, wsName);
       pDataNode->CreateXMLMappingNode();
       if (eNodeType == XFA_ELEMENT_DataValue &&
@@ -118,7 +118,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
       }
       pDataParent->InsertChild(pDataNode);
       pDataNode->SetDataDescriptionNode(pDDNode);
-      pDataNode->SetFlag(XFA_NODEFLAG_Initialized, TRUE, FALSE);
+      pDataNode->SetFlag(XFA_NODEFLAG_Initialized, false);
       return pDataNode;
     }
     return NULL;

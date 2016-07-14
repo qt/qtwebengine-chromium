@@ -15,7 +15,7 @@
 #include "glsl/GrGLSLPrimitiveProcessor.h"
 #include "glsl/GrGLSLProgramDataManager.h"
 #include "glsl/GrGLSLUniformHandler.h"
-#include "glsl/GrGLSLTextureSampler.h"
+#include "glsl/GrGLSLSampler.h"
 #include "glsl/GrGLSLVertexShaderBuilder.h"
 #include "glsl/GrGLSLXferProcessor.h"
 
@@ -40,6 +40,10 @@ public:
     const GrProgramDesc::KeyHeader& header() const { return fDesc.header(); }
 
     void appendUniformDecls(GrShaderFlags visibility, SkString*) const;
+
+    typedef GrGLSLUniformHandler::SamplerHandle SamplerHandle;
+
+    const GrGLSLSampler& getSampler(SamplerHandle handle) const;
 
     // Handles for program uniforms (other than per-effect uniforms)
     struct BuiltinUniformHandles {
@@ -104,8 +108,6 @@ protected:
 
     void finalizeShaders();
 
-    SkTArray<UniformHandle> fSamplerUniforms;
-
 private:
     // reset is called by program creator between each processor's emit code.  It increments the
     // stage offset for variable name mangling, and also ensures verfication variables in the
@@ -146,8 +148,15 @@ private:
                                 const GrGLSLExpr4& coverageIn,
                                 bool ignoresCoverage,
                                 GrPixelLocalStorageState plsState);
+
     void emitSamplers(const GrProcessor& processor,
-                      GrGLSLTextureSampler::TextureSamplerArray* outSamplers);
+                      SkTArray<SamplerHandle>* outTexSamplers,
+                      SkTArray<SamplerHandle>* outBufferSamplers);
+    void emitSampler(GrSLType samplerType,
+                     GrPixelConfig,
+                     const char* name,
+                     GrShaderFlags visibility,
+                     SkTArray<SamplerHandle>* outSamplers);
     void emitFSOutputSwizzle(bool hasSecondaryOutput);
     bool checkSamplerCounts();
 

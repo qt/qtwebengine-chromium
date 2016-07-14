@@ -18,7 +18,7 @@
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/Constants.h"
-#include "libANGLE/Data.h"
+#include "libANGLE/ContextState.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/HandleAllocator.h"
 #include "libANGLE/VertexAttribute.h"
@@ -26,7 +26,8 @@
 
 namespace rx
 {
-class Renderer;
+class ContextImpl;
+class EGLImplFactory;
 }
 
 namespace egl
@@ -57,9 +58,9 @@ class TransformFeedback;
 class Context final : public ValidationContext
 {
   public:
-    Context(const egl::Config *config,
+    Context(rx::EGLImplFactory *implFactory,
+            const egl::Config *config,
             const Context *shareContext,
-            rx::Renderer *renderer,
             const egl::AttributeMap &attribs);
 
     virtual ~Context();
@@ -386,7 +387,12 @@ class Context final : public ValidationContext
     void pushGroupMarker(GLsizei length, const char *marker);
     void popGroupMarker();
 
-    void recordError(const Error &error) override;
+    void bindUniformLocation(GLuint program, GLint location, const GLchar *name);
+
+    // CHROMIUM_framebuffer_mixed_samples
+    void setCoverageModulation(GLenum components);
+
+    void handleError(const Error &error) override;
 
     GLenum getError();
     GLenum getResetStatus();
@@ -402,9 +408,8 @@ class Context final : public ValidationContext
     const std::string &getExtensionString(size_t idx) const;
     size_t getExtensionStringCount() const;
 
-    rx::Renderer *getRenderer() { return mRenderer; }
-
     State &getState() { return mState; }
+    rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
 
   private:
     void syncRendererState();
@@ -430,6 +435,8 @@ class Context final : public ValidationContext
 
     void initCaps(GLuint clientVersion);
 
+    std::unique_ptr<rx::ContextImpl> mImplementation;
+
     // Caps to use for validation
     Caps mCaps;
     TextureCapsMap mTextureCaps;
@@ -439,7 +446,6 @@ class Context final : public ValidationContext
     // Shader compiler
     Compiler *mCompiler;
 
-    rx::Renderer *const mRenderer;
     State mState;
 
     int mClientVersion;

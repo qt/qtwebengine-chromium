@@ -229,7 +229,7 @@ int VoEBaseImpl::Init(AudioDeviceModule* external_adm,
     return -1;
 #else
     // Create the internal ADM implementation.
-    shared_->set_audio_device(AudioDeviceModuleImpl::Create(
+    shared_->set_audio_device(AudioDeviceModule::Create(
         VoEId(shared_->instance_id(), -1), shared_->audio_device_layer()));
 
     if (shared_->audio_device() == nullptr) {
@@ -620,11 +620,14 @@ int32_t VoEBaseImpl::StopPlayout() {
 }
 
 int32_t VoEBaseImpl::StartSend() {
-  if (!shared_->audio_device()->Recording()) {
+  if (!shared_->audio_device()->RecordingIsInitialized() &&
+      !shared_->audio_device()->Recording()) {
     if (shared_->audio_device()->InitRecording() != 0) {
       LOG_F(LS_ERROR) << "Failed to initialize recording";
       return -1;
     }
+  }
+  if (!shared_->audio_device()->Recording()) {
     if (shared_->audio_device()->StartRecording() != 0) {
       LOG_F(LS_ERROR) << "Failed to start recording";
       return -1;

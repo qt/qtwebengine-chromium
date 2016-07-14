@@ -74,6 +74,7 @@ class UnsignalledSsrcHandler {
   };
   virtual Action OnUnsignalledSsrc(WebRtcVideoChannel2* channel,
                                    uint32_t ssrc) = 0;
+  virtual ~UnsignalledSsrcHandler() = default;
 };
 
 // TODO(pbos): Remove, use external handlers only.
@@ -86,6 +87,7 @@ class DefaultUnsignalledSsrcHandler : public UnsignalledSsrcHandler {
   rtc::VideoSinkInterface<VideoFrame>* GetDefaultSink() const;
   void SetDefaultSink(VideoMediaChannel* channel,
                       rtc::VideoSinkInterface<VideoFrame>* sink);
+  virtual ~DefaultUnsignalledSsrcHandler() = default;
 
  private:
   uint32_t default_recv_ssrc_;
@@ -96,7 +98,7 @@ class DefaultUnsignalledSsrcHandler : public UnsignalledSsrcHandler {
 class WebRtcVideoEngine2 {
  public:
   WebRtcVideoEngine2();
-  ~WebRtcVideoEngine2();
+  virtual ~WebRtcVideoEngine2();
 
   // Basic video engine implementation.
   void Init();
@@ -145,9 +147,13 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
 
   bool SetSendParameters(const VideoSendParameters& params) override;
   bool SetRecvParameters(const VideoRecvParameters& params) override;
-  webrtc::RtpParameters GetRtpParameters(uint32_t ssrc) const override;
-  bool SetRtpParameters(uint32_t ssrc,
-                        const webrtc::RtpParameters& parameters) override;
+  webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const override;
+  bool SetRtpSendParameters(uint32_t ssrc,
+                            const webrtc::RtpParameters& parameters) override;
+  webrtc::RtpParameters GetRtpReceiveParameters(uint32_t ssrc) const override;
+  bool SetRtpReceiveParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) override;
   bool GetSendCodec(VideoCodec* send_codec) override;
   bool SetSend(bool send) override;
   bool SetVideoSend(uint32_t ssrc,
@@ -161,7 +167,9 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
   bool SetSink(uint32_t ssrc,
                rtc::VideoSinkInterface<VideoFrame>* sink) override;
   bool GetStats(VideoMediaInfo* info) override;
-  bool SetCapturer(uint32_t ssrc, VideoCapturer* capturer) override;
+  void SetSource(
+      uint32_t ssrc,
+      rtc::VideoSourceInterface<cricket::VideoFrame>* source) override;
 
   void OnPacketReceived(rtc::CopyOnWriteBuffer* packet,
                         const rtc::PacketTime& packet_time) override;
@@ -169,7 +177,7 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
                       const rtc::PacketTime& packet_time) override;
   void OnReadyToSend(bool ready) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
-                             const NetworkRoute& network_route) override;
+                             const rtc::NetworkRoute& network_route) override;
   void SetInterface(NetworkInterface* iface) override;
 
   // Implemented for VideoMediaChannelTest.
@@ -217,8 +225,6 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
   bool GetChangedRecvParameters(const VideoRecvParameters& params,
                                 ChangedRecvParameters* changed_params) const;
 
-  bool MuteStream(uint32_t ssrc, bool mute);
-
   void SetMaxSendBandwidth(int bps);
   void SetOptions(uint32_t ssrc, const VideoOptions& options);
 
@@ -235,7 +241,7 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
   static std::string CodecSettingsVectorToString(
       const std::vector<VideoCodecSettings>& codecs);
 
-  // Wrapper for the sender part, this is where the capturer is connected and
+  // Wrapper for the sender part, this is where the source is connected and
   // frames are then converted from cricket frames to webrtc frames.
   class WebRtcVideoSendStream
       : public rtc::VideoSinkInterface<cricket::VideoFrame>,
@@ -261,9 +267,8 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
     webrtc::RtpParameters GetRtpParameters() const;
 
     void OnFrame(const cricket::VideoFrame& frame) override;
-    bool SetCapturer(VideoCapturer* capturer);
-    void MuteStream(bool mute);
-    bool DisconnectCapturer();
+    void SetSource(rtc::VideoSourceInterface<cricket::VideoFrame>* source);
+    void DisconnectSource();
 
     void SetSend(bool send);
 
@@ -365,12 +370,12 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
     webrtc::Call* const call_;
     rtc::VideoSinkWants sink_wants_;
     // Counter used for deciding if the video resolution is currently
-    // restricted by CPU usage. It is reset if |capturer_| is changed.
+    // restricted by CPU usage. It is reset if |source_| is changed.
     int cpu_restricted_counter_;
     // Total number of times resolution as been requested to be changed due to
     // CPU adaptation.
     int number_of_cpu_adapt_changes_;
-    VideoCapturer* capturer_;
+    rtc::VideoSourceInterface<cricket::VideoFrame>* source_;
     WebRtcVideoEncoderFactory* const external_encoder_factory_
         GUARDED_BY(lock_);
 
@@ -381,6 +386,7 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
     // entire channel.
     VideoSendStreamParameters parameters_ GUARDED_BY(lock_);
     // Contains settings that are unique for each stream, such as max_bitrate.
+    // Does *not* contain codecs, however.
     // TODO(skvlad): Move ssrcs_ and ssrc_groups_ into rtp_parameters_.
     // TODO(skvlad): Combine parameters_ and rtp_parameters_ once we have only
     // one stream per MediaChannel.
@@ -393,14 +399,13 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
         webrtc::kVideoRotation_0;
 
     bool sending_ GUARDED_BY(lock_);
-    bool muted_ GUARDED_BY(lock_);
 
     // The timestamp of the first frame received
     // Used to generate the timestamps of subsequent frames
-    int64_t first_frame_timestamp_ms_ GUARDED_BY(lock_);
+    rtc::Optional<int64_t> first_frame_timestamp_ms_ GUARDED_BY(lock_);
 
     // The timestamp of the last frame received
-    // Used to generate timestamp for the black frame when capturer is removed
+    // Used to generate timestamp for the black frame when source is removed
     int64_t last_frame_timestamp_ms_ GUARDED_BY(lock_);
   };
 
@@ -417,7 +422,8 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
         const webrtc::VideoReceiveStream::Config& config,
         WebRtcVideoDecoderFactory* external_decoder_factory,
         bool default_stream,
-        const std::vector<VideoCodecSettings>& recv_codecs);
+        const std::vector<VideoCodecSettings>& recv_codecs,
+        bool red_disabled_by_remote_side);
     ~WebRtcVideoReceiveStream();
 
     const std::vector<uint32_t>& GetSsrcs() const;
@@ -436,6 +442,14 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
     void SetSink(rtc::VideoSinkInterface<cricket::VideoFrame>* sink);
 
     VideoReceiverInfo GetVideoReceiverInfo();
+
+    // Used to disable RED/FEC when the remote description doesn't contain those
+    // codecs. This is needed to be able to work around an RTX bug which is only
+    // happening if the remote side doesn't send RED, but the local side is
+    // configured to receive RED.
+    // TODO(holmer): Remove this after a couple of Chrome versions, M53-54
+    // time frame.
+    void SetFecDisabledRemotely(bool disable);
 
    private:
     struct AllocatedDecoder {
@@ -467,6 +481,7 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
     webrtc::VideoReceiveStream* stream_;
     const bool default_stream_;
     webrtc::VideoReceiveStream::Config config_;
+    bool red_disabled_by_remote_side_;
 
     WebRtcVideoDecoderFactory* const external_decoder_factory_;
     std::vector<AllocatedDecoder> allocated_decoders_;
@@ -537,6 +552,7 @@ class WebRtcVideoChannel2 : public VideoMediaChannel, public webrtc::Transport {
   VideoSendParameters send_params_;
   VideoOptions default_send_options_;
   VideoRecvParameters recv_params_;
+  bool red_disabled_by_remote_side_;
 };
 
 }  // namespace cricket

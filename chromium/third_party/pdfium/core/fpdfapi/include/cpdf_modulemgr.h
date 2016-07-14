@@ -9,19 +9,17 @@
 
 #include <memory>
 
-#include "core/fpdfapi/ipdf_pagemodule.h"
 #include "core/fxcrt/include/fx_basic.h"
 
 class CCodec_ModuleMgr;
-class ICodec_FaxModule;
-class ICodec_FlateModule;
-class ICodec_IccModule;
-class ICodec_Jbig2Module;
-class ICodec_JpegModule;
-class ICodec_JpxModule;
+class CCodec_FaxModule;
+class CCodec_FlateModule;
+class CCodec_IccModule;
+class CCodec_Jbig2Module;
+class CCodec_JpegModule;
+class CCodec_JpxModule;
 
-class IPDF_PageModule;
-class IPDF_RenderModule;
+class CPDF_PageModule;
 
 class CPDF_ModuleMgr {
  public:
@@ -34,22 +32,20 @@ class CPDF_ModuleMgr {
   CCodec_ModuleMgr* GetCodecModule() { return m_pCodecModule; }
 
   void InitPageModule();
-  void InitRenderModule();
 
-  IPDF_RenderModule* GetRenderModule() const { return m_pRenderModule.get(); }
-  IPDF_PageModule* GetPageModule() const { return m_pPageModule.get(); }
+  CPDF_PageModule* GetPageModule() const { return m_pPageModule.get(); }
 
   void LoadEmbeddedGB1CMaps();
   void LoadEmbeddedCNS1CMaps();
   void LoadEmbeddedJapan1CMaps();
   void LoadEmbeddedKorea1CMaps();
 
-  ICodec_FaxModule* GetFaxModule();
-  ICodec_JpegModule* GetJpegModule();
-  ICodec_JpxModule* GetJpxModule();
-  ICodec_Jbig2Module* GetJbig2Module();
-  ICodec_IccModule* GetIccModule();
-  ICodec_FlateModule* GetFlateModule();
+  CCodec_FaxModule* GetFaxModule();
+  CCodec_JpegModule* GetJpegModule();
+  CCodec_JpxModule* GetJpxModule();
+  CCodec_Jbig2Module* GetJbig2Module();
+  CCodec_IccModule* GetIccModule();
+  CCodec_FlateModule* GetFlateModule();
 
   void SetPrivateData(void* module_id,
                       void* pData,
@@ -62,8 +58,7 @@ class CPDF_ModuleMgr {
   ~CPDF_ModuleMgr();
 
   CCodec_ModuleMgr* m_pCodecModule;
-  std::unique_ptr<IPDF_RenderModule> m_pRenderModule;
-  std::unique_ptr<IPDF_PageModule> m_pPageModule;
+  std::unique_ptr<CPDF_PageModule> m_pPageModule;
   CFX_PrivateData m_privateData;
 };
 

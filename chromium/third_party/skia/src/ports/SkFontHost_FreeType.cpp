@@ -58,8 +58,6 @@
 //#define SK_FONTHOST_FREETYPE_RUNTIME_VERSION
 //#define SK_GAMMA_APPLY_TO_A8
 
-using namespace skia_advanced_typeface_metrics_utils;
-
 static bool isLCD(const SkScalerContext::Rec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat;
 }
@@ -181,7 +179,7 @@ static void unref_ft_library() {
 
 class SkScalerContext_FreeType : public SkScalerContext_FreeType_Base {
 public:
-    SkScalerContext_FreeType(SkTypeface*, const SkDescriptor* desc);
+    SkScalerContext_FreeType(SkTypeface*, const SkScalerContextEffects&, const SkDescriptor* desc);
     virtual ~SkScalerContext_FreeType();
 
     bool success() const {
@@ -434,23 +432,15 @@ static bool GetLetterCBox(FT_Face face, char letter, FT_BBox* bbox) {
     return true;
 }
 
-static bool getWidthAdvance(FT_Face face, int gId, int16_t* data) {
-    FT_Fixed advance = 0;
-    if (FT_Get_Advances(face, gId, 1, FT_LOAD_NO_SCALE, &advance)) {
-        return false;
-    }
-    SkASSERT(data);
-    *data = advance;
-    return true;
-}
-
 static void populate_glyph_to_unicode(FT_Face& face, SkTDArray<SkUnichar>* glyphToUnicode) {
-    glyphToUnicode->setCount(face->num_glyphs);
-    sk_bzero(glyphToUnicode->begin(), sizeof((*glyphToUnicode)[0]) * face->num_glyphs);
+    FT_Long numGlyphs = face->num_glyphs;
+    glyphToUnicode->setCount(SkToInt(numGlyphs));
+    sk_bzero(glyphToUnicode->begin(), sizeof((*glyphToUnicode)[0]) * numGlyphs);
 
     FT_UInt glyphIndex;
     SkUnichar charCode = FT_Get_First_Char(face, &glyphIndex);
     while (glyphIndex) {
+        SkASSERT(glyphIndex < SkToUInt(numGlyphs));
         (*glyphToUnicode)[glyphIndex] = charCode;
         charCode = FT_Get_Next_Char(face, charCode, &glyphIndex);
     }
@@ -589,13 +579,14 @@ SkAdvancedTypefaceMetrics* SkTypeface_FreeType::onGetAdvancedTypefaceMetrics(
 
     if (perGlyphInfo & kHAdvance_PerGlyphInfo) {
         if (FT_IS_FIXED_WIDTH(face)) {
-            appendRange(&info->fGlyphWidths, 0);
+            SkAdvancedTypefaceMetrics::WidthRange range(0);
             int16_t advance = face->max_advance_width;
-            info->fGlyphWidths->fAdvance.append(1, &advance);
-            finishRange(info->fGlyphWidths.get(), 0,
-                        SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            range.fAdvance.append(1, &advance);
+            SkAdvancedTypefaceMetrics::FinishRange(
+                    &range, 0, SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            info->fGlyphWidths.emplace_back(std::move(range));
         } else if (!cid) {
-            appendRange(&info->fGlyphWidths, 0);
+            SkAdvancedTypefaceMetrics::WidthRange range(0);
             // So as to not blow out the stack, get advances in batches.
             for (int gID = 0; gID < face->num_glyphs; gID += 128) {
                 FT_Fixed advances[128];
@@ -606,18 +597,28 @@ SkAdvancedTypefaceMetrics* SkTypeface_FreeType::onGetAdvancedTypefaceMetrics(
                 FT_Get_Advances(face, gID, advanceCount, FT_LOAD_NO_SCALE, advances);
                 for (int i = 0; i < advanceCount; i++) {
                     int16_t advance = advances[i];
-                    info->fGlyphWidths->fAdvance.append(1, &advance);
+                    range.fAdvance.append(1, &advance);
                 }
             }
-            finishRange(info->fGlyphWidths.get(), face->num_glyphs - 1,
-                        SkAdvancedTypefaceMetrics::WidthRange::kRange);
+            SkAdvancedTypefaceMetrics::FinishRange(
+                    &range, face->num_glyphs - 1,
+                    SkAdvancedTypefaceMetrics::WidthRange::kRange);
+            info->fGlyphWidths.emplace_back(std::move(range));
         } else {
-            info->fGlyphWidths.reset(
-                getAdvanceData(face,
-                               face->num_glyphs,
-                               glyphIDs,
-                               glyphIDsCount,
-                               &getWidthAdvance));
+            info->setGlyphWidths(
+                face->num_glyphs,
+                glyphIDs,
+                glyphIDsCount,
+                SkAdvancedTypefaceMetrics::GetAdvance([face](int gId, int16_t* data) {
+                    FT_Fixed advance = 0;
+                    if (FT_Get_Advances(face, gId, 1, FT_LOAD_NO_SCALE, &advance)) {
+                        return false;
+                    }
+                    SkASSERT(data);
+                    *data = advance;
+                    return true;
+                })
+            );
         }
     }
 
@@ -663,10 +664,10 @@ static bool isAxisAligned(const SkScalerContext::Rec& rec) {
             bothZero(rec.fPost2x2[0][0], rec.fPost2x2[1][1]));
 }
 
-SkScalerContext* SkTypeface_FreeType::onCreateScalerContext(
-                                               const SkDescriptor* desc) const {
+SkScalerContext* SkTypeface_FreeType::onCreateScalerContext(const SkScalerContextEffects& effects,
+                                                            const SkDescriptor* desc) const {
     SkScalerContext_FreeType* c =
-            new SkScalerContext_FreeType(const_cast<SkTypeface_FreeType*>(this), desc);
+            new SkScalerContext_FreeType(const_cast<SkTypeface_FreeType*>(this), effects, desc);
     if (!c->success()) {
         delete c;
         c = nullptr;
@@ -714,7 +715,8 @@ void SkTypeface_FreeType::onFilterRec(SkScalerContextRec* rec) const {
 
 #ifndef SK_GAMMA_APPLY_TO_A8
     if (!isLCD(*rec)) {
-      rec->ignorePreBlend();
+        // SRGBTODO: Is this correct? Do we want contrast boost?
+        rec->ignorePreBlend();
     }
 #endif
 }
@@ -789,8 +791,10 @@ static FT_Int chooseBitmapStrike(FT_Face face, FT_F26Dot6 scaleY) {
     return chosenStrikeIndex;
 }
 
-SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface, const SkDescriptor* desc)
-    : SkScalerContext_FreeType_Base(typeface, desc)
+SkScalerContext_FreeType::SkScalerContext_FreeType(SkTypeface* typeface,
+                                                   const SkScalerContextEffects& effects,
+                                                   const SkDescriptor* desc)
+    : SkScalerContext_FreeType_Base(typeface, effects, desc)
     , fFace(nullptr)
     , fFTSize(nullptr)
     , fStrikeIndex(-1)
@@ -1521,14 +1525,9 @@ int SkTypeface_FreeType::onCharsToGlyphs(const void* chars, Encoding encoding,
 }
 
 int SkTypeface_FreeType::onCountGlyphs() const {
-    // we cache this value, using -1 as a sentinel for "not computed"
-    if (fGlyphCount < 0) {
-        AutoFTAccess fta(this);
-        FT_Face face = fta.face();
-        // if the face failed, we still assign a non-negative value
-        fGlyphCount = face ? face->num_glyphs : 0;
-    }
-    return fGlyphCount;
+    AutoFTAccess fta(this);
+    FT_Face face = fta.face();
+    return face ? face->num_glyphs : 0;
 }
 
 SkTypeface::LocalizedStrings* SkTypeface_FreeType::onCreateFamilyNameIterator() const {
@@ -1691,6 +1690,11 @@ bool SkTypeface_FreeType::Scanner::scanFont(
     if (os2 && os2->version != 0xffff) {
         weight = os2->usWeightClass;
         width = os2->usWidthClass;
+
+        // OS/2::fsSelection bit 9 indicates oblique.
+        if (SkToBool(os2->fsSelection & (1u << 9))) {
+            slant = SkFontStyle::kOblique_Slant;
+        }
     } else if (0 == FT_Get_PS_Font_Info(face, &psFontInfo) && psFontInfo.weight) {
         static const struct {
             char const * const name;

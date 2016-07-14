@@ -7,11 +7,26 @@
 #ifndef XFA_FWL_CORE_FWL_NOTEIMP_H_
 #define XFA_FWL_CORE_FWL_NOTEIMP_H_
 
-#include "xfa/fwl/core/ifwl_notedriver.h"
-#include "xfa/fwl/core/ifwl_noteloop.h"
+#include <unordered_map>
+
+#include "xfa/fwl/core/cfwl_event.h"
+#include "xfa/fwl/core/cfwl_message.h"
+#include "xfa/fwl/core/fwl_error.h"
+#include "xfa/fwl/core/ifwl_widget.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
 
+enum FWL_KeyFlag {
+  FWL_KEYFLAG_Ctrl = 1 << 0,
+  FWL_KEYFLAG_Alt = 1 << 1,
+  FWL_KEYFLAG_Shift = 1 << 2,
+  FWL_KEYFLAG_Command = 1 << 3,
+  FWL_KEYFLAG_LButton = 1 << 4,
+  FWL_KEYFLAG_RButton = 1 << 5,
+  FWL_KEYFLAG_MButton = 1 << 6
+};
+
 class CFWL_CoreToolTipDP;
+class CFWL_EventTarget;
 class CFWL_MsgActivate;
 class CFWL_MsgDeactivate;
 class CFWL_MsgDropFiles;
@@ -22,24 +37,21 @@ class CFWL_MsgMouseWheel;
 class CFWL_MsgSetFocus;
 class CFWL_MsgSize;
 class CFWL_MsgWindowMove;
+class CFWL_TargetImp;
 class CFWL_ToolTipImp;
 class CFWL_WidgetImp;
 class IFWL_ToolTipTarget;
 
-class CFWL_NoteLoop : public IFWL_NoteLoop {
+class CFWL_NoteLoop {
  public:
-  CFWL_NoteLoop(CFWL_WidgetImp* pForm = NULL);
+  CFWL_NoteLoop(CFWL_WidgetImp* pForm = nullptr);
+  ~CFWL_NoteLoop() {}
 
-  // IFWL_NoteLoop:
-  ~CFWL_NoteLoop() override {}
-  FX_BOOL PreProcessMessage(CFWL_Message* pMessage) override;
-  FWL_ERR Idle(int32_t count) override;
-
+  FWL_Error Idle(int32_t count);
   CFWL_WidgetImp* GetForm();
   FX_BOOL ContinueModal();
-  FWL_ERR EndModalLoop();
-  FX_BOOL TranslateAccelerator(CFWL_Message* pMessage);
-  FWL_ERR SetMainForm(CFWL_WidgetImp* pForm);
+  FWL_Error EndModalLoop();
+  FWL_Error SetMainForm(CFWL_WidgetImp* pForm);
 
  protected:
   void GenerateCommondEvent(uint32_t dwCommand);
@@ -48,40 +60,35 @@ class CFWL_NoteLoop : public IFWL_NoteLoop {
   FX_BOOL m_bContinueModal;
 };
 
-class CFWL_NoteDriver : public IFWL_NoteDriver {
+class CFWL_NoteDriver {
  public:
   CFWL_NoteDriver();
-  ~CFWL_NoteDriver() override;
+  ~CFWL_NoteDriver();
 
-  // IFWL_NoteDriver:
-  FX_BOOL SendNote(CFWL_Note* pNote) override;
-  FWL_ERR RegisterEventTarget(IFWL_Widget* pListener,
-                              IFWL_Widget* pEventSource = NULL,
-                              uint32_t dwFilter = FWL_EVENT_ALL_MASK) override;
-  FWL_ERR UnregisterEventTarget(IFWL_Widget* pListener) override;
-  void ClearEventTargets(FX_BOOL bRemoveAll) override;
-  int32_t GetQueueMaxSize() const override;
-  FWL_ERR SetQueueMaxSize(const int32_t size) override;
-  IFWL_NoteThread* GetOwnerThread() const override;
-  FWL_ERR PushNoteLoop(IFWL_NoteLoop* pNoteLoop) override;
-  IFWL_NoteLoop* PopNoteLoop() override;
-  IFWL_Widget* GetFocus() override;
-  FX_BOOL SetFocus(IFWL_Widget* pFocus, FX_BOOL bNotify = FALSE) override;
-  void SetGrab(IFWL_Widget* pGrab, FX_BOOL bSet) override;
-  FWL_ERR Run() override;
+  void SendEvent(CFWL_Event* pNote);
+  FWL_Error RegisterEventTarget(IFWL_Widget* pListener,
+                                IFWL_Widget* pEventSource = nullptr,
+                                uint32_t dwFilter = FWL_EVENT_ALL_MASK);
+  FWL_Error UnregisterEventTarget(IFWL_Widget* pListener);
+  void ClearEventTargets(FX_BOOL bRemoveAll);
+  IFWL_App* GetOwnerApp() const;
+  FWL_Error PushNoteLoop(CFWL_NoteLoop* pNoteLoop);
+  CFWL_NoteLoop* PopNoteLoop();
+  IFWL_Widget* GetFocus();
+  FX_BOOL SetFocus(IFWL_Widget* pFocus, FX_BOOL bNotify = FALSE);
+  void SetGrab(IFWL_Widget* pGrab, FX_BOOL bSet);
+  FWL_Error Run();
 
   IFWL_Widget* GetHover();
   void SetHover(IFWL_Widget* pHover);
   void NotifyTargetHide(IFWL_Widget* pNoteTarget);
   void NotifyTargetDestroy(IFWL_Widget* pNoteTarget);
-  void NotifyFullScreenMode(IFWL_Widget* pNoteTarget, FX_BOOL bFullScreen);
-  FWL_ERR RegisterForm(CFWL_WidgetImp* pForm);
-  FWL_ERR UnRegisterForm(CFWL_WidgetImp* pForm);
+  FWL_Error RegisterForm(CFWL_WidgetImp* pForm);
+  FWL_Error UnRegisterForm(CFWL_WidgetImp* pForm);
   FX_BOOL QueueMessage(CFWL_Message* pMessage);
   FX_BOOL UnqueueMessage(CFWL_NoteLoop* pNoteLoop);
   CFWL_NoteLoop* GetTopLoop();
   int32_t CountLoop();
-  void SetHook(FWLMessageHookCallback callback, void* info);
   FX_BOOL ProcessMessage(CFWL_Message* pMessage);
 
  protected:
@@ -101,22 +108,16 @@ class CFWL_NoteDriver : public IFWL_NoteDriver {
   FX_BOOL IsValidMessage(CFWL_Message* pMessage);
   IFWL_Widget* GetMessageForm(IFWL_Widget* pDstTarget);
   void ClearInvalidEventTargets(FX_BOOL bRemoveAll);
-  CFX_PtrArray m_forms;
-  CFX_PtrArray m_noteQueue;
-  CFX_PtrArray m_noteLoopQueue;
-  CFX_MapPtrToPtr m_eventTargets;
-  int32_t m_sendEventCalled;
-  int32_t m_maxSize;
-  FX_BOOL m_bFullScreen;
+
+  CFX_ArrayTemplate<CFWL_WidgetImp*> m_forms;
+  CFX_ArrayTemplate<CFWL_Message*> m_noteQueue;
+  CFX_ArrayTemplate<CFWL_NoteLoop*> m_noteLoopQueue;
+  std::unordered_map<uint32_t, CFWL_EventTarget*> m_eventTargets;
   IFWL_Widget* m_pHover;
   IFWL_Widget* m_pFocus;
   IFWL_Widget* m_pGrab;
   CFWL_NoteLoop* m_pNoteLoop;
-  FWLMessageHookCallback m_hook;
-  void* m_hookInfo;
 };
-
-typedef CFX_MapPtrTemplate<void*, uint32_t> CFWL_EventSource;
 
 class CFWL_EventTarget {
  public:
@@ -131,7 +132,7 @@ class CFWL_EventTarget {
   void FlagInvalid() { m_bInvalid = TRUE; }
 
  protected:
-  CFWL_EventSource m_eventSources;
+  CFX_MapPtrTemplate<void*, uint32_t> m_eventSources;
   IFWL_Widget* m_pListener;
   CFWL_NoteDriver* m_pNoteDriver;
   FX_BOOL m_bInvalid;
@@ -142,17 +143,14 @@ class CFWL_ToolTipContainer {
   static CFWL_ToolTipContainer* getInstance();
   static void DeleteInstance();
 
-  FX_ERR AddToolTipTarget(IFWL_ToolTipTarget* pTarget);
-  FX_ERR RemoveToolTipTarget(IFWL_ToolTipTarget* pTarget);
+  FWL_Error AddToolTipTarget(IFWL_ToolTipTarget* pTarget);
+  FWL_Error RemoveToolTipTarget(IFWL_ToolTipTarget* pTarget);
   IFWL_ToolTipTarget* GetCurrentToolTipTarget();
 
   FX_BOOL HasToolTip(IFWL_Widget* pWidget);
 
   FX_BOOL ProcessEnter(CFWL_EvtMouse* pEvt, IFWL_Widget* pOwner);
   FX_BOOL ProcessLeave(CFWL_EvtMouse* pEvt);
-
-  FX_ERR SetToolTipInitialDelay(int32_t iDelayTime);
-  FX_ERR SetToolTipAutoPopDelay(int32_t iDelayTime);
 
  protected:
   CFWL_ToolTipContainer();
@@ -161,7 +159,7 @@ class CFWL_ToolTipContainer {
   IFWL_ToolTipTarget* pCurTarget;
   CFWL_ToolTipImp* m_pToolTipImp;
   CFWL_CoreToolTipDP* m_ToolTipDp;
-  CFX_PtrArray m_arrWidget;
+  CFX_ArrayTemplate<IFWL_ToolTipTarget*> m_arrWidget;
 
  private:
   static CFWL_ToolTipContainer* s_pInstance;

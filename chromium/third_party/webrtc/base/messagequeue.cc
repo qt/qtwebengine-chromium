@@ -7,27 +7,17 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
-#if defined(WEBRTC_POSIX)
-#include <sys/time.h>
-#endif
-
 #include <algorithm>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/messagequeue.h"
-#if defined(__native_client__)
-#include "webrtc/base/nullsocketserver.h"
-typedef rtc::NullSocketServer DefaultSocketServer;
-#else
-#include "webrtc/base/physicalsocketserver.h"
-typedef rtc::PhysicalSocketServer DefaultSocketServer;
-#endif
+#include "webrtc/base/trace_event.h"
 
 namespace rtc {
 
-const uint32_t kMaxMsgLatency = 150;  // 150 ms
+const int kMaxMsgLatency = 150;  // 150 ms
 
 //------------------------------------------------------------------
 // MessageQueueManager
@@ -115,23 +105,24 @@ void MessageQueueManager::ClearInternal(MessageHandler *handler) {
 
 //------------------------------------------------------------------
 // MessageQueue
-
 MessageQueue::MessageQueue(SocketServer* ss, bool init_queue)
     : fStop_(false), fPeekKeep_(false),
       dmsgq_next_num_(0), fInitialized_(false), fDestroyed_(false), ss_(ss) {
-  if (!ss_) {
-    // Currently, MessageQueue holds a socket server, and is the base class for
-    // Thread.  It seems like it makes more sense for Thread to hold the socket
-    // server, and provide it to the MessageQueue, since the Thread controls
-    // the I/O model, and MQ is agnostic to those details.  Anyway, this causes
-    // messagequeue_unittest to depend on network libraries... yuck.
-    default_ss_.reset(new DefaultSocketServer());
-    ss_ = default_ss_.get();
-  }
+  RTC_DCHECK(ss);
+  // Currently, MessageQueue holds a socket server, and is the base class for
+  // Thread.  It seems like it makes more sense for Thread to hold the socket
+  // server, and provide it to the MessageQueue, since the Thread controls
+  // the I/O model, and MQ is agnostic to those details.  Anyway, this causes
+  // messagequeue_unittest to depend on network libraries... yuck.
   ss_->SetMessageQueue(this);
   if (init_queue) {
     DoInit();
   }
+}
+
+MessageQueue::MessageQueue(std::unique_ptr<SocketServer> ss, bool init_queue)
+    : MessageQueue(ss.get(), init_queue) {
+  own_ss_ = std::move(ss);
 }
 
 MessageQueue::~MessageQueue() {
@@ -178,7 +169,7 @@ void MessageQueue::set_socketserver(SocketServer* ss) {
   // Other places that only read "ss_" can use a shared lock as simultaneous
   // read access is allowed.
   ExclusiveScope es(&ss_lock_);
-  ss_ = ss ? ss : default_ss_.get();
+  ss_ = ss ? ss : own_ss_.get();
   ss_->SetMessageQueue(this);
 }
 
@@ -224,16 +215,16 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
 
   // Get w/wait + timer scan / dispatch + socket / event multiplexer dispatch
 
-  int cmsTotal = cmsWait;
-  int cmsElapsed = 0;
-  uint32_t msStart = Time();
-  uint32_t msCurrent = msStart;
+  int64_t cmsTotal = cmsWait;
+  int64_t cmsElapsed = 0;
+  int64_t msStart = TimeMillis();
+  int64_t msCurrent = msStart;
   while (true) {
     // Check for sent messages
     ReceiveSends();
 
     // Check for posted events
-    int cmsDelayNext = kForever;
+    int64_t cmsDelayNext = kForever;
     bool first_pass = true;
     while (true) {
       // All queue operations need to be locked, but nothing else in this loop
@@ -246,7 +237,7 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
         if (first_pass) {
           first_pass = false;
           while (!dmsgq_.empty()) {
-            if (TimeIsLater(msCurrent, dmsgq_.top().msTrigger_)) {
+            if (msCurrent < dmsgq_.top().msTrigger_) {
               cmsDelayNext = TimeDiff(dmsgq_.top().msTrigger_, msCurrent);
               break;
             }
@@ -265,7 +256,7 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
 
       // Log a warning for time-sensitive messages that we're late to deliver.
       if (pmsg->ts_sensitive) {
-        int32_t delay = TimeDiff(msCurrent, pmsg->ts_sensitive);
+        int64_t delay = TimeDiff(msCurrent, pmsg->ts_sensitive);
         if (delay > 0) {
           LOG_F(LS_WARNING) << "id: " << pmsg->message_id << "  delay: "
                             << (delay + kMaxMsgLatency) << "ms";
@@ -286,11 +277,11 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
 
     // Which is shorter, the delay wait or the asked wait?
 
-    int cmsNext;
+    int64_t cmsNext;
     if (cmsWait == kForever) {
       cmsNext = cmsDelayNext;
     } else {
-      cmsNext = std::max(0, cmsTotal - cmsElapsed);
+      cmsNext = std::max<int64_t>(0, cmsTotal - cmsElapsed);
       if ((cmsDelayNext != kForever) && (cmsDelayNext < cmsNext))
         cmsNext = cmsDelayNext;
     }
@@ -298,13 +289,13 @@ bool MessageQueue::Get(Message *pmsg, int cmsWait, bool process_io) {
     {
       // Wait and multiplex in the meantime
       SharedScope ss(&ss_lock_);
-      if (!ss_->Wait(cmsNext, process_io))
+      if (!ss_->Wait(static_cast<int>(cmsNext), process_io))
         return false;
     }
 
     // If the specified timeout expired, return
 
-    msCurrent = Time();
+    msCurrent = TimeMillis();
     cmsElapsed = TimeDiff(msCurrent, msStart);
     if (cmsWait != kForever) {
       if (cmsElapsed >= cmsWait)
@@ -335,7 +326,7 @@ void MessageQueue::Post(MessageHandler* phandler,
     msg.message_id = id;
     msg.pdata = pdata;
     if (time_sensitive) {
-      msg.ts_sensitive = Time() + kMaxMsgLatency;
+      msg.ts_sensitive = TimeMillis() + kMaxMsgLatency;
     }
     msgq_.push_back(msg);
   }
@@ -353,11 +344,20 @@ void MessageQueue::PostAt(uint32_t tstamp,
                           MessageHandler* phandler,
                           uint32_t id,
                           MessageData* pdata) {
+  // This should work even if it is used (unexpectedly).
+  int delay = static_cast<uint32_t>(TimeMillis()) - tstamp;
+  return DoDelayPost(delay, tstamp, phandler, id, pdata);
+}
+
+void MessageQueue::PostAt(int64_t tstamp,
+                          MessageHandler* phandler,
+                          uint32_t id,
+                          MessageData* pdata) {
   return DoDelayPost(TimeUntil(tstamp), tstamp, phandler, id, pdata);
 }
 
 void MessageQueue::DoDelayPost(int cmsDelay,
-                               uint32_t tstamp,
+                               int64_t tstamp,
                                MessageHandler* phandler,
                                uint32_t id,
                                MessageData* pdata) {
@@ -451,6 +451,7 @@ void MessageQueue::Clear(MessageHandler* phandler,
 }
 
 void MessageQueue::Dispatch(Message *pmsg) {
+  TRACE_EVENT0("webrtc", "MessageQueue::Dispatch");
   pmsg->phandler->OnMessage(pmsg);
 }
 

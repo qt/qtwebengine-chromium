@@ -10,19 +10,20 @@
 
 #include "webrtc/p2p/quic/quictransportchannel.h"
 
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "webrtc/base/common.h"
 #include "webrtc/base/gunit.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/p2p/base/faketransportcontroller.h"
 
 using cricket::ConnectionRole;
 using cricket::IceRole;
 using cricket::QuicTransportChannel;
+using cricket::ReliableQuicStream;
 using cricket::TransportChannel;
 using cricket::TransportDescription;
 
@@ -93,13 +94,17 @@ class QuicTestPeer : public sigslot::has_slots<> {
   explicit QuicTestPeer(const std::string& name)
       : name_(name),
         bytes_sent_(0),
-        ice_channel_(name_, 0),
-        quic_channel_(&ice_channel_) {
+        ice_channel_(new FailableTransportChannel(name_, 0)),
+        quic_channel_(ice_channel_),
+        incoming_stream_count_(0) {
     quic_channel_.SignalReadPacket.connect(
         this, &QuicTestPeer::OnTransportChannelReadPacket);
-    ice_channel_.SetAsync(true);
+    quic_channel_.SignalIncomingStream.connect(this,
+                                               &QuicTestPeer::OnIncomingStream);
+    quic_channel_.SignalClosed.connect(this, &QuicTestPeer::OnClosed);
+    ice_channel_->SetAsync(true);
     rtc::scoped_refptr<rtc::RTCCertificate> local_cert =
-        rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+        rtc::RTCCertificate::Create(std::unique_ptr<rtc::SSLIdentity>(
             rtc::SSLIdentity::Generate(name_, rtc::KT_DEFAULT)));
     quic_channel_.SetLocalCertificate(local_cert);
     local_fingerprint_.reset(CreateFingerprint(local_cert.get()));
@@ -107,13 +112,13 @@ class QuicTestPeer : public sigslot::has_slots<> {
 
   // Connects |ice_channel_| to that of the other peer.
   void Connect(QuicTestPeer* other_peer) {
-    ice_channel_.Connect();
-    other_peer->ice_channel_.Connect();
-    ice_channel_.SetDestination(&other_peer->ice_channel_);
+    ice_channel_->Connect();
+    other_peer->ice_channel_->Connect();
+    ice_channel_->SetDestination(other_peer->ice_channel_);
   }
 
   // Disconnects |ice_channel_|.
-  void Disconnect() { ice_channel_.SetDestination(nullptr); }
+  void Disconnect() { ice_channel_->SetDestination(nullptr); }
 
   // Generates ICE credentials and passes them to |quic_channel_|.
   void SetIceParameters(IceRole local_ice_role,
@@ -144,7 +149,7 @@ class QuicTestPeer : public sigslot::has_slots<> {
     if (!get_digest_algorithm || digest_algorithm.empty()) {
       return nullptr;
     }
-    rtc::scoped_ptr<rtc::SSLFingerprint> fingerprint(
+    std::unique_ptr<rtc::SSLFingerprint> fingerprint(
         rtc::SSLFingerprint::Create(digest_algorithm, cert->identity()));
     if (digest_algorithm != rtc::DIGEST_SHA_256) {
       return nullptr;
@@ -184,22 +189,28 @@ class QuicTestPeer : public sigslot::has_slots<> {
 
   void ClearBytesReceived() { bytes_received_ = 0; }
 
-  void SetWriteError(int error) { ice_channel_.SetError(error); }
+  void SetWriteError(int error) { ice_channel_->SetError(error); }
 
   size_t bytes_received() const { return bytes_received_; }
 
   size_t bytes_sent() const { return bytes_sent_; }
 
-  FailableTransportChannel* ice_channel() { return &ice_channel_; }
+  FailableTransportChannel* ice_channel() { return ice_channel_; }
 
   QuicTransportChannel* quic_channel() { return &quic_channel_; }
 
-  rtc::scoped_ptr<rtc::SSLFingerprint>& local_fingerprint() {
+  std::unique_ptr<rtc::SSLFingerprint>& local_fingerprint() {
     return local_fingerprint_;
   }
 
+  ReliableQuicStream* incoming_quic_stream() { return incoming_quic_stream_; }
+
+  size_t incoming_stream_count() const { return incoming_stream_count_; }
+
+  bool signal_closed_emitted() const { return signal_closed_emitted_; }
+
  private:
-  // QUIC channel callback.
+  // QuicTransportChannel callbacks.
   void OnTransportChannelReadPacket(TransportChannel* channel,
                                     const char* data,
                                     size_t size,
@@ -210,13 +221,21 @@ class QuicTestPeer : public sigslot::has_slots<> {
     int expected_flags = IsRtpLeadByte(data[0]) ? cricket::PF_SRTP_BYPASS : 0;
     ASSERT_EQ(expected_flags, flags);
   }
+  void OnIncomingStream(ReliableQuicStream* stream) {
+    incoming_quic_stream_ = stream;
+    ++incoming_stream_count_;
+  }
+  void OnClosed() { signal_closed_emitted_ = true; }
 
   std::string name_;                      // Channel name.
   size_t bytes_sent_;                     // Bytes sent by QUIC channel.
   size_t bytes_received_;                 // Bytes received by QUIC channel.
-  FailableTransportChannel ice_channel_;  // Simulates an ICE channel.
+  FailableTransportChannel* ice_channel_;  // Simulates an ICE channel.
   QuicTransportChannel quic_channel_;     // QUIC channel to test.
-  rtc::scoped_ptr<rtc::SSLFingerprint> local_fingerprint_;
+  std::unique_ptr<rtc::SSLFingerprint> local_fingerprint_;
+  ReliableQuicStream* incoming_quic_stream_ = nullptr;
+  size_t incoming_stream_count_;
+  bool signal_closed_emitted_ = false;
 };
 
 class QuicTransportChannelTest : public testing::Test {
@@ -244,9 +263,9 @@ class QuicTransportChannelTest : public testing::Test {
     peer1_.quic_channel()->SetSslRole(peer1_ssl_role);
     peer2_.quic_channel()->SetSslRole(peer2_ssl_role);
 
-    rtc::scoped_ptr<rtc::SSLFingerprint>& peer1_fingerprint =
+    std::unique_ptr<rtc::SSLFingerprint>& peer1_fingerprint =
         peer1_.local_fingerprint();
-    rtc::scoped_ptr<rtc::SSLFingerprint>& peer2_fingerprint =
+    std::unique_ptr<rtc::SSLFingerprint>& peer2_fingerprint =
         peer2_.local_fingerprint();
 
     peer1_.quic_channel()->SetRemoteFingerprint(
@@ -450,7 +469,7 @@ TEST_F(QuicTransportChannelTest, QuicRoleReversalAfterQuic) {
 // Set the SSL role, then test that GetSslRole returns the same value.
 TEST_F(QuicTransportChannelTest, SetGetSslRole) {
   ASSERT_TRUE(peer1_.quic_channel()->SetSslRole(rtc::SSL_SERVER));
-  rtc::scoped_ptr<rtc::SSLRole> role(new rtc::SSLRole());
+  std::unique_ptr<rtc::SSLRole> role(new rtc::SSLRole());
   ASSERT_TRUE(peer1_.quic_channel()->GetSslRole(role.get()));
   EXPECT_EQ(rtc::SSL_SERVER, *role);
 }
@@ -485,4 +504,53 @@ TEST_F(QuicTransportChannelTest, IceReceivingBeforeConnected) {
   ASSERT_TRUE(peer1_.ice_channel()->receiving());
   ASSERT_TRUE_WAIT(quic_connected(), kTimeoutMs);
   EXPECT_TRUE(peer1_.quic_channel()->receiving());
+}
+
+// Test that when peer 1 creates an outgoing stream, peer 2 creates an incoming
+// QUIC stream with the same ID and fires OnIncomingStream.
+TEST_F(QuicTransportChannelTest, CreateOutgoingAndIncomingQuicStream) {
+  Connect();
+  EXPECT_EQ(nullptr, peer1_.quic_channel()->CreateQuicStream());
+  ASSERT_TRUE_WAIT(quic_connected(), kTimeoutMs);
+  ReliableQuicStream* stream = peer1_.quic_channel()->CreateQuicStream();
+  ASSERT_NE(nullptr, stream);
+  stream->Write("Hi", 2);
+  EXPECT_TRUE_WAIT(peer2_.incoming_quic_stream() != nullptr, kTimeoutMs);
+  EXPECT_EQ(stream->id(), peer2_.incoming_quic_stream()->id());
+}
+
+// Test that if the QuicTransportChannel is unwritable, then all outgoing QUIC
+// streams can send data once the QuicTransprotChannel becomes writable again.
+TEST_F(QuicTransportChannelTest, OutgoingQuicStreamSendsDataAfterReconnect) {
+  Connect();
+  ASSERT_TRUE_WAIT(quic_connected(), kTimeoutMs);
+  ReliableQuicStream* stream1 = peer1_.quic_channel()->CreateQuicStream();
+  ASSERT_NE(nullptr, stream1);
+  ReliableQuicStream* stream2 = peer1_.quic_channel()->CreateQuicStream();
+  ASSERT_NE(nullptr, stream2);
+
+  peer1_.ice_channel()->SetWritable(false);
+  stream1->Write("First", 5);
+  EXPECT_EQ(5u, stream1->queued_data_bytes());
+  stream2->Write("Second", 6);
+  EXPECT_EQ(6u, stream2->queued_data_bytes());
+  EXPECT_EQ(0u, peer2_.incoming_stream_count());
+
+  peer1_.ice_channel()->SetWritable(true);
+  EXPECT_EQ_WAIT(0u, stream1->queued_data_bytes(), kTimeoutMs);
+  EXPECT_EQ_WAIT(0u, stream2->queued_data_bytes(), kTimeoutMs);
+  EXPECT_EQ_WAIT(2u, peer2_.incoming_stream_count(), kTimeoutMs);
+}
+
+// Test that SignalClosed is emitted when the QuicConnection closes.
+TEST_F(QuicTransportChannelTest, SignalClosedEmitted) {
+  Connect();
+  ASSERT_TRUE_WAIT(quic_connected(), kTimeoutMs);
+  ASSERT_FALSE(peer1_.signal_closed_emitted());
+  ReliableQuicStream* stream = peer1_.quic_channel()->CreateQuicStream();
+  ASSERT_NE(nullptr, stream);
+  stream->CloseConnectionWithDetails(net::QuicErrorCode::QUIC_NO_ERROR,
+                                     "Closing QUIC for testing");
+  EXPECT_TRUE(peer1_.signal_closed_emitted());
+  EXPECT_TRUE_WAIT(peer2_.signal_closed_emitted(), kTimeoutMs);
 }

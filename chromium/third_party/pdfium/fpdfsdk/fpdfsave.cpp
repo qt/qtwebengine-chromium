@@ -19,14 +19,14 @@
 #include "public/fpdf_edit.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
 #include "public/fpdf_formfill.h"
-#include "xfa/include/fxfa/xfa_checksum.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffwidgethandler.h"
+#include "xfa/fxfa/include/xfa_checksum.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
 #endif
 
 #if _FX_OS_ == _FX_ANDROID_

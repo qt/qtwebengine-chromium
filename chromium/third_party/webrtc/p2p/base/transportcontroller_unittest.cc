@@ -9,19 +9,19 @@
  */
 
 #include <map>
+#include <memory>
 
 #include "webrtc/base/fakesslidentity.h"
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/helpers.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/p2p/base/dtlstransportchannel.h"
+#include "webrtc/p2p/base/fakeportallocator.h"
 #include "webrtc/p2p/base/faketransportcontroller.h"
 #include "webrtc/p2p/base/p2ptransportchannel.h"
 #include "webrtc/p2p/base/portallocator.h"
 #include "webrtc/p2p/base/transportcontroller.h"
-#include "webrtc/p2p/client/fakeportallocator.h"
 
 static const int kTimeout = 100;
 static const char kIceUfrag1[] = "TESTICEUFRAG0001";
@@ -81,12 +81,12 @@ class TransportControllerTest : public testing::Test,
   FakeTransportChannel* CreateChannel(const std::string& content,
                                       int component) {
     TransportChannel* channel =
-        transport_controller_->CreateTransportChannel_w(content, component);
+        transport_controller_->CreateTransportChannel_n(content, component);
     return static_cast<FakeTransportChannel*>(channel);
   }
 
   void DestroyChannel(const std::string& content, int component) {
-    transport_controller_->DestroyTransportChannel_w(content, component);
+    transport_controller_->DestroyTransportChannel_n(content, component);
   }
 
   Candidate CreateCandidate(int component) {
@@ -177,8 +177,8 @@ class TransportControllerTest : public testing::Test,
     ++candidates_signal_count_;
   }
 
-  rtc::scoped_ptr<rtc::Thread> worker_thread_;  // Not used for most tests.
-  rtc::scoped_ptr<TransportControllerForTest> transport_controller_;
+  std::unique_ptr<rtc::Thread> worker_thread_;  // Not used for most tests.
+  std::unique_ptr<TransportControllerForTest> transport_controller_;
 
   // Information received from signals from transport controller.
   IceConnectionState connection_state_ = cricket::kIceConnectionConnecting;
@@ -269,10 +269,10 @@ TEST_F(TransportControllerTest, TestGetSslRole) {
 
 TEST_F(TransportControllerTest, TestSetAndGetLocalCertificate) {
   rtc::scoped_refptr<rtc::RTCCertificate> certificate1 =
-      rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+      rtc::RTCCertificate::Create(std::unique_ptr<rtc::SSLIdentity>(
           rtc::SSLIdentity::Generate("session1", rtc::KT_DEFAULT)));
   rtc::scoped_refptr<rtc::RTCCertificate> certificate2 =
-      rtc::RTCCertificate::Create(rtc::scoped_ptr<rtc::SSLIdentity>(
+      rtc::RTCCertificate::Create(std::unique_ptr<rtc::SSLIdentity>(
           rtc::SSLIdentity::Generate("session2", rtc::KT_DEFAULT)));
   rtc::scoped_refptr<rtc::RTCCertificate> returned_certificate;
 
@@ -308,7 +308,7 @@ TEST_F(TransportControllerTest, TestGetRemoteSSLCertificate) {
   ASSERT_NE(nullptr, channel);
 
   channel->SetRemoteSSLCertificate(&fake_certificate);
-  rtc::scoped_ptr<rtc::SSLCertificate> returned_certificate =
+  std::unique_ptr<rtc::SSLCertificate> returned_certificate =
       transport_controller_->GetRemoteSSLCertificate("audio");
   EXPECT_TRUE(returned_certificate);
   EXPECT_EQ(fake_certificate.ToPEMString(),

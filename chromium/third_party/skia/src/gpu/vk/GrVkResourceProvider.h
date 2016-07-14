@@ -63,12 +63,24 @@ public:
 
     // Finds or creates a compatible GrVkSampler based on the GrTextureParams.
     // The refcount is incremented and a pointer returned.
-    GrVkSampler* findOrCreateCompatibleSampler(const GrTextureParams&);
+    GrVkSampler* findOrCreateCompatibleSampler(const GrTextureParams&, uint32_t mipLevels);
 
     sk_sp<GrVkPipelineState> findOrCreateCompatiblePipelineState(const GrPipeline&,
                                                                  const GrPrimitiveProcessor&,
                                                                  GrPrimitiveType,
                                                                  const GrVkRenderPass& renderPass);
+
+    // For all our GrVkPipelineState objects, we require a layout where the first set contains two
+    // uniform buffers, one for the vertex shader and one for the fragment shader. Thus it is
+    // possible for us to use a shadered descriptor pool to allocate all these similar descriptor
+    // sets. The caller is responsible for reffing the outPool for as long as the returned
+    // VkDescriptor set is in use.
+    void getUniformDescriptorSet(VkDescriptorSet*, const GrVkDescriptorPool** outPool);
+
+    // Returns the compatible VkDescriptorSetLayout to use for uniform buffers. The caller does not
+    // own the VkDescriptorSetLayout and thus should not delete it. This function should be used
+    // when the caller needs the layout to create a VkPipelineLayout.
+    VkDescriptorSetLayout getUniDSLayout() const { return fUniformDescLayout; }
 
     // Destroy any cached resources. To be called before destroying the VkDevice.
     // The assumption is that all queues are idle and all command buffers are finished.
@@ -83,7 +95,7 @@ public:
 
 private:
 
-#ifdef SK_DEVELOPER
+#ifdef SK_DEBUG
 #define GR_PIPELINE_STATE_CACHE_STATS
 #endif
 
@@ -122,6 +134,9 @@ private:
 #endif
     };
 
+    // Initialiaze the vkDescriptorSetLayout used for allocating new uniform buffer descritpor sets.
+    void initUniformDescObjects();
+
     GrVkGpu* fGpu;
 
     // Central cache for creating pipelines
@@ -136,10 +151,23 @@ private:
 
     // Stores GrVkSampler objects that we've already created so we can reuse them across multiple
     // GrVkPipelineStates
-    SkTDynamicHash<GrVkSampler, uint8_t> fSamplers;
+    SkTDynamicHash<GrVkSampler, uint16_t> fSamplers;
 
     // Cache of GrVkPipelineStates
     PipelineStateCache* fPipelineStateCache;
+
+    // Current pool to allocate uniform descriptor sets from
+    const GrVkDescriptorPool* fUniformDescPool;
+    VkDescriptorSetLayout  fUniformDescLayout;
+    //Curent number of uniform descriptors allocated from the pool
+    int                fCurrentUniformDescCount;
+    int                fCurrMaxUniDescriptors;
+
+    enum {
+        kMaxUniformDescriptors = 1024,
+        kNumUniformDescPerSet = 2,
+        kStartNumUniformDescriptors = 16, // must be less than kMaxUniformDescriptors
+    };
 };
 
 #endif

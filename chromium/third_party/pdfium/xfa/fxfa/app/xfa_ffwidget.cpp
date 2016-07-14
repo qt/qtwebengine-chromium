@@ -4,22 +4,25 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 
 #include <algorithm>
+#include <memory>
 
 #include "core/fpdfapi/fpdf_page/include/cpdf_pageobjectholder.h"
-#include "core/include/fxcodec/fx_codec.h"
+#include "core/fxcodec/codec/include/ccodec_progressivedecoder.h"
+#include "core/fxcodec/include/fx_codec.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/parser/cxfa_corner.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 #include "xfa/fxgraphics/cfx_pattern.h"
 #include "xfa/fxgraphics/cfx_shading.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
 
 CXFA_FFWidget::CXFA_FFWidget(CXFA_FFPageView* pPageView,
                              CXFA_WidgetAcc* pDataAcc)
@@ -36,14 +39,14 @@ void CXFA_FFWidget::SetPageView(CXFA_FFPageView* pPageView) {
   m_pPageView = pPageView;
 }
 void CXFA_FFWidget::GetWidgetRect(CFX_RectF& rtWidget) {
-  if ((m_dwStatus & XFA_WIDGETSTATUS_RectCached) == 0) {
-    m_dwStatus |= XFA_WIDGETSTATUS_RectCached;
+  if ((m_dwStatus & XFA_WidgetStatus_RectCached) == 0) {
+    m_dwStatus |= XFA_WidgetStatus_RectCached;
     GetRect(m_rtWidget);
   }
   rtWidget = m_rtWidget;
 }
 CFX_RectF CXFA_FFWidget::ReCacheWidgetRect() {
-  m_dwStatus |= XFA_WIDGETSTATUS_RectCached;
+  m_dwStatus |= XFA_WidgetStatus_RectCached;
   GetRect(m_rtWidget);
   return m_rtWidget;
 }
@@ -143,7 +146,7 @@ void CXFA_FFWidget::DrawBorder(CFX_Graphics* pGS,
 void CXFA_FFWidget::InvalidateWidget(const CFX_RectF* pRect) {
   if (!pRect) {
     CFX_RectF rtWidget;
-    GetBBox(rtWidget, XFA_WIDGETSTATUS_Focused);
+    GetBBox(rtWidget, XFA_WidgetStatus_Focused);
     rtWidget.Inflate(2, 2);
     GetDoc()->GetDocProvider()->InvalidateRect(m_pPageView, rtWidget,
                                                XFA_INVALIDATE_CurrentPage);
@@ -157,7 +160,7 @@ void CXFA_FFWidget::AddInvalidateRect(const CFX_RectF* pRect) {
   if (pRect) {
     rtWidget = *pRect;
   } else {
-    GetBBox(rtWidget, XFA_WIDGETSTATUS_Focused);
+    GetBBox(rtWidget, XFA_WidgetStatus_Focused);
     rtWidget.Inflate(2, 2);
   }
   m_pDocView->AddInvalidateRect(m_pPageView, rtWidget);
@@ -170,9 +173,11 @@ FX_BOOL CXFA_FFWidget::GetCaptionText(CFX_WideString& wsCap) {
   pCapTextlayout->GetText(wsCap);
   return TRUE;
 }
-FX_BOOL CXFA_FFWidget::IsFocused() {
-  return m_dwStatus & XFA_WIDGETSTATUS_Focused;
+
+bool CXFA_FFWidget::IsFocused() {
+  return !!(m_dwStatus & XFA_WidgetStatus_Focused);
 }
+
 FX_BOOL CXFA_FFWidget::OnMouseEnter() {
   return FALSE;
 }
@@ -220,7 +225,7 @@ FX_BOOL CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   if (pParent && !pParent->IsAncestorOf(pOldWidget)) {
     pParent->OnSetFocus(pOldWidget);
   }
-  m_dwStatus |= XFA_WIDGETSTATUS_Focused;
+  m_dwStatus |= XFA_WidgetStatus_Focused;
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Enter;
   eParam.m_pTarget = m_pDataAcc;
@@ -228,7 +233,7 @@ FX_BOOL CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   return TRUE;
 }
 FX_BOOL CXFA_FFWidget::OnKillFocus(CXFA_FFWidget* pNewWidget) {
-  m_dwStatus &= ~XFA_WIDGETSTATUS_Focused;
+  m_dwStatus &= ~XFA_WidgetStatus_Focused;
   EventKillFocus();
   if (pNewWidget) {
     CXFA_FFWidget* pParent = GetParent();
@@ -247,8 +252,8 @@ FX_BOOL CXFA_FFWidget::OnKeyUp(uint32_t dwKeyCode, uint32_t dwFlags) {
 FX_BOOL CXFA_FFWidget::OnChar(uint32_t dwChar, uint32_t dwFlags) {
   return FALSE;
 }
-uint32_t CXFA_FFWidget::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {
-  return FALSE;
+FWL_WidgetHit CXFA_FFWidget::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {
+  return FWL_WidgetHit::Unknown;
 }
 FX_BOOL CXFA_FFWidget::OnSetCursor(FX_FLOAT fx, FX_FLOAT fy) {
   return FALSE;
@@ -398,12 +403,14 @@ void CXFA_FFWidget::GetMinMaxHeight(FX_FLOAT fMinHeight, FX_FLOAT fMaxHeight) {
     m_pDataAcc->GetMaxHeight(fMaxHeight);
   }
 }
-FX_BOOL CXFA_FFWidget::IsMatchVisibleStatus(uint32_t dwStatus) {
-  return m_dwStatus & XFA_WIDGETSTATUS_Visible;
+
+bool CXFA_FFWidget::IsMatchVisibleStatus(uint32_t dwStatus) {
+  return !!(m_dwStatus & XFA_WidgetStatus_Visible);
 }
+
 void CXFA_FFWidget::EventKillFocus() {
-  if (m_dwStatus & XFA_WIDGETSTATUS_Access) {
-    m_dwStatus &= ~XFA_WIDGETSTATUS_Access;
+  if (m_dwStatus & XFA_WidgetStatus_Access) {
+    m_dwStatus &= ~XFA_WidgetStatus_Access;
     return;
   }
   CXFA_EventParam eParam;
@@ -412,11 +419,11 @@ void CXFA_FFWidget::EventKillFocus() {
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Exit, &eParam);
 }
 FX_BOOL CXFA_FFWidget::IsButtonDown() {
-  return (m_dwStatus & XFA_WIDGETSTATUS_ButtonDown) != 0;
+  return (m_dwStatus & XFA_WidgetStatus_ButtonDown) != 0;
 }
 void CXFA_FFWidget::SetButtonDown(FX_BOOL bSet) {
-  bSet ? m_dwStatus |= XFA_WIDGETSTATUS_ButtonDown
-       : m_dwStatus &= ~XFA_WIDGETSTATUS_ButtonDown;
+  bSet ? m_dwStatus |= XFA_WidgetStatus_ButtonDown
+       : m_dwStatus &= ~XFA_WidgetStatus_ButtonDown;
 }
 int32_t XFA_StrokeTypeSetLineDash(CFX_Graphics* pGraphics,
                                   int32_t iStrokeType,
@@ -474,10 +481,12 @@ CFX_GraphStateData::LineCap XFA_LineCapToFXGE(int32_t iLineCap) {
   }
   return CFX_GraphStateData::LineCapSquare;
 }
+
 class CXFA_ImageRenderer {
  public:
   CXFA_ImageRenderer();
   ~CXFA_ImageRenderer();
+
   FX_BOOL Start(CFX_RenderDevice* pDevice,
                 CFX_DIBSource* pDIBSource,
                 FX_ARGB bitmap_argb,
@@ -496,7 +505,7 @@ class CXFA_ImageRenderer {
   int m_BitmapAlpha;
   FX_ARGB m_FillArgb;
   uint32_t m_Flags;
-  CFX_ImageTransformer* m_pTransformer;
+  std::unique_ptr<CFX_ImageTransformer> m_pTransformer;
   void* m_DeviceHandle;
   int32_t m_BlendType;
   FX_BOOL m_Result;
@@ -518,23 +527,18 @@ CXFA_ImageRenderer::CXFA_ImageRenderer() {
   m_BitmapAlpha = 255;
   m_FillArgb = 0;
   m_Flags = 0;
-  m_pTransformer = NULL;
   m_DeviceHandle = NULL;
   m_BlendType = FXDIB_BLEND_NORMAL;
   m_Result = TRUE;
   m_bPrint = FALSE;
 }
+
 CXFA_ImageRenderer::~CXFA_ImageRenderer() {
-  if (m_pCloneConvert) {
-    delete m_pCloneConvert;
-  }
-  if (m_pTransformer) {
-    delete m_pTransformer;
-  }
-  if (m_DeviceHandle) {
+  delete m_pCloneConvert;
+  if (m_DeviceHandle)
     m_pDevice->CancelDIBits(m_DeviceHandle);
-  }
 }
+
 FX_BOOL CXFA_ImageRenderer::Start(CFX_RenderDevice* pDevice,
                                   CFX_DIBSource* pDIBSource,
                                   FX_ARGB bitmap_argb,
@@ -585,8 +589,9 @@ FX_BOOL CXFA_ImageRenderer::StartDIBSource() {
     FX_RECT clip_box = m_pDevice->GetClipBox();
     clip_box.Intersect(image_rect);
     m_Status = 2;
-    m_pTransformer = new CFX_ImageTransformer;
-    m_pTransformer->Start(pDib, &m_ImageMatrix, m_Flags, &clip_box);
+    m_pTransformer.reset(
+        new CFX_ImageTransformer(pDib, &m_ImageMatrix, m_Flags, &clip_box));
+    m_pTransformer->Start();
     return TRUE;
   }
   if (m_ImageMatrix.a < 0) {
@@ -623,45 +628,45 @@ FX_BOOL CXFA_ImageRenderer::StartDIBSource() {
   FX_RECT dest_clip(
       dest_rect.left - image_rect.left, dest_rect.top - image_rect.top,
       dest_rect.right - image_rect.left, dest_rect.bottom - image_rect.top);
-  CFX_DIBitmap* pStretched =
-      m_pDIBSource->StretchTo(dest_width, dest_height, m_Flags, &dest_clip);
+  std::unique_ptr<CFX_DIBitmap> pStretched(
+      m_pDIBSource->StretchTo(dest_width, dest_height, m_Flags, &dest_clip));
   if (pStretched) {
-    CompositeDIBitmap(pStretched, dest_rect.left, dest_rect.top, m_FillArgb,
-                      m_BitmapAlpha, m_BlendType, FALSE);
-    delete pStretched;
-    pStretched = NULL;
+    CompositeDIBitmap(pStretched.get(), dest_rect.left, dest_rect.top,
+                      m_FillArgb, m_BitmapAlpha, m_BlendType, FALSE);
   }
   return FALSE;
 }
+
 FX_BOOL CXFA_ImageRenderer::Continue(IFX_Pause* pPause) {
   if (m_Status == 2) {
-    if (m_pTransformer->Continue(pPause)) {
+    if (m_pTransformer->Continue(pPause))
       return TRUE;
-    }
-    CFX_DIBitmap* pBitmap = m_pTransformer->m_Storer.Detach();
-    if (pBitmap == NULL) {
+
+    std::unique_ptr<CFX_DIBitmap> pBitmap(m_pTransformer->DetachBitmap());
+    if (!pBitmap)
       return FALSE;
-    }
+
     if (pBitmap->IsAlphaMask()) {
-      if (m_BitmapAlpha != 255) {
+      if (m_BitmapAlpha != 255)
         m_FillArgb = FXARGB_MUL_ALPHA(m_FillArgb, m_BitmapAlpha);
-      }
-      m_Result = m_pDevice->SetBitMask(pBitmap, m_pTransformer->m_ResultLeft,
-                                       m_pTransformer->m_ResultTop, m_FillArgb);
+      m_Result =
+          m_pDevice->SetBitMask(pBitmap.get(), m_pTransformer->result().left,
+                                m_pTransformer->result().top, m_FillArgb);
     } else {
-      if (m_BitmapAlpha != 255) {
+      if (m_BitmapAlpha != 255)
         pBitmap->MultiplyAlpha(m_BitmapAlpha);
-      }
-      m_Result = m_pDevice->SetDIBits(pBitmap, m_pTransformer->m_ResultLeft,
-                                      m_pTransformer->m_ResultTop, m_BlendType);
+      m_Result =
+          m_pDevice->SetDIBits(pBitmap.get(), m_pTransformer->result().left,
+                               m_pTransformer->result().top, m_BlendType);
     }
-    delete pBitmap;
     return FALSE;
-  } else if (m_Status == 3) {
-    return m_pDevice->ContinueDIBits(m_DeviceHandle, pPause);
   }
+  if (m_Status == 3)
+    return m_pDevice->ContinueDIBits(m_DeviceHandle, pPause);
+
   return FALSE;
 }
+
 void CXFA_ImageRenderer::CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
                                            int left,
                                            int top,
@@ -672,8 +677,8 @@ void CXFA_ImageRenderer::CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
   if (pDIBitmap == NULL) {
     return;
   }
-  FX_BOOL bIsolated = Transparency & PDFTRANS_ISOLATED;
-  FX_BOOL bGroup = Transparency & PDFTRANS_GROUP;
+  bool bIsolated = !!(Transparency & PDFTRANS_ISOLATED);
+  bool bGroup = !!(Transparency & PDFTRANS_GROUP);
   if (blend_mode == FXDIB_BLEND_NORMAL) {
     if (!pDIBitmap->IsAlphaMask()) {
       if (bitmap_alpha < 255) {
@@ -989,21 +994,21 @@ CFX_DIBitmap* XFA_LoadImageData(CXFA_FFDoc* pDoc,
       CFX_ByteString bsData = wsImage.UTF8Encode();
       int32_t iLength = bsData.GetLength();
       pImageBuffer = FX_Alloc(uint8_t, iLength);
-      int32_t iRead = XFA_Base64Decode((const FX_CHAR*)bsData, pImageBuffer);
+      int32_t iRead = XFA_Base64Decode(bsData.c_str(), pImageBuffer);
       if (iRead > 0) {
         pImageFileRead = FX_CreateMemoryStream(pImageBuffer, iRead);
       }
     } else {
       bsContent = CFX_ByteString::FromUnicode(wsImage);
       pImageFileRead = FX_CreateMemoryStream(
-          (uint8_t*)(const uint8_t*)bsContent, bsContent.GetLength());
+          const_cast<uint8_t*>(bsContent.raw_str()), bsContent.GetLength());
     }
   } else {
     CFX_WideString wsURL = wsHref;
     if (wsURL.Left(7) != FX_WSTRC(L"http://") &&
         wsURL.Left(6) != FX_WSTRC(L"ftp://")) {
       CFX_DIBitmap* pBitmap =
-          pDoc->GetPDFNamedImage(wsURL.AsWideStringC(), iImageXDpi, iImageYDpi);
+          pDoc->GetPDFNamedImage(wsURL.AsStringC(), iImageXDpi, iImageYDpi);
       if (pBitmap) {
         bNameImage = TRUE;
         return pBitmap;
@@ -1056,7 +1061,7 @@ CFX_DIBitmap* XFA_LoadImageFromBuffer(IFX_FileRead* pImageFileRead,
   }
   CFX_DIBAttribute dibAttr;
   CFX_DIBitmap* pBitmap = NULL;
-  ICodec_ProgressiveDecoder* pProgressiveDecoder =
+  CCodec_ProgressiveDecoder* pProgressiveDecoder =
       pCodecMgr->CreateProgressiveDecoder();
   pProgressiveDecoder->LoadImageInfo(pImageFileRead, type, &dibAttr);
   switch (dibAttr.m_wDPIUnit) {
@@ -1151,7 +1156,7 @@ static void XFA_BOX_GetPath(CXFA_Box box,
                             int32_t nIndex,
                             FX_BOOL bStart,
                             FX_BOOL bCorner) {
-  FXSYS_assert(nIndex >= 0 && nIndex < 8);
+  ASSERT(nIndex >= 0 && nIndex < 8);
   FX_BOOL bInverted, bRound;
   FX_FLOAT fRadius1, fRadius2, sx, sy, vx, vy, nx, ny, offsetY, offsetX,
       offsetEX, offsetEY;

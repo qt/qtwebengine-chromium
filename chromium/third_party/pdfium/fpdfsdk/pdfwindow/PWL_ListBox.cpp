@@ -120,14 +120,14 @@ void CPWL_ListBox::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
       if (m_pList->IsItemSelected(i)) {
         sListItems << CPWL_Utils::GetRectFillAppStream(rcItem,
                                                        PWL_DEFAULT_SELBACKCOLOR)
-                          .AsByteStringC();
+                          .AsStringC();
         CFX_ByteString sItem =
             CPWL_Utils::GetEditAppStream(m_pList->GetItemEdit(i), ptOffset);
         if (sItem.GetLength() > 0) {
           sListItems << "BT\n"
                      << CPWL_Utils::GetColorAppStream(PWL_DEFAULT_SELTEXTCOLOR)
-                            .AsByteStringC()
-                     << sItem.AsByteStringC() << "ET\n";
+                            .AsStringC()
+                     << sItem.AsStringC() << "ET\n";
         }
       } else {
         CFX_ByteString sItem =
@@ -135,8 +135,8 @@ void CPWL_ListBox::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
         if (sItem.GetLength() > 0) {
           sListItems << "BT\n"
                      << CPWL_Utils::GetColorAppStream(GetTextColor())
-                            .AsByteStringC()
-                     << sItem.AsByteStringC() << "ET\n";
+                            .AsStringC()
+                     << sItem.AsStringC() << "ET\n";
         }
       }
     }
@@ -181,7 +181,7 @@ void CPWL_ListBox::DrawThisAppearance(CFX_RenderDevice* pDevice,
       }
 
       if (m_pList->IsItemSelected(i)) {
-        IFX_SystemHandler* pSysHandler = GetSystemHandler();
+        CFX_SystemHandler* pSysHandler = GetSystemHandler();
         if (pSysHandler && pSysHandler->IsSelectionImplemented()) {
           IFX_Edit::DrawEdit(
               pDevice, pUser2Device, m_pList->GetItemEdit(i),
@@ -197,7 +197,7 @@ void CPWL_ListBox::DrawThisAppearance(CFX_RenderDevice* pDevice,
                              ptOffset, NULL, pSysHandler, m_pFormFiller);
         }
       } else {
-        IFX_SystemHandler* pSysHandler = GetSystemHandler();
+        CFX_SystemHandler* pSysHandler = GetSystemHandler();
         IFX_Edit::DrawEdit(pDevice, pUser2Device, m_pList->GetItemEdit(i),
                            CPWL_Utils::PWLColorToFXColor(GetTextColor()),
                            CPWL_Utils::PWLColorToFXColor(GetTextStrokeColor()),

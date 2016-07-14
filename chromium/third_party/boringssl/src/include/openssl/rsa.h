@@ -321,6 +321,17 @@ OPENSSL_EXPORT int RSA_padding_add_PKCS1_PSS_mgf1(RSA *rsa, uint8_t *EM,
                                                   const EVP_MD *mgf1Hash,
                                                   int sLen);
 
+/* RSA_padding_add_PKCS1_OAEP_mgf1 writes an OAEP padding of |from| to |to|
+ * with the given parameters and hash functions. If |md| is NULL then SHA-1 is
+ * used. If |mgf1md| is NULL then the value of |md| is used (which means SHA-1
+ * if that, in turn, is NULL).
+ *
+ * It returns one on success or zero on error. */
+OPENSSL_EXPORT int RSA_padding_add_PKCS1_OAEP_mgf1(
+    uint8_t *to, unsigned to_len, const uint8_t *from, unsigned from_len,
+    const uint8_t *param, unsigned param_len, const EVP_MD *md,
+    const EVP_MD *mgf1md);
+
 /* RSA_add_pkcs1_prefix builds a version of |msg| prefixed with the DigestInfo
  * header for the given hash function and sets |out_msg| to point to it. On
  * successful return, |*out_msg| may be allocated memory and, if so,
@@ -405,7 +416,12 @@ OPENSSL_EXPORT void *RSA_get_ex_data(const RSA *r, int idx);
 /* Deprecated and ignored. */
 #define RSA_FLAG_CACHE_PRIVATE 4
 
-/* RSA_FLAG_NO_BLINDING disables blinding of private operations. */
+/* RSA_FLAG_NO_BLINDING disables blinding of private operations, which is a
+ * dangerous thing to do. It is deprecated and should not be used. It will
+ * be ignored whenever possible.
+ *
+ * This flag must be used if a key without the public exponent |e| is used for
+ * private key operations; avoid using such keys whenever possible. */
 #define RSA_FLAG_NO_BLINDING 8
 
 /* RSA_FLAG_EXT_PKEY is deprecated and ignored. */
@@ -474,6 +490,15 @@ OPENSSL_EXPORT int RSA_verify_PKCS1_PSS(RSA *rsa, const uint8_t *mHash,
                                         const EVP_MD *Hash, const uint8_t *EM,
                                         int sLen);
 
+/* RSA_padding_add_PKCS1_OAEP acts like |RSA_padding_add_PKCS1_OAEP_mgf1| but
+ * the |md| and |mgf1md| paramaters of the latter are implicitly set to NULL,
+ * which means SHA-1. */
+OPENSSL_EXPORT int RSA_padding_add_PKCS1_OAEP(uint8_t *to, unsigned to_len,
+                                              const uint8_t *from,
+                                              unsigned from_len,
+                                              const uint8_t *param,
+                                              unsigned param_len);
+
 
 struct rsa_meth_st {
   struct openssl_method_common_st common;
@@ -489,6 +514,7 @@ struct rsa_meth_st {
   int (*sign)(int type, const uint8_t *m, unsigned int m_length,
               uint8_t *sigret, unsigned int *siglen, const RSA *rsa);
 
+  /* Ignored. Set this to NULL. */
   int (*verify)(int dtype, const uint8_t *m, unsigned int m_length,
                 const uint8_t *sigbuf, unsigned int siglen, const RSA *rsa);
 
@@ -501,6 +527,7 @@ struct rsa_meth_st {
 
   int (*decrypt)(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
                  const uint8_t *in, size_t in_len, int padding);
+  /* Ignored. Set this to NULL. */
   int (*verify_raw)(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
                     const uint8_t *in, size_t in_len, int padding);
 

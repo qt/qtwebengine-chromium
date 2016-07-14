@@ -72,6 +72,7 @@ static GrTexture* copy_on_gpu(GrTexture* inputTexture, const SkIRect* subset,
     // TODO: If no scaling is being performed then use copySurface.
 
     GrPaint paint;
+    paint.setGammaCorrect(true);
 
     // TODO: Initializing these values for no reason cause the compiler is complaining
     SkScalar sx = 0.f;
@@ -112,13 +113,13 @@ static GrTexture* copy_on_gpu(GrTexture* inputTexture, const SkIRect* subset,
         localRect = SkRect::MakeWH(1.f, 1.f);
     }
 
-    SkAutoTUnref<GrDrawContext> drawContext(context->drawContext(copy->asRenderTarget()));
+    sk_sp<GrDrawContext> drawContext(context->drawContext(sk_ref_sp(copy->asRenderTarget())));
     if (!drawContext) {
         return nullptr;
     }
 
     SkRect dstRect = SkRect::MakeWH(SkIntToScalar(rtDesc.fWidth), SkIntToScalar(rtDesc.fHeight));
-    drawContext->fillRectToRect(GrClip::WideOpen(), paint, SkMatrix::I(), dstRect, localRect);
+    drawContext->fillRectToRect(GrNoClip(), paint, SkMatrix::I(), dstRect, localRect);
     return copy.release();
 }
 
@@ -162,6 +163,11 @@ GrTexture* GrTextureAdjuster::refTextureSafeForParams(const GrTextureParams& par
     GrContext* context = texture->getContext();
     CopyParams copyParams;
     const SkIRect* contentArea = this->contentAreaOrNull();
+
+    if (!context) {
+        // The texture was abandoned.
+        return nullptr;
+    }
 
     if (contentArea && GrTextureParams::kMipMap_FilterMode == params.filterMode()) {
         // If we generate a MIP chain for texture it will read pixel values from outside the content

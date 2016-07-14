@@ -31,7 +31,6 @@
 namespace cricket {
 
 class AudioRenderer;
-class VideoCapturer;
 class VideoRenderer;
 class VideoFrame;
 
@@ -113,14 +112,6 @@ class VideoTrackSourceInterface
     int input_width;
     int input_height;
   };
-  // Get access to the source implementation of cricket::VideoCapturer.
-  // This can be used for receiving frames and state notifications.
-  // But it should not be used for starting or stopping capturing.
-  // TODO(perkj): We are currently trying to replace all internal use of
-  // cricket::VideoCapturer with rtc::VideoSourceInterface. Once that
-  // refactoring is done,
-  // remove this method.
-  virtual cricket::VideoCapturer* GetVideoCapturer() = 0;
 
   virtual void Stop() = 0;
   virtual void Restart() = 0;
@@ -215,7 +206,8 @@ class AudioProcessorInterface : public rtc::RefCountInterface {
                             echo_return_loss_enhancement(0),
                             echo_delay_median_ms(0),
                             aec_quality_min(0.0),
-                            echo_delay_std_ms(0) {}
+                            echo_delay_std_ms(0),
+                            aec_divergent_filter_fraction(0.0) {}
     ~AudioProcessorStats() {}
 
     bool typing_noise_detected;
@@ -224,6 +216,7 @@ class AudioProcessorInterface : public rtc::RefCountInterface {
     int echo_delay_median_ms;
     float aec_quality_min;
     int echo_delay_std_ms;
+    float aec_divergent_filter_fraction;
   };
 
   // Get audio processor statistics.

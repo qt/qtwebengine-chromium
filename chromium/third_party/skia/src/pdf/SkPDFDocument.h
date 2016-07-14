@@ -14,11 +14,12 @@
 
 class SkPDFDevice;
 
-sk_sp<SkDocument> SkPDFMakeDocument(
-        SkWStream* stream,
-        void (*doneProc)(SkWStream*, bool),
-        SkScalar rasterDpi,
-        SkPixelSerializer* jpegEncoder);
+sk_sp<SkDocument> SkPDFMakeDocument(SkWStream* stream,
+                                    void (*doneProc)(SkWStream*, bool),
+                                    SkScalar rasterDpi,
+                                    const SkDocument::PDFMetadata&,
+                                    sk_sp<SkPixelSerializer>,
+                                    bool pdfa);
 
 // Logically part of SkPDFDocument (like SkPDFCanon), but separate to
 // keep similar functionality together.
@@ -33,7 +34,7 @@ struct SkPDFObjectSerializer : SkNoncopyable {
     SkPDFObjectSerializer();
     ~SkPDFObjectSerializer();
     void addObjectRecursively(const sk_sp<SkPDFObject>&);
-    void serializeHeader(SkWStream*, const SkPDFMetadata&);
+    void serializeHeader(SkWStream*, const SkDocument::PDFMetadata&);
     void serializeObjects(SkWStream*);
     void serializeFooter(SkWStream*, const sk_sp<SkPDFObject>, sk_sp<SkPDFObject>);
     int32_t offset(SkWStream*);
@@ -47,16 +48,20 @@ public:
     SkPDFDocument(SkWStream*,
                   void (*)(SkWStream*, bool),
                   SkScalar,
-                  SkPixelSerializer*);
+                  const SkDocument::PDFMetadata&,
+                  sk_sp<SkPixelSerializer>,
+                  bool);
     virtual ~SkPDFDocument();
     SkCanvas* onBeginPage(SkScalar, SkScalar, const SkRect&) override;
     void onEndPage() override;
     bool onClose(SkWStream*) override;
     void onAbort() override;
+#ifdef SK_SUPPORT_LEGACY_DOCUMENT_API
     void setMetadata(const SkDocument::Attribute[],
                      int,
                      const SkTime::DateTime*,
                      const SkTime::DateTime*) override;
+#endif  // SK_SUPPORT_LEGACY_DOCUMENT_API
     /**
        Serialize the object, as well as any other objects it
        indirectly refers to.  If any any other objects have been added
@@ -79,12 +84,11 @@ private:
     sk_sp<SkPDFDict> fDests;
     sk_sp<SkPDFDevice> fPageDevice;
     sk_sp<SkCanvas> fCanvas;
-    #ifdef SK_PDF_GENERATE_PDFA
     sk_sp<SkPDFObject> fID;
     sk_sp<SkPDFObject> fXMP;
-    #endif
     SkScalar fRasterDpi;
-    SkPDFMetadata fMetadata;
+    SkDocument::PDFMetadata fMetadata;
+    bool fPDFA;
 };
 
 #endif  // SkPDFDocument_DEFINED

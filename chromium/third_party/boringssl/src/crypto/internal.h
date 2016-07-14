@@ -294,12 +294,22 @@ static inline int constant_time_select_int(unsigned int mask, int a, int b) {
 
 /* Thread-safe initialisation. */
 
+/* Android's mingw-w64 has some prototypes for INIT_ONCE, but is missing
+ * others. Work around the missing ones.
+ *
+ * TODO(davidben): Remove this once Android's mingw-w64 is upgraded. See
+ * b/26523949. */
+#if defined(__MINGW32__) && !defined(INIT_ONCE_STATIC_INIT)
+typedef RTL_RUN_ONCE INIT_ONCE;
+#define INIT_ONCE_STATIC_INIT RTL_RUN_ONCE_INIT
+#endif
+
 #if defined(OPENSSL_NO_THREADS)
 typedef uint32_t CRYPTO_once_t;
 #define CRYPTO_ONCE_INIT 0
 #elif defined(OPENSSL_WINDOWS)
-typedef volatile LONG CRYPTO_once_t;
-#define CRYPTO_ONCE_INIT 0
+typedef INIT_ONCE CRYPTO_once_t;
+#define CRYPTO_ONCE_INIT INIT_ONCE_STATIC_INIT
 #else
 typedef pthread_once_t CRYPTO_once_t;
 #define CRYPTO_ONCE_INIT PTHREAD_ONCE_INIT
@@ -353,8 +363,10 @@ OPENSSL_EXPORT int CRYPTO_refcount_dec_and_test_zero(CRYPTO_refcount_t *count);
  * automatically by |CRYPTO_STATIC_MUTEX_lock_*|. */
 
 #if defined(OPENSSL_NO_THREADS)
-struct CRYPTO_STATIC_MUTEX {};
-#define CRYPTO_STATIC_MUTEX_INIT {}
+struct CRYPTO_STATIC_MUTEX {
+  char padding;  /* Empty structs have different sizes in C and C++. */
+};
+#define CRYPTO_STATIC_MUTEX_INIT { 0 }
 #elif defined(OPENSSL_WINDOWS)
 struct CRYPTO_STATIC_MUTEX {
   CRYPTO_once_t once;

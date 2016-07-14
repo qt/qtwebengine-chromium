@@ -725,8 +725,16 @@ EGLBoolean EGLAPIENTRY StreamConsumerGLTextureExternalKHR(EGLDisplay dpy, EGLStr
         SetGlobalError(error);
         return EGL_FALSE;
     }
+
+    error = streamObject->createConsumerGLTextureExternal(AttributeMap(), context);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
     SetGlobalError(error);
-    return EGL_FALSE;
+    return EGL_TRUE;
 }
 
 EGLBoolean EGLAPIENTRY StreamConsumerAcquireKHR(EGLDisplay dpy, EGLStreamKHR stream)
@@ -742,8 +750,16 @@ EGLBoolean EGLAPIENTRY StreamConsumerAcquireKHR(EGLDisplay dpy, EGLStreamKHR str
         SetGlobalError(error);
         return EGL_FALSE;
     }
+
+    error = streamObject->consumerAcquire();
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
     SetGlobalError(error);
-    return EGL_FALSE;
+    return EGL_TRUE;
 }
 
 EGLBoolean EGLAPIENTRY StreamConsumerReleaseKHR(EGLDisplay dpy, EGLStreamKHR stream)
@@ -759,8 +775,16 @@ EGLBoolean EGLAPIENTRY StreamConsumerReleaseKHR(EGLDisplay dpy, EGLStreamKHR str
         SetGlobalError(error);
         return EGL_FALSE;
     }
+
+    error = streamObject->consumerRelease();
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
     SetGlobalError(error);
-    return EGL_FALSE;
+    return EGL_TRUE;
 }
 
 EGLBoolean EGLAPIENTRY StreamConsumerGLTextureExternalAttribsNV(EGLDisplay dpy,
@@ -782,7 +806,76 @@ EGLBoolean EGLAPIENTRY StreamConsumerGLTextureExternalAttribsNV(EGLDisplay dpy,
         SetGlobalError(error);
         return EGL_FALSE;
     }
+
+    error = streamObject->createConsumerGLTextureExternal(attributes, context);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
     SetGlobalError(error);
-    return EGL_FALSE;
+    return EGL_TRUE;
+}
+
+EGLBoolean EGLAPIENTRY CreateStreamProducerD3DTextureNV12ANGLE(EGLDisplay dpy,
+                                                               EGLStreamKHR stream,
+                                                               const EGLAttrib *attrib_list)
+{
+    EVENT(
+        "(EGLDisplay dpy = 0x%0.8p, EGLStreamKHR stream = 0x%0.8p, EGLAttrib attrib_list = 0x%0.8p",
+        dpy, stream, attrib_list);
+    Display *display        = static_cast<Display *>(dpy);
+    Stream *streamObject    = static_cast<Stream *>(stream);
+    AttributeMap attributes = AttributeMap::CreateFromAttribArray(attrib_list);
+
+    Error error =
+        ValidateCreateStreamProducerD3DTextureNV12ANGLE(display, streamObject, attributes);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
+    error = streamObject->createProducerD3D11TextureNV12(attributes);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
+    SetGlobalError(error);
+    return EGL_TRUE;
+}
+
+EGLBoolean EGLAPIENTRY StreamPostD3DTextureNV12ANGLE(EGLDisplay dpy,
+                                                     EGLStreamKHR stream,
+                                                     void *texture,
+                                                     const EGLAttrib *attrib_list)
+{
+    EVENT(
+        "(EGLDisplay dpy = 0x%0.8p, EGLStreamKHR stream = 0x%0.8p, void* texture = 0x%0.8p, "
+        "EGLAttrib attrib_list = 0x%0.8p",
+        dpy, stream, texture, attrib_list);
+    Display *display        = static_cast<Display *>(dpy);
+    Stream *streamObject    = static_cast<Stream *>(stream);
+    AttributeMap attributes = AttributeMap::CreateFromAttribArray(attrib_list);
+
+    Error error = ValidateStreamPostD3DTextureNV12ANGLE(display, streamObject, texture, attributes);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
+    error = streamObject->postD3D11NV12Texture(texture, attributes);
+    if (error.isError())
+    {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
+    SetGlobalError(error);
+    return EGL_TRUE;
 }
 }

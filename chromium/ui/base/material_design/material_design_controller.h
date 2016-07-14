@@ -28,11 +28,18 @@ class UI_BASE_EXPORT MaterialDesignController {
     MATERIAL_HYBRID = 2
   };
 
+  // Initializes |mode_|. Must be called before checking |mode_|.
+  static void Initialize();
+
   // Get the current Mode that should be used by the system.
   static Mode GetMode();
 
   // Returns true if the current mode is a material design variant.
   static bool IsModeMaterial();
+
+  // Returns true if the current mode is a material design variant and this mode
+  // should be extended to cover secondary UI.
+  static bool IsSecondaryUiMaterial();
 
   // Returns the per-platform default material design variant.
   static Mode DefaultMode();
@@ -47,16 +54,17 @@ class UI_BASE_EXPORT MaterialDesignController {
   // The current Mode to be used by the system.
   static Mode mode_;
 
+  // True when |mode_| applies beyond the primary UI (toolbar, tabstrip,
+  // etc.). For example, this controls use of MD inside bubbles and dialogs.
+  static bool include_secondary_ui_;
+
   // Declarations only. Do not allow construction of an object.
   MaterialDesignController();
   ~MaterialDesignController();
 
-  // Initializes |mode_|.
-  static void InitializeMode();
-
-  // Resets the Mode state to uninitialized. To be used by tests to cleanup
-  // global state.
-  static void UninitializeMode();
+  // Resets the initialization state to uninitialized. To be used by tests to
+  // allow calling Initialize() more than once.
+  static void Uninitialize();
 
   // Set |mode_| to |mode| and updates |is_mode_initialized_| to true. Can be
   // used by tests to directly set the mode.

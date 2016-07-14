@@ -27,27 +27,24 @@ namespace vcm {
 VideoSender::VideoSender(Clock* clock,
                          EncodedImageCallback* post_encode_callback,
                          VideoEncoderRateObserver* encoder_rate_observer,
-                         VCMQMSettingsCallback* qm_settings_callback)
+                         VCMSendStatisticsCallback* send_stats_callback)
     : clock_(clock),
-      process_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       _encoder(nullptr),
-      _encodedFrameCallback(post_encode_callback),
       _mediaOpt(clock_),
-      _sendStatsCallback(nullptr),
+      _encodedFrameCallback(post_encode_callback, &_mediaOpt),
+      send_stats_callback_(send_stats_callback),
       _codecDataBase(encoder_rate_observer, &_encodedFrameCallback),
       frame_dropper_enabled_(true),
       _sendStatsTimer(1000, clock_),
       current_codec_(),
-      qm_settings_callback_(qm_settings_callback),
       protection_callback_(nullptr),
       encoder_params_({0, 0, 0, 0}),
       encoder_has_internal_source_(false),
       next_frame_types_(1, kVideoFrameDelta) {
+  _mediaOpt.Reset();
   // Allow VideoSender to be created on one thread but used on another, post
   // construction. This is currently how this class is being used by at least
   // one external project (diffractor).
-  _mediaOpt.EnableQM(qm_settings_callback_ != nullptr);
-  _mediaOpt.Reset();
   main_thread_.DetachFromThread();
 }
 
@@ -55,12 +52,19 @@ VideoSender::~VideoSender() {}
 
 void VideoSender::Process() {
   if (_sendStatsTimer.TimeUntilProcess() == 0) {
+    // |_sendStatsTimer.Processed()| must be called. Otherwise
+    // VideoSender::Process() will be called in an infinite loop.
     _sendStatsTimer.Processed();
-    CriticalSectionScoped cs(process_crit_sect_.get());
-    if (_sendStatsCallback != nullptr) {
+    if (send_stats_callback_) {
       uint32_t bitRate = _mediaOpt.SentBitRate();
       uint32_t frameRate = _mediaOpt.SentFrameRate();
-      _sendStatsCallback->SendStatistics(bitRate, frameRate);
+      std::string encoder_name;
+      {
+        rtc::CritScope cs(&params_crit_);
+        // Copy the string here so that we don't hold |params_crit_| in the CB.
+        encoder_name = encoder_name_;
+      }
+      send_stats_callback_->SendStatistics(bitRate, frameRate, encoder_name);
     }
   }
 
@@ -196,19 +200,38 @@ int VideoSender::FrameRate(unsigned int* framerate) const {
 int32_t VideoSender::SetChannelParameters(uint32_t target_bitrate,
                                           uint8_t lossRate,
                                           int64_t rtt) {
-  uint32_t target_rate =
-      _mediaOpt.SetTargetRates(target_bitrate, lossRate, rtt,
-                               protection_callback_, qm_settings_callback_);
+  uint32_t target_rate = _mediaOpt.SetTargetRates(target_bitrate, lossRate, rtt,
+                                                  protection_callback_);
 
   uint32_t input_frame_rate = _mediaOpt.InputFrameRate();
 
-  rtc::CritScope cs(&params_crit_);
-  encoder_params_ = {target_rate, lossRate, rtt, input_frame_rate};
+  EncoderParameters encoder_params = {target_rate, lossRate, rtt,
+                                      input_frame_rate};
+  bool encoder_has_internal_source;
+  {
+    rtc::CritScope cs(&params_crit_);
+    encoder_params_ = encoder_params;
+    encoder_has_internal_source = encoder_has_internal_source_;
+  }
+
+  // For encoders with internal sources, we need to tell the encoder directly,
+  // instead of waiting for an AddVideoFrame that will never come (internal
+  // source encoders don't get input frames).
+  if (encoder_has_internal_source) {
+    rtc::CritScope cs(&encoder_crit_);
+    if (_encoder) {
+      SetEncoderParameters(encoder_params);
+    }
+  }
 
   return VCM_OK;
 }
 
 void VideoSender::SetEncoderParameters(EncoderParameters params) {
+  // |target_bitrate == 0 | means that the network is down or the send pacer is
+  // full.
+  // TODO(perkj): Consider setting |target_bitrate| == 0 to the encoders.
+  // Especially if |encoder_has_internal_source_ | == true.
   if (params.target_bitrate == 0)
     return;
 
@@ -218,24 +241,6 @@ void VideoSender::SetEncoderParameters(EncoderParameters params) {
   }
   if (_encoder != nullptr)
     _encoder->SetEncoderParameters(params);
-}
-
-int32_t VideoSender::RegisterTransportCallback(
-    VCMPacketizationCallback* transport) {
-  rtc::CritScope lock(&encoder_crit_);
-  _encodedFrameCallback.SetMediaOpt(&_mediaOpt);
-  _encodedFrameCallback.SetTransportCallback(transport);
-  return VCM_OK;
-}
-
-// Register video output information callback which will be called to deliver
-// information about the video stream produced by the encoder, for instance the
-// average frame rate and bit rate.
-int32_t VideoSender::RegisterSendStatisticsCallback(
-    VCMSendStatisticsCallback* sendStats) {
-  CriticalSectionScoped cs(process_crit_sect_.get());
-  _sendStatsCallback = sendStats;
-  return VCM_OK;
 }
 
 // Register a video protection callback which will be called to deliver the
@@ -269,7 +274,6 @@ void VideoSender::SetVideoProtection(VCMVideoProtection videoProtection) {
 }
 // Add one raw video frame to the encoder, blocking.
 int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
-                                   const VideoContentMetrics* contentMetrics,
                                    const CodecSpecificInfo* codecSpecificInfo) {
   EncoderParameters encoder_params;
   std::vector<FrameType> next_frame_types;
@@ -291,7 +295,6 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
     _encoder->OnDroppedFrame();
     return VCM_OK;
   }
-  _mediaOpt.UpdateContentData(contentMetrics);
   // TODO(pbos): Make sure setting send codec is synchronized with video
   // processing so frame size always matches.
   if (!_codecDataBase.MatchesCurrentResolution(videoFrame.width(),
@@ -300,7 +303,8 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
     return VCM_PARAMETER_ERROR;
   }
   VideoFrame converted_frame = videoFrame;
-  if (converted_frame.native_handle() && !_encoder->SupportsNativeHandle()) {
+  if (converted_frame.video_frame_buffer()->native_handle() &&
+      !_encoder->SupportsNativeHandle()) {
     // This module only supports software encoding.
     // TODO(pbos): Offload conversion from the encoder thread.
     converted_frame = converted_frame.ConvertNativeToI420Frame();
@@ -313,9 +317,12 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
     LOG(LS_ERROR) << "Failed to encode frame. Error code: " << ret;
     return ret;
   }
+
   {
-    // Change all keyframe requests to encode delta frames the next time.
     rtc::CritScope lock(&params_crit_);
+    encoder_name_ = _encoder->ImplementationName();
+
+    // Change all keyframe requests to encode delta frames the next time.
     for (size_t i = 0; i < next_frame_types_.size(); ++i) {
       // Check for equality (same requested as before encoding) to not
       // accidentally drop a keyframe request while encoding.
@@ -323,16 +330,13 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
         next_frame_types_[i] = kVideoFrameDelta;
     }
   }
-  if (qm_settings_callback_)
-    qm_settings_callback_->SetTargetFramerate(_encoder->GetTargetFramerate());
   return VCM_OK;
 }
 
-int32_t VideoSender::IntraFrameRequest(int stream_index) {
+int32_t VideoSender::IntraFrameRequest(size_t stream_index) {
   {
     rtc::CritScope lock(&params_crit_);
-    if (stream_index < 0 ||
-        static_cast<size_t>(stream_index) >= next_frame_types_.size()) {
+    if (stream_index >= next_frame_types_.size()) {
       return -1;
     }
     next_frame_types_[stream_index] = kVideoFrameKey;
@@ -346,7 +350,7 @@ int32_t VideoSender::IntraFrameRequest(int stream_index) {
   // encoder_crit_.
   rtc::CritScope lock(&encoder_crit_);
   rtc::CritScope params_lock(&params_crit_);
-  if (static_cast<size_t>(stream_index) >= next_frame_types_.size())
+  if (stream_index >= next_frame_types_.size())
     return -1;
   if (_encoder != nullptr && _encoder->InternalSource()) {
     // Try to request the frame if we have an external encoder with

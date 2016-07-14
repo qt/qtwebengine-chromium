@@ -63,13 +63,15 @@ fi
 
 # Add iPhoneOS-V6 to the list of platforms below if you need armv6 support.
 # Note that iPhoneOS-V6 support is not available with the iOS6 SDK.
-readonly INCLUDES="mkvmuxer.hpp
-                   mkvmuxertypes.hpp
-                   mkvmuxerutil.hpp
-                   mkvparser.hpp
-                   mkvreader.hpp
-                   mkvwriter.hpp
-                   webmids.hpp"
+readonly INCLUDES="common/file_util.h
+                   common/hdr_util.h
+                   common/webmids.h
+                   mkvmuxer/mkvmuxer.h
+                   mkvmuxer/mkvmuxertypes.h
+                   mkvmuxer/mkvmuxerutil.h
+                   mkvmuxer/mkvwriter.h
+                   mkvparser/mkvparser.h
+                   mkvparser/mkvreader.h"
 readonly PLATFORMS="iPhoneSimulator
                     iPhoneSimulator64
                     iPhoneOS-V7
@@ -174,19 +176,31 @@ for PLATFORM in ${PLATFORMS}; do
   CXXFLAGS="-arch ${ARCH2:-${ARCH}} -isysroot ${SDKROOT} ${OPT_FLAGS}
             -miphoneos-version-min=6.0"
 
+  # enable bitcode if available
+  if [ "${SDK_MAJOR_VERSION}" -gt 8 ]; then
+    CXXFLAGS="${CXXFLAGS} -fembed-bitcode"
+  fi
+
   # Build using the legacy makefile (instead of generating via cmake).
-  eval make -f makefile.unix libwebm.a CXXFLAGS=\"${CXXFLAGS}\" ${devnull}
+  eval make -f Makefile.unix libwebm.a CXXFLAGS=\"${CXXFLAGS}\" ${devnull}
 
   # copy lib and add it to LIBLIST.
   eval cp libwebm.a "${LIBFILE}" ${devnull}
   LIBLIST="${LIBLIST} ${LIBFILE}"
 
   # clean build so we can go again.
-  eval make -f makefile.unix clean ${devnull}
+  eval make -f Makefile.unix clean ${devnull}
 done
 
-for include_file in ${INCLUDES}; do
-  eval cp -p ${include_file} "${OUTDIR}/${TARGETDIR}/Headers/" ${devnull}
+# create include sub dirs in framework dir.
+readonly framework_header_dir="${OUTDIR}/${TARGETDIR}/Headers"
+readonly framework_header_sub_dirs="common mkvmuxer mkvparser"
+for dir in ${framework_header_sub_dirs}; do
+  mkdir "${framework_header_dir}/${dir}"
+done
+
+for header_file in ${INCLUDES}; do
+  eval cp -p ${header_file} "${framework_header_dir}/${header_file}" ${devnull}
 done
 
 eval ${LIPO} -create ${LIBLIST} -output "${OUTDIR}/${TARGETDIR}/WebM" ${devnull}

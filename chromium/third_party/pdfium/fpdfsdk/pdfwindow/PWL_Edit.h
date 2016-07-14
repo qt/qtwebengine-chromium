@@ -8,11 +8,9 @@
 #define FPDFSDK_PDFWINDOW_PWL_EDIT_H_
 
 #include "core/fxcrt/include/fx_basic.h"
-#include "fpdfsdk/include/fxedit/fx_edit.h"
+#include "fpdfsdk/fxedit/include/fx_edit.h"
 #include "fpdfsdk/pdfwindow/PWL_EditCtrl.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
-
-class IPWL_SpellCheck;
 
 class IPWL_Filler_Notify {
  public:
@@ -81,19 +79,14 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
 
   void SetLineLeading(FX_FLOAT fLineLeading, FX_BOOL bPaint = TRUE);
 
-  void EnableSpellCheck(FX_BOOL bEnabled);
-
   FX_BOOL CanSelectAll() const;
   FX_BOOL CanClear() const;
   FX_BOOL CanCopy() const;
   FX_BOOL CanCut() const;
-  FX_BOOL CanPaste() const;
 
-  virtual void CopyText();
-  virtual void PasteText();
-  virtual void CutText();
+  void CutText();
 
-  virtual void SetText(const FX_WCHAR* csText);
+  void SetText(const FX_WCHAR* csText);
   void ReplaceSel(const FX_WCHAR* csText);
 
   CFX_ByteString GetTextAppearanceStream(const CFX_FloatPoint& ptOffset) const;
@@ -116,6 +109,9 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
                            CFX_ArrayTemplate<CPDF_TextObject*>& ObjArray);
   void GeneratePageObjects(CPDF_PageObjectHolder* pObjectHolder,
                            const CFX_FloatPoint& ptOffset);
+
+  FX_BOOL IsProceedtoOnChar(uint16_t nKeyCode, uint32_t nFlag);
+  void AttachFFLData(void* pData) { m_pFormFiller = pData; }
 
  protected:
   // IFX_Edit_OprNotify
@@ -152,20 +148,9 @@ class CPWL_Edit : public CPWL_EditCtrl, public IFX_Edit_OprNotify {
   CPVT_WordRange GetSameWordsRange(const CPVT_WordPlace& place,
                                    FX_BOOL bLatin,
                                    FX_BOOL bArabic) const;
-
- public:
-  FX_BOOL IsProceedtoOnChar(uint16_t nKeyCode, uint32_t nFlag);
-
- private:
   IPWL_Filler_Notify* m_pFillerNotify;
-  IPWL_SpellCheck* m_pSpellCheck;
   FX_BOOL m_bFocus;
   CFX_FloatRect m_rcOldWindow;
-
- public:
-  void AttachFFLData(void* pData) { m_pFormFiller = pData; }
-
- private:
   void* m_pFormFiller;
 };
 

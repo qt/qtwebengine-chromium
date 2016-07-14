@@ -12,7 +12,9 @@
 
 #include "webrtc/api/mediastreamtrackproxy.h"
 #include "webrtc/api/audiotrack.h"
+#include "webrtc/api/videosourceproxy.h"
 #include "webrtc/api/videotrack.h"
+#include "webrtc/base/trace_event.h"
 
 namespace webrtc {
 
@@ -65,6 +67,15 @@ void AudioRtpReceiver::Stop() {
   provider_ = nullptr;
 }
 
+RtpParameters AudioRtpReceiver::GetParameters() const {
+  return provider_->GetAudioRtpReceiveParameters(ssrc_);
+}
+
+bool AudioRtpReceiver::SetParameters(const RtpParameters& parameters) {
+  TRACE_EVENT0("webrtc", "AudioRtpReceiver::SetParameters");
+  return provider_->SetAudioRtpReceiveParameters(ssrc_, parameters);
+}
+
 void AudioRtpReceiver::Reconfigure() {
   if (!provider_) {
     return;
@@ -81,11 +92,15 @@ VideoRtpReceiver::VideoRtpReceiver(MediaStreamInterface* stream,
       ssrc_(ssrc),
       provider_(provider),
       source_(new RefCountedObject<VideoTrackSource>(&broadcaster_,
-                                                     worker_thread,
                                                      true /* remote */)),
       track_(VideoTrackProxy::Create(
           rtc::Thread::Current(),
-          VideoTrack::Create(track_id, source_.get()))) {
+          worker_thread,
+          VideoTrack::Create(
+              track_id,
+              VideoTrackSourceProxy::Create(rtc::Thread::Current(),
+                                            worker_thread,
+                                            source_)))) {
   source_->SetState(MediaSourceInterface::kLive);
   provider_->SetVideoPlayout(ssrc_, true, &broadcaster_);
   stream->AddTrack(track_);
@@ -106,6 +121,15 @@ void VideoRtpReceiver::Stop() {
   source_->OnSourceDestroyed();
   provider_->SetVideoPlayout(ssrc_, false, nullptr);
   provider_ = nullptr;
+}
+
+RtpParameters VideoRtpReceiver::GetParameters() const {
+  return provider_->GetVideoRtpReceiveParameters(ssrc_);
+}
+
+bool VideoRtpReceiver::SetParameters(const RtpParameters& parameters) {
+  TRACE_EVENT0("webrtc", "VideoRtpReceiver::SetParameters");
+  return provider_->SetVideoRtpReceiveParameters(ssrc_, parameters);
 }
 
 }  // namespace webrtc

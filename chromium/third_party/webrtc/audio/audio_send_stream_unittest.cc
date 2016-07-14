@@ -16,7 +16,7 @@
 #include "webrtc/audio/audio_send_stream.h"
 #include "webrtc/audio/audio_state.h"
 #include "webrtc/audio/conversion.h"
-#include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
+#include "webrtc/modules/congestion_controller/include/mock/mock_congestion_controller.h"
 #include "webrtc/modules/congestion_controller/include/congestion_controller.h"
 #include "webrtc/modules/pacing/paced_sender.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h"
@@ -89,6 +89,10 @@ struct ConfigHelper {
               .Times(1);
           EXPECT_CALL(*channel_proxy_, ResetCongestionControlObjects())
               .Times(1);
+          EXPECT_CALL(*channel_proxy_, RegisterExternalTransport(nullptr))
+              .Times(1);
+          EXPECT_CALL(*channel_proxy_, DeRegisterExternalTransport())
+              .Times(1);
           return channel_proxy_;
         }));
     stream_config_.voe_channel_id = kChannelId;
@@ -157,7 +161,7 @@ struct ConfigHelper {
   rtc::scoped_refptr<AudioState> audio_state_;
   AudioSendStream::Config stream_config_;
   testing::StrictMock<MockVoEChannelProxy>* channel_proxy_ = nullptr;
-  testing::NiceMock<MockBitrateObserver> bitrate_observer_;
+  testing::NiceMock<MockCongestionObserver> bitrate_observer_;
   testing::NiceMock<MockRemoteBitrateObserver> remote_bitrate_observer_;
   CongestionController congestion_controller_;
 };

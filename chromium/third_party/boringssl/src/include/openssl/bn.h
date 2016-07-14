@@ -441,6 +441,11 @@ OPENSSL_EXPORT int BN_cmp(const BIGNUM *a, const BIGNUM *b);
  * value of |b|, respectively. */
 OPENSSL_EXPORT int BN_ucmp(const BIGNUM *a, const BIGNUM *b);
 
+/* BN_equal_consttime returns one if |a| is equal to |b|, and zero otherwise.
+ * It takes an amount of time dependent on the sizes of |a| and |b|, but
+ * independent of the contents (including the signs) of |a| and |b|. */
+OPENSSL_EXPORT int BN_equal_consttime(const BIGNUM *a, const BIGNUM *b);
+
 /* BN_abs_is_word returns one if the absolute value of |bn| equals |w| and zero
  * otherwise. */
 OPENSSL_EXPORT int BN_abs_is_word(const BIGNUM *bn, BN_ULONG w);
@@ -749,11 +754,11 @@ OPENSSL_EXPORT int BN_MONT_CTX_set(BN_MONT_CTX *mont, const BIGNUM *mod,
 
 /* BN_MONT_CTX_set_locked takes |lock| and checks whether |*pmont| is NULL. If
  * so, it creates a new |BN_MONT_CTX| and sets the modulus for it to |mod|. It
- * then stores it as |*pmont| and returns it, or NULL on error.
+ * then stores it as |*pmont|. It returns one on success and zero on error.
  *
- * If |*pmont| is already non-NULL then the existing value is returned. */
-BN_MONT_CTX *BN_MONT_CTX_set_locked(BN_MONT_CTX **pmont, CRYPTO_MUTEX *lock,
-                                    const BIGNUM *mod, BN_CTX *bn_ctx);
+ * If |*pmont| is already non-NULL then it does nothing and returns one. */
+int BN_MONT_CTX_set_locked(BN_MONT_CTX **pmont, CRYPTO_MUTEX *lock,
+                           const BIGNUM *mod, BN_CTX *bn_ctx);
 
 /* BN_to_montgomery sets |ret| equal to |a| in the Montgomery domain. It
  * returns one on success and zero on error. */
@@ -797,14 +802,6 @@ OPENSSL_EXPORT int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a,
                                              BN_CTX *ctx,
                                              const BN_MONT_CTX *mont);
 
-OPENSSL_EXPORT int BN_mod_exp_mont_word(BIGNUM *r, BN_ULONG a, const BIGNUM *p,
-                                        const BIGNUM *m, BN_CTX *ctx,
-                                        const BN_MONT_CTX *mont);
-OPENSSL_EXPORT int BN_mod_exp2_mont(BIGNUM *r, const BIGNUM *a1,
-                                    const BIGNUM *p1, const BIGNUM *a2,
-                                    const BIGNUM *p2, const BIGNUM *m,
-                                    BN_CTX *ctx, const BN_MONT_CTX *mont);
-
 
 /* Deprecated functions */
 
@@ -823,6 +820,20 @@ OPENSSL_EXPORT size_t BN_bn2mpi(const BIGNUM *in, uint8_t *out);
  * |out| is reused and returned. On error, NULL is returned and the error queue
  * is updated. */
 OPENSSL_EXPORT BIGNUM *BN_mpi2bn(const uint8_t *in, size_t len, BIGNUM *out);
+
+/* BN_mod_exp_mont_word is like |BN_mod_exp_mont| except that the base |a| is
+ * given as a |BN_ULONG| instead of a |BIGNUM *|. It returns one on success
+ * or zero otherwise. */
+OPENSSL_EXPORT int BN_mod_exp_mont_word(BIGNUM *r, BN_ULONG a, const BIGNUM *p,
+                                        const BIGNUM *m, BN_CTX *ctx,
+                                        const BN_MONT_CTX *mont);
+
+/* BN_mod_exp2_mont calculates (a1^p1) * (a2^p2) mod m. It returns 1 on success
+ * or zero otherwise. */
+OPENSSL_EXPORT int BN_mod_exp2_mont(BIGNUM *r, const BIGNUM *a1,
+                                    const BIGNUM *p1, const BIGNUM *a2,
+                                    const BIGNUM *p2, const BIGNUM *m,
+                                    BN_CTX *ctx, const BN_MONT_CTX *mont);
 
 
 /* Private functions */
@@ -850,15 +861,6 @@ OPENSSL_EXPORT unsigned BN_num_bits_word(BN_ULONG l);
  * call BN_mod_exp_mont_consttime, BN_div() will call BN_div_no_branch,
  * BN_mod_inverse() will call BN_mod_inverse_no_branch. */
 #define BN_FLG_CONSTTIME 0x04
-
-
-/* Android compatibility section.
- *
- * These functions are declared, temporarily, for Android because
- * wpa_supplicant will take a little time to sync with upstream. Outside of
- * Android they'll have no definition. */
-
-OPENSSL_EXPORT BIGNUM *get_rfc3526_prime_1536(BIGNUM *bn);
 
 
 #if defined(__cplusplus)

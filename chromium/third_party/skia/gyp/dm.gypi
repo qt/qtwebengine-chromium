@@ -24,6 +24,7 @@
     'skia_lib.gyp:skia_lib',
     'svg.gyp:svg',
     'tools.gyp:crash_handler',
+	'tools.gyp:picture_utils',
     'tools.gyp:proc_stats',
     'tools.gyp:sk_tool_utils',
     'tools.gyp:url_data_manager',
@@ -44,6 +45,7 @@
 
     '../tools/debugger/SkDebugCanvas.cpp',
     '../tools/debugger/SkDrawCommand.cpp',
+    '../tools/debugger/SkJsonWriteBuffer.cpp',
     '../tools/debugger/SkObjectParser.cpp',
     '../tools/debugger/SkOverdrawMode.h',
     '../tools/debugger/SkOverdrawMode.cpp',
@@ -52,6 +54,5 @@
     [ 'skia_gpu == 1', {
       'dependencies': [ 'gputest.gyp:skgputest' ],
     }],
-    [ 'skia_mojo', { 'dependencies': [ 'skmojo.gyp:skmojo' ], } ],
   ],
 }

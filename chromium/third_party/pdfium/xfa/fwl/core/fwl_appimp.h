@@ -9,30 +9,37 @@
 
 #include <memory>
 
-#include "xfa/fwl/core/fwl_threadimp.h"
+#include "xfa/fwl/core/fwl_noteimp.h"
 
 class CFWL_WidgetMgr;
-class IFWL_AdapterNative;
-class IFWL_WidgetMgr;
-class IFWL_ThemeProvider;
+class CXFA_FFApp;
 class IFWL_App;
+class IFWL_NoteThread;
+class IFWL_ThemeProvider;
+class IFWL_WidgetMgr;
 
-class CFWL_AppImp : public CFWL_NoteThreadImp {
+class CFWL_AppImp {
  public:
-  CFWL_AppImp(IFWL_App* pIface, IFWL_AdapterNative* pAdapter);
-  virtual ~CFWL_AppImp();
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
-  virtual IFWL_AdapterNative* GetAdapterNative() const;
-  virtual IFWL_WidgetMgr* GetWidgetMgr() const;
-  virtual IFWL_ThemeProvider* GetThemeProvider() const;
-  virtual FWL_ERR SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
-  virtual FWL_ERR Exit(int32_t iExitCode = 0);
+  CFWL_AppImp(IFWL_App* pIface, CXFA_FFApp* pAdapter);
+  ~CFWL_AppImp();
 
- protected:
-  IFWL_AdapterNative* const m_pAdapterNative;
+  IFWL_App* GetInterface() const { return m_pIface; }
+  CFWL_NoteDriver* GetNoteDriver() const { return m_pNoteDriver.get(); }
+
+  FWL_Error Initialize();
+  FWL_Error Finalize();
+  CXFA_FFApp* GetAdapterNative() const;
+  IFWL_WidgetMgr* GetWidgetMgr() const;
+  IFWL_ThemeProvider* GetThemeProvider() const;
+  void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
+  void Exit(int32_t iExitCode);
+
+ private:
+  CXFA_FFApp* const m_pAdapterNative;
   std::unique_ptr<CFWL_WidgetMgr> m_pWidgetMgr;
   IFWL_ThemeProvider* m_pThemeProvider;
+  std::unique_ptr<CFWL_NoteDriver> m_pNoteDriver;
+  IFWL_App* const m_pIface;
 };
 
 #endif  // XFA_FWL_CORE_FWL_APPIMP_H_

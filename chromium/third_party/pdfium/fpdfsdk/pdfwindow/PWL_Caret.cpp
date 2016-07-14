@@ -6,7 +6,7 @@
 
 #include "fpdfsdk/pdfwindow/PWL_Caret.h"
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/pdfwindow/PWL_Utils.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
@@ -95,7 +95,7 @@ CFX_ByteString CPWL_Caret::GetCaretAppearanceStream(
     const CFX_FloatPoint& ptOffset) {
   CFX_ByteTextBuf sCaret;
   GetCaretApp(sCaret, ptOffset);
-  return sCaret.GetByteString();
+  return sCaret.MakeString();
 }
 
 void CPWL_Caret::TimerProc() {

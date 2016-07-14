@@ -5,18 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "GrLayerCache.h"
-#include "GrLayerHoister.h"
-#include "GrRecordReplaceDraw.h"
-
 #include "SkBigPicture.h"
 #include "SkCanvas.h"
-#include "SkGpuDevice.h"
+#include "SkImageFilterCache.h"
 #include "SkLayerInfo.h"
 #include "SkRecordDraw.h"
 #include "SkSpecialImage.h"
 #include "SkSurface.h"
-#include "SkSurface_Gpu.h"
+
+#include "GrLayerHoister.h"
+
+#if !defined(SK_IGNORE_GPU_LAYER_HOISTING) && SK_SUPPORT_GPU
+
+#include "GrContext.h"
+#include "GrLayerCache.h"
+#include "GrRecordReplaceDraw.h"
 
 // Create the layer information for the hoisted layer and secure the
 // required texture/render target resources.
@@ -232,7 +235,7 @@ void GrLayerHoister::DrawLayersToAtlas(GrContext* context,
     if (atlased.count() > 0) {
         // All the atlased layers are rendered into the same GrTexture
         SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-        auto surface(SkSurface::MakeRenderTargetDirect(
+        sk_sp<SkSurface> surface(SkSurface::MakeRenderTargetDirect(
                                         atlased[0].fLayer->texture()->asRenderTarget(), &props));
 
         SkCanvas* atlasCanvas = surface->getCanvas();
@@ -278,7 +281,7 @@ void GrLayerHoister::DrawLayersToAtlas(GrContext* context,
 }
 
 void GrLayerHoister::FilterLayer(GrContext* context,
-                                 SkGpuDevice* device,
+                                 const SkSurfaceProps* props,
                                  const GrHoistedLayer& info) {
     GrCachedLayer* layer = info.fLayer;
 
@@ -297,17 +300,17 @@ void GrLayerHoister::FilterLayer(GrContext* context,
 
     // This cache is transient, and is freed (along with all its contained
     // textures) when it goes out of scope.
-    SkAutoTUnref<SkImageFilter::Cache> cache(SkImageFilter::Cache::Create(kDefaultCacheSize));
+    SkAutoTUnref<SkImageFilterCache> cache(SkImageFilterCache::Create(kDefaultCacheSize));
     SkImageFilter::Context filterContext(totMat, clipBounds, cache);
 
-    SkImageFilter::DeviceProxy proxy(device);
-
     // TODO: should the layer hoister store stand alone layers as SkSpecialImages internally?
-    const SkIRect subset = SkIRect::MakeWH(layer->texture()->width(), layer->texture()->height());
-    sk_sp<SkSpecialImage> img(SkSpecialImage::MakeFromGpu(&proxy, subset,
+    SkASSERT(layer->rect().width() == layer->texture()->width() &&
+             layer->rect().height() == layer->texture()->height());
+    const SkIRect subset = SkIRect::MakeWH(layer->rect().width(), layer->rect().height());
+    sk_sp<SkSpecialImage> img(SkSpecialImage::MakeFromGpu(subset,
                                                           kNeedNewImageUniqueID_SpecialImage,
-                                                          layer->texture(),
-                                                          &device->surfaceProps()));
+                                                          sk_ref_sp(layer->texture()),
+                                                          props));
 
     SkIPoint offset = SkIPoint::Make(0, 0);
     sk_sp<SkSpecialImage> result(layer->filter()->filterImage(img.get(),
@@ -318,8 +321,9 @@ void GrLayerHoister::FilterLayer(GrContext* context,
         return;
     }
 
-    SkASSERT(result->peekTexture());
-    layer->setTexture(result->peekTexture(), result->subset(), false);
+    SkASSERT(result->isTextureBacked());
+    sk_sp<GrTexture> texture(result->asTextureRef(context));
+    layer->setTexture(texture.get(), result->subset(), false);
     layer->setOffset(offset);
 }
 
@@ -359,9 +363,7 @@ void GrLayerHoister::DrawLayers(GrContext* context, const SkTDArray<GrHoistedLay
         layerCanvas->flush();
 
         if (layer->filter()) {
-            SkSurface_Gpu* gpuSurf = static_cast<SkSurface_Gpu*>(surface.get());
-
-            FilterLayer(context, gpuSurf->getDevice(), layers[i]);
+            FilterLayer(context, &surface->props(), layers[i]);
         }
     }
 }
@@ -396,3 +398,5 @@ void GrLayerHoister::End(GrContext* context) {
 
     layerCache->end();
 }
+
+#endif

@@ -129,18 +129,18 @@ FX_FLOAT FXSYS_logb(FX_FLOAT b, FX_FLOAT x) {
 FX_FLOAT FXSYS_strtof(const FX_CHAR* pcsStr,
                       int32_t iLength,
                       int32_t* pUsedLen) {
-  FXSYS_assert(pcsStr);
+  ASSERT(pcsStr);
   if (iLength < 0) {
     iLength = (int32_t)FXSYS_strlen(pcsStr);
   }
   CFX_WideString ws =
-      CFX_WideString::FromLocal(CFX_ByteString(pcsStr, iLength));
+      CFX_WideString::FromLocal(CFX_ByteStringC(pcsStr, iLength));
   return FXSYS_wcstof(ws.c_str(), iLength, pUsedLen);
 }
 FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
                       int32_t iLength,
                       int32_t* pUsedLen) {
-  FXSYS_assert(pwsStr);
+  ASSERT(pwsStr);
   if (iLength < 0) {
     iLength = (int32_t)FXSYS_wcslen(pwsStr);
   }
@@ -186,7 +186,7 @@ FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
 FX_WCHAR* FXSYS_wcsncpy(FX_WCHAR* dstStr,
                         const FX_WCHAR* srcStr,
                         size_t count) {
-  FXSYS_assert(dstStr && srcStr && count > 0);
+  ASSERT(dstStr && srcStr && count > 0);
   for (size_t i = 0; i < count; ++i)
     if ((dstStr[i] = srcStr[i]) == L'\0') {
       break;
@@ -194,7 +194,7 @@ FX_WCHAR* FXSYS_wcsncpy(FX_WCHAR* dstStr,
   return dstStr;
 }
 int32_t FXSYS_wcsnicmp(const FX_WCHAR* s1, const FX_WCHAR* s2, size_t count) {
-  FXSYS_assert(s1 && s2 && count > 0);
+  ASSERT(s1 && s2 && count > 0);
   FX_WCHAR wch1 = 0, wch2 = 0;
   while (count-- > 0) {
     wch1 = (FX_WCHAR)FXSYS_tolower(*s1++);
@@ -206,7 +206,7 @@ int32_t FXSYS_wcsnicmp(const FX_WCHAR* s1, const FX_WCHAR* s2, size_t count) {
   return wch1 - wch2;
 }
 int32_t FXSYS_strnicmp(const FX_CHAR* s1, const FX_CHAR* s2, size_t count) {
-  FXSYS_assert(s1 && s2 && count > 0);
+  ASSERT(s1 && s2 && count > 0);
   FX_CHAR ch1 = 0, ch2 = 0;
   while (count-- > 0) {
     ch1 = (FX_CHAR)FXSYS_tolower(*s1++);
@@ -217,34 +217,22 @@ int32_t FXSYS_strnicmp(const FX_CHAR* s1, const FX_CHAR* s2, size_t count) {
   }
   return ch1 - ch2;
 }
-uint32_t FX_HashCode_String_GetA(const FX_CHAR* pStr,
-                                 int32_t iLength,
-                                 FX_BOOL bIgnoreCase) {
-  FXSYS_assert(pStr);
-  if (iLength < 0) {
-    iLength = (int32_t)FXSYS_strlen(pStr);
-  }
-  const FX_CHAR* pStrEnd = pStr + iLength;
+
+uint32_t FX_HashCode_GetA(const CFX_ByteStringC& str, bool bIgnoreCase) {
   uint32_t dwHashCode = 0;
   if (bIgnoreCase) {
-    while (pStr < pStrEnd) {
-      dwHashCode = 31 * dwHashCode + FXSYS_tolower(*pStr++);
-    }
+    for (FX_STRSIZE i = 0; i < str.GetLength(); ++i)
+      dwHashCode = 31 * dwHashCode + FXSYS_tolower(str.CharAt(i));
   } else {
-    while (pStr < pStrEnd) {
-      dwHashCode = 31 * dwHashCode + *pStr++;
-    }
+    for (FX_STRSIZE i = 0; i < str.GetLength(); ++i)
+      dwHashCode = 31 * dwHashCode + str.CharAt(i);
   }
   return dwHashCode;
 }
-uint32_t FX_HashCode_String_GetW(const FX_WCHAR* pStr,
-                                 int32_t iLength,
-                                 FX_BOOL bIgnoreCase) {
-  FXSYS_assert(pStr);
-  if (iLength < 0) {
-    iLength = (int32_t)FXSYS_wcslen(pStr);
-  }
-  const FX_WCHAR* pStrEnd = pStr + iLength;
+
+uint32_t FX_HashCode_GetW(const CFX_WideStringC& str, bool bIgnoreCase) {
+  const FX_WCHAR* pStr = str.c_str();
+  const FX_WCHAR* pStrEnd = pStr + str.GetLength();
   uint32_t dwHashCode = 0;
   if (bIgnoreCase) {
     while (pStr < pStrEnd) {
@@ -270,7 +258,7 @@ void* FX_Random_MT_Start(uint32_t dwSeed) {
   return pContext;
 }
 uint32_t FX_Random_MT_Generate(void* pContext) {
-  FXSYS_assert(pContext);
+  ASSERT(pContext);
   FX_MTRANDOMCONTEXT* pMTC = static_cast<FX_MTRANDOMCONTEXT*>(pContext);
   uint32_t v;
   static uint32_t mag[2] = {0, MT_Matrix_A};
@@ -301,7 +289,7 @@ uint32_t FX_Random_MT_Generate(void* pContext) {
   return v;
 }
 void FX_Random_MT_Close(void* pContext) {
-  FXSYS_assert(pContext);
+  ASSERT(pContext);
   FX_Free(pContext);
 }
 void FX_Random_GenerateMT(uint32_t* pBuffer, int32_t iCount) {
@@ -327,9 +315,9 @@ void FX_Random_GenerateBase(uint32_t* pBuffer, int32_t iCount) {
     ::GetSystemTime(&st2);
   } while (FXSYS_memcmp(&st1, &st2, sizeof(SYSTEMTIME)) == 0);
   uint32_t dwHash1 =
-      FX_HashCode_String_GetA((const FX_CHAR*)&st1, sizeof(st1), TRUE);
+      FX_HashCode_GetA(CFX_ByteStringC((uint8_t*)&st1, sizeof(st1)), true);
   uint32_t dwHash2 =
-      FX_HashCode_String_GetA((const FX_CHAR*)&st2, sizeof(st2), TRUE);
+      FX_HashCode_GetA(CFX_ByteStringC((uint8_t*)&st2, sizeof(st2)), true);
   ::srand((dwHash1 << 16) | (uint32_t)dwHash2);
 #else
   time_t tmLast = time(NULL);

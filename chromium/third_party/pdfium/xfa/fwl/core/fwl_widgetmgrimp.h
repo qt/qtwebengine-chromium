@@ -7,14 +7,21 @@
 #ifndef XFA_FWL_CORE_FWL_WIDGETMGRIMP_H_
 #define XFA_FWL_CORE_FWL_WIDGETMGRIMP_H_
 
+#include "core/fxcrt/include/fx_system.h"
+#include "xfa/fwl/core/fwl_error.h"
 #include "xfa/fwl/core/ifwl_widgetmgr.h"
-#include "xfa/fwl/core/ifwl_widgetmgrdelegate.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
 
-class IFWL_Widget;
-class IFWL_AdapterWidgetMgr;
+#define FWL_WGTMGR_DisableThread 0x00000001
+#define FWL_WGTMGR_DisableForm 0x00000002
+
+class CFWL_Message;
 class CFWL_WidgetMgrDelegate;
-class IFWL_AdapterNative;
+class CXFA_FFApp;
+class CXFA_FWLAdapterWidgetMgr;
+class CFX_Graphics;
+class CFX_Matrix;
+class IFWL_Widget;
 
 class CFWL_WidgetMgrItem {
  public:
@@ -54,7 +61,7 @@ class CFWL_WidgetMgrItem {
 
 class CFWL_WidgetMgr : public IFWL_WidgetMgr {
  public:
-  CFWL_WidgetMgr(IFWL_AdapterNative* pAdapterNative);
+  CFWL_WidgetMgr(CXFA_FFApp* pAdapterNative);
   ~CFWL_WidgetMgr() override;
 
   // IFWL_WidgetMgr:
@@ -64,8 +71,8 @@ class CFWL_WidgetMgr : public IFWL_WidgetMgr {
                          FWL_WGTRELATION eRelation) override;
   int32_t GetWidgetIndex(IFWL_Widget* pWidget) override;
   FX_BOOL SetWidgetIndex(IFWL_Widget* pWidget, int32_t nIndex) override;
-  FWL_ERR RepaintWidget(IFWL_Widget* pWidget,
-                        const CFX_RectF* pRect = NULL) override;
+  FWL_Error RepaintWidget(IFWL_Widget* pWidget,
+                          const CFX_RectF* pRect = NULL) override;
   uint32_t GetCapability() override { return m_dwCapability; }
 
   void AddWidget(IFWL_Widget* pWidget);
@@ -76,44 +83,23 @@ class CFWL_WidgetMgr : public IFWL_WidgetMgr {
   void SetOwner(IFWL_Widget* pOwner, IFWL_Widget* pOwned);
   void SetParent(IFWL_Widget* pParent, IFWL_Widget* pChild);
   FX_BOOL IsChild(IFWL_Widget* pChild, IFWL_Widget* pParent);
-  FWL_ERR CreateWidget_Native(IFWL_Widget* pWidget);
-  FWL_ERR DestroyWidget_Native(IFWL_Widget* pWidget);
-  FWL_ERR GetWidgetRect_Native(IFWL_Widget* pWidget, CFX_RectF& rect);
-  FWL_ERR SetWidgetRect_Native(IFWL_Widget* pWidget, const CFX_RectF& rect);
-  FWL_ERR SetWidgetPosition_Native(IFWL_Widget* pWidget,
-                                   FX_FLOAT fx,
-                                   FX_FLOAT fy);
-  FWL_ERR SetWidgetIcon_Native(IFWL_Widget* pWidget,
-                               const CFX_DIBitmap* pIcon,
-                               FX_BOOL bBig);
-  FWL_ERR SetWidgetCaption_Native(IFWL_Widget* pWidget,
-                                  const CFX_WideStringC& wsCaption);
-  FWL_ERR SetBorderRegion_Native(IFWL_Widget* pWidget, CFX_Path* pPath);
-  FWL_ERR ShowWidget_Native(IFWL_Widget* pWidget);
-  FWL_ERR HideWidget_Native(IFWL_Widget* pWidget);
-  FWL_ERR SetNormal_Native(IFWL_Widget* pWidget);
-  FWL_ERR SetMaximize_Native(IFWL_Widget* pWidget);
-  FWL_ERR SetMinimize_Native(IFWL_Widget* pWidget);
-  FX_BOOL CheckMessage_Native();
-  FWL_ERR DispatchMessage_Native();
-  FX_BOOL IsIdleMessage_Native();
-  FWL_ERR Exit_Native(int32_t iExitCode);
-  FWL_ERR CreateWidgetWithNativeId_Native(IFWL_Widget* pWidget, void* vp);
+  FWL_Error SetWidgetRect_Native(IFWL_Widget* pWidget, const CFX_RectF& rect);
   IFWL_Widget* GetWidgetAtPoint(IFWL_Widget* pParent, FX_FLOAT fx, FX_FLOAT fy);
   void NotifySizeChanged(IFWL_Widget* pForm, FX_FLOAT fx, FX_FLOAT fy);
   IFWL_Widget* nextTab(IFWL_Widget* parent, IFWL_Widget* focus, FX_BOOL& bFind);
   int32_t CountRadioButtonGroup(IFWL_Widget* pFirst);
   IFWL_Widget* GetSiblingRadioButton(IFWL_Widget* pWidget, FX_BOOL bNext);
   IFWL_Widget* GetRadioButtonGroupHeader(IFWL_Widget* pRadioButton);
-  void GetSameGroupRadioButton(IFWL_Widget* pRadioButton, CFX_PtrArray& group);
+  void GetSameGroupRadioButton(IFWL_Widget* pRadioButton,
+                               CFX_ArrayTemplate<IFWL_Widget*>& group);
   IFWL_Widget* GetDefaultButton(IFWL_Widget* pParent);
   void AddRedrawCounts(IFWL_Widget* pWidget);
   void ResetRedrawCounts(IFWL_Widget* pWidget);
-  IFWL_AdapterWidgetMgr* GetAdapterWidgetMgr() { return m_pAdapter; }
-  CFWL_WidgetMgrDelegate* GetDelegate() { return m_pDelegate; }
+  CXFA_FWLAdapterWidgetMgr* GetAdapterWidgetMgr() const { return m_pAdapter; }
+  CFWL_WidgetMgrDelegate* GetDelegate() const { return m_pDelegate; }
   CFWL_WidgetMgrItem* GetWidgetMgrItem(IFWL_Widget* pWidget);
-  FX_BOOL IsThreadEnabled();
-  FX_BOOL IsFormDisabled();
+  bool IsThreadEnabled();
+  bool IsFormDisabled();
   FX_BOOL GetAdapterPopupPos(IFWL_Widget* pWidget,
                              FX_FLOAT fMinHeight,
                              FX_FLOAT fMaxHeight,
@@ -127,7 +113,7 @@ class CFWL_WidgetMgr : public IFWL_WidgetMgr {
                           IFWL_Widget** pWidget = NULL);
   FX_BOOL IsAbleNative(IFWL_Widget* pWidget);
   CFX_MapPtrToPtr m_mapWidgetItem;
-  IFWL_AdapterWidgetMgr* m_pAdapter;
+  CXFA_FWLAdapterWidgetMgr* m_pAdapter;
   CFWL_WidgetMgrDelegate* m_pDelegate;
   friend class CFWL_WidgetMgrDelegate;
   uint32_t m_dwCapability;
@@ -136,18 +122,16 @@ class CFWL_WidgetMgr : public IFWL_WidgetMgr {
 #endif
 };
 
-class CFWL_WidgetMgrDelegate : public IFWL_WidgetMgrDelegate {
+class CFWL_WidgetMgrDelegate {
  public:
   CFWL_WidgetMgrDelegate(CFWL_WidgetMgr* pWidgetMgr);
-  ~CFWL_WidgetMgrDelegate() override {}
+  ~CFWL_WidgetMgrDelegate() {}
 
-  // IFWL_WidgetMgrDelegate:
-  FWL_ERR OnSetCapability(
-      uint32_t dwCapability = FWL_WGTMGR_DisableThread) override;
-  int32_t OnProcessMessageToForm(CFWL_Message* pMessage) override;
-  FWL_ERR OnDrawWidget(IFWL_Widget* pWidget,
-                       CFX_Graphics* pGraphics,
-                       const CFX_Matrix* pMatrix) override;
+  FWL_Error OnSetCapability(uint32_t dwCapability = FWL_WGTMGR_DisableThread);
+  void OnProcessMessageToForm(CFWL_Message* pMessage);
+  void OnDrawWidget(IFWL_Widget* pWidget,
+                    CFX_Graphics* pGraphics,
+                    const CFX_Matrix* pMatrix);
 
  protected:
   void DrawChild(IFWL_Widget* pParent,

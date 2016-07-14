@@ -10,7 +10,6 @@
 
 #include "GrPipelineBuilder.h"
 #include "GrProgramDesc.h"
-#include "GrStencil.h"
 #include "GrSwizzle.h"
 #include "GrAllocator.h"
 #include "GrTextureParamsAdjuster.h"
@@ -34,6 +33,7 @@ class GrPipeline;
 class GrPrimitiveProcessor;
 class GrRenderTarget;
 class GrStencilAttachment;
+class GrStencilSettings;
 class GrSurface;
 class GrTexture;
 
@@ -138,10 +138,12 @@ public:
      * @param size            size of buffer to create.
      * @param intendedType    hint to the graphics subsystem about what the buffer will be used for.
      * @param accessPattern   hint to the graphics subsystem about how the data will be accessed.
+     * @param data            optional data with which to initialize the buffer.
      *
      * @return the buffer if successful, otherwise nullptr.
      */
-    GrBuffer* createBuffer(size_t size, GrBufferType intendedType, GrAccessPattern accessPattern);
+    GrBuffer* createBuffer(size_t size, GrBufferType intendedType, GrAccessPattern accessPattern,
+                           const void* data = nullptr);
 
     /**
      * Resolves MSAA.
@@ -483,17 +485,6 @@ public:
     virtual void resetShaderCacheForTesting() const {}
 
 protected:
-    // Functions used to map clip-respecting stencil tests into normal
-    // stencil funcs supported by GPUs.
-    static GrStencilFunc ConvertStencilFunc(bool stencilInClip,
-                                            GrStencilFunc func);
-    static void ConvertStencilFuncAndMask(GrStencilFunc func,
-                                          bool clipInStencil,
-                                          unsigned int clipBit,
-                                          unsigned int userBits,
-                                          unsigned int* ref,
-                                          unsigned int* mask);
-
     static void ElevateDrawPreference(GrGpu::DrawPreference* preference,
                                       GrGpu::DrawPreference elevation) {
         GR_STATIC_ASSERT(GrGpu::kCallerPrefersDraw_DrawPreference > GrGpu::kNoDraw_DrawPreference);
@@ -509,6 +500,9 @@ protected:
             this->resetContext();
         }
     }
+
+    // Handles cases where a surface will be updated without a call to flushRenderTarget
+    void didWriteToSurface(GrSurface* surface, const SkIRect* bounds, uint32_t mipLevels = 1) const;
 
     Stats                                   fStats;
     SkAutoTDelete<GrPathRendering>          fPathRendering;
@@ -527,17 +521,18 @@ private:
     // Texture size and sample size will have already been validated in base class before
     // onCreateTexture/CompressedTexture are called.
     virtual GrTexture* onCreateTexture(const GrSurfaceDesc& desc,
-                                       GrGpuResource::LifeCycle lifeCycle,
+                                       SkBudgeted budgeted,
                                        const SkTArray<GrMipLevel>& texels) = 0;
     virtual GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc,
-                                                 GrGpuResource::LifeCycle lifeCycle,
+                                                 SkBudgeted budgeted,
                                                  const SkTArray<GrMipLevel>& texels) = 0;
 
     virtual GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership) = 0;
     virtual GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
                                                       GrWrapOwnership) = 0;
     virtual GrRenderTarget* onWrapBackendTextureAsRenderTarget(const GrBackendTextureDesc&) = 0;
-    virtual GrBuffer* onCreateBuffer(size_t size, GrBufferType intendedType, GrAccessPattern) = 0;
+    virtual GrBuffer* onCreateBuffer(size_t size, GrBufferType intendedType, GrAccessPattern,
+                                     const void* data) = 0;
 
     // overridden by backend-specific derived class to perform the clear.
     virtual void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) = 0;

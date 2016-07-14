@@ -5,12 +5,13 @@
 #include "content/renderer/media/webmediaplayer_ms_compositor.h"
 
 #include <stdint.h>
+#include <string>
 
 #include "base/command_line.h"
 #include "base/hash.h"
 #include "base/single_thread_task_runner.h"
 #include "base/values.h"
-#include "cc/blink/context_provider_web_context.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/media/webmediaplayer_ms.h"
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/media_switches.h"
@@ -22,8 +23,6 @@
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
-#include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/video_common.h"
 
@@ -50,7 +49,7 @@ scoped_refptr<media::VideoFrame> CopyFrame(
                           frame->visible_rect().height());
     SkCanvas canvas(bitmap);
 
-    cc::ContextProvider* const provider =
+    auto* provider =
         RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
     if (provider) {
       const media::Context3D context_3d =
@@ -114,7 +113,7 @@ scoped_refptr<media::VideoFrame> CopyFrame(
 
 WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
     const scoped_refptr<base::SingleThreadTaskRunner>& compositor_task_runner,
-    const blink::WebURL& url,
+    const blink::WebMediaStream& web_stream,
     const base::WeakPtr<WebMediaPlayerMS>& player)
     : compositor_task_runner_(compositor_task_runner),
       player_(player),
@@ -127,8 +126,6 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
       weak_ptr_factory_(this) {
   main_message_loop_ = base::MessageLoop::current();
 
-  const blink::WebMediaStream web_stream(
-      blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url));
   blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
   if (!web_stream.isNull())
     web_stream.videoTracks(video_tracks);
@@ -146,7 +143,9 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
   }
 
   // Just for logging purpose.
-  const uint32_t hash_value = base::Hash(url.string().utf8());
+  std::string stream_id =
+      web_stream.isNull() ? std::string() : web_stream.id().utf8();
+  const uint32_t hash_value = base::Hash(stream_id);
   serial_ = (hash_value << 1) | (remote_video ? 1 : 0);
 }
 

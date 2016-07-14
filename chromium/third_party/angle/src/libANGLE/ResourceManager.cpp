@@ -10,19 +10,17 @@
 #include "libANGLE/ResourceManager.h"
 
 #include "libANGLE/Buffer.h"
+#include "libANGLE/Fence.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/Renderbuffer.h"
+#include "libANGLE/Sampler.h"
 #include "libANGLE/Shader.h"
 #include "libANGLE/Texture.h"
-#include "libANGLE/Sampler.h"
-#include "libANGLE/Fence.h"
-#include "libANGLE/renderer/Renderer.h"
+#include "libANGLE/renderer/GLImplFactory.h"
 
 namespace gl
 {
-ResourceManager::ResourceManager(rx::ImplFactory *factory)
-    : mFactory(factory),
-      mRefCount(1)
+ResourceManager::ResourceManager() : mRefCount(1)
 {
 }
 
@@ -88,13 +86,15 @@ GLuint ResourceManager::createBuffer()
 }
 
 // Returns an unused shader/program name
-GLuint ResourceManager::createShader(const gl::Limitations &rendererLimitations, GLenum type)
+GLuint ResourceManager::createShader(rx::GLImplFactory *factory,
+                                     const gl::Limitations &rendererLimitations,
+                                     GLenum type)
 {
     GLuint handle = mProgramShaderHandleAllocator.allocate();
 
     if (type == GL_VERTEX_SHADER || type == GL_FRAGMENT_SHADER)
     {
-        mShaderMap[handle] = new Shader(this, mFactory, rendererLimitations, type, handle);
+        mShaderMap[handle] = new Shader(this, factory, rendererLimitations, type, handle);
     }
     else UNREACHABLE();
 
@@ -102,11 +102,11 @@ GLuint ResourceManager::createShader(const gl::Limitations &rendererLimitations,
 }
 
 // Returns an unused program/shader name
-GLuint ResourceManager::createProgram()
+GLuint ResourceManager::createProgram(rx::GLImplFactory *factory)
 {
     GLuint handle = mProgramShaderHandleAllocator.allocate();
 
-    mProgramMap[handle] = new Program(mFactory, this, handle);
+    mProgramMap[handle] = new Program(factory, this, handle);
 
     return handle;
 }
@@ -142,11 +142,11 @@ GLuint ResourceManager::createSampler()
 }
 
 // Returns the next unused fence name, and allocates the fence
-GLuint ResourceManager::createFenceSync()
+GLuint ResourceManager::createFenceSync(rx::GLImplFactory *factory)
 {
     GLuint handle = mFenceSyncHandleAllocator.allocate();
 
-    FenceSync *fenceSync = new FenceSync(mFactory->createFenceSync(), handle);
+    FenceSync *fenceSync = new FenceSync(factory->createFenceSync(), handle);
     fenceSync->addRef();
     mFenceSyncMap[handle] = fenceSync;
 
@@ -357,7 +357,7 @@ void ResourceManager::setRenderbuffer(GLuint handle, Renderbuffer *buffer)
     mRenderbufferMap[handle] = buffer;
 }
 
-Buffer *ResourceManager::checkBufferAllocation(GLuint handle)
+Buffer *ResourceManager::checkBufferAllocation(rx::GLImplFactory *factory, GLuint handle)
 {
     if (handle == 0)
     {
@@ -372,7 +372,7 @@ Buffer *ResourceManager::checkBufferAllocation(GLuint handle)
         return bufferMapIt->second;
     }
 
-    Buffer *buffer = new Buffer(mFactory->createBuffer(), handle);
+    Buffer *buffer = new Buffer(factory->createBuffer(), handle);
     buffer->addRef();
 
     if (handleAllocated)
@@ -388,7 +388,9 @@ Buffer *ResourceManager::checkBufferAllocation(GLuint handle)
     return buffer;
 }
 
-Texture *ResourceManager::checkTextureAllocation(GLuint handle, GLenum type)
+Texture *ResourceManager::checkTextureAllocation(rx::GLImplFactory *factory,
+                                                 GLuint handle,
+                                                 GLenum type)
 {
     if (handle == 0)
     {
@@ -403,7 +405,7 @@ Texture *ResourceManager::checkTextureAllocation(GLuint handle, GLenum type)
         return textureMapIt->second;
     }
 
-    Texture *texture = new Texture(mFactory->createTexture(type), handle, type);
+    Texture *texture = new Texture(factory, handle, type);
     texture->addRef();
 
     if (handleAllocated)
@@ -419,7 +421,8 @@ Texture *ResourceManager::checkTextureAllocation(GLuint handle, GLenum type)
     return texture;
 }
 
-Renderbuffer *ResourceManager::checkRenderbufferAllocation(GLuint handle)
+Renderbuffer *ResourceManager::checkRenderbufferAllocation(rx::GLImplFactory *factory,
+                                                           GLuint handle)
 {
     if (handle == 0)
     {
@@ -434,7 +437,7 @@ Renderbuffer *ResourceManager::checkRenderbufferAllocation(GLuint handle)
         return renderbufferMapIt->second;
     }
 
-    Renderbuffer *renderbuffer = new Renderbuffer(mFactory->createRenderbuffer(), handle);
+    Renderbuffer *renderbuffer = new Renderbuffer(factory->createRenderbuffer(), handle);
     renderbuffer->addRef();
 
     if (handleAllocated)
@@ -450,7 +453,7 @@ Renderbuffer *ResourceManager::checkRenderbufferAllocation(GLuint handle)
     return renderbuffer;
 }
 
-Sampler *ResourceManager::checkSamplerAllocation(GLuint samplerHandle)
+Sampler *ResourceManager::checkSamplerAllocation(rx::GLImplFactory *factory, GLuint samplerHandle)
 {
     // Samplers cannot be created via Bind
     if (samplerHandle == 0)
@@ -462,7 +465,7 @@ Sampler *ResourceManager::checkSamplerAllocation(GLuint samplerHandle)
 
     if (!sampler)
     {
-        sampler                    = new Sampler(mFactory, samplerHandle);
+        sampler                    = new Sampler(factory, samplerHandle);
         mSamplerMap[samplerHandle] = sampler;
         sampler->addRef();
     }

@@ -15,17 +15,16 @@
 
 #define PUSHBUTTON_SIZE_Corner 2
 
-CFWL_PushButtonTP::CFWL_PushButtonTP() {
-  m_pThemeData = new PBThemeData;
+CFWL_PushButtonTP::CFWL_PushButtonTP() : m_pThemeData(new PBThemeData) {
   SetThemeData(0);
 }
+
 CFWL_PushButtonTP::~CFWL_PushButtonTP() {
-  if (m_pThemeData) {
-    delete m_pThemeData;
-  }
+  delete m_pThemeData;
 }
-FX_BOOL CFWL_PushButtonTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget->GetClassID() == FWL_CLASSHASH_PushButton;
+
+bool CFWL_PushButtonTP::IsValidWidget(IFWL_Widget* pWidget) {
+  return pWidget && pWidget->GetClassID() == FWL_Type::PushButton;
 }
 uint32_t CFWL_PushButtonTP::SetThemeID(IFWL_Widget* pWidget,
                                        uint32_t dwThemeID,
@@ -35,16 +34,16 @@ uint32_t CFWL_PushButtonTP::SetThemeID(IFWL_Widget* pWidget,
 }
 FX_BOOL CFWL_PushButtonTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   switch (pParams->m_iPart) {
-    case FWL_PART_PSB_Border: {
+    case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_PSB_Edge: {
+    case CFWL_Part::Edge: {
       DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
                &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_PSB_Background: {
+    case CFWL_Part::Background: {
       CFX_RectF& rect = pParams->m_rtPart;
       FX_FLOAT fRight = rect.right();
       FX_FLOAT fBottom = rect.bottom();
@@ -84,7 +83,7 @@ FX_BOOL CFWL_PushButtonTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       CFX_Color crFill(m_pThemeData->clrFill[iColor]);
       pGraphics->SetFillColor(&crFill);
       pGraphics->FillPath(&fillPath, FXFILL_WINDING, &pParams->m_matrix);
-      if (pParams->m_dwStates & FWL_PARTSTATE_PSB_Focused) {
+      if (pParams->m_dwStates & CFWL_PartState_Focused) {
         rtInner.Inflate(1, 1, 0, 0);
         DrawFocus(pGraphics, &rtInner, &pParams->m_matrix);
       }
@@ -96,18 +95,18 @@ FX_BOOL CFWL_PushButtonTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   return TRUE;
 }
 void* CFWL_PushButtonTP::GetCapacity(CFWL_ThemePart* pThemePart,
-                                     uint32_t dwCapacity) {
-  if (dwCapacity == FWL_WGTCAPACITY_PSB_Margin) {
+                                     CFWL_WidgetCapacity dwCapacity) {
+  if (dwCapacity == CFWL_WidgetCapacity::Margin) {
     m_fValue = 0;
     return &m_fValue;
   }
   return CFWL_WidgetTP::GetCapacity(pThemePart, dwCapacity);
 }
-FWL_ERR CFWL_PushButtonTP::Initialize() {
+FWL_Error CFWL_PushButtonTP::Initialize() {
   InitTTO();
   return CFWL_WidgetTP::Initialize();
 }
-FWL_ERR CFWL_PushButtonTP::Finalize() {
+FWL_Error CFWL_PushButtonTP::Finalize() {
   FinalizeTTO();
   return CFWL_WidgetTP::Finalize();
 }
@@ -157,5 +156,16 @@ void CFWL_PushButtonTP::SetThemeData(uint32_t dwID) {
   }
 }
 int32_t CFWL_PushButtonTP::GetColorID(uint32_t dwStates) {
-  return dwStates &= FWL_PARTSTATE_PSB_Mask;
+  int32_t color = 0;
+  if (dwStates & CFWL_PartState_Disabled)
+    color += 4;
+  if (dwStates & CFWL_PartState_Default) {
+    color += 3;
+  } else {
+    if (dwStates & CFWL_PartState_Hovered)
+      color += 2;
+    if (dwStates & CFWL_PartState_Pressed)
+      color += 1;
+  }
+  return color;
 }

@@ -4,7 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #include <windows.h>
@@ -17,8 +17,8 @@ using std::max;
 
 #include <gdiplus.h>
 
+#include "core/fxge/include/fx_ge_win32.h"
 #include "core/fxge/win32/win32_int.h"
-#include "core/include/fxge/fx_ge_win32.h"
 
 using namespace Gdiplus;              // NOLINT
 using namespace Gdiplus::DllExports;  // NOLINT
@@ -673,7 +673,7 @@ static void OutputImage(GpGraphics* pGraphics,
 CGdiplusExt::CGdiplusExt() {
   m_hModule = NULL;
   m_GdiModule = NULL;
-  for (int i = 0; i < sizeof g_GdipFuncNames / sizeof(LPCSTR); i++) {
+  for (size_t i = 0; i < sizeof g_GdipFuncNames / sizeof(LPCSTR); i++) {
     m_Functions[i] = NULL;
   }
   m_pGdiAddFontMemResourceEx = NULL;
@@ -686,11 +686,11 @@ void CGdiplusExt::Load() {
   strPlusPath += buf;
   strPlusPath += "\\";
   strPlusPath += "GDIPLUS.DLL";
-  m_hModule = LoadLibraryA(strPlusPath);
+  m_hModule = LoadLibraryA(strPlusPath.c_str());
   if (!m_hModule) {
     return;
   }
-  for (int i = 0; i < sizeof g_GdipFuncNames / sizeof(LPCSTR); i++) {
+  for (size_t i = 0; i < sizeof g_GdipFuncNames / sizeof(LPCSTR); i++) {
     m_Functions[i] = GetProcAddress(m_hModule, g_GdipFuncNames[i]);
     if (!m_Functions[i]) {
       m_hModule = NULL;

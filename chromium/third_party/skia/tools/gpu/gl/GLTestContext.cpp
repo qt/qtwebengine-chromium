@@ -1,13 +1,12 @@
-
 /*
  * Copyright 2013 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 #include "GLTestContext.h"
 #include "gl/GrGLUtil.h"
-#include "SkGpuFenceSync.h"
 
 namespace sk_gpu_test {
 class GLTestContext::GLFenceSync : public SkGpuFenceSync {
@@ -15,7 +14,7 @@ public:
     static GLFenceSync* CreateIfSupported(const GLTestContext*);
 
     SkPlatformGpuFence SK_WARN_UNUSED_RESULT insertFence() const override;
-    bool waitFence(SkPlatformGpuFence fence, bool flush) const override;
+    bool waitFence(SkPlatformGpuFence fence) const override;
     void deleteFence(SkPlatformGpuFence fence) const override;
 
 private:
@@ -38,74 +37,39 @@ private:
     typedef SkGpuFenceSync INHERITED;
 };
 
-GLTestContext::GLTestContext()
-    : fCurrentFenceIdx(0) {
-    memset(fFrameFences, 0, sizeof(fFrameFences));
-}
+GLTestContext::GLTestContext() : TestContext() {}
 
 GLTestContext::~GLTestContext() {
-    // Subclass should call teardown.
-#ifdef SK_DEBUG
-    for (size_t i = 0; i < SK_ARRAY_COUNT(fFrameFences); i++) {
-        SkASSERT(0 == fFrameFences[i]);
-    }
-#endif
     SkASSERT(nullptr == fGL.get());
-    SkASSERT(nullptr == fFenceSync.get());
 }
 
 void GLTestContext::init(const GrGLInterface* gl, SkGpuFenceSync* fenceSync) {
     SkASSERT(!fGL.get());
     fGL.reset(gl);
-    fFenceSync.reset(fenceSync ? fenceSync : GLFenceSync::CreateIfSupported(this));
+    fFenceSync = fenceSync ? fenceSync : GLFenceSync::CreateIfSupported(this);
 }
 
 void GLTestContext::teardown() {
-    if (fFenceSync) {
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fFrameFences); i++) {
-            if (fFrameFences[i]) {
-                fFenceSync->deleteFence(fFrameFences[i]);
-                fFrameFences[i] = 0;
-            }
-        }
-        fFenceSync.reset(nullptr);
-    }
-
     fGL.reset(nullptr);
-}
-
-void GLTestContext::makeCurrent() const {
-    this->onPlatformMakeCurrent();
-}
-
-void GLTestContext::swapBuffers() {
-    this->onPlatformSwapBuffers();
-}
-
-void GLTestContext::waitOnSyncOrSwap() {
-    if (!fFenceSync) {
-        // Fallback on the platform SwapBuffers method for synchronization. This may have no effect.
-        this->swapBuffers();
-        return;
-    }
-
-    if (fFrameFences[fCurrentFenceIdx]) {
-        if (!fFenceSync->waitFence(fFrameFences[fCurrentFenceIdx], true)) {
-            SkDebugf("WARNING: Wait failed for fence sync. Timings might not be accurate.\n");
-        }
-        fFenceSync->deleteFence(fFrameFences[fCurrentFenceIdx]);
-    }
-
-    fFrameFences[fCurrentFenceIdx] = fFenceSync->insertFence();
-    fCurrentFenceIdx = (fCurrentFenceIdx + 1) % SK_ARRAY_COUNT(fFrameFences);
+    INHERITED::teardown();
 }
 
 void GLTestContext::testAbandon() {
+    INHERITED::testAbandon();
     if (fGL) {
         fGL->abandon();
     }
-    if (fFenceSync) {
-        memset(fFrameFences, 0, sizeof(fFrameFences));
+}
+
+void GLTestContext::submit() {
+    if (fGL) {
+        GR_GL_CALL(fGL.get(), Flush());
+    }
+}
+
+void GLTestContext::finish() {
+    if (fGL) {
+        GR_GL_CALL(fGL.get(), Finish());
     }
 }
 
@@ -148,9 +112,9 @@ SkPlatformGpuFence GLTestContext::GLFenceSync::insertFence() const {
     return fGLFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 
-bool GLTestContext::GLFenceSync::waitFence(SkPlatformGpuFence fence, bool flush) const {
+bool GLTestContext::GLFenceSync::waitFence(SkPlatformGpuFence fence) const {
     GLsync glsync = static_cast<GLsync>(fence);
-    return GL_WAIT_FAILED != fGLClientWaitSync(glsync, flush ? GL_SYNC_FLUSH_COMMANDS_BIT : 0, -1);
+    return GL_WAIT_FAILED != fGLClientWaitSync(glsync, GL_SYNC_FLUSH_COMMANDS_BIT, -1);
 }
 
 void GLTestContext::GLFenceSync::deleteFence(SkPlatformGpuFence fence) const {

@@ -188,7 +188,7 @@ struct GPUTarget {
         fSurface.reset(SkSurface::MakeRenderTarget(context,
                                                    SkBudgeted::kNo, info,
                                                    numSamples, &props).release());
-        fGL = factory->getContextInfo(ctxType, ctxOptions).fGLContext;
+        fGL = factory->getContextInfo(ctxType, ctxOptions).glContext();
         if (!fSurface.get()) {
             return false;
         }
@@ -302,7 +302,7 @@ struct TimingThread {
 
     void waitFence(SkPlatformGpuFence sync) {
         SkDEBUGCODE(double start = now_ms());
-        fFenceSync->waitFence(sync, false);
+        fFenceSync->waitFence(sync);
         SkASSERT(sanity(start));
     }
 

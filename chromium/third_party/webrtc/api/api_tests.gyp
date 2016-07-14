@@ -43,7 +43,7 @@
         'peerconnectionendtoend_unittest.cc',
         'peerconnectionfactory_unittest.cc',
         'peerconnectioninterface_unittest.cc',
-        # 'peerconnectionproxy_unittest.cc',
+        'proxy_unittest.cc',
         'rtpsenderreceiver_unittest.cc',
         'statscollector_unittest.cc',
         'test/fakeaudiocapturemodule.cc',
@@ -72,7 +72,6 @@
         '-Wextra',
       ],
       'cflags_cc!': [
-        '-Wnon-virtual-dtor',
         '-Woverloaded-virtual',
       ],
       'msvs_disabled_warnings': [
@@ -113,6 +112,18 @@
             },
           },
         }],
+        ['use_quic==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/libquic/libquic.gyp:libquic',
+          ],
+          'sources': [
+            'quicdatachannel_unittest.cc',
+            'quicdatatransport_unittest.cc',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/third_party/libquic/libquic.gyp:libquic',
+          ],
+        }],
       ],  # conditions
     },  # target peerconnection_unittests
   ],  # targets
@@ -131,41 +142,17 @@
             'resource_dir': 'androidtests/res',
             'native_lib_target': 'libjingle_peerconnection_so',
             'is_test_apk': 1,
+            'test_type': 'instrumentation',
+            'tested_apk_path': '',
             'never_lint': 1,
           },
-          'includes': [ '../../build/java_apk.gypi' ],
+          'includes': [
+            '../../build/java_apk.gypi',
+            '../../build/android/test_runner.gypi',
+          ],
         },
       ],  # targets
     }],  # OS=="android"
-    ['OS=="ios" or (OS=="mac" and mac_deployment_target=="10.7")', {
-      'targets': [
-        {
-          'target_name': 'rtc_api_objc_tests',
-          'type': 'executable',
-          'includes': [
-            '../build/objc_common.gypi',
-          ],
-          'dependencies': [
-            '<(webrtc_root)/api/api.gyp:rtc_api_objc',
-            '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
-          ],
-          'sources': [
-            'objctests/RTCConfigurationTest.mm',
-            'objctests/RTCDataChannelConfigurationTest.mm',
-            'objctests/RTCIceCandidateTest.mm',
-            'objctests/RTCIceServerTest.mm',
-            'objctests/RTCMediaConstraintsTest.mm',
-            'objctests/RTCSessionDescriptionTest.mm',
-          ],
-          'xcode_settings': {
-            # |-ObjC| flag needed to make sure category method implementations
-            # are included:
-            # https://developer.apple.com/library/mac/qa/qa1490/_index.html
-            'OTHER_LDFLAGS': ['-ObjC'],
-          },
-        },
-      ],
-    }],  # OS=="ios"
     ['OS=="android"', {
       'targets': [
         {
@@ -175,6 +162,27 @@
             '<(apk_tests_path):peerconnection_unittests_apk',
           ],
         },
+      ],
+      'conditions': [
+        ['test_isolation_mode != "noop"',
+          {
+            'targets': [
+              {
+                'target_name': 'peerconnection_unittests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  '<(apk_tests_path):peerconnection_unittests_apk',
+                ],
+                'includes': [
+                  '../build/isolate.gypi',
+                ],
+                'sources': [
+                  'peerconnection_unittests_apk.isolate',
+                ],
+              },
+            ]
+          }
+        ],
       ],
     }],  # OS=="android"
     ['test_isolation_mode != "noop"', {

@@ -74,19 +74,17 @@ CreatePeerConnectionFactory() {
                                             pc_factory);
 }
 
-rtc::scoped_refptr<PeerConnectionFactoryInterface>
-CreatePeerConnectionFactory(
+rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
+    rtc::Thread* network_thread,
     rtc::Thread* worker_thread,
     rtc::Thread* signaling_thread,
     AudioDeviceModule* default_adm,
     cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
   rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
-      new rtc::RefCountedObject<PeerConnectionFactory>(worker_thread,
-                                                       signaling_thread,
-                                                       default_adm,
-                                                       encoder_factory,
-                                                       decoder_factory));
+      new rtc::RefCountedObject<PeerConnectionFactory>(
+          network_thread, worker_thread, signaling_thread, default_adm,
+          encoder_factory, decoder_factory));
 
   // Call Initialize synchronously but make sure its executed on
   // |signaling_thread|.
@@ -104,16 +102,19 @@ CreatePeerConnectionFactory(
 PeerConnectionFactory::PeerConnectionFactory()
     : owns_ptrs_(true),
       wraps_current_thread_(false),
-      signaling_thread_(rtc::ThreadManager::Instance()->CurrentThread()),
-      worker_thread_(new rtc::Thread) {
+      network_thread_(rtc::Thread::CreateWithSocketServer().release()),
+      worker_thread_(rtc::Thread::Create().release()),
+      signaling_thread_(rtc::Thread::Current()) {
   if (!signaling_thread_) {
     signaling_thread_ = rtc::ThreadManager::Instance()->WrapCurrentThread();
     wraps_current_thread_ = true;
   }
+  network_thread_->Start();
   worker_thread_->Start();
 }
 
 PeerConnectionFactory::PeerConnectionFactory(
+    rtc::Thread* network_thread,
     rtc::Thread* worker_thread,
     rtc::Thread* signaling_thread,
     AudioDeviceModule* default_adm,
@@ -121,13 +122,15 @@ PeerConnectionFactory::PeerConnectionFactory(
     cricket::WebRtcVideoDecoderFactory* video_decoder_factory)
     : owns_ptrs_(false),
       wraps_current_thread_(false),
-      signaling_thread_(signaling_thread),
+      network_thread_(network_thread),
       worker_thread_(worker_thread),
+      signaling_thread_(signaling_thread),
       default_adm_(default_adm),
       video_encoder_factory_(video_encoder_factory),
       video_decoder_factory_(video_decoder_factory) {
-  ASSERT(worker_thread != NULL);
-  ASSERT(signaling_thread != NULL);
+  RTC_DCHECK(network_thread);
+  RTC_DCHECK(worker_thread);
+  RTC_DCHECK(signaling_thread);
   // TODO: Currently there is no way creating an external adm in
   // libjingle source tree. So we can 't currently assert if this is NULL.
   // ASSERT(default_adm != NULL);
@@ -148,12 +151,13 @@ PeerConnectionFactory::~PeerConnectionFactory() {
     if (wraps_current_thread_)
       rtc::ThreadManager::Instance()->UnwrapCurrentThread();
     delete worker_thread_;
+    delete network_thread_;
   }
 }
 
 bool PeerConnectionFactory::Initialize() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
-  rtc::InitRandom(rtc::Time());
+  rtc::InitRandom(rtc::Time32());
 
   default_network_manager_.reset(new rtc::BasicNetworkManager());
   if (!default_network_manager_) {
@@ -161,7 +165,7 @@ bool PeerConnectionFactory::Initialize() {
   }
 
   default_socket_factory_.reset(
-      new rtc::BasicPacketSocketFactory(worker_thread_));
+      new rtc::BasicPacketSocketFactory(network_thread_));
   if (!default_socket_factory_) {
     return false;
   }
@@ -172,16 +176,16 @@ bool PeerConnectionFactory::Initialize() {
       worker_thread_->Invoke<cricket::MediaEngineInterface*>(rtc::Bind(
       &PeerConnectionFactory::CreateMediaEngine_w, this));
 
-  channel_manager_.reset(
-      new cricket::ChannelManager(media_engine, worker_thread_));
+  channel_manager_.reset(new cricket::ChannelManager(
+      media_engine, worker_thread_, network_thread_));
 
   channel_manager_->SetVideoRtxEnabled(true);
   if (!channel_manager_->Init()) {
     return false;
   }
 
-  dtls_identity_store_ = new RefCountedDtlsIdentityStore(
-      signaling_thread_, worker_thread_);
+  dtls_identity_store_ =
+      new RefCountedDtlsIdentityStore(signaling_thread_, network_thread_);
 
   return true;
 }
@@ -211,7 +215,8 @@ PeerConnectionFactory::CreateVideoSource(
   rtc::scoped_refptr<VideoTrackSourceInterface> source(
       VideoCapturerTrackSource::Create(worker_thread_, capturer, constraints,
                                        false));
-  return VideoTrackSourceProxy::Create(signaling_thread_, source);
+  return VideoTrackSourceProxy::Create(signaling_thread_, worker_thread_,
+                                       source);
 }
 
 rtc::scoped_refptr<VideoTrackSourceInterface>
@@ -219,7 +224,8 @@ PeerConnectionFactory::CreateVideoSource(cricket::VideoCapturer* capturer) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoTrackSourceInterface> source(
       VideoCapturerTrackSource::Create(worker_thread_, capturer, false));
-  return VideoTrackSourceProxy::Create(signaling_thread_, source);
+  return VideoTrackSourceProxy::Create(signaling_thread_, worker_thread_,
+                                       source);
 }
 
 bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file,
@@ -233,9 +239,10 @@ void PeerConnectionFactory::StopAecDump() {
   channel_manager_->StopAecDump();
 }
 
-bool PeerConnectionFactory::StartRtcEventLog(rtc::PlatformFile file) {
+bool PeerConnectionFactory::StartRtcEventLog(rtc::PlatformFile file,
+                                             int64_t max_size_bytes) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
-  return channel_manager_->StartRtcEventLog(file);
+  return channel_manager_->StartRtcEventLog(file, max_size_bytes);
 }
 
 void PeerConnectionFactory::StopRtcEventLog() {
@@ -247,8 +254,8 @@ rtc::scoped_refptr<PeerConnectionInterface>
 PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration_in,
     const MediaConstraintsInterface* constraints,
-    rtc::scoped_ptr<cricket::PortAllocator> allocator,
-    rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<cricket::PortAllocator> allocator,
+    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
     PeerConnectionObserver* observer) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
 
@@ -263,8 +270,8 @@ PeerConnectionFactory::CreatePeerConnection(
 rtc::scoped_refptr<PeerConnectionInterface>
 PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
-    rtc::scoped_ptr<cricket::PortAllocator> allocator,
-    rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<cricket::PortAllocator> allocator,
+    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
     PeerConnectionObserver* observer) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
 
@@ -280,28 +287,14 @@ PeerConnectionFactory::CreatePeerConnection(
     allocator.reset(new cricket::BasicPortAllocator(
         default_network_manager_.get(), default_socket_factory_.get()));
   }
-  allocator->SetNetworkIgnoreMask(options_.network_ignore_mask);
+  worker_thread_->Invoke<void>(
+      rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask, allocator.get(),
+                options_.network_ignore_mask));
 
   rtc::scoped_refptr<PeerConnection> pc(
       new rtc::RefCountedObject<PeerConnection>(this));
-  // We rely on default values when constraints aren't found.
-  cricket::MediaConfig media_config;
 
-  media_config.video.disable_prerenderer_smoothing =
-      configuration.disable_prerenderer_smoothing;
-  if (configuration.enable_dscp) {
-    media_config.enable_dscp = *(configuration.enable_dscp);
-  }
-  if (configuration.cpu_overuse_detection) {
-    media_config.video.enable_cpu_overuse_detection =
-        *(configuration.cpu_overuse_detection);
-  }
-  if (configuration.suspend_below_min_bitrate) {
-    media_config.video.suspend_below_min_bitrate =
-        *(configuration.suspend_below_min_bitrate);
-  }
-
-  if (!pc->Initialize(media_config, configuration, std::move(allocator),
+  if (!pc->Initialize(configuration, std::move(allocator),
                       std::move(dtls_identity_store), observer)) {
     return nullptr;
   }
@@ -321,7 +314,7 @@ rtc::scoped_refptr<VideoTrackInterface> PeerConnectionFactory::CreateVideoTrack(
   RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoTrackInterface> track(
       VideoTrack::Create(id, source));
-  return VideoTrackProxy::Create(signaling_thread_, track);
+  return VideoTrackProxy::Create(signaling_thread_, worker_thread_, track);
 }
 
 rtc::scoped_refptr<AudioTrackInterface>
@@ -348,6 +341,10 @@ rtc::Thread* PeerConnectionFactory::signaling_thread() {
 rtc::Thread* PeerConnectionFactory::worker_thread() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   return worker_thread_;
+}
+
+rtc::Thread* PeerConnectionFactory::network_thread() {
+  return network_thread_;
 }
 
 cricket::MediaEngineInterface* PeerConnectionFactory::CreateMediaEngine_w() {

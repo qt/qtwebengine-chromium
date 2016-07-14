@@ -18,13 +18,13 @@
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #endif  // PDF_ENABLE_XFA
 
 namespace {
@@ -91,10 +91,9 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
   if (!pWidgetHandler)
     return -1;
 
-  std::unique_ptr<IXFA_WidgetIterator, ReleaseDeleter<IXFA_WidgetIterator>>
-      pWidgetIterator(pPageView->CreateWidgetIterator(
-          XFA_TRAVERSEWAY_Form,
-          XFA_WIDGETFILTER_Viewable | XFA_WIDGETFILTER_AllType));
+  std::unique_ptr<IXFA_WidgetIterator> pWidgetIterator(
+      pPageView->CreateWidgetIterator(XFA_TRAVERSEWAY_Form,
+                                      XFA_WidgetStatus_Viewable));
   if (!pWidgetIterator)
     return -1;
 
@@ -342,11 +341,9 @@ static void FFLCommon(FPDF_FORMHANDLE hHandle,
 
   FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
 
-#ifdef _SKIA_SUPPORT_
-  std::unique_ptr<CFX_SkiaDevice> pDevice(new CFX_SkiaDevice());
-  pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
-#else
   std::unique_ptr<CFX_FxgeDevice> pDevice(new CFX_FxgeDevice);
+#ifdef _SKIA_SUPPORT_
+  pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
   pDevice->Attach((CFX_DIBitmap*)bitmap);
   pDevice->SaveState();
@@ -597,8 +594,7 @@ FPDF_StringHandleGetStringByIndex(FPDF_STRINGHANDLE sHandle,
 
   uint32_t real_size = len < *size ? len : *size;
   if (real_size > 0)
-    FXSYS_memcpy((void*)bsText, (const FX_CHAR*)(*sSuggestWords)[index],
-                 real_size);
+    FXSYS_memcpy((void*)bsText, (*sSuggestWords)[index].c_str(), real_size);
   *size = real_size;
   return TRUE;
 }

@@ -9,7 +9,6 @@
 #include "xfa/fee/fde_txtedtbuf.h"
 #include "xfa/fee/fde_txtedtengine.h"
 #include "xfa/fee/fx_wordbreak/fx_wordbreak.h"
-#include "xfa/fee/ifde_txtedtbuf.h"
 #include "xfa/fee/ifde_txtedtengine.h"
 #include "xfa/fgas/layout/fgas_textbreak.h"
 
@@ -19,7 +18,7 @@ CFDE_TxtEdtParag::CFDE_TxtEdtParag(CFDE_TxtEdtEngine* pEngine)
       m_nLineCount(0),
       m_lpData(NULL),
       m_pEngine(pEngine) {
-  FXSYS_assert(m_pEngine);
+  ASSERT(m_pEngine);
 }
 CFDE_TxtEdtParag::~CFDE_TxtEdtParag() {
   if (m_lpData != NULL) {
@@ -31,15 +30,15 @@ void CFDE_TxtEdtParag::LoadParag() {
     ((int32_t*)m_lpData)[0]++;
     return;
   }
-  IFX_TxtBreak* pTxtBreak = m_pEngine->GetTextBreak();
-  IFDE_TxtEdtBuf* pTxtBuf = m_pEngine->GetTextBuf();
+  CFX_TxtBreak* pTxtBreak = m_pEngine->GetTextBreak();
+  CFDE_TxtEdtBuf* pTxtBuf = m_pEngine->GetTextBuf();
   const FDE_TXTEDTPARAMS* pParam = m_pEngine->GetEditParams();
   FX_WCHAR wcAlias = 0;
   if (pParam->dwMode & FDE_TEXTEDITMODE_Password) {
     wcAlias = m_pEngine->GetAliasChar();
   }
-  IFX_CharIter* pIter =
-      new CFDE_TxtEdtBufIter((CFDE_TxtEdtBuf*)pTxtBuf, wcAlias);
+  std::unique_ptr<IFX_CharIter> pIter(
+      new CFDE_TxtEdtBufIter(static_cast<CFDE_TxtEdtBuf*>(pTxtBuf), wcAlias));
   pIter->SetAt(m_nCharStart);
   int32_t nEndIndex = m_nCharStart + m_nCharCount;
   CFX_ArrayTemplate<int32_t> LineBaseArr;
@@ -72,7 +71,6 @@ void CFDE_TxtEdtParag::LoadParag() {
       pIter->Next(TRUE);
     }
   } while (pIter->Next(FALSE) && (pIter->GetAt() < nEndIndex));
-  pIter->Release();
   pTxtBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
   pTxtBreak->ClearBreakPieces();
   int32_t nLineCount = LineBaseArr.GetSize();
@@ -92,21 +90,22 @@ void CFDE_TxtEdtParag::LoadParag() {
   LineBaseArr.RemoveAll();
 }
 void CFDE_TxtEdtParag::UnloadParag() {
-  FXSYS_assert(m_lpData != NULL);
+  ASSERT(m_lpData != NULL);
   ((int32_t*)m_lpData)[0]--;
-  FXSYS_assert(((int32_t*)m_lpData)[0] >= 0);
+  ASSERT(((int32_t*)m_lpData)[0] >= 0);
   if (((int32_t*)m_lpData)[0] == 0) {
     FX_Free(m_lpData);
     m_lpData = NULL;
   }
 }
 void CFDE_TxtEdtParag::CalcLines() {
-  IFX_TxtBreak* pTxtBreak = m_pEngine->GetTextBreak();
-  IFDE_TxtEdtBuf* pTxtBuf = m_pEngine->GetTextBuf();
-  IFX_CharIter* pIter = new CFDE_TxtEdtBufIter((CFDE_TxtEdtBuf*)pTxtBuf);
+  CFX_TxtBreak* pTxtBreak = m_pEngine->GetTextBreak();
+  CFDE_TxtEdtBuf* pTxtBuf = m_pEngine->GetTextBuf();
   int32_t nCount = 0;
   uint32_t dwBreakStatus = FX_TXTBREAK_None;
   int32_t nEndIndex = m_nCharStart + m_nCharCount;
+  std::unique_ptr<IFX_CharIter> pIter(
+      new CFDE_TxtEdtBufIter(static_cast<CFDE_TxtEdtBuf*>(pTxtBuf)));
   pIter->SetAt(m_nCharStart);
   FX_BOOL bReload = FALSE;
   do {
@@ -130,7 +129,6 @@ void CFDE_TxtEdtParag::CalcLines() {
       pIter->Next(TRUE);
     }
   } while (pIter->Next(FALSE) && (pIter->GetAt() < nEndIndex));
-  pIter->Release();
   pTxtBreak->EndBreak(FX_TXTBREAK_ParagraphBreak);
   pTxtBreak->ClearBreakPieces();
   m_nLineCount = nCount;
@@ -139,7 +137,7 @@ void CFDE_TxtEdtParag::GetLineRange(int32_t nLineIndex,
                                     int32_t& nStart,
                                     int32_t& nCount) const {
   int32_t* pLineBaseArr = (int32_t*)m_lpData;
-  FXSYS_assert(nLineIndex < m_nLineCount);
+  ASSERT(nLineIndex < m_nLineCount);
   nStart = m_nCharStart;
   pLineBaseArr++;
   for (int32_t i = 0; i < nLineIndex; i++) {

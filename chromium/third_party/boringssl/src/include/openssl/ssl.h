@@ -487,6 +487,16 @@ OPENSSL_EXPORT int SSL_get_error(const SSL *ssl, int ret_code);
  * and zero on failure. */
 OPENSSL_EXPORT int SSL_set_mtu(SSL *ssl, unsigned mtu);
 
+/* DTLSv1_set_initial_timeout_duration sets the initial duration for a DTLS
+ * handshake timeout.
+ *
+ * This duration overrides the default of 1 second, which is the strong
+ * recommendation of RFC 6347 (see section 4.2.4.1). However, there may exist
+ * situations where a shorter timeout would be beneficial, such as for
+ * time-sensitive applications. */
+OPENSSL_EXPORT void DTLSv1_set_initial_timeout_duration(SSL *ssl,
+                                                        unsigned duration_ms);
+
 /* DTLSv1_get_timeout queries the next DTLS handshake timeout. If there is a
  * timeout in progress, it sets |*out| to the time remaining and returns one.
  * Otherwise, it returns zero.
@@ -1496,6 +1506,16 @@ OPENSSL_EXPORT uint32_t SSL_SESSION_get_key_exchange_info(
  * TODO(davidben): This should return a const X509 *. */
 OPENSSL_EXPORT X509 *SSL_SESSION_get0_peer(const SSL_SESSION *session);
 
+/* TODO(davidben): Remove this when wpa_supplicant in Android has synced with
+ * upstream. */
+#if !defined(BORINGSSL_SUPPRESS_ACCESSORS)
+/* SSL_SESSION_get_master_key writes up to |max_out| bytes of |session|'s master
+ * secret to |out| and returns the number of bytes written. If |max_out| is
+ * zero, it returns the size of the master secret. */
+OPENSSL_EXPORT size_t SSL_SESSION_get_master_key(const SSL_SESSION *session,
+                                                 uint8_t *out, size_t max_out);
+#endif
+
 /* SSL_SESSION_set_time sets |session|'s creation time to |time| and returns
  * |time|. This function may be useful in writing tests but otherwise should not
  * be used. */
@@ -2162,12 +2182,6 @@ OPENSSL_EXPORT STACK_OF(X509_NAME) *SSL_dup_CA_list(STACK_OF(X509_NAME) *list);
  * error. */
 OPENSSL_EXPORT int SSL_add_file_cert_subjects_to_stack(STACK_OF(X509_NAME) *out,
                                                        const char *file);
-
-/* SSL_add_dir_cert_subjects_to_stack lists files in directory |dir|. It calls
- * |SSL_add_file_cert_subjects_to_stack| on each file and returns one on success
- * or zero on error. */
-OPENSSL_EXPORT int SSL_add_dir_cert_subjects_to_stack(STACK_OF(X509_NAME) *out,
-                                                      const char *dir);
 
 
 /* Server name indication.
@@ -2929,6 +2943,9 @@ OPENSSL_EXPORT int SSL_get_shutdown(const SSL *ssl);
  * |TLSEXT_hash_none|. */
 OPENSSL_EXPORT uint8_t SSL_get_server_key_exchange_hash(const SSL *ssl);
 
+/* TODO(davidben): Remove this when wpa_supplicant in Android has synced with
+ * upstream. */
+#if !defined(BORINGSSL_SUPPRESS_ACCESSORS)
 /* SSL_get_client_random writes up to |max_out| bytes of the most recent
  * handshake's client_random to |out| and returns the number of bytes written.
  * If |max_out| is zero, it returns the size of the client_random. */
@@ -2940,6 +2957,7 @@ OPENSSL_EXPORT size_t SSL_get_client_random(const SSL *ssl, uint8_t *out,
  * If |max_out| is zero, it returns the size of the server_random. */
 OPENSSL_EXPORT size_t SSL_get_server_random(const SSL *ssl, uint8_t *out,
                                             size_t max_out);
+#endif
 
 /* SSL_get_pending_cipher returns the cipher suite for the current handshake or
  * NULL if one has not been negotiated yet or there is no pending handshake. */
@@ -3403,6 +3421,13 @@ OPENSSL_EXPORT int SSL_CTX_set_tmp_ecdh(SSL_CTX *ctx, const EC_KEY *ec_key);
  * |ec_key|'s curve. */
 OPENSSL_EXPORT int SSL_set_tmp_ecdh(SSL *ssl, const EC_KEY *ec_key);
 
+/* SSL_add_dir_cert_subjects_to_stack lists files in directory |dir|. It calls
+ * |SSL_add_file_cert_subjects_to_stack| on each file and returns one on success
+ * or zero on error. This function is only available from the libdecrepit
+ * library. */
+OPENSSL_EXPORT int SSL_add_dir_cert_subjects_to_stack(STACK_OF(X509_NAME) *out,
+                                                      const char *dir);
+
 
 /* Private structures.
  *
@@ -3854,8 +3879,6 @@ struct ssl_st {
    * handshake_func is == 0 until then, we use this test instead of an "init"
    * member. */
 
-  int shutdown; /* we have shut things down, 0x01 sent, 0x02
-                 * for received */
   int state;    /* where we are */
 
   BUF_MEM *init_buf; /* buffer used during init */
@@ -3866,6 +3889,10 @@ struct ssl_st {
 
   struct ssl3_state_st *s3;  /* SSLv3 variables */
   struct dtls1_state_st *d1; /* DTLSv1 variables */
+
+  /* initial_timeout_duration_ms is the default DTLS timeout duration in
+   * milliseconds. It's used to initialize the timer any time it's restarted. */
+  unsigned initial_timeout_duration_ms;
 
   /* callback that allows applications to peek at protocol messages */
   void (*msg_callback)(int write_p, int version, int content_type,
@@ -4012,6 +4039,14 @@ typedef struct ssl3_buffer_st {
   uint16_t cap;
 } SSL3_BUFFER;
 
+/* An ssl_shutdown_t describes the shutdown state of one end of the connection,
+ * whether it is alive or has been shutdown via close_notify or fatal alert. */
+enum ssl_shutdown_t {
+  ssl_shutdown_none = 0,
+  ssl_shutdown_close_notify = 1,
+  ssl_shutdown_fatal_alert = 2,
+};
+
 typedef struct ssl3_state_st {
   uint8_t read_sequence[8];
   uint8_t write_sequence[8];
@@ -4054,12 +4089,13 @@ typedef struct ssl3_state_st {
    * the handshake hash for TLS 1.1 and below. */
   EVP_MD_CTX handshake_md5;
 
-  /* clean_shutdown is one if the connection was cleanly shutdown with a
-   * close_notify and zero otherwise. */
-  char clean_shutdown;
+  /* recv_shutdown is the shutdown state for the receive half of the
+   * connection. */
+  enum ssl_shutdown_t recv_shutdown;
 
-  /* we allow one fatal and one warning alert to be outstanding, send close
-   * alert via the warning alert */
+  /* recv_shutdown is the shutdown state for the send half of the connection. */
+  enum ssl_shutdown_t send_shutdown;
+
   int alert_dispatch;
   uint8_t send_alert[2];
 
@@ -4093,8 +4129,11 @@ typedef struct ssl3_state_st {
     uint8_t peer_finish_md[EVP_MAX_MD_SIZE];
     int peer_finish_md_len;
 
-    unsigned long message_size;
     int message_type;
+
+    /* message_complete is one if the current message is complete and zero
+     * otherwise. */
+    unsigned message_complete:1;
 
     /* used to hold the new cipher we are going to use */
     const SSL_CIPHER *new_cipher;
@@ -4251,8 +4290,6 @@ typedef struct ssl3_state_st {
  * These functions are declared, temporarily, for Android because
  * wpa_supplicant will take a little time to sync with upstream. Outside of
  * Android they'll have no definition. */
-
-#define SSL_F_SSL_SET_SESSION_TICKET_EXT doesnt_exist
 
 OPENSSL_EXPORT int SSL_set_session_ticket_ext(SSL *s, void *ext_data,
                                               int ext_len);

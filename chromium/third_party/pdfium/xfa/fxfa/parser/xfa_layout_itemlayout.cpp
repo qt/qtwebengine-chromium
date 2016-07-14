@@ -12,7 +12,7 @@
 #include "xfa/fgas/crt/fgas_algorithm.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
+#include "xfa/fxfa/parser/cxfa_occur.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_document_layout_imp.h"
@@ -46,8 +46,8 @@ CXFA_ItemLayoutProcessor::CXFA_ItemLayoutProcessor(CXFA_Node* pNode,
       m_bUseInheriated(FALSE),
       m_ePreProcessRs(XFA_ItemLayoutProcessorResult_Done),
       m_bHasAvailHeight(TRUE) {
-  FXSYS_assert(m_pFormNode && (m_pFormNode->IsContainerNode() ||
-                               m_pFormNode->GetClassID() == XFA_ELEMENT_Form));
+  ASSERT(m_pFormNode && (m_pFormNode->IsContainerNode() ||
+                         m_pFormNode->GetClassID() == XFA_ELEMENT_Form));
   m_pOldLayoutItem =
       (CXFA_ContentLayoutItem*)m_pFormNode->GetUserData(XFA_LAYOUTITEMKEY);
 }
@@ -545,28 +545,29 @@ void CXFA_LayoutItem::RemoveChild(CXFA_LayoutItem* pChildItem) {
 CXFA_ContentLayoutItem* CXFA_ItemLayoutProcessor::ExtractLayoutItem() {
   CXFA_ContentLayoutItem* pLayoutItem = m_pLayoutItem;
   if (pLayoutItem) {
-    m_pLayoutItem = (CXFA_ContentLayoutItem*)pLayoutItem->m_pNextSibling;
-    pLayoutItem->m_pNextSibling = NULL;
+    m_pLayoutItem =
+        static_cast<CXFA_ContentLayoutItem*>(pLayoutItem->m_pNextSibling);
+    pLayoutItem->m_pNextSibling = nullptr;
   }
-  if (m_nCurChildNodeStage == XFA_ItemLayoutProcessorStages_Done &&
-      ToContentLayoutItem(m_pOldLayoutItem)) {
-    if (m_pOldLayoutItem->m_pPrev) {
-      m_pOldLayoutItem->m_pPrev->m_pNext = NULL;
-    }
-    CXFA_FFNotify* pNotify =
-        m_pOldLayoutItem->m_pFormNode->GetDocument()->GetParser()->GetNotify();
-    CXFA_LayoutProcessor* pDocLayout =
-        m_pOldLayoutItem->m_pFormNode->GetDocument()->GetDocLayout();
-    CXFA_ContentLayoutItem* pOldLayoutItem = m_pOldLayoutItem;
-    while (pOldLayoutItem) {
-      CXFA_ContentLayoutItem* pNextOldLayoutItem = pOldLayoutItem->m_pNext;
-      pNotify->OnLayoutEvent(pDocLayout, pOldLayoutItem,
-                             XFA_LAYOUTEVENT_ItemRemoving);
-      delete pOldLayoutItem;
-      pOldLayoutItem = pNextOldLayoutItem;
-    }
-    m_pOldLayoutItem = NULL;
+  if (m_nCurChildNodeStage != XFA_ItemLayoutProcessorStages_Done ||
+      !ToContentLayoutItem(m_pOldLayoutItem))
+    return pLayoutItem;
+  if (m_pOldLayoutItem->m_pPrev)
+    m_pOldLayoutItem->m_pPrev->m_pNext = nullptr;
+  CXFA_FFNotify* pNotify =
+      m_pOldLayoutItem->m_pFormNode->GetDocument()->GetParser()->GetNotify();
+  CXFA_LayoutProcessor* pDocLayout =
+      m_pOldLayoutItem->m_pFormNode->GetDocument()->GetDocLayout();
+  CXFA_ContentLayoutItem* pOldLayoutItem = m_pOldLayoutItem;
+  while (pOldLayoutItem) {
+    CXFA_ContentLayoutItem* pNextOldLayoutItem = pOldLayoutItem->m_pNext;
+    pNotify->OnLayoutItemRemoving(pDocLayout, pOldLayoutItem);
+    if (pOldLayoutItem->m_pParent)
+      pOldLayoutItem->m_pParent->RemoveChild(pOldLayoutItem);
+    delete pOldLayoutItem;
+    pOldLayoutItem = pNextOldLayoutItem;
   }
+  m_pOldLayoutItem = nullptr;
   return pLayoutItem;
 }
 static FX_BOOL XFA_ItemLayoutProcessor_FindBreakNode(
@@ -629,8 +630,7 @@ static void XFA_DeleteLayoutGeneratedNode(CXFA_Node* pGenerateNode) {
     CXFA_ContentLayoutItem* pNextLayoutItem = NULL;
     while (pCurLayoutItem) {
       pNextLayoutItem = pCurLayoutItem->m_pNext;
-      pNotify->OnLayoutEvent(pDocLayout, pCurLayoutItem,
-                             XFA_LAYOUTEVENT_ItemRemoving);
+      pNotify->OnLayoutItemRemoving(pDocLayout, pCurLayoutItem);
       delete pCurLayoutItem;
       pCurLayoutItem = pNextLayoutItem;
     }
@@ -1380,7 +1380,7 @@ void CXFA_ItemLayoutProcessor::DoLayoutTableContainer(CXFA_Node* pLayoutNode) {
   CFX_WideStringC wsColumnWidths;
   if (pLayoutNode->TryCData(XFA_ATTRIBUTE_ColumnWidths, wsColumnWidths)) {
     CFX_WideStringArray widths;
-    if (FX_SeparateStringW(wsColumnWidths.raw_str(), wsColumnWidths.GetLength(),
+    if (FX_SeparateStringW(wsColumnWidths.c_str(), wsColumnWidths.GetLength(),
                            L' ', widths) > 0) {
       int32_t iCols = widths.GetSize();
       CFX_WideString wsWidth;
@@ -1388,7 +1388,7 @@ void CXFA_ItemLayoutProcessor::DoLayoutTableContainer(CXFA_Node* pLayoutNode) {
         wsWidth = widths[i];
         wsWidth.TrimLeft(L' ');
         if (!wsWidth.IsEmpty()) {
-          CXFA_Measurement measure(wsWidth.AsWideStringC());
+          CXFA_Measurement measure(wsWidth.AsStringC());
           m_rgSpecifiedColumnWidths.Add(measure.ToUnit(XFA_UNIT_Pt));
         }
       }
@@ -1867,7 +1867,7 @@ void CXFA_ItemLayoutProcessor::ProcessUnUseBinds(CXFA_Node* pFormNode) {
         pNode->SetObject(XFA_ATTRIBUTE_BindingNode, NULL);
       }
     }
-    pNode->SetFlag(XFA_NODEFLAG_UnusedNode);
+    pNode->SetFlag(XFA_NODEFLAG_UnusedNode, true);
   }
 }
 void CXFA_ItemLayoutProcessor::ProcessUnUseOverFlow(

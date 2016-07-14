@@ -8,11 +8,20 @@
 #define XFA_FXFA_PARSER_XFA_UTILS_H_
 
 #include "xfa/fde/xml/fde_xml.h"
-#include "xfa/include/fxfa/fxfa_basic.h"
+#include "xfa/fxfa/include/fxfa_basic.h"
 
 class CFDE_XMLElement;
 class CFDE_XMLNode;
 class CXFA_LocaleValue;
+class CXFA_Node;
+class CXFA_WidgetData;
+
+inline FX_BOOL XFA_IsSpace(FX_WCHAR c) {
+  return (c == 0x20) || (c == 0x0d) || (c == 0x0a) || (c == 0x09);
+}
+inline FX_BOOL XFA_IsDigit(FX_WCHAR c) {
+  return c >= '0' && c <= '9';
+}
 
 FX_BOOL XFA_FDEExtension_ResolveNamespaceQualifier(
     CFDE_XMLElement* pNode,
@@ -155,49 +164,9 @@ class CXFA_NodeIteratorTemplate {
   NodeType* m_pRoot;
   CFX_StackTemplate<NodeType*> m_NodeStack;
 };
-template <class KeyType>
-class CXFA_PtrSetTemplate : private CFX_MapPtrToPtr {
- public:
-  CXFA_PtrSetTemplate() : CFX_MapPtrToPtr(10) {}
-
-  int GetCount() const { return CFX_MapPtrToPtr::GetCount(); }
-
-  FX_BOOL IsEmpty() const { return CFX_MapPtrToPtr::IsEmpty(); }
-
-  FX_BOOL Lookup(KeyType key) const {
-    void* pValue = NULL;
-    return CFX_MapPtrToPtr::Lookup((void*)key, pValue);
-  }
-
-  FX_BOOL operator[](KeyType key) { return Lookup(key); }
-
-  void Add(KeyType key) { CFX_MapPtrToPtr::SetAt((void*)key, (void*)key); }
-
-  FX_BOOL RemoveKey(KeyType key) {
-    return CFX_MapPtrToPtr::RemoveKey((void*)key);
-  }
-
-  void RemoveAll() { CFX_MapPtrToPtr::RemoveAll(); }
-
-  FX_POSITION GetStartPosition() const {
-    return CFX_MapPtrToPtr::GetStartPosition();
-  }
-
-  void GetNextAssoc(FX_POSITION& rNextPosition, KeyType& rKey) const {
-    void* pKey = NULL;
-    void* pValue = NULL;
-    CFX_MapPtrToPtr::GetNextAssoc(rNextPosition, pKey, pValue);
-    rKey = (KeyType)(uintptr_t)pKey;
-  }
-};
-class CXFA_Node;
-class CXFA_WidgetData;
 
 CXFA_Node* XFA_CreateUIChild(CXFA_Node* pNode, XFA_ELEMENT& eWidgetType);
 CXFA_LocaleValue XFA_GetLocaleValue(CXFA_WidgetData* pWidgetData);
-CFX_WideString XFA_NumericLimit(const CFX_WideString& wsValue,
-                                int32_t iLead,
-                                int32_t iTread);
 FX_DOUBLE XFA_WideStringToDouble(const CFX_WideString& wsStringVal);
 FX_DOUBLE XFA_ByteStringToDouble(const CFX_ByteStringC& szStringVal);
 int32_t XFA_MapRotation(int32_t nRotation);
@@ -209,9 +178,7 @@ FX_BOOL XFA_FieldIsMultiListBox(CXFA_Node* pFieldNode);
 IFX_Stream* XFA_CreateWideTextRead(const CFX_WideString& wsBuffer);
 FX_BOOL XFA_IsLayoutElement(XFA_ELEMENT eElement,
                             FX_BOOL bLayoutContainer = FALSE);
-FX_BOOL XFA_IsTakingupSpace(XFA_ATTRIBUTEENUM ePresence);
-FX_BOOL XFA_IsFlowingLayout(XFA_ATTRIBUTEENUM eLayout);
-FX_BOOL XFA_IsHorizontalFlow(XFA_ATTRIBUTEENUM eLayout);
+
 void XFA_DataExporter_DealWithDataGroupNode(CXFA_Node* pDataNode);
 void XFA_DataExporter_RegenerateFormFile(CXFA_Node* pNode,
                                          IFX_Stream* pStream,

@@ -7,7 +7,8 @@
 #ifndef XFA_FXFA_APP_XFA_FWLTHEME_H_
 #define XFA_FXFA_APP_XFA_FWLTHEME_H_
 
-#include "xfa/fwl/core/ifwl_target.h"
+#include <memory>
+
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 #include "xfa/fwl/theme/cfwl_barcodetp.h"
 #include "xfa/fwl/theme/cfwl_carettp.h"
@@ -21,47 +22,48 @@
 #include "xfa/fwl/theme/cfwl_pushbuttontp.h"
 #include "xfa/fwl/theme/cfwl_scrollbartp.h"
 #include "xfa/fwl/theme/cfwl_widgettp.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
 
 class CXFA_FWLTheme : public IFWL_ThemeProvider {
  public:
   CXFA_FWLTheme(CXFA_FFApp* pApp);
   virtual ~CXFA_FWLTheme();
-  virtual FWL_ERR Release() {
+  virtual FWL_Error Release() {
     delete this;
-    return FWL_ERR_Succeeded;
+    return FWL_Error::Succeeded;
   }
-  virtual IFWL_Target* Retain() { return NULL; }
-  virtual FWL_ERR GetClassName(CFX_WideString& wsClass) const {
-    return FWL_ERR_Succeeded;
+  virtual IFWL_Widget* Retain() { return NULL; }
+  virtual FWL_Error GetClassName(CFX_WideString& wsClass) const {
+    return FWL_Error::Succeeded;
   }
   virtual uint32_t GetHashCode() const { return 0; }
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
-  virtual FX_BOOL IsValidWidget(IFWL_Widget* pWidget);
+  virtual FWL_Error Initialize();
+  virtual FWL_Error Finalize();
+  virtual bool IsValidWidget(IFWL_Widget* pWidget);
   virtual uint32_t GetThemeID(IFWL_Widget* pWidget);
   virtual uint32_t SetThemeID(IFWL_Widget* pWidget,
                               uint32_t dwThemeID,
                               FX_BOOL bChildren = TRUE);
   virtual FX_BOOL DrawBackground(CFWL_ThemeBackground* pParams);
   virtual FX_BOOL DrawText(CFWL_ThemeText* pParams);
-  virtual void* GetCapacity(CFWL_ThemePart* pThemePart, uint32_t dwCapacity);
+  virtual void* GetCapacity(CFWL_ThemePart* pThemePart,
+                            CFWL_WidgetCapacity dwCapacity);
   virtual FX_BOOL IsCustomizedLayout(IFWL_Widget* pWidget);
-  virtual FWL_ERR GetPartRect(CFWL_ThemePart* pThemePart);
+  virtual FWL_Error GetPartRect(CFWL_ThemePart* pThemePart);
   virtual FX_BOOL IsInPart(CFWL_ThemePart* pThemePart,
                            FX_FLOAT fx,
                            FX_FLOAT fy);
 
   virtual FX_BOOL CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect);
-  virtual FWL_ERR GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix) {
-    return FWL_ERR_Succeeded;
+  virtual FWL_Error GetThemeMatrix(IFWL_Widget* pWidget, CFX_Matrix& matrix) {
+    return FWL_Error::Succeeded;
   }
-  virtual FWL_ERR SetThemeMatrix(IFWL_Widget* pWidget,
-                                 const CFX_Matrix& matrix) {
-    return FWL_ERR_Succeeded;
+  virtual FWL_Error SetThemeMatrix(IFWL_Widget* pWidget,
+                                   const CFX_Matrix& matrix) {
+    return FWL_Error::Succeeded;
   }
-  virtual FWL_ERR GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart) {
-    return FWL_ERR_Succeeded;
+  virtual FWL_Error GetPartRect(CFWL_ThemePart* pThemePart, CFX_RectF& rtPart) {
+    return FWL_Error::Succeeded;
   }
 
  protected:
@@ -77,7 +79,7 @@ class CXFA_FWLTheme : public IFWL_ThemeProvider {
   CFWL_PushButtonTP* m_pPushButtonTP;
   CFWL_CaretTP* m_pCaretTP;
   CFWL_BarcodeTP* m_pBarcodeTP;
-  IFDE_TextOut* m_pTextOut;
+  std::unique_ptr<CFDE_TextOut> m_pTextOut;
   FX_FLOAT m_fCapacity;
   uint32_t m_dwCapacity;
   IFX_Font* m_pCalendarFont;

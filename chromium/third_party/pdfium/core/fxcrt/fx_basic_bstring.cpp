@@ -6,12 +6,14 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <cctype>
 
 #include "core/fxcrt/include/fx_basic.h"
 #include "third_party/base/numerics/safe_math.h"
 
 template class CFX_StringDataTemplate<FX_CHAR>;
+template class CFX_StringCTemplate<FX_CHAR>;
 
 namespace {
 
@@ -48,7 +50,34 @@ int Buffer_itoa(char* buf, int i, uint32_t flags) {
   return len;
 }
 
+const FX_CHAR* FX_strstr(const FX_CHAR* haystack,
+                         int haystack_len,
+                         const FX_CHAR* needle,
+                         int needle_len) {
+  if (needle_len > haystack_len || needle_len == 0) {
+    return nullptr;
+  }
+  const FX_CHAR* end_ptr = haystack + haystack_len - needle_len;
+  while (haystack <= end_ptr) {
+    int i = 0;
+    while (1) {
+      if (haystack[i] != needle[i]) {
+        break;
+      }
+      i++;
+      if (i == needle_len) {
+        return haystack;
+      }
+    }
+    haystack++;
+  }
+  return nullptr;
+}
+
 }  // namespace
+
+static_assert(sizeof(CFX_ByteString) <= sizeof(FX_CHAR*),
+              "Strings must not require more space than pointers");
 
 CFX_ByteString::CFX_ByteString(const FX_CHAR* pStr, FX_STRSIZE nLen) {
   if (nLen < 0)
@@ -71,9 +100,8 @@ CFX_ByteString::CFX_ByteString(char ch) {
 }
 
 CFX_ByteString::CFX_ByteString(const CFX_ByteStringC& stringSrc) {
-  if (!stringSrc.IsEmpty()) {
+  if (!stringSrc.IsEmpty())
     m_pData.Reset(StringData::Create(stringSrc.c_str(), stringSrc.GetLength()));
-  }
 }
 
 CFX_ByteString::CFX_ByteString(const CFX_ByteStringC& str1,
@@ -98,11 +126,12 @@ const CFX_ByteString& CFX_ByteString::operator=(const FX_CHAR* pStr) {
   return *this;
 }
 
-const CFX_ByteString& CFX_ByteString::operator=(const CFX_ByteStringC& str) {
-  if (str.IsEmpty())
+const CFX_ByteString& CFX_ByteString::operator=(
+    const CFX_ByteStringC& stringSrc) {
+  if (stringSrc.IsEmpty())
     clear();
   else
-    AssignCopy(str.c_str(), str.GetLength());
+    AssignCopy(stringSrc.c_str(), stringSrc.GetLength());
 
   return *this;
 }
@@ -113,20 +142,6 @@ const CFX_ByteString& CFX_ByteString::operator=(
     m_pData = stringSrc.m_pData;
 
   return *this;
-}
-
-const CFX_ByteString& CFX_ByteString::operator=(const CFX_BinaryBuf& buf) {
-  Load(buf.GetBuffer(), buf.GetSize());
-  return *this;
-}
-
-void CFX_ByteString::Load(const uint8_t* buf, FX_STRSIZE len) {
-  if (!len) {
-    clear();
-    return;
-  }
-
-  m_pData.Reset(StringData::Create(reinterpret_cast<const FX_CHAR*>(buf), len));
 }
 
 const CFX_ByteString& CFX_ByteString::operator+=(const FX_CHAR* pStr) {
@@ -261,20 +276,25 @@ void CFX_ByteString::ReleaseBuffer(FX_STRSIZE nNewLength) {
   if (nNewLength == -1)
     nNewLength = FXSYS_strlen(m_pData->m_String);
 
+  nNewLength = std::min(nNewLength, m_pData->m_nAllocLength);
   if (nNewLength == 0) {
     clear();
     return;
   }
 
-  FXSYS_assert(nNewLength <= m_pData->m_nAllocLength);
-  ReallocBeforeWrite(nNewLength);
+  ASSERT(m_pData->m_nRefs == 1);
   m_pData->m_nDataLength = nNewLength;
   m_pData->m_String[nNewLength] = 0;
+  if (m_pData->m_nAllocLength - nNewLength >= 32) {
+    // Over arbitrary threshold, so pay the price to relocate.  Force copy to
+    // always occur by holding a second reference to the string.
+    CFX_ByteString preserve(*this);
+    ReallocBeforeWrite(nNewLength);
+  }
 }
 
 void CFX_ByteString::Reserve(FX_STRSIZE len) {
   GetBuffer(len);
-  ReleaseBuffer(GetLength());
 }
 
 FX_CHAR* CFX_ByteString::GetBuffer(FX_STRSIZE nMinBufLength) {
@@ -317,9 +337,9 @@ FX_STRSIZE CFX_ByteString::Delete(FX_STRSIZE nIndex, FX_STRSIZE nCount) {
       return m_pData->m_nDataLength;
     }
     ReallocBeforeWrite(nOldLength);
-    int nBytesToCopy = nOldLength - mLength + 1;
+    int nCharsToCopy = nOldLength - mLength + 1;
     FXSYS_memmove(m_pData->m_String + nIndex, m_pData->m_String + mLength,
-                  nBytesToCopy);
+                  nCharsToCopy);
     m_pData->m_nDataLength = nOldLength - nCount;
   }
   return m_pData->m_nDataLength;
@@ -388,7 +408,7 @@ void CFX_ByteString::AllocCopy(CFX_ByteString& dest,
 
 CFX_ByteString CFX_ByteString::FormatInteger(int i, uint32_t flags) {
   char buf[32];
-  return CFX_ByteStringC(buf, Buffer_itoa(buf, i, flags));
+  return CFX_ByteString(buf, Buffer_itoa(buf, i, flags));
 }
 
 void CFX_ByteString::FormatV(const FX_CHAR* pFormat, va_list argList) {
@@ -653,11 +673,12 @@ FX_STRSIZE CFX_ByteString::Find(FX_CHAR ch, FX_STRSIZE nStart) const {
   if (!m_pData)
     return -1;
 
-  if (nStart >= m_pData->m_nDataLength)
+  if (nStart < 0 || nStart >= m_pData->m_nDataLength)
     return -1;
 
-  const FX_CHAR* pStr = FXSYS_strchr(m_pData->m_String + nStart, ch);
-  return pStr ? (int)(pStr - m_pData->m_String) : -1;
+  const FX_CHAR* pStr = static_cast<const FX_CHAR*>(
+      memchr(m_pData->m_String + nStart, ch, m_pData->m_nDataLength - nStart));
+  return pStr ? pStr - m_pData->m_String : -1;
 }
 
 FX_STRSIZE CFX_ByteString::ReverseFind(FX_CHAR ch) const {
@@ -670,30 +691,6 @@ FX_STRSIZE CFX_ByteString::ReverseFind(FX_CHAR ch) const {
       return nLength;
   }
   return -1;
-}
-
-const FX_CHAR* FX_strstr(const FX_CHAR* str1,
-                         int len1,
-                         const FX_CHAR* str2,
-                         int len2) {
-  if (len2 > len1 || len2 == 0) {
-    return nullptr;
-  }
-  const FX_CHAR* end_ptr = str1 + len1 - len2;
-  while (str1 <= end_ptr) {
-    int i = 0;
-    while (1) {
-      if (str1[i] != str2[i]) {
-        break;
-      }
-      i++;
-      if (i == len2) {
-        return str1;
-      }
-    }
-    str1++;
-  }
-  return nullptr;
 }
 
 FX_STRSIZE CFX_ByteString::Find(const CFX_ByteStringC& pSub,
@@ -731,10 +728,22 @@ FX_STRSIZE CFX_ByteString::Remove(FX_CHAR chRemove) {
   if (!m_pData || m_pData->m_nDataLength < 1)
     return 0;
 
-  ReallocBeforeWrite(m_pData->m_nDataLength);
   FX_CHAR* pstrSource = m_pData->m_String;
-  FX_CHAR* pstrDest = m_pData->m_String;
   FX_CHAR* pstrEnd = m_pData->m_String + m_pData->m_nDataLength;
+  while (pstrSource < pstrEnd) {
+    if (*pstrSource == chRemove)
+      break;
+    pstrSource++;
+  }
+  if (pstrSource == pstrEnd)
+    return 0;
+
+  ptrdiff_t copied = pstrSource - m_pData->m_String;
+  ReallocBeforeWrite(m_pData->m_nDataLength);
+  pstrSource = m_pData->m_String + copied;
+  pstrEnd = m_pData->m_String + m_pData->m_nDataLength;
+
+  FX_CHAR* pstrDest = pstrSource;
   while (pstrSource < pstrEnd) {
     if (*pstrSource != chRemove) {
       *pstrDest = *pstrSource;
@@ -742,6 +751,7 @@ FX_STRSIZE CFX_ByteString::Remove(FX_CHAR chRemove) {
     }
     pstrSource++;
   }
+
   *pstrDest = 0;
   FX_STRSIZE nCount = (FX_STRSIZE)(pstrSource - pstrDest);
   m_pData->m_nDataLength -= nCount;
@@ -799,8 +809,8 @@ void CFX_ByteString::SetAt(FX_STRSIZE nIndex, FX_CHAR ch) {
   if (!m_pData) {
     return;
   }
-  FXSYS_assert(nIndex >= 0);
-  FXSYS_assert(nIndex < m_pData->m_nDataLength);
+  ASSERT(nIndex >= 0);
+  ASSERT(nIndex < m_pData->m_nDataLength);
   ReallocBeforeWrite(m_pData->m_nDataLength);
   m_pData->m_String[nIndex] = ch;
 }
@@ -810,7 +820,7 @@ CFX_WideString CFX_ByteString::UTF8Decode() const {
   for (FX_STRSIZE i = 0; i < GetLength(); i++) {
     decoder.Input((uint8_t)m_pData->m_String[i]);
   }
-  return decoder.GetResult();
+  return CFX_WideString(decoder.GetResult());
 }
 
 // static
@@ -822,7 +832,7 @@ CFX_ByteString CFX_ByteString::FromUnicode(const FX_WCHAR* str,
 
 // static
 CFX_ByteString CFX_ByteString::FromUnicode(const CFX_WideString& str) {
-  return CFX_CharMap::GetByteString(0, str);
+  return CFX_CharMap::GetByteString(0, str.AsStringC());
 }
 
 int CFX_ByteString::Compare(const CFX_ByteStringC& str) const {
@@ -848,11 +858,11 @@ int CFX_ByteString::Compare(const CFX_ByteStringC& str) const {
   }
   return 0;
 }
+
 void CFX_ByteString::TrimRight(const CFX_ByteStringC& pTargets) {
   if (!m_pData || pTargets.IsEmpty()) {
     return;
   }
-  ReallocBeforeWrite(m_pData->m_nDataLength);
   FX_STRSIZE pos = GetLength();
   if (pos < 1) {
     return;
@@ -869,16 +879,20 @@ void CFX_ByteString::TrimRight(const CFX_ByteStringC& pTargets) {
     pos--;
   }
   if (pos < m_pData->m_nDataLength) {
+    ReallocBeforeWrite(m_pData->m_nDataLength);
     m_pData->m_String[pos] = 0;
     m_pData->m_nDataLength = pos;
   }
 }
+
 void CFX_ByteString::TrimRight(FX_CHAR chTarget) {
   TrimRight(CFX_ByteStringC(chTarget));
 }
+
 void CFX_ByteString::TrimRight() {
   TrimRight("\x09\x0a\x0b\x0c\x0d\x20");
 }
+
 void CFX_ByteString::TrimLeft(const CFX_ByteStringC& pTargets) {
   if (!m_pData || pTargets.IsEmpty())
     return;
@@ -887,7 +901,6 @@ void CFX_ByteString::TrimLeft(const CFX_ByteStringC& pTargets) {
   if (len < 1)
     return;
 
-  ReallocBeforeWrite(len);
   FX_STRSIZE pos = 0;
   while (pos < len) {
     FX_STRSIZE i = 0;
@@ -900,40 +913,24 @@ void CFX_ByteString::TrimLeft(const CFX_ByteStringC& pTargets) {
     pos++;
   }
   if (pos) {
+    ReallocBeforeWrite(len);
     FX_STRSIZE nDataLength = len - pos;
     FXSYS_memmove(m_pData->m_String, m_pData->m_String + pos,
                   (nDataLength + 1) * sizeof(FX_CHAR));
     m_pData->m_nDataLength = nDataLength;
   }
 }
+
 void CFX_ByteString::TrimLeft(FX_CHAR chTarget) {
   TrimLeft(CFX_ByteStringC(chTarget));
 }
+
 void CFX_ByteString::TrimLeft() {
   TrimLeft("\x09\x0a\x0b\x0c\x0d\x20");
 }
+
 uint32_t CFX_ByteString::GetID(FX_STRSIZE start_pos) const {
-  return CFX_ByteStringC(*this).GetID(start_pos);
-}
-uint32_t CFX_ByteStringC::GetID(FX_STRSIZE start_pos) const {
-  if (m_Length == 0) {
-    return 0;
-  }
-  if (start_pos < 0 || start_pos >= m_Length) {
-    return 0;
-  }
-  uint32_t strid = 0;
-  if (start_pos + 4 > m_Length) {
-    for (FX_STRSIZE i = 0; i < m_Length - start_pos; i++) {
-      strid = strid * 256 + m_Ptr[start_pos + i];
-    }
-    strid = strid << ((4 - m_Length + start_pos) * 8);
-  } else {
-    for (int i = 0; i < 4; i++) {
-      strid = strid * 256 + m_Ptr[start_pos + i];
-    }
-  }
-  return strid;
+  return AsStringC().GetID(start_pos);
 }
 FX_STRSIZE FX_ftoa(FX_FLOAT d, FX_CHAR* buf) {
   buf[0] = '0';

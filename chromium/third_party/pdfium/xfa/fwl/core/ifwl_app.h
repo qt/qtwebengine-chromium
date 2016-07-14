@@ -7,39 +7,61 @@
 #ifndef XFA_FWL_CORE_IFWL_APP_H_
 #define XFA_FWL_CORE_IFWL_APP_H_
 
-#include "core/fxcrt/include/fx_string.h"
-#include "xfa/fwl/core/ifwl_notethread.h"
+// The FWL app code contains three parallel classes, which reference each
+// other via pointers as follows:
+//
+//                    m_pIface               m_pImpl
+//      CXFA_FFApp ------------> IFWL_App -----------> CFWL_AppImp
+//                                        <-----------
+//                                           m_pIface
 
-class IFWL_AdapterNative;
+#include <memory>
+
+#include "core/fxcrt/include/fx_string.h"
+#include "xfa/fwl/core/fwl_appimp.h"
+#include "xfa/fwl/core/fwl_error.h"
+
+class CFWL_NoteDriver;
+class CXFA_FFApp;
+class CXFA_FWLAdapterWidgetMgr;
+class IFWL_ThemeProvider;
 class IFWL_Widget;
 class IFWL_WidgetMgr;
-class IFWL_ThemeProvider;
-class IFWL_AdapterWidgetMgr;
 
-class IFWL_App : public IFWL_NoteThread {
+class IFWL_App {
  public:
-  static IFWL_App* Create(IFWL_AdapterNative* pAdapter);
+  static IFWL_App* Create(CXFA_FFApp* pAdapter);
 
-  FWL_ERR Initialize();
-  FWL_ERR Finalize();
-  IFWL_AdapterNative* GetAdapterNative();
+  virtual ~IFWL_App() {}
+
+  FWL_Error Initialize();
+  FWL_Error Finalize();
+  CXFA_FFApp* GetAdapterNative();
   IFWL_WidgetMgr* GetWidgetMgr();
   IFWL_ThemeProvider* GetThemeProvider();
-  FWL_ERR SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
-  FWL_ERR Exit(int32_t iExitCode);
+  void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
+  void Exit(int32_t iExitCode);
+
+  // These call into polymorphic methods in the impl; no need to override.
+  void Release();
+
+  CFWL_AppImp* GetImpl() const { return m_pImpl.get(); }
+
+  // Takes ownership of |pImpl|.
+  void SetImpl(CFWL_AppImp* pImpl) { m_pImpl.reset(pImpl); }
+
+  CFWL_NoteDriver* GetNoteDriver() const;
 
  private:
   IFWL_App() {}
+
+  std::unique_ptr<CFWL_AppImp> m_pImpl;
 };
 
 IFWL_App* FWL_GetApp();
 void FWL_SetApp(IFWL_App* pApp);
-IFWL_AdapterNative* FWL_GetAdapterNative();
-IFWL_AdapterWidgetMgr* FWL_GetAdapterWidgetMgr();
-IFWL_ThemeProvider* FWL_GetThemeProvider();
-extern FWL_ERR FWL_Execute(const CFX_WideStringC& wsExecutable,
-                           const CFX_WideStringC& wsParameters);
-FWL_ERR FWL_SetFullScreen(IFWL_Widget* pWidget, FX_BOOL bFullScreen);
-FX_BOOL FWL_AppIsActived();
+
+CXFA_FFApp* FWL_GetAdapterNative();
+CXFA_FWLAdapterWidgetMgr* FWL_GetAdapterWidgetMgr();
 
 #endif  // XFA_FWL_CORE_IFWL_APP_H_

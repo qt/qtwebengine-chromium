@@ -5,7 +5,7 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "core/fxcodec/codec/codec_int.h"
-#include "core/include/fxcodec/fx_codec.h"
+#include "core/fxcodec/include/fx_codec.h"
 
 namespace {
 
@@ -132,11 +132,6 @@ void FaxFillBits(uint8_t* dest_buf, int columns, int startpos, int endpos) {
 #define NEXTBIT                                  \
   src_buf[bitpos / 8] & (1 << (7 - bitpos % 8)); \
   bitpos++;
-#define ADDBIT(code, bit) \
-  code = code << 1;       \
-  if (bit)                \
-    code++;
-#define GETBIT(bitpos) src_buf[bitpos / 8] & (1 << (7 - bitpos % 8))
 
 const uint8_t FaxBlackRunIns[] = {
     0,          2,          0x02,       3,          0,          0x03,
@@ -613,7 +608,6 @@ class CCodec_FaxDecoder : public CCodec_ScanlineDecoder {
                  int Rows);
 
   // CCodec_ScanlineDecoder
-  void v_DownScale(int dest_width, int dest_height) override {}
   FX_BOOL v_Rewind() override;
   uint8_t* v_GetNextLine() override;
   uint32_t GetSrcOffset() override;
@@ -666,7 +660,6 @@ FX_BOOL CCodec_FaxDecoder::Create(const uint8_t* src_buf,
   m_SrcSize = src_size;
   m_nComps = 1;
   m_bpc = 1;
-  m_bColorTransformed = FALSE;
   return TRUE;
 }
 FX_BOOL CCodec_FaxDecoder::v_Rewind() {
@@ -812,7 +805,7 @@ FX_BOOL CCodec_FaxModule::Encode(const uint8_t* src_buf,
   encoder.Encode(dest_buf, dest_size);
   return TRUE;
 }
-ICodec_ScanlineDecoder* CCodec_FaxModule::CreateDecoder(
+CCodec_ScanlineDecoder* CCodec_FaxModule::CreateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,

@@ -218,12 +218,12 @@ class Channel
   int SetOpusDtx(bool enable_dtx);
 
   // VoENetwork
-  int32_t RegisterExternalTransport(Transport& transport);
+  int32_t RegisterExternalTransport(Transport* transport);
   int32_t DeRegisterExternalTransport();
-  int32_t ReceivedRTPPacket(const int8_t* data,
+  int32_t ReceivedRTPPacket(const uint8_t* received_packet,
                             size_t length,
                             const PacketTime& packet_time);
-  int32_t ReceivedRTCPPacket(const int8_t* data, size_t length);
+  int32_t ReceivedRTCPPacket(const uint8_t* data, size_t length);
 
   // VoEFile
   int StartPlayingFileLocally(const char* fileName,
@@ -394,7 +394,9 @@ class Channel
   bool SendRtcp(const uint8_t* data, size_t len) override;
 
   // From MixerParticipant
-  int32_t GetAudioFrame(int32_t id, AudioFrame* audioFrame) override;
+  MixerParticipant::AudioFrameInfo GetAudioFrameWithMuted(
+      int32_t id,
+      AudioFrame* audioFrame) override;
   int32_t NeededFrequency(int32_t id) const override;
 
   // From FileCallback

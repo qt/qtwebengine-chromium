@@ -37,7 +37,6 @@
 #include "platform/graphics/BitmapImage.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCachePolicy.h"
-#include "wtf/CheckedNumeric.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 
@@ -75,14 +74,6 @@ ImageResource::ImageResource(blink::Image* image, const ResourceLoaderOptions& o
     , m_hasDevicePixelRatioHeaderValue(false)
 {
     WTF_LOG(Timers, "new ImageResource(Image) %p", this);
-    setStatus(Cached);
-}
-
-ImageResource::ImageResource(const ResourceRequest& resourceRequest, blink::Image* image, const ResourceLoaderOptions& options)
-    : Resource(resourceRequest, Image, options)
-    , m_image(image)
-{
-    WTF_LOG(Timers, "new ImageResource(ResourceRequest, Image) %p", this);
     setStatus(Cached);
 }
 
@@ -351,7 +342,7 @@ inline void ImageResource::clearImage()
 
     // If our Image has an observer, it's always us so we need to clear the back pointer
     // before dropping our reference.
-    m_image->setImageObserver(nullptr);
+    m_image->clearImageObserver();
     m_image.clear();
 }
 
@@ -376,10 +367,11 @@ void ImageResource::updateImage(bool allDataReceived)
     // to decode.
     if (sizeAvailable || allDataReceived) {
         if (!m_image || m_image->isNull()) {
-            error(errorOccurred() ? getStatus() : DecodeError);
+            if (!errorOccurred())
+                setStatus(DecodeError);
+            clear();
             if (memoryCache()->contains(this))
                 memoryCache()->remove(this);
-            return;
         }
 
         // It would be nice to only redraw the decoded band of the image, but with the current design
@@ -388,27 +380,31 @@ void ImageResource::updateImage(bool allDataReceived)
     }
 }
 
-void ImageResource::finish()
+void ImageResource::updateImageAndClearBuffer()
+{
+    clearImage();
+    updateImage(true);
+    m_data.clear();
+}
+
+void ImageResource::finish(double loadFinishTime)
 {
     if (m_multipartParser) {
         m_multipartParser->finish();
-        if (m_data) {
-            clearImage();
-            updateImage(true);
-            m_data.clear();
-        }
+        if (m_data)
+            updateImageAndClearBuffer();
     } else {
         updateImage(true);
     }
-    Resource::finish();
+    Resource::finish(loadFinishTime);
 }
 
-void ImageResource::error(Resource::Status status)
+void ImageResource::error(const ResourceError& error)
 {
     if (m_multipartParser)
         m_multipartParser->cancel();
     clear();
-    Resource::error(status);
+    Resource::error(error);
     notifyObservers();
 }
 
@@ -419,7 +415,7 @@ void ImageResource::responseReceived(const ResourceResponse& response, PassOwnPt
     // If there's no boundary, just handle the request normally.
     if (response.isMultipart() && !response.multipartBoundary().isEmpty())
         m_multipartParser = new MultipartImageResourceParser(response, response.multipartBoundary(), this);
-    Resource::responseReceived(response, handle);
+    Resource::responseReceived(response, std::move(handle));
     if (RuntimeEnabledFeatures::clientHintsEnabled()) {
         m_devicePixelRatioHeaderValue = m_response.httpHeaderField(HTTPNames::Content_DPR).toFloat(&m_hasDevicePixelRatioHeaderValue);
         if (!m_hasDevicePixelRatioHeaderValue || m_devicePixelRatioHeaderValue <= 0.0) {
@@ -430,14 +426,12 @@ void ImageResource::responseReceived(const ResourceResponse& response, PassOwnPt
     }
 }
 
-void ImageResource::decodedSizeChanged(const blink::Image* image, int delta)
+void ImageResource::decodedSizeChangedTo(const blink::Image* image, size_t newSize)
 {
     if (!image || image != m_image)
         return;
 
-    CheckedNumeric<intptr_t> signedDecodedSize(decodedSize());
-    signedDecodedSize += delta;
-    setDecodedSize(safeCast<size_t>(signedDecodedSize.ValueOrDie()));
+    setDecodedSize(newSize);
 }
 
 void ImageResource::didDraw(const blink::Image* image)
@@ -509,7 +503,11 @@ void ImageResource::reloadIfLoFi(ResourceFetcher* fetcher)
         return;
     m_resourceRequest.setCachePolicy(WebCachePolicy::BypassingCache);
     m_resourceRequest.setLoFiState(WebURLRequest::LoFiOff);
-    error(Resource::LoadError);
+    if (isLoading())
+        m_loader->cancel();
+    else
+        updateImageAndClearBuffer();
+    setStatus(NotStarted);
     load(fetcher);
 }
 
@@ -530,9 +528,7 @@ void ImageResource::onePartInMultipartReceived(const ResourceResponse& response)
         m_multipartParsingState = MultipartParsingState::ParsingFirstPart;
         return;
     }
-    clear();
-    updateImage(true);
-    m_data.clear();
+    updateImageAndClearBuffer();
 
     if (m_multipartParsingState == MultipartParsingState::ParsingFirstPart) {
         m_multipartParsingState = MultipartParsingState::FinishedParsingFirstPart;
@@ -541,7 +537,7 @@ void ImageResource::onePartInMultipartReceived(const ResourceResponse& response)
             setStatus(Cached);
         checkNotify();
         if (m_loader)
-            m_loader->didFinishLoadingOnePart(0, WebURLLoaderClient::kUnknownEncodedDataLength);
+            m_loader->didFinishLoadingFirstPartInMultipart();
     }
 }
 

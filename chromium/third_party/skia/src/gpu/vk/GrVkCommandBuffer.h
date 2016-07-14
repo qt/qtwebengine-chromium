@@ -82,6 +82,8 @@ public:
         }
     }
 
+    void bindPipeline(const GrVkGpu* gpu, const GrVkPipeline* pipeline);
+
     void bindDescriptorSets(const GrVkGpu* gpu,
                             GrVkPipelineState*,
                             VkPipelineLayout layout,
@@ -125,13 +127,33 @@ public:
                    const VkImageCopy* copyRegions);
 
     void blitImage(const GrVkGpu* gpu,
-                   GrVkImage* srcImage,
+                   const GrVkResource* srcResource,
+                   VkImage srcImage,
                    VkImageLayout srcLayout,
-                   GrVkImage* dstImage,
+                   const GrVkResource* dstResource,
+                   VkImage dstImage,
                    VkImageLayout dstLayout,
                    uint32_t blitRegionCount,
                    const VkImageBlit* blitRegions,
                    VkFilter filter);
+
+    void blitImage(const GrVkGpu* gpu,
+                   const GrVkImage& srcImage,
+                   const GrVkImage& dstImage,
+                   uint32_t blitRegionCount,
+                   const VkImageBlit* blitRegions,
+                   VkFilter filter) {
+        this->blitImage(gpu,
+                        srcImage.resource(),
+                        srcImage.image(),
+                        srcImage.currentLayout(),
+                        dstImage.resource(),
+                        dstImage.image(),
+                        dstImage.currentLayout(),
+                        blitRegionCount,
+                        blitRegions,
+                        filter);
+    }
 
     void copyImageToBuffer(const GrVkGpu* gpu,
                            GrVkImage* srcImage,
@@ -153,9 +175,6 @@ public:
                           const VkClearAttachment* attachments,
                           int numRects,
                           const VkClearRect* clearRects) const;
-
-    void bindPipeline(const GrVkGpu* gpu, const GrVkPipeline* pipeline);
-
 
     void drawIndexed(const GrVkGpu* gpu,
                      uint32_t indexCount,

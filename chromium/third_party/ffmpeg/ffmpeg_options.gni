@@ -16,10 +16,14 @@ if (is_chrome_branded) {
 if (is_chromeos) {
   _default_ffmpeg_branding = _default_ffmpeg_branding + "OS"
 }
-if (is_chromecast && !is_android) {
-  # TODO(alokp): What audio codecs does Chromecast want here?  Sort
-  # out and add configs if necessary.  http://crbug.com/570754
-  _default_ffmpeg_branding = "ChromeOS"
+if (is_chromecast) {
+  if (is_android) {
+    _default_ffmpeg_branding = "Chrome"
+  } else {
+    # TODO(alokp): What audio codecs does Chromecast want here?  Sort
+    # out and add configs if necessary.  http://crbug.com/570754
+    _default_ffmpeg_branding = "ChromeOS"
+  }
 }
 
 declare_args() {
@@ -43,7 +47,7 @@ assert(ffmpeg_branding == "Chromium" ||
 
 if (current_cpu == "x86") {
   ffmpeg_arch = "ia32"
-} else if (current_cpu == "arm" && arm_version == 7 && arm_use_neon) {
+} else if (current_cpu == "arm" && arm_version >= 7 && arm_use_neon) {
   ffmpeg_arch = "arm-neon"
 } else {
   ffmpeg_arch = current_cpu

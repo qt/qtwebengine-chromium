@@ -100,8 +100,6 @@ class CPWL_PathData {
   PWL_PATHDATA_TYPE type;
 };
 
-class IPWL_SpellCheck;
-
 class CPWL_Utils {
  public:
   static CFX_FloatRect InflateRect(const CFX_FloatRect& rcRect, FX_FLOAT fSize);
@@ -138,7 +136,7 @@ class CPWL_Utils {
                                            const CPWL_Color& color,
                                            const CPWL_Color& crLeftTop,
                                            const CPWL_Color& crRightBottom,
-                                           int32_t nStyle,
+                                           BorderStyle nStyle,
                                            const CPWL_Dash& dash);
   static CFX_ByteString GetCircleBorderAppStream(
       const CFX_FloatRect& rect,
@@ -146,7 +144,7 @@ class CPWL_Utils {
       const CPWL_Color& color,
       const CPWL_Color& crLeftTop,
       const CPWL_Color& crRightBottom,
-      int32_t nStyle,
+      BorderStyle nStyle,
       const CPWL_Dash& dash);
   static CFX_ByteString GetRectFillAppStream(const CFX_FloatRect& rect,
                                              const CPWL_Color& color);
@@ -175,11 +173,6 @@ class CPWL_Utils {
                                          uint16_t SubWord = 0);
   static CFX_ByteString GetEditSelAppStream(
       IFX_Edit* pEdit,
-      const CFX_FloatPoint& ptOffset,
-      const CPVT_WordRange* pRange = NULL);
-  static CFX_ByteString GetSpellCheckAppStream(
-      IFX_Edit* pEdit,
-      IPWL_SpellCheck* pSpellCheck,
       const CFX_FloatPoint& ptOffset,
       const CPVT_WordRange* pRange = NULL);
   static CFX_ByteString GetTextAppStream(const CFX_FloatRect& rcBBox,
@@ -220,7 +213,7 @@ class CPWL_Utils {
                          const CPWL_Color& color,
                          const CPWL_Color& crLeftTop,
                          const CPWL_Color& crRightBottom,
-                         int32_t nStyle,
+                         BorderStyle nStyle,
                          int32_t nTransparancy);
   static void DrawFillArea(CFX_RenderDevice* pDevice,
                            CFX_Matrix* pUser2Device,
@@ -235,13 +228,6 @@ class CPWL_Utils {
                          int32_t nTransparancy,
                          int32_t nStartGray,
                          int32_t nEndGray);
-  static void DrawEditSpellCheck(CFX_RenderDevice* pDevice,
-                                 CFX_Matrix* pUser2Device,
-                                 IFX_Edit* pEdit,
-                                 const CFX_FloatRect& rcClip,
-                                 const CFX_FloatPoint& ptOffset,
-                                 const CPVT_WordRange* pRange,
-                                 IPWL_SpellCheck* pSpellCheck);
 
  public:
   static void ConvertCMYK2RGB(FX_FLOAT dC,

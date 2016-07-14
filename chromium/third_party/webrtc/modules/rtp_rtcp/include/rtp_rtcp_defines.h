@@ -99,8 +99,6 @@ enum KeyFrameRequestMethod { kKeyFrameReqPliRtcp, kKeyFrameReqFirRtcp };
 
 enum RtpRtcpPacketType { kPacketRtp = 0, kPacketKeepAlive = 1 };
 
-enum NACKMethod { kNackOff = 0, kNackRtcp = 2 };
-
 enum RetransmissionMode : uint8_t {
   kRetransmitOff = 0x0,
   kRetransmitFECPackets = 0x1,
@@ -247,32 +245,28 @@ class RtcpBandwidthObserver {
 
 struct PacketInfo {
   PacketInfo(int64_t arrival_time_ms, uint16_t sequence_number)
-      : PacketInfo(-1, arrival_time_ms, -1, sequence_number, 0, false) {}
+      : PacketInfo(-1, arrival_time_ms, -1, sequence_number, 0) {}
 
   PacketInfo(int64_t arrival_time_ms,
              int64_t send_time_ms,
              uint16_t sequence_number,
-             size_t payload_size,
-             bool was_paced)
+             size_t payload_size)
       : PacketInfo(-1,
                    arrival_time_ms,
                    send_time_ms,
                    sequence_number,
-                   payload_size,
-                   was_paced) {}
+                   payload_size) {}
 
   PacketInfo(int64_t creation_time_ms,
              int64_t arrival_time_ms,
              int64_t send_time_ms,
              uint16_t sequence_number,
-             size_t payload_size,
-             bool was_paced)
+             size_t payload_size)
       : creation_time_ms(creation_time_ms),
         arrival_time_ms(arrival_time_ms),
         send_time_ms(send_time_ms),
         sequence_number(sequence_number),
-        payload_size(payload_size),
-        was_paced(was_paced) {}
+        payload_size(payload_size) {}
 
   // Time corresponding to when this object was created.
   int64_t creation_time_ms;
@@ -287,8 +281,6 @@ struct PacketInfo {
   uint16_t sequence_number;
   // Size of the packet excluding RTP headers.
   size_t payload_size;
-  // True if the packet was paced out by the pacer.
-  bool was_paced;
 };
 
 class TransportFeedbackObserver {
@@ -298,9 +290,7 @@ class TransportFeedbackObserver {
 
   // Note: Transport-wide sequence number as sequence number. Arrival time
   // must be set to 0.
-  virtual void AddPacket(uint16_t sequence_number,
-                         size_t length,
-                         bool was_paced) = 0;
+  virtual void AddPacket(uint16_t sequence_number, size_t length) = 0;
 
   virtual void OnTransportFeedback(const rtcp::TransportFeedback& feedback) = 0;
 };

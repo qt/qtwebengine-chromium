@@ -13,7 +13,6 @@
 #include "xfa/fwl/core/cfwl_widgetimpproperties.h"
 
 #define FWL_CLASS_DateTimePicker L"FWL_DATETIMEPICKER"
-#define FWL_CLASSHASH_DateTimePicker 3851176257
 #define FWL_STYLEEXT_DTP_AllowEdit (1L << 0)
 #define FWL_STYLEEXT_DTP_LongDateFormat (0L << 1)
 #define FWL_STYLEEXT_DTP_ShortDateFormat (1L << 1)
@@ -30,40 +29,22 @@
 #define FWL_STYLEEXT_DTP_EditHAlignMask (3L << 4)
 #define FWL_STYLEEXT_DTP_EditVAlignMask (3L << 6)
 #define FWL_STYLEEXT_DTP_EditHAlignModeMask (3L << 8)
-#define FWL_PART_DTP_Border 1
-#define FWL_PART_DTP_Edge 2
-#define FWL_PART_DTP_Background 3
-#define FWL_PART_DTP_DropDownButton 4
-#define FWL_PARTSTATE_DTP_Normal (0L << 0)
-#define FWL_PARTSTATE_DTP_Hovered (1L << 0)
-#define FWL_PARTSTATE_DTP_Pressed (2L << 0)
-#define FWL_PARTSTATE_DTP_Disabled (3L << 0)
-#define FWL_EVT_DTP_DropDown L"FWL_EVENT_DTP_DropDown"
-#define FWL_EVTHASH_DTP_DropDown 264728733
-#define FWL_EVT_DTP_CloseUp L"FWL_EVENT_DTP_CloseUp"
-#define FWL_EVTHASH_DTP_CloseUp 4280973803
-#define FWL_EVT_DTP_EditChanged L"FWL_EVENT_DTP_EditChanged"
-#define FWL_EVTHASH_DTP_EditChanged 4009610944
-#define FWL_EVT_DTP_HoverChanged L"FWL_EVENT_DTP_HoverChanged"
-#define FWL_EVTHASH_DTP_HoverChanged 686674750
-#define FWL_EVT_DTP_SelectChanged L"FWL_EVENT_DTP_SelectChanged"
-#define FWL_EVTHASH_DTP_SelectChanged 1589616858
 
-BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpDropDown, FWL_EVTHASH_DTP_DropDown)
+BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpDropDown, CFWL_EventType::DropDown)
 END_FWL_EVENT_DEF
 
-BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpCloseUp, FWL_EVTHASH_DTP_CloseUp)
+BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpCloseUp, CFWL_EventType::CloseUp)
 END_FWL_EVENT_DEF
 
-BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpEditChanged, FWL_EVTHASH_DTP_EditChanged)
+BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpEditChanged, CFWL_EventType::EditChanged)
 CFX_WideString m_wsText;
 END_FWL_EVENT_DEF
 
-BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpHoverChanged, FWL_EVTHASH_DTP_HoverChanged)
+BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpHoverChanged, CFWL_EventType::HoverChanged)
 int32_t hoverday;
 END_FWL_EVENT_DEF
 
-BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpSelectChanged, FWL_EVTHASH_DTP_SelectChanged)
+BEGIN_FWL_EVENT_DEF(CFWL_Event_DtpSelectChanged, CFWL_EventType::SelectChanged)
 int32_t iYear;
 int32_t iMonth;
 int32_t iDay;
@@ -71,10 +52,10 @@ END_FWL_EVENT_DEF
 
 class IFWL_DateTimePickerDP : public IFWL_DataProvider {
  public:
-  virtual FWL_ERR GetToday(IFWL_Widget* pWidget,
-                           int32_t& iYear,
-                           int32_t& iMonth,
-                           int32_t& iDay) = 0;
+  virtual FWL_Error GetToday(IFWL_Widget* pWidget,
+                             int32_t& iYear,
+                             int32_t& iMonth,
+                             int32_t& iDay) = 0;
 };
 
 class IFWL_DateTimePicker : public IFWL_Widget {
@@ -82,12 +63,12 @@ class IFWL_DateTimePicker : public IFWL_Widget {
   static IFWL_DateTimePicker* Create(const CFWL_WidgetImpProperties& properties,
                                      IFWL_Widget* pOuter);
 
-  FWL_ERR GetCurSel(int32_t& iYear, int32_t& iMonth, int32_t& iDay);
-  FWL_ERR SetCurSel(int32_t iYear, int32_t iMonth, int32_t iDay);
-  FWL_ERR SetEditText(const CFX_WideString& wsText);
-  FWL_ERR GetEditText(CFX_WideString& wsText,
-                      int32_t nStart = 0,
-                      int32_t nCount = -1) const;
+  FWL_Error GetCurSel(int32_t& iYear, int32_t& iMonth, int32_t& iDay);
+  FWL_Error SetCurSel(int32_t iYear, int32_t iMonth, int32_t iDay);
+  FWL_Error SetEditText(const CFX_WideString& wsText);
+  FWL_Error GetEditText(CFX_WideString& wsText,
+                        int32_t nStart = 0,
+                        int32_t nCount = -1) const;
   int32_t CountSelRanges();
   int32_t GetSelRange(int32_t nIndex, int32_t& nStart);
   FX_BOOL CanUndo();
@@ -103,10 +84,10 @@ class IFWL_DateTimePicker : public IFWL_Widget {
   FX_BOOL SelectAll();
   FX_BOOL Delete();
   FX_BOOL DeSelect();
-  FWL_ERR GetBBox(CFX_RectF& rect);
-  FWL_ERR SetEditLimit(int32_t nLimit);
-  FWL_ERR ModifyEditStylesEx(uint32_t dwStylesExAdded,
-                             uint32_t dwStylesExRemoved);
+  FWL_Error GetBBox(CFX_RectF& rect);
+  FWL_Error SetEditLimit(int32_t nLimit);
+  FWL_Error ModifyEditStylesEx(uint32_t dwStylesExAdded,
+                               uint32_t dwStylesExRemoved);
 
  protected:
   IFWL_DateTimePicker();

@@ -15,9 +15,13 @@
     {
         'angle_end2end_tests_sources':
         [
+            '<(angle_path)/src/tests/gl_tests/MultisampleCompatibilityTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/FramebufferMixedSamplesTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/BindUniformLocationTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BlendMinMaxTest.cpp',
             '<(angle_path)/src/tests/gl_tests/BlitFramebufferANGLETest.cpp',
             '<(angle_path)/src/tests/gl_tests/BufferDataTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/BuiltinVariableTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ClearTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ColorMaskTest.cpp',
             '<(angle_path)/src/tests/gl_tests/CompressedTextureTest.cpp',
@@ -58,6 +62,7 @@
             '<(angle_path)/src/tests/gl_tests/SRGBTextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/StateChangeTest.cpp',
             '<(angle_path)/src/tests/gl_tests/SwizzleTest.cpp',
+            '<(angle_path)/src/tests/gl_tests/SyncQueriesTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TextureTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TimerQueriesTest.cpp',
             '<(angle_path)/src/tests/gl_tests/TransformFeedbackTest.cpp',
@@ -68,6 +73,7 @@
             '<(angle_path)/src/tests/gl_tests/VertexAttributeTest.cpp',
             '<(angle_path)/src/tests/gl_tests/ViewportTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLContextCompatibilityTest.cpp',
+            '<(angle_path)/src/tests/egl_tests/EGLContextSharingTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLQueryContextTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSanityCheckTest.cpp',
             '<(angle_path)/src/tests/egl_tests/EGLSurfaceTest.cpp',
@@ -89,6 +95,7 @@
             '<(angle_path)/src/tests/egl_tests/EGLStreamTest.cpp',
             # TODO(cwallez) for Linux, requires a portable implementation of threads
             '<(angle_path)/src/tests/egl_tests/EGLThreadTest.cpp',
+            '<(angle_path)/src/tests/egl_tests/media/yuvtest.inl',
         ],
         'angle_end2end_tests_x11_sources':
         [

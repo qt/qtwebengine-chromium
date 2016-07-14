@@ -72,13 +72,11 @@ class TransportFeedbackProxy : public TransportFeedbackObserver {
   }
 
   // Implements TransportFeedbackObserver.
-  void AddPacket(uint16_t sequence_number,
-                 size_t length,
-                 bool was_paced) override {
+  void AddPacket(uint16_t sequence_number, size_t length) override {
     RTC_DCHECK(pacer_thread_.CalledOnValidThread());
     rtc::CritScope lock(&crit_);
     if (feedback_observer_)
-      feedback_observer_->AddPacket(sequence_number, length, was_paced);
+      feedback_observer_->AddPacket(sequence_number, length);
   }
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override {
     RTC_DCHECK(network_thread_.CalledOnValidThread());
@@ -476,22 +474,32 @@ bool Channel::OnRecoveredPacket(const uint8_t* rtp_packet,
   return ReceivePacket(rtp_packet, rtp_packet_length, header, false);
 }
 
-int32_t Channel::GetAudioFrame(int32_t id, AudioFrame* audioFrame) {
+MixerParticipant::AudioFrameInfo Channel::GetAudioFrameWithMuted(
+    int32_t id,
+    AudioFrame* audioFrame) {
   if (event_log_) {
     unsigned int ssrc;
     RTC_CHECK_EQ(GetLocalSSRC(ssrc), 0);
     event_log_->LogAudioPlayout(ssrc);
   }
   // Get 10ms raw PCM data from the ACM (mixer limits output frequency)
-  if (audio_coding_->PlayoutData10Ms(audioFrame->sample_rate_hz_, audioFrame) ==
-      -1) {
+  bool muted;
+  if (audio_coding_->PlayoutData10Ms(audioFrame->sample_rate_hz_, audioFrame,
+                                     &muted) == -1) {
     WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId, _channelId),
                  "Channel::GetAudioFrame() PlayoutData10Ms() failed!");
     // In all likelihood, the audio in this frame is garbage. We return an
     // error so that the audio mixer module doesn't add it to the mix. As
     // a result, it won't be played out and the actions skipped here are
     // irrelevant.
-    return -1;
+    return MixerParticipant::AudioFrameInfo::kError;
+  }
+
+  if (muted) {
+    // TODO(henrik.lundin): We should be able to do better than this. But we
+    // will have to go through all the cases below where the audio samples may
+    // be used, and handle the muted case in some way.
+    audioFrame->Mute();
   }
 
   if (_RxVadDetection) {
@@ -563,6 +571,7 @@ int32_t Channel::GetAudioFrame(int32_t id, AudioFrame* audioFrame) {
   // Mix decoded PCM output with file if file mixing is enabled
   if (state.output_file_playing) {
     MixAudioWithFile(*audioFrame, audioFrame->sample_rate_hz_);
+    muted = false;  // We may have added non-zero samples.
   }
 
   // External media
@@ -587,6 +596,7 @@ int32_t Channel::GetAudioFrame(int32_t id, AudioFrame* audioFrame) {
   }
 
   // Measure audio level (0-9)
+  // TODO(henrik.lundin) Use the |muted| information here too.
   _outputAudioLevel.ComputeLevel(*audioFrame);
 
   if (capture_start_rtp_time_stamp_ < 0 && audioFrame->timestamp_ != 0) {
@@ -619,7 +629,8 @@ int32_t Channel::GetAudioFrame(int32_t id, AudioFrame* audioFrame) {
     }
   }
 
-  return 0;
+  return muted ? MixerParticipant::AudioFrameInfo::kMuted
+               : MixerParticipant::AudioFrameInfo::kNormal;
 }
 
 int32_t Channel::NeededFrequency(int32_t id) const {
@@ -811,6 +822,7 @@ Channel::Channel(int32_t channelId,
   }
   acm_config.neteq_config.enable_fast_accelerate =
       config.Get<NetEqFastAccelerate>().enabled;
+  acm_config.neteq_config.enable_muted_state = true;
   audio_coding_.reset(AudioCodingModule::Create(acm_config));
 
   _outputAudioLevel.Clear();
@@ -1449,12 +1461,11 @@ int Channel::SetOpusDtx(bool enable_dtx) {
   return 0;
 }
 
-int32_t Channel::RegisterExternalTransport(Transport& transport) {
+int32_t Channel::RegisterExternalTransport(Transport* transport) {
   WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
                "Channel::RegisterExternalTransport()");
 
   rtc::CritScope cs(&_callbackCritSect);
-
   if (_externalTransport) {
     _engineStatisticsPtr->SetLastError(
         VE_INVALID_OPERATION, kTraceError,
@@ -1462,7 +1473,7 @@ int32_t Channel::RegisterExternalTransport(Transport& transport) {
     return -1;
   }
   _externalTransport = true;
-  _transportPtr = &transport;
+  _transportPtr = transport;
   return 0;
 }
 
@@ -1471,22 +1482,21 @@ int32_t Channel::DeRegisterExternalTransport() {
                "Channel::DeRegisterExternalTransport()");
 
   rtc::CritScope cs(&_callbackCritSect);
-
-  if (!_transportPtr) {
+  if (_transportPtr) {
+    WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
+                 "DeRegisterExternalTransport() all transport is disabled");
+  } else {
     _engineStatisticsPtr->SetLastError(
         VE_INVALID_OPERATION, kTraceWarning,
         "DeRegisterExternalTransport() external transport already "
         "disabled");
-    return 0;
   }
   _externalTransport = false;
   _transportPtr = NULL;
-  WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
-               "DeRegisterExternalTransport() all transport is disabled");
   return 0;
 }
 
-int32_t Channel::ReceivedRTPPacket(const int8_t* data,
+int32_t Channel::ReceivedRTPPacket(const uint8_t* received_packet,
                                    size_t length,
                                    const PacketTime& packet_time) {
   WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId, _channelId),
@@ -1495,7 +1505,6 @@ int32_t Channel::ReceivedRTPPacket(const int8_t* data,
   // Store playout timestamp for the received RTP packet
   UpdatePlayoutTimestamp(false);
 
-  const uint8_t* received_packet = reinterpret_cast<const uint8_t*>(data);
   RTPHeader header;
   if (!rtp_header_parser_->Parse(received_packet, length, &header)) {
     WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVoice, _channelId,
@@ -1585,14 +1594,14 @@ bool Channel::IsPacketRetransmitted(const RTPHeader& header,
   return !in_order && statistician->IsRetransmitOfOldPacket(header, min_rtt);
 }
 
-int32_t Channel::ReceivedRTCPPacket(const int8_t* data, size_t length) {
+int32_t Channel::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
   WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_instanceId, _channelId),
                "Channel::ReceivedRTCPPacket()");
   // Store playout timestamp for the received RTCP packet
   UpdatePlayoutTimestamp(true);
 
   // Deliver RTCP packet to RTP/RTCP module for parsing
-  if (_rtpRtcpModule->IncomingRtcpPacket((const uint8_t*)data, length) == -1) {
+  if (_rtpRtcpModule->IncomingRtcpPacket(data, length) == -1) {
     _engineStatisticsPtr->SetLastError(
         VE_SOCKET_TRANSPORT_MODULE_ERROR, kTraceWarning,
         "Channel::IncomingRTPPacket() RTCP packet is invalid");
@@ -2917,7 +2926,6 @@ void Channel::SetNACKStatus(bool enable, int maxNumberOfPackets) {
   if (!pacing_enabled_)
     _rtpRtcpModule->SetStorePacketsStatus(enable, maxNumberOfPackets);
   rtp_receive_statistics_->SetMaxReorderingThreshold(maxNumberOfPackets);
-  rtp_receiver_->SetNACKStatus(enable ? kNackRtcp : kNackOff);
   if (enable)
     audio_coding_->EnableNack(maxNumberOfPackets);
   else

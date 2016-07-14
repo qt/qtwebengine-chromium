@@ -22,52 +22,6 @@
         }],
       ],
     }],
-    ['OS=="ios" or (OS=="mac" and mac_deployment_target=="10.7")', {
-      'targets': [
-        {
-          'target_name': 'rtc_base_objc',
-          'type': 'static_library',
-          'includes': [ '../build/objc_common.gypi' ],
-          'dependencies': [
-            'rtc_base',
-          ],
-          'sources': [
-            'objc/NSString+StdString.h',
-            'objc/NSString+StdString.mm',
-            'objc/RTCDispatcher.h',
-            'objc/RTCDispatcher.m',
-            'objc/RTCFieldTrials.h',
-            'objc/RTCFieldTrials.mm',
-            'objc/RTCFileLogger.h',
-            'objc/RTCFileLogger.mm',
-            'objc/RTCLogging.h',
-            'objc/RTCLogging.mm',
-            'objc/RTCMacros.h',
-            'objc/RTCSSLAdapter.h',
-            'objc/RTCSSLAdapter.mm',
-            'objc/RTCTracing.h',
-            'objc/RTCTracing.mm',
-          ],
-          'conditions': [
-            ['OS=="ios"', {
-              'sources': [
-                'objc/RTCCameraPreviewView.h',
-                'objc/RTCCameraPreviewView.m',
-                'objc/RTCUIApplication.h',
-                'objc/RTCUIApplication.mm',
-              ],
-              'all_dependent_settings': {
-                'xcode_settings': {
-                  'OTHER_LDFLAGS': [
-                    '-framework AVFoundation',
-                  ],
-                },
-              },
-            }],
-          ],
-        }
-      ],
-    }], # OS=="ios"
   ],
   'targets': [
     {
@@ -77,9 +31,9 @@
       'sources': [
         'array_view.h',
         'atomicops.h',
+        'bind.h',
         'bitbuffer.cc',
         'bitbuffer.h',
-        'buffer.cc',
         'buffer.h',
         'bufferqueue.cc',
         'bufferqueue.h',
@@ -105,6 +59,7 @@
         'md5digest.cc',
         'md5digest.h',
         'mod_ops.h',
+        'onetimeevent.h',
         'optional.h',
         'platform_file.cc',
         'platform_file.h',
@@ -120,7 +75,6 @@
         'refcount.h',
         'safe_conversions.h',
         'safe_conversions_impl.h',
-        'scoped_ptr.h',
         'scoped_ref_ptr.h',
         'stringencode.cc',
         'stringencode.h',
@@ -129,6 +83,8 @@
         'swap_queue.h',
         'systeminfo.cc',
         'systeminfo.h',
+        'task_queue.h',
+        'task_queue_posix.h',
         'template_util.h',
         'thread_annotations.h',
         'thread_checker.h',
@@ -154,8 +110,43 @@
           'sources': [
             'logging.cc',
             'logging.h',
+            'logging_mac.mm',
           ],
         }],
+        ['build_libevent==1', {
+          'dependencies': [
+            '<(DEPTH)/base/third_party/libevent/libevent.gyp:libevent',
+          ],
+        }],
+        ['enable_libevent==1', {
+          'sources': [
+            'task_queue_libevent.cc',
+            'task_queue_posix.cc',
+          ],
+        }, {
+          # If not libevent, fall back to the other task queues.
+          'conditions': [
+            ['OS=="mac" or OS=="ios"', {
+             'sources': [
+               'task_queue_gcd.cc',
+               'task_queue_posix.cc',
+             ],
+            }],
+            ['OS=="win"', {
+              'sources': [ 'task_queue_win.cc' ],
+            }]
+          ],
+        }],
+        ['OS=="mac" and build_with_chromium==0', {
+          'all_dependent_settings': {
+            'xcode_settings': {
+              'OTHER_LDFLAGS': [
+                # needed for logging_mac.mm
+                '-framework Foundation',
+              ],
+            },
+          },
+        }], # OS=="mac" and build_with_chromium==0
       ],
     },
     {
@@ -240,6 +231,7 @@
         'network.h',
         'networkmonitor.cc',
         'networkmonitor.h',
+        'nullsocketserver.cc',
         'nullsocketserver.h',
         'openssl.h',
         'openssladapter.cc',
@@ -262,6 +254,8 @@
         'ratelimiter.h',
         'rtccertificate.cc',
         'rtccertificate.h',
+        'rtccertificategenerator.cc',
+        'rtccertificategenerator.h',
         'sha1.cc',
         'sha1.h',
         'sha1digest.cc',
@@ -319,13 +313,7 @@
         '-Wextra',
         '-Wall',
       ],
-      'cflags_cc!': [
-        '-Wnon-virtual-dtor',
-      ],
       'direct_dependent_settings': {
-        'cflags_cc!': [
-          '-Wnon-virtual-dtor',
-        ],
         'defines': [
           'FEATURE_ENABLE_SSL',
           'SSL_USE_OPENSSL',
@@ -361,7 +349,6 @@
           'sources': [
             'bandwidthsmoother.cc',
             'bandwidthsmoother.h',
-            'bind.h',
             'callback.h',
             'fileutils_mock.h',
             'httpserver.cc',

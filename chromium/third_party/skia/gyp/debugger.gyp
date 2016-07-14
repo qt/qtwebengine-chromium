@@ -6,7 +6,7 @@
   'variables': {
     'skia_warnings_as_errors': 0,
     'conditions': [
-      [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
+      [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
         # Use the systemwide Qt libs by default
         'variables': {
           'qt_sdk%': '/usr',
@@ -99,6 +99,8 @@
         '../tools/debugger/SkDebugCanvas.cpp',
         '../tools/debugger/SkDrawCommand.h',
         '../tools/debugger/SkDrawCommand.cpp',
+        '../tools/debugger/SkJsonWriteBuffer.h',
+        '../tools/debugger/SkJsonWriteBuffer.cpp',
         '../tools/debugger/SkObjectParser.h',
         '../tools/debugger/SkObjectParser.cpp',
         '../tools/debugger/SkOverdrawMode.h',

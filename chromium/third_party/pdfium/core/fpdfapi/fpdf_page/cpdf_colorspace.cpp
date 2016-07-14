@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/fpdf_page/include/cpdf_colorspace.h"
 
+#include "core/fpdfapi/fpdf_page/cpdf_pagemodule.h"
 #include "core/fpdfapi/fpdf_page/pageint.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
@@ -15,7 +16,7 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
-#include "core/include/fxcodec/fx_codec.h"
+#include "core/fxcodec/include/fx_codec.h"
 
 namespace {
 
@@ -472,14 +473,6 @@ void CPDF_ColorSpace::GetDefaultColor(FX_FLOAT* buf) const {
   }
 }
 
-int CPDF_ColorSpace::GetMaxIndex() const {
-  if (m_Family != PDFCS_INDEXED) {
-    return 0;
-  }
-  CPDF_IndexedCS* pCS = (CPDF_IndexedCS*)this;
-  return pCS->m_MaxIndex;
-}
-
 void CPDF_ColorSpace::TranslateImageLine(uint8_t* dest_buf,
                                          const uint8_t* src_buf,
                                          int pixels,
@@ -675,7 +668,7 @@ void CPDF_LabCS::GetDefaultValue(int iComponent,
                                  FX_FLOAT& value,
                                  FX_FLOAT& min,
                                  FX_FLOAT& max) const {
-  assert(iComponent < 3);
+  ASSERT(iComponent < 3);
   value = 0;
   if (iComponent == 0) {
     min = 0;
@@ -863,12 +856,14 @@ FX_BOOL CPDF_ICCBasedCS::GetRGB(FX_FLOAT* pBuf,
     B = pBuf[2];
     return TRUE;
   }
-  ICodec_IccModule* pIccModule = CPDF_ModuleMgr::Get()->GetIccModule();
+  CCodec_IccModule* pIccModule = CPDF_ModuleMgr::Get()->GetIccModule();
   if (!m_pProfile->m_pTransform || !pIccModule) {
-    if (m_pAlterCS) {
+    if (m_pAlterCS)
       return m_pAlterCS->GetRGB(pBuf, R, G, B);
-    }
-    R = G = B = 0.0f;
+
+    R = 0.0f;
+    G = 0.0f;
+    B = 0.0f;
     return TRUE;
   }
   FX_FLOAT rgb[3];
@@ -1029,7 +1024,7 @@ FX_BOOL CPDF_IndexedCS::GetRGB(FX_FLOAT* pBuf,
   }
   CFX_FixedBufGrow<FX_FLOAT, 16> Comps(m_nBaseComponents);
   FX_FLOAT* comps = Comps;
-  const uint8_t* pTable = m_Table;
+  const uint8_t* pTable = m_Table.raw_str();
   for (int i = 0; i < m_nBaseComponents; i++) {
     comps[i] =
         m_pCompMinMax[i * 2] +

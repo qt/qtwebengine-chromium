@@ -75,53 +75,43 @@ using rtc::CS_AES_CM_128_HMAC_SHA1_32;
 using rtc::CS_AES_CM_128_HMAC_SHA1_80;
 
 static const AudioCodec kAudioCodecs1[] = {
-  AudioCodec(103, "ISAC",   16000, -1,    1, 6),
-  AudioCodec(102, "iLBC",   8000,  13300, 1, 5),
-  AudioCodec(0,   "PCMU",   8000,  64000, 1, 4),
-  AudioCodec(8,   "PCMA",   8000,  64000, 1, 3),
-  AudioCodec(117, "red",    8000,  0,     1, 2),
-  AudioCodec(107, "CN",     48000, 0,     1, 1)
-};
+    AudioCodec(103, "ISAC", 16000, -1, 1),
+    AudioCodec(102, "iLBC", 8000, 13300, 1),
+    AudioCodec(0, "PCMU", 8000, 64000, 1),
+    AudioCodec(8, "PCMA", 8000, 64000, 1),
+    AudioCodec(117, "red", 8000, 0, 1),
+    AudioCodec(107, "CN", 48000, 0, 1)};
 
 static const AudioCodec kAudioCodecs2[] = {
-  AudioCodec(126, "speex",  16000, 22000, 1, 3),
-  AudioCodec(0,   "PCMU",   8000,  64000, 1, 2),
-  AudioCodec(127, "iLBC",   8000,  13300, 1, 1),
+    AudioCodec(126, "speex", 16000, 22000, 1),
+    AudioCodec(0, "PCMU", 8000, 64000, 1),
+    AudioCodec(127, "iLBC", 8000, 13300, 1),
 };
 
 static const AudioCodec kAudioCodecsAnswer[] = {
-  AudioCodec(102, "iLBC",   8000,  13300, 1, 5),
-  AudioCodec(0,   "PCMU",   8000,  64000, 1, 4),
+    AudioCodec(102, "iLBC", 8000, 13300, 1),
+    AudioCodec(0, "PCMU", 8000, 64000, 1),
 };
 
 static const VideoCodec kVideoCodecs1[] = {
-  VideoCodec(96, "H264-SVC", 320, 200, 30, 2),
-  VideoCodec(97, "H264", 320, 200, 30, 1)
-};
+    VideoCodec(96, "H264-SVC", 320, 200, 30),
+    VideoCodec(97, "H264", 320, 200, 30)};
 
 static const VideoCodec kVideoCodecs2[] = {
-  VideoCodec(126, "H264", 320, 200, 30, 2),
-  VideoCodec(127, "H263", 320, 200, 30, 1)
-};
+    VideoCodec(126, "H264", 320, 200, 30),
+    VideoCodec(127, "H263", 320, 200, 30)};
 
 static const VideoCodec kVideoCodecsAnswer[] = {
-  VideoCodec(97, "H264", 320, 200, 30, 1)
-};
+    VideoCodec(97, "H264", 320, 200, 30)};
 
-static const DataCodec kDataCodecs1[] = {
-  DataCodec(98, "binary-data", 2),
-  DataCodec(99, "utf8-text", 1)
-};
+static const DataCodec kDataCodecs1[] = {DataCodec(98, "binary-data"),
+                                         DataCodec(99, "utf8-text")};
 
-static const DataCodec kDataCodecs2[] = {
-  DataCodec(126, "binary-data", 2),
-  DataCodec(127, "utf8-text", 1)
-};
+static const DataCodec kDataCodecs2[] = {DataCodec(126, "binary-data"),
+                                         DataCodec(127, "utf8-text")};
 
-static const DataCodec kDataCodecsAnswer[] = {
-  DataCodec(98, "binary-data", 2),
-  DataCodec(99, "utf8-text", 1)
-};
+static const DataCodec kDataCodecsAnswer[] = {DataCodec(98, "binary-data"),
+                                              DataCodec(99, "utf8-text")};
 
 static const RtpHeaderExtension kAudioRtpExtension1[] = {
   RtpHeaderExtension("urn:ietf:params:rtp-hdrext:ssrc-audio-level", 8),
@@ -180,6 +170,12 @@ static const char kDataTrack1[] = "data_1";
 static const char kDataTrack2[] = "data_2";
 static const char kDataTrack3[] = "data_3";
 
+static const char* kMediaProtocols[] = {"RTP/AVP", "RTP/SAVP", "RTP/AVPF",
+                                        "RTP/SAVPF"};
+static const char* kMediaProtocolsDtls[] = {
+    "TCP/TLS/RTP/SAVPF", "TCP/TLS/RTP/SAVP", "UDP/TLS/RTP/SAVPF",
+    "UDP/TLS/RTP/SAVP"};
+
 static bool IsMediaContentOfType(const ContentInfo* content,
                                  MediaType media_type) {
   const MediaContentDescription* mdesc =
@@ -222,9 +218,9 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     f2_.set_video_codecs(MAKE_VECTOR(kVideoCodecs2));
     f2_.set_data_codecs(MAKE_VECTOR(kDataCodecs2));
     tdf1_.set_certificate(rtc::RTCCertificate::Create(
-        rtc::scoped_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id1"))));
+        std::unique_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id1"))));
     tdf2_.set_certificate(rtc::RTCCertificate::Create(
-        rtc::scoped_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id2"))));
+        std::unique_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id2"))));
   }
 
   // Create a video StreamParamsVec object with:
@@ -420,12 +416,12 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     opts.recv_video = true;
     std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
     ASSERT_TRUE(offer.get() != NULL);
-    ContentInfo* ac_offer= offer->GetContentByName("audio");
+    ContentInfo* ac_offer = offer->GetContentByName("audio");
     ASSERT_TRUE(ac_offer != NULL);
     AudioContentDescription* acd_offer =
         static_cast<AudioContentDescription*>(ac_offer->description);
     acd_offer->set_direction(direction_in_offer);
-    ContentInfo* vc_offer= offer->GetContentByName("video");
+    ContentInfo* vc_offer = offer->GetContentByName("video");
     ASSERT_TRUE(vc_offer != NULL);
     VideoContentDescription* vcd_offer =
         static_cast<VideoContentDescription*>(vc_offer->description);
@@ -899,7 +895,7 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   f1_.set_secure(SEC_ENABLED);
   f2_.set_secure(SEC_ENABLED);
   std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, NULL));
-  ContentInfo* dc_offer= offer->GetContentByName("data");
+  ContentInfo* dc_offer = offer->GetContentByName("data");
   ASSERT_TRUE(dc_offer != NULL);
   DataContentDescription* dcd_offer =
       static_cast<DataContentDescription*>(dc_offer->description);
@@ -1316,7 +1312,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
   ASSERT_EQ(2U, updated_video_streams.size());
   EXPECT_EQ(video_streams[0], updated_video_streams[0]);
   EXPECT_EQ(kVideoTrack2, updated_video_streams[1].id);
-  EXPECT_NE(updated_video_streams[1].cname, updated_video_streams[0].cname);
+  // All the media streams in one PeerConnection share one RTCP CNAME.
+  EXPECT_EQ(updated_video_streams[1].cname, updated_video_streams[0].cname);
 
   const StreamParamsVec& updated_data_streams = updated_dcd->streams();
   ASSERT_EQ(2U, updated_data_streams.size());
@@ -1325,6 +1322,10 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoOffer) {
   ASSERT_EQ(1U, updated_data_streams[1].ssrcs.size());
   EXPECT_NE(0U, updated_data_streams[1].ssrcs[0]);
   EXPECT_EQ(updated_data_streams[0].cname, updated_data_streams[1].cname);
+  // The stream correctly got the CNAME from the MediaSessionOptions.
+  // The Expected RTCP CNAME is the default one as we are using the default
+  // MediaSessionOptions.
+  EXPECT_EQ(updated_data_streams[0].cname, cricket::kDefaultRtcpCname);
 }
 
 // Create an offer with simulcast video stream.
@@ -1435,7 +1436,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoAnswer) {
   EXPECT_TRUE(dcd->rtcp_mux());                 // rtcp-mux defaults on
 
   // Update the answer. Add a new video track that is not synched to the
-  // other traacks and remove 1 audio track.
+  // other tracks and remove 1 audio track.
   opts.AddSendStream(MEDIA_TYPE_VIDEO, kVideoTrack2, kMediaStream2);
   opts.RemoveSendStream(MEDIA_TYPE_AUDIO, kAudioTrack2);
   opts.RemoveSendStream(MEDIA_TYPE_DATA, kDataTrack2);
@@ -1478,7 +1479,8 @@ TEST_F(MediaSessionDescriptionFactoryTest, TestCreateMultiStreamVideoAnswer) {
   ASSERT_EQ(2U, updated_video_streams.size());
   EXPECT_EQ(video_streams[0], updated_video_streams[0]);
   EXPECT_EQ(kVideoTrack2, updated_video_streams[1].id);
-  EXPECT_NE(updated_video_streams[1].cname, updated_video_streams[0].cname);
+  // All media streams in one PeerConnection share one CNAME.
+  EXPECT_EQ(updated_video_streams[1].cname, updated_video_streams[0].cname);
 
   const StreamParamsVec& updated_data_streams = updated_dcd->streams();
   ASSERT_EQ(1U, updated_data_streams.size());
@@ -1570,11 +1572,9 @@ TEST_F(MediaSessionDescriptionFactoryTest,
 
   EXPECT_EQ(expected_codecs, vcd->codecs());
 
-  // Now, make sure we get same result, except for the preference order,
-  // if |f2_| creates an updated offer even though the default payload types
-  // are different from |f1_|.
-  expected_codecs[0].preference = f1_codecs[1].preference;
-
+  // Now, make sure we get same result (except for the order) if |f2_| creates
+  // an updated offer even though the default payload types between |f1_| and
+  // |f2_| are different.
   std::unique_ptr<SessionDescription> updated_offer(
       f2_.CreateOffer(opts, answer.get()));
   ASSERT_TRUE(updated_offer);
@@ -1694,7 +1694,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, RtxWithoutApt) {
   opts.recv_audio = false;
   std::vector<VideoCodec> f1_codecs = MAKE_VECTOR(kVideoCodecs1);
   // This creates RTX without associated payload type parameter.
-  AddRtxCodec(VideoCodec(126, cricket::kRtxCodecName, 0, 0, 0, 0), &f1_codecs);
+  AddRtxCodec(VideoCodec(126, cricket::kRtxCodecName, 0, 0, 0), &f1_codecs);
   f1_.set_video_codecs(f1_codecs);
 
   std::vector<VideoCodec> f2_codecs = MAKE_VECTOR(kVideoCodecs2);
@@ -1842,7 +1842,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, SimSsrcsGenerateMultipleRtxSsrcs) {
 
   // Use a single real codec, and then add RTX for it.
   std::vector<VideoCodec> f1_codecs;
-  f1_codecs.push_back(VideoCodec(97, "H264", 320, 200, 30, 1));
+  f1_codecs.push_back(VideoCodec(97, "H264", 320, 200, 30));
   AddRtxCodec(VideoCodec::CreateRtxCodec(125, 97), &f1_codecs);
   f1_.set_video_codecs(f1_codecs);
 
@@ -2391,3 +2391,62 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   EXPECT_EQ("video_modified", video_content->name);
   EXPECT_EQ("data_modified", data_content->name);
 }
+
+class MediaProtocolTest : public ::testing::TestWithParam<const char*> {
+ public:
+  MediaProtocolTest() : f1_(&tdf1_), f2_(&tdf2_) {
+    f1_.set_audio_codecs(MAKE_VECTOR(kAudioCodecs1));
+    f1_.set_video_codecs(MAKE_VECTOR(kVideoCodecs1));
+    f1_.set_data_codecs(MAKE_VECTOR(kDataCodecs1));
+    f2_.set_audio_codecs(MAKE_VECTOR(kAudioCodecs2));
+    f2_.set_video_codecs(MAKE_VECTOR(kVideoCodecs2));
+    f2_.set_data_codecs(MAKE_VECTOR(kDataCodecs2));
+    f1_.set_secure(SEC_ENABLED);
+    f2_.set_secure(SEC_ENABLED);
+    tdf1_.set_certificate(rtc::RTCCertificate::Create(
+        std::unique_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id1"))));
+    tdf2_.set_certificate(rtc::RTCCertificate::Create(
+        std::unique_ptr<rtc::SSLIdentity>(new rtc::FakeSSLIdentity("id2"))));
+    tdf1_.set_secure(SEC_ENABLED);
+    tdf2_.set_secure(SEC_ENABLED);
+  }
+
+ protected:
+  MediaSessionDescriptionFactory f1_;
+  MediaSessionDescriptionFactory f2_;
+  TransportDescriptionFactory tdf1_;
+  TransportDescriptionFactory tdf2_;
+};
+
+TEST_P(MediaProtocolTest, TestAudioVideoAcceptance) {
+  MediaSessionOptions opts;
+  opts.recv_video = true;
+  std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
+  ASSERT_TRUE(offer.get() != nullptr);
+  // Set the protocol for all the contents.
+  for (auto content : offer.get()->contents()) {
+    static_cast<MediaContentDescription*>(content.description)
+        ->set_protocol(GetParam());
+  }
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), opts, nullptr));
+  const ContentInfo* ac = answer->GetContentByName("audio");
+  const ContentInfo* vc = answer->GetContentByName("video");
+  ASSERT_TRUE(ac != nullptr);
+  ASSERT_TRUE(vc != nullptr);
+  EXPECT_FALSE(ac->rejected);  // the offer is accepted
+  EXPECT_FALSE(vc->rejected);
+  const AudioContentDescription* acd =
+      static_cast<const AudioContentDescription*>(ac->description);
+  const VideoContentDescription* vcd =
+      static_cast<const VideoContentDescription*>(vc->description);
+  EXPECT_EQ(GetParam(), acd->protocol());
+  EXPECT_EQ(GetParam(), vcd->protocol());
+}
+
+INSTANTIATE_TEST_CASE_P(MediaProtocolPatternTest,
+                        MediaProtocolTest,
+                        ::testing::ValuesIn(kMediaProtocols));
+INSTANTIATE_TEST_CASE_P(MediaProtocolDtlsPatternTest,
+                        MediaProtocolTest,
+                        ::testing::ValuesIn(kMediaProtocolsDtls));

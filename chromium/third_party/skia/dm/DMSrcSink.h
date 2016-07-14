@@ -117,6 +117,7 @@ public:
         kGetFromCanvas_DstColorType,
         kIndex8_Always_DstColorType,
         kGrayscale_Always_DstColorType,
+        kNonNative8888_Always_DstColorType,
     };
     CodecSrc(Path, Mode, DstColorType, SkAlphaType, float);
 
@@ -136,14 +137,7 @@ private:
 
 class AndroidCodecSrc : public Src {
 public:
-    enum Mode {
-        kFullImage_Mode,
-        // Splits the image into multiple subsets using a divisor and decodes the subsets
-        // separately.
-        kDivisor_Mode,
-    };
-
-    AndroidCodecSrc(Path, Mode, CodecSrc::DstColorType, SkAlphaType, int sampleSize);
+    AndroidCodecSrc(Path, CodecSrc::DstColorType, SkAlphaType, int sampleSize);
 
     Error draw(SkCanvas*) const override;
     SkISize size() const override;
@@ -152,7 +146,6 @@ public:
     bool serial() const override { return fRunSerially; }
 private:
     Path                    fPath;
-    Mode                    fMode;
     CodecSrc::DstColorType  fDstColorType;
     SkAlphaType             fDstAlphaType;
     int                     fSampleSize;
@@ -172,7 +165,7 @@ public:
         kDivisor_Mode,
     };
 
-    BRDSrc(Path, SkBitmapRegionDecoder::Strategy, Mode, CodecSrc::DstColorType, uint32_t);
+    BRDSrc(Path, Mode, CodecSrc::DstColorType, uint32_t);
 
     Error draw(SkCanvas*) const override;
     SkISize size() const override;
@@ -180,7 +173,6 @@ public:
     bool veto(SinkFlags) const override;
 private:
     Path                                     fPath;
-    SkBitmapRegionDecoder::Strategy          fStrategy;
     Mode                                     fMode;
     CodecSrc::DstColorType                   fDstColorType;
     uint32_t                                 fSampleSize;
@@ -205,6 +197,24 @@ private:
     SkAlphaType fDstAlphaType;
     bool        fIsGpu;
     bool        fRunSerially;
+};
+
+class ColorCodecSrc : public Src {
+public:
+    enum Mode {
+        // Mimic legacy behavior and apply no color correction.
+        kBaseline_Mode,
+    };
+
+    ColorCodecSrc(Path, Mode);
+
+    Error draw(SkCanvas*) const override;
+    SkISize size() const override;
+    Name name() const override;
+    bool veto(SinkFlags) const override;
+private:
+    Path                    fPath;
+    Mode                    fMode;
 };
 
 class SKPSrc : public Src {
@@ -253,9 +263,11 @@ private:
 
 class PDFSink : public Sink {
 public:
+    PDFSink(bool pdfa = false) : fPDFA(pdfa) {}
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     const char* fileExtension() const override { return "pdf"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kVector, SinkFlags::kDirect }; }
+    bool fPDFA;
 };
 
 class XPSSink : public Sink {

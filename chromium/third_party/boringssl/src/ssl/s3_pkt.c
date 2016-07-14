@@ -133,6 +133,16 @@ static const uint8_t kMaxWarningAlerts = 4;
 static int ssl3_get_record(SSL *ssl) {
   int ret;
 again:
+  switch (ssl->s3->recv_shutdown) {
+    case ssl_shutdown_none:
+      break;
+    case ssl_shutdown_fatal_alert:
+      OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
+      return -1;
+    case ssl_shutdown_close_notify:
+      return 0;
+  }
+
   /* Ensure the buffer is large enough to decrypt in-place. */
   ret = ssl_read_buffer_extend_to(ssl, ssl_record_prefix_len(ssl));
   if (ret <= 0) {
@@ -193,7 +203,6 @@ int ssl3_write_bytes(SSL *ssl, int type, const void *buf_, int len) {
   const uint8_t *buf = buf_;
   unsigned tot, n, nw;
 
-  ssl->rwstate = SSL_NOTHING;
   assert(ssl->s3->wnum <= INT_MAX);
   tot = ssl->s3->wnum;
   ssl->s3->wnum = 0;
@@ -378,8 +387,6 @@ int ssl3_read_bytes(SSL *ssl, int type, uint8_t *buf, int len, int peek) {
   }
 
 start:
-  ssl->rwstate = SSL_NOTHING;
-
   /* ssl->s3->rrec.type    - is the type of record
    * ssl->s3->rrec.data    - data
    * ssl->s3->rrec.off     - offset into 'data' for next read
@@ -396,27 +403,8 @@ start:
 
   /* we now have a packet which can be read and processed */
 
-  /* If the other end has shut down, throw anything we read away (even in
-   * 'peek' mode) */
-  if (ssl->shutdown & SSL_RECEIVED_SHUTDOWN) {
-    rr->length = 0;
-    ssl->rwstate = SSL_NOTHING;
-    return 0;
-  }
-
   if (type != 0 && type == rr->type) {
     ssl->s3->warning_alert_count = 0;
-
-    /* Make sure that we are not getting application data when we are doing a
-     * handshake for the first time. */
-    if (SSL_in_init(ssl) && type == SSL3_RT_APPLICATION_DATA &&
-        ssl->s3->aead_read_ctx == NULL) {
-      /* TODO(davidben): Is this check redundant with the handshake_func
-       * check? */
-      al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, SSL_R_APP_DATA_IN_HANDSHAKE);
-      goto f_err;
-    }
 
     /* Discard empty records. */
     if (rr->length == 0) {
@@ -506,7 +494,8 @@ start:
     /* Begin a new handshake. */
     ssl->s3->total_renegotiations++;
     ssl->state = SSL_ST_CONNECT;
-    i = ssl->handshake_func(ssl);
+    /* TODO(davidben): Lift this call up to SSL_read. */
+    i = SSL_do_handshake(ssl);
     if (i < 0) {
       return i;
     }
@@ -519,11 +508,10 @@ start:
     goto start;
   }
 
-  /* If an alert record, process one alert out of the record. Note that we allow
-   * a single record to contain multiple alerts. */
+  /* If an alert record, process the alert. */
   if (rr->type == SSL3_RT_ALERT) {
-    /* Alerts may not be fragmented. */
-    if (rr->length < 2) {
+    /* Alerts records may not contain fragmented or multiple alerts. */
+    if (rr->length != 2) {
       al = SSL_AD_DECODE_ERROR;
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ALERT);
       goto f_err;
@@ -551,22 +539,8 @@ start:
 
     if (alert_level == SSL3_AL_WARNING) {
       if (alert_descr == SSL_AD_CLOSE_NOTIFY) {
-        ssl->s3->clean_shutdown = 1;
-        ssl->shutdown |= SSL_RECEIVED_SHUTDOWN;
+        ssl->s3->recv_shutdown = ssl_shutdown_close_notify;
         return 0;
-      }
-
-      /* This is a warning but we receive it if we requested renegotiation and
-       * the peer denied it. Terminate with a fatal alert because if
-       * application tried to renegotiatie it presumably had a good reason and
-       * expects it to succeed.
-       *
-       * In future we might have a renegotiation where we don't care if the
-       * peer refused it where we carry on. */
-      else if (alert_descr == SSL_AD_NO_RENEGOTIATION) {
-        al = SSL_AD_HANDSHAKE_FAILURE;
-        OPENSSL_PUT_ERROR(SSL, SSL_R_NO_RENEGOTIATION);
-        goto f_err;
       }
 
       ssl->s3->warning_alert_count++;
@@ -578,11 +552,10 @@ start:
     } else if (alert_level == SSL3_AL_FATAL) {
       char tmp[16];
 
-      ssl->rwstate = SSL_NOTHING;
       OPENSSL_PUT_ERROR(SSL, SSL_AD_REASON_OFFSET + alert_descr);
       BIO_snprintf(tmp, sizeof(tmp), "%d", alert_descr);
       ERR_add_error_data(2, "SSL alert number ", tmp);
-      ssl->shutdown |= SSL_RECEIVED_SHUTDOWN;
+      ssl->s3->recv_shutdown = ssl_shutdown_fatal_alert;
       SSL_CTX_remove_session(ssl->ctx, ssl->session);
       return 0;
     } else {
@@ -594,7 +567,9 @@ start:
     goto start;
   }
 
-  if (ssl->shutdown & SSL_SENT_SHUTDOWN) {
+  if (type == 0) {
+    /* This may only occur from read_close_notify. */
+    assert(ssl->s3->send_shutdown == ssl_shutdown_close_notify);
     /* close_notify has been sent, so discard all records other than alerts. */
     rr->length = 0;
     goto start;
@@ -610,9 +585,19 @@ err:
 }
 
 int ssl3_send_alert(SSL *ssl, int level, int desc) {
-  /* If a fatal one, remove from cache */
-  if (level == 2 && ssl->session != NULL) {
-    SSL_CTX_remove_session(ssl->ctx, ssl->session);
+  /* It is illegal to send an alert when we've already sent a closing one. */
+  if (ssl->s3->send_shutdown != ssl_shutdown_none) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_PROTOCOL_IS_SHUTDOWN);
+    return -1;
+  }
+
+  if (level == SSL3_AL_FATAL) {
+    if (ssl->session != NULL) {
+      SSL_CTX_remove_session(ssl->ctx, ssl->session);
+    }
+    ssl->s3->send_shutdown = ssl_shutdown_fatal_alert;
+  } else if (level == SSL3_AL_WARNING && desc == SSL_AD_CLOSE_NOTIFY) {
+    ssl->s3->send_shutdown = ssl_shutdown_close_notify;
   }
 
   ssl->s3->alert_dispatch = 1;
@@ -624,8 +609,7 @@ int ssl3_send_alert(SSL *ssl, int level, int desc) {
     return ssl->method->ssl_dispatch_alert(ssl);
   }
 
-  /* else data is still being written out, we will get written some time in the
-   * future */
+  /* The alert will be dispatched later. */
   return -1;
 }
 

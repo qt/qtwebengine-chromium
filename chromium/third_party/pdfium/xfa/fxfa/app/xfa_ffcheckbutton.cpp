@@ -7,16 +7,16 @@
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
 
 #include "xfa/fwl/core/cfwl_message.h"
-#include "xfa/fwl/core/ifwl_notedriver.h"
-#include "xfa/fwl/core/ifwl_widgetmgrdelegate.h"
+#include "xfa/fwl/core/fwl_noteimp.h"
+#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/lightwidget/cfwl_checkbox.h"
 #include "xfa/fxfa/app/xfa_ffexclgroup.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 
 CXFA_FFCheckButton::CXFA_FFCheckButton(CXFA_FFPageView* pPageView,
                                        CXFA_WidgetAcc* pDataAcc)
@@ -30,7 +30,7 @@ FX_BOOL CXFA_FFCheckButton::LoadWidget() {
   m_pNormalWidget = pCheckBox;
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
   m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
-  IFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
   if (m_pDataAcc->IsRadioButton()) {
@@ -250,7 +250,7 @@ FX_BOOL CXFA_FFCheckButton::OnLButtonUp(uint32_t dwFlags,
   }
   SetButtonDown(FALSE);
   CFWL_MsgMouse ms;
-  ms.m_dwCmd = FWL_MSGMOUSECMD_LButtonUp;
+  ms.m_dwCmd = FWL_MouseCommand::LeftButtonUp;
   ms.m_dwFlags = dwFlags;
   ms.m_fx = fx;
   ms.m_fy = fy;
@@ -295,14 +295,15 @@ FX_BOOL CXFA_FFCheckButton::UpdateFWLData() {
   m_pNormalWidget->Update();
   return TRUE;
 }
-int32_t CXFA_FFCheckButton::OnProcessMessage(CFWL_Message* pMessage) {
-  return m_pOldDelegate->OnProcessMessage(pMessage);
+
+void CXFA_FFCheckButton::OnProcessMessage(CFWL_Message* pMessage) {
+  m_pOldDelegate->OnProcessMessage(pMessage);
 }
-FWL_ERR CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
+
+void CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
-  uint32_t dwEventID = pEvent->GetClassID();
-  switch (dwEventID) {
-    case FWL_EVTHASH_CKB_CheckStateChanged: {
+  switch (pEvent->GetClassID()) {
+    case CFWL_EventType::CheckStateChanged: {
       CXFA_EventParam eParam;
       eParam.m_eType = XFA_EVENT_Change;
       m_pDataAcc->GetValue(eParam.m_wsNewText, XFA_VALUEPICTURE_Raw);
@@ -327,11 +328,13 @@ FWL_ERR CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
       m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Click, &eParam);
       break;
     }
-    default: {}
+    default:
+      break;
   }
-  return m_pOldDelegate->OnProcessEvent(pEvent);
+  m_pOldDelegate->OnProcessEvent(pEvent);
 }
-FWL_ERR CXFA_FFCheckButton::OnDrawWidget(CFX_Graphics* pGraphics,
-                                         const CFX_Matrix* pMatrix) {
-  return m_pOldDelegate->OnDrawWidget(pGraphics, pMatrix);
+
+void CXFA_FFCheckButton::OnDrawWidget(CFX_Graphics* pGraphics,
+                                      const CFX_Matrix* pMatrix) {
+  m_pOldDelegate->OnDrawWidget(pGraphics, pMatrix);
 }

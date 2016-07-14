@@ -7,9 +7,9 @@
 #include <setjmp.h>
 
 #include "core/fxcodec/codec/codec_int.h"
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_safe_types.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_dib.h"
+#include "core/fxge/include/fx_dib.h"
 
 extern "C" {
 #undef FAR
@@ -142,7 +142,7 @@ static void _JpegEncode(const CFX_DIBSource* pSource,
   uint32_t pitch = pSource->GetPitch();
   uint32_t width = pdfium::base::checked_cast<uint32_t>(pSource->GetWidth());
   uint32_t height = pdfium::base::checked_cast<uint32_t>(pSource->GetHeight());
-  FX_SAFE_DWORD safe_buf_len = width;
+  FX_SAFE_UINT32 safe_buf_len = width;
   safe_buf_len *= height;
   safe_buf_len *= nComponents;
   safe_buf_len += 1024;
@@ -318,10 +318,8 @@ class CCodec_JpegDecoder : public CCodec_ScanlineDecoder {
                  int height,
                  int nComps,
                  FX_BOOL ColorTransform);
-  void Destroy() { delete this; }
 
   // CCodec_ScanlineDecoder
-  void v_DownScale(int dest_width, int dest_height) override;
   FX_BOOL v_Rewind() override;
   uint8_t* v_GetNextLine() override;
   uint32_t GetSrcOffset() override;
@@ -346,7 +344,6 @@ class CCodec_JpegDecoder : public CCodec_ScanlineDecoder {
 
 CCodec_JpegDecoder::CCodec_JpegDecoder() {
   m_pScanlineBuf = NULL;
-  m_DownScale = 1;
   m_bStarted = FALSE;
   m_bInited = FALSE;
   FXSYS_memset(&cinfo, 0, sizeof(cinfo));
@@ -437,41 +434,10 @@ FX_BOOL CCodec_JpegDecoder::Create(const uint8_t* src_buf,
   m_pScanlineBuf = FX_Alloc(uint8_t, m_Pitch);
   m_nComps = cinfo.num_components;
   m_bpc = 8;
-  m_bColorTransformed = FALSE;
   m_bStarted = FALSE;
   return TRUE;
 }
-extern "C" {
-int32_t FX_GetDownsampleRatio(int32_t originWidth,
-                              int32_t originHeight,
-                              int32_t downsampleWidth,
-                              int32_t downsampleHeight) {
-  int iratio_w = originWidth / downsampleWidth;
-  int iratio_h = originHeight / downsampleHeight;
-  int ratio = (iratio_w > iratio_h) ? iratio_h : iratio_w;
-  if (ratio >= 8) {
-    return 8;
-  }
-  if (ratio >= 4) {
-    return 4;
-  }
-  if (ratio >= 2) {
-    return 2;
-  }
-  return 1;
-}
-}
-void CCodec_JpegDecoder::v_DownScale(int dest_width, int dest_height) {
-  int old_scale = m_DownScale;
-  m_DownScale =
-      FX_GetDownsampleRatio(m_OrigWidth, m_OrigHeight, dest_width, dest_height);
-  m_OutputWidth = (m_OrigWidth + m_DownScale - 1) / m_DownScale;
-  m_OutputHeight = (m_OrigHeight + m_DownScale - 1) / m_DownScale;
-  m_Pitch = (static_cast<uint32_t>(m_OutputWidth) * m_nComps + 3) / 4 * 4;
-  if (old_scale != m_DownScale) {
-    m_NextLine = -1;
-  }
-}
+
 FX_BOOL CCodec_JpegDecoder::v_Rewind() {
   if (m_bStarted) {
     jpeg_destroy_decompress(&cinfo);
@@ -482,15 +448,15 @@ FX_BOOL CCodec_JpegDecoder::v_Rewind() {
   if (setjmp(m_JmpBuf) == -1) {
     return FALSE;
   }
-  cinfo.scale_denom = m_nDefaultScaleDenom * m_DownScale;
-  m_OutputWidth = (m_OrigWidth + m_DownScale - 1) / m_DownScale;
-  m_OutputHeight = (m_OrigHeight + m_DownScale - 1) / m_DownScale;
+  cinfo.scale_denom = m_nDefaultScaleDenom;
+  m_OutputWidth = m_OrigWidth;
+  m_OutputHeight = m_OrigHeight;
   if (!jpeg_start_decompress(&cinfo)) {
     jpeg_destroy_decompress(&cinfo);
     return FALSE;
   }
   if ((int)cinfo.output_width > m_OrigWidth) {
-    FXSYS_assert(FALSE);
+    ASSERT(FALSE);
     return FALSE;
   }
   m_bStarted = TRUE;
@@ -509,7 +475,7 @@ uint8_t* CCodec_JpegDecoder::v_GetNextLine() {
 uint32_t CCodec_JpegDecoder::GetSrcOffset() {
   return (uint32_t)(m_SrcSize - src.bytes_in_buffer);
 }
-ICodec_ScanlineDecoder* CCodec_JpegModule::CreateDecoder(
+CCodec_ScanlineDecoder* CCodec_JpegModule::CreateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -584,7 +550,7 @@ static void* jpeg_alloc_func(unsigned int size) {
 static void jpeg_free_func(void* p) {
   FX_Free(p);
 }
-void* CCodec_JpegModule::Start() {
+FXJPEG_Context* CCodec_JpegModule::Start() {
   FXJPEG_Context* p = FX_Alloc(FXJPEG_Context, 1);
   p->m_AllocFunc = jpeg_alloc_func;
   p->m_FreeFunc = jpeg_free_func;
@@ -608,85 +574,83 @@ void* CCodec_JpegModule::Start() {
   p->m_SkipSize = 0;
   return p;
 }
-void CCodec_JpegModule::Finish(void* pContext) {
-  FXJPEG_Context* p = (FXJPEG_Context*)pContext;
-  jpeg_destroy_decompress(&p->m_Info);
-  p->m_FreeFunc(p);
+
+void CCodec_JpegModule::Finish(FXJPEG_Context* ctx) {
+  jpeg_destroy_decompress(&ctx->m_Info);
+  ctx->m_FreeFunc(ctx);
 }
-void CCodec_JpegModule::Input(void* pContext,
+
+void CCodec_JpegModule::Input(FXJPEG_Context* ctx,
                               const unsigned char* src_buf,
                               uint32_t src_size) {
-  FXJPEG_Context* p = (FXJPEG_Context*)pContext;
-  if (p->m_SkipSize) {
-    if (p->m_SkipSize > src_size) {
-      p->m_SrcMgr.bytes_in_buffer = 0;
-      p->m_SkipSize -= src_size;
+  if (ctx->m_SkipSize) {
+    if (ctx->m_SkipSize > src_size) {
+      ctx->m_SrcMgr.bytes_in_buffer = 0;
+      ctx->m_SkipSize -= src_size;
       return;
     }
-    src_size -= p->m_SkipSize;
-    src_buf += p->m_SkipSize;
-    p->m_SkipSize = 0;
+    src_size -= ctx->m_SkipSize;
+    src_buf += ctx->m_SkipSize;
+    ctx->m_SkipSize = 0;
   }
-  p->m_SrcMgr.next_input_byte = src_buf;
-  p->m_SrcMgr.bytes_in_buffer = src_size;
+  ctx->m_SrcMgr.next_input_byte = src_buf;
+  ctx->m_SrcMgr.bytes_in_buffer = src_size;
 }
 
 #ifdef PDF_ENABLE_XFA
-int CCodec_JpegModule::ReadHeader(void* pContext,
+int CCodec_JpegModule::ReadHeader(FXJPEG_Context* ctx,
                                   int* width,
                                   int* height,
                                   int* nComps,
                                   CFX_DIBAttribute* pAttribute) {
 #else   // PDF_ENABLE_XFA
-int CCodec_JpegModule::ReadHeader(void* pContext,
+int CCodec_JpegModule::ReadHeader(FXJPEG_Context* ctx,
                                   int* width,
                                   int* height,
                                   int* nComps) {
 #endif  // PDF_ENABLE_XFA
-  FXJPEG_Context* p = (FXJPEG_Context*)pContext;
-  if (setjmp(p->m_JumpMark) == -1) {
+  if (setjmp(ctx->m_JumpMark) == -1)
     return 1;
-  }
-  int ret = jpeg_read_header(&p->m_Info, true);
-  if (ret == JPEG_SUSPENDED) {
+
+  int ret = jpeg_read_header(&ctx->m_Info, true);
+  if (ret == JPEG_SUSPENDED)
     return 2;
-  }
-  if (ret != JPEG_HEADER_OK) {
+  if (ret != JPEG_HEADER_OK)
     return 1;
-  }
-  *width = p->m_Info.image_width;
-  *height = p->m_Info.image_height;
-  *nComps = p->m_Info.num_components;
+
+  *width = ctx->m_Info.image_width;
+  *height = ctx->m_Info.image_height;
+  *nComps = ctx->m_Info.num_components;
 #ifdef PDF_ENABLE_XFA
-  _JpegLoadAttribute(&p->m_Info, pAttribute);
+  _JpegLoadAttribute(&ctx->m_Info, pAttribute);
 #endif
   return 0;
 }
-int CCodec_JpegModule::StartScanline(void* pContext, int down_scale) {
-  FXJPEG_Context* p = (FXJPEG_Context*)pContext;
-  if (setjmp(p->m_JumpMark) == -1) {
+
+int CCodec_JpegModule::StartScanline(FXJPEG_Context* ctx, int down_scale) {
+  if (setjmp(ctx->m_JumpMark) == -1)
     return 0;
-  }
-  p->m_Info.scale_denom = down_scale;
-  return jpeg_start_decompress(&p->m_Info);
+
+  ctx->m_Info.scale_denom = down_scale;
+  return jpeg_start_decompress(&ctx->m_Info);
 }
-FX_BOOL CCodec_JpegModule::ReadScanline(void* pContext,
+
+FX_BOOL CCodec_JpegModule::ReadScanline(FXJPEG_Context* ctx,
                                         unsigned char* dest_buf) {
-  FXJPEG_Context* p = (FXJPEG_Context*)pContext;
-  if (setjmp(p->m_JumpMark) == -1) {
+  if (setjmp(ctx->m_JumpMark) == -1)
     return FALSE;
-  }
-  int nlines = jpeg_read_scanlines(&p->m_Info, &dest_buf, 1);
+
+  int nlines = jpeg_read_scanlines(&ctx->m_Info, &dest_buf, 1);
   return nlines == 1;
 }
-uint32_t CCodec_JpegModule::GetAvailInput(void* pContext,
+
+uint32_t CCodec_JpegModule::GetAvailInput(FXJPEG_Context* ctx,
                                           uint8_t** avail_buf_ptr) {
   if (avail_buf_ptr) {
     *avail_buf_ptr = NULL;
-    if (((FXJPEG_Context*)pContext)->m_SrcMgr.bytes_in_buffer > 0) {
-      *avail_buf_ptr =
-          (uint8_t*)((FXJPEG_Context*)pContext)->m_SrcMgr.next_input_byte;
+    if (ctx->m_SrcMgr.bytes_in_buffer > 0) {
+      *avail_buf_ptr = (uint8_t*)ctx->m_SrcMgr.next_input_byte;
     }
   }
-  return (uint32_t)((FXJPEG_Context*)pContext)->m_SrcMgr.bytes_in_buffer;
+  return (uint32_t)ctx->m_SrcMgr.bytes_in_buffer;
 }

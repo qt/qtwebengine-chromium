@@ -26,7 +26,6 @@
 #include "webrtc/modules/audio_coding/acm2/call_statistics.h"
 #include "webrtc/modules/audio_coding/neteq/include/neteq.h"
 #include "webrtc/system_wrappers/include/clock.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
@@ -133,11 +132,13 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
   return 0;
 }
 
-int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
+int AcmReceiver::GetAudio(int desired_freq_hz,
+                          AudioFrame* audio_frame,
+                          bool* muted) {
   // Accessing members, take the lock.
   rtc::CritScope lock(&crit_sect_);
 
-  if (neteq_->GetAudio(audio_frame) != NetEq::kOK) {
+  if (neteq_->GetAudio(audio_frame, muted) != NetEq::kOK) {
     LOG(LERROR) << "AcmReceiver::GetAudio - NetEq Failed.";
     return -1;
   }

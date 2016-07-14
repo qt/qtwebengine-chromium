@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -109,7 +110,7 @@ class VideoCapturerTrackSourceTest : public testing::Test {
  protected:
   VideoCapturerTrackSourceTest() { InitCapturer(false); }
   void InitCapturer(bool is_screencast) {
-    capturer_cleanup_ = rtc::scoped_ptr<TestVideoCapturer>(
+    capturer_cleanup_ = std::unique_ptr<TestVideoCapturer>(
         new TestVideoCapturer(is_screencast));
     capturer_ = capturer_cleanup_.get();
   }
@@ -126,17 +127,16 @@ class VideoCapturerTrackSourceTest : public testing::Test {
                                                constraints, false);
 
     ASSERT_TRUE(source_.get() != NULL);
-    EXPECT_EQ(capturer_, source_->GetVideoCapturer());
 
     state_observer_.reset(new StateObserver(source_));
     source_->RegisterObserver(state_observer_.get());
     source_->AddOrUpdateSink(&renderer_, rtc::VideoSinkWants());
   }
 
-  rtc::scoped_ptr<TestVideoCapturer> capturer_cleanup_;
+  std::unique_ptr<TestVideoCapturer> capturer_cleanup_;
   TestVideoCapturer* capturer_;
   cricket::FakeVideoRenderer renderer_;
-  rtc::scoped_ptr<StateObserver> state_observer_;
+  std::unique_ptr<StateObserver> state_observer_;
   rtc::scoped_refptr<VideoTrackSourceInterface> source_;
 };
 

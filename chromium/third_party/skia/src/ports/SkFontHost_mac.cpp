@@ -35,7 +35,7 @@
 #include "SkOTTable_hhea.h"
 #include "SkOTTable_loca.h"
 #include "SkOTUtils.h"
-#include "SkOncePtr.h"
+#include "SkOnce.h"
 #include "SkPaint.h"
 #include "SkPath.h"
 #include "SkSFNTHeader.h"
@@ -417,23 +417,7 @@ static SkFontStyle fontstyle_from_descriptor(CTFontDescriptorRef desc) {
     return SkFontStyle(unit_weight_to_fontstyle(weight),
                        unit_width_to_fontstyle(width),
                        slant ? SkFontStyle::kItalic_Slant
-                       : SkFontStyle::kUpright_Slant);
-}
-
-static SkTypeface::Style computeStyleBits(CTFontRef font, bool* isFixedPitch) {
-    unsigned style = SkTypeface::kNormal;
-    CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(font);
-
-    if (traits & kCTFontBoldTrait) {
-        style |= SkTypeface::kBold;
-    }
-    if (traits & kCTFontItalicTrait) {
-        style |= SkTypeface::kItalic;
-    }
-    if (isFixedPitch) {
-        *isFixedPitch = (traits & kCTFontMonoSpaceTrait) != 0;
-    }
-    return (SkTypeface::Style)style;
+                             : SkFontStyle::kUpright_Slant);
 }
 
 #define WEIGHT_THRESHOLD    ((SkFontStyle::kNormal_Weight + SkFontStyle::kBold_Weight)/2)
@@ -450,9 +434,8 @@ class SkTypeface_Mac : public SkTypeface {
 public:
     SkTypeface_Mac(CTFontRef fontRef, CFTypeRef resourceRef,
                    const SkFontStyle& fs, bool isFixedPitch,
-                   const char requestedName[], bool isLocalStream)
+                   bool isLocalStream)
         : SkTypeface(fs, SkTypefaceCache::NewFontID(), isFixedPitch)
-        , fRequestedName(requestedName)
         , fFontRef(fontRef) // caller has already called CFRetain for us
         , fOriginatingCFTypeRef(resourceRef) // caller has already called CFRetain for us
         , fHasColorGlyphs(SkToBool(CTFontGetSymbolicTraits(fFontRef) & SkCTFontColorGlyphsTrait))
@@ -461,7 +444,6 @@ public:
         SkASSERT(fontRef);
     }
 
-    SkString fRequestedName;
     AutoCFRelease<CTFontRef> fFontRef;
     AutoCFRelease<CFTypeRef> fOriginatingCFTypeRef;
     const bool fHasColorGlyphs;
@@ -475,7 +457,8 @@ protected:
     int onGetTableTags(SkFontTableTag tags[]) const override;
     virtual size_t onGetTableData(SkFontTableTag, size_t offset,
                                   size_t length, void* data) const override;
-    SkScalerContext* onCreateScalerContext(const SkDescriptor*) const override;
+    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
+                                           const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
     virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
@@ -492,17 +475,18 @@ private:
 };
 
 /** Creates a typeface without searching the cache. Takes ownership of the CTFontRef. */
-static SkTypeface* NewFromFontRef(CTFontRef fontRef, CFTypeRef resourceRef,
-                                  const char name[], bool isLocalStream)
-{
+static SkTypeface* NewFromFontRef(CTFontRef fontRef, CFTypeRef resourceRef, bool isLocalStream) {
     SkASSERT(fontRef);
-    bool isFixedPitch;
-    SkFontStyle style = SkFontStyle(computeStyleBits(fontRef, &isFixedPitch));
 
-    return new SkTypeface_Mac(fontRef, resourceRef, style, isFixedPitch, name, isLocalStream);
+    AutoCFRelease<CTFontDescriptorRef> desc(CTFontCopyFontDescriptor(fontRef));
+    SkFontStyle style = fontstyle_from_descriptor(desc);
+
+    CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(fontRef);
+    bool isFixedPitch = SkToBool(traits & kCTFontMonoSpaceTrait);
+    return new SkTypeface_Mac(fontRef, resourceRef, style, isFixedPitch, isLocalStream);
 }
 
-static bool find_by_CTFontRef(SkTypeface* cached, const SkFontStyle&, void* context) {
+static bool find_by_CTFontRef(SkTypeface* cached, void* context) {
     CTFontRef self = (CTFontRef)context;
     CTFontRef other = ((SkTypeface_Mac*)cached)->fFontRef;
 
@@ -558,10 +542,11 @@ static SkTypeface* NewFromName(const char familyName[], const SkFontStyle& theSt
     }
 
     SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_CTFontRef, (void*)ctFont.get());
-    if (!face) {
-        face = NewFromFontRef(ctFont.release(), nullptr, nullptr, false);
-        SkTypefaceCache::Add(face, face->fontStyle());
+    if (face) {
+        return face;
     }
+    face = NewFromFontRef(ctFont.release(), nullptr, false);
+    SkTypefaceCache::Add(face);
     return face;
 }
 
@@ -573,7 +558,6 @@ static SkTypeface* GetDefaultFace() {
 
     if (nullptr == gDefaultFace) {
         gDefaultFace = NewFromName(FONT_DEFAULT_NAME, SkFontStyle());
-        SkTypefaceCache::Add(gDefaultFace, SkFontStyle());
     }
     return gDefaultFace;
 }
@@ -591,28 +575,16 @@ CTFontRef SkTypeface_GetCTFontRef(const SkTypeface* face) {
  */
 SkTypeface* SkCreateTypefaceFromCTFont(CTFontRef fontRef, CFTypeRef resourceRef) {
     SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_CTFontRef, (void*)fontRef);
-    if (!face) {
-        CFRetain(fontRef);
-        if (resourceRef) {
-            CFRetain(resourceRef);
-        }
-        face = NewFromFontRef(fontRef, resourceRef, nullptr, false);
-        SkTypefaceCache::Add(face, face->fontStyle());
+    if (face) {
+        return face;
     }
+    CFRetain(fontRef);
+    if (resourceRef) {
+        CFRetain(resourceRef);
+    }
+    face = NewFromFontRef(fontRef, resourceRef, false);
+    SkTypefaceCache::Add(face);
     return face;
-}
-
-struct NameStyle {
-    const char* fName;
-    SkFontStyle fStyle;
-};
-
-static bool find_by_NameStyle(SkTypeface* cachedFace, const SkFontStyle& cachedStyle, void* ctx) {
-    const SkTypeface_Mac* cachedMacFace = static_cast<SkTypeface_Mac*>(cachedFace);
-    const NameStyle* requested = static_cast<const NameStyle*>(ctx);
-
-    return cachedStyle == requested->fStyle
-        && cachedMacFace->fRequestedName.equals(requested->fName);
 }
 
 static const char* map_css_names(const char* name) {
@@ -645,7 +617,7 @@ struct GlyphRect {
 
 class SkScalerContext_Mac : public SkScalerContext {
 public:
-    SkScalerContext_Mac(SkTypeface_Mac*, const SkDescriptor*);
+    SkScalerContext_Mac(SkTypeface_Mac*, const SkScalerContextEffects&, const SkDescriptor*);
 
 protected:
     unsigned generateGlyphCount(void) override;
@@ -754,8 +726,9 @@ static CTFontRef ctfont_create_exact_copy(CTFontRef baseFont, CGFloat textSize,
 }
 
 SkScalerContext_Mac::SkScalerContext_Mac(SkTypeface_Mac* typeface,
+                                         const SkScalerContextEffects& effects,
                                          const SkDescriptor* desc)
-        : INHERITED(typeface, desc)
+        : INHERITED(typeface, effects, desc)
         , fFBoundingBoxes()
         , fFBoundingBoxesGlyphOffset(0)
         , fGeneratedFBoundingBoxes(false)
@@ -805,12 +778,12 @@ static CTFontDrawGlyphsProc* choose_CTFontDrawGlyphs() {
     return &legacy_CTFontDrawGlyphs;
 }
 
-SK_DECLARE_STATIC_ONCE_PTR(CTFontDrawGlyphsProc, gCTFontDrawGlyphs);
-
 CGRGBPixel* Offscreen::getCG(const SkScalerContext_Mac& context, const SkGlyph& glyph,
                              CGGlyph glyphID, size_t* rowBytesPtr,
                              bool generateA8FromLCD) {
-    auto ctFontDrawGlyphs = gCTFontDrawGlyphs.get(choose_CTFontDrawGlyphs);
+    static SkOnce once;
+    static CTFontDrawGlyphsProc* ctFontDrawGlyphs;
+    once([]{ ctFontDrawGlyphs = choose_CTFontDrawGlyphs(); });
 
     if (!fRGBSpace) {
         //It doesn't appear to matter what color space is specified.
@@ -1469,7 +1442,7 @@ static SkTypeface* create_from_dataProvider(CGDataProviderRef provider) {
         return nullptr;
     }
     CTFontRef ct = CTFontCreateWithGraphicsFont(cg, 0, nullptr, nullptr);
-    return ct ? NewFromFontRef(ct, nullptr, nullptr, true) : nullptr;
+    return ct ? NewFromFontRef(ct, nullptr, true) : nullptr;
 }
 
 // Web fonts added to the the CTFont registry do not return their character set.
@@ -1537,15 +1510,6 @@ static void populate_glyph_to_unicode(CTFontRef ctFont, CFIndex glyphCount,
             }
         }
     }
-}
-
-static bool getWidthAdvance(CTFontRef ctFont, int gId, int16_t* data) {
-    CGSize advance;
-    advance.width = 0;
-    CGGlyph glyph = gId;
-    CTFontGetAdvancesForGlyphs(ctFont, kCTFontHorizontalOrientation, &glyph, &advance, 1);
-    *data = sk_float_round2int(advance.width);
-    return true;
 }
 
 /** Assumes src and dst are not nullptr. */
@@ -1646,17 +1610,27 @@ SkAdvancedTypefaceMetrics* SkTypeface_Mac::onGetAdvancedTypefaceMetrics(
 
     if (perGlyphInfo & kHAdvance_PerGlyphInfo) {
         if (info->fStyle & SkAdvancedTypefaceMetrics::kFixedPitch_Style) {
-            skia_advanced_typeface_metrics_utils::appendRange(&info->fGlyphWidths, 0);
-            info->fGlyphWidths->fAdvance.append(1, &min_width);
-            skia_advanced_typeface_metrics_utils::finishRange(info->fGlyphWidths.get(), 0,
-                        SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            SkAdvancedTypefaceMetrics::WidthRange range(0);
+            range.fAdvance.append(1, &min_width);
+            SkAdvancedTypefaceMetrics::FinishRange(
+                    &range, 0, SkAdvancedTypefaceMetrics::WidthRange::kDefault);
+            info->fGlyphWidths.emplace_back(std::move(range));
         } else {
-            info->fGlyphWidths.reset(
-                skia_advanced_typeface_metrics_utils::getAdvanceData(ctFont.get(),
-                               SkToInt(glyphCount),
-                               glyphIDs,
-                               glyphIDsCount,
-                               &getWidthAdvance));
+            CTFontRef borrowedCTFont = ctFont.get();
+            info->setGlyphWidths(
+                SkToInt(glyphCount),
+                glyphIDs,
+                glyphIDsCount,
+                SkAdvancedTypefaceMetrics::GetAdvance([borrowedCTFont](int gId, int16_t* data) {
+                    CGSize advance;
+                    advance.width = 0;
+                    CGGlyph glyph = gId;
+                    CTFontGetAdvancesForGlyphs(borrowedCTFont, kCTFontHorizontalOrientation,
+                                               &glyph, &advance, 1);
+                    *data = sk_float_round2int(advance.width);
+                    return true;
+                })
+            );
         }
     }
     return info;
@@ -1953,8 +1927,9 @@ size_t SkTypeface_Mac::onGetTableData(SkFontTableTag tag, size_t offset,
     return length;
 }
 
-SkScalerContext* SkTypeface_Mac::onCreateScalerContext(const SkDescriptor* desc) const {
-    return new SkScalerContext_Mac(const_cast<SkTypeface_Mac*>(this), desc);
+SkScalerContext* SkTypeface_Mac::onCreateScalerContext(const SkScalerContextEffects& effects,
+                                                       const SkDescriptor* desc) const {
+    return new SkScalerContext_Mac(const_cast<SkTypeface_Mac*>(this), effects, desc);
 }
 
 void SkTypeface_Mac::onFilterRec(SkScalerContextRec* rec) const {
@@ -2030,6 +2005,7 @@ void SkTypeface_Mac::onFilterRec(SkScalerContextRec* rec) const {
     // All other masks can use regular gamma.
     if (SkMask::kA8_Format == rec->fMaskFormat && SkPaint::kNo_Hinting == hinting) {
 #ifndef SK_GAMMA_APPLY_TO_A8
+        // SRGBTODO: Is this correct? Do we want contrast boost?
         rec->ignorePreBlend();
 #endif
     } else {
@@ -2176,42 +2152,30 @@ static inline int sqr(int value) {
 static int compute_metric(const SkFontStyle& a, const SkFontStyle& b) {
     return sqr(a.weight() - b.weight()) +
            sqr((a.width() - b.width()) * 100) +
-           sqr((a.isItalic() != b.isItalic()) * 900);
+           sqr((a.slant() != b.slant()) * 900);
 }
 
-static SkTypeface* createFromDesc(CFStringRef cfFamilyName, CTFontDescriptorRef desc) {
-    NameStyle cacheRequest;
-    SkString skFamilyName;
-    CFStringToSkString(cfFamilyName, &skFamilyName);
-    cacheRequest.fName = skFamilyName.c_str();
-    cacheRequest.fStyle = fontstyle_from_descriptor(desc);
-
-    SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_NameStyle, &cacheRequest);
-    if (face) {
-        return face;
-    }
-
+static SkTypeface* createFromDesc(CTFontDescriptorRef desc) {
     AutoCFRelease<CTFontRef> ctFont(CTFontCreateWithFontDescriptor(desc, 0, nullptr));
     if (!ctFont) {
         return nullptr;
     }
 
-    bool isFixedPitch;
-    (void)computeStyleBits(ctFont, &isFixedPitch);
+    SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_CTFontRef, (void*)ctFont.get());
+    if (face) {
+        return face;
+    }
 
-    face = new SkTypeface_Mac(ctFont.release(), nullptr, cacheRequest.fStyle, isFixedPitch,
-                              skFamilyName.c_str(), false);
-    SkTypefaceCache::Add(face, face->fontStyle());
+    face = NewFromFontRef(ctFont.release(), nullptr, false);
+    SkTypefaceCache::Add(face);
     return face;
 }
 
 class SkFontStyleSet_Mac : public SkFontStyleSet {
 public:
-    SkFontStyleSet_Mac(CFStringRef familyName, CTFontDescriptorRef desc)
+    SkFontStyleSet_Mac(CTFontDescriptorRef desc)
         : fArray(CTFontDescriptorCreateMatchingFontDescriptors(desc, nullptr))
-        , fFamilyName(familyName)
         , fCount(0) {
-        CFRetain(familyName);
         if (nullptr == fArray) {
             fArray = CFArrayCreate(nullptr, nullptr, 0, nullptr);
         }
@@ -2220,7 +2184,6 @@ public:
 
     virtual ~SkFontStyleSet_Mac() {
         CFRelease(fArray);
-        CFRelease(fFamilyName);
     }
 
     int count() override {
@@ -2244,19 +2207,18 @@ public:
         SkASSERT((unsigned)index < (unsigned)CFArrayGetCount(fArray));
         CTFontDescriptorRef desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(fArray, index);
 
-        return createFromDesc(fFamilyName, desc);
+        return createFromDesc(desc);
     }
 
     SkTypeface* matchStyle(const SkFontStyle& pattern) override {
         if (0 == fCount) {
             return nullptr;
         }
-        return createFromDesc(fFamilyName, findMatchingDesc(pattern));
+        return createFromDesc(findMatchingDesc(pattern));
     }
 
 private:
     CFArrayRef  fArray;
-    CFStringRef fFamilyName;
     int         fCount;
 
     CTFontDescriptorRef findMatchingDesc(const SkFontStyle& pattern) const {
@@ -2298,7 +2260,7 @@ class SkFontMgr_Mac : public SkFontMgr {
 
         AutoCFRelease<CTFontDescriptorRef> desc(
                                 CTFontDescriptorCreateWithAttributes(cfAttr));
-        return new SkFontStyleSet_Mac(cfFamilyName, desc);
+        return new SkFontStyleSet_Mac(desc);
     }
 
 public:
@@ -2504,7 +2466,7 @@ protected:
         if (!ct) {
             return nullptr;
         }
-        return NewFromFontRef(ct, cg.release(), nullptr, true);
+        return NewFromFontRef(ct, cg.release(), true);
     }
 
     static CFDictionaryRef get_axes(CGFontRef cg, SkFontData* fontData) {
@@ -2587,7 +2549,7 @@ protected:
         if (!ct) {
             return nullptr;
         }
-        return NewFromFontRef(ct, cg.release(), nullptr, true);
+        return NewFromFontRef(ct, cg.release(), true);
     }
 
     SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const override {
@@ -2598,10 +2560,7 @@ protected:
         return create_from_dataProvider(pr);
     }
 
-    virtual SkTypeface* onLegacyCreateTypeface(const char familyName[],
-                                               unsigned styleBits) const override {
-
-        SkFontStyle style = SkFontStyle((SkTypeface::Style)styleBits);
+    SkTypeface* onLegacyCreateTypeface(const char familyName[], SkFontStyle style) const override {
         if (familyName) {
             familyName = map_css_names(familyName);
         }
@@ -2610,19 +2569,12 @@ protected:
             familyName = FONT_DEFAULT_NAME;
         }
 
-        NameStyle cacheRequest = { familyName, style };
-        SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_NameStyle, &cacheRequest);
-
-        if (nullptr == face) {
-            face = NewFromName(familyName, style);
-            if (face) {
-                SkTypefaceCache::Add(face, style);
-            } else {
-                face = GetDefaultFace();
-                face->ref();
-            }
+        SkTypeface* face = NewFromName(familyName, style);
+        if (face) {
+            return face;
         }
-        return face;
+
+        return SkSafeRef(GetDefaultFace());
     }
 };
 

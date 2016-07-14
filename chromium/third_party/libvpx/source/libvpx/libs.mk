@@ -183,6 +183,9 @@ INSTALL-SRCS-$(CONFIG_CODEC_SRCS) += third_party/x86inc/x86inc.asm
 endif
 CODEC_EXPORTS-yes += vpx/exports_com
 CODEC_EXPORTS-$(CONFIG_ENCODERS) += vpx/exports_enc
+ifeq ($(CONFIG_SPATIAL_SVC),yes)
+CODEC_EXPORTS-$(CONFIG_ENCODERS) += vpx/exports_spatial_svc
+endif
 CODEC_EXPORTS-$(CONFIG_DECODERS) += vpx/exports_dec
 
 INSTALL-LIBS-yes += include/vpx/vpx_codec.h
@@ -394,6 +397,12 @@ $(filter %$(ASM).o,$(OBJS-yes)): $(BUILD_PFX)vpx_config.asm
 $(shell $(SRC_PATH_BARE)/build/make/version.sh "$(SRC_PATH_BARE)" $(BUILD_PFX)vpx_version.h)
 CLEAN-OBJS += $(BUILD_PFX)vpx_version.h
 
+#
+# Add include path for libwebm sources.
+#
+ifeq ($(CONFIG_WEBM_IO),yes)
+  CXXFLAGS += -I$(SRC_PATH_BARE)/third_party/libwebm
+endif
 
 ##
 ## libvpx test directives
@@ -469,6 +478,7 @@ test_libvpx.$(VCPROJ_SFX): $(LIBVPX_TEST_SRCS) vpx.$(VCPROJ_SFX) gtest.$(VCPROJ_
             $(if $(CONFIG_STATIC_MSVCRT),--static-crt) \
             --out=$@ $(INTERNAL_CFLAGS) $(CFLAGS) \
             -I. -I"$(SRC_PATH_BARE)/third_party/googletest/src/include" \
+            $(if $(CONFIG_WEBM_IO),-I"$(SRC_PATH_BARE)/third_party/libwebm") \
             -L. -l$(CODEC_LIB) -l$(GTEST_LIB) $^
 
 PROJECTS-$(CONFIG_MSVS) += test_libvpx.$(VCPROJ_SFX)

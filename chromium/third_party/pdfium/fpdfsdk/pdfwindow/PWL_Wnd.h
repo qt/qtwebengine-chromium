@@ -9,19 +9,18 @@
 
 #include <vector>
 
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "core/fxcrt/include/fx_basic.h"
-#include "core/include/fpdfdoc/fpdf_doc.h"
-#include "fpdfsdk/include/fx_systemhandler.h"
+#include "fpdfsdk/cfx_systemhandler.h"
 
 class CPWL_MsgControl;
 class CPWL_ScrollBar;
 class CPWL_Timer;
 class CPWL_TimerHandler;
 class CPWL_Wnd;
+class CFX_SystemHandler;
 class IPVT_FontMap;
-class IFX_SystemHandler;
 class IPWL_Provider;
-class IPWL_SpellCheck;
 
 // window styles
 #define PWS_CHILD 0x80000000L
@@ -65,18 +64,9 @@ class IPWL_SpellCheck;
 #define PRES_MULTILINE 0x0001L
 #define PRES_AUTORETURN 0x0002L
 #define PRES_AUTOSCROLL 0x0004L
-#define PRES_SPELLCHECK 0x0008L
 #define PRES_UNDO 0x0100L
 #define PRES_MULTIPAGES 0x0200L
 #define PRES_TEXTOVERFLOW 0x0400L
-
-// border style
-#define PBS_SOLID 0
-#define PBS_DASH 1
-#define PBS_BEVELED 2
-#define PBS_INSET 3
-#define PBS_UNDERLINED 4
-#define PBS_SHADOW 5
 
 // notification messages
 #define PNM_ADDCHILD 0x00000000L
@@ -168,14 +158,6 @@ inline bool operator!=(const CPWL_Color& c1, const CPWL_Color& c2) {
 #define PWL_CBBUTTON_TRIANGLE_HALFLEN 3.0f
 #define PWL_INVALIDATE_INFLATE 2
 
-class IPWL_SpellCheck {
- public:
-  virtual ~IPWL_SpellCheck() {}
-  virtual FX_BOOL CheckWord(const FX_CHAR* sWord) = 0;
-  virtual void SuggestWords(const FX_CHAR* sWord,
-                            std::vector<CFX_ByteString>& sSuggest) = 0;
-};
-
 class IPWL_Provider {
  public:
   virtual ~IPWL_Provider() {}
@@ -213,8 +195,7 @@ struct PWL_CREATEPARAM {
         dwFlags(0),
         sBackgroundColor(),
         hAttachedWnd(NULL),
-        pSpellCheck(NULL),
-        nBorderStyle(PBS_SOLID),
+        nBorderStyle(BorderStyle::SOLID),
         dwBorderWidth(1),
         sBorderColor(),
         sTextColor(),
@@ -229,15 +210,14 @@ struct PWL_CREATEPARAM {
         mtChild(1, 0, 0, 1, 0, 0) {}
 
   CFX_FloatRect rcRectWnd;            // required
-  IFX_SystemHandler* pSystemHandler;  // required
+  CFX_SystemHandler* pSystemHandler;  // required
   IPVT_FontMap* pFontMap;             // required for text window
   IPWL_Provider* pProvider;           // required for self coordinate
   IPWL_FocusHandler* pFocusHandler;   // optional
   uint32_t dwFlags;                   // optional
   CPWL_Color sBackgroundColor;        // optional
   FX_HWND hAttachedWnd;               // required for no-reader framework
-  IPWL_SpellCheck* pSpellCheck;       // required for spellchecking
-  int32_t nBorderStyle;               // optional
+  BorderStyle nBorderStyle;           // optional
   int32_t dwBorderWidth;              // optional
   CPWL_Color sBorderColor;            // optional
   CPWL_Color sTextColor;              // optional
@@ -254,7 +234,7 @@ struct PWL_CREATEPARAM {
 
 class CPWL_Timer {
  public:
-  CPWL_Timer(CPWL_TimerHandler* pAttached, IFX_SystemHandler* pSystemHandler);
+  CPWL_Timer(CPWL_TimerHandler* pAttached, CFX_SystemHandler* pSystemHandler);
   virtual ~CPWL_Timer();
 
   int32_t SetPWLTimer(int32_t nElapse);
@@ -264,7 +244,7 @@ class CPWL_Timer {
  private:
   int32_t m_nTimerID;
   CPWL_TimerHandler* m_pAttached;
-  IFX_SystemHandler* m_pSystemHandler;
+  CFX_SystemHandler* m_pSystemHandler;
 };
 
 class CPWL_TimerHandler {
@@ -275,7 +255,7 @@ class CPWL_TimerHandler {
   void BeginTimer(int32_t nElapse);
   void EndTimer();
   virtual void TimerProc();
-  virtual IFX_SystemHandler* GetSystemHandler() const = 0;
+  virtual CFX_SystemHandler* GetSystemHandler() const = 0;
 
  private:
   CPWL_Timer* m_pTimer;
@@ -334,14 +314,14 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   virtual CPWL_Color GetTextStrokeColor() const;
   virtual FX_FLOAT GetFontSize() const;
   virtual int32_t GetInnerBorderWidth() const;
-  virtual CPWL_Color GetBorderLeftTopColor(int32_t nBorderStyle) const;
-  virtual CPWL_Color GetBorderRightBottomColor(int32_t nBorderStyle) const;
+  virtual CPWL_Color GetBorderLeftTopColor(BorderStyle nBorderStyle) const;
+  virtual CPWL_Color GetBorderRightBottomColor(BorderStyle nBorderStyle) const;
 
   virtual void SetFontSize(FX_FLOAT fFontSize);
 
   void SetBackgroundColor(const CPWL_Color& color);
   void SetClipRect(const CFX_FloatRect& rect);
-  void SetBorderStyle(int32_t eBorderStyle);
+  void SetBorderStyle(BorderStyle eBorderStyle);
 
   virtual CFX_FloatRect GetWindowRect() const;
   virtual CFX_FloatRect GetClientRect() const;
@@ -353,7 +333,7 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   void RemoveFlag(uint32_t dwFlags);
   const CFX_FloatRect& GetClipRect() const;
   CPWL_Wnd* GetParentWindow() const;
-  int32_t GetBorderStyle() const;
+  BorderStyle GetBorderStyle() const;
   const CPWL_Dash& GetBorderDash() const;
   void* GetAttachedData() const;
 
@@ -394,7 +374,7 @@ class CPWL_Wnd : public CPWL_TimerHandler {
 
  protected:
   // CPWL_TimerHandler
-  IFX_SystemHandler* GetSystemHandler() const override;
+  CFX_SystemHandler* GetSystemHandler() const override;
 
   virtual void CreateChildWnd(const PWL_CREATEPARAM& cp);
   virtual void RePosChildWnd();
@@ -437,7 +417,6 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   FX_BOOL IsCTRLpressed(uint32_t nFlag) const;
   FX_BOOL IsSHIFTpressed(uint32_t nFlag) const;
   FX_BOOL IsALTpressed(uint32_t nFlag) const;
-  FX_BOOL IsINSERTpressed(uint32_t nFlag) const;
 
  private:
   void AddChild(CPWL_Wnd* pWnd);

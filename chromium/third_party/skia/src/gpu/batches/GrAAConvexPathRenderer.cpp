@@ -18,7 +18,6 @@
 #include "GrPathUtils.h"
 #include "GrProcessor.h"
 #include "GrPipelineBuilder.h"
-#include "GrStrokeInfo.h"
 #include "SkGeometry.h"
 #include "SkPathPriv.h"
 #include "SkString.h"
@@ -682,7 +681,7 @@ const GrGeometryProcessor* QuadEdgeEffect::TestCreate(GrProcessorTestData* d) {
 
 bool GrAAConvexPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
     return (args.fShaderCaps->shaderDerivativeSupport() && args.fAntiAlias &&
-            args.fStroke->isFillStyle() && !args.fPath->isInverseFillType() &&
+            args.fStyle->isSimpleFill() && !args.fPath->isInverseFillType() &&
             args.fPath->isConvex());
 }
 
@@ -1007,7 +1006,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     geometry.fPath = *args.fPath;
 
     SkAutoTUnref<GrDrawBatch> batch(AAConvexPathBatch::Create(geometry));
-    args.fTarget->drawBatch(*args.fPipelineBuilder, batch);
+    args.fTarget->drawBatch(*args.fPipelineBuilder, *args.fClip, batch);
 
     return true;
 

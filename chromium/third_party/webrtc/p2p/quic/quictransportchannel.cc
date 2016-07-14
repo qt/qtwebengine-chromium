@@ -104,13 +104,16 @@ class InsecureProofVerifier : public net::ProofVerifier {
   // ProofVerifier override.
   net::QuicAsyncStatus VerifyProof(
       const std::string& hostname,
+      const uint16_t port,
       const std::string& server_config,
+      net::QuicVersion quic_version,
+      base::StringPiece chlo_hash,
       const std::vector<std::string>& certs,
       const std::string& cert_sct,
       const std::string& signature,
-      const net::ProofVerifyContext* verify_context,
+      const net::ProofVerifyContext* context,
       std::string* error_details,
-      scoped_ptr<net::ProofVerifyDetails>* verify_details,
+      std::unique_ptr<net::ProofVerifyDetails>* verify_details,
       net::ProofVerifierCallback* callback) override {
     LOG(LS_INFO) << "VerifyProof() ignoring credentials and returning success";
     return net::QUIC_SUCCESS;
@@ -271,7 +274,7 @@ int QuicTransportChannel::SendPacket(const char* data,
 //       |channel_| again.
 void QuicTransportChannel::OnWritableState(TransportChannel* channel) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   LOG_J(LS_VERBOSE, this)
       << "QuicTransportChannel: channel writable state changed to "
       << channel_->writable();
@@ -305,7 +308,7 @@ void QuicTransportChannel::OnWritableState(TransportChannel* channel) {
 
 void QuicTransportChannel::OnReceivingState(TransportChannel* channel) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   LOG_J(LS_VERBOSE, this)
       << "QuicTransportChannel: channel receiving state changed to "
       << channel_->receiving();
@@ -321,7 +324,7 @@ void QuicTransportChannel::OnReadPacket(TransportChannel* channel,
                                         const rtc::PacketTime& packet_time,
                                         int flags) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   ASSERT(flags == 0);
 
   switch (quic_state_) {
@@ -368,24 +371,24 @@ void QuicTransportChannel::OnReadyToSend(TransportChannel* channel) {
 }
 
 void QuicTransportChannel::OnGatheringState(TransportChannelImpl* channel) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalGatheringState(this);
 }
 
 void QuicTransportChannel::OnCandidateGathered(TransportChannelImpl* channel,
                                                const Candidate& c) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalCandidateGathered(this, c);
 }
 
 void QuicTransportChannel::OnRoleConflict(TransportChannelImpl* channel) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalRoleConflict(this);
 }
 
 void QuicTransportChannel::OnRouteChange(TransportChannel* channel,
                                          const Candidate& candidate) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalRouteChange(this, candidate);
 }
 
@@ -393,13 +396,13 @@ void QuicTransportChannel::OnSelectedCandidatePairChanged(
     TransportChannel* channel,
     CandidatePairInterface* selected_candidate_pair,
     int last_sent_packet_id) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalSelectedCandidatePairChanged(this, selected_candidate_pair,
                                      last_sent_packet_id);
 }
 
 void QuicTransportChannel::OnConnectionRemoved(TransportChannelImpl* channel) {
-  ASSERT(channel == channel_);
+  ASSERT(channel == channel_.get());
   SignalConnectionRemoved(this);
 }
 
@@ -435,7 +438,7 @@ bool QuicTransportChannel::CreateQuicSession() {
                                      ? net::Perspective::IS_CLIENT
                                      : net::Perspective::IS_SERVER;
   bool owns_writer = false;
-  rtc::scoped_ptr<net::QuicConnection> connection(new net::QuicConnection(
+  std::unique_ptr<net::QuicConnection> connection(new net::QuicConnection(
       kConnectionId, kConnectionIpEndpoint, &helper_, this, owns_writer,
       perspective, net::QuicSupportedVersions()));
   quic_.reset(new QuicSession(std::move(connection), config_));
@@ -443,6 +446,8 @@ bool QuicTransportChannel::CreateQuicSession() {
       this, &QuicTransportChannel::OnHandshakeComplete);
   quic_->SignalConnectionClosed.connect(
       this, &QuicTransportChannel::OnConnectionClosed);
+  quic_->SignalIncomingStream.connect(this,
+                                      &QuicTransportChannel::OnIncomingStream);
   return true;
 }
 
@@ -483,8 +488,14 @@ bool QuicTransportChannel::StartQuicHandshake() {
     net::QuicCryptoServerConfig::ConfigOptions options;
     quic_crypto_server_config_->AddDefaultConfig(helper_.GetRandomGenerator(),
                                                  helper_.GetClock(), options);
+    quic_compressed_certs_cache_.reset(new net::QuicCompressedCertsCache(
+        net::QuicCompressedCertsCache::kQuicCompressedCertsCacheSize));
+    // TODO(mikescarlett): Add support for stateless rejects.
+    bool use_stateless_rejects_if_peer_supported = false;
     net::QuicCryptoServerStream* crypto_stream =
         new net::QuicCryptoServerStream(quic_crypto_server_config_.get(),
+                                        quic_compressed_certs_cache_.get(),
+                                        use_stateless_rejects_if_peer_supported,
                                         quic_.get());
     quic_->StartServerHandshake(crypto_stream);
     LOG_J(LS_INFO, this) << "QuicTransportChannel: Started server handshake.";
@@ -541,6 +552,7 @@ void QuicTransportChannel::OnConnectionClosed(net::QuicErrorCode error,
   // does not close due to failure.
   set_quic_state(QUIC_TRANSPORT_CLOSED);
   set_writable(false);
+  SignalClosed();
 }
 
 void QuicTransportChannel::OnProofValid(
@@ -567,6 +579,18 @@ void QuicTransportChannel::set_quic_state(QuicTransportState state) {
   LOG_J(LS_VERBOSE, this) << "set_quic_state from:" << quic_state_ << " to "
                           << state;
   quic_state_ = state;
+}
+
+ReliableQuicStream* QuicTransportChannel::CreateQuicStream() {
+  if (quic_) {
+    net::SpdyPriority priority = 0;  // Priority of the QUIC stream
+    return quic_->CreateOutgoingDynamicStream(priority);
+  }
+  return nullptr;
+}
+
+void QuicTransportChannel::OnIncomingStream(ReliableQuicStream* stream) {
+  SignalIncomingStream(stream);
 }
 
 }  // namespace cricket

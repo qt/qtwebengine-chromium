@@ -50,28 +50,7 @@
 #define FWL_WGTSTATE_Focused (1L << 4)
 #define FWL_WGTSTATE_Invisible (1L << 5)
 #define FWL_WGTSTATE_MAX (6)
-#define FWL_WGTHITTEST_Unknown 0
-#define FWL_WGTHITTEST_Client 1
-#define FWL_WGTHITTEST_Left 2
-#define FWL_WGTHITTEST_Top 3
-#define FWL_WGTHITTEST_Right 4
-#define FWL_WGTHITTEST_Bottom 5
-#define FWL_WGTHITTEST_LeftTop 6
-#define FWL_WGTHITTEST_RightTop 7
-#define FWL_WGTHITTEST_LeftBottom 8
-#define FWL_WGTHITTEST_RightBottom 9
-#define FWL_WGTHITTEST_Icon 10
-#define FWL_WGTHITTEST_Titlebar 11
-#define FWL_WGTHITTEST_MinBox 12
-#define FWL_WGTHITTEST_MaxBox 13
-#define FWL_WGTHITTEST_CloseBox 14
-#define FWL_WGTHITTEST_HScrollBar 15
-#define FWL_WGTHITTEST_VScrollBar 16
-#define FWL_WGTHITTEST_Border 17
-#define FWL_WGTHITTEST_Edge 18
-#define FWL_WGTHITTEST_Edit 19
-#define FWL_WGTHITTEST_HyperLink 20
-#define FWL_WGTHITTEST_MAX 21
+
 #define FWL_VKEY_LButton 0x01
 #define FWL_VKEY_RButton 0x02
 #define FWL_VKEY_MButton 0x04
@@ -243,7 +222,5 @@
 #define FWL_VKEY_PA1 0xFD
 #define FWL_VKEY_OEM_Clear 0xFE
 #define FWL_VKEY_Unknown 0
-#define FWL_VKEYSTATE_Toggled 0x0001
-#define FWL_VKEYSTATE_Down 0x0100
 
 #endif  // XFA_FWL_CORE_FWL_WIDGETDEF_H_

@@ -8,10 +8,10 @@
 
 #include <algorithm>
 
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxge/dib/dib_int.h"
 #include "core/fxge/ge/fx_text_int.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 #include "third_party/agg23/agg_conv_dash.h"
 #include "third_party/agg23/agg_conv_stroke.h"
 #include "third_party/agg23/agg_curves.h"
@@ -1106,7 +1106,7 @@ class CFX_Renderer {
     FX_BOOL bObjectCMYK = FXGETFLAG_COLORTYPE(alpha_flag);
     FX_BOOL bDeviceCMYK = pDevice->IsCmykImage();
     m_Alpha = bObjectCMYK ? FXGETFLAG_ALPHA_FILL(alpha_flag) : FXARGB_A(color);
-    ICodec_IccModule* pIccModule = NULL;
+    CCodec_IccModule* pIccModule = NULL;
     if (!CFX_GEModule::Get()->GetCodecModule() ||
         !CFX_GEModule::Get()->GetCodecModule()->GetIccModule()) {
       pIccTransform = NULL;
@@ -1529,7 +1529,7 @@ FX_BOOL _DibSetPixel(CFX_DIBitmap* pDevice,
   FX_BOOL bObjCMYK = FXGETFLAG_COLORTYPE(alpha_flag);
   int alpha = bObjCMYK ? FXGETFLAG_ALPHA_FILL(alpha_flag) : FXARGB_A(color);
   if (pIccTransform) {
-    ICodec_IccModule* pIccModule =
+    CCodec_IccModule* pIccModule =
         CFX_GEModule::Get()->GetCodecModule()->GetIccModule();
     color = bObjCMYK ? FXCMYK_TODIB(color) : FXARGB_TODIB(color);
     pIccModule->TranslateScanline(pIccTransform, (uint8_t*)&color,
@@ -1754,11 +1754,10 @@ FX_BOOL CFX_AggDeviceDriver::StretchDIBits(const CFX_DIBSource* pSource,
                    FALSE, m_bRgbByteOrder, alpha_flag, pIccTransform,
                    blend_type);
   dest_clip.Offset(-dest_rect.left, -dest_rect.top);
-  CFX_ImageStretcher stretcher;
-  if (stretcher.Start(&composer, pSource, dest_width, dest_height, dest_clip,
-                      flags)) {
-    stretcher.Continue(NULL);
-  }
+  CFX_ImageStretcher stretcher(&composer, pSource, dest_width, dest_height,
+                               dest_clip, flags);
+  if (stretcher.Start())
+    stretcher.Continue(nullptr);
   return TRUE;
 }
 
@@ -1795,6 +1794,7 @@ void CFX_AggDeviceDriver::CancelDIBits(void* pHandle) {
   delete (CFX_ImageRenderer*)pHandle;
 }
 
+#ifndef _SKIA_SUPPORT_
 CFX_FxgeDevice::CFX_FxgeDevice() {
   m_bOwnedBitmap = FALSE;
 }
@@ -1837,3 +1837,4 @@ CFX_FxgeDevice::~CFX_FxgeDevice() {
     delete GetBitmap();
   }
 }
+#endif

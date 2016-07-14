@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/codecs/isac/locked_bandwidth_info.h"
@@ -56,7 +57,6 @@ class AudioEncoderIsacT final : public AudioEncoder {
       const rtc::scoped_refptr<LockedIsacBandwidthInfo>& bwinfo);
   ~AudioEncoderIsacT() override;
 
-  size_t MaxEncodedBytes() const override;
   int SampleRateHz() const override;
   size_t NumChannels() const override;
   size_t Num10MsFramesInNextPacket() const override;

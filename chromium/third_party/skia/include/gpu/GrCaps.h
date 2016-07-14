@@ -63,6 +63,7 @@ public:
     bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
     bool dualSourceBlendingSupport() const { return fDualSourceBlendingSupport; }
     bool integerSupport() const { return fIntegerSupport; }
+    bool texelBufferSupport() const { return fTexelBufferSupport; }
 
     /**
     * Get the precision info for a variable of type kFloat_GrSLType, kVec2f_GrSLType, etc in a
@@ -111,6 +112,7 @@ protected:
     bool fDstReadInShaderSupport : 1;
     bool fDualSourceBlendingSupport : 1;
     bool fIntegerSupport : 1;
+    bool fTexelBufferSupport : 1;
 
     bool fShaderPrecisionVaries;
     PrecisionInfo fFloatPrecisions[kGrShaderTypeCount][kGrSLPrecisionCount];
@@ -142,9 +144,12 @@ public:
      * Skia convention is that a device only has sRGB support if it supports sRGB formats for both
      * textures and framebuffers. In addition:
      *   Decoding to linear of an sRGB texture can be disabled.
-     *   Encoding and gamma-correct blending to an sRGB framebuffer can be disabled.
      */
     bool srgbSupport() const { return fSRGBSupport; }
+    /**
+     * Is there support for enabling/disabling sRGB writes for sRGB-capable color buffers?
+     */
+    bool srgbWriteControl() const { return fSRGBWriteControl; }
     bool twoSidedStencilSupport() const { return fTwoSidedStencilSupport; }
     bool stencilWrapOpsSupport() const { return  fStencilWrapOpsSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
@@ -250,10 +255,6 @@ public:
 
     bool immediateFlush() const { return fImmediateFlush; }
 
-    bool drawPathMasksToCompressedTexturesSupport() const {
-        return fDrawPathMasksToCompressedTextureSupport;
-    }
-
     size_t bufferMapThreshold() const {
         SkASSERT(fBufferMapThreshold >= 0);
         return fBufferMapThreshold;
@@ -282,6 +283,7 @@ protected:
     bool fNPOTTextureTileSupport                     : 1;
     bool fMipMapSupport                              : 1;
     bool fSRGBSupport                                : 1;
+    bool fSRGBWriteControl                           : 1;
     bool fTwoSidedStencilSupport                     : 1;
     bool fStencilWrapOpsSupport                      : 1;
     bool fDiscardRenderTargetSupport                 : 1;
@@ -327,7 +329,6 @@ private:
 
     bool fSuppressPrints : 1;
     bool fImmediateFlush: 1;
-    bool fDrawPathMasksToCompressedTextureSupport : 1;
 
     typedef SkRefCnt INHERITED;
 };

@@ -5159,8 +5159,10 @@ RegExpNode* RegExpCharacterClass::ToNode(RegExpCompiler* compiler,
       ranges = negated;
     }
     if (ranges->length() == 0) {
-      // No matches possible.
-      return new (zone) EndNode(EndNode::BACKTRACK, zone);
+      ranges->Add(CharacterRange::Everything(), zone);
+      RegExpCharacterClass* fail =
+          new (zone) RegExpCharacterClass(ranges, true);
+      return new (zone) TextNode(fail, compiler->read_backward(), on_success);
     }
     if (standard_type() == '*') {
       return UnanchoredAdvance(compiler, on_success);
@@ -6762,7 +6764,7 @@ bool RegExpEngine::TooMuchRegExpCode(Handle<String> pattern) {
   Heap* heap = pattern->GetHeap();
   bool too_much = pattern->length() > RegExpImpl::kRegExpTooLargeToOptimize;
   if (heap->total_regexp_code_generated() > RegExpImpl::kRegExpCompiledLimit &&
-      heap->isolate()->memory_allocator()->SizeExecutable() >
+      heap->memory_allocator()->SizeExecutable() >
           RegExpImpl::kRegExpExecutableMemoryLimit) {
     too_much = true;
   }

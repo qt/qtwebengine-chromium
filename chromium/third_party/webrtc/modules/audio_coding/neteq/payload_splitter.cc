@@ -12,6 +12,7 @@
 
 #include <assert.h>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/audio_coding/neteq/decoder_database.h"
 
@@ -143,8 +144,9 @@ int PayloadSplitter::SplitFec(PacketList* packet_list,
 
     // Not an FEC packet.
     AudioDecoder* decoder = decoder_database->GetDecoder(payload_type);
-    // decoder should not return NULL.
-    assert(decoder != NULL);
+    // decoder should not return NULL, except for comfort noise payloads which
+    // are handled separately.
+    assert(decoder != NULL || decoder_database->IsComfortNoise(payload_type));
     if (!decoder ||
         !decoder->PacketHasFec(packet->payload, packet->payload_length)) {
       ++it;
@@ -167,8 +169,9 @@ int PayloadSplitter::SplitFec(PacketList* packet_list,
         memcpy(new_packet->payload, packet->payload, packet->payload_length);
         new_packet->payload_length = packet->payload_length;
         new_packet->primary = false;
-        new_packet->waiting_time = packet->waiting_time;
         new_packet->sync_packet = packet->sync_packet;
+        // Waiting time should not be set here.
+        RTC_DCHECK(!packet->waiting_time);
 
         packet_list->insert(it, new_packet);
         break;

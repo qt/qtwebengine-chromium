@@ -21,7 +21,7 @@
 #include "webrtc/base/platform_thread.h"
 #include "webrtc/call.h"
 #include "webrtc/call/transport_adapter.h"
-#include "webrtc/frame_callback.h"
+#include "webrtc/common_video/include/frame_callback.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_sender.h"
@@ -32,6 +32,7 @@
 #include "webrtc/test/call_test.h"
 #include "webrtc/test/configurable_frame_size_encoder.h"
 #include "webrtc/test/fake_texture_frame.h"
+#include "webrtc/test/frame_utils.h"
 #include "webrtc/test/null_transport.h"
 #include "webrtc/test/testsupport/perf_test.h"
 #include "webrtc/video/send_statistics_proxy.h"
@@ -42,11 +43,6 @@ namespace webrtc {
 
 enum VideoFormat { kGeneric, kVP8, };
 
-void ExpectEqualFrames(const VideoFrame& frame1, const VideoFrame& frame2);
-void ExpectEqualTextureFrames(const VideoFrame& frame1,
-                              const VideoFrame& frame2);
-void ExpectEqualBufferFrames(const VideoFrame& frame1,
-                             const VideoFrame& frame2);
 void ExpectEqualFramesVector(const std::vector<VideoFrame>& frames1,
                              const std::vector<VideoFrame>& frames2);
 VideoFrame CreateVideoFrame(int width, int height, uint8_t data);
@@ -312,11 +308,13 @@ class FecObserver : public test::EndToEndTest {
   FecObserver(bool header_extensions_enabled,
               bool use_nack,
               bool expect_red,
+              bool expect_fec,
               const std::string& codec)
       : EndToEndTest(VideoSendStreamTest::kDefaultTimeoutMs),
         payload_name_(codec),
         use_nack_(use_nack),
         expect_red_(expect_red),
+        expect_fec_(expect_fec),
         send_count_(0),
         received_media_(false),
         received_fec_(false),
@@ -379,6 +377,7 @@ class FecObserver : public test::EndToEndTest {
     if (encapsulated_payload_type != -1) {
       if (encapsulated_payload_type ==
           VideoSendStreamTest::kUlpfecPayloadType) {
+        EXPECT_TRUE(expect_fec_);
         received_fec_ = true;
       } else {
         received_media_ = true;
@@ -386,7 +385,7 @@ class FecObserver : public test::EndToEndTest {
     }
 
     if (send_count_ > 100 && received_media_) {
-      if (received_fec_ || !expect_red_)
+      if (received_fec_ || !expect_fec_)
         observation_complete_.Set();
     }
 
@@ -446,6 +445,7 @@ class FecObserver : public test::EndToEndTest {
   const std::string payload_name_;
   const bool use_nack_;
   const bool expect_red_;
+  const bool expect_fec_;
   int send_count_;
   bool received_media_;
   bool received_fec_;
@@ -454,12 +454,12 @@ class FecObserver : public test::EndToEndTest {
 };
 
 TEST_F(VideoSendStreamTest, SupportsFecWithExtensions) {
-  FecObserver test(true, false, true, "VP8");
+  FecObserver test(true, false, true, true, "VP8");
   RunBaseTest(&test);
 }
 
 TEST_F(VideoSendStreamTest, SupportsFecWithoutExtensions) {
-  FecObserver test(false, false, true, "VP8");
+  FecObserver test(false, false, true, true, "VP8");
   RunBaseTest(&test);
 }
 
@@ -467,26 +467,28 @@ TEST_F(VideoSendStreamTest, SupportsFecWithoutExtensions) {
 // since we'll still have to re-request FEC packets, effectively wasting
 // bandwidth since the receiver has to wait for FEC retransmissions to determine
 // that the received state is actually decodable.
-TEST_F(VideoSendStreamTest, DoesNotUtilizeRedForH264WithNackEnabled) {
-  FecObserver test(false, true, false, "H264");
+TEST_F(VideoSendStreamTest, DoesNotUtilizeFecForH264WithNackEnabled) {
+  FecObserver test(false, true, true, false, "H264");
   RunBaseTest(&test);
 }
 
 // Without retransmissions FEC for H264 is fine.
 TEST_F(VideoSendStreamTest, DoesUtilizeRedForH264WithoutNackEnabled) {
-  FecObserver test(false, false, true, "H264");
+  FecObserver test(false, false, true, true, "H264");
   RunBaseTest(&test);
 }
 
 TEST_F(VideoSendStreamTest, DoesUtilizeRedForVp8WithNackEnabled) {
-  FecObserver test(false, true, true, "VP8");
+  FecObserver test(false, true, true, true, "VP8");
   RunBaseTest(&test);
 }
 
+#if !defined(RTC_DISABLE_VP9)
 TEST_F(VideoSendStreamTest, DoesUtilizeRedForVp9WithNackEnabled) {
-  FecObserver test(false, true, true, "VP9");
+  FecObserver test(false, true, true, true, "VP9");
   RunBaseTest(&test);
 }
+#endif  // !defined(RTC_DISABLE_VP9)
 
 void VideoSendStreamTest::TestNackRetransmission(
     uint32_t retransmit_ssrc,
@@ -712,7 +714,7 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
       }
     }
 
-    virtual void EncodedFrameCallback(const EncodedFrame& encoded_frame) {
+    void EncodedFrameCallback(const EncodedFrame& encoded_frame) override {
       // Increase frame size for next encoded frame, in the context of the
       // encoder thread.
       if (!use_fec_ &&
@@ -811,7 +813,8 @@ TEST_F(VideoSendStreamTest, FragmentsVp8AccordingToMaxPacketSizeWithFec) {
 TEST_F(VideoSendStreamTest, SuspendBelowMinBitrate) {
   static const int kSuspendTimeFrames = 60;  // Suspend for 2 seconds @ 30 fps.
 
-  class RembObserver : public test::SendTest, public I420FrameCallback {
+  class RembObserver : public test::SendTest,
+                       public rtc::VideoSinkInterface<VideoFrame> {
    public:
     RembObserver()
         : SendTest(kDefaultTimeoutMs),
@@ -862,8 +865,8 @@ TEST_F(VideoSendStreamTest, SuspendBelowMinBitrate) {
       return SEND_PACKET;
     }
 
-    // This method implements the I420FrameCallback.
-    void FrameCallback(VideoFrame* video_frame) override {
+    // This method implements the rtc::VideoSinkInterface
+    void OnFrame(const VideoFrame& video_frame) override {
       rtc::CritScope lock(&crit_);
       if (test_state_ == kDuringSuspend &&
           ++suspended_frame_count_ > kSuspendTimeFrames) {
@@ -1002,8 +1005,8 @@ TEST_F(VideoSendStreamTest, NoPaddingWhenVideoIsMuted) {
 
     size_t GetNumVideoStreams() const override { return 3; }
 
-    virtual void OnFrameGeneratorCapturerCreated(
-        test::FrameGeneratorCapturer* frame_generator_capturer) {
+    void OnFrameGeneratorCapturerCreated(
+        test::FrameGeneratorCapturer* frame_generator_capturer) override {
       rtc::CritScope lock(&crit_);
       capturer_ = frame_generator_capturer;
     }
@@ -1043,7 +1046,7 @@ TEST_F(VideoSendStreamTest, MinTransmitBitrateRespectsRemb) {
     }
 
    private:
-    virtual Action OnSendRtp(const uint8_t* packet, size_t length) {
+    Action OnSendRtp(const uint8_t* packet, size_t length) override {
       if (RtpHeaderParser::IsRtcp(packet, length))
         return DROP_PACKET;
 
@@ -1115,18 +1118,22 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
   class StartBitrateObserver : public test::FakeEncoder {
    public:
     StartBitrateObserver()
-        : FakeEncoder(Clock::GetRealTimeClock()), start_bitrate_kbps_(0) {}
+        : FakeEncoder(Clock::GetRealTimeClock()),
+          start_bitrate_changed_(false, false),
+          start_bitrate_kbps_(0) {}
     int32_t InitEncode(const VideoCodec* config,
                        int32_t number_of_cores,
                        size_t max_payload_size) override {
       rtc::CritScope lock(&crit_);
       start_bitrate_kbps_ = config->startBitrate;
+      start_bitrate_changed_.Set();
       return FakeEncoder::InitEncode(config, number_of_cores, max_payload_size);
     }
 
     int32_t SetRates(uint32_t new_target_bitrate, uint32_t framerate) override {
       rtc::CritScope lock(&crit_);
       start_bitrate_kbps_ = new_target_bitrate;
+      start_bitrate_changed_.Set();
       return FakeEncoder::SetRates(new_target_bitrate, framerate);
     }
 
@@ -1135,8 +1142,14 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
       return start_bitrate_kbps_;
     }
 
+    bool WaitForStartBitrate() {
+      return start_bitrate_changed_.Wait(
+          VideoSendStreamTest::kDefaultTimeoutMs);
+    }
+
    private:
     rtc::CriticalSection crit_;
+    rtc::Event start_bitrate_changed_;
     int start_bitrate_kbps_ GUARDED_BY(crit_);
   };
 
@@ -1155,6 +1168,7 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
 
   CreateVideoStreams();
 
+  EXPECT_TRUE(encoder.WaitForStartBitrate());
   EXPECT_EQ(video_encoder_config_.streams[0].max_bitrate_bps / 1000,
             encoder.GetStartBitrateKbps());
 
@@ -1165,6 +1179,7 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
   // New bitrate should be reconfigured above the previous max. As there's no
   // network connection this shouldn't be flaky, as no bitrate should've been
   // reported in between.
+  EXPECT_TRUE(encoder.WaitForStartBitrate());
   EXPECT_EQ(bitrate_config.start_bitrate_bps / 1000,
             encoder.GetStartBitrateKbps());
 
@@ -1172,12 +1187,12 @@ TEST_F(VideoSendStreamTest, CanReconfigureToUseStartBitrateAbovePreviousMax) {
 }
 
 TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
-  class FrameObserver : public I420FrameCallback {
+  class FrameObserver : public rtc::VideoSinkInterface<VideoFrame> {
    public:
     FrameObserver() : output_frame_event_(false, false) {}
 
-    void FrameCallback(VideoFrame* video_frame) override {
-      output_frames_.push_back(*video_frame);
+    void OnFrame(const VideoFrame& video_frame) override {
+      output_frames_.push_back(video_frame);
       output_frame_event_.Set();
     }
 
@@ -1244,49 +1259,13 @@ TEST_F(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
   DestroyStreams();
 }
 
-void ExpectEqualFrames(const VideoFrame& frame1, const VideoFrame& frame2) {
-  if (frame1.native_handle() || frame2.native_handle())
-    ExpectEqualTextureFrames(frame1, frame2);
-  else
-    ExpectEqualBufferFrames(frame1, frame2);
-}
-
-void ExpectEqualTextureFrames(const VideoFrame& frame1,
-                              const VideoFrame& frame2) {
-  EXPECT_EQ(frame1.native_handle(), frame2.native_handle());
-  EXPECT_EQ(frame1.width(), frame2.width());
-  EXPECT_EQ(frame1.height(), frame2.height());
-}
-
-void ExpectEqualBufferFrames(const VideoFrame& frame1,
-                             const VideoFrame& frame2) {
-  EXPECT_EQ(frame1.width(), frame2.width());
-  EXPECT_EQ(frame1.height(), frame2.height());
-  EXPECT_EQ(frame1.stride(kYPlane), frame2.stride(kYPlane));
-  EXPECT_EQ(frame1.stride(kUPlane), frame2.stride(kUPlane));
-  EXPECT_EQ(frame1.stride(kVPlane), frame2.stride(kVPlane));
-  ASSERT_EQ(frame1.allocated_size(kYPlane), frame2.allocated_size(kYPlane));
-  EXPECT_EQ(0,
-            memcmp(frame1.buffer(kYPlane),
-                   frame2.buffer(kYPlane),
-                   frame1.allocated_size(kYPlane)));
-  ASSERT_EQ(frame1.allocated_size(kUPlane), frame2.allocated_size(kUPlane));
-  EXPECT_EQ(0,
-            memcmp(frame1.buffer(kUPlane),
-                   frame2.buffer(kUPlane),
-                   frame1.allocated_size(kUPlane)));
-  ASSERT_EQ(frame1.allocated_size(kVPlane), frame2.allocated_size(kVPlane));
-  EXPECT_EQ(0,
-            memcmp(frame1.buffer(kVPlane),
-                   frame2.buffer(kVPlane),
-                   frame1.allocated_size(kVPlane)));
-}
-
 void ExpectEqualFramesVector(const std::vector<VideoFrame>& frames1,
                              const std::vector<VideoFrame>& frames2) {
   EXPECT_EQ(frames1.size(), frames2.size());
   for (size_t i = 0; i < std::min(frames1.size(), frames2.size()); ++i)
-    ExpectEqualFrames(frames1[i], frames2[i]);
+    // Compare frame buffers, since we don't care about differing timestamps.
+    EXPECT_TRUE(test::FrameBufsEqual(frames1[i].video_frame_buffer(),
+                                     frames2[i].video_frame_buffer()));
 }
 
 VideoFrame CreateVideoFrame(int width, int height, uint8_t data) {
@@ -1378,9 +1357,6 @@ TEST_F(VideoSendStreamTest, EncoderIsProperlyInitializedAndDestroyed) {
     void OnVideoStreamsCreated(
         VideoSendStream* send_stream,
         const std::vector<VideoReceiveStream*>& receive_streams) override {
-      // Encoder initialization should be done in stream construction before
-      // starting.
-      EXPECT_TRUE(IsReadyForEncode());
       stream_ = send_stream;
     }
 
@@ -1428,6 +1404,7 @@ TEST_F(VideoSendStreamTest, EncoderSetupPropagatesCommonEncoderConfigValues) {
     VideoCodecConfigObserver()
         : SendTest(kDefaultTimeoutMs),
           FakeEncoder(Clock::GetRealTimeClock()),
+          init_encode_event_(false, false),
           num_initializations_(0) {}
 
    private:
@@ -1456,19 +1433,23 @@ TEST_F(VideoSendStreamTest, EncoderSetupPropagatesCommonEncoderConfigValues) {
         EXPECT_EQ(kScreensharing, config->mode);
       }
       ++num_initializations_;
+      init_encode_event_.Set();
       return FakeEncoder::InitEncode(config, number_of_cores, max_payload_size);
     }
 
     void PerformTest() override {
+      EXPECT_TRUE(init_encode_event_.Wait(kDefaultTimeoutMs));
       EXPECT_EQ(1u, num_initializations_) << "VideoEncoder not initialized.";
 
       encoder_config_.content_type = VideoEncoderConfig::ContentType::kScreen;
       stream_->ReconfigureVideoEncoder(encoder_config_);
+      EXPECT_TRUE(init_encode_event_.Wait(kDefaultTimeoutMs));
       EXPECT_EQ(2u, num_initializations_)
           << "ReconfigureVideoEncoder did not reinitialize the encoder with "
              "new encoder settings.";
     }
 
+    rtc::Event init_encode_event_;
     size_t num_initializations_;
     VideoSendStream* stream_;
     VideoEncoderConfig encoder_config_;
@@ -1488,6 +1469,7 @@ class VideoCodecConfigObserver : public test::SendTest,
         FakeEncoder(Clock::GetRealTimeClock()),
         video_codec_type_(video_codec_type),
         codec_name_(codec_name),
+        init_encode_event_(false, false),
         num_initializations_(0) {
     memset(&encoder_settings_, 0, sizeof(encoder_settings_));
   }
@@ -1521,16 +1503,21 @@ class VideoCodecConfigObserver : public test::SendTest,
     EXPECT_EQ(video_codec_type_, config->codecType);
     VerifyCodecSpecifics(*config);
     ++num_initializations_;
+    init_encode_event_.Set();
     return FakeEncoder::InitEncode(config, number_of_cores, max_payload_size);
   }
 
   void VerifyCodecSpecifics(const VideoCodec& config) const;
 
   void PerformTest() override {
-    EXPECT_EQ(1u, num_initializations_) << "VideoEncoder not initialized.";
+    EXPECT_TRUE(
+        init_encode_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs));
+    ASSERT_EQ(1u, num_initializations_) << "VideoEncoder not initialized.";
 
     encoder_settings_.frameDroppingOn = true;
     stream_->ReconfigureVideoEncoder(encoder_config_);
+    ASSERT_TRUE(
+        init_encode_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs));
     EXPECT_EQ(2u, num_initializations_)
         << "ReconfigureVideoEncoder did not reinitialize the encoder with "
            "new encoder settings.";
@@ -1546,6 +1533,7 @@ class VideoCodecConfigObserver : public test::SendTest,
   T encoder_settings_;
   const VideoCodecType video_codec_type_;
   const char* const codec_name_;
+  rtc::Event init_encode_event_;
   size_t num_initializations_;
   VideoSendStream* stream_;
   VideoEncoderConfig encoder_config_;
@@ -1708,18 +1696,7 @@ TEST_F(VideoSendStreamTest, TranslatesTwoLayerScreencastToTargetBitrate) {
   RunBaseTest(&test);
 }
 
-// Disabled on LinuxAsan:
-// https://bugs.chromium.org/p/webrtc/issues/detail?id=5382
-#if defined(ADDRESS_SANITIZER) && defined(WEBRTC_LINUX)
-#define MAYBE_ReconfigureBitratesSetsEncoderBitratesCorrectly \
-  DISABLED_ReconfigureBitratesSetsEncoderBitratesCorrectly
-#else
-#define MAYBE_ReconfigureBitratesSetsEncoderBitratesCorrectly \
-  ReconfigureBitratesSetsEncoderBitratesCorrectly
-#endif
-
-TEST_F(VideoSendStreamTest,
-       MAYBE_ReconfigureBitratesSetsEncoderBitratesCorrectly) {
+TEST_F(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
   // These are chosen to be "kind of odd" to not be accidentally checked against
   // default values.
   static const int kMinBitrateKbps = 137;
@@ -1734,6 +1711,7 @@ TEST_F(VideoSendStreamTest,
     EncoderBitrateThresholdObserver()
         : SendTest(kDefaultTimeoutMs),
           FakeEncoder(Clock::GetRealTimeClock()),
+          init_encode_event_(false, false),
           num_initializations_(0) {}
 
    private:
@@ -1762,6 +1740,7 @@ TEST_F(VideoSendStreamTest,
                   codecSettings->startBitrate);
       }
       ++num_initializations_;
+      init_encode_event_.Set();
       return FakeEncoder::InitEncode(codecSettings, numberOfCores,
                                      maxPayloadSize);
     }
@@ -1797,6 +1776,9 @@ TEST_F(VideoSendStreamTest,
     }
 
     void PerformTest() override {
+      ASSERT_TRUE(
+          init_encode_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs))
+          << "Timed out while waiting encoder to be configured.";
       Call::Config::BitrateConfig bitrate_config;
       bitrate_config.start_bitrate_bps = kIncreasedStartBitrateKbps * 1000;
       bitrate_config.max_bitrate_bps = kIncreasedMaxBitrateKbps * 1000;
@@ -1806,6 +1788,8 @@ TEST_F(VideoSendStreamTest,
       encoder_config_.streams[0].min_bitrate_bps = 0;
       encoder_config_.streams[0].max_bitrate_bps = kLowerMaxBitrateKbps * 1000;
       send_stream_->ReconfigureVideoEncoder(encoder_config_);
+      ASSERT_TRUE(
+          init_encode_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs));
       EXPECT_EQ(2, num_initializations_)
           << "Encoder should have been reconfigured with the new value.";
       encoder_config_.streams[0].target_bitrate_bps =
@@ -1813,10 +1797,13 @@ TEST_F(VideoSendStreamTest,
       encoder_config_.streams[0].max_bitrate_bps =
           kIncreasedMaxBitrateKbps * 1000;
       send_stream_->ReconfigureVideoEncoder(encoder_config_);
+      ASSERT_TRUE(
+          init_encode_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs));
       EXPECT_EQ(3, num_initializations_)
           << "Encoder should have been reconfigured with the new value.";
     }
 
+    rtc::Event init_encode_event_;
     int num_initializations_;
     webrtc::Call* call_;
     webrtc::VideoSendStream* send_stream_;
@@ -1846,7 +1833,6 @@ TEST_F(VideoSendStreamTest, ReportsSentResolution) {
                    const CodecSpecificInfo* codecSpecificInfo,
                    const std::vector<FrameType>* frame_types) override {
       CodecSpecificInfo specifics;
-      memset(&specifics, 0, sizeof(specifics));
       specifics.codecType = kVideoCodecGeneric;
 
       uint8_t buffer[16] = {0};
@@ -1906,6 +1892,7 @@ TEST_F(VideoSendStreamTest, ReportsSentResolution) {
   RunBaseTest(&test);
 }
 
+#if !defined(RTC_DISABLE_VP9)
 class Vp9HeaderObserver : public test::SendTest {
  public:
   Vp9HeaderObserver()
@@ -2289,9 +2276,6 @@ TEST_F(VideoSendStreamTest, Vp9NonFlexModeSmallResolution) {
   RunBaseTest(&test);
 }
 
-#if !defined(MEMORY_SANITIZER)
-// Fails under MemorySanitizer:
-// See https://code.google.com/p/webrtc/issues/detail?id=5402.
 TEST_F(VideoSendStreamTest, Vp9FlexModeRefCount) {
   class FlexibleMode : public Vp9HeaderObserver {
     void ModifyVideoConfigsHook(
@@ -2316,6 +2300,6 @@ TEST_F(VideoSendStreamTest, Vp9FlexModeRefCount) {
 
   RunBaseTest(&test);
 }
-#endif
+#endif  // !defined(RTC_DISABLE_VP9)
 
 }  // namespace webrtc

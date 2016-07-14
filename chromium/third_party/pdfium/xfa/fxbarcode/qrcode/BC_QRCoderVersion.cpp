@@ -35,17 +35,18 @@ const int32_t CBC_QRCoderVersion::VERSION_DECODE_INFO[] = {
     0x15683, 0x168C9, 0x177EC, 0x18EC4, 0x191E1, 0x1AFAB, 0x1B08E,
     0x1CC1A, 0x1D33F, 0x1ED75, 0x1F250, 0x209D5, 0x216F0, 0x228BA,
     0x2379F, 0x24B0B, 0x2542E, 0x26A64, 0x27541, 0x28C69};
-CFX_PtrArray* CBC_QRCoderVersion::VERSION = NULL;
+
+CFX_ArrayTemplate<CBC_QRCoderVersion*>* CBC_QRCoderVersion::VERSION = nullptr;
 
 void CBC_QRCoderVersion::Initialize() {
-  VERSION = new CFX_PtrArray();
+  VERSION = new CFX_ArrayTemplate<CBC_QRCoderVersion*>();
 }
 void CBC_QRCoderVersion::Finalize() {
-  for (int32_t i = 0; i < VERSION->GetSize(); i++) {
-    CBC_QRCoderVersion* v = (CBC_QRCoderVersion*)(VERSION->GetAt(i));
-    delete v;
-  }
+  for (int32_t i = 0; i < VERSION->GetSize(); i++)
+    delete VERSION->GetAt(i);
+
   delete VERSION;
+  VERSION = nullptr;
 }
 CBC_QRCoderVersion::CBC_QRCoderVersion(int32_t versionNumber,
                                        CBC_QRCoderECBlocks* ecBlocks1,
@@ -53,15 +54,15 @@ CBC_QRCoderVersion::CBC_QRCoderVersion(int32_t versionNumber,
                                        CBC_QRCoderECBlocks* ecBlocks3,
                                        CBC_QRCoderECBlocks* ecBlocks4) {
   m_versionNumber = versionNumber;
-  m_ecBlocks.Add(ecBlocks1);
-  m_ecBlocks.Add(ecBlocks2);
-  m_ecBlocks.Add(ecBlocks3);
-  m_ecBlocks.Add(ecBlocks4);
+  m_ecBlocksArray.Add(ecBlocks1);
+  m_ecBlocksArray.Add(ecBlocks2);
+  m_ecBlocksArray.Add(ecBlocks3);
+  m_ecBlocksArray.Add(ecBlocks4);
   int32_t total = 0;
   int32_t ecCodeWords = ecBlocks1->GetECCodeWordsPerBlock();
-  CFX_PtrArray* ecbArray = ecBlocks1->GetECBlocks();
+  CFX_ArrayTemplate<CBC_QRCoderECB*>* ecbArray = ecBlocks1->GetECBlocks();
   for (int32_t i = 0; i < ecbArray->GetSize(); i++) {
-    CBC_QRCoderECB* ecBlock = (CBC_QRCoderECB*)((*ecbArray)[i]);
+    CBC_QRCoderECB* ecBlock = (*ecbArray)[i];
     total += ecBlock->GetCount() * (ecBlock->GetDataCodeWords() + ecCodeWords);
   }
   m_totalCodeWords = total;
@@ -326,16 +327,12 @@ CBC_QRCoderVersion::CBC_QRCoderVersion(int32_t versionNumber,
       break;
   }
 }
+
 CBC_QRCoderVersion::~CBC_QRCoderVersion() {
-  if (m_ecBlocks.GetSize() != 0) {
-    int32_t itBeg = 0;
-    int32_t itEnd = m_ecBlocks.GetSize();
-    while (itBeg != itEnd) {
-      delete ((CBC_QRCoderECBlocks*)(m_ecBlocks[itBeg]));
-      itBeg++;
-    }
-  }
+  for (int32_t i = 0; i < m_ecBlocksArray.GetSize(); ++i)
+    delete m_ecBlocksArray[i];
 }
+
 int32_t CBC_QRCoderVersion::GetVersionNumber() {
   return m_versionNumber;
 }
@@ -350,7 +347,7 @@ int32_t CBC_QRCoderVersion::GetDimensionForVersion() {
 }
 CBC_QRCoderECBlocks* CBC_QRCoderVersion::GetECBlocksForLevel(
     CBC_QRCoderErrorCorrectionLevel* ecLevel) {
-  return (CBC_QRCoderECBlocks*)m_ecBlocks[ecLevel->Ordinal()];
+  return m_ecBlocksArray[ecLevel->Ordinal()];
 }
 CBC_QRCoderVersion* CBC_QRCoderVersion::GetProvisionalVersionForDimension(
     int32_t dimension,
@@ -759,11 +756,11 @@ CBC_QRCoderVersion* CBC_QRCoderVersion::GetVersionForNumber(
     e = BCExceptionIllegalArgument;
     BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
   }
-  return (CBC_QRCoderVersion*)(*VERSION)[versionNumber - 1];
+  return (*VERSION)[versionNumber - 1];
 }
+
 void CBC_QRCoderVersion::Destroy() {
-  int32_t i;
-  for (i = 0; i < VERSION->GetSize(); i++) {
-    delete ((CBC_QRCoderVersion*)(*VERSION)[i]);
-  }
+  for (int32_t i = 0; i < VERSION->GetSize(); i++)
+    delete (*VERSION)[i];
+  VERSION->RemoveAll();
 }

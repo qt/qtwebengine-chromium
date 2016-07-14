@@ -162,20 +162,18 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(GrPrimitiveType primitiveT
     VkShaderModule vertShaderModule;
     VkShaderModule fragShaderModule;
 
-    uint32_t numSamplers = fSamplerUniforms.count();
+    uint32_t numSamplers = (uint32_t)fUniformHandler.numSamplers();
 
     SkAutoTDeleteArray<VkDescriptorSetLayoutBinding> dsSamplerBindings(
                                                      new VkDescriptorSetLayoutBinding[numSamplers]);
     for (uint32_t i = 0; i < numSamplers; ++i) {
-        UniformHandle uniHandle = fSamplerUniforms[i];
-        GrVkUniformHandler::UniformInfo uniformInfo = fUniformHandler.getUniformInfo(uniHandle);
-        SkASSERT(kSampler2D_GrSLType == uniformInfo.fVariable.getType());
-        SkASSERT(GrVkUniformHandler::kSamplerDescSet == uniformInfo.fSetNumber);
-        SkASSERT(uniformInfo.fBinding == i);
-        dsSamplerBindings[i].binding = uniformInfo.fBinding;
+        const GrVkGLSLSampler& sampler =
+            static_cast<const GrVkGLSLSampler&>(fUniformHandler.getSampler(i));
+        SkASSERT(sampler.binding() == i);
+        dsSamplerBindings[i].binding = sampler.binding();
         dsSamplerBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         dsSamplerBindings[i].descriptorCount = 1;
-        dsSamplerBindings[i].stageFlags = visibility_to_vk_stage_flags(uniformInfo.fVisibility);
+        dsSamplerBindings[i].stageFlags = visibility_to_vk_stage_flags(sampler.visibility());
         dsSamplerBindings[i].pImmutableSamplers = nullptr;
     }
 
@@ -184,11 +182,10 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(GrPrimitiveType primitiveT
     dsSamplerLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     dsSamplerLayoutCreateInfo.pNext = nullptr;
     dsSamplerLayoutCreateInfo.flags = 0;
-    dsSamplerLayoutCreateInfo.bindingCount = fSamplerUniforms.count();
+    dsSamplerLayoutCreateInfo.bindingCount = numSamplers;
     // Setting to nullptr fixes an error in the param checker validation layer. Even though
     // bindingCount is 0 (which is valid), it still tries to validate pBindings unless it is null.
-    dsSamplerLayoutCreateInfo.pBindings = fSamplerUniforms.count() ? dsSamplerBindings.get() :
-                                                                     nullptr;
+    dsSamplerLayoutCreateInfo.pBindings = numSamplers ? dsSamplerBindings.get() : nullptr;
 
     GR_VK_CALL_ERRCHECK(fGpu->vkInterface(),
                         CreateDescriptorSetLayout(fGpu->device(),
@@ -196,35 +193,8 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(GrPrimitiveType primitiveT
                                                   nullptr,
                                                   &dsLayout[GrVkUniformHandler::kSamplerDescSet]));
 
-    // Create Uniform Buffer Descriptor
-    // We always attach uniform buffers to descriptor set 1. The vertex uniform buffer will have
-    // binding 0 and the fragment binding 1.
-    VkDescriptorSetLayoutBinding dsUniBindings[2];
-    memset(&dsUniBindings, 0, 2 * sizeof(VkDescriptorSetLayoutBinding));
-    dsUniBindings[0].binding = GrVkUniformHandler::kVertexBinding;
-    dsUniBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    dsUniBindings[0].descriptorCount = 1;
-    dsUniBindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    dsUniBindings[0].pImmutableSamplers = nullptr;
-    dsUniBindings[1].binding = GrVkUniformHandler::kFragBinding;
-    dsUniBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    dsUniBindings[1].descriptorCount = 1;
-    dsUniBindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    dsUniBindings[1].pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutCreateInfo dsUniformLayoutCreateInfo;
-    memset(&dsUniformLayoutCreateInfo, 0, sizeof(VkDescriptorSetLayoutCreateInfo));
-    dsUniformLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dsUniformLayoutCreateInfo.pNext = nullptr;
-    dsUniformLayoutCreateInfo.flags = 0;
-    dsUniformLayoutCreateInfo.bindingCount = 2;
-    dsUniformLayoutCreateInfo.pBindings = dsUniBindings;
-
-    GR_VK_CALL_ERRCHECK(fGpu->vkInterface(), CreateDescriptorSetLayout(
-                                             fGpu->device(),
-                                             &dsUniformLayoutCreateInfo,
-                                             nullptr,
-                                             &dsLayout[GrVkUniformHandler::kUniformBufferDescSet]));
+    // This layout is not owned by the PipelineStateBuilder and thus should no be destroyed
+    dsLayout[GrVkUniformHandler::kUniformBufferDescSet] = fGpu->resourceProvider().getUniDSLayout();
 
     // Create the VkPipelineLayout
     VkPipelineLayoutCreateInfo layoutCreateInfo;
@@ -280,10 +250,11 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(GrPrimitiveType primitiveT
     if (!pipeline) {
         GR_VK_CALL(fGpu->vkInterface(), DestroyPipelineLayout(fGpu->device(), pipelineLayout,
                                                               nullptr));
-        GR_VK_CALL(fGpu->vkInterface(), DestroyDescriptorSetLayout(fGpu->device(), dsLayout[0],
-                                                                   nullptr));
-        GR_VK_CALL(fGpu->vkInterface(), DestroyDescriptorSetLayout(fGpu->device(), dsLayout[1],
-                                                                   nullptr));
+        GR_VK_CALL(fGpu->vkInterface(),
+                   DestroyDescriptorSetLayout(fGpu->device(),
+                                              dsLayout[GrVkUniformHandler::kSamplerDescSet],
+                                              nullptr));
+
         this->cleanupFragmentProcessors();
         return nullptr;
     }
@@ -292,7 +263,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(GrPrimitiveType primitiveT
                                  desc,
                                  pipeline,
                                  pipelineLayout,
-                                 dsLayout,
+                                 dsLayout[GrVkUniformHandler::kSamplerDescSet],
                                  fUniformHandles,
                                  fUniformHandler.fUniforms,
                                  fUniformHandler.fCurrentVertexUBOOffset,

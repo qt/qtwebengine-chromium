@@ -9,11 +9,11 @@
 #include "xfa/fwl/core/fwl_widgetdef.h"
 #include "xfa/fxfa/app/xfa_ffdraw.h"
 #include "xfa/fxfa/app/xfa_textlayout.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #include "xfa/fxgraphics/include/cfx_graphics.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
 
 CXFA_FFText::CXFA_FFText(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFDraw(pPageView, pDataAcc) {}
@@ -136,19 +136,17 @@ FX_BOOL CXFA_FFText::OnLButtonUp(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy) {
     return FALSE;
   }
   CXFA_FFDoc* pDoc = GetDoc();
-  pDoc->GetDocProvider()->GotoURL(pDoc, CFX_WideStringC(wsURLContent), FALSE);
+  pDoc->GetDocProvider()->GotoURL(pDoc, wsURLContent, FALSE);
   return TRUE;
 }
-uint32_t CXFA_FFText::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {
+FWL_WidgetHit CXFA_FFText::OnHitTest(FX_FLOAT fx, FX_FLOAT fy) {
   CFX_RectF rtBox;
   GetRectWithoutRotate(rtBox);
-  if (!rtBox.Contains(fx, fy)) {
-    return FWL_WGTHITTEST_Unknown;
-  }
-  if (!GetLinkURLAtPoint(fx, fy)) {
-    return FWL_WGTHITTEST_Unknown;
-  }
-  return FWL_WGTHITTEST_HyperLink;
+  if (!rtBox.Contains(fx, fy))
+    return FWL_WidgetHit::Unknown;
+  if (!GetLinkURLAtPoint(fx, fy))
+    return FWL_WidgetHit::Unknown;
+  return FWL_WidgetHit::HyperLink;
 }
 const FX_WCHAR* CXFA_FFText::GetLinkURLAtPoint(FX_FLOAT fx, FX_FLOAT fy) {
   CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();

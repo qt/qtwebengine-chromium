@@ -17,9 +17,10 @@
 
 #include <windows.h>
 
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
+#include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/modules/desktop_capture/win/scoped_thread_desktop.h"
 
 namespace webrtc {
@@ -37,7 +38,7 @@ class ScreenCapturerWinGdi : public ScreenCapturer {
   // Overridden from ScreenCapturer:
   void Start(Callback* callback) override;
   void SetSharedMemoryFactory(
-      rtc::scoped_ptr<SharedMemoryFactory> shared_memory_factory) override;
+      std::unique_ptr<SharedMemoryFactory> shared_memory_factory) override;
   void Capture(const DesktopRegion& region) override;
   bool GetScreenList(ScreenList* screens) override;
   bool SelectScreen(ScreenId id) override;
@@ -71,7 +72,7 @@ class ScreenCapturerWinGdi : public ScreenCapturer {
   HDC memory_dc_;
 
   // Queue of the frames buffers.
-  ScreenCaptureFrameQueue queue_;
+  ScreenCaptureFrameQueue<SharedDesktopFrame> queue_;
 
   // Rectangle describing the bounds of the desktop device context, relative to
   // the primary display's top-left.

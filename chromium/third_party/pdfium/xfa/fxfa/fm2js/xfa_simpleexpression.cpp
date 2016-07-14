@@ -146,7 +146,7 @@ CXFA_FMStringExpression::CXFA_FMStringExpression(uint32_t line,
     : CXFA_FMSimpleExpression(line, TOKstring), m_wsString(wsString) {}
 
 void CXFA_FMStringExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
-  CFX_WideString tempStr = m_wsString;
+  CFX_WideString tempStr(m_wsString);
   if (tempStr.GetLength() > 2) {
     javascript.AppendChar(L'\"');
     FX_WCHAR oneChar;
@@ -178,7 +178,7 @@ CXFA_FMIdentifierExpressionn::CXFA_FMIdentifierExpressionn(
       m_wsIdentifier(wsIdentifier) {}
 
 void CXFA_FMIdentifierExpressionn::ToJavaScript(CFX_WideTextBuf& javascript) {
-  CFX_WideString tempStr = m_wsIdentifier;
+  CFX_WideString tempStr(m_wsIdentifier);
   if (tempStr == FX_WSTRC(L"$")) {
     tempStr = FX_WSTRC(L"this");
   } else if (tempStr == FX_WSTRC(L"!")) {
@@ -237,7 +237,7 @@ void CXFA_FMAssignExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   CFX_WideTextBuf tempExp1;
   m_pExp1->ToJavaScript(tempExp1);
   if (m_pExp1->GetOperatorToken() == TOKidentifier &&
-      tempExp1.GetWideString() != FX_WSTRC(L"this")) {
+      tempExp1.AsStringC() != FX_WSTRC(L"this")) {
     javascript << FX_WSTRC(L"else\n{\n");
     javascript << tempExp1;
     javascript << FX_WSTRC(L" = ");
@@ -267,7 +267,7 @@ void CXFA_FMAssignExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   CFX_WideTextBuf tempExp1;
   m_pExp1->ToJavaScript(tempExp1);
   if (m_pExp1->GetOperatorToken() == TOKidentifier &&
-      tempExp1.GetWideString() != FX_WSTRC(L"this")) {
+      tempExp1.AsStringC() != FX_WSTRC(L"this")) {
     javascript << FX_WSTRC(L"else\n{\n");
     javascript << RUNTIMEFUNCTIONRETURNVALUE;
     javascript << FX_WSTRC(L" = ");
@@ -332,7 +332,7 @@ void CXFA_FMEqualityExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
       javascript << gs_lpStrExpFuncName[NOTEQUALITY];
       break;
     default:
-      FXSYS_assert(FALSE);
+      ASSERT(FALSE);
       break;
   }
   javascript << FX_WSTRC(L"(");
@@ -368,7 +368,7 @@ void CXFA_FMRelationalExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
       javascript << gs_lpStrExpFuncName[GREATEREQUAL];
       break;
     default:
-      FXSYS_assert(FALSE);
+      ASSERT(FALSE);
       break;
   }
   javascript << FX_WSTRC(L"(");
@@ -394,7 +394,7 @@ void CXFA_FMAdditiveExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
       javascript << gs_lpStrExpFuncName[MINUS];
       break;
     default:
-      FXSYS_assert(FALSE);
+      ASSERT(FALSE);
       break;
   }
   javascript << FX_WSTRC(L"(");
@@ -421,7 +421,7 @@ void CXFA_FMMultiplicativeExpression::ToJavaScript(
       javascript << gs_lpStrExpFuncName[DIVIDE];
       break;
     default:
-      FXSYS_assert(FALSE);
+      ASSERT(FALSE);
       break;
   }
   javascript << FX_WSTRC(L"(");
@@ -464,27 +464,26 @@ void CXFA_FMNotExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << FX_WSTRC(L")");
 }
 
-CXFA_FMCallExpression::CXFA_FMCallExpression(uint32_t line,
-                                             CXFA_FMSimpleExpression* pExp,
-                                             CFX_PtrArray* pArguments,
-                                             FX_BOOL bIsSomMethod)
+CXFA_FMCallExpression::CXFA_FMCallExpression(
+    uint32_t line,
+    CXFA_FMSimpleExpression* pExp,
+    CFX_ArrayTemplate<CXFA_FMSimpleExpression*>* pArguments,
+    FX_BOOL bIsSomMethod)
     : CXFA_FMUnaryExpression(line, TOKcall, pExp),
       m_bIsSomMethod(bIsSomMethod),
       m_pArguments(pArguments) {}
 
 CXFA_FMCallExpression::~CXFA_FMCallExpression() {
   if (m_pArguments) {
-    for (int i = 0; i < m_pArguments->GetSize(); ++i) {
-      delete reinterpret_cast<CXFA_FMSimpleExpression*>(m_pArguments->GetAt(i));
-    }
-    m_pArguments->RemoveAll();
+    for (int i = 0; i < m_pArguments->GetSize(); ++i)
+      delete m_pArguments->GetAt(i);
+
     delete m_pArguments;
   }
 }
 
 bool CXFA_FMCallExpression::IsBuildInFunc(CFX_WideTextBuf* funcName) {
-  uint32_t uHash = FX_HashCode_String_GetW(funcName->GetBuffer(),
-                                           funcName->GetLength(), TRUE);
+  uint32_t uHash = FX_HashCode_GetW(funcName->AsStringC(), true);
   const XFA_FMBuildInFunc* pEnd = g_BuildInFuncs + FX_ArraySize(g_BuildInFuncs);
   const XFA_FMBuildInFunc* pFunc =
       std::lower_bound(g_BuildInFuncs, pEnd, uHash,
@@ -501,8 +500,7 @@ bool CXFA_FMCallExpression::IsBuildInFunc(CFX_WideTextBuf* funcName) {
 
 uint32_t CXFA_FMCallExpression::IsMethodWithObjParam(
     const CFX_WideStringC& methodName) {
-  int32_t iLength = methodName.GetLength();
-  uint32_t uHash = FX_HashCode_String_GetW(methodName.raw_str(), iLength);
+  uint32_t uHash = FX_HashCode_GetW(methodName, false);
   XFA_FMSOMMethod somMethodWithObjPara;
   uint32_t parameters = 0x00;
   int32_t iStart = 0,
@@ -530,7 +528,7 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     javascript << funcName;
     javascript << FX_WSTRC(L"(");
     if (m_pArguments) {
-      uint32_t methodPara = IsMethodWithObjParam(funcName.GetWideString());
+      uint32_t methodPara = IsMethodWithObjParam(funcName.AsStringC());
       if (methodPara > 0) {
         for (int i = 0; i < m_pArguments->GetSize(); ++i) {
           if ((methodPara & (0x01 << i)) > 0) {
@@ -539,9 +537,7 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
             javascript << gs_lpStrExpFuncName[GETFMVALUE];
           }
           javascript << FX_WSTRC(L"(");
-          CXFA_FMSimpleExpression* e =
-              reinterpret_cast<CXFA_FMSimpleExpression*>(
-                  m_pArguments->GetAt(i));
+          CXFA_FMSimpleExpression* e = m_pArguments->GetAt(i);
           e->ToJavaScript(javascript);
           javascript << FX_WSTRC(L")");
           if (i + 1 < m_pArguments->GetSize()) {
@@ -552,9 +548,7 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
         for (int i = 0; i < m_pArguments->GetSize(); ++i) {
           javascript << gs_lpStrExpFuncName[GETFMVALUE];
           javascript << FX_WSTRC(L"(");
-          CXFA_FMSimpleExpression* e =
-              reinterpret_cast<CXFA_FMSimpleExpression*>(
-                  m_pArguments->GetAt(i));
+          CXFA_FMSimpleExpression* e = m_pArguments->GetAt(i);
           e->ToJavaScript(javascript);
           javascript << FX_WSTRC(L")");
           if (i + 1 < m_pArguments->GetSize()) {
@@ -568,12 +562,12 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     bool isEvalFunc = false;
     bool isExistsFunc = false;
     if (IsBuildInFunc(&funcName)) {
-      if (funcName.GetWideString() == FX_WSTRC(L"Eval")) {
+      if (funcName.AsStringC() == FX_WSTRC(L"Eval")) {
         isEvalFunc = true;
         javascript << FX_WSTRC(L"eval.call(this, ");
         javascript << gs_lpStrExpFuncName[CALL];
         javascript << FX_WSTRC(L"Translate");
-      } else if (funcName.GetWideString() == FX_WSTRC(L"Exists")) {
+      } else if (funcName.AsStringC() == FX_WSTRC(L"Exists")) {
         isExistsFunc = true;
         javascript << gs_lpStrExpFuncName[CALL];
         javascript << funcName;
@@ -588,8 +582,7 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     if (isExistsFunc) {
       javascript << FX_WSTRC(L"\n(\nfunction ()\n{\ntry\n{\n");
       if (m_pArguments && m_pArguments->GetSize() > 0) {
-        CXFA_FMSimpleExpression* e =
-            reinterpret_cast<CXFA_FMSimpleExpression*>(m_pArguments->GetAt(0));
+        CXFA_FMSimpleExpression* e = m_pArguments->GetAt(0);
         javascript << FX_WSTRC(L"return ");
         e->ToJavaScript(javascript);
         javascript << FX_WSTRC(L";\n}\n");
@@ -600,8 +593,7 @@ void CXFA_FMCallExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
           L"catch(accessExceptions)\n{\nreturn 0;\n}\n}\n).call(this)\n");
     } else if (m_pArguments) {
       for (int i = 0; i < m_pArguments->GetSize(); ++i) {
-        CXFA_FMSimpleExpression* e =
-            reinterpret_cast<CXFA_FMSimpleExpression*>(m_pArguments->GetAt(i));
+        CXFA_FMSimpleExpression* e = m_pArguments->GetAt(i);
         e->ToJavaScript(javascript);
         if (i + 1 < m_pArguments->GetSize()) {
           javascript << FX_WSTRC(L", ");

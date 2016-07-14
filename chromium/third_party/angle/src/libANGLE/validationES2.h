@@ -183,6 +183,13 @@ bool ValidateFlushMappedBufferRangeEXT(Context *context,
                                        GLintptr offset,
                                        GLsizeiptr length);
 
+bool ValidateBindUniformLocationCHROMIUM(Context *context,
+                                         GLuint program,
+                                         GLint location,
+                                         const GLchar *name);
+
+bool ValidateCoverageModulationCHROMIUM(Context* context, GLenum components);
+
 }  // namespace gl
 
 #endif // LIBANGLE_VALIDATION_ES2_H_

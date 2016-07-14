@@ -73,11 +73,9 @@ public:
     void onGetMultisampleSpecs(GrRenderTarget* rt,
                                const GrStencilSettings&,
                                int* effectiveSampleCnt,
-                               SkAutoTDeleteArray<SkPoint>*);
+                               SkAutoTDeleteArray<SkPoint>*) override;
 
-    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) const override {
-        return false;
-    }
+    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) const override;
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
@@ -113,16 +111,18 @@ public:
 
     void finishDrawTarget() override;
 
+    void generateMipmap(GrVkTexture* tex) const;
+
 private:
     GrVkGpu(GrContext* context, const GrContextOptions& options,
             const GrVkBackendContext* backendContext);
 
     void onResetContext(uint32_t resetBits) override {}
 
-    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle,
+    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                const SkTArray<GrMipLevel>&) override;
 
-    GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle,
+    GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc, SkBudgeted,
                                          const SkTArray<GrMipLevel>&) override { return NULL; }
 
     GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership) override;
@@ -131,7 +131,8 @@ private:
                                               GrWrapOwnership) override;
     GrRenderTarget* onWrapBackendTextureAsRenderTarget(const GrBackendTextureDesc&) override { return NULL; }
 
-    GrBuffer* onCreateBuffer(size_t size, GrBufferType type, GrAccessPattern) override;
+    GrBuffer* onCreateBuffer(size_t size, GrBufferType type, GrAccessPattern,
+                             const void* data) override;
 
     void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) override;
 
@@ -191,19 +192,22 @@ private:
                            const SkIRect& srcRect,
                            const SkIPoint& dstPoint);
 
-    // helper for onCreateTexture and writeTexturePixels
-    bool uploadTexData(GrVkTexture* tex,
-                       int left, int top, int width, int height,
-                       GrPixelConfig dataConfig,
-                       const void* data,
-                       size_t rowBytes);
+    // helpers for onCreateTexture and writeTexturePixels
+    bool uploadTexDataLinear(GrVkTexture* tex,
+                             int left, int top, int width, int height,
+                             GrPixelConfig dataConfig,
+                             const void* data,
+                             size_t rowBytes);
+    bool uploadTexDataOptimal(GrVkTexture* tex,
+                              int left, int top, int width, int height,
+                              GrPixelConfig dataConfig,
+                              const SkTArray<GrMipLevel>&);
 
     SkAutoTUnref<const GrVkBackendContext> fBackendContext;
     SkAutoTUnref<GrVkCaps>                 fVkCaps;
 
     // These Vulkan objects are provided by the client, and also stored in fBackendContext.
     // They're copied here for convenient access.
-    VkInstance                             fVkInstance;
     VkDevice                               fDevice;
     VkQueue                                fQueue;    // Must be Graphics queue
 

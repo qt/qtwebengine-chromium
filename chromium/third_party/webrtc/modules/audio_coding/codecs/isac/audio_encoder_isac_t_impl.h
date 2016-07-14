@@ -80,11 +80,6 @@ AudioEncoderIsacT<T>::~AudioEncoderIsacT() {
 }
 
 template <typename T>
-size_t AudioEncoderIsacT<T>::MaxEncodedBytes() const {
-  return kSufficientEncodeBufferSizeBytes;
-}
-
-template <typename T>
 int AudioEncoderIsacT<T>::SampleRateHz() const {
   return T::EncSampRate(isac_state_);
 }
@@ -150,6 +145,7 @@ AudioEncoder::EncodedInfo AudioEncoderIsacT<T>::EncodeImpl(
   info.encoded_bytes = encoded_bytes;
   info.encoded_timestamp = packet_timestamp_;
   info.payload_type = config_.payload_type;
+  info.encoder_type = CodecType::kIsac;
   return info;
 }
 

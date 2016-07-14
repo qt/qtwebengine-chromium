@@ -11,13 +11,13 @@
 #include "SkRefCnt.h"
 #include "SkCanvas.h"
 #include "SkColor.h"
-#include "SkImageFilter.h"
 #include "SkSurfaceProps.h"
 
 class SkBitmap;
 class SkClipStack;
 class SkDraw;
 class SkDrawFilter;
+class SkImageFilterCache;
 struct SkIRect;
 class SkMatrix;
 class SkMetaData;
@@ -106,8 +106,12 @@ public:
     /**
      * Return the device's associated gpu render target, or NULL.
      */
-    virtual GrRenderTarget* accessRenderTarget() { return NULL; }
+    virtual GrRenderTarget* accessRenderTarget() { return nullptr; }
 
+    /**
+     * Don't call this!
+     */
+    virtual GrDrawContext* accessDrawContext() { return nullptr; }
 
     /**
      *  Return the device's origin: its offset in device coordinates from
@@ -280,27 +284,7 @@ protected:
     */
     virtual const SkBitmap& onAccessBitmap() = 0;
 
-    /**
-     *  Override and return true for filters that the device can handle
-     *  intrinsically. Doing so means that SkCanvas will pass-through this
-     *  filter to drawSprite and drawDevice (and potentially filterImage).
-     *  Returning false means the SkCanvas will have apply the filter itself,
-     *  and just pass the resulting image to the device.
-     */
-    virtual bool canHandleImageFilter(const SkImageFilter*) { return false; }
-
-    /**
-     *  Related (but not required) to canHandleImageFilter, this method returns
-     *  true if the device could apply the filter to the src bitmap and return
-     *  the result (and updates offset as needed).
-     *  If the device does not recognize or support this filter,
-     *  it just returns false and leaves result and offset unchanged.
-     */
-    virtual bool filterImage(const SkImageFilter*, const SkBitmap&,
-                             const SkImageFilter::Context&,
-                             SkBitmap* /*result*/, SkIPoint* /*offset*/) {
-        return false;
-    }
+    virtual GrContext* context() const { return nullptr; }
 
 protected:
     virtual sk_sp<SkSurface> makeSurface(const SkImageInfo&, const SkSurfaceProps&);
@@ -387,13 +371,15 @@ protected:
     virtual void drawSpriteWithFilter(const SkDraw&, const SkBitmap&,
                                       int x, int y, const SkPaint&);
 
+    // A helper function used by derived classes to log the scale factor of a bitmap or image draw.
+    static void LogDrawScaleFactor(const SkMatrix&, SkFilterQuality);
+
 private:
     friend class SkCanvas;
     friend struct DeviceCM; //for setMatrixClip
     friend class SkDraw;
     friend class SkDrawIter;
     friend class SkDeviceFilteredPaint;
-    friend class SkImageFilter::DeviceProxy;
     friend class SkNoPixelsBitmapDevice;
     friend class SkSurface_Raster;
 
@@ -412,7 +398,7 @@ private:
      */
     virtual void flush() {}
 
-    virtual SkImageFilter::Cache* getImageFilterCache() { return NULL; }
+    virtual SkImageFilterCache* getImageFilterCache() { return NULL; }
 
     SkIPoint    fOrigin;
     SkMetaData* fMetaData;

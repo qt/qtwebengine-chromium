@@ -4,70 +4,51 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
 
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/include/fsdk_mgr.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
 
 CPDFXFA_Page::CPDFXFA_Page(CPDFXFA_Document* pDoc, int page_index)
-    : m_pPDFPage(NULL),
-      m_pXFAPageView(NULL),
-      m_iPageIndex(page_index),
+    : m_pXFAPageView(nullptr),
       m_pDocument(pDoc),
+      m_iPageIndex(page_index),
       m_iRef(1) {}
 
 CPDFXFA_Page::~CPDFXFA_Page() {
-  if (m_pPDFPage)
-    delete m_pPDFPage;
-  m_pPDFPage = NULL;
-  m_pXFAPageView = NULL;
-}
-
-void CPDFXFA_Page::Release() {
-  m_iRef--;
-  if (m_iRef > 0)
-    return;
-
   if (m_pDocument)
     m_pDocument->RemovePage(this);
-
-  delete this;
 }
 
 FX_BOOL CPDFXFA_Page::LoadPDFPage() {
   if (!m_pDocument)
     return FALSE;
+
   CPDF_Document* pPDFDoc = m_pDocument->GetPDFDoc();
-  if (pPDFDoc) {
-    CPDF_Dictionary* pDict = pPDFDoc->GetPage(m_iPageIndex);
-    if (pDict == NULL)
-      return FALSE;
-    if (m_pPDFPage) {
-      if (m_pPDFPage->m_pFormDict == pDict)
-        return TRUE;
+  if (!pPDFDoc)
+    return FALSE;
 
-      delete m_pPDFPage;
-      m_pPDFPage = NULL;
-    }
+  CPDF_Dictionary* pDict = pPDFDoc->GetPage(m_iPageIndex);
+  if (!pDict)
+    return FALSE;
 
-    m_pPDFPage = new CPDF_Page;
-    m_pPDFPage->Load(pPDFDoc, pDict);
-    m_pPDFPage->ParseContent(nullptr);
-    return TRUE;
+  if (!m_pPDFPage || m_pPDFPage->m_pFormDict != pDict) {
+    m_pPDFPage.reset(new CPDF_Page(pPDFDoc, pDict, true));
+    m_pPDFPage->ParseContent();
   }
-
-  return FALSE;
+  return TRUE;
 }
 
 FX_BOOL CPDFXFA_Page::LoadXFAPageView() {
   if (!m_pDocument)
     return FALSE;
+
   CXFA_FFDoc* pXFADoc = m_pDocument->GetXFADoc();
   if (!pXFADoc)
     return FALSE;
@@ -80,11 +61,7 @@ FX_BOOL CPDFXFA_Page::LoadXFAPageView() {
   if (!pPageView)
     return FALSE;
 
-  if (m_pXFAPageView == pPageView)
-    return TRUE;
-
   m_pXFAPageView = pPageView;
-  (void)m_pXFAPageView->LoadPageView(nullptr);
   return TRUE;
 }
 
@@ -110,17 +87,12 @@ FX_BOOL CPDFXFA_Page::LoadPDFPage(CPDF_Dictionary* pageDict) {
   if (!m_pDocument || m_iPageIndex < 0 || !pageDict)
     return FALSE;
 
-  if (m_pPDFPage)
-    delete m_pPDFPage;
-
-  m_pPDFPage = new CPDF_Page();
-  m_pPDFPage->Load(m_pDocument->GetPDFDoc(), pageDict);
-  m_pPDFPage->ParseContent(nullptr);
-
+  m_pPDFPage.reset(new CPDF_Page(m_pDocument->GetPDFDoc(), pageDict, true));
+  m_pPDFPage->ParseContent();
   return TRUE;
 }
 
-FX_FLOAT CPDFXFA_Page::GetPageWidth() {
+FX_FLOAT CPDFXFA_Page::GetPageWidth() const {
   if (!m_pPDFPage && !m_pXFAPageView)
     return 0.0f;
 
@@ -145,7 +117,7 @@ FX_FLOAT CPDFXFA_Page::GetPageWidth() {
   return 0.0f;
 }
 
-FX_FLOAT CPDFXFA_Page::GetPageHeight() {
+FX_FLOAT CPDFXFA_Page::GetPageHeight() const {
   if (!m_pPDFPage && !m_pXFAPageView)
     return 0.0f;
 

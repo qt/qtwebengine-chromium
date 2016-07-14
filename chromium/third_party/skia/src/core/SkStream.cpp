@@ -78,12 +78,6 @@ void SkWStream::flush()
 {
 }
 
-bool SkWStream::writeText(const char text[])
-{
-    SkASSERT(text);
-    return this->write(text, strlen(text));
-}
-
 bool SkWStream::writeDecAsText(int32_t dec)
 {
     char buffer[SkStrAppendS32_MaxSize];
@@ -823,7 +817,7 @@ SkStreamAsset* SkDynamicMemoryWStream::detachAsStream() {
 
 void SkDebugWStream::newline()
 {
-#if defined(SK_DEBUG) || defined(SK_DEVELOPER)
+#if defined(SK_DEBUG)
     SkDebugf("\n");
     fBytesWritten++;
 #endif
@@ -831,7 +825,7 @@ void SkDebugWStream::newline()
 
 bool SkDebugWStream::write(const void* buffer, size_t size)
 {
-#if defined(SK_DEBUG) || defined(SK_DEVELOPER)
+#if defined(SK_DEBUG)
     char* s = new char[size+1];
     memcpy(s, buffer, size);
     s[size] = 0;

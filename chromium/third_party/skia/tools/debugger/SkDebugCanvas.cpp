@@ -9,7 +9,6 @@
 #include "SkClipStack.h"
 #include "SkDebugCanvas.h"
 #include "SkDrawCommand.h"
-#include "SkDevice.h"
 #include "SkPaintFilterCanvas.h"
 #include "SkOverdrawMode.h"
 
@@ -239,6 +238,11 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index, int m) {
         }
 
 #if SK_SUPPORT_GPU
+        // We need to flush any pending operations, or they might batch with commands below.
+        // Previous operations were not registered with the audit trail when they were
+        // created, so if we allow them to combine, the audit trail will fail to find them.
+        canvas->flush();
+
         GrAuditTrail::AutoCollectBatches* acb = nullptr;
         if (at) {
             acb = new GrAuditTrail::AutoCollectBatches(at, i);
@@ -414,12 +418,9 @@ SkTDArray <SkDrawCommand*>& SkDebugCanvas::getDrawCommands() {
 GrAuditTrail* SkDebugCanvas::getAuditTrail(SkCanvas* canvas) {
     GrAuditTrail* at = nullptr;
 #if SK_SUPPORT_GPU
-    GrRenderTarget* rt = canvas->internal_private_accessTopLayerRenderTarget();
-    if (rt) {
-        GrContext* ctx = rt->getContext();
-        if (ctx) {
-            at = ctx->getAuditTrail();
-        }
+    GrContext* ctx = canvas->getGrContext();
+    if (ctx) {
+        at = ctx->getAuditTrail();
     }
 #endif
     return at;

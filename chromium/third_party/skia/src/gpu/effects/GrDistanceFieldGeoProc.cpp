@@ -82,6 +82,8 @@ public:
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                               kUniformScale_DistanceFieldEffectMask;
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
+        bool isGammaCorrect =
+            SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
         varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
         vertBuilder->codeAppendf("%s = %s;", uv.vsOut(), dfTexEffect.inTextureCoords()->fName);
 
@@ -97,12 +99,11 @@ public:
                                  dfTexEffect.inTextureCoords()->fName);
 
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppend(GrGLSLShaderVar::PrecisionString(args.fGLSLCaps,
-                                                                 kHigh_GrSLPrecision));
+        fragBuilder->appendPrecisionModifier(kHigh_GrSLPrecision);
         fragBuilder->codeAppendf("vec2 uv = %s;\n", uv.fsIn());
 
         fragBuilder->codeAppend("\tfloat texColor = ");
-        fragBuilder->appendTextureLookup(args.fSamplers[0],
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0],
                                          "uv",
                                          kVec2f_GrSLType);
         fragBuilder->codeAppend(".r;\n");
@@ -154,7 +155,16 @@ public:
             // this gives us a smooth step across approximately one fragment
             fragBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
-        fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
+
+        // The smoothstep falloff compensates for the non-linear sRGB response curve. If we are
+        // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want distance
+        // mapped linearly to coverage, so use a linear step:
+        if (isGammaCorrect) {
+            fragBuilder->codeAppend(
+                "float val = clamp(distance + afwidth / (2.0 * afwidth), 0.0, 1.0);");
+        } else {
+            fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
+        }
 
         fragBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
@@ -335,25 +345,25 @@ public:
                                                      "TextureSize", &textureSizeUniName);
 
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppend(GrGLSLShaderVar::PrecisionString(args.fGLSLCaps,
-                                                                 kHigh_GrSLPrecision));
+        fragBuilder->appendPrecisionModifier(kHigh_GrSLPrecision);
         fragBuilder->codeAppendf("vec2 uv = %s;", v.fsIn());
 
         fragBuilder->codeAppend("float texColor = ");
-        fragBuilder->appendTextureLookup(args.fSamplers[0],
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0],
                                          "uv",
                                          kVec2f_GrSLType);
         fragBuilder->codeAppend(".r;");
         fragBuilder->codeAppend("float distance = "
             SK_DistanceFieldMultiplier "*(texColor - " SK_DistanceFieldThreshold ");");
 
-        fragBuilder->codeAppend(GrGLSLShaderVar::PrecisionString(args.fGLSLCaps,
-                                                                 kHigh_GrSLPrecision));
+        fragBuilder->appendPrecisionModifier(kHigh_GrSLPrecision);
         fragBuilder->codeAppendf("vec2 st = uv*%s;", textureSizeUniName);
         fragBuilder->codeAppend("float afwidth;");
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                                kUniformScale_DistanceFieldEffectMask;
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
+        bool isGammaCorrect =
+            SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
         if (isUniformScale) {
             // For uniform scale, we adjust for the effect of the transformation on the distance
             // by using the length of the gradient of the t coordinate in the y direction.
@@ -394,7 +404,15 @@ public:
             // this gives us a smooth step across approximately one fragment
             fragBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
-        fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
+        // The smoothstep falloff compensates for the non-linear sRGB response curve. If we are
+        // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want distance
+        // mapped linearly to coverage, so use a linear step:
+        if (isGammaCorrect) {
+            fragBuilder->codeAppend(
+                "float val = clamp(distance + afwidth / (2.0 * afwidth), 0.0, 1.0);");
+        } else {
+            fragBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
+        }
 
         fragBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
@@ -556,6 +574,8 @@ public:
         bool isUniformScale = (dfTexEffect.getFlags() & kUniformScale_DistanceFieldEffectMask) ==
                               kUniformScale_DistanceFieldEffectMask;
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
+        bool isGammaCorrect =
+            SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
         GrGLSLVertToFrag recipScale(kFloat_GrSLType);
         GrGLSLVertToFrag uv(kVec2f_GrSLType);
         varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
@@ -579,11 +599,9 @@ public:
 
         // create LCD offset adjusted by inverse of transform
         // Use highp to work around aliasing issues
-        fragBuilder->codeAppend(GrGLSLShaderVar::PrecisionString(args.fGLSLCaps,
-                                                                 kHigh_GrSLPrecision));
+        fragBuilder->appendPrecisionModifier(kHigh_GrSLPrecision);
         fragBuilder->codeAppendf("vec2 uv = %s;\n", uv.fsIn());
-        fragBuilder->codeAppend(GrGLSLShaderVar::PrecisionString(args.fGLSLCaps,
-                                                                 kHigh_GrSLPrecision));
+        fragBuilder->appendPrecisionModifier(kHigh_GrSLPrecision);
 
         SkScalar lcdDelta = 1.0f / (3.0f * atlas->width());
         if (dfTexEffect.getFlags() & kBGR_DistanceFieldEffectFlag) {
@@ -612,20 +630,20 @@ public:
 
         // green is distance to uv center
         fragBuilder->codeAppend("\tvec4 texColor = ");
-        fragBuilder->appendTextureLookup(args.fSamplers[0], "uv", kVec2f_GrSLType);
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv", kVec2f_GrSLType);
         fragBuilder->codeAppend(";\n");
         fragBuilder->codeAppend("\tvec3 distance;\n");
         fragBuilder->codeAppend("\tdistance.y = texColor.r;\n");
         // red is distance to left offset
         fragBuilder->codeAppend("\tvec2 uv_adjusted = uv - offset;\n");
         fragBuilder->codeAppend("\ttexColor = ");
-        fragBuilder->appendTextureLookup(args.fSamplers[0], "uv_adjusted", kVec2f_GrSLType);
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv_adjusted", kVec2f_GrSLType);
         fragBuilder->codeAppend(";\n");
         fragBuilder->codeAppend("\tdistance.x = texColor.r;\n");
         // blue is distance to right offset
         fragBuilder->codeAppend("\tuv_adjusted = uv + offset;\n");
         fragBuilder->codeAppend("\ttexColor = ");
-        fragBuilder->appendTextureLookup(args.fSamplers[0], "uv_adjusted", kVec2f_GrSLType);
+        fragBuilder->appendTextureLookup(args.fTexSamplers[0], "uv_adjusted", kVec2f_GrSLType);
         fragBuilder->codeAppend(";\n");
         fragBuilder->codeAppend("\tdistance.z = texColor.r;\n");
 
@@ -672,8 +690,17 @@ public:
             fragBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
 
-        fragBuilder->codeAppend(
-                      "vec4 val = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);");
+        // The smoothstep falloff compensates for the non-linear sRGB response curve. If we are
+        // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want distance
+        // mapped linearly to coverage, so use a linear step:
+        if (isGammaCorrect) {
+            fragBuilder->codeAppend("vec4 val = "
+                "vec4(clamp(distance + vec3(afwidth) / vec3(2.0 * afwidth), 0.0, 1.0), 1.0f);");
+        } else {
+            fragBuilder->codeAppend(
+                "vec4 val = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);");
+        }
+
         // set alpha to be max of rgb coverage
         fragBuilder->codeAppend("val.a = max(max(val.r, val.g), val.b);");
 

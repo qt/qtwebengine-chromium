@@ -7,6 +7,8 @@
 #ifndef XFA_FXFA_PARSER_XFA_OBJECT_H_
 #define XFA_FXFA_PARSER_XFA_OBJECT_H_
 
+#include <unordered_set>
+
 #include "xfa/fde/xml/fde_xml.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 #include "xfa/fxjse/cfxjse_arguments.h"
@@ -48,22 +50,22 @@ class CXFA_Object {
     return (XFA_OBJECTTYPE)(m_uFlags & XFA_OBJECTTYPEMASK);
   }
 
-  FX_BOOL IsNode() const {
+  bool IsNode() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) >= XFA_OBJECTTYPE_Node;
   }
-  FX_BOOL IsOrdinaryObject() const {
+  bool IsOrdinaryObject() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_OrdinaryObject;
   }
-  FX_BOOL IsNodeList() const {
+  bool IsNodeList() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_NodeList;
   }
-  FX_BOOL IsOrdinaryList() const {
+  bool IsOrdinaryList() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_OrdinaryList;
   }
-  FX_BOOL IsContentNode() const {
+  bool IsContentNode() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_ContentNode;
   }
-  FX_BOOL IsContainerNode() const {
+  bool IsContainerNode() const {
     return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_ContainerNode;
   }
 
@@ -87,6 +89,7 @@ class CXFA_Object {
   CXFA_Document* const m_pDocument;
   uint32_t m_uFlags;
 };
+using CXFA_ObjArray = CFX_ArrayTemplate<CXFA_Object*>;
 
 #define XFA_NODEFILTER_Children 0x01
 #define XFA_NODEFILTER_Properties 0x02
@@ -104,9 +107,9 @@ enum XFA_SOM_MESSAGETYPE {
   XFA_SOM_MandatoryMessage
 };
 
-typedef CFX_ArrayTemplate<CXFA_Node*> CXFA_NodeArray;
-typedef CFX_StackTemplate<CXFA_Node*> CXFA_NodeStack;
-typedef CXFA_PtrSetTemplate<CXFA_Node*> CXFA_NodeSet;
+using CXFA_NodeArray = CFX_ArrayTemplate<CXFA_Node*>;
+using CXFA_NodeStack = CFX_StackTemplate<CXFA_Node*>;
+using CXFA_NodeSet = std::unordered_set<CXFA_Node*>;
 typedef void (*PD_CALLBACK_DUPLICATEDATA)(void*& pData);
 
 struct XFA_MAPDATABLOCKCALLBACKINFO {
@@ -133,9 +136,11 @@ class CXFA_Node : public CXFA_Object {
   XFA_ELEMENT GetClassID() const { return (XFA_ELEMENT)m_eNodeClass; }
   uint32_t GetPacketID() const { return m_ePacket; }
   FX_BOOL HasFlag(uint32_t dwFlag) const;
-  void SetFlag(uint32_t dwFlag, FX_BOOL bOn = TRUE, FX_BOOL bNotify = TRUE);
+  void SetFlag(uint32_t dwFlag, bool bNotify);
+  void ClearFlag(uint32_t dwFlag);
+
   FX_BOOL IsAttributeInXML();
-  FX_BOOL IsFormContainer() {
+  bool IsFormContainer() const {
     return m_ePacket == XFA_XDPPACKET_Form && IsContainerNode();
   }
   void SetXMLMappingNode(CFDE_XMLNode* pXMLNode) { m_pXMLNode = pXMLNode; }
@@ -149,20 +154,20 @@ class CXFA_Node : public CXFA_Object {
   FX_BOOL HasAttribute(XFA_ATTRIBUTE eAttr, FX_BOOL bCanInherit = FALSE);
   FX_BOOL SetAttribute(XFA_ATTRIBUTE eAttr,
                        const CFX_WideStringC& wsValue,
-                       FX_BOOL bNotify = FALSE);
+                       bool bNotify = false);
   FX_BOOL GetAttribute(XFA_ATTRIBUTE eAttr,
                        CFX_WideString& wsValue,
                        FX_BOOL bUseDefault = TRUE);
   FX_BOOL SetAttribute(const CFX_WideStringC& wsAttr,
                        const CFX_WideStringC& wsValue,
-                       FX_BOOL bNotify = FALSE);
+                       bool bNotify = false);
   FX_BOOL GetAttribute(const CFX_WideStringC& wsAttr,
                        CFX_WideString& wsValue,
                        FX_BOOL bUseDefault = TRUE);
   FX_BOOL RemoveAttribute(const CFX_WideStringC& wsAttr);
   FX_BOOL SetContent(const CFX_WideString& wsContent,
                      const CFX_WideString& wsXMLValue,
-                     FX_BOOL bNotify = FALSE,
+                     bool bNotify = false,
                      FX_BOOL bScriptModify = FALSE,
                      FX_BOOL bSyncData = TRUE);
   FX_BOOL TryContent(CFX_WideString& wsContent,
@@ -174,7 +179,7 @@ class CXFA_Node : public CXFA_Object {
 
   FX_BOOL SetBoolean(XFA_ATTRIBUTE eAttr,
                      FX_BOOL bValue,
-                     FX_BOOL bNotify = FALSE) {
+                     bool bNotify = false) {
     return SetValue(eAttr, XFA_ATTRIBUTETYPE_Boolean, (void*)(uintptr_t)bValue,
                     bNotify);
   }
@@ -187,7 +192,7 @@ class CXFA_Node : public CXFA_Object {
   }
   FX_BOOL SetInteger(XFA_ATTRIBUTE eAttr,
                      int32_t iValue,
-                     FX_BOOL bNotify = FALSE) {
+                     bool bNotify = false) {
     return SetValue(eAttr, XFA_ATTRIBUTETYPE_Integer, (void*)(uintptr_t)iValue,
                     bNotify);
   }
@@ -200,7 +205,7 @@ class CXFA_Node : public CXFA_Object {
   }
   FX_BOOL SetEnum(XFA_ATTRIBUTE eAttr,
                   XFA_ATTRIBUTEENUM eValue,
-                  FX_BOOL bNotify = FALSE) {
+                  bool bNotify = false) {
     return SetValue(eAttr, XFA_ATTRIBUTETYPE_Enum, (void*)(uintptr_t)eValue,
                     bNotify);
   }
@@ -213,11 +218,11 @@ class CXFA_Node : public CXFA_Object {
   }
   FX_BOOL SetCData(XFA_ATTRIBUTE eAttr,
                    const CFX_WideString& wsValue,
-                   FX_BOOL bNotify = FALSE,
+                   bool bNotify = false,
                    FX_BOOL bScriptModify = FALSE);
   FX_BOOL SetAttributeValue(const CFX_WideString& wsValue,
                             const CFX_WideString& wsXMLValue,
-                            FX_BOOL bNotify = FALSE,
+                            bool bNotify = false,
                             FX_BOOL bScriptModify = FALSE);
   FX_BOOL TryCData(XFA_ATTRIBUTE eAttr,
                    CFX_WideString& wsValue,
@@ -233,7 +238,7 @@ class CXFA_Node : public CXFA_Object {
   }
   FX_BOOL SetMeasure(XFA_ATTRIBUTE eAttr,
                      CXFA_Measurement mValue,
-                     FX_BOOL bNotify = FALSE);
+                     bool bNotify = false);
   FX_BOOL TryMeasure(XFA_ATTRIBUTE eAttr,
                      CXFA_Measurement& mValue,
                      FX_BOOL bUseDefault = TRUE) const;
@@ -263,7 +268,7 @@ class CXFA_Node : public CXFA_Object {
                       FX_BOOL bOnlyChild = FALSE);
   int32_t InsertChild(int32_t index, CXFA_Node* pNode);
   FX_BOOL InsertChild(CXFA_Node* pNode, CXFA_Node* pBeforeNode = NULL);
-  FX_BOOL RemoveChild(CXFA_Node* pNode, FX_BOOL bNotify = TRUE);
+  FX_BOOL RemoveChild(CXFA_Node* pNode, bool bNotify = true);
   CXFA_Node* Clone(FX_BOOL bRecursive);
   CXFA_Node* GetNodeItem(XFA_NODEITEM eItem) const;
   CXFA_Node* GetNodeItem(XFA_NODEITEM eItem, XFA_OBJECTTYPE eType) const;
@@ -375,8 +380,7 @@ class CXFA_Node : public CXFA_Object {
   void Script_Delta_Target(FXJSE_HVALUE hValue,
                            FX_BOOL bSetting,
                            XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_SendAttributeChangeMessage(void* eAttribute,
-                                                   void* eValue,
+  void Script_Attribute_SendAttributeChangeMessage(XFA_ATTRIBUTE eAttribute,
                                                    FX_BOOL bScriptModify);
   void Script_Attribute_Integer(FXJSE_HVALUE hValue,
                                 FX_BOOL bSetting,
@@ -592,22 +596,19 @@ class CXFA_Node : public CXFA_Object {
   FX_BOOL SetValue(XFA_ATTRIBUTE eAttr,
                    XFA_ATTRIBUTETYPE eType,
                    void* pValue,
-                   FX_BOOL bNotify);
+                   bool bNotify);
   FX_BOOL GetValue(XFA_ATTRIBUTE eAttr,
                    XFA_ATTRIBUTETYPE eType,
                    FX_BOOL bUseDefault,
                    void*& pValue);
-  void OnRemoved(CXFA_Node* pParent, CXFA_Node* pRemoved, FX_BOOL bNotify);
-  void OnChanging(XFA_ATTRIBUTE eAttr, void* pNewValue, FX_BOOL bNotify);
-  void OnChanged(XFA_ATTRIBUTE eAttr,
-                 void* pNewValue,
-                 FX_BOOL bNotify,
-                 FX_BOOL bScriptModify = FALSE);
+  void OnRemoved(bool bNotify);
+  void OnChanging(XFA_ATTRIBUTE eAttr, bool bNotify);
+  void OnChanged(XFA_ATTRIBUTE eAttr, bool bNotify, FX_BOOL bScriptModify);
   int32_t execSingleEventByName(const CFX_WideStringC& wsEventName,
                                 XFA_ELEMENT eElementType);
   FX_BOOL SetScriptContent(const CFX_WideString& wsContent,
                            const CFX_WideString& wsXMLValue,
-                           FX_BOOL bNotify = TRUE,
+                           bool bNotify = true,
                            FX_BOOL bScriptModify = FALSE,
                            FX_BOOL bSyncData = TRUE);
   CFX_WideString GetScriptContent(FX_BOOL bScriptModify = FALSE);
@@ -784,21 +785,9 @@ inline const CXFA_NodeList* CXFA_Object::AsNodeList() const {
 inline CXFA_Node* ToNode(CXFA_Object* pObj) {
   return pObj ? pObj->AsNode() : nullptr;
 }
-inline CXFA_OrdinaryObject* ToOrdinaryObject(CXFA_Object* pObj) {
-  return pObj ? pObj->AsOrdinaryObject() : nullptr;
-}
-inline CXFA_NodeList* ToNodeList(CXFA_Object* pObj) {
-  return pObj ? pObj->AsNodeList() : nullptr;
-}
 
 inline const CXFA_Node* ToNode(const CXFA_Object* pObj) {
   return pObj ? pObj->AsNode() : nullptr;
-}
-inline const CXFA_OrdinaryObject* ToOrdinaryObject(const CXFA_Object* pObj) {
-  return pObj ? pObj->AsOrdinaryObject() : nullptr;
-}
-inline const CXFA_NodeList* ToNodeList(const CXFA_Object* pObj) {
-  return pObj ? pObj->AsNodeList() : nullptr;
 }
 
 #endif  // XFA_FXFA_PARSER_XFA_OBJECT_H_

@@ -66,6 +66,9 @@ static const char kTransport[] = "transport";
 // NOTE: Must be in the same order as the ServiceType enum.
 static const char* kValidIceServiceTypes[] = {"stun", "stuns", "turn", "turns"};
 
+// The length of RTCP CNAMEs.
+static const int kRtcpCnameLength = 16;
+
 // NOTE: A loop below assumes that the first value of this enum is 0 and all
 // other values are incremental.
 enum ServiceType {
@@ -373,9 +376,36 @@ void AddSendStreams(
   }
 }
 
+uint32_t ConvertIceTransportTypeToCandidateFilter(
+    PeerConnectionInterface::IceTransportsType type) {
+  switch (type) {
+    case PeerConnectionInterface::kNone:
+      return cricket::CF_NONE;
+    case PeerConnectionInterface::kRelay:
+      return cricket::CF_RELAY;
+    case PeerConnectionInterface::kNoHost:
+      return (cricket::CF_ALL & ~cricket::CF_HOST);
+    case PeerConnectionInterface::kAll:
+      return cricket::CF_ALL;
+    default:
+      ASSERT(false);
+  }
+  return cricket::CF_NONE;
+}
+
 }  // namespace
 
 namespace webrtc {
+
+// Generate a RTCP CNAME when a PeerConnection is created.
+std::string GenerateRtcpCname() {
+  std::string cname;
+  if (!rtc::CreateRandomString(kRtcpCnameLength, &cname)) {
+    LOG(LS_ERROR) << "Failed to generate CNAME.";
+    RTC_DCHECK(false);
+  }
+  return cname;
+}
 
 bool ExtractMediaSessionOptions(
     const PeerConnectionInterface::RTCOfferAnswerOptions& rtc_options,
@@ -508,6 +538,7 @@ PeerConnection::PeerConnection(PeerConnectionFactory* factory)
       ice_state_(kIceNew),
       ice_connection_state_(kIceConnectionNew),
       ice_gathering_state_(kIceGatheringNew),
+      rtcp_cname_(GenerateRtcpCname()),
       local_streams_(StreamCollection::Create()),
       remote_streams_(StreamCollection::Create()) {}
 
@@ -522,13 +553,20 @@ PeerConnection::~PeerConnection() {
   for (const auto& receiver : receivers_) {
     receiver->Stop();
   }
+  // Destroy stats_ because it depends on session_.
+  stats_.reset(nullptr);
+  // Now destroy session_ before destroying other members,
+  // because its destruction fires signals (such as VoiceChannelDestroyed)
+  // which will trigger some final actions in PeerConnection...
+  session_.reset(nullptr);
+  // port_allocator_ lives on the worker thread and should be destroyed there.
+  worker_thread()->Invoke<void>([this] { port_allocator_.reset(nullptr); });
 }
 
 bool PeerConnection::Initialize(
-    const cricket::MediaConfig& media_config,
     const PeerConnectionInterface::RTCConfiguration& configuration,
-    rtc::scoped_ptr<cricket::PortAllocator> allocator,
-    rtc::scoped_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<cricket::PortAllocator> allocator,
+    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
     PeerConnectionObserver* observer) {
   TRACE_EVENT0("webrtc", "PeerConnection::Initialize");
   RTC_DCHECK(observer != nullptr);
@@ -539,41 +577,20 @@ bool PeerConnection::Initialize(
 
   port_allocator_ = std::move(allocator);
 
-  cricket::ServerAddresses stun_servers;
-  std::vector<cricket::RelayServerConfig> turn_servers;
-  if (!ParseIceServers(configuration.servers, &stun_servers, &turn_servers)) {
+  // The port allocator lives on the worker thread and should be initialized
+  // there.
+  if (!worker_thread()->Invoke<bool>(rtc::Bind(
+          &PeerConnection::InitializePortAllocator_w, this, configuration))) {
     return false;
   }
-  port_allocator_->SetIceServers(stun_servers, turn_servers);
 
-  // To handle both internal and externally created port allocator, we will
-  // enable BUNDLE here.
-  int portallocator_flags = port_allocator_->flags();
-  portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
-                         cricket::PORTALLOCATOR_ENABLE_IPV6;
-  // If the disable-IPv6 flag was specified, we'll not override it
-  // by experiment.
-  if (configuration.disable_ipv6) {
-    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
-  } else if (webrtc::field_trial::FindFullName("WebRTC-IPv6Default") ==
-             "Disabled") {
-    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
-  }
-
-  if (configuration.tcp_candidate_policy == kTcpCandidatePolicyDisabled) {
-    portallocator_flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
-    LOG(LS_INFO) << "TCP candidates are disabled.";
-  }
-
-  port_allocator_->set_flags(portallocator_flags);
-  // No step delay is used while allocating ports.
-  port_allocator_->set_step_delay(cricket::kMinimumStepDelay);
-
-  media_controller_.reset(factory_->CreateMediaController(media_config));
+  media_controller_.reset(
+      factory_->CreateMediaController(configuration.media_config));
 
   session_.reset(
-      new WebRtcSession(media_controller_.get(), factory_->signaling_thread(),
-                        factory_->worker_thread(), port_allocator_.get()));
+      new WebRtcSession(media_controller_.get(), factory_->network_thread(),
+                        factory_->worker_thread(), factory_->signaling_thread(),
+                        port_allocator_.get()));
   stats_.reset(new StatsCollector(this));
 
   // Initialize the WebRtcSession. It creates transport channels etc.
@@ -628,7 +645,7 @@ bool PeerConnection::AddStream(MediaStreamInterface* local_stream) {
                                           &PeerConnection::OnVideoTrackAdded);
   observer->SignalVideoTrackRemoved.connect(
       this, &PeerConnection::OnVideoTrackRemoved);
-  stream_observers_.push_back(rtc::scoped_ptr<MediaStreamObserver>(observer));
+  stream_observers_.push_back(std::unique_ptr<MediaStreamObserver>(observer));
 
   for (const auto& track : local_stream->GetAudioTracks()) {
     OnAudioTrackAdded(track.get(), local_stream);
@@ -655,7 +672,7 @@ void PeerConnection::RemoveStream(MediaStreamInterface* local_stream) {
   stream_observers_.erase(
       std::remove_if(
           stream_observers_.begin(), stream_observers_.end(),
-          [local_stream](const rtc::scoped_ptr<MediaStreamObserver>& observer) {
+          [local_stream](const std::unique_ptr<MediaStreamObserver>& observer) {
             return observer->stream()->label().compare(local_stream->label()) ==
                    0;
           }),
@@ -835,7 +852,7 @@ PeerConnection::CreateDataChannel(
   TRACE_EVENT0("webrtc", "PeerConnection::CreateDataChannel");
   bool first_datachannel = !HasDataChannels();
 
-  rtc::scoped_ptr<InternalDataChannelInit> internal_config;
+  std::unique_ptr<InternalDataChannelInit> internal_config;
   if (config) {
     internal_config.reset(new InternalDataChannelInit(*config));
   }
@@ -1144,18 +1161,19 @@ void PeerConnection::SetRemoteDescription(
   signaling_thread()->Post(this, MSG_SET_SESSIONDESCRIPTION_SUCCESS, msg);
 }
 
-bool PeerConnection::SetConfiguration(const RTCConfiguration& config) {
+bool PeerConnection::SetConfiguration(const RTCConfiguration& configuration) {
   TRACE_EVENT0("webrtc", "PeerConnection::SetConfiguration");
   if (port_allocator_) {
-    cricket::ServerAddresses stun_servers;
-    std::vector<cricket::RelayServerConfig> turn_servers;
-    if (!ParseIceServers(config.servers, &stun_servers, &turn_servers)) {
+    if (!worker_thread()->Invoke<bool>(
+            rtc::Bind(&PeerConnection::ReconfigurePortAllocator_w, this,
+                      configuration))) {
       return false;
     }
-    port_allocator_->SetIceServers(stun_servers, turn_servers);
   }
-  session_->SetIceConfig(session_->ParseIceConfig(config));
-  return session_->SetIceTransports(config.type);
+
+  // TODO(deadbeef): Shouldn't have to hop to the worker thread twice...
+  session_->SetIceConfig(session_->ParseIceConfig(configuration));
+  return true;
 }
 
 bool PeerConnection::AddIceCandidate(
@@ -1503,6 +1521,8 @@ bool PeerConnection::GetOptionsForOffer(
   if (session_->data_channel_type() == cricket::DCT_SCTP && HasDataChannels()) {
     session_options->data_channel_type = cricket::DCT_SCTP;
   }
+
+  session_options->rtcp_cname = rtcp_cname_;
   return true;
 }
 
@@ -1540,6 +1560,8 @@ bool PeerConnection::GetOptionsForAnswer(
   if (!ParseConstraintsForAnswer(constraints, session_options)) {
     return false;
   }
+  session_options->rtcp_cname = rtcp_cname_;
+
   FinishOptionsForAnswer(session_options);
   return true;
 }
@@ -1552,6 +1574,8 @@ bool PeerConnection::GetOptionsForAnswer(
   if (!ExtractMediaSessionOptions(options, false, session_options)) {
     return false;
   }
+  session_options->rtcp_cname = rtcp_cname_;
+
   FinishOptionsForAnswer(session_options);
   return true;
 }
@@ -2062,6 +2086,62 @@ DataChannel* PeerConnection::FindDataChannelBySid(int sid) const {
     }
   }
   return nullptr;
+}
+
+bool PeerConnection::InitializePortAllocator_w(
+    const RTCConfiguration& configuration) {
+  cricket::ServerAddresses stun_servers;
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  if (!ParseIceServers(configuration.servers, &stun_servers, &turn_servers)) {
+    return false;
+  }
+
+  // To handle both internal and externally created port allocator, we will
+  // enable BUNDLE here.
+  int portallocator_flags = port_allocator_->flags();
+  portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
+                         cricket::PORTALLOCATOR_ENABLE_IPV6;
+  // If the disable-IPv6 flag was specified, we'll not override it
+  // by experiment.
+  if (configuration.disable_ipv6) {
+    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
+  } else if (webrtc::field_trial::FindFullName("WebRTC-IPv6Default") ==
+             "Disabled") {
+    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
+  }
+
+  if (configuration.tcp_candidate_policy == kTcpCandidatePolicyDisabled) {
+    portallocator_flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
+    LOG(LS_INFO) << "TCP candidates are disabled.";
+  }
+
+  port_allocator_->set_flags(portallocator_flags);
+  // No step delay is used while allocating ports.
+  port_allocator_->set_step_delay(cricket::kMinimumStepDelay);
+  port_allocator_->set_candidate_filter(
+      ConvertIceTransportTypeToCandidateFilter(configuration.type));
+
+  // Call this last since it may create pooled allocator sessions using the
+  // properties set above.
+  port_allocator_->SetConfiguration(stun_servers, turn_servers,
+                                    configuration.ice_candidate_pool_size);
+  return true;
+}
+
+bool PeerConnection::ReconfigurePortAllocator_w(
+    const RTCConfiguration& configuration) {
+  cricket::ServerAddresses stun_servers;
+  std::vector<cricket::RelayServerConfig> turn_servers;
+  if (!ParseIceServers(configuration.servers, &stun_servers, &turn_servers)) {
+    return false;
+  }
+  port_allocator_->set_candidate_filter(
+      ConvertIceTransportTypeToCandidateFilter(configuration.type));
+  // Call this last since it may create pooled allocator sessions using the
+  // candidate filter set above.
+  port_allocator_->SetConfiguration(stun_servers, turn_servers,
+                                    configuration.ice_candidate_pool_size);
+  return true;
 }
 
 }  // namespace webrtc

@@ -81,27 +81,26 @@ int32_t GetHeaderOffset(IFX_FileRead* pFile) {
   return -1;
 }
 
-int32_t GetDirectInteger(CPDF_Dictionary* pDict, const CFX_ByteStringC& key) {
+int32_t GetDirectInteger(CPDF_Dictionary* pDict, const CFX_ByteString& key) {
   CPDF_Number* pObj = ToNumber(pDict->GetObjectBy(key));
   return pObj ? pObj->GetInteger() : 0;
 }
 
 CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
+  if (bstr.Find('#') == -1)
+    return CFX_ByteString(bstr);
+
   int size = bstr.GetLength();
-  const FX_CHAR* pSrc = bstr.c_str();
-  if (!FXSYS_memchr(pSrc, '#', size)) {
-    return bstr;
-  }
   CFX_ByteString result;
   FX_CHAR* pDestStart = result.GetBuffer(size);
   FX_CHAR* pDest = pDestStart;
   for (int i = 0; i < size; i++) {
-    if (pSrc[i] == '#' && i < size - 2) {
+    if (bstr[i] == '#' && i < size - 2) {
       *pDest++ =
-          FXSYS_toHexDigit(pSrc[i + 1]) * 16 + FXSYS_toHexDigit(pSrc[i + 2]);
+          FXSYS_toHexDigit(bstr[i + 1]) * 16 + FXSYS_toHexDigit(bstr[i + 2]);
       i += 2;
     } else {
-      *pDest++ = pSrc[i];
+      *pDest++ = bstr[i];
     }
   }
   result.ReleaseBuffer((FX_STRSIZE)(pDest - pDestStart));
@@ -109,10 +108,9 @@ CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& bstr) {
 }
 
 CFX_ByteString PDF_NameDecode(const CFX_ByteString& orig) {
-  if (!FXSYS_memchr(orig.c_str(), '#', orig.GetLength())) {
+  if (orig.Find('#') == -1)
     return orig;
-  }
-  return PDF_NameDecode(CFX_ByteStringC(orig));
+  return PDF_NameDecode(orig.AsStringC());
 }
 
 CFX_ByteString PDF_NameEncode(const CFX_ByteString& orig) {
@@ -179,7 +177,7 @@ CFX_ByteTextBuf& operator<<(CFX_ByteTextBuf& buf, const CPDF_Object* pObj) {
     case CPDF_Object::ARRAY: {
       const CPDF_Array* p = pObj->AsArray();
       buf << "[";
-      for (uint32_t i = 0; i < p->GetCount(); i++) {
+      for (size_t i = 0; i < p->GetCount(); i++) {
         CPDF_Object* pElement = p->GetObjectAt(i);
         if (pElement->GetObjNum()) {
           buf << " " << pElement->GetObjNum() << " 0 R";

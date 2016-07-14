@@ -27,6 +27,7 @@ enum GrSLType {
     kSampler2D_GrSLType,
     kSamplerExternal_GrSLType,
     kSampler2DRect_GrSLType,
+    kSamplerBuffer_GrSLType,
     kBool_GrSLType,
     kInt_GrSLType,
     kUint_GrSLType,
@@ -76,7 +77,7 @@ static const int kGrSLPrecisionCount = kLast_GrSLPrecision + 1;
  */
 static inline int GrSLTypeVectorCount(GrSLType type) {
     SkASSERT(type >= 0 && type < static_cast<GrSLType>(kGrSLTypeCount));
-    static const int kCounts[] = { -1, 1, 2, 3, 4, -1, -1, -1, -1, -1, -1, 1, 1, 1 };
+    static const int kCounts[] = { -1, 1, 2, 3, 4, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1 };
     return kCounts[type];
 
     GR_STATIC_ASSERT(0 == kVoid_GrSLType);
@@ -90,9 +91,10 @@ static inline int GrSLTypeVectorCount(GrSLType type) {
     GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
     GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
     GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
-    GR_STATIC_ASSERT(11 == kBool_GrSLType);
-    GR_STATIC_ASSERT(12 == kInt_GrSLType);
-    GR_STATIC_ASSERT(13 == kUint_GrSLType);
+    GR_STATIC_ASSERT(11 == kSamplerBuffer_GrSLType);
+    GR_STATIC_ASSERT(12 == kBool_GrSLType);
+    GR_STATIC_ASSERT(13 == kInt_GrSLType);
+    GR_STATIC_ASSERT(14 == kUint_GrSLType);
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kCounts) == kGrSLTypeCount);
 }
 
@@ -124,10 +126,11 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
     GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
     GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
     GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
-    GR_STATIC_ASSERT(11 == kBool_GrSLType);
-    GR_STATIC_ASSERT(12 == kInt_GrSLType);
-    GR_STATIC_ASSERT(13 == kUint_GrSLType);
-    GR_STATIC_ASSERT(14 == kGrSLTypeCount);
+    GR_STATIC_ASSERT(11 == kSamplerBuffer_GrSLType);
+    GR_STATIC_ASSERT(12 == kBool_GrSLType);
+    GR_STATIC_ASSERT(13 == kInt_GrSLType);
+    GR_STATIC_ASSERT(14 == kUint_GrSLType);
+    GR_STATIC_ASSERT(15 == kGrSLTypeCount);
 }
 
 /** Is the shading language type integral (including vectors/matrices)? */
@@ -146,10 +149,11 @@ static inline bool GrSLTypeIsIntType(GrSLType type) {
     GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
     GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
     GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
-    GR_STATIC_ASSERT(11 == kBool_GrSLType);
-    GR_STATIC_ASSERT(12 == kInt_GrSLType);
-    GR_STATIC_ASSERT(13 == kUint_GrSLType);
-    GR_STATIC_ASSERT(14 == kGrSLTypeCount);
+    GR_STATIC_ASSERT(11 == kSamplerBuffer_GrSLType);
+    GR_STATIC_ASSERT(12 == kBool_GrSLType);
+    GR_STATIC_ASSERT(13 == kInt_GrSLType);
+    GR_STATIC_ASSERT(14 == kUint_GrSLType);
+    GR_STATIC_ASSERT(15 == kGrSLTypeCount);
 }
 
 /** Is the shading language type numeric (including vectors/matrices)? */
@@ -172,6 +176,7 @@ static inline size_t GrSLTypeSize(GrSLType type) {
         0,                        // kSampler2D_GrSLType
         0,                        // kSamplerExternal_GrSLType
         0,                        // kSampler2DRect_GrSLType
+        0,                        // kSamplerBuffer_GrSLType
         0,                        // kBool_GrSLType
         0,                        // kInt_GrSLType
         0,                        // kUint_GrSLType
@@ -189,19 +194,30 @@ static inline size_t GrSLTypeSize(GrSLType type) {
     GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
     GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
     GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
-    GR_STATIC_ASSERT(11 == kBool_GrSLType);
-    GR_STATIC_ASSERT(12 == kInt_GrSLType);
-    GR_STATIC_ASSERT(13 == kUint_GrSLType);
-    GR_STATIC_ASSERT(14 == kGrSLTypeCount);
+    GR_STATIC_ASSERT(11 == kSamplerBuffer_GrSLType);
+    GR_STATIC_ASSERT(12 == kBool_GrSLType);
+    GR_STATIC_ASSERT(13 == kInt_GrSLType);
+    GR_STATIC_ASSERT(14 == kUint_GrSLType);
+    GR_STATIC_ASSERT(15 == kGrSLTypeCount);
 }
 
-static inline bool GrSLTypeIsSamplerType(GrSLType type) {
+static inline bool GrSLTypeIs2DTextureType(GrSLType type) {
     SkASSERT(type >= 0 && type < static_cast<GrSLType>(kGrSLTypeCount));
     return type >= kSampler2D_GrSLType && type <= kSampler2DRect_GrSLType;
 
     GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
     GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
     GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
+}
+
+static inline bool GrSLTypeIsSamplerType(GrSLType type) {
+    SkASSERT(type >= 0 && type < static_cast<GrSLType>(kGrSLTypeCount));
+    return type >= kSampler2D_GrSLType && type <= kSamplerBuffer_GrSLType;
+
+    GR_STATIC_ASSERT(8 == kSampler2D_GrSLType);
+    GR_STATIC_ASSERT(9 == kSamplerExternal_GrSLType);
+    GR_STATIC_ASSERT(10 == kSampler2DRect_GrSLType);
+    GR_STATIC_ASSERT(11 == kSamplerBuffer_GrSLType);
 }
 
 static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
@@ -385,6 +401,8 @@ enum GrIOType {
 
 struct GrScissorState {
     GrScissorState() : fEnabled(false) {}
+    GrScissorState(const SkIRect& rect) : fEnabled(true), fRect(rect) {}
+    void setDisabled() { fEnabled = false; }
     void set(const SkIRect& rect) { fRect = rect; fEnabled = true; }
     bool operator==(const GrScissorState& other) const {
         return fEnabled == other.fEnabled &&
@@ -447,5 +465,15 @@ enum GrAccessPattern {
 #else
 #define GrCapsDebugf(caps, ...)
 #endif
+
+/**
+ * Specifies if the holder owns the backend, OpenGL or Vulkan, object.
+ */
+enum class GrBackendObjectOwnership : bool {
+    /** Holder does not destroy the backend object. */
+    kBorrowed = false,
+    /** Holder destroys the backend object. */
+    kOwned = true
+};
 
 #endif

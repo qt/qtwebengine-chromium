@@ -4,17 +4,15 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "fpdfsdk/include/fxedit/fxet_list.h"
+#include "fpdfsdk/fxedit/include/fxet_list.h"
 
 #include "core/fpdfdoc/include/cpvt_word.h"
-#include "fpdfsdk/include/fxedit/fxet_edit.h"
+#include "fpdfsdk/fxedit/include/fxet_edit.h"
 
 CFX_ListItem::CFX_ListItem()
-    : m_pEdit(NULL),
+    : m_pEdit(IFX_Edit::NewEdit()),
       m_bSelected(FALSE),
-      m_bCaret(FALSE),
       m_rcListItem(0.0f, 0.0f, 0.0f, 0.0f) {
-  m_pEdit = IFX_Edit::NewEdit();
   m_pEdit->SetAlignmentV(1);
   m_pEdit->Initialize();
 }
@@ -24,8 +22,7 @@ CFX_ListItem::~CFX_ListItem() {
 }
 
 void CFX_ListItem::SetFontMap(IPVT_FontMap* pFontMap) {
-  if (m_pEdit)
-    m_pEdit->SetFontMap(pFontMap);
+  m_pEdit->SetFontMap(pFontMap);
 }
 
 IFX_Edit* CFX_ListItem::GetEdit() const {
@@ -33,10 +30,7 @@ IFX_Edit* CFX_ListItem::GetEdit() const {
 }
 
 IFX_Edit_Iterator* CFX_ListItem::GetIterator() const {
-  if (m_pEdit)
-    return m_pEdit->GetIterator();
-
-  return NULL;
+  return m_pEdit->GetIterator();
 }
 
 void CFX_ListItem::SetRect(const CLST_Rect& rect) {
@@ -55,47 +49,28 @@ void CFX_ListItem::SetSelect(FX_BOOL bSelected) {
   m_bSelected = bSelected;
 }
 
-FX_BOOL CFX_ListItem::IsCaret() const {
-  return m_bCaret;
-}
-
-void CFX_ListItem::SetCaret(FX_BOOL bCaret) {
-  m_bCaret = bCaret;
-}
-
 void CFX_ListItem::SetText(const FX_WCHAR* text) {
-  if (m_pEdit)
-    m_pEdit->SetText(text);
+  m_pEdit->SetText(text);
 }
 
 void CFX_ListItem::SetFontSize(FX_FLOAT fFontSize) {
-  if (m_pEdit)
-    m_pEdit->SetFontSize(fFontSize);
+  m_pEdit->SetFontSize(fFontSize);
 }
 
 FX_FLOAT CFX_ListItem::GetItemHeight() const {
-  if (m_pEdit)
-    return m_pEdit->GetContentRect().Height();
-
-  return 0.0f;
+  return m_pEdit->GetContentRect().Height();
 }
 
 uint16_t CFX_ListItem::GetFirstChar() const {
   CPVT_Word word;
-
-  if (IFX_Edit_Iterator* pIterator = GetIterator()) {
-    pIterator->SetAt(1);
-    pIterator->GetWord(word);
-  }
-
+  IFX_Edit_Iterator* pIterator = GetIterator();
+  pIterator->SetAt(1);
+  pIterator->GetWord(word);
   return word.Word;
 }
 
 CFX_WideString CFX_ListItem::GetText() const {
-  if (m_pEdit)
-    return m_pEdit->GetText();
-
-  return L"";
+  return m_pEdit->GetText();
 }
 
 CFX_List::CFX_List()
@@ -257,29 +232,21 @@ CFX_FloatRect CFX_List::GetItemRect(int32_t nIndex) const {
     CFX_FloatRect rcItem = pListItem->GetRect();
     rcItem.left = 0.0f;
     rcItem.right = GetPlateRect().Width();
-    return InnerToOuter(rcItem);
+    return InnerToOuter(CLST_Rect(rcItem));
   }
 
   return CFX_FloatRect();
 }
 
 FX_BOOL CFX_List::IsItemSelected(int32_t nIndex) const {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex)) {
+  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nIndex))
     return pListItem->IsSelected();
-  }
-
   return FALSE;
 }
 
 void CFX_List::SetItemSelect(int32_t nItemIndex, FX_BOOL bSelected) {
   if (CFX_ListItem* pListItem = m_aListItems.GetAt(nItemIndex)) {
     pListItem->SetSelect(bSelected);
-  }
-}
-
-void CFX_List::SetItemCaret(int32_t nItemIndex, FX_BOOL bCaret) {
-  if (CFX_ListItem* pListItem = m_aListItems.GetAt(nItemIndex)) {
-    pListItem->SetCaret(bCaret);
   }
 }
 
@@ -639,10 +606,6 @@ void CFX_ListCtrl::SetCaret(int32_t nItemIndex) {
 
     if (nOldIndex != nItemIndex) {
       m_nCaretIndex = nItemIndex;
-
-      SetItemCaret(nOldIndex, FALSE);
-      SetItemCaret(nItemIndex, TRUE);
-
       InvalidateItem(nOldIndex);
       InvalidateItem(nItemIndex);
     }

@@ -51,9 +51,9 @@ TEST(TestVideoFrame, SizeAllocation) {
   VideoFrame frame;
   frame. CreateEmptyFrame(10, 10, 12, 14, 220);
   int height = frame.height();
-  int stride_y = frame.stride(kYPlane);
-  int stride_u = frame.stride(kUPlane);
-  int stride_v = frame.stride(kVPlane);
+  int stride_y = frame.video_frame_buffer()->StrideY();
+  int stride_u = frame.video_frame_buffer()->StrideU();
+  int stride_v = frame.video_frame_buffer()->StrideV();
   // Verify that allocated size was computed correctly.
   EXPECT_EQ(ExpectedSize(stride_y, height, kYPlane),
             frame.allocated_size(kYPlane));
@@ -101,9 +101,12 @@ TEST(TestVideoFrame, CopyFrame) {
   // Frame of larger dimensions.
   small_frame.CreateEmptyFrame(width, height,
                                stride_y, stride_u, stride_v);
-  memset(small_frame.buffer(kYPlane), 1, small_frame.allocated_size(kYPlane));
-  memset(small_frame.buffer(kUPlane), 2, small_frame.allocated_size(kUPlane));
-  memset(small_frame.buffer(kVPlane), 3, small_frame.allocated_size(kVPlane));
+  memset(small_frame.video_frame_buffer()->MutableDataY(), 1,
+         small_frame.allocated_size(kYPlane));
+  memset(small_frame.video_frame_buffer()->MutableDataU(), 2,
+         small_frame.allocated_size(kUPlane));
+  memset(small_frame.video_frame_buffer()->MutableDataV(), 3,
+         small_frame.allocated_size(kVPlane));
   big_frame.CopyFrame(small_frame);
   EXPECT_TRUE(test::FramesEqual(small_frame, big_frame));
 }
@@ -141,12 +144,12 @@ TEST(TestVideoFrame, ShallowCopy) {
   const VideoFrame* const_frame1_ptr = &frame1;
   const VideoFrame* const_frame2_ptr = &frame2;
 
-  EXPECT_TRUE(const_frame1_ptr->buffer(kYPlane) ==
-              const_frame2_ptr->buffer(kYPlane));
-  EXPECT_TRUE(const_frame1_ptr->buffer(kUPlane) ==
-              const_frame2_ptr->buffer(kUPlane));
-  EXPECT_TRUE(const_frame1_ptr->buffer(kVPlane) ==
-              const_frame2_ptr->buffer(kVPlane));
+  EXPECT_TRUE(const_frame1_ptr->video_frame_buffer()->DataY() ==
+              const_frame2_ptr->video_frame_buffer()->DataY());
+  EXPECT_TRUE(const_frame1_ptr->video_frame_buffer()->DataU() ==
+              const_frame2_ptr->video_frame_buffer()->DataU());
+  EXPECT_TRUE(const_frame1_ptr->video_frame_buffer()->DataV() ==
+              const_frame2_ptr->video_frame_buffer()->DataV());
 
   EXPECT_EQ(frame2.timestamp(), frame1.timestamp());
   EXPECT_EQ(frame2.ntp_time_ms(), frame1.ntp_time_ms());
@@ -162,21 +165,6 @@ TEST(TestVideoFrame, ShallowCopy) {
   EXPECT_NE(frame2.ntp_time_ms(), frame1.ntp_time_ms());
   EXPECT_NE(frame2.render_time_ms(), frame1.render_time_ms());
   EXPECT_NE(frame2.rotation(), frame1.rotation());
-}
-
-TEST(TestVideoFrame, Reset) {
-  VideoFrame frame;
-  frame.CreateEmptyFrame(5, 5, 5, 5, 5);
-  frame.set_ntp_time_ms(1);
-  frame.set_timestamp(2);
-  frame.set_render_time_ms(3);
-  ASSERT_TRUE(frame.video_frame_buffer() != NULL);
-
-  frame.Reset();
-  EXPECT_EQ(0u, frame.ntp_time_ms());
-  EXPECT_EQ(0u, frame.render_time_ms());
-  EXPECT_EQ(0u, frame.timestamp());
-  EXPECT_TRUE(frame.video_frame_buffer() == NULL);
 }
 
 TEST(TestVideoFrame, CopyBuffer) {
@@ -199,12 +187,12 @@ TEST(TestVideoFrame, CopyBuffer) {
                      width, height, stride_y, stride_uv, stride_uv,
                      kVideoRotation_0);
   // Expect exactly the same pixel data.
-  EXPECT_TRUE(
-      test::EqualPlane(buffer_y, frame2.buffer(kYPlane), stride_y, 15, 15));
-  EXPECT_TRUE(
-      test::EqualPlane(buffer_u, frame2.buffer(kUPlane), stride_uv, 8, 8));
-  EXPECT_TRUE(
-      test::EqualPlane(buffer_v, frame2.buffer(kVPlane), stride_uv, 8, 8));
+  EXPECT_TRUE(test::EqualPlane(buffer_y, frame2.video_frame_buffer()->DataY(),
+                               stride_y, 15, 15));
+  EXPECT_TRUE(test::EqualPlane(buffer_u, frame2.video_frame_buffer()->DataU(),
+                               stride_uv, 8, 8));
+  EXPECT_TRUE(test::EqualPlane(buffer_v, frame2.video_frame_buffer()->DataV(),
+                               stride_uv, 8, 8));
 
   // Compare size.
   EXPECT_LE(kSizeY, frame2.allocated_size(kYPlane));
@@ -215,27 +203,27 @@ TEST(TestVideoFrame, CopyBuffer) {
 TEST(TestVideoFrame, ReuseAllocation) {
   VideoFrame frame;
   frame.CreateEmptyFrame(640, 320, 640, 320, 320);
-  const uint8_t* y = frame.buffer(kYPlane);
-  const uint8_t* u = frame.buffer(kUPlane);
-  const uint8_t* v = frame.buffer(kVPlane);
+  const uint8_t* y = frame.video_frame_buffer()->DataY();
+  const uint8_t* u = frame.video_frame_buffer()->DataU();
+  const uint8_t* v = frame.video_frame_buffer()->DataV();
   frame.CreateEmptyFrame(640, 320, 640, 320, 320);
-  EXPECT_EQ(y, frame.buffer(kYPlane));
-  EXPECT_EQ(u, frame.buffer(kUPlane));
-  EXPECT_EQ(v, frame.buffer(kVPlane));
+  EXPECT_EQ(y, frame.video_frame_buffer()->DataY());
+  EXPECT_EQ(u, frame.video_frame_buffer()->DataU());
+  EXPECT_EQ(v, frame.video_frame_buffer()->DataV());
 }
 
 TEST(TestVideoFrame, FailToReuseAllocation) {
   VideoFrame frame1;
   frame1.CreateEmptyFrame(640, 320, 640, 320, 320);
-  const uint8_t* y = frame1.buffer(kYPlane);
-  const uint8_t* u = frame1.buffer(kUPlane);
-  const uint8_t* v = frame1.buffer(kVPlane);
+  const uint8_t* y = frame1.video_frame_buffer()->DataY();
+  const uint8_t* u = frame1.video_frame_buffer()->DataU();
+  const uint8_t* v = frame1.video_frame_buffer()->DataV();
   // Make a shallow copy of |frame1|.
   VideoFrame frame2(frame1.video_frame_buffer(), 0, 0, kVideoRotation_0);
   frame1.CreateEmptyFrame(640, 320, 640, 320, 320);
-  EXPECT_NE(y, frame1.buffer(kYPlane));
-  EXPECT_NE(u, frame1.buffer(kUPlane));
-  EXPECT_NE(v, frame1.buffer(kVPlane));
+  EXPECT_NE(y, frame1.video_frame_buffer()->DataY());
+  EXPECT_NE(u, frame1.video_frame_buffer()->DataU());
+  EXPECT_NE(v, frame1.video_frame_buffer()->DataV());
 }
 
 TEST(TestVideoFrame, TextureInitialValues) {
@@ -246,7 +234,8 @@ TEST(TestVideoFrame, TextureInitialValues) {
   EXPECT_EQ(480, frame.height());
   EXPECT_EQ(100u, frame.timestamp());
   EXPECT_EQ(10, frame.render_time_ms());
-  EXPECT_EQ(handle, frame.native_handle());
+  ASSERT_TRUE(frame.video_frame_buffer() != nullptr);
+  EXPECT_EQ(handle, frame.video_frame_buffer()->native_handle());
 
   frame.set_timestamp(200);
   EXPECT_EQ(200u, frame.timestamp());
@@ -257,9 +246,9 @@ TEST(TestVideoFrame, TextureInitialValues) {
 TEST(TestI420FrameBuffer, Copy) {
   rtc::scoped_refptr<I420Buffer> buf1(
       new rtc::RefCountedObject<I420Buffer>(20, 10));
-  memset(buf1->MutableData(kYPlane), 1, 200);
-  memset(buf1->MutableData(kUPlane), 2, 50);
-  memset(buf1->MutableData(kVPlane), 3, 50);
+  memset(buf1->MutableDataY(), 1, 200);
+  memset(buf1->MutableDataU(), 2, 50);
+  memset(buf1->MutableDataV(), 3, 50);
   rtc::scoped_refptr<I420Buffer> buf2 = I420Buffer::Copy(buf1);
   EXPECT_TRUE(test::FrameBufsEqual(buf1, buf2));
 }

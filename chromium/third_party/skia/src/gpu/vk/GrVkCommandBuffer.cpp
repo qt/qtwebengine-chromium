@@ -141,6 +141,7 @@ void GrVkCommandBuffer::submitToQueue(const GrVkGpu* gpu, VkQueue queue, GrVkGpu
     submitInfo.pNext = nullptr;
     submitInfo.waitSemaphoreCount = 0;
     submitInfo.pWaitSemaphores = nullptr;
+    submitInfo.pWaitDstStageMask = 0;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &fCmdBuffer;
     submitInfo.signalSemaphoreCount = 0;
@@ -195,6 +196,11 @@ void GrVkCommandBuffer::pipelineBarrier(const GrVkGpu* gpu,
                                         BarrierType barrierType,
                                         void* barrier) const {
     SkASSERT(fIsActive);
+    // For images we can have barriers inside of render passes but they require us to add more
+    // support in subpasses which need self dependencies to have barriers inside them. Also, we can
+    // never have buffer barriers inside of a render pass. For now we will just assert that we are
+    // not in a render pass.
+    SkASSERT(!fActiveRenderPass);
     VkDependencyFlags dependencyFlags = byRegion ? VK_DEPENDENCY_BY_REGION_BIT : 0;
 
     switch (barrierType) {
@@ -245,30 +251,32 @@ void GrVkCommandBuffer::copyImage(const GrVkGpu* gpu,
     this->addResource(srcImage->resource());
     this->addResource(dstImage->resource());
     GR_VK_CALL(gpu->vkInterface(), CmdCopyImage(fCmdBuffer,
-                                                srcImage->textureImage(),
+                                                srcImage->image(),
                                                 srcLayout,
-                                                dstImage->textureImage(),
+                                                dstImage->image(),
                                                 dstLayout,
                                                 copyRegionCount,
                                                 copyRegions));
 }
 
 void GrVkCommandBuffer::blitImage(const GrVkGpu* gpu,
-                                  GrVkImage* srcImage,
+                                  const GrVkResource* srcResource,
+                                  VkImage srcImage,
                                   VkImageLayout srcLayout,
-                                  GrVkImage* dstImage,
+                                  const GrVkResource* dstResource,
+                                  VkImage dstImage,
                                   VkImageLayout dstLayout,
                                   uint32_t blitRegionCount,
                                   const VkImageBlit* blitRegions,
                                   VkFilter filter) {
     SkASSERT(fIsActive);
     SkASSERT(!fActiveRenderPass);
-    this->addResource(srcImage->resource());
-    this->addResource(dstImage->resource());
+    this->addResource(srcResource);
+    this->addResource(dstResource);
     GR_VK_CALL(gpu->vkInterface(), CmdBlitImage(fCmdBuffer,
-                                                srcImage->textureImage(),
+                                                srcImage,
                                                 srcLayout,
-                                                dstImage->textureImage(),
+                                                dstImage,
                                                 dstLayout,
                                                 blitRegionCount,
                                                 blitRegions,
@@ -286,7 +294,7 @@ void GrVkCommandBuffer::copyImageToBuffer(const GrVkGpu* gpu,
     this->addResource(srcImage->resource());
     this->addResource(dstBuffer->resource());
     GR_VK_CALL(gpu->vkInterface(), CmdCopyImageToBuffer(fCmdBuffer,
-                                                        srcImage->textureImage(),
+                                                        srcImage->image(),
                                                         srcLayout,
                                                         dstBuffer->buffer(),
                                                         copyRegionCount,
@@ -305,7 +313,7 @@ void GrVkCommandBuffer::copyBufferToImage(const GrVkGpu* gpu,
     this->addResource(dstImage->resource());
     GR_VK_CALL(gpu->vkInterface(), CmdCopyBufferToImage(fCmdBuffer,
                                                         srcBuffer->buffer(),
-                                                        dstImage->textureImage(),
+                                                        dstImage->image(),
                                                         dstLayout,
                                                         copyRegionCount,
                                                         copyRegions));
@@ -320,7 +328,7 @@ void GrVkCommandBuffer::clearColorImage(const GrVkGpu* gpu,
     SkASSERT(!fActiveRenderPass);
     this->addResource(image->resource());
     GR_VK_CALL(gpu->vkInterface(), CmdClearColorImage(fCmdBuffer,
-                                                      image->textureImage(),
+                                                      image->image(),
                                                       image->currentLayout(),
                                                       color,
                                                       subRangeCount,
@@ -336,7 +344,7 @@ void GrVkCommandBuffer::clearDepthStencilImage(const GrVkGpu* gpu,
     SkASSERT(!fActiveRenderPass);
     this->addResource(image->resource());
     GR_VK_CALL(gpu->vkInterface(), CmdClearDepthStencilImage(fCmdBuffer,
-                                                             image->textureImage(),
+                                                             image->image(),
                                                              image->currentLayout(),
                                                              color,
                                                              subRangeCount,
@@ -390,7 +398,6 @@ void GrVkCommandBuffer::bindDescriptorSets(const GrVkGpu* gpu,
 
 void GrVkCommandBuffer::bindPipeline(const GrVkGpu* gpu, const GrVkPipeline* pipeline) {
     SkASSERT(fIsActive);
-    SkASSERT(fActiveRenderPass);
     GR_VK_CALL(gpu->vkInterface(), CmdBindPipeline(fCmdBuffer,
                                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                    pipeline->pipeline()));

@@ -11,6 +11,14 @@
 #include "xfa/fxjse/util_inline.h"
 #include "xfa/fxjse/value.h"
 
+namespace {
+
+CFXJSE_Context* CFXContextFromHContext(FXJSE_HCONTEXT hContext) {
+  return reinterpret_cast<CFXJSE_Context*>(hContext);
+}
+
+}  // namespace
+
 FXJSE_HCONTEXT FXJSE_Context_Create(FXJSE_HRUNTIME hRuntime,
                                     const FXJSE_CLASS* lpGlobalClass,
                                     void* lpGlobalObject) {
@@ -20,27 +28,18 @@ FXJSE_HCONTEXT FXJSE_Context_Create(FXJSE_HRUNTIME hRuntime,
 }
 
 void FXJSE_Context_Release(FXJSE_HCONTEXT hContext) {
-  CFXJSE_Context* pContext = reinterpret_cast<CFXJSE_Context*>(hContext);
-  if (pContext) {
-    delete pContext;
-  }
+  delete CFXContextFromHContext(hContext);
 }
 
 FXJSE_HVALUE FXJSE_Context_GetGlobalObject(FXJSE_HCONTEXT hContext) {
-  CFXJSE_Context* pContext = reinterpret_cast<CFXJSE_Context*>(hContext);
-  if (!pContext) {
-    return NULL;
-  }
+  CFXJSE_Context* pContext = CFXContextFromHContext(hContext);
+  if (!pContext)
+    return nullptr;
+
   CFXJSE_Value* lpValue = CFXJSE_Value::Create(pContext->GetRuntime());
   ASSERT(lpValue);
   pContext->GetGlobalObject(lpValue);
   return reinterpret_cast<FXJSE_HVALUE>(lpValue);
-}
-
-FXJSE_HRUNTIME FXJSE_Context_GetRuntime(FXJSE_HCONTEXT hContext) {
-  CFXJSE_Context* pContext = reinterpret_cast<CFXJSE_Context*>(hContext);
-  return pContext ? reinterpret_cast<FXJSE_HRUNTIME>(pContext->GetRuntime())
-                  : NULL;
 }
 
 static const FX_CHAR* szCompatibleModeScripts[] = {
@@ -82,8 +81,7 @@ FX_BOOL FXJSE_ExecuteScript(FXJSE_HCONTEXT hContext,
                             const FX_CHAR* szScript,
                             FXJSE_HVALUE hRetValue,
                             FXJSE_HVALUE hNewThisObject) {
-  CFXJSE_Context* pContext = reinterpret_cast<CFXJSE_Context*>(hContext);
-  ASSERT(pContext);
+  CFXJSE_Context* pContext = CFXContextFromHContext(hContext);
   return pContext->ExecuteScript(
       szScript, reinterpret_cast<CFXJSE_Value*>(hRetValue),
       reinterpret_cast<CFXJSE_Value*>(hNewThisObject));
@@ -127,52 +125,6 @@ v8::Local<v8::Object> FXJSE_CreateReturnValue(v8::Isolate* pIsolate,
   return hReturnValue;
 }
 
-FX_BOOL FXJSE_ReturnValue_GetMessage(FXJSE_HVALUE hRetValue,
-                                     CFX_ByteString& utf8Name,
-                                     CFX_ByteString& utf8Message) {
-  CFXJSE_Value* lpValue = reinterpret_cast<CFXJSE_Value*>(hRetValue);
-  if (!lpValue) {
-    return FALSE;
-  }
-  v8::Isolate* pIsolate = lpValue->GetIsolate();
-  CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
-  v8::Local<v8::Value> hValue =
-      v8::Local<v8::Value>::New(pIsolate, lpValue->DirectGetValue());
-  if (!hValue->IsObject()) {
-    return FALSE;
-  }
-  v8::String::Utf8Value hStringVal0(
-      hValue.As<v8::Object>()->Get(0)->ToString());
-  utf8Name = *hStringVal0;
-  v8::String::Utf8Value hStringVal1(
-      hValue.As<v8::Object>()->Get(1)->ToString());
-  utf8Message = *hStringVal1;
-  return TRUE;
-}
-
-FX_BOOL FXJSE_ReturnValue_GetLineInfo(FXJSE_HVALUE hRetValue,
-                                      int32_t& nLine,
-                                      int32_t& nCol) {
-  CFXJSE_Value* lpValue = reinterpret_cast<CFXJSE_Value*>(hRetValue);
-  if (!lpValue) {
-    return FALSE;
-  }
-  v8::Isolate* pIsolate = lpValue->GetIsolate();
-  CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
-  v8::Local<v8::Value> hValue =
-      v8::Local<v8::Value>::New(pIsolate, lpValue->DirectGetValue());
-  if (!hValue->IsObject()) {
-    return FALSE;
-  }
-  v8::MaybeLocal<v8::Int32> maybe_int =
-      hValue.As<v8::Object>()->Get(3)->ToInt32(pIsolate->GetCurrentContext());
-  nLine = maybe_int.FromMaybe(v8::Local<v8::Int32>())->Value();
-  maybe_int =
-      hValue.As<v8::Object>()->Get(5)->ToInt32(pIsolate->GetCurrentContext());
-  nCol = maybe_int.FromMaybe(v8::Local<v8::Int32>())->Value();
-  return TRUE;
-}
-
 CFXJSE_Context* CFXJSE_Context::Create(v8::Isolate* pIsolate,
                                        const FXJSE_CLASS* lpGlobalClass,
                                        void* lpGlobalObject) {
@@ -204,12 +156,8 @@ CFXJSE_Context* CFXJSE_Context::Create(v8::Isolate* pIsolate,
 }
 
 CFXJSE_Context::~CFXJSE_Context() {
-  for (int32_t i = 0, count = m_rgClasses.GetSize(); i < count; i++) {
-    CFXJSE_Class* pClass = m_rgClasses[i];
-    if (pClass) {
-      delete pClass;
-    }
-  }
+  for (int32_t i = 0, count = m_rgClasses.GetSize(); i < count; i++)
+    delete m_rgClasses[i];
   m_rgClasses.RemoveAll();
 }
 

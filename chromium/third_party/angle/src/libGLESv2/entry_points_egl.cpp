@@ -1460,6 +1460,9 @@ __eglMustCastToProperFunctionPointerType EGLAPIENTRY GetProcAddress(const char *
         INSERT_PROC_ADDRESS(gl, GetObjectPtrLabelKHR);
         INSERT_PROC_ADDRESS(gl, GetPointervKHR);
 
+        // GL_CHROMIUM_bind_uniform_location
+        INSERT_PROC_ADDRESS(gl, BindUniformLocationCHROMIUM);
+
         // GLES3 core
         INSERT_PROC_ADDRESS(gl, ReadBuffer);
         INSERT_PROC_ADDRESS(gl, DrawRangeElements);
@@ -1657,6 +1660,10 @@ __eglMustCastToProperFunctionPointerType EGLAPIENTRY GetProcAddress(const char *
 
         // EGL_NV_stream_consumer_gltexture_yuv
         INSERT_PROC_ADDRESS(egl, StreamConsumerGLTextureExternalAttribsNV);
+
+        // EGL_ANGLE_stream_producer_d3d_texture_nv12
+        INSERT_PROC_ADDRESS(egl, CreateStreamProducerD3DTextureNV12ANGLE);
+        INSERT_PROC_ADDRESS(egl, StreamPostD3DTextureNV12ANGLE);
 
 #undef INSERT_PROC_ADDRESS
         return map;

@@ -640,6 +640,7 @@ FunctionsGL::FunctionsGL()
       vertexAttribIFormat(nullptr),
       vertexAttribLFormat(nullptr),
       vertexBindingDivisor(nullptr),
+      coverageModulationNV(nullptr),
 
       bindBuffersBase(nullptr),
       bindBuffersRange(nullptr),
@@ -823,6 +824,9 @@ void FunctionsGL::initializeProcsDesktopGL()
     // Even though extensions are written against specific versions of GL, many drivers expose the extensions
     // in even older versions.  Always try loading the extensions regardless of GL version.
 
+    // GL_NV_framebuffer_mixed_samples
+    AssignGLExtensionEntryPoint(extensions, "GL_NV_framebuffer_mixed_samples", loadProcAddress("glCoverageModulationNV"), &coverageModulationNV);
+
     // GL_NV_fence
     AssignGLExtensionEntryPoint(extensions, "GL_NV_fence", loadProcAddress("glDeleteFencesNV"), &deleteFencesNV);
     AssignGLExtensionEntryPoint(extensions, "GL_NV_fence", loadProcAddress("glGenFencesNV"), &genFencesNV);
@@ -960,6 +964,11 @@ void FunctionsGL::initializeProcsDesktopGL()
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_transform_feedback3", loadProcAddress("glBeginQueryIndexed"), &beginQueryIndexed);
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_transform_feedback3", loadProcAddress("glEndQueryIndexed"), &endQueryIndexed);
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_transform_feedback3", loadProcAddress("glGetQueryIndexediv"), &getQueryIndexediv);
+
+    // GL_ARB_get_program_binary
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_get_program_binary", loadProcAddress("glGetProgramBinary"), &getProgramBinary);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_get_program_binary", loadProcAddress("glProgramBinary"), &programBinary);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_get_program_binary", loadProcAddress("glProgramParameteri"), &programParameteri);
 
     // 1.0
     if (isAtLeastGL(gl::Version(1, 0)))
@@ -1719,6 +1728,9 @@ void FunctionsGL::initializeProcsGLES()
     AssignGLExtensionEntryPoint(extensions, "GL_OES_texture_3D", loadProcAddress("glTexSubImage3DOES"), &texSubImage3D);
     AssignGLExtensionEntryPoint(extensions, "GL_OES_texture_3D", loadProcAddress("glCopyTexSubImage3DOES"), &copyTexSubImage3D);
 
+    // GL_NV_framebuffer_mixed_samples
+    AssignGLExtensionEntryPoint(extensions, "GL_NV_framebuffer_mixed_samples", loadProcAddress("glCoverageModulationNV"), &coverageModulationNV);
+
     // GL_NV_fence
     AssignGLExtensionEntryPoint(extensions, "GL_NV_fence", loadProcAddress("glDeleteFencesNV"), &deleteFencesNV);
     AssignGLExtensionEntryPoint(extensions, "GL_NV_fence", loadProcAddress("glGenFencesNV"), &genFencesNV);
@@ -1790,6 +1802,10 @@ void FunctionsGL::initializeProcsGLES()
     // GL_OES_EGL_image
     AssignGLExtensionEntryPoint(extensions, "GL_OES_EGL_image", loadProcAddress("glEGLImageTargetRenderbufferStorageOES"), &eglImageTargetRenderbufferStorageOES);
     AssignGLExtensionEntryPoint(extensions, "GL_OES_EGL_image", loadProcAddress("glEGLImageTargetTexture2DOES"), &eglImageTargetTexture2DOES);
+
+    // GL_OES_get_program_binary
+    AssignGLExtensionEntryPoint(extensions, "GL_OES_get_program_binary", loadProcAddress("glGetProgramBinaryOES"), &getProgramBinary);
+    AssignGLExtensionEntryPoint(extensions, "GL_OES_get_program_binary", loadProcAddress("glProgramBinaryOES"), &programBinary);
 
     // 2.0
     if (isAtLeastGLES(gl::Version(2, 0)))

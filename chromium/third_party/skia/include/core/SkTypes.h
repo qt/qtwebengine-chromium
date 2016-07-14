@@ -148,8 +148,9 @@ inline void operator delete(void* p) {
     #define SkDECLAREPARAM(type, var)
     #define SkPARAM(var)
 
-    // unlike SkASSERT, this guy executes its condition in the non-debug build
-    #define SkAssertResult(cond)        cond
+    // unlike SkASSERT, this guy executes its condition in the non-debug build.
+    // The if is present so that this can be used with functions marked SK_WARN_UNUSED_RESULT.
+    #define SkAssertResult(cond)         if (cond) {} do {} while(false)
 #endif
 
 // Legacy macro names for SK_ABORT
@@ -160,12 +161,6 @@ inline void operator delete(void* p) {
 // So we use the comma operator to make an SkDebugf that always returns false: we'll evaluate cond,
 // and if it's true the assert passes; if it's false, we'll print the message and the assert fails.
 #define SkASSERTF(cond, fmt, ...)       SkASSERT((cond) || (SkDebugf(fmt"\n", __VA_ARGS__), false))
-
-#ifdef SK_DEVELOPER
-    #define SkDEVCODE(code)             code
-#else
-    #define SkDEVCODE(code)
-#endif
 
 #ifdef SK_IGNORE_TO_STRING
     #define SK_TO_STRING_NONVIRT()
@@ -446,6 +441,15 @@ template <typename T> static inline const T& SkTPin(const T& value, const T& min
 enum class SkBudgeted : bool {
     kNo  = false,
     kYes = true
+};
+
+/**
+ * Indicates whether a backing store needs to be an exact match or can be larger
+ * than is strictly necessary
+ */
+enum class SkBackingFit {
+    kApprox,
+    kExact
 };
 
 ///////////////////////////////////////////////////////////////////////////////

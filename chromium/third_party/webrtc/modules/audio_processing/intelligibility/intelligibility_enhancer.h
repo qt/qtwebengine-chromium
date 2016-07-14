@@ -36,7 +36,7 @@ class IntelligibilityEnhancer : public LappedTransform::Callback {
                           size_t num_noise_bins);
 
   // Sets the capture noise magnitude spectrum estimate.
-  void SetCaptureNoiseEstimate(std::vector<float> noise);
+  void SetCaptureNoiseEstimate(std::vector<float> noise, int gain_db);
 
   // Reads chunk of speech in time domain and updates with modified signal.
   void ProcessRenderAudio(float* const* audio,
@@ -56,6 +56,12 @@ class IntelligibilityEnhancer : public LappedTransform::Callback {
  private:
   FRIEND_TEST_ALL_PREFIXES(IntelligibilityEnhancerTest, TestErbCreation);
   FRIEND_TEST_ALL_PREFIXES(IntelligibilityEnhancerTest, TestSolveForGains);
+  FRIEND_TEST_ALL_PREFIXES(IntelligibilityEnhancerTest,
+                           TestNoiseGainHasExpectedResult);
+
+  // Updates the SNR estimation and enables or disables this component using a
+  // hysteresis.
+  void SnrBasedEffectActivation();
 
   // Bisection search for optimal |lambda|.
   void SolveForLambda(float power_target);
@@ -103,6 +109,8 @@ class IntelligibilityEnhancer : public LappedTransform::Callback {
   std::vector<int16_t> audio_s16_;
   size_t chunks_since_voice_;
   bool is_speech_;
+  float snr_;
+  bool is_active_;
 
   std::vector<float> noise_estimation_buffer_;
   SwapQueue<std::vector<float>, RenderQueueItemVerifier<float>>

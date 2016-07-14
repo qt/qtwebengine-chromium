@@ -12,15 +12,11 @@
       'OPJ_STATIC',
       'PNG_PREFIX',
       'PNG_USE_READ_MACROS',
-      '_CRT_SECURE_NO_WARNINGS',
     ],
     'include_dirs': [
       # This is implicit in GN.
       '<(DEPTH)',
       '..',
-    ],
-    'msvs_disabled_warnings': [
-      4005, 4018, 4146, 4333, 4345, 4267
     ],
   },
   'targets': [
@@ -89,6 +85,13 @@
            'freetype/src/base/fttype1.c',
           ],
         }],
+        ['os_posix==1 and clang==0', {
+          'cflags': [
+            # open_face_PS_from_sfnt_stream() and open_face_from_buffer() in
+            # ftbase.h are unused. GCC needs this flag too.
+            '-Wno-unused-function',
+          ],
+        }],
       ],
       'variables': {
         'clang_warning_flags': [
@@ -97,6 +100,11 @@
           '-Wno-unused-function',
         ],
       },
+      'msvs_disabled_warnings': [
+        # Warnings about conversion from 'size_t' to 'long', possible loss of
+        # data.
+        4267,
+      ],
     },
     {
       'target_name': 'fx_agg',
@@ -121,7 +129,7 @@
       'conditions': [
         ['os_posix==1', {
           # library contains several enum vs non-enum conditionals.
-          'cflags': [ '-Wno-extra', ],
+          'cflags': [ '-Wno-extra' ],
         }],
       ],
       'variables': {
@@ -254,7 +262,12 @@
           # Avoid warning for undefined behaviour.
           '-Wno-shift-negative-value',
         ],
-      }
+      },
+      'msvs_disabled_warnings': [
+        # Warnings about conversion from 'size_t' to 'long', possible loss of
+        # data.
+        4267,
+      ],
     },
     {
       'target_name': 'fx_libopenjpeg',
@@ -279,6 +292,9 @@
         'libopenjpeg20/t2.c',
         'libopenjpeg20/tcd.c',
         'libopenjpeg20/tgt.c',
+      ],
+      'msvs_disabled_warnings': [
+        4018,
       ],
     },
     {
@@ -410,6 +426,15 @@
             'libtiff/tif_warning.c',
             'libtiff/tif_write.c',
             'libtiff/tif_zip.c',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'defines!': [
+                # Need to undefine the macro since it is redefined in
+                # tif_ojpeg.c and tif_jpeg.c.
+                'WIN32_LEAN_AND_MEAN',
+              ],
+            }],
           ],
         },
       ],

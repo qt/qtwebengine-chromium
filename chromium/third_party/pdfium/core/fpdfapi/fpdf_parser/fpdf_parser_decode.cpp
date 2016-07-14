@@ -7,14 +7,15 @@
 #include "core/fpdfapi/fpdf_parser/include/fpdf_parser_decode.h"
 
 #include <limits.h>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/fpdf_parser/fpdf_parser_utility.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_ext.h"
-#include "core/include/fxcodec/fx_codec.h"
 #include "third_party/base/stl_util.h"
 
 #define _STREAM_MAX_SIZE_ 20 * 1024 * 1024
@@ -225,7 +226,7 @@ uint32_t RunLengthDecode(const uint8_t* src_buf,
   return ret;
 }
 
-ICodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
+CCodec_ScanlineDecoder* FPDFAPI_CreateFaxDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -278,7 +279,7 @@ static FX_BOOL CheckFlateDecodeParams(int Colors,
   return TRUE;
 }
 
-ICodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
+CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
     const uint8_t* src_buf,
     uint32_t src_size,
     int width,
@@ -342,29 +343,26 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
 
   CPDF_Object* pParams =
       pDict ? pDict->GetDirectObjectBy("DecodeParms") : nullptr;
-  std::vector<CFX_ByteString> DecoderList;
-  CFX_ArrayTemplate<CPDF_Object*> ParamList;
+
+  std::vector<std::pair<CFX_ByteString, CPDF_Object*>> DecoderArray;
   if (CPDF_Array* pDecoders = pDecoder->AsArray()) {
     CPDF_Array* pParamsArray = ToArray(pParams);
-    if (!pParamsArray)
-      pParams = nullptr;
-
-    for (uint32_t i = 0; i < pDecoders->GetCount(); i++) {
-      DecoderList.push_back(pDecoders->GetConstStringAt(i));
-      ParamList.Add(pParams ? pParamsArray->GetDictAt(i) : nullptr);
+    for (size_t i = 0; i < pDecoders->GetCount(); i++) {
+      DecoderArray.push_back(
+          {pDecoders->GetStringAt(i),
+           pParamsArray ? pParamsArray->GetDictAt(i) : nullptr});
     }
   } else {
-    DecoderList.push_back(pDecoder->GetConstString());
-    ParamList.Add(pParams ? pParams->GetDict() : nullptr);
+    DecoderArray.push_back(
+        {pDecoder->GetString(), pParams ? pParams->GetDict() : nullptr});
   }
-  uint8_t* last_buf = (uint8_t*)src_buf;
+  uint8_t* last_buf = const_cast<uint8_t*>(src_buf);
   uint32_t last_size = src_size;
-  int nSize = pdfium::CollectionSize<int>(DecoderList);
+  int nSize = pdfium::CollectionSize<int>(DecoderArray);
   for (int i = 0; i < nSize; i++) {
     int estimated_size = i == nSize - 1 ? last_estimated_size : 0;
-    CFX_ByteString decoder = DecoderList[i];
-    // Use ToDictionary here because we can push nullptr into the ParamList.
-    CPDF_Dictionary* pParam = ToDictionary(ParamList[i]);
+    CFX_ByteString decoder = DecoderArray[i].first;
+    CPDF_Dictionary* pParam = ToDictionary(DecoderArray[i].second);
     uint8_t* new_buf = nullptr;
     uint32_t new_size = (uint32_t)-1;
     int offset = -1;
@@ -530,7 +528,7 @@ CFX_ByteString PDF_EncodeString(const CFX_ByteString& src, FX_BOOL bHex) {
       result.AppendChar("0123456789ABCDEF"[src[i] % 16]);
     }
     result.AppendChar('>');
-    return result.GetByteString();
+    return result.MakeString();
   }
   result.AppendChar('(');
   for (int i = 0; i < srclen; i++) {
@@ -547,7 +545,7 @@ CFX_ByteString PDF_EncodeString(const CFX_ByteString& src, FX_BOOL bHex) {
     result.AppendChar(ch);
   }
   result.AppendChar(')');
-  return result.GetByteString();
+  return result.MakeString();
 }
 
 void FlateEncode(const uint8_t* src_buf,

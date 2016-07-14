@@ -35,18 +35,6 @@ class VideoFrame {
   virtual size_t GetWidth() const final { return width(); }
   virtual size_t GetHeight() const final { return height(); }
 
-  // These can return NULL if the object is not backed by a buffer.
-  virtual const uint8_t* GetYPlane() const = 0;
-  virtual const uint8_t* GetUPlane() const = 0;
-  virtual const uint8_t* GetVPlane() const = 0;
-  virtual uint8_t* GetYPlane() = 0;
-  virtual uint8_t* GetUPlane() = 0;
-  virtual uint8_t* GetVPlane() = 0;
-
-  virtual int32_t GetYPitch() const = 0;
-  virtual int32_t GetUPitch() const = 0;
-  virtual int32_t GetVPitch() const = 0;
-
   // Returns the handle of the underlying video frame. This is used when the
   // frame is backed by a texture. The object should be destroyed when it is no
   // longer in use, so the underlying resource can be freed.
@@ -54,14 +42,25 @@ class VideoFrame {
 
   // Returns the underlying video frame buffer. This function is ok to call
   // multiple times, but the returned object will refer to the same memory.
-  virtual rtc::scoped_refptr<webrtc::VideoFrameBuffer> GetVideoFrameBuffer()
-      const = 0;
+  virtual const rtc::scoped_refptr<webrtc::VideoFrameBuffer>&
+  video_frame_buffer() const = 0;
 
-  virtual int64_t GetTimeStamp() const = 0;
-  virtual void SetTimeStamp(int64_t time_stamp) = 0;
+  // System monotonic clock, same timebase as rtc::TimeMicros().
+  virtual int64_t timestamp_us() const = 0;
+  virtual void set_timestamp_us(int64_t time_us) = 0;
+
+  // Deprecated methods, for backwards compatibility.
+  // TODO(nisse): Delete when usage in Chrome and other applications
+  // have been replaced.
+  virtual int64_t GetTimeStamp() const {
+    return rtc::kNumNanosecsPerMicrosec * timestamp_us();
+  }
+  virtual void SetTimeStamp(int64_t time_ns) {
+    set_timestamp_us(time_ns / rtc::kNumNanosecsPerMicrosec);
+  }
 
   // Indicates the rotation angle in degrees.
-  virtual webrtc::VideoRotation GetVideoRotation() const  = 0;
+  virtual webrtc::VideoRotation rotation() const = 0;
 
   // Make a shallow copy of the frame. The frame buffer itself is not copied.
   // Both the current and new VideoFrame will share a single reference-counted
@@ -137,9 +136,10 @@ class VideoFrame {
                             int32_t dst_pitch_v) const;
 
   // Creates an empty frame.
-  virtual VideoFrame *CreateEmptyFrame(int w, int h,
-                                       int64_t time_stamp) const = 0;
-  virtual void SetRotation(webrtc::VideoRotation rotation) = 0;
+  virtual VideoFrame* CreateEmptyFrame(int w,
+                                       int h,
+                                       int64_t timestamp_us) const = 0;
+  virtual void set_rotation(webrtc::VideoRotation rotation) = 0;
 };
 
 }  // namespace cricket

@@ -304,6 +304,7 @@ public:
     bool OutputCSV = false;
     bool PrintNewCovPcs = false;
     bool PrintFinalStats = false;
+    bool DetectLeaks = true;
   };
   Fuzzer(UserCallback CB, MutationDispatcher &MD, FuzzingOptions Options);
   void AddToCorpus(const Unit &U) {
@@ -343,6 +344,7 @@ public:
   static void StaticInterruptCallback();
 
   void ExecuteCallback(const uint8_t *Data, size_t Size);
+  bool RunOne(const uint8_t *Data, size_t Size);
 
   // Merge Corpora[1:] into Corpora[0].
   void Merge(const std::vector<std::string> &Corpora);
@@ -358,7 +360,6 @@ private:
   void InterruptCallback();
   void MutateAndTestOne();
   void ReportNewCoverage(const Unit &U);
-  bool RunOne(const uint8_t *Data, size_t Size);
   bool RunOne(const Unit &U) { return RunOne(U.data(), U.size()); }
   void RunOneAndUpdateCorpus(uint8_t *Data, size_t Size);
   void WriteToOutputCorpus(const Unit &U);
@@ -366,6 +367,8 @@ private:
   void PrintStats(const char *Where, const char *End = "\n");
   void PrintStatusForNewUnit(const Unit &U);
   void ShuffleCorpus(UnitVector *V);
+  void TryDetectingAMemoryLeak(uint8_t *Data, size_t Size);
+  void CheckForMemoryLeaks();
 
   // Updates the probability distribution for the units in the corpus.
   // Must be called whenever the corpus or unit weights are changed.
@@ -391,12 +394,14 @@ private:
   void DumpCurrentUnit(const char *Prefix);
   void DeathCallback();
 
-  uint8_t *CurrentUnitData;
-  size_t CurrentUnitSize;
+  uint8_t *CurrentUnitData = nullptr;
+  size_t CurrentUnitSize = 0;
 
   size_t TotalNumberOfRuns = 0;
-  size_t TotalNumberOfExecutedTraceBasedMutations = 0;
   size_t NumberOfNewUnitsAdded = 0;
+
+  bool HasMoreMallocsThanFrees = false;
+  size_t NumberOfLeakDetectionAttempts = 0;
 
   std::vector<Unit> Corpus;
   std::unordered_set<std::string> UnitHashesAddedToCorpus;

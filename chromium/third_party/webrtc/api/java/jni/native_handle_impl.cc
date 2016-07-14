@@ -10,12 +10,13 @@
 
 #include "webrtc/api/java/jni/native_handle_impl.h"
 
+#include <memory>
+
 #include "webrtc/api/java/jni/jni_helpers.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/keep_ref_until_done.h"
 #include "webrtc/base/logging.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 
 using webrtc::NativeHandleBuffer;
@@ -56,6 +57,37 @@ void RotateMatrix(float a[16], webrtc::VideoRotation rotation) {
         memcpy(a, ROTATE_270, sizeof(ROTATE_270));
     } break;
   }
+}
+
+// Calculates result = a * b, in column-major order.
+void MultiplyMatrix(const float a[16], const float b[16], float result[16]) {
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      float sum = 0;
+      for (int k = 0; k < 4; ++k) {
+        sum += a[k * 4 + j] * b[i * 4 + k];
+      }
+      result[i * 4 + j] = sum;
+    }
+  }
+}
+
+// Center crop by keeping xFraction of the width and yFraction of the height,
+// so e.g. cropping from 640x480 to 640x360 would use
+// xFraction=1, yFraction=360/480.
+void CropMatrix(float a[16], float xFraction, float yFraction) {
+  // Move cropped area to the center of the frame by offsetting half the
+  // removed area.
+  const float xOffset = (1 - xFraction) / 2;
+  const float yOffset = (1 - yFraction) / 2;
+  const float crop_matrix[16] = {
+    xFraction, 0, 0, 0,
+    0, yFraction, 0, 0,
+    0, 0, 1, 0,
+    xOffset, yOffset, 0, 1};
+  float mul_result[16];
+  MultiplyMatrix(crop_matrix, a, mul_result);
+  memcpy(a, mul_result, sizeof(mul_result));
 }
 
 }  // anonymouse namespace
@@ -104,7 +136,7 @@ AndroidTextureBuffer::NativeToI420Buffer() {
   //
   // TODO(nisse): Use an I420BufferPool. We then need to extend that
   // class, and I420Buffer, to support our memory layout.
-  rtc::scoped_ptr<uint8_t, webrtc::AlignedFreeDeleter> yuv_data(
+  std::unique_ptr<uint8_t, webrtc::AlignedFreeDeleter> yuv_data(
       static_cast<uint8_t*>(webrtc::AlignedMalloc(size, kBufferAlignment)));
   // See SurfaceTextureHelper.java for the required layout.
   uint8_t* y_data = yuv_data.get();
@@ -145,15 +177,18 @@ AndroidTextureBuffer::NativeToI420Buffer() {
 }
 
 rtc::scoped_refptr<AndroidTextureBuffer>
-AndroidTextureBuffer::ScaleAndRotate(int dst_widht,
-                                     int dst_height,
-                                     webrtc::VideoRotation rotation) {
-  if (width() == dst_widht && height() == dst_height &&
+AndroidTextureBuffer::CropScaleAndRotate(int cropped_width,
+                                         int cropped_height,
+                                         int dst_width,
+                                         int dst_height,
+                                         webrtc::VideoRotation rotation) {
+  if (cropped_width == dst_width && cropped_height == dst_height &&
+      width() == dst_width && height() == dst_height &&
       rotation == webrtc::kVideoRotation_0) {
     return this;
   }
-  int rotated_width = (rotation % 180 == 0) ? dst_widht : dst_height;
-  int rotated_height = (rotation % 180 == 0) ? dst_height : dst_widht;
+  int rotated_width = (rotation % 180 == 0) ? dst_width : dst_height;
+  int rotated_height = (rotation % 180 == 0) ? dst_height : dst_width;
 
   // Here we use Bind magic to add a reference count to |this| until the newly
   // created AndroidTextureBuffer is destructed
@@ -162,6 +197,11 @@ AndroidTextureBuffer::ScaleAndRotate(int dst_widht,
           rotated_width, rotated_height, native_handle_,
           surface_texture_helper_, rtc::KeepRefUntilDone(this)));
 
+  if (cropped_width != width() || cropped_height != height()) {
+    CropMatrix(buffer->native_handle_.sampling_matrix,
+               cropped_width / static_cast<float>(width()),
+               cropped_height / static_cast<float>(height()));
+  }
   RotateMatrix(buffer->native_handle_.sampling_matrix, rotation);
   return buffer;
 }

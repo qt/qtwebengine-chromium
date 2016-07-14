@@ -10,11 +10,12 @@
 
 #include "webrtc/pc/mediasession.h"
 
-#include <algorithm>  // For std::find_if.
+#include <algorithm>  // For std::find_if, std::sort.
 #include <functional>
 #include <map>
 #include <memory>
 #include <set>
+#include <unordered_map>
 #include <utility>
 
 #include "webrtc/base/helpers.h"
@@ -45,7 +46,7 @@ void GetSupportedCryptoSuiteNames(void (*func)(std::vector<int>*),
   }
 #endif
 }
-}
+}  // namespace
 
 namespace cricket {
 
@@ -208,55 +209,6 @@ static bool SelectCrypto(const MediaContentDescription* offer,
     }
   }
   return false;
-}
-
-static const StreamParams* FindFirstStreamParamsByCname(
-    const StreamParamsVec& params_vec,
-    const std::string& cname) {
-  for (StreamParamsVec::const_iterator it = params_vec.begin();
-       it != params_vec.end(); ++it) {
-    if (cname == it->cname)
-      return &*it;
-  }
-  return NULL;
-}
-
-// Generates a new CNAME or the CNAME of an already existing StreamParams
-// if a StreamParams exist for another Stream in streams with sync_label
-// sync_label.
-static bool GenerateCname(const StreamParamsVec& params_vec,
-                          const MediaSessionOptions::Streams& streams,
-                          const std::string& synch_label,
-                          std::string* cname) {
-  ASSERT(cname != NULL);
-  if (!cname)
-    return false;
-
-  // Check if a CNAME exist for any of the other synched streams.
-  for (MediaSessionOptions::Streams::const_iterator stream_it = streams.begin();
-       stream_it != streams.end() ; ++stream_it) {
-    if (synch_label != stream_it->sync_label)
-      continue;
-
-    // groupid is empty for StreamParams generated using
-    // MediaSessionDescriptionFactory.
-    const StreamParams* param = GetStreamByIds(params_vec, "", stream_it->id);
-    if (param) {
-      *cname = param->cname;
-      return true;
-    }
-  }
-  // No other stream seems to exist that we should sync with.
-  // Generate a random string for the RTCP CNAME, as stated in RFC 6222.
-  // This string is only used for synchronization, and therefore is opaque.
-  do {
-    if (!rtc::CreateRandomString(16, cname)) {
-      ASSERT(false);
-      return false;
-    }
-  } while (FindFirstStreamParamsByCname(params_vec, *cname));
-
-  return true;
 }
 
 // Generate random SSRC values that are not already present in |params_vec|.
@@ -443,15 +395,15 @@ static bool IsSctp(const MediaContentDescription* desc) {
 // media_type to content_description.
 // |current_params| - All currently known StreamParams of any media type.
 template <class C>
-static bool AddStreamParams(
-    MediaType media_type,
-    const MediaSessionOptions::Streams& streams,
-    StreamParamsVec* current_streams,
-    MediaContentDescriptionImpl<C>* content_description,
-    const bool add_legacy_stream) {
+static bool AddStreamParams(MediaType media_type,
+                            const MediaSessionOptions& options,
+                            StreamParamsVec* current_streams,
+                            MediaContentDescriptionImpl<C>* content_description,
+                            const bool add_legacy_stream) {
   const bool include_rtx_streams =
       ContainsRtxCodec(content_description->codecs());
 
+  const MediaSessionOptions::Streams& streams = options.streams;
   if (streams.empty() && add_legacy_stream) {
     // TODO(perkj): Remove this legacy stream when all apps use StreamParams.
     std::vector<uint32_t> ssrcs;
@@ -482,13 +434,6 @@ static bool AddStreamParams(
     // MediaSessionDescriptionFactory.
     if (!param) {
       // This is a new stream.
-      // Get a CNAME. Either new or same as one of the other synched streams.
-      std::string cname;
-      if (!GenerateCname(*current_streams, streams, stream_it->sync_label,
-                         &cname)) {
-        return false;
-      }
-
       std::vector<uint32_t> ssrcs;
       if (IsSctp(content_description)) {
         GenerateSctpSids(*current_streams, &ssrcs);
@@ -516,7 +461,7 @@ static bool AddStreamParams(
         }
         content_description->set_multistream(true);
       }
-      stream_param.cname = cname;
+      stream_param.cname = options.rtcp_cname;
       stream_param.sync_label = stream_it->sync_label;
       content_description->AddStream(stream_param);
 
@@ -749,7 +694,6 @@ static bool CreateMediaContentOffer(
     StreamParamsVec* current_streams,
     MediaContentDescriptionImpl<C>* offer) {
   offer->AddCodecs(codecs);
-  offer->SortCodecs();
 
   if (secure_policy == SEC_REQUIRED) {
     offer->set_crypto_required(CT_SDES);
@@ -761,9 +705,8 @@ static bool CreateMediaContentOffer(
   offer->set_multistream(options.is_muc);
   offer->set_rtp_header_extensions(rtp_extensions);
 
-  if (!AddStreamParams(
-          offer->type(), options.streams, current_streams,
-          offer, add_legacy_stream)) {
+  if (!AddStreamParams(offer->type(), options, current_streams, offer,
+                       add_legacy_stream)) {
     return false;
   }
 
@@ -810,6 +753,8 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
                             std::vector<C>* negotiated_codecs) {
   for (const C& ours : local_codecs) {
     C theirs;
+    // Note that we intentionally only find one matching codec for each of our
+    // local codecs, in case the remote offer contains duplicate codecs.
     if (FindMatchingCodec(local_codecs, offered_codecs, ours, &theirs)) {
       C negotiated = ours;
       negotiated.IntersectFeedbackParams(theirs);
@@ -822,14 +767,23 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
                             offered_apt_value);
       }
       negotiated.id = theirs.id;
-      // RFC3264: Although the answerer MAY list the formats in their desired
-      // order of preference, it is RECOMMENDED that unless there is a
-      // specific reason, the answerer list formats in the same relative order
-      // they were present in the offer.
-      negotiated.preference = theirs.preference;
       negotiated_codecs->push_back(negotiated);
     }
   }
+  // RFC3264: Although the answerer MAY list the formats in their desired
+  // order of preference, it is RECOMMENDED that unless there is a
+  // specific reason, the answerer list formats in the same relative order
+  // they were present in the offer.
+  std::unordered_map<int, int> payload_type_preferences;
+  int preference = static_cast<int>(offered_codecs.size() + 1);
+  for (const C& codec : offered_codecs) {
+    payload_type_preferences[codec.id] = preference--;
+  }
+  std::sort(negotiated_codecs->begin(), negotiated_codecs->end(),
+            [&payload_type_preferences](const C& a, const C& b) {
+              return payload_type_preferences[a.id] >
+                     payload_type_preferences[b.id];
+            });
 }
 
 // Finds a codec in |codecs2| that matches |codec_to_match|, which is
@@ -1042,7 +996,6 @@ static bool CreateMediaContentAnswer(
   std::vector<C> negotiated_codecs;
   NegotiateCodecs(local_codecs, offer->codecs(), &negotiated_codecs);
   answer->AddCodecs(negotiated_codecs);
-  answer->SortCodecs();
   answer->set_protocol(offer->protocol());
   RtpHeaderExtensions negotiated_rtp_extensions;
   NegotiateRtpHeaderExtensions(local_rtp_extenstions,
@@ -1070,9 +1023,8 @@ static bool CreateMediaContentAnswer(
     return false;
   }
 
-  if (!AddStreamParams(
-          answer->type(), options.streams, current_streams,
-          answer, add_legacy_stream)) {
+  if (!AddStreamParams(answer->type(), options, current_streams, answer,
+                       add_legacy_stream)) {
     return false;  // Something went seriously wrong.
   }
 
@@ -1105,21 +1057,55 @@ static bool CreateMediaContentAnswer(
   return true;
 }
 
+static bool IsDtlsRtp(const std::string& protocol) {
+  // Most-likely values first.
+  return protocol == "UDP/TLS/RTP/SAVPF" || protocol == "TCP/TLS/RTP/SAVPF" ||
+         protocol == "UDP/TLS/RTP/SAVP" || protocol == "TCP/TLS/RTP/SAVP";
+}
+
+static bool IsPlainRtp(const std::string& protocol) {
+  // Most-likely values first.
+  return protocol == "RTP/SAVPF" || protocol == "RTP/AVPF" ||
+         protocol == "RTP/SAVP" || protocol == "RTP/AVP";
+}
+
+static bool IsDtlsSctp(const std::string& protocol) {
+  return protocol == "DTLS/SCTP";
+}
+
+static bool IsPlainSctp(const std::string& protocol) {
+  return protocol == "SCTP";
+}
+
 static bool IsMediaProtocolSupported(MediaType type,
                                      const std::string& protocol,
                                      bool secure_transport) {
-  // Data channels can have a protocol of SCTP or SCTP/DTLS.
-  if (type == MEDIA_TYPE_DATA &&
-      ((protocol == kMediaProtocolSctp && !secure_transport)||
-       (protocol == kMediaProtocolDtlsSctp && secure_transport))) {
+  // Since not all applications serialize and deserialize the media protocol,
+  // we will have to accept |protocol| to be empty.
+  if (protocol.empty()) {
     return true;
   }
 
-  // Since not all applications serialize and deserialize the media protocol,
-  // we will have to accept |protocol| to be empty.
-  return protocol == kMediaProtocolAvpf || protocol.empty() ||
-      protocol == kMediaProtocolSavpf ||
-      (protocol == kMediaProtocolDtlsSavpf && secure_transport);
+  if (type == MEDIA_TYPE_DATA) {
+    // Check for SCTP, but also for RTP for RTP-based data channels.
+    // TODO(pthatcher): Remove RTP once RTP-based data channels are gone.
+    if (secure_transport) {
+      // Most likely scenarios first.
+      return IsDtlsSctp(protocol) || IsDtlsRtp(protocol) ||
+             IsPlainRtp(protocol);
+    } else {
+      return IsPlainSctp(protocol) || IsPlainRtp(protocol);
+    }
+  }
+
+  // Allow for non-DTLS RTP protocol even when using DTLS because that's what
+  // JSEP specifies.
+  if (secure_transport) {
+    // Most likely scenarios first.
+    return IsDtlsRtp(protocol) || IsPlainRtp(protocol);
+  } else {
+    return IsPlainRtp(protocol);
+  }
 }
 
 static void SetMediaProtocol(bool secure_transport,
@@ -1365,8 +1351,8 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
     const SessionDescription* offer, const MediaSessionOptions& options,
     const SessionDescription* current_description) const {
   // The answer contains the intersection of the codecs in the offer with the
-  // codecs we support, ordered by our local preference. As indicated by
-  // XEP-0167, we retain the same payload ids from the offer in the answer.
+  // codecs we support. As indicated by XEP-0167, we retain the same payload ids
+  // from the offer in the answer.
   std::unique_ptr<SessionDescription> answer(new SessionDescription());
 
   StreamParamsVec current_streams;
@@ -1933,10 +1919,9 @@ bool IsDataContent(const ContentInfo* content) {
 
 const ContentInfo* GetFirstMediaContent(const ContentInfos& contents,
                                         MediaType media_type) {
-  for (ContentInfos::const_iterator content = contents.begin();
-       content != contents.end(); content++) {
-    if (IsMediaContentOfType(&*content, media_type)) {
-      return &*content;
+  for (const ContentInfo& content : contents) {
+    if (IsMediaContentOfType(&content, media_type)) {
+      return &content;
     }
   }
   return nullptr;
@@ -1997,6 +1982,79 @@ const VideoContentDescription* GetFirstVideoContentDescription(
 const DataContentDescription* GetFirstDataContentDescription(
     const SessionDescription* sdesc) {
   return static_cast<const DataContentDescription*>(
+      GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_DATA));
+}
+
+//
+// Non-const versions of the above functions.
+//
+
+ContentInfo* GetFirstMediaContent(ContentInfos& contents,
+                                  MediaType media_type) {
+  for (ContentInfo& content : contents) {
+    if (IsMediaContentOfType(&content, media_type)) {
+      return &content;
+    }
+  }
+  return nullptr;
+}
+
+ContentInfo* GetFirstAudioContent(ContentInfos& contents) {
+  return GetFirstMediaContent(contents, MEDIA_TYPE_AUDIO);
+}
+
+ContentInfo* GetFirstVideoContent(ContentInfos& contents) {
+  return GetFirstMediaContent(contents, MEDIA_TYPE_VIDEO);
+}
+
+ContentInfo* GetFirstDataContent(ContentInfos& contents) {
+  return GetFirstMediaContent(contents, MEDIA_TYPE_DATA);
+}
+
+static ContentInfo* GetFirstMediaContent(SessionDescription* sdesc,
+                                         MediaType media_type) {
+  if (sdesc == nullptr) {
+    return nullptr;
+  }
+
+  return GetFirstMediaContent(sdesc->contents(), media_type);
+}
+
+ContentInfo* GetFirstAudioContent(SessionDescription* sdesc) {
+  return GetFirstMediaContent(sdesc, MEDIA_TYPE_AUDIO);
+}
+
+ContentInfo* GetFirstVideoContent(SessionDescription* sdesc) {
+  return GetFirstMediaContent(sdesc, MEDIA_TYPE_VIDEO);
+}
+
+ContentInfo* GetFirstDataContent(SessionDescription* sdesc) {
+  return GetFirstMediaContent(sdesc, MEDIA_TYPE_DATA);
+}
+
+MediaContentDescription* GetFirstMediaContentDescription(
+    SessionDescription* sdesc,
+    MediaType media_type) {
+  ContentInfo* content = GetFirstMediaContent(sdesc, media_type);
+  ContentDescription* description = content ? content->description : NULL;
+  return static_cast<MediaContentDescription*>(description);
+}
+
+AudioContentDescription* GetFirstAudioContentDescription(
+    SessionDescription* sdesc) {
+  return static_cast<AudioContentDescription*>(
+      GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_AUDIO));
+}
+
+VideoContentDescription* GetFirstVideoContentDescription(
+    SessionDescription* sdesc) {
+  return static_cast<VideoContentDescription*>(
+      GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_VIDEO));
+}
+
+DataContentDescription* GetFirstDataContentDescription(
+    SessionDescription* sdesc) {
+  return static_cast<DataContentDescription*>(
       GetFirstMediaContentDescription(sdesc, MEDIA_TYPE_DATA));
 }
 

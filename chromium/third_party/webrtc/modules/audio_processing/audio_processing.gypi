@@ -9,6 +9,8 @@
 {
   'variables': {
     'shared_generated_dir': '<(SHARED_INTERMEDIATE_DIR)/audio_processing/asm_offsets',
+    # Outputs some low-level debug files.
+    'aec_debug_dump%': 0,
   },
   'targets': [
     {
@@ -16,7 +18,6 @@
       'type': 'static_library',
       'variables': {
         # Outputs some low-level debug files.
-        'aec_debug_dump%': 0,
         'agc_debug_dump%': 0,
 
         # Disables the usual mode where we trust the reported system delay
@@ -34,17 +35,16 @@
       'sources': [
         'aec/aec_core.cc',
         'aec/aec_core.h',
-        'aec/aec_core_internal.h',
-        'aec/aec_rdft.c',
+        'aec/aec_core_optimized_methods.h',
+        'aec/aec_rdft.cc',
         'aec/aec_rdft.h',
         'aec/aec_resampler.cc',
         'aec/aec_resampler.h',
         'aec/echo_cancellation.cc',
-        'aec/echo_cancellation_internal.h',
         'aec/echo_cancellation.h',
-        'aecm/aecm_core.c',
+        'aecm/aecm_core.cc',
         'aecm/aecm_core.h',
-        'aecm/echo_control_mobile.c',
+        'aecm/echo_control_mobile.cc',
         'aecm/echo_control_mobile.h',
         'agc/agc.cc',
         'agc/agc.h',
@@ -91,9 +91,8 @@
         'intelligibility/intelligibility_utils.h',
         'level_estimator_impl.cc',
         'level_estimator_impl.h',
-        'logging/aec_logging.h',
-        'logging/aec_logging_file_handling.cc',
-        'logging/aec_logging_file_handling.h',
+        'logging/apm_data_dumper.cc',
+        'logging/apm_data_dumper.h',
         'noise_suppression_impl.cc',
         'noise_suppression_impl.h',
         'render_queue_item_verifier.h',
@@ -120,10 +119,10 @@
         'typing_detection.h',
         'utility/block_mean_calculator.cc',
         'utility/block_mean_calculator.h',
-        'utility/delay_estimator.c',
+        'utility/delay_estimator.cc',
         'utility/delay_estimator.h',
         'utility/delay_estimator_internal.h',
-        'utility/delay_estimator_wrapper.c',
+        'utility/delay_estimator_wrapper.cc',
         'utility/delay_estimator_wrapper.h',
         'vad/common.h',
         'vad/gmm.cc',
@@ -150,7 +149,9 @@
       ],
       'conditions': [
         ['aec_debug_dump==1', {
-          'defines': ['WEBRTC_AEC_DEBUG_DUMP',],
+          'defines': ['WEBRTC_AEC_DEBUG_DUMP=1',],
+        }, {
+          'defines': ['WEBRTC_AEC_DEBUG_DUMP=0',],
         }],
         ['aec_untrusted_delay_for_testing==1', {
           'defines': ['WEBRTC_UNTRUSTED_DELAY',],
@@ -201,19 +202,19 @@
         }],
         ['target_arch=="mipsel" and mips_arch_variant!="r6"', {
           'sources': [
-            'aecm/aecm_core_mips.c',
+            'aecm/aecm_core_mips.cc',
           ],
           'conditions': [
             ['mips_float_abi=="hard"', {
               'sources': [
                 'aec/aec_core_mips.cc',
-                'aec/aec_rdft_mips.c',
+                'aec/aec_rdft_mips.cc',
               ],
             }],
           ],
         }, {
           'sources': [
-            'aecm/aecm_core_c.c',
+            'aecm/aecm_core_c.cc',
           ],
         }],
       ],
@@ -246,9 +247,14 @@
           'type': 'static_library',
           'sources': [
             'aec/aec_core_sse2.cc',
-            'aec/aec_rdft_sse2.c',
+            'aec/aec_rdft_sse2.cc',
           ],
           'conditions': [
+            ['aec_debug_dump==1', {
+              'defines': ['WEBRTC_AEC_DEBUG_DUMP=1',],
+            }, {
+              'defines': ['WEBRTC_AEC_DEBUG_DUMP=0',],
+            }],
             ['os_posix==1', {
               'cflags': [ '-msse2', ],
               'xcode_settings': {
@@ -269,9 +275,17 @@
         ],
         'sources': [
           'aec/aec_core_neon.cc',
-          'aec/aec_rdft_neon.c',
-          'aecm/aecm_core_neon.c',
+          'aec/aec_rdft_neon.cc',
+          'aecm/aecm_core_neon.cc',
           'ns/nsx_core_neon.c',
+        ],
+        'conditions': [
+          ['aec_debug_dump==1', {
+            'defines': ['WEBRTC_AEC_DEBUG_DUMP=1',],
+          }],
+          ['aec_debug_dump==0', {
+            'defines': ['WEBRTC_AEC_DEBUG_DUMP=0',],
+          }],
         ],
       }],
     }],

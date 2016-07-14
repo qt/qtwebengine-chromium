@@ -11,9 +11,9 @@
 #include "webrtc/modules/utility/source/process_thread_impl.h"
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/include/module.h"
 #include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 namespace {
@@ -36,9 +36,9 @@ int64_t GetNextCallbackTime(Module* module, int64_t time_now) {
 ProcessThread::~ProcessThread() {}
 
 // static
-rtc::scoped_ptr<ProcessThread> ProcessThread::Create(
+std::unique_ptr<ProcessThread> ProcessThread::Create(
     const char* thread_name) {
-  return rtc::scoped_ptr<ProcessThread>(new ProcessThreadImpl(thread_name));
+  return std::unique_ptr<ProcessThread>(new ProcessThreadImpl(thread_name));
 }
 
 ProcessThreadImpl::ProcessThreadImpl(const char* thread_name)
@@ -119,7 +119,7 @@ void ProcessThreadImpl::WakeUp(Module* module) {
   wake_up_->Set();
 }
 
-void ProcessThreadImpl::PostTask(rtc::scoped_ptr<ProcessTask> task) {
+void ProcessThreadImpl::PostTask(std::unique_ptr<ProcessTask> task) {
   // Allowed to be called on any thread.
   {
     rtc::CritScope lock(&lock_);
@@ -188,7 +188,7 @@ bool ProcessThreadImpl::Run(void* obj) {
 }
 
 bool ProcessThreadImpl::Process() {
-  int64_t now = TickTime::MillisecondTimestamp();
+  int64_t now = rtc::TimeMillis();
   int64_t next_checkpoint = now + (1000 * 60);
 
   {
@@ -209,7 +209,7 @@ bool ProcessThreadImpl::Process() {
         // Use a new 'now' reference to calculate when the next callback
         // should occur.  We'll continue to use 'now' above for the baseline
         // of calculating how long we should wait, to reduce variance.
-        int64_t new_now = TickTime::MillisecondTimestamp();
+        int64_t new_now = rtc::TimeMillis();
         m.next_callback = GetNextCallbackTime(m.module, new_now);
       }
 
@@ -227,7 +227,7 @@ bool ProcessThreadImpl::Process() {
     }
   }
 
-  int64_t time_to_wait = next_checkpoint - TickTime::MillisecondTimestamp();
+  int64_t time_to_wait = next_checkpoint - rtc::TimeMillis();
   if (time_to_wait > 0)
     wake_up_->Wait(static_cast<unsigned long>(time_to_wait));
 

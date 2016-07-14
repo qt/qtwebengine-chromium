@@ -58,29 +58,28 @@ void CPDF_PageContentGenerator::GenerateContent() {
 }
 CFX_ByteString CPDF_PageContentGenerator::RealizeResource(
     CPDF_Object* pResourceObj,
-    const FX_CHAR* szType) {
+    const CFX_ByteString& bsType) {
   if (!m_pPage->m_pResources) {
     m_pPage->m_pResources = new CPDF_Dictionary;
     int objnum = m_pDocument->AddIndirectObject(m_pPage->m_pResources);
     m_pPage->m_pFormDict->SetAtReference("Resources", m_pDocument, objnum);
   }
-  CPDF_Dictionary* pResList = m_pPage->m_pResources->GetDictBy(szType);
+  CPDF_Dictionary* pResList = m_pPage->m_pResources->GetDictBy(bsType);
   if (!pResList) {
     pResList = new CPDF_Dictionary;
-    m_pPage->m_pResources->SetAt(szType, pResList);
+    m_pPage->m_pResources->SetAt(bsType, pResList);
   }
   m_pDocument->AddIndirectObject(pResourceObj);
   CFX_ByteString name;
   int idnum = 1;
   while (1) {
-    name.Format("FX%c%d", szType[0], idnum);
-    if (!pResList->KeyExist(name.AsByteStringC())) {
+    name.Format("FX%c%d", bsType[0], idnum);
+    if (!pResList->KeyExist(name)) {
       break;
     }
     idnum++;
   }
-  pResList->AddReference(name.AsByteStringC(), m_pDocument,
-                         pResourceObj->GetObjNum());
+  pResList->AddReference(name, m_pDocument, pResourceObj->GetObjNum());
   return name;
 }
 void CPDF_PageContentGenerator::ProcessImage(CFX_ByteTextBuf& buf,
@@ -129,11 +128,10 @@ void CPDF_PageContentGenerator::TransformContent(CFX_Matrix& matrix) {
 
   CFX_ByteTextBuf buf;
   if (CPDF_Array* pArray = pContent->AsArray()) {
-    int iCount = pArray->GetCount();
+    size_t iCount = pArray->GetCount();
     CPDF_StreamAcc** pContentArray = FX_Alloc(CPDF_StreamAcc*, iCount);
-    int size = 0;
-    int i = 0;
-    for (i = 0; i < iCount; ++i) {
+    size_t size = 0;
+    for (size_t i = 0; i < iCount; ++i) {
       pContent = pArray->GetObjectAt(i);
       CPDF_Stream* pStream = ToStream(pContent);
       if (!pStream)
@@ -146,7 +144,7 @@ void CPDF_PageContentGenerator::TransformContent(CFX_Matrix& matrix) {
     }
     int pos = 0;
     uint8_t* pBuf = FX_Alloc(uint8_t, size);
-    for (i = 0; i < iCount; ++i) {
+    for (size_t i = 0; i < iCount; ++i) {
       FXSYS_memcpy(pBuf + pos, pContentArray[i]->GetData(),
                    pContentArray[i]->GetSize());
       pos += pContentArray[i]->GetSize() + 1;

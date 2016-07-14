@@ -21,9 +21,9 @@
 #include "xfa/fwl/basewidget/ifwl_scrollbar.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
+#include "xfa/fxfa/include/xfa_ffapp.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 #include "xfa/fxgraphics/cfx_color.h"
-#include "xfa/include/fxfa/xfa_ffapp.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
 
 namespace {
 
@@ -44,7 +44,6 @@ CXFA_FFWidget* XFA_ThemeGetOuterWidget(IFWL_Widget* pWidget) {
   return NULL;
 }
 CXFA_FWLTheme::CXFA_FWLTheme(CXFA_FFApp* pApp) : m_pApp(pApp) {
-  m_pTextOut = NULL;
   m_dwCapacity = 0;
   m_fCapacity = 0;
   m_pCalendarFont = NULL;
@@ -76,8 +75,8 @@ CXFA_FWLTheme::~CXFA_FWLTheme() {
   delete m_pCaretTP;
   delete m_pBarcodeTP;
 }
-FWL_ERR CXFA_FWLTheme::Initialize() {
-  m_pTextOut = IFDE_TextOut::Create();
+FWL_Error CXFA_FWLTheme::Initialize() {
+  m_pTextOut.reset(new CFDE_TextOut);
   for (size_t i = 0; !m_pCalendarFont && i < FX_ArraySize(g_FWLTheme_CalFonts);
        ++i) {
     m_pCalendarFont = IFX_Font::LoadFont(g_FWLTheme_CalFonts[i], 0, 0,
@@ -93,57 +92,58 @@ FWL_ERR CXFA_FWLTheme::Initialize() {
 #endif
   }
 
-  FXSYS_assert(NULL != m_pCalendarFont);
+  ASSERT(NULL != m_pCalendarFont);
   FWLTHEME_Init();
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FWL_ERR CXFA_FWLTheme::Finalize() {
-  if (m_pTextOut) {
-    m_pTextOut->Release();
-    m_pTextOut = NULL;
-  }
+FWL_Error CXFA_FWLTheme::Finalize() {
+  m_pTextOut.reset();
   if (m_pCalendarFont) {
     m_pCalendarFont->Release();
-    m_pCalendarFont = NULL;
+    m_pCalendarFont = nullptr;
   }
   FWLTHEME_Release();
-  return FWL_ERR_Succeeded;
+  return FWL_Error::Succeeded;
 }
-FX_BOOL CXFA_FWLTheme::IsValidWidget(IFWL_Widget* pWidget) {
+
+bool CXFA_FWLTheme::IsValidWidget(IFWL_Widget* pWidget) {
   return TRUE;
 }
+
 uint32_t CXFA_FWLTheme::GetThemeID(IFWL_Widget* pWidget) {
   return 0;
 }
+
 uint32_t CXFA_FWLTheme::SetThemeID(IFWL_Widget* pWidget,
                                    uint32_t dwThemeID,
                                    FX_BOOL bChildren) {
   return 0;
 }
+
 FX_BOOL CXFA_FWLTheme::DrawBackground(CFWL_ThemeBackground* pParams) {
   return GetTheme(pParams->m_pWidget)->DrawBackground(pParams);
 }
 FX_BOOL CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
-  if (pParams->m_wsText.IsEmpty()) {
-    return FWL_ERR_Indefinite;
-  }
-  if (pParams->m_pWidget->GetClassID() == FWL_CLASSHASH_MonthCalendar) {
+  if (pParams->m_wsText.IsEmpty())
+    return FALSE;
+
+  if (pParams->m_pWidget->GetClassID() == FWL_Type::MonthCalendar) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
-    if (!pWidget) {
-      return FWL_ERR_Indefinite;
-    }
+    if (!pWidget)
+      return FALSE;
+
     m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
     m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
     m_pTextOut->SetFont(m_pCalendarFont);
     m_pTextOut->SetFontSize(FWLTHEME_CAPACITY_FontSize);
     m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
-    if ((pParams->m_iPart == FWL_PART_MCD_DatesIn) &&
+    if ((pParams->m_iPart == CFWL_Part::DatesIn) &&
         !(pParams->m_dwStates & FWL_ITEMSTATE_MCD_Flag) &&
         (pParams->m_dwStates &
-         (FWL_PARTSTATE_MCD_Hovered | FWL_PARTSTATE_MCD_Selected))) {
+         (CFWL_PartState_Hovered | CFWL_PartState_Selected))) {
       m_pTextOut->SetTextColor(0xFFFFFFFF);
     }
-    if (pParams->m_iPart == FWL_PART_MCD_Caption) {
+    if (pParams->m_iPart == CFWL_Part::Caption) {
       if (m_pMonthCalendarTP->GetThemeID(pParams->m_pWidget) == 0) {
         m_pTextOut->SetTextColor(ArgbEncode(0xff, 0, 153, 255));
       } else {
@@ -161,14 +161,14 @@ FX_BOOL CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
       mtPart.Concat(*pMatrix);
     }
     m_pTextOut->SetMatrix(mtPart);
-    m_pTextOut->DrawLogicText(pParams->m_wsText, pParams->m_wsText.GetLength(),
-                              pParams->m_rtPart);
+    m_pTextOut->DrawLogicText(pParams->m_wsText.c_str(),
+                              pParams->m_wsText.GetLength(), pParams->m_rtPart);
     return TRUE;
   }
   CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
-  if (!pWidget) {
-    return FWL_ERR_Indefinite;
-  }
+  if (!pWidget)
+    return FALSE;
+
   CXFA_WidgetAcc* pAcc = pWidget->GetDataAcc();
   CFX_Graphics* pGraphics = pParams->m_pGraphics;
   CFX_RenderDevice* pRenderDevice = pGraphics->GetRenderDevice();
@@ -186,45 +186,45 @@ FX_BOOL CXFA_FWLTheme::DrawText(CFWL_ThemeText* pParams) {
     mtPart.Concat(*pMatrix);
   }
   m_pTextOut->SetMatrix(mtPart);
-  m_pTextOut->DrawLogicText(pParams->m_wsText, pParams->m_wsText.GetLength(),
-                            pParams->m_rtPart);
+  m_pTextOut->DrawLogicText(pParams->m_wsText.c_str(),
+                            pParams->m_wsText.GetLength(), pParams->m_rtPart);
   return TRUE;
 }
 void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
-                                 uint32_t dwCapacity) {
+                                 CFWL_WidgetCapacity dwCapacity) {
   switch (dwCapacity) {
-    case FWL_WGTCAPACITY_Font: {
+    case CFWL_WidgetCapacity::Font: {
       if (CXFA_FFWidget* pWidget =
               XFA_ThemeGetOuterWidget(pThemePart->m_pWidget)) {
         return pWidget->GetDataAcc()->GetFDEFont();
       }
     } break;
-    case FWL_WGTCAPACITY_FontSize: {
+    case CFWL_WidgetCapacity::FontSize: {
       if (CXFA_FFWidget* pWidget =
               XFA_ThemeGetOuterWidget(pThemePart->m_pWidget)) {
         m_fCapacity = pWidget->GetDataAcc()->GetFontSize();
         return &m_fCapacity;
       }
     } break;
-    case FWL_WGTCAPACITY_TextColor: {
+    case CFWL_WidgetCapacity::TextColor: {
       if (CXFA_FFWidget* pWidget =
               XFA_ThemeGetOuterWidget(pThemePart->m_pWidget)) {
         m_dwCapacity = pWidget->GetDataAcc()->GetTextColor();
         return &m_dwCapacity;
       }
     } break;
-    case FWL_WGTCAPACITY_LineHeight: {
+    case CFWL_WidgetCapacity::LineHeight: {
       if (CXFA_FFWidget* pWidget =
               XFA_ThemeGetOuterWidget(pThemePart->m_pWidget)) {
         m_fCapacity = pWidget->GetDataAcc()->GetLineHeight();
         return &m_fCapacity;
       }
     } break;
-    case FWL_WGTCAPACITY_ScrollBarWidth: {
+    case CFWL_WidgetCapacity::ScrollBarWidth: {
       m_fCapacity = 9;
       return &m_fCapacity;
     } break;
-    case FWL_WGTCAPACITY_UIMargin: {
+    case CFWL_WidgetCapacity::UIMargin: {
       CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pThemePart->m_pWidget);
       if (pWidget) {
         CXFA_LayoutItem* pItem = pWidget;
@@ -249,7 +249,7 @@ void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
       }
       return &m_Rect;
     } break;
-    case FWL_WGTCAPACITY_SpaceAboveBelow: {
+    case CFWL_WidgetCapacity::SpaceAboveBelow: {
       CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pThemePart->m_pWidget);
       if (pWidget) {
         CXFA_WidgetAcc* pWidgetAcc = pWidget->GetDataAcc();
@@ -263,18 +263,81 @@ void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
     default:
       break;
   }
-  if (pThemePart->m_pWidget->GetClassID() == FWL_CLASSHASH_MonthCalendar &&
-      dwCapacity >= FWL_MCCAPACITY_Sun && dwCapacity <= FWL_MCCAPACITY_Today) {
+
+  int dwCapValue = static_cast<int>(dwCapacity);
+  if (pThemePart->m_pWidget->GetClassID() == FWL_Type::MonthCalendar &&
+      dwCapValue >= static_cast<int>(CFWL_WidgetCapacity::Today) &&
+      dwCapValue <= static_cast<int>(CFWL_WidgetCapacity::December)) {
     if (CXFA_FFWidget* pWidget =
             XFA_ThemeGetOuterWidget(pThemePart->m_pWidget)) {
       IXFA_AppProvider* pAppProvider = pWidget->GetAppProvider();
-      m_wsResource.Empty();
-      pAppProvider->LoadString(
-          XFA_IDS_StringWeekDay_Sun + dwCapacity - FWL_WGTCAPACITY_MAX - 5,
-          m_wsResource);
-      if (!m_wsResource.IsEmpty()) {
-        return &m_wsResource;
+      m_wsResource.clear();
+      switch (dwCapacity) {
+        case CFWL_WidgetCapacity::Sun:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Sun, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Mon:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Mon, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Tue:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Tue, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Wed:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Wed, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Thu:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Thu, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Fri:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Fri, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Sat:
+          pAppProvider->LoadString(XFA_IDS_StringWeekDay_Sat, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::January:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Jan, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::February:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Feb, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::March:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_March, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::April:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_April, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::May:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_May, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::June:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_June, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::July:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_July, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::August:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Aug, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::September:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Sept, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::October:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Oct, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::November:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Nov, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::December:
+          pAppProvider->LoadString(XFA_IDS_StringMonth_Dec, m_wsResource);
+          break;
+        case CFWL_WidgetCapacity::Today:
+          pAppProvider->LoadString(XFA_IDS_String_Today, m_wsResource);
+          break;
+        default:
+          break;
       }
+      if (!m_wsResource.IsEmpty())
+        return &m_wsResource;
     }
   }
   return GetTheme(pThemePart->m_pWidget)->GetCapacity(pThemePart, dwCapacity);
@@ -282,7 +345,7 @@ void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
 FX_BOOL CXFA_FWLTheme::IsCustomizedLayout(IFWL_Widget* pWidget) {
   return GetTheme(pWidget)->IsCustomizedLayout(pWidget);
 }
-FWL_ERR CXFA_FWLTheme::GetPartRect(CFWL_ThemePart* pThemePart) {
+FWL_Error CXFA_FWLTheme::GetPartRect(CFWL_ThemePart* pThemePart) {
   CFX_RectF rect;
   return GetTheme(pThemePart->m_pWidget)->GetPartRect(pThemePart, rect);
 }
@@ -292,11 +355,10 @@ FX_BOOL CXFA_FWLTheme::IsInPart(CFWL_ThemePart* pThemePart,
   return GetTheme(pThemePart->m_pWidget)->IsInPart(pThemePart, fx, fy);
 }
 FX_BOOL CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
-  if (pParams->m_pWidget->GetClassID() == FWL_CLASSHASH_MonthCalendar) {
+  if (pParams->m_pWidget->GetClassID() == FWL_Type::MonthCalendar) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
-    if (!pWidget) {
-      return FWL_ERR_Indefinite;
-    }
+    if (!pWidget)
+      return FALSE;
     if (!pParams)
       return FALSE;
     if (!m_pTextOut)
@@ -306,66 +368,61 @@ FX_BOOL CXFA_FWLTheme::CalcTextRect(CFWL_ThemeText* pParams, CFX_RectF& rect) {
     m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
     m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
     m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
-    m_pTextOut->CalcLogicSize(pParams->m_wsText, pParams->m_wsText.GetLength(),
-                              rect);
+    m_pTextOut->CalcLogicSize(pParams->m_wsText.c_str(),
+                              pParams->m_wsText.GetLength(), rect);
     return TRUE;
   }
   CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
-  if (!pWidget) {
-    return FWL_ERR_Indefinite;
-  }
+  if (!pWidget)
+    return FALSE;
+
   CXFA_WidgetAcc* pAcc = pWidget->GetDataAcc();
   m_pTextOut->SetFont(pAcc->GetFDEFont());
   m_pTextOut->SetFontSize(pAcc->GetFontSize());
   m_pTextOut->SetTextColor(pAcc->GetTextColor());
   if (!pParams)
     return FALSE;
-  if (!m_pTextOut)
-    return FALSE;
   m_pTextOut->SetAlignment(pParams->m_iTTOAlign);
   m_pTextOut->SetStyles(pParams->m_dwTTOStyles);
-  m_pTextOut->CalcLogicSize(pParams->m_wsText, pParams->m_wsText.GetLength(),
-                            rect);
+  m_pTextOut->CalcLogicSize(pParams->m_wsText.c_str(),
+                            pParams->m_wsText.GetLength(), rect);
   return TRUE;
 }
 CFWL_WidgetTP* CXFA_FWLTheme::GetTheme(IFWL_Widget* pWidget) {
   switch (pWidget->GetClassID()) {
-    case FWL_CLASSHASH_CheckBox:
+    case FWL_Type::CheckBox:
       return m_pCheckBoxTP;
-    case FWL_CLASSHASH_ListBox:
+    case FWL_Type::ListBox:
       return m_pListBoxTP;
-    case FWL_CLASSHASH_PictureBox:
+    case FWL_Type::PictureBox:
       return m_pPictureBoxTP;
-    case FWL_CLASSHASH_ScrollBar:
+    case FWL_Type::ScrollBar:
       return m_pSrollBarTP;
-    case FWL_CLASSHASH_Edit:
+    case FWL_Type::Edit:
       return m_pEditTP;
-    case FWL_CLASSHASH_ComboBox:
+    case FWL_Type::ComboBox:
       return m_pComboBoxTP;
-    case FWL_CLASSHASH_MonthCalendar:
+    case FWL_Type::MonthCalendar:
       return m_pMonthCalendarTP;
-    case FWL_CLASSHASH_DateTimePicker:
+    case FWL_Type::DateTimePicker:
       return m_pDateTimePickerTP;
-    case FWL_CLASSHASH_PushButton:
+    case FWL_Type::PushButton:
       return m_pPushButtonTP;
-    case FWL_CLASSHASH_Caret:
+    case FWL_Type::Caret:
       return m_pCaretTP;
-    case FWL_CLASSHASH_Barcode:
+    case FWL_Type::Barcode:
       return m_pBarcodeTP;
     default:
-      break;
+      return nullptr;
   }
-  return NULL;
 }
 CXFA_FWLCheckBoxTP::CXFA_FWLCheckBoxTP() {}
 FX_BOOL CXFA_FWLCheckBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
-  if (pParams->m_iPart != FWL_PART_CKB_CheckBox) {
+  if (pParams->m_iPart != CFWL_Part::CheckBox) {
     return TRUE;
   }
-  if (((pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-       FWL_PARTSTATE_CKB_Checked) ||
-      ((pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-       FWL_PARTSTATE_CKB_Neutral)) {
+  if ((pParams->m_dwStates & CFWL_PartState_Checked) ||
+      (pParams->m_dwStates & CFWL_PartState_Neutral)) {
     DrawCheckSign(pParams->m_pWidget, pParams->m_pGraphics, &pParams->m_rtPart,
                   pParams->m_dwStates, &pParams->m_matrix);
   }
@@ -378,9 +435,9 @@ void CXFA_FWLCheckBoxTP::DrawCheckSign(IFWL_Widget* pWidget,
                                        CFX_Matrix* pMatrix) {
   CFX_RectF rtSign(*pRtBox);
   uint32_t dwColor = 0xFF000000;
-  if ((iState & FWL_PARTSTATE_CKB_Mask2) == FWL_PARTSTATE_CKB_Neutral) {
+  if (iState & CFWL_PartState_Neutral)
     dwColor = 0xFFA9A9A9;
-  }
+
   {
     uint32_t dwStyle = pWidget->GetStylesEx();
     rtSign.Deflate(rtSign.width / 4, rtSign.height / 4);
@@ -411,7 +468,7 @@ void CXFA_FWLCheckBoxTP::DrawCheckSign(IFWL_Widget* pWidget,
 CXFA_FWLEditTP::CXFA_FWLEditTP() {}
 CXFA_FWLEditTP::~CXFA_FWLEditTP() {}
 FX_BOOL CXFA_FWLEditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
-  if (FWL_PART_EDT_CombTextLine == pParams->m_iPart) {
+  if (CFWL_Part::CombTextLine == pParams->m_iPart) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
     FX_ARGB cr = 0xFF000000;
     FX_FLOAT fWidth = 1.0f;

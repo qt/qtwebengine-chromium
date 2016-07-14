@@ -13,12 +13,13 @@
 #ifndef WEBRTC_API_JSEPSESSIONDESCRIPTION_H_
 #define WEBRTC_API_JSEPSESSIONDESCRIPTION_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "webrtc/api/jsep.h"
 #include "webrtc/api/jsepicecandidate.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/p2p/base/candidate.h"
 
 namespace cricket {
@@ -72,10 +73,9 @@ class JsepSessionDescription : public SessionDescriptionInterface {
   static const char kDefaultVideoCodecName[];
   static const int kMaxVideoCodecWidth;
   static const int kMaxVideoCodecHeight;
-  static const int kDefaultVideoCodecPreference;
 
  private:
-  rtc::scoped_ptr<cricket::SessionDescription> description_;
+  std::unique_ptr<cricket::SessionDescription> description_;
   std::string session_id_;
   std::string session_version_;
   std::string type_;

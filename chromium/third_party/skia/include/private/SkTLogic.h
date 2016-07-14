@@ -33,27 +33,6 @@ template <typename T> using remove_pointer_t = typename std::remove_pointer<T>::
 template <typename T> using remove_reference_t = typename std::remove_reference<T>::type;
 template <typename T> using remove_extent_t = typename std::remove_extent<T>::type;
 
-// template<typename R, typename... Args> struct is_function<
-//     R [calling-convention] (Args...[, ...]) [const] [volatile] [&|&&]> : std::true_type {};
-// The cv and ref-qualified versions are strange types we're currently avoiding, so not supported.
-// These aren't supported in msvc either until vs2015u2.
-// On all platforms, variadic functions only exist in the c calling convention.
-// mcvc 2013 introduced __vectorcall, but it wan't until 2015 that it was added to is_function.
-template <typename> struct is_function : std::false_type {};
-#if !defined(WIN32)
-template <typename R, typename... Args> struct is_function<R(Args...)> : std::true_type {};
-#else
-template <typename R, typename... Args> struct is_function<R __cdecl (Args...)> : std::true_type {};
-#if defined(_M_IX86)
-template <typename R, typename... Args> struct is_function<R __stdcall (Args...)> : std::true_type {};
-template <typename R, typename... Args> struct is_function<R __fastcall (Args...)> : std::true_type {};
-#endif
-#if defined(_MSC_VER) && (_M_IX86_FP >= 2 || defined(_M_AMD64) || defined(_M_X64))
-template <typename R, typename... Args> struct is_function<R __vectorcall (Args...)> : std::true_type {};
-#endif
-#endif
-template <typename R, typename... Args> struct is_function<R(Args..., ...)> : std::true_type {};
-
 template <typename T> using add_const_t = typename std::add_const<T>::type;
 template <typename T> using add_volatile_t = typename std::add_volatile<T>::type;
 template <typename T> using add_cv_t = typename std::add_cv<T>::type;
@@ -82,29 +61,6 @@ template <typename T> struct underlying_type {
 template <typename T> using underlying_type = std::underlying_type<T>;
 #endif
 template <typename T> using underlying_type_t = typename skstd::underlying_type<T>::type;
-
-template <typename S, typename D,
-          bool=std::is_void<S>::value || is_function<D>::value || std::is_array<D>::value>
-struct is_convertible_detector {
-    static const/*expr*/ bool value = std::is_void<D>::value;
-};
-template <typename S, typename D> struct is_convertible_detector<S, D, false> {
-    using yes_type = uint8_t;
-    using no_type = uint16_t;
-
-    template <typename To> static void param_convertable_to(To);
-
-    template <typename From, typename To>
-    static decltype(param_convertable_to<To>(std::declval<From>()), yes_type()) convertible(int);
-
-    template <typename, typename> static no_type convertible(...);
-
-    static const/*expr*/ bool value = sizeof(convertible<S, D>(0)) == sizeof(yes_type);
-};
-// std::is_convertable is known to be broken (not work with incomplete types) in Android clang NDK.
-// This is currently what prevents us from using std::unique_ptr.
-template<typename S, typename D> struct is_convertible
-    : bool_constant<is_convertible_detector<S, D>::value> {};
 
 }  // namespace skstd
 

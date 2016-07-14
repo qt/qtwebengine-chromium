@@ -19,17 +19,21 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/modules/audio_coding/neteq/mock/mock_audio_decoder.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
+#include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
 
 namespace webrtc {
 
 TEST(DecoderDatabase, CreateAndDestroy) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   EXPECT_EQ(0, db.Size());
   EXPECT_TRUE(db.Empty());
 }
 
 TEST(DecoderDatabase, InsertAndRemove) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -43,7 +47,8 @@ TEST(DecoderDatabase, InsertAndRemove) {
 }
 
 TEST(DecoderDatabase, GetDecoderInfo) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -53,16 +58,16 @@ TEST(DecoderDatabase, GetDecoderInfo) {
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
   EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
-  EXPECT_EQ(NULL, info->decoder);
+  EXPECT_EQ(nullptr, info->external_decoder);
   EXPECT_EQ(8000, info->fs_hz);
   EXPECT_EQ(kCodecName, info->name);
-  EXPECT_FALSE(info->external);
   info = db.GetDecoderInfo(kPayloadType + 1);  // Other payload type.
   EXPECT_TRUE(info == NULL);  // Should not be found.
 }
 
 TEST(DecoderDatabase, GetRtpPayloadType) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -76,7 +81,7 @@ TEST(DecoderDatabase, GetRtpPayloadType) {
 }
 
 TEST(DecoderDatabase, GetDecoder) {
-  DecoderDatabase db;
+  DecoderDatabase db(CreateBuiltinAudioDecoderFactory());
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(DecoderDatabase::kOK,
@@ -87,7 +92,8 @@ TEST(DecoderDatabase, GetDecoder) {
 }
 
 TEST(DecoderDatabase, TypeTests) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   const uint8_t kPayloadTypePcmU = 0;
   const uint8_t kPayloadTypeCng = 13;
   const uint8_t kPayloadTypeDtmf = 100;
@@ -122,7 +128,8 @@ TEST(DecoderDatabase, TypeTests) {
 }
 
 TEST(DecoderDatabase, ExternalDecoder) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   MockAudioDecoder decoder;
@@ -139,9 +146,8 @@ TEST(DecoderDatabase, ExternalDecoder) {
   ASSERT_TRUE(info != NULL);
   EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
   EXPECT_EQ(kCodecName, info->name);
-  EXPECT_EQ(&decoder, info->decoder);
+  EXPECT_EQ(&decoder, info->external_decoder);
   EXPECT_EQ(8000, info->fs_hz);
-  EXPECT_TRUE(info->external);
   // Expect not to delete the decoder when removing it from the database, since
   // it was declared externally.
   EXPECT_CALL(decoder, Die()).Times(0);
@@ -152,7 +158,8 @@ TEST(DecoderDatabase, ExternalDecoder) {
 }
 
 TEST(DecoderDatabase, CheckPayloadTypes) {
-  DecoderDatabase db;
+  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
+  DecoderDatabase db(std::move(factory));
   // Load a number of payloads into the database. Payload types are 0, 1, ...,
   // while the decoder type is the same for all payload types (this does not
   // matter for the test).
@@ -196,7 +203,7 @@ TEST(DecoderDatabase, CheckPayloadTypes) {
 
 // Test the methods for setting and getting active speech and CNG decoders.
 TEST(DecoderDatabase, IF_ISAC(ActiveDecoders)) {
-  DecoderDatabase db;
+  DecoderDatabase db(CreateBuiltinAudioDecoderFactory());
   // Load payload types.
   ASSERT_EQ(DecoderDatabase::kOK,
             db.RegisterPayload(0, NetEqDecoder::kDecoderPCMu, "pcmu"));
@@ -233,8 +240,8 @@ TEST(DecoderDatabase, IF_ISAC(ActiveDecoders)) {
 
   // Set active CNG codec.
   EXPECT_EQ(DecoderDatabase::kOK, db.SetActiveCngDecoder(13));
-  decoder = db.GetActiveCngDecoder();
-  ASSERT_FALSE(decoder == NULL);  // Should get a decoder here.
+  ComfortNoiseDecoder* cng = db.GetActiveCngDecoder();
+  ASSERT_FALSE(cng == NULL);  // Should get a decoder here.
 
   // Remove the active CNG decoder, and verify that the active becomes NULL.
   EXPECT_EQ(DecoderDatabase::kOK, db.Remove(13));

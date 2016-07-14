@@ -14,33 +14,36 @@
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 
-#define CHECKBOX_SIZE_SIGNMARGIN 3
-#define CHECKBOX_SIZE_SIGNBORDER 2
-#define CHECKBOX_SIZE_SIGNPATH 100
+namespace {
+
+const int kSignMargin = 3;
+const int kSignBorder = 2;
+const int kSignPath = 100;
+
+}  // namespace
+
 #define CHECKBOX_COLOR_BOXLT1 (ArgbEncode(255, 172, 168, 153))
 #define CHECKBOX_COLOR_BOXLT2 (ArgbEncode(255, 113, 111, 100))
 #define CHECKBOX_COLOR_BOXRB1 (ArgbEncode(255, 241, 239, 226))
 #define CHECKBOX_COLOR_BOXRB2 (ArgbEncode(255, 255, 255, 255))
-#define CHECKBOX_FXGE_CoordinatesAdjust
 
-CFWL_CheckBoxTP::CFWL_CheckBoxTP() : m_pCheckPath(NULL) {
-  m_pThemeData = new CKBThemeData;
+CFWL_CheckBoxTP::CFWL_CheckBoxTP()
+    : m_pThemeData(new CKBThemeData), m_pCheckPath(nullptr) {
   SetThemeData(0);
 }
+
 CFWL_CheckBoxTP::~CFWL_CheckBoxTP() {
-  if (m_pThemeData) {
-    delete m_pThemeData;
-    m_pThemeData = NULL;
-  }
+  delete m_pThemeData;
   if (m_pCheckPath) {
     m_pCheckPath->Clear();
     delete m_pCheckPath;
-    m_pCheckPath = NULL;
   }
 }
-FX_BOOL CFWL_CheckBoxTP::IsValidWidget(IFWL_Widget* pWidget) {
-  return pWidget && pWidget->GetClassID() == FWL_CLASSHASH_CheckBox;
+
+bool CFWL_CheckBoxTP::IsValidWidget(IFWL_Widget* pWidget) {
+  return pWidget && pWidget->GetClassID() == FWL_Type::CheckBox;
 }
+
 uint32_t CFWL_CheckBoxTP::SetThemeID(IFWL_Widget* pWidget,
                                      uint32_t dwThemeID,
                                      FX_BOOL bChildren) {
@@ -52,8 +55,7 @@ uint32_t CFWL_CheckBoxTP::SetThemeID(IFWL_Widget* pWidget,
 FX_BOOL CFWL_CheckBoxTP::DrawText(CFWL_ThemeText* pParams) {
   if (!m_pTextOut)
     return FALSE;
-  m_pTextOut->SetTextColor((pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask1) ==
-                                   FWL_PARTSTATE_CKB_Disabled
+  m_pTextOut->SetTextColor(pParams->m_dwStates & CFWL_PartState_Disabled
                                ? FWLTHEME_CAPACITY_TextDisColor
                                : FWLTHEME_CAPACITY_TextColor);
   return CFWL_WidgetTP::DrawText(pParams);
@@ -62,49 +64,46 @@ FX_BOOL CFWL_CheckBoxTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (!pParams)
     return FALSE;
   switch (pParams->m_iPart) {
-    case FWL_PART_CKB_Border: {
+    case CFWL_Part::Border: {
       DrawBorder(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_CKB_Edge: {
+    case CFWL_Part::Edge: {
       DrawEdge(pParams->m_pGraphics, pParams->m_pWidget->GetStyles(),
                &pParams->m_rtPart, &pParams->m_matrix);
       break;
     }
-    case FWL_PART_CKB_Background: {
+    case CFWL_Part::Background: {
       FillBackground(pParams->m_pGraphics, &pParams->m_rtPart,
                      &pParams->m_matrix);
-      if (pParams->m_dwStates & FWL_PARTSTATE_CKB_Focused) {
+      if (pParams->m_dwStates & CFWL_PartState_Focused) {
         pParams->m_rtPart = *(CFX_RectF*)pParams->m_pData;
         DrawFocus(pParams->m_pGraphics, &pParams->m_rtPart, &pParams->m_matrix);
       }
       break;
     }
-    case FWL_PART_CKB_CheckBox: {
+    case CFWL_Part::CheckBox: {
       DrawBoxBk(pParams->m_pWidget, pParams->m_pGraphics, &pParams->m_rtPart,
                 pParams->m_dwStates, &pParams->m_matrix);
-      if (((pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-           FWL_PARTSTATE_CKB_Checked) |
-          ((pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-           FWL_PARTSTATE_CKB_Neutral)) {
+      if ((pParams->m_dwStates & CFWL_PartState_Checked) |
+          (pParams->m_dwStates & CFWL_PartState_Neutral)) {
         DrawSign(pParams->m_pWidget, pParams->m_pGraphics, &pParams->m_rtPart,
                  pParams->m_dwStates, &pParams->m_matrix);
       }
-      FX_BOOL bDisable = (pParams->m_dwStates & FWL_PARTSTATE_CKB_Mask1) ==
-                         FWL_PARTSTATE_CKB_Disabled;
-      DrawSignBorder(pParams->m_pWidget, pParams->m_pGraphics,
-                     &pParams->m_rtPart, bDisable, &pParams->m_matrix);
+      DrawSignBorder(
+          pParams->m_pWidget, pParams->m_pGraphics, &pParams->m_rtPart,
+          pParams->m_dwStates & CFWL_PartState_Disabled, &pParams->m_matrix);
       break;
     }
     default: { return FALSE; }
   }
   return TRUE;
 }
-FWL_ERR CFWL_CheckBoxTP::Initialize() {
+FWL_Error CFWL_CheckBoxTP::Initialize() {
   InitTTO();
   return CFWL_WidgetTP::Initialize();
 }
-FWL_ERR CFWL_CheckBoxTP::Finalize() {
+FWL_Error CFWL_CheckBoxTP::Finalize() {
   FinalizeTTO();
   return CFWL_WidgetTP::Finalize();
 }
@@ -121,52 +120,38 @@ void CFWL_CheckBoxTP::DrawBoxBk(IFWL_Widget* pWidget,
   path.Create();
   FX_FLOAT fRight = pRect->right();
   FX_FLOAT fBottom = pRect->bottom();
-  FX_BOOL bClipSign =
-      (dwStates & FWL_PARTSTATE_CKB_Mask1) == FWL_PARTSTATE_CKB_Hovered;
+  bool bClipSign = !!(dwStates & CFWL_PartState_Hovered);
   if ((dwStyleEx == FWL_STYLEEXT_CKB_ShapeSolidSquare) ||
       (dwStyleEx == FWL_STYLEEXT_CKB_ShapeSunkenSquare)) {
     path.AddRectangle(pRect->left, pRect->top, pRect->width, pRect->height);
     if (bClipSign) {
       fillMode = FXFILL_ALTERNATE;
-      path.AddRectangle(pRect->left + CHECKBOX_SIZE_SIGNMARGIN,
-                        pRect->top + CHECKBOX_SIZE_SIGNMARGIN,
-                        pRect->width - CHECKBOX_SIZE_SIGNMARGIN * 2,
-                        pRect->height - CHECKBOX_SIZE_SIGNMARGIN * 2);
+      path.AddRectangle(pRect->left + kSignMargin, pRect->top + kSignMargin,
+                        pRect->width - kSignMargin * 2,
+                        pRect->height - kSignMargin * 2);
     }
   } else {
-#ifdef CHECKBOX_FXGE_CoordinatesAdjust
     CFX_RectF rect(*pRect);
     rect.Deflate(0, 0, 1, 1);
     path.AddEllipse(rect);
-#else
-    path.AddEllipse(*pRect);
-#endif
     if (bClipSign) {
       fillMode = FXFILL_ALTERNATE;
-#ifdef CHECKBOX_FXGE_CoordinatesAdjust
       CFX_RectF rtClip(rect);
-#else
-      CFX_RectF rtClip(*pRect);
-#endif
-      rtClip.Deflate(CHECKBOX_SIZE_SIGNMARGIN - 1,
-                     CHECKBOX_SIZE_SIGNMARGIN - 1);
+      rtClip.Deflate(kSignMargin - 1, kSignMargin - 1);
       path.AddEllipse(rtClip);
     }
   }
   int32_t iTheme = 1;
-  if ((dwStates & FWL_PARTSTATE_CKB_Mask1) == FWL_PARTSTATE_CKB_Hovered) {
+  if (dwStates & CFWL_PartState_Hovered) {
     iTheme = 2;
-  } else if ((dwStates & FWL_PARTSTATE_CKB_Mask1) ==
-             FWL_PARTSTATE_CKB_Pressed) {
+  } else if (dwStates & CFWL_PartState_Pressed) {
     iTheme = 3;
-  } else if ((dwStates & FWL_PARTSTATE_CKB_Mask1) ==
-             FWL_PARTSTATE_CKB_Disabled) {
+  } else if (dwStates & CFWL_PartState_Disabled) {
     iTheme = 4;
   }
-  if ((dwStates & FWL_PARTSTATE_CKB_Mask2) == FWL_PARTSTATE_CKB_Checked) {
+  if (dwStates & CFWL_PartState_Checked) {
     iTheme += 4;
-  } else if ((dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-             FWL_PARTSTATE_CKB_Neutral) {
+  } else if (dwStates & CFWL_PartState_Neutral) {
     iTheme += 8;
   }
   DrawAxialShading(pGraphics, pRect->left - 1, pRect->top - 1, fRight, fBottom,
@@ -179,33 +164,23 @@ void CFWL_CheckBoxTP::DrawSign(IFWL_Widget* pWidget,
                                uint32_t dwStates,
                                CFX_Matrix* pMatrix) {
   CFX_RectF rtSign(*pRtBox);
-  rtSign.Deflate(CHECKBOX_SIZE_SIGNMARGIN, CHECKBOX_SIZE_SIGNMARGIN);
+  rtSign.Deflate(kSignMargin, kSignMargin);
   uint32_t dwColor = m_pThemeData->clrSignCheck;
   FX_BOOL bCheck = TRUE;
-  if (((dwStates & FWL_PARTSTATE_CKB_Mask1) == FWL_PARTSTATE_CKB_Disabled) &&
-      ((dwStates & FWL_PARTSTATE_CKB_Mask2) == FWL_PARTSTATE_CKB_Checked)) {
+  if ((dwStates & CFWL_PartState_Disabled) &&
+      (dwStates & CFWL_PartState_Checked)) {
     dwColor = m_pThemeData->clrSignBorderDisable;
-  } else if ((dwStates & FWL_PARTSTATE_CKB_Mask2) ==
-             FWL_PARTSTATE_CKB_Neutral) {
-    switch (dwStates & FWL_PARTSTATE_CKB_Mask1) {
-      case FWL_PARTSTATE_CKB_Normal: {
-        bCheck = FALSE;
-        dwColor = m_pThemeData->clrSignNeutralNormal;
-        break;
-      }
-      case FWL_PARTSTATE_CKB_Hovered: {
-        bCheck = FALSE;
-        dwColor = m_pThemeData->clrSignNeutralHover;
-        break;
-      }
-      case FWL_PARTSTATE_CKB_Pressed: {
-        bCheck = FALSE, dwColor = m_pThemeData->clrSignNeutralPressed;
-        break;
-      }
-      case FWL_PARTSTATE_CKB_Disabled: {
-        bCheck = FALSE, dwColor = m_pThemeData->clrSignBorderDisable;
-        break;
-      }
+  } else if (dwStates & CFWL_PartState_Neutral) {
+    if (dwStates & CFWL_PartState_Normal) {
+      bCheck = FALSE;
+      dwColor = m_pThemeData->clrSignNeutralNormal;
+    } else if (dwStates & CFWL_PartState_Hovered) {
+      bCheck = FALSE;
+      dwColor = m_pThemeData->clrSignNeutralHover;
+    } else if (dwStates & CFWL_PartState_Pressed) {
+      bCheck = FALSE, dwColor = m_pThemeData->clrSignNeutralPressed;
+    } else if (dwStates & CFWL_PartState_Disabled) {
+      bCheck = FALSE, dwColor = m_pThemeData->clrSignBorderDisable;
     }
   }
   if (bCheck) {
@@ -374,8 +349,8 @@ void CFWL_CheckBoxTP::DrawSignBorder(IFWL_Widget* pWidget,
       break;
     }
     case FWL_STYLEEXT_CKB_ShapeSunkenSquare: {
-      Draw3DRect(pGraphics, FWLTHEME_EDGE_Sunken, CHECKBOX_SIZE_SIGNBORDER,
-                 pRtBox, CHECKBOX_COLOR_BOXLT1, CHECKBOX_COLOR_BOXLT2,
+      Draw3DRect(pGraphics, FWLTHEME_EDGE_Sunken, kSignBorder, pRtBox,
+                 CHECKBOX_COLOR_BOXLT1, CHECKBOX_COLOR_BOXLT2,
                  CHECKBOX_COLOR_BOXRB1, CHECKBOX_COLOR_BOXRB2, pMatrix);
       break;
     }
@@ -386,8 +361,8 @@ void CFWL_CheckBoxTP::DrawSignBorder(IFWL_Widget* pWidget,
       break;
     }
     case FWL_STYLEEXT_CKB_ShapeSunkenCircle: {
-      Draw3DCircle(pGraphics, FWLTHEME_EDGE_Sunken, CHECKBOX_SIZE_SIGNBORDER,
-                   pRtBox, CHECKBOX_COLOR_BOXLT1, CHECKBOX_COLOR_BOXLT2,
+      Draw3DCircle(pGraphics, FWLTHEME_EDGE_Sunken, kSignBorder, pRtBox,
+                   CHECKBOX_COLOR_BOXLT1, CHECKBOX_COLOR_BOXLT2,
                    CHECKBOX_COLOR_BOXRB1, CHECKBOX_COLOR_BOXRB2, pMatrix);
       break;
     }
@@ -465,9 +440,9 @@ void CFWL_CheckBoxTP::initCheckPath(FX_FLOAT fCheckLen) {
   if (!m_pCheckPath) {
     m_pCheckPath = new CFX_Path;
     m_pCheckPath->Create();
-    FX_FLOAT fWidth = CHECKBOX_SIZE_SIGNPATH;
-    FX_FLOAT fHeight = -CHECKBOX_SIZE_SIGNPATH;
-    FX_FLOAT fBottom = CHECKBOX_SIZE_SIGNPATH;
+    FX_FLOAT fWidth = kSignPath;
+    FX_FLOAT fHeight = -kSignPath;
+    FX_FLOAT fBottom = kSignPath;
     CFX_PointF pt1(fWidth / 15.0f, fBottom + fHeight * 2 / 5.0f);
     CFX_PointF pt2(fWidth / 4.5f, fBottom + fHeight / 16.0f);
     CFX_PointF pt3(fWidth / 3.0f, fBottom);
@@ -490,43 +465,38 @@ void CFWL_CheckBoxTP::initCheckPath(FX_FLOAT fCheckLen) {
     FX_FLOAT py1 = pt12.y - pt1.y;
     FX_FLOAT px2 = pt21.x - pt2.x;
     FX_FLOAT py2 = pt21.y - pt2.y;
-    m_pCheckPath->BezierTo(pt1.x + px1 * FWLTHEME_BEZIER,
-                           pt1.y + py1 * FWLTHEME_BEZIER,
-                           pt2.x + px2 * FWLTHEME_BEZIER,
-                           pt2.y + py2 * FWLTHEME_BEZIER, pt2.x, pt2.y);
+    m_pCheckPath->BezierTo(pt1.x + px1 * FX_BEZIER, pt1.y + py1 * FX_BEZIER,
+                           pt2.x + px2 * FX_BEZIER, pt2.y + py2 * FX_BEZIER,
+                           pt2.x, pt2.y);
     px1 = pt23.x - pt2.x;
     py1 = pt23.y - pt2.y;
     px2 = pt32.x - pt3.x;
     py2 = pt32.y - pt3.y;
-    m_pCheckPath->BezierTo(pt2.x + px1 * FWLTHEME_BEZIER,
-                           pt2.y + py1 * FWLTHEME_BEZIER,
-                           pt3.x + px2 * FWLTHEME_BEZIER,
-                           pt3.y + py2 * FWLTHEME_BEZIER, pt3.x, pt3.y);
+    m_pCheckPath->BezierTo(pt2.x + px1 * FX_BEZIER, pt2.y + py1 * FX_BEZIER,
+                           pt3.x + px2 * FX_BEZIER, pt3.y + py2 * FX_BEZIER,
+                           pt3.x, pt3.y);
     px1 = pt34.x - pt3.x;
     py1 = pt34.y - pt3.y;
     px2 = pt43.x - pt4.x;
     py2 = pt43.y - pt4.y;
-    m_pCheckPath->BezierTo(pt3.x + px1 * FWLTHEME_BEZIER,
-                           pt3.y + py1 * FWLTHEME_BEZIER,
-                           pt4.x + px2 * FWLTHEME_BEZIER,
-                           pt4.y + py2 * FWLTHEME_BEZIER, pt4.x, pt4.y);
+    m_pCheckPath->BezierTo(pt3.x + px1 * FX_BEZIER, pt3.y + py1 * FX_BEZIER,
+                           pt4.x + px2 * FX_BEZIER, pt4.y + py2 * FX_BEZIER,
+                           pt4.x, pt4.y);
     px1 = pt45.x - pt4.x;
     py1 = pt45.y - pt4.y;
     px2 = pt54.x - pt5.x;
     py2 = pt54.y - pt5.y;
-    m_pCheckPath->BezierTo(pt4.x + px1 * FWLTHEME_BEZIER,
-                           pt4.y + py1 * FWLTHEME_BEZIER,
-                           pt5.x + px2 * FWLTHEME_BEZIER,
-                           pt5.y + py2 * FWLTHEME_BEZIER, pt5.x, pt5.y);
+    m_pCheckPath->BezierTo(pt4.x + px1 * FX_BEZIER, pt4.y + py1 * FX_BEZIER,
+                           pt5.x + px2 * FX_BEZIER, pt5.y + py2 * FX_BEZIER,
+                           pt5.x, pt5.y);
     px1 = pt51.x - pt5.x;
     py1 = pt51.y - pt5.y;
     px2 = pt15.x - pt1.x;
     py2 = pt15.y - pt1.y;
-    m_pCheckPath->BezierTo(pt5.x + px1 * FWLTHEME_BEZIER,
-                           pt5.y + py1 * FWLTHEME_BEZIER,
-                           pt1.x + px2 * FWLTHEME_BEZIER,
-                           pt1.y + py2 * FWLTHEME_BEZIER, pt1.x, pt1.y);
-    FX_FLOAT fScale = fCheckLen / CHECKBOX_SIZE_SIGNPATH;
+    m_pCheckPath->BezierTo(pt5.x + px1 * FX_BEZIER, pt5.y + py1 * FX_BEZIER,
+                           pt1.x + px2 * FX_BEZIER, pt1.y + py2 * FX_BEZIER,
+                           pt1.x, pt1.y);
+    FX_FLOAT fScale = fCheckLen / kSignPath;
     CFX_Matrix mt;
     mt.Set(1, 0, 0, 1, 0, 0);
     mt.Scale(fScale, fScale);

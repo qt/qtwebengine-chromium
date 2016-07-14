@@ -24,48 +24,49 @@ class IFWL_Caret;
 class CFWL_EditImp;
 class CFWL_EditImpDelegate;
 
-class CFWL_EditImp : public CFWL_WidgetImp, public IFDE_TxtEdtEventSink {
+class CFWL_EditImp : public CFWL_WidgetImp {
  public:
   CFWL_EditImp(const CFWL_WidgetImpProperties& properties, IFWL_Widget* pOuter);
   ~CFWL_EditImp() override;
 
   // CFWL_WidgetImp:
-  FWL_ERR GetClassName(CFX_WideString& wsClass) const override;
-  uint32_t GetClassID() const override;
-  FWL_ERR Initialize() override;
-  FWL_ERR Finalize() override;
-  FWL_ERR GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE) override;
-  FWL_ERR SetWidgetRect(const CFX_RectF& rect) override;
-  FWL_ERR Update() override;
-  uint32_t HitTest(FX_FLOAT fx, FX_FLOAT fy) override;
-  FWL_ERR SetStates(uint32_t dwStates, FX_BOOL bSet = TRUE) override;
-  FWL_ERR DrawWidget(CFX_Graphics* pGraphics,
-                     const CFX_Matrix* pMatrix = NULL) override;
-  FWL_ERR SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) override;
+  FWL_Error GetClassName(CFX_WideString& wsClass) const override;
+  FWL_Type GetClassID() const override;
+  FWL_Error Initialize() override;
+  FWL_Error Finalize() override;
+  FWL_Error GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE) override;
+  FWL_Error SetWidgetRect(const CFX_RectF& rect) override;
+  FWL_Error Update() override;
+  FWL_WidgetHit HitTest(FX_FLOAT fx, FX_FLOAT fy) override;
+  void SetStates(uint32_t dwStates, FX_BOOL bSet = TRUE) override;
+  FWL_Error DrawWidget(CFX_Graphics* pGraphics,
+                       const CFX_Matrix* pMatrix = NULL) override;
+  FWL_Error SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) override;
 
-  virtual FWL_ERR SetText(const CFX_WideString& wsText);
+  virtual FWL_Error SetText(const CFX_WideString& wsText);
   virtual int32_t GetTextLength() const;
-  virtual FWL_ERR GetText(CFX_WideString& wsText,
-                          int32_t nStart = 0,
-                          int32_t nCount = -1) const;
-  virtual FWL_ERR ClearText();
+  virtual FWL_Error GetText(CFX_WideString& wsText,
+                            int32_t nStart = 0,
+                            int32_t nCount = -1) const;
+  virtual FWL_Error ClearText();
   virtual int32_t GetCaretPos() const;
   virtual int32_t SetCaretPos(int32_t nIndex, FX_BOOL bBefore = TRUE);
-  virtual FWL_ERR AddSelRange(int32_t nStart, int32_t nCount = -1);
+  virtual FWL_Error AddSelRange(int32_t nStart, int32_t nCount = -1);
   virtual int32_t CountSelRanges();
   virtual int32_t GetSelRange(int32_t nIndex, int32_t& nStart);
-  virtual FWL_ERR ClearSelections();
+  virtual FWL_Error ClearSelections();
   virtual int32_t GetLimit();
-  virtual FWL_ERR SetLimit(int32_t nLimit);
-  virtual FWL_ERR SetAliasChar(FX_WCHAR wAlias);
-  virtual FWL_ERR Insert(int32_t nStart, const FX_WCHAR* lpText, int32_t nLen);
-  virtual FWL_ERR DeleteSelections();
-  virtual FWL_ERR DeleteRange(int32_t nStart, int32_t nCount = -1);
-  virtual FWL_ERR ReplaceSelections(const CFX_WideStringC& wsReplace);
-  virtual FWL_ERR Replace(int32_t nStart,
-                          int32_t nLen,
-                          const CFX_WideStringC& wsReplace);
-  virtual FWL_ERR DoClipboard(int32_t iCmd);
+  virtual FWL_Error SetLimit(int32_t nLimit);
+  virtual FWL_Error SetAliasChar(FX_WCHAR wAlias);
+  virtual FWL_Error Insert(int32_t nStart,
+                           const FX_WCHAR* lpText,
+                           int32_t nLen);
+  virtual FWL_Error DeleteSelections();
+  virtual FWL_Error DeleteRange(int32_t nStart, int32_t nCount = -1);
+  virtual FWL_Error Replace(int32_t nStart,
+                            int32_t nLen,
+                            const CFX_WideStringC& wsReplace);
+  virtual FWL_Error DoClipboard(int32_t iCmd);
   virtual FX_BOOL Copy(CFX_WideString& wsCopy);
   virtual FX_BOOL Cut(CFX_WideString& wsCut);
   virtual FX_BOOL Paste(const CFX_WideString& wsPaste);
@@ -76,41 +77,27 @@ class CFWL_EditImp : public CFWL_WidgetImp, public IFDE_TxtEdtEventSink {
   virtual FX_BOOL Redo();
   virtual FX_BOOL CanUndo();
   virtual FX_BOOL CanRedo();
-  virtual FWL_ERR SetTabWidth(FX_FLOAT fTabWidth, FX_BOOL bEquidistant);
-  virtual FWL_ERR SetOuter(IFWL_Widget* pOuter);
-  virtual FWL_ERR SetNumberRange(int32_t iMin, int32_t iMax);
-  void On_CaretChanged(IFDE_TxtEdtEngine* pEdit,
+  virtual FWL_Error SetTabWidth(FX_FLOAT fTabWidth, FX_BOOL bEquidistant);
+  virtual FWL_Error SetOuter(IFWL_Widget* pOuter);
+  virtual FWL_Error SetNumberRange(int32_t iMin, int32_t iMax);
+  virtual FWL_Error SetBackgroundColor(uint32_t color);
+  virtual FWL_Error SetFont(const CFX_WideString& wsFont, FX_FLOAT fSize);
+
+  void On_CaretChanged(CFDE_TxtEdtEngine* pEdit,
                        int32_t nPage,
-                       FX_BOOL bVisible = true) override;
-  void On_TextChanged(IFDE_TxtEdtEngine* pEdit,
-                      FDE_TXTEDT_TEXTCHANGE_INFO& ChangeInfo) override;
-  void On_PageCountChanged(IFDE_TxtEdtEngine* pEdit) override {}
-  void On_SelChanged(IFDE_TxtEdtEngine* pEdit) override;
-  FX_BOOL On_PageLoad(IFDE_TxtEdtEngine* pEdit,
+                       FX_BOOL bVisible = true);
+  void On_TextChanged(CFDE_TxtEdtEngine* pEdit,
+                      FDE_TXTEDT_TEXTCHANGE_INFO& ChangeInfo);
+  void On_SelChanged(CFDE_TxtEdtEngine* pEdit);
+  FX_BOOL On_PageLoad(CFDE_TxtEdtEngine* pEdit,
                       int32_t nPageIndex,
-                      int32_t nPurpose) override;
-  FX_BOOL On_PageUnload(IFDE_TxtEdtEngine* pEdit,
+                      int32_t nPurpose);
+  FX_BOOL On_PageUnload(CFDE_TxtEdtEngine* pEdit,
                         int32_t nPageIndex,
-                        int32_t nPurpose) override;
-  FX_BOOL On_PageChange(IFDE_TxtEdtEngine* pEdit, int32_t nPageIndex) override {
-    return TRUE;
-  }
-  void On_AddDoRecord(IFDE_TxtEdtEngine* pEdit,
-                      const CFX_ByteStringC& bsDoRecord) override;
-  FX_BOOL On_ValidateField(IFDE_TxtEdtEngine* pEdit,
-                           int32_t nBlockIndex,
-                           int32_t nFieldIndex,
-                           const CFX_WideString& wsFieldText,
-                           int32_t nCharIndex) override;
-  FX_BOOL On_ValidateBlock(IFDE_TxtEdtEngine* pEdit,
-                           int32_t nBlockIndex) override;
-  FX_BOOL On_GetBlockFormatText(IFDE_TxtEdtEngine* pEdit,
-                                int32_t nBlockIndex,
-                                CFX_WideString& wsBlockText) override;
-  FX_BOOL On_Validate(IFDE_TxtEdtEngine* pEdit,
-                      CFX_WideString& wsText) override;
-  virtual FWL_ERR SetBackgroundColor(uint32_t color);
-  virtual FWL_ERR SetFont(const CFX_WideString& wsFont, FX_FLOAT fSize);
+                        int32_t nPurpose);
+  void On_AddDoRecord(CFDE_TxtEdtEngine* pEdit,
+                      const CFX_ByteStringC& bsDoRecord);
+  FX_BOOL On_Validate(CFDE_TxtEdtEngine* pEdit, CFX_WideString& wsText);
   void SetScrollOffset(FX_FLOAT fScrollOffset);
   FX_BOOL GetSuggestWords(CFX_PointF pointf,
                           std::vector<CFX_ByteString>& sSuggest);
@@ -160,7 +147,7 @@ class CFWL_EditImp : public CFWL_WidgetImp, public IFDE_TxtEdtEventSink {
   FX_FLOAT m_fVAlignOffset;
   FX_FLOAT m_fScrollOffsetX;
   FX_FLOAT m_fScrollOffsetY;
-  IFDE_TxtEdtEngine* m_pEdtEngine;
+  CFDE_TxtEdtEngine* m_pEdtEngine;
   FX_BOOL m_bLButtonDown;
   int32_t m_nSelStart;
   int32_t m_nLimit;
@@ -188,10 +175,10 @@ class CFWL_EditImp : public CFWL_WidgetImp, public IFDE_TxtEdtEventSink {
 class CFWL_EditImpDelegate : public CFWL_WidgetImpDelegate {
  public:
   CFWL_EditImpDelegate(CFWL_EditImp* pOwner);
-  int32_t OnProcessMessage(CFWL_Message* pMessage) override;
-  FWL_ERR OnProcessEvent(CFWL_Event* pEvent) override;
-  FWL_ERR OnDrawWidget(CFX_Graphics* pGraphics,
-                       const CFX_Matrix* pMatrix = NULL) override;
+  void OnProcessMessage(CFWL_Message* pMessage) override;
+  void OnProcessEvent(CFWL_Event* pEvent) override;
+  void OnDrawWidget(CFX_Graphics* pGraphics,
+                    const CFX_Matrix* pMatrix = NULL) override;
 
  protected:
   void DoActivate(CFWL_MsgActivate* pMsg);

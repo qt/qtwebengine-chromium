@@ -8,7 +8,6 @@
 
 #include "core/fxcrt/include/fx_ext.h"
 #include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
-#include "xfa/fxfa/parser/xfa_docdata.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -20,15 +19,12 @@
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 CXFA_ResolveProcessor::CXFA_ResolveProcessor(void)
-    : m_pNodeHelper(NULL), m_iCurStart(0) {
-  m_pNodeHelper = new CXFA_NodeHelper;
-}
+    : m_pNodeHelper(new CXFA_NodeHelper), m_iCurStart(0) {}
+
 CXFA_ResolveProcessor::~CXFA_ResolveProcessor(void) {
-  if (m_pNodeHelper) {
-    delete m_pNodeHelper;
-    m_pNodeHelper = NULL;
-  }
+  delete m_pNodeHelper;
 }
+
 int32_t CXFA_ResolveProcessor::XFA_ResolveNodes(CXFA_ResolveNodesData& rnd) {
   if (rnd.m_CurNode == NULL) {
     return -1;
@@ -36,7 +32,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes(CXFA_ResolveNodesData& rnd) {
   if (!rnd.m_CurNode->IsNode()) {
     if (rnd.m_dwStyles & XFA_RESOLVENODE_Attributes) {
       return XFA_ResolveNodes_ForAttributeRs(rnd.m_CurNode, rnd,
-                                             rnd.m_wsName.AsWideStringC());
+                                             rnd.m_wsName.AsStringC());
     }
     return 0;
   }
@@ -71,7 +67,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes(CXFA_ResolveNodesData& rnd) {
       rnd.m_Nodes.Add(rnd.m_CurNode);
     } else if ((rnd.m_dwStyles & XFA_RESOLVENODE_Attributes) &&
                XFA_ResolveNodes_ForAttributeRs(rnd.m_CurNode, rnd,
-                                               rnd.m_wsName.AsWideStringC())) {
+                                               rnd.m_wsName.AsStringC())) {
       return 1;
     }
     if (rnd.m_Nodes.GetSize() > 0) {
@@ -96,8 +92,8 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_AnyChild(
     bClassName = TRUE;
     wsName = wsName.Right(wsName.GetLength() - 1);
   }
-  findNode = m_pNodeHelper->XFA_ResolveNodes_GetOneChild(ToNode(rnd.m_CurNode),
-                                                         wsName, bClassName);
+  findNode = m_pNodeHelper->XFA_ResolveNodes_GetOneChild(
+      ToNode(rnd.m_CurNode), wsName.c_str(), bClassName);
   if (findNode == NULL) {
     return 0;
   }
@@ -123,8 +119,8 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Dollar(
   if (rnd.m_nLevel > 0) {
     return -1;
   }
-  uint32_t dwNameHash =
-      FX_HashCode_String_GetW((const FX_WCHAR*)wsName + 1, iNameLen - 1);
+  uint32_t dwNameHash = FX_HashCode_GetW(
+      CFX_WideStringC(wsName.c_str() + 1, iNameLen - 1), false);
   if (dwNameHash == XFA_HASHCODE_Xfa) {
     nodes.Add(rnd.m_pSC->GetDocument()->GetRoot());
   } else {
@@ -152,8 +148,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Excalmatory(
   rndFind.m_pSC = rnd.m_pSC;
   rndFind.m_CurNode = datasets;
   rndFind.m_wsName = rnd.m_wsName.Right(rnd.m_wsName.GetLength() - 1);
-  rndFind.m_uHashName =
-      FX_HashCode_String_GetW(rndFind.m_wsName, rndFind.m_wsName.GetLength());
+  rndFind.m_uHashName = FX_HashCode_GetW(rndFind.m_wsName.AsStringC(), false);
   rndFind.m_nLevel = rnd.m_nLevel + 1;
   rndFind.m_dwStyles = XFA_RESOLVENODE_Children;
   rndFind.m_wsCondition = rnd.m_wsCondition;
@@ -169,7 +164,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_NumberSign(
   CFX_WideString wsName = rnd.m_wsName.Right(rnd.m_wsName.GetLength() - 1);
   CFX_WideString wsCondition = rnd.m_wsCondition;
   CXFA_Node* curNode = ToNode(rnd.m_CurNode);
-  if (XFA_ResolveNodes_ForAttributeRs(curNode, rnd, wsName.AsWideStringC())) {
+  if (XFA_ResolveNodes_ForAttributeRs(curNode, rnd, wsName.AsStringC())) {
     return 1;
   }
   CXFA_ResolveNodesData rndFind;
@@ -179,8 +174,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_NumberSign(
   rndFind.m_dwStyles |= XFA_RESOLVENODE_TagName;
   rndFind.m_dwStyles &= ~XFA_RESOLVENODE_Attributes;
   rndFind.m_wsName = wsName;
-  rndFind.m_uHashName =
-      FX_HashCode_String_GetW(rndFind.m_wsName, rndFind.m_wsName.GetLength());
+  rndFind.m_uHashName = FX_HashCode_GetW(rndFind.m_wsName.AsStringC(), false);
   rndFind.m_wsCondition = wsCondition;
   rndFind.m_CurNode = curNode;
   XFA_ResolveNodes_Normal(rndFind);
@@ -262,7 +256,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Normal(
       rndFind.m_CurNode = pVariablesNode;
       XFA_ResolveNodes_SetStylesForChild(dwStyles, rndFind);
       CFX_WideString wsSaveCondition = rndFind.m_wsCondition;
-      rndFind.m_wsCondition.Empty();
+      rndFind.m_wsCondition.clear();
       XFA_ResolveNodes_Normal(rndFind);
       rndFind.m_wsCondition = wsSaveCondition;
       if (rndFind.m_Nodes.GetSize() > 0) {
@@ -300,7 +294,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Normal(
         }
         rndFind.m_CurNode = child;
         CFX_WideString wsSaveCondition = rndFind.m_wsCondition;
-        rndFind.m_wsCondition.Empty();
+        rndFind.m_wsCondition.clear();
         XFA_ResolveNodes_Normal(rndFind);
         rndFind.m_wsCondition = wsSaveCondition;
         if (rndFind.m_Nodes.GetSize() > 0) {
@@ -332,7 +326,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Normal(
     }
   }
   if (dwStyles & XFA_RESOLVENODE_Attributes) {
-    if (XFA_ResolveNodes_ForAttributeRs(curNode, rnd, wsName.AsWideStringC())) {
+    if (XFA_ResolveNodes_ForAttributeRs(curNode, rnd, wsName.AsStringC())) {
       return 1;
     }
   }
@@ -367,7 +361,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Normal(
       }
     } else {
       const XFA_ELEMENTINFO* pElement =
-          XFA_GetElementByName(wsName.AsWideStringC());
+          XFA_GetElementByName(wsName.AsStringC());
       if (pElement) {
         pProp = curNode->AsNode()->GetProperty(
             0, pElement->eName, pElement->eName != XFA_ELEMENT_PageSet);
@@ -444,7 +438,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_Normal(
       if (bInnerSearch) {
         rndFind.m_CurNode = child;
         CFX_WideString wsOriginCondition = rndFind.m_wsCondition;
-        rndFind.m_wsCondition.Empty();
+        rndFind.m_wsCondition.clear();
         uint32_t dwOriginStyle = rndFind.m_dwStyles;
         rndFind.m_dwStyles = dwOriginStyle | XFA_RESOLVENODE_ALL;
         XFA_ResolveNodes_Normal(rndFind);
@@ -525,7 +519,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_GetFilter(
     const CFX_WideStringC& wsExpression,
     int32_t nStart,
     CXFA_ResolveNodesData& rnd) {
-  FXSYS_assert(nStart > -1);
+  ASSERT(nStart > -1);
   int32_t iLength = wsExpression.GetLength();
   if (nStart >= iLength) {
     return 0;
@@ -538,7 +532,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_GetFilter(
   int32_t nConditionCount = 0;
   CFX_Int32Array stack;
   int32_t nType = -1;
-  const FX_WCHAR* pSrc = wsExpression.raw_str();
+  const FX_WCHAR* pSrc = wsExpression.c_str();
   FX_WCHAR wPrev = 0, wCur;
   FX_BOOL bIsCondition = FALSE;
   while (nStart < iLength) {
@@ -618,7 +612,7 @@ int32_t CXFA_ResolveProcessor::XFA_ResolveNodes_GetFilter(
   wsCondition.ReleaseBuffer(nConditionCount);
   wsCondition.TrimLeft();
   wsCondition.TrimRight();
-  rnd.m_uHashName = FX_HashCode_String_GetW(wsName, wsName.GetLength());
+  rnd.m_uHashName = FX_HashCode_GetW(wsName.AsStringC(), false);
   return nStart;
 }
 void CXFA_ResolveProcessor::XFA_ResolveNode_ConditionArray(
@@ -694,7 +688,7 @@ void CXFA_ResolveProcessor::XFA_ResolveNode_DoPredicateFilter(
     int32_t iFoundCount,
     CXFA_ResolveNodesData& rnd) {
   CXFA_NodeArray& findNodes = (CXFA_NodeArray&)rnd.m_Nodes;
-  FXSYS_assert(iFoundCount == findNodes.GetSize());
+  ASSERT(iFoundCount == findNodes.GetSize());
   CFX_WideString wsExpression;
   XFA_SCRIPTLANGTYPE eLangType = XFA_SCRIPTLANGTYPE_Unkown;
   if (wsCondition.Left(2) == FX_WSTRC(L".[") &&
@@ -713,8 +707,8 @@ void CXFA_ResolveProcessor::XFA_ResolveNode_DoPredicateFilter(
     CXFA_Object* node = findNodes[i];
     FX_BOOL bRet = FALSE;
     FXJSE_HVALUE pRetValue = FXJSE_Value_Create(rnd.m_pSC->GetRuntime());
-    bRet = pContext->RunScript(eLangType, wsExpression.AsWideStringC(),
-                               pRetValue, node);
+    bRet = pContext->RunScript(eLangType, wsExpression.AsStringC(), pRetValue,
+                               node);
     if (!bRet || !FXJSE_Value_ToBoolean(pRetValue)) {
       findNodes.RemoveAt(i);
     }

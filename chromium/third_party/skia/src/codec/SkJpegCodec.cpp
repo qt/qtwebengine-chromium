@@ -211,17 +211,21 @@ bool SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
     }
 
     if (codecOut) {
-        // Recommend the color type to decode to
-        const SkColorType colorType = decoderMgr->getColorType();
+        // Get the encoded color type
+        SkEncodedInfo::Color color;
+        if (!decoderMgr->getEncodedColor(&color)) {
+            return false;
+        }
 
         // Create image info object and the codec
-        const SkImageInfo& imageInfo = SkImageInfo::Make(decoderMgr->dinfo()->image_width,
-                decoderMgr->dinfo()->image_height, colorType, kOpaque_SkAlphaType);
+        SkEncodedInfo info = SkEncodedInfo::Make(color, SkEncodedInfo::kOpaque_Alpha, 8);
 
         Origin orientation = get_exif_orientation(decoderMgr->dinfo());
         sk_sp<SkColorSpace> colorSpace = get_icc_profile(decoderMgr->dinfo());
 
-        *codecOut = new SkJpegCodec(imageInfo, stream, decoderMgr.release(), colorSpace,
+        const int width = decoderMgr->dinfo()->image_width;
+        const int height = decoderMgr->dinfo()->image_height;
+        *codecOut = new SkJpegCodec(width, height, info, stream, decoderMgr.release(), colorSpace,
                 orientation);
     } else {
         SkASSERT(nullptr != decoderMgrOut);
@@ -242,9 +246,9 @@ SkCodec* SkJpegCodec::NewFromStream(SkStream* stream) {
     return nullptr;
 }
 
-SkJpegCodec::SkJpegCodec(const SkImageInfo& srcInfo, SkStream* stream,
+SkJpegCodec::SkJpegCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
         JpegDecoderMgr* decoderMgr, sk_sp<SkColorSpace> colorSpace, Origin origin)
-    : INHERITED(srcInfo, stream, colorSpace, origin)
+    : INHERITED(width, height, info, stream, colorSpace, origin)
     , fDecoderMgr(decoderMgr)
     , fReadyState(decoderMgr->dinfo()->global_state)
     , fSwizzlerSubset(SkIRect::MakeEmpty())
@@ -346,18 +350,23 @@ bool SkJpegCodec::setOutputColorSpace(const SkImageInfo& dst) {
 
     // Check for valid color types and set the output color space
     switch (dst.colorType()) {
-        case kN32_SkColorType:
+        case kRGBA_8888_SkColorType:
             if (isCMYK) {
                 fDecoderMgr->dinfo()->out_color_space = JCS_CMYK;
             } else {
 #ifdef LIBJPEG_TURBO_VERSION
-            // Check the byte ordering of the RGBA color space for the
-            // current platform
-    #ifdef SK_PMCOLOR_IS_RGBA
             fDecoderMgr->dinfo()->out_color_space = JCS_EXT_RGBA;
-    #else
+#else
+            fDecoderMgr->dinfo()->out_color_space = JCS_RGB;
+#endif
+            }
+            return true;
+        case kBGRA_8888_SkColorType:
+            if (isCMYK) {
+                fDecoderMgr->dinfo()->out_color_space = JCS_CMYK;
+            } else {
+#ifdef LIBJPEG_TURBO_VERSION
             fDecoderMgr->dinfo()->out_color_space = JCS_EXT_BGRA;
-    #endif
 #else
             fDecoderMgr->dinfo()->out_color_space = JCS_RGB;
 #endif
@@ -506,30 +515,21 @@ SkCodec::Result SkJpegCodec::onGetPixels(const SkImageInfo& dstInfo,
 }
 
 void SkJpegCodec::initializeSwizzler(const SkImageInfo& dstInfo, const Options& options) {
-    SkSwizzler::SrcConfig srcConfig = SkSwizzler::kUnknown;
-    if (JCS_CMYK == fDecoderMgr->dinfo()->out_color_space) {
-        srcConfig = SkSwizzler::kCMYK;
-    } else {
-        // If the out_color_space is not CMYK, the only reason we would need a swizzler is
-        // for sampling and/or subsetting.
-        switch (dstInfo.colorType()) {
-            case kGray_8_SkColorType:
-                srcConfig = SkSwizzler::kNoOp8;
-                break;
-            case kN32_SkColorType:
-                srcConfig = SkSwizzler::kNoOp32;
-                break;
-            case kRGB_565_SkColorType:
-                srcConfig = SkSwizzler::kNoOp16;
-                break;
-            default:
-                // This function should only be called if the colorType is supported by jpeg
-                SkASSERT(false);
-        }
-    }
-
-    if (JCS_RGB == fDecoderMgr->dinfo()->out_color_space) {
-        srcConfig = SkSwizzler::kRGB;
+    // libjpeg-turbo may have already performed color conversion.  We must indicate the
+    // appropriate format to the swizzler.
+    SkEncodedInfo swizzlerInfo = this->getEncodedInfo();
+    bool preSwizzled = true;
+    switch (fDecoderMgr->dinfo()->out_color_space) {
+        case JCS_RGB:
+            preSwizzled = false;
+            swizzlerInfo.setColor(SkEncodedInfo::kRGB_Color);
+            break;
+        case JCS_CMYK:
+            preSwizzled = false;
+            swizzlerInfo.setColor(SkEncodedInfo::kInvertedCMYK_Color);
+            break;
+        default:
+            break;
     }
 
     Options swizzlerOptions = options;
@@ -541,7 +541,8 @@ void SkJpegCodec::initializeSwizzler(const SkImageInfo& dstInfo, const Options& 
                 fSwizzlerSubset.width() == options.fSubset->width());
         swizzlerOptions.fSubset = &fSwizzlerSubset;
     }
-    fSwizzler.reset(SkSwizzler::CreateSwizzler(srcConfig, nullptr, dstInfo, swizzlerOptions));
+    fSwizzler.reset(SkSwizzler::CreateSwizzler(swizzlerInfo, nullptr, dstInfo, swizzlerOptions,
+                                               nullptr, preSwizzled));
     SkASSERT(fSwizzler);
     fStorage.reset(get_row_bytes(fDecoderMgr->dinfo()));
     fSrcRow = fStorage.get();

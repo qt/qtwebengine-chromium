@@ -37,8 +37,7 @@ CBC_ReedSolomonGF256Poly* CBC_ReedSolomonEncoder::BuildGenerator(int32_t degree,
                                                                  int32_t& e) {
   if (degree >= m_cachedGenerators.GetSize()) {
     CBC_ReedSolomonGF256Poly* lastGenerator =
-        (CBC_ReedSolomonGF256Poly*)(m_cachedGenerators
-                                        [m_cachedGenerators.GetSize() - 1]);
+        m_cachedGenerators[m_cachedGenerators.GetSize() - 1];
     for (int32_t d = m_cachedGenerators.GetSize(); d <= degree; d++) {
       CFX_Int32Array temp;
       temp.Add(1);
@@ -53,7 +52,7 @@ CBC_ReedSolomonGF256Poly* CBC_ReedSolomonEncoder::BuildGenerator(int32_t degree,
       lastGenerator = nextGenerator;
     }
   }
-  return (CBC_ReedSolomonGF256Poly*)(m_cachedGenerators[degree]);
+  return m_cachedGenerators[degree];
 }
 void CBC_ReedSolomonEncoder::Encode(CFX_Int32Array* toEncode,
                                     int32_t ecBytes,
@@ -80,10 +79,10 @@ void CBC_ReedSolomonEncoder::Encode(CFX_Int32Array* toEncode,
   std::unique_ptr<CBC_ReedSolomonGF256Poly> infoTemp(
       info.MultiplyByMonomial(ecBytes, 1, e));
   BC_EXCEPTION_CHECK_ReturnVoid(e);
-  std::unique_ptr<CFX_PtrArray> temp(infoTemp->Divide(generator, e));
+  std::unique_ptr<CFX_ArrayTemplate<CBC_ReedSolomonGF256Poly*>> temp(
+      infoTemp->Divide(generator, e));
   BC_EXCEPTION_CHECK_ReturnVoid(e);
-  CBC_ReedSolomonGF256Poly* remainder =
-      (CBC_ReedSolomonGF256Poly*)(temp->operator[](1));
+  CBC_ReedSolomonGF256Poly* remainder = (*temp)[1];
   CFX_Int32Array* coefficients = remainder->GetCoefficients();
   int32_t numZeroCoefficients = ecBytes - coefficients->GetSize();
   for (int32_t i = 0; i < numZeroCoefficients; i++) {
@@ -94,11 +93,10 @@ void CBC_ReedSolomonEncoder::Encode(CFX_Int32Array* toEncode,
         coefficients->operator[](y);
   }
   for (int32_t k = 0; k < temp->GetSize(); k++) {
-    delete (CBC_ReedSolomonGF256Poly*)(*temp)[k];
+    delete (*temp)[k];
   }
 }
 CBC_ReedSolomonEncoder::~CBC_ReedSolomonEncoder() {
-  for (int32_t i = 0; i < m_cachedGenerators.GetSize(); i++) {
-    delete (CBC_ReedSolomonGF256Poly*)m_cachedGenerators[i];
-  }
+  for (int32_t i = 0; i < m_cachedGenerators.GetSize(); i++)
+    delete m_cachedGenerators[i];
 }

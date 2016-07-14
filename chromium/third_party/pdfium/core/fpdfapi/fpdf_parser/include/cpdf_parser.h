@@ -14,15 +14,15 @@
 #include "core/fxcrt/include/fx_basic.h"
 
 class CPDF_Array;
+class CPDF_CryptoHandler;
 class CPDF_Dictionary;
 class CPDF_Document;
 class CPDF_IndirectObjectHolder;
 class CPDF_Object;
+class CPDF_SecurityHandler;
 class CPDF_StreamAcc;
 class CPDF_SyntaxParser;
 class IFX_FileRead;
-class IPDF_CryptoHandler;
-class IPDF_SecurityHandler;
 
 class CPDF_Parser {
  public:
@@ -63,7 +63,7 @@ class CPDF_Parser {
   bool IsVersionUpdated() const { return m_bVersionUpdated; }
   bool IsObjectFreeOrNull(uint32_t objnum) const;
   FX_BOOL IsFormStream(uint32_t objnum, FX_BOOL& bForm);
-  IPDF_CryptoHandler* GetCryptoHandler();
+  CPDF_CryptoHandler* GetCryptoHandler();
   IFX_FileRead* GetFileAccess() const;
 
   FX_FILESIZE GetObjectOffset(uint32_t objnum) const;
@@ -114,6 +114,9 @@ class CPDF_Parser {
   FX_BOOL IsLinearizedFile(IFX_FileRead* pFileAccess, uint32_t offset);
   void SetEncryptDictionary(CPDF_Dictionary* pDict);
   void ShrinkObjectMap(uint32_t size);
+  // A simple check whether the cross reference table matches with
+  // the objects.
+  bool VerifyCrossRefV4();
 
   CPDF_Document* m_pDocument;
   std::unique_ptr<CPDF_SyntaxParser> m_pSyntax;
@@ -123,7 +126,7 @@ class CPDF_Parser {
   CPDF_Dictionary* m_pEncryptDict;
   FX_FILESIZE m_LastXRefOffset;
   FX_BOOL m_bXRefStream;
-  std::unique_ptr<IPDF_SecurityHandler> m_pSecurityHandler;
+  std::unique_ptr<CPDF_SecurityHandler> m_pSecurityHandler;
   CFX_ByteString m_bsRecipient;
   CFX_ByteString m_FilePath;
   CFX_ByteString m_Password;

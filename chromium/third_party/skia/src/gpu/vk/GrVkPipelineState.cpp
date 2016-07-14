@@ -8,6 +8,7 @@
 #include "GrVkPipelineState.h"
 
 #include "GrPipeline.h"
+#include "GrTexturePriv.h"
 #include "GrVkCommandBuffer.h"
 #include "GrVkDescriptorPool.h"
 #include "GrVkGpu.h"
@@ -21,12 +22,13 @@
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLGeometryProcessor.h"
 #include "glsl/GrGLSLXferProcessor.h"
+#include "SkMipMap.h"
 
 GrVkPipelineState::GrVkPipelineState(GrVkGpu* gpu,
                                      const GrVkPipelineState::Desc& desc,
                                      GrVkPipeline* pipeline,
                                      VkPipelineLayout layout,
-                                     VkDescriptorSetLayout dsLayout[2],
+                                     VkDescriptorSetLayout dsSamplerLayout,
                                      const BuiltinUniformHandles& builtinUniformHandles,
                                      const UniformInfoArray& uniforms,
                                      uint32_t vertexUniformSize,
@@ -45,11 +47,9 @@ GrVkPipelineState::GrVkPipelineState(GrVkGpu* gpu,
     , fFragmentProcessors(fragmentProcessors)
     , fDesc(desc)
     , fDataManager(uniforms, vertexUniformSize, fragmentUniformSize)
-    , fSamplerPoolManager(dsLayout[GrVkUniformHandler::kSamplerDescSet],
-                          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, numSamplers, gpu)
-    , fUniformPoolManager(dsLayout[GrVkUniformHandler::kUniformBufferDescSet],
-                          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                          (vertexUniformSize || fragmentUniformSize) ? 2 : 0, gpu) {
+    , fSamplerPoolManager(dsSamplerLayout, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                          numSamplers, gpu)
+    , fCurrentUniformDescPool(nullptr) {
     fSamplers.setReserve(numSamplers);
     fTextureViews.setReserve(numSamplers);
     fTextures.setReserve(numSamplers);
@@ -124,7 +124,10 @@ void GrVkPipelineState::freeGPUResources(const GrVkGpu* gpu) {
     }
 
     fSamplerPoolManager.freeGPUResources(gpu);
-    fUniformPoolManager.freeGPUResources(gpu);
+    if (fCurrentUniformDescPool) {
+        fCurrentUniformDescPool->unref(gpu);
+        fCurrentUniformDescPool = nullptr;
+    }
 
     this->freeTempResources(gpu);
 }
@@ -154,7 +157,10 @@ void GrVkPipelineState::abandonGPUResources() {
     fTextures.rewind();
 
     fSamplerPoolManager.abandonGPUResources();
-    fUniformPoolManager.abandonGPUResources();
+    if (fCurrentUniformDescPool) {
+        fCurrentUniformDescPool->unrefAndAbandon();
+        fCurrentUniformDescPool = nullptr;
+    }
 }
 
 static void append_texture_bindings(const GrProcessor& processor,
@@ -197,20 +203,29 @@ void GrVkPipelineState::setData(GrVkGpu* gpu,
     if (fNumSamplers) {
         fSamplerPoolManager.getNewDescriptorSet(gpu,
                                              &fDescriptorSets[GrVkUniformHandler::kSamplerDescSet]);
-        this->writeSamplers(gpu, textureBindings);
+        this->writeSamplers(gpu, textureBindings, pipeline.getAllowSRGBInputs());
     }
 
-
     if (fVertexUniformBuffer.get() || fFragmentUniformBuffer.get()) {
-        fUniformPoolManager.getNewDescriptorSet(gpu,
-                                       &fDescriptorSets[GrVkUniformHandler::kUniformBufferDescSet]);
-        this->writeUniformBuffers(gpu);
+        if (fDataManager.uploadUniformBuffers(gpu, fVertexUniformBuffer, fFragmentUniformBuffer) ||
+            VK_NULL_HANDLE == fDescriptorSets[GrVkUniformHandler::kUniformBufferDescSet]) {
+            const GrVkDescriptorPool* pool;
+            int uniformDSIdx = GrVkUniformHandler::kUniformBufferDescSet;
+            gpu->resourceProvider().getUniformDescriptorSet(&fDescriptorSets[uniformDSIdx],
+                                                            &pool);
+            if (pool != fCurrentUniformDescPool) {
+                if (fCurrentUniformDescPool) {
+                    fCurrentUniformDescPool->unref(gpu);
+                }
+                fCurrentUniformDescPool = pool;
+                fCurrentUniformDescPool->ref();
+            }
+            this->writeUniformBuffers(gpu);
+        }
     }
 }
 
 void GrVkPipelineState::writeUniformBuffers(const GrVkGpu* gpu) {
-    fDataManager.uploadUniformBuffers(gpu, fVertexUniformBuffer, fFragmentUniformBuffer);
-
     VkWriteDescriptorSet descriptorWrites[2];
     memset(descriptorWrites, 0, 2 * sizeof(VkWriteDescriptorSet));
 
@@ -236,13 +251,6 @@ void GrVkPipelineState::writeUniformBuffers(const GrVkGpu* gpu) {
         descriptorWrites[0].pImageInfo = nullptr;
         descriptorWrites[0].pBufferInfo = &vertBufferInfo;
         descriptorWrites[0].pTexelBufferView = nullptr;
-
-        fVertexUniformBuffer->addMemoryBarrier(gpu,
-                                               VK_ACCESS_HOST_WRITE_BIT,
-                                               VK_ACCESS_UNIFORM_READ_BIT,
-                                               VK_PIPELINE_STAGE_HOST_BIT,
-                                               VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-                                               false);
     }
 
     VkDescriptorBufferInfo fragBufferInfo;
@@ -267,13 +275,6 @@ void GrVkPipelineState::writeUniformBuffers(const GrVkGpu* gpu) {
         descriptorWrites[1].pImageInfo = nullptr;
         descriptorWrites[1].pBufferInfo = &fragBufferInfo;
         descriptorWrites[1].pTexelBufferView = nullptr;
-
-        fFragmentUniformBuffer->addMemoryBarrier(gpu,
-                                                 VK_ACCESS_HOST_WRITE_BIT,
-                                                 VK_ACCESS_UNIFORM_READ_BIT,
-                                                 VK_PIPELINE_STAGE_HOST_BIT,
-                                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                                 false);
     }
 
     if (uniformBindingUpdateCount) {
@@ -285,41 +286,43 @@ void GrVkPipelineState::writeUniformBuffers(const GrVkGpu* gpu) {
 }
 
 void GrVkPipelineState::writeSamplers(GrVkGpu* gpu,
-                                      const SkTArray<const GrTextureAccess*>& textureBindings) {
+                                      const SkTArray<const GrTextureAccess*>& textureBindings,
+                                      bool allowSRGBInputs) {
     SkASSERT(fNumSamplers == textureBindings.count());
 
     for (int i = 0; i < textureBindings.count(); ++i) {
         const GrTextureParams& params = textureBindings[i]->getParams();
-        fSamplers.push(gpu->resourceProvider().findOrCreateCompatibleSampler(params));
 
         GrVkTexture* texture = static_cast<GrVkTexture*>(textureBindings[i]->getTexture());
+        if (GrTextureParams::kMipMap_FilterMode == params.filterMode()) {
+            if (texture->texturePriv().mipMapsAreDirty()) {
+                gpu->generateMipmap(texture);
+                texture->texturePriv().dirtyMipMaps(false);
+            }
+        }
 
-        const GrVkImage::Resource* textureResource = texture->resource();
+        fSamplers.push(gpu->resourceProvider().findOrCreateCompatibleSampler(params,
+                                                          texture->texturePriv().maxMipMapLevel()));
+
+        const GrVkResource* textureResource = texture->resource();
         textureResource->ref();
         fTextures.push(textureResource);
 
-        const GrVkImageView* textureView = texture->textureView();
+        const GrVkImageView* textureView = texture->textureView(allowSRGBInputs);
         textureView->ref();
         fTextureViews.push(textureView);
 
         // Change texture layout so it can be read in shader
-        VkImageLayout layout = texture->currentLayout();
-        VkPipelineStageFlags srcStageMask = GrVkMemory::LayoutToPipelineStageFlags(layout);
-        VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
-        VkAccessFlags srcAccessMask = GrVkMemory::LayoutToSrcAccessMask(layout);
-        VkAccessFlags dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         texture->setImageLayout(gpu,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                srcAccessMask,
-                                dstAccessMask,
-                                srcStageMask,
-                                dstStageMask,
+                                VK_ACCESS_SHADER_READ_BIT,
+                                VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
                                 false);
 
         VkDescriptorImageInfo imageInfo;
         memset(&imageInfo, 0, sizeof(VkDescriptorImageInfo));
         imageInfo.sampler = fSamplers[i]->sampler();
-        imageInfo.imageView = texture->textureView()->imageView();
+        imageInfo.imageView = textureView->imageView();
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkWriteDescriptorSet writeInfo;
@@ -380,8 +383,8 @@ void GrVkPipelineState::addUniformResources(GrVkCommandBuffer& commandBuffer) {
     if (fSamplerPoolManager.fPool) {
         commandBuffer.addResource(fSamplerPoolManager.fPool);
     }
-    if (fUniformPoolManager.fPool) {
-        commandBuffer.addResource(fUniformPoolManager.fPool);
+    if (fCurrentUniformDescPool) {
+        commandBuffer.addResource(fCurrentUniformDescPool);
     }
 
     if (fVertexUniformBuffer.get()) {
@@ -408,30 +411,30 @@ void GrVkPipelineState::addUniformResources(GrVkCommandBuffer& commandBuffer) {
 void GrVkPipelineState::DescriptorPoolManager::getNewPool(GrVkGpu* gpu) {
     if (fPool) {
         fPool->unref(gpu);
-        SkASSERT(fMaxDescriptorSets < (SK_MaxU32 >> 1));
-        if (fMaxDescriptorSets < kMaxDescSetLimit >> 1) {
-            fMaxDescriptorSets = fMaxDescriptorSets << 1;
+        if (fMaxDescriptors < kMaxDescLimit >> 1) {
+            fMaxDescriptors = fMaxDescriptors << 1;
         } else {
-            fMaxDescriptorSets = kMaxDescSetLimit;
+            fMaxDescriptors = kMaxDescLimit;
         }
 
     }
-    if (fMaxDescriptorSets) {
+    if (fMaxDescriptors) {
         fPool = gpu->resourceProvider().findOrCreateCompatibleDescriptorPool(fDescType,
-                                                                             fMaxDescriptorSets);
+                                                                             fMaxDescriptors);
     }
-    SkASSERT(fPool || !fMaxDescriptorSets);
+    SkASSERT(fPool || !fMaxDescriptors);
 }
 
-void GrVkPipelineState::DescriptorPoolManager::getNewDescriptorSet(GrVkGpu* gpu, VkDescriptorSet* ds) {
-    if (!fMaxDescriptorSets) {
+void GrVkPipelineState::DescriptorPoolManager::getNewDescriptorSet(GrVkGpu* gpu,
+                                                                   VkDescriptorSet* ds) {
+    if (!fMaxDescriptors) {
         return;
     }
-    if (fCurrentDescriptorSet == fMaxDescriptorSets) {
+    fCurrentDescriptorCount += fDescCountPerSet;
+    if (fCurrentDescriptorCount > fMaxDescriptors) {
         this->getNewPool(gpu);
-        fCurrentDescriptorSet = 0;
+        fCurrentDescriptorCount = fDescCountPerSet;
     }
-    fCurrentDescriptorSet++;
 
     VkDescriptorSetAllocateInfo dsAllocateInfo;
     memset(&dsAllocateInfo, 0, sizeof(VkDescriptorSetAllocateInfo));

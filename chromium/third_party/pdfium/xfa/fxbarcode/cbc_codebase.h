@@ -8,7 +8,7 @@
 #define XFA_FXBARCODE_CBC_CODEBASE_H_
 
 #include "core/fxcrt/include/fx_system.h"
-#include "core/include/fxge/fx_dib.h"
+#include "core/fxge/include/fx_dib.h"
 #include "xfa/fxbarcode/include/BC_Library.h"
 
 class CBC_Writer;
@@ -26,12 +26,12 @@ class CBC_CodeBase {
                          FX_BOOL isDevice,
                          int32_t& e) = 0;
   virtual FX_BOOL RenderDevice(CFX_RenderDevice* device,
-                               const CFX_Matrix* matirx,
+                               const CFX_Matrix* matrix,
                                int32_t& e) = 0;
   virtual FX_BOOL RenderBitmap(CFX_DIBitmap*& pOutBitmap, int32_t& e) = 0;
   virtual CFX_WideString Decode(uint8_t* buf,
                                 int32_t width,
-                                int32_t hight,
+                                int32_t height,
                                 int32_t& e) = 0;
   virtual CFX_WideString Decode(CFX_DIBitmap* pBitmap, int32_t& e) = 0;
 

@@ -6,7 +6,7 @@
 
 #include "fpdfsdk/pdfwindow/PWL_ScrollBar.h"
 
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/pdfwindow/PWL_Utils.h"
 #include "fpdfsdk/pdfwindow/PWL_Wnd.h"
 
@@ -671,7 +671,7 @@ void CPWL_ScrollBar::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
     sButton << "q\n";
     sButton << "0 w\n"
             << CPWL_Utils::GetColorAppStream(GetBackgroundColor(), TRUE)
-                   .AsByteStringC();
+                   .AsStringC();
     sButton << rectWnd.left << " " << rectWnd.bottom << " "
             << rectWnd.right - rectWnd.left << " "
             << rectWnd.top - rectWnd.bottom << " re b Q\n";
@@ -852,7 +852,7 @@ void CPWL_ScrollBar::CreateButtons(const PWL_CREATEPARAM& cp) {
   PWL_CREATEPARAM scp = cp;
   scp.pParentWnd = this;
   scp.dwBorderWidth = 2;
-  scp.nBorderStyle = PBS_BEVELED;
+  scp.nBorderStyle = BorderStyle::BEVELED;
 
   scp.dwFlags =
       PWS_VISIBLE | PWS_CHILD | PWS_BORDER | PWS_BACKGROUND | PWS_NOREFRESHCLIP;

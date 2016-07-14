@@ -49,10 +49,8 @@ DesktopFrameWin* DesktopFrameWin::Create(
   std::unique_ptr<SharedMemory> shared_memory;
   HANDLE section_handle = nullptr;
   if (shared_memory_factory) {
-    shared_memory = rtc::ScopedToUnique(
-        shared_memory_factory->CreateSharedMemory(buffer_size));
-    if (shared_memory)
-      section_handle = shared_memory->handle();
+    shared_memory = shared_memory_factory->CreateSharedMemory(buffer_size);
+    section_handle = shared_memory->handle();
   }
   void* data = nullptr;
   HBITMAP bitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &data,

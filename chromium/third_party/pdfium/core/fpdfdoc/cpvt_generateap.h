@@ -10,17 +10,10 @@
 #include "core/fpdfdoc/cpvt_color.h"
 #include "core/fpdfdoc/cpvt_dash.h"
 #include "core/fpdfdoc/include/cpdf_variabletext.h"
+#include "core/fpdfdoc/include/fpdf_doc.h"
 #include "core/fxcrt/include/fx_coordinates.h"
 #include "core/fxcrt/include/fx_string.h"
 #include "core/fxcrt/include/fx_system.h"
-
-// border style
-#define PBS_SOLID 0
-#define PBS_DASH 1
-#define PBS_BEVELED 2
-#define PBS_INSET 3
-#define PBS_UNDERLINED 4
-#define PBS_SHADOW 5
 
 class CPDF_Dictionary;
 class CPDF_Document;
@@ -42,14 +35,13 @@ class CPVT_GenerateAP {
                                        CPDF_VariableText::Iterator* pIterator,
                                        const CFX_FloatPoint& ptOffset,
                                        FX_BOOL bContinuous,
-                                       uint16_t SubWord = 0,
-                                       const CPVT_WordRange* pVisible = NULL);
+                                       uint16_t SubWord);
   static CFX_ByteString GenerateBorderAP(const CFX_FloatRect& rect,
                                          FX_FLOAT fWidth,
                                          const CPVT_Color& color,
                                          const CPVT_Color& crLeftTop,
                                          const CPVT_Color& crRightBottom,
-                                         int32_t nStyle,
+                                         BorderStyle nStyle,
                                          const CPVT_Dash& dash);
   static CFX_ByteString GenerateColorAP(const CPVT_Color& color,
                                         const FX_BOOL& bFillOrStroke);

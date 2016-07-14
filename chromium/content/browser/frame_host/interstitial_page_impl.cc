@@ -11,11 +11,12 @@
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -221,8 +222,8 @@ void InterstitialPageImpl::Show() {
   (*g_web_contents_to_interstitial_page)[web_contents_] = this;
 
   if (new_navigation_) {
-    scoped_ptr<NavigationEntryImpl> entry =
-        make_scoped_ptr(new NavigationEntryImpl);
+    std::unique_ptr<NavigationEntryImpl> entry =
+        base::WrapUnique(new NavigationEntryImpl);
     entry->SetURL(url_);
     entry->SetVirtualURL(url_);
     entry->set_page_type(PAGE_TYPE_INTERSTITIAL);
@@ -826,6 +827,12 @@ void InterstitialPageImpl::TakeActionOnResourceDispatcher(
 
   RenderFrameHostImpl* rfh =
       static_cast<RenderFrameHostImpl*>(rvh->GetMainFrame());
+  // Note, the RenderViewHost can lose its main frame if a new RenderFrameHost
+  // commits with a new RenderViewHost. Additionally, RenderViewHosts for OOPIF
+  // don't have main frames.
+  if (!rfh)
+    return;
+
   switch (action) {
     case BLOCK:
       ResourceDispatcherHost::BlockRequestsForFrameFromUI(rfh);

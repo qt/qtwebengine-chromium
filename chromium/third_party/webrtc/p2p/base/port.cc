@@ -21,7 +21,6 @@
 #include "webrtc/base/logging.h"
 #include "webrtc/base/messagedigest.h"
 #include "webrtc/base/network.h"
-#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
 
@@ -220,6 +219,19 @@ Port::~Port() {
     delete list[i];
 }
 
+void Port::SetIceParameters(int component,
+                            const std::string& username_fragment,
+                            const std::string& password) {
+  component_ = component;
+  ice_username_fragment_ = username_fragment;
+  password_ = password;
+  for (Candidate& c : candidates_) {
+    c.set_component(component);
+    c.set_username(username_fragment);
+    c.set_password(password);
+  }
+}
+
 Connection* Port::GetConnection(const rtc::SocketAddress& remote_addr) {
   AddressMap::const_iterator iter = connections_.find(remote_addr);
   if (iter != connections_.end())
@@ -278,7 +290,7 @@ void Port::OnReadPacket(
 
   // If this is an authenticated STUN request, then signal unknown address and
   // send back a proper binding response.
-  rtc::scoped_ptr<IceMessage> msg;
+  std::unique_ptr<IceMessage> msg;
   std::string remote_username;
   if (!GetStunMessage(data, size, addr, &msg, &remote_username)) {
     LOG_J(LS_ERROR, this) << "Received non-STUN packet from unknown address ("
@@ -325,7 +337,7 @@ size_t Port::AddPrflxCandidate(const Candidate& local) {
 bool Port::GetStunMessage(const char* data,
                           size_t size,
                           const rtc::SocketAddress& addr,
-                          rtc::scoped_ptr<IceMessage>* out_msg,
+                          std::unique_ptr<IceMessage>* out_msg,
                           std::string* out_username) {
   // NOTE: This could clearly be optimized to avoid allocating any memory.
   //       However, at the data rates we'll be looking at on the client side,
@@ -342,7 +354,7 @@ bool Port::GetStunMessage(const char* data,
 
   // Parse the request message.  If the packet is not a complete and correct
   // STUN message, then ignore it.
-  rtc::scoped_ptr<IceMessage> stun_msg(new IceMessage());
+  std::unique_ptr<IceMessage> stun_msg(new IceMessage());
   rtc::ByteBufferReader buf(data, size);
   if (!stun_msg->Read(&buf) || (buf.Length() > 0)) {
     return false;
@@ -790,14 +802,14 @@ Connection::Connection(Port* port,
       last_ping_received_(0),
       last_data_received_(0),
       last_ping_response_received_(0),
-      recv_rate_tracker_(100u, 10u),
-      send_rate_tracker_(100u, 10u),
+      recv_rate_tracker_(100, 10u),
+      send_rate_tracker_(100, 10u),
       sent_packets_discarded_(0),
       sent_packets_total_(0),
       reported_(false),
       state_(STATE_WAITING),
       receiving_timeout_(WEAK_CONNECTION_RECEIVE_TIMEOUT),
-      time_created_ms_(rtc::Time64()) {
+      time_created_ms_(rtc::TimeMillis()) {
   // All of our connections start in WAITING state.
   // TODO(mallinath) - Start connections from STATE_FROZEN.
   // Wire up to send stun packets
@@ -895,14 +907,14 @@ void Connection::OnSendStunPacket(const void* data, size_t size,
 
 void Connection::OnReadPacket(
   const char* data, size_t size, const rtc::PacketTime& packet_time) {
-  rtc::scoped_ptr<IceMessage> msg;
+  std::unique_ptr<IceMessage> msg;
   std::string remote_ufrag;
   const rtc::SocketAddress& addr(remote_candidate_.address());
   if (!port_->GetStunMessage(data, size, addr, &msg, &remote_ufrag)) {
     // The packet did not parse as a valid STUN message
     // This is a data packet, pass it along.
     set_receiving(true);
-    last_data_received_ = rtc::Time64();
+    last_data_received_ = rtc::TimeMillis();
     recv_rate_tracker_.AddSamples(size);
     SignalReadPacket(this, data, size, packet_time);
 
@@ -1117,7 +1129,7 @@ void Connection::Ping(int64_t now) {
 
 void Connection::ReceivedPing() {
   set_receiving(true);
-  last_ping_received_ = rtc::Time64();
+  last_ping_received_ = rtc::TimeMillis();
 }
 
 void Connection::ReceivedPingResponse() {
@@ -1130,7 +1142,7 @@ void Connection::ReceivedPingResponse() {
   set_write_state(STATE_WRITABLE);
   set_state(STATE_SUCCEEDED);
   pings_since_last_response_.clear();
-  last_ping_response_received_ = rtc::Time64();
+  last_ping_response_received_ = rtc::TimeMillis();
 }
 
 bool Connection::dead(int64_t now) const {
@@ -1298,11 +1310,21 @@ void Connection::HandleRoleConflictFromPeer() {
   port_->SignalRoleConflict(port_);
 }
 
-void Connection::MaybeSetRemoteIceCredentials(const std::string& ice_ufrag,
-                                              const std::string& ice_pwd) {
+void Connection::MaybeSetRemoteIceCredentialsAndGeneration(
+    const std::string& ice_ufrag,
+    const std::string& ice_pwd,
+    int generation) {
   if (remote_candidate_.username() == ice_ufrag &&
       remote_candidate_.password().empty()) {
     remote_candidate_.set_password(ice_pwd);
+  }
+  // TODO(deadbeef): A value of '0' for the generation is used for both
+  // generation 0 and "generation unknown". It should be changed to an
+  // rtc::Optional to fix this.
+  if (remote_candidate_.username() == ice_ufrag &&
+      remote_candidate_.password() == ice_pwd &&
+      remote_candidate_.generation() == 0) {
+    remote_candidate_.set_generation(generation);
   }
 }
 

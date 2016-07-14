@@ -10,11 +10,12 @@ import("//build/config/crypto.gni")
 import("//build/config/ui.gni")
 import("../build/webrtc.gni")
 
-# Enable OpenSSL (BoringSSL) for iOS. This is covered in webrtc/supplement.gypi
-# for the GYP build.
 import("//build_overrides/webrtc.gni")
-if (is_ios && !build_with_chromium) {
-  use_openssl = true
+
+config("rtc_base_approved_all_dependent_config") {
+  if (is_mac && !build_with_chromium) {
+    libs = [ "Foundation.framework" ]  # needed for logging_mac.mm
+  }
 }
 
 config("rtc_base_config") {
@@ -27,12 +28,6 @@ config("rtc_base_config") {
     "FEATURE_ENABLE_SSL",
     "LOGGING=1",
   ]
-
-  if (is_posix) {
-    # TODO(henrike): issue 3307, make rtc_base build without disabling
-    # these flags.
-    cflags_cc = [ "-Wno-non-virtual-dtor" ]
-  }
 }
 
 config("rtc_base_chromium_config") {
@@ -46,45 +41,38 @@ config("openssl_config") {
   ]
 }
 
-config("ios_config") {
-  libs = [
-    "AVFoundation.framework",
-    "CFNetwork.framework",
+config("rtc_base_all_dependent_config") {
+  if (is_ios) {
+    libs = [
+      "CFNetwork.framework",
 
-    #"Foundation.framework",  # Already included in //build/config:default_libs.
-    "Security.framework",
-    "SystemConfiguration.framework",
-
-    #"UIKit.framework",  # Already included in //build/config:default_libs.
-  ]
-}
-
-config("mac_config") {
-  libs = [
-    "Cocoa.framework",
-
-    #"Foundation.framework",  # Already included in //build/config:default_libs.
-    #"IOKit.framework",  # Already included in //build/config:default_libs.
-    #"Security.framework",  # Already included in //build/config:default_libs.
-    "SystemConfiguration.framework",
-  ]
-}
-
-config("mac_x86_config") {
-  libs = [
-    #"Carbon.framework",  # Already included in //build/config:default_libs.
-  ]
+      #"Foundation.framework",  # Already in //build/config:default_libs.
+      "Security.framework",
+      "SystemConfiguration.framework",
+      "UIKit.framework",  # Already in //build/config:default_libs.
+    ]
+  }
+  if (is_mac) {
+    libs = [
+      "Cocoa.framework",
+      "Foundation.framework",
+      "IOKit.framework",
+      "Security.framework",
+      "SystemConfiguration.framework",
+    ]
+    if (current_cpu == "x86") {
+      libs = [ "Carbon.framework" ]  # Already in //build/config:default_libs.
+    }
+  }
 }
 
 if (is_linux && !build_with_chromium) {
   # Provides the same functionality as the //crypto:platform target, which
   # WebRTC cannot use as we don't sync src/crypto from Chromium.
   group("linux_system_ssl") {
-    if (use_openssl) {
-      deps = [
-        "//third_party/boringssl",
-      ]
-    }
+    deps = [
+      "//third_party/boringssl",
+    ]
   }
 }
 
@@ -98,16 +86,18 @@ if (rtc_build_ssl == 0) {
 
 # The subset of rtc_base approved for use outside of libjingle.
 static_library("rtc_base_approved") {
+  defines = []
   deps = []
   configs += [ "..:common_config" ]
   public_configs = [ "..:common_inherited_config" ]
+  all_dependent_configs = [ ":rtc_base_approved_all_dependent_config" ]
 
   sources = [
     "array_view.h",
     "atomicops.h",
+    "bind.h",
     "bitbuffer.cc",
     "bitbuffer.h",
-    "buffer.cc",
     "buffer.h",
     "bufferqueue.cc",
     "bufferqueue.h",
@@ -133,6 +123,7 @@ static_library("rtc_base_approved") {
     "md5digest.cc",
     "md5digest.h",
     "mod_ops.h",
+    "onetimeevent.h",
     "optional.h",
     "platform_file.cc",
     "platform_file.h",
@@ -148,7 +139,6 @@ static_library("rtc_base_approved") {
     "refcount.h",
     "safe_conversions.h",
     "safe_conversions_impl.h",
-    "scoped_ptr.h",
     "scoped_ref_ptr.h",
     "stringencode.cc",
     "stringencode.h",
@@ -157,6 +147,8 @@ static_library("rtc_base_approved") {
     "swap_queue.h",
     "systeminfo.cc",
     "systeminfo.h",
+    "task_queue.h",
+    "task_queue_posix.h",
     "template_util.h",
     "thread_annotations.h",
     "thread_checker.h",
@@ -179,7 +171,29 @@ static_library("rtc_base_approved") {
     sources += [
       "logging.cc",
       "logging.h",
+      "logging_mac.mm",
     ]
+  }
+
+  if (rtc_build_libevent) {
+    deps += [ "//base/third_party/libevent" ]
+  }
+  if (rtc_enable_libevent) {
+    sources += [
+      "task_queue_libevent.cc",
+      "task_queue_posix.cc",
+    ]
+  } else {
+    # If not libevent, fall back to the other task queues.
+    if (is_mac || is_ios) {
+      sources += [
+        "task_queue_gcd.cc",
+        "task_queue_posix.cc",
+      ]
+    }
+    if (is_win) {
+      sources += [ "task_queue_win.cc" ]
+    }
   }
 }
 
@@ -205,6 +219,8 @@ static_library("rtc_base") {
     ":openssl_config",
     ":rtc_base_config",
   ]
+
+  all_dependent_configs = [ ":rtc_base_all_dependent_config" ]
 
   defines = [ "LOGGING=1" ]
 
@@ -274,7 +290,17 @@ static_library("rtc_base") {
     "network.h",
     "networkmonitor.cc",
     "networkmonitor.h",
+    "nullsocketserver.cc",
     "nullsocketserver.h",
+    "openssl.h",
+    "openssladapter.cc",
+    "openssladapter.h",
+    "openssldigest.cc",
+    "openssldigest.h",
+    "opensslidentity.cc",
+    "opensslidentity.h",
+    "opensslstreamadapter.cc",
+    "opensslstreamadapter.h",
     "pathutils.cc",
     "pathutils.h",
     "physicalsocketserver.cc",
@@ -287,6 +313,8 @@ static_library("rtc_base") {
     "ratelimiter.h",
     "rtccertificate.cc",
     "rtccertificate.h",
+    "rtccertificategenerator.cc",
+    "rtccertificategenerator.h",
     "sha1.cc",
     "sha1.h",
     "sha1digest.cc",
@@ -354,7 +382,6 @@ static_library("rtc_base") {
     sources += [
       "bandwidthsmoother.cc",
       "bandwidthsmoother.h",
-      "bind.h",
       "callback.h",
       "fileutils_mock.h",
       "httpserver.cc",
@@ -460,29 +487,12 @@ static_library("rtc_base") {
   configs += [ "//build/config/compiler:no_chromium_code" ]
   if (!is_win) {
     cflags += [ "-Wno-uninitialized" ]
-    cflags_cc += [ "-Wno-non-virtual-dtor" ]
   }
 
-  # TODO(kjellander): The use_openssl block should really go away in order for
-  # the GN build to be similar to the GYP build. See http://crbug.com/601042 for
-  # more details.
-  if (use_openssl) {
-    if (rtc_build_ssl) {
-      deps += [ "//third_party/boringssl" ]
-    } else {
-      configs += [ "external_ssl_library" ]
-    }
-    sources += [
-      "openssl.h",
-      "openssladapter.cc",
-      "openssladapter.h",
-      "openssldigest.cc",
-      "openssldigest.h",
-      "opensslidentity.cc",
-      "opensslidentity.h",
-      "opensslstreamadapter.cc",
-      "opensslstreamadapter.h",
-    ]
+  if (rtc_build_ssl) {
+    deps += [ "//third_party/boringssl" ]
+  } else {
+    configs += [ "external_ssl_library" ]
   }
 
   if (is_android) {
@@ -498,9 +508,6 @@ static_library("rtc_base") {
   }
 
   if (is_ios || is_mac) {
-    if (is_ios) {
-      all_dependent_configs = [ ":ios_config" ]
-    }
     sources += [
       "maccocoathreadhelper.h",
       "maccocoathreadhelper.mm",
@@ -539,12 +546,6 @@ static_library("rtc_base") {
       "macutils.cc",
       "macutils.h",
     ]
-
-    all_dependent_configs = [ ":mac_config" ]
-
-    if (current_cpu == "x86") {
-      all_dependent_configs += [ ":mac_x86_config" ]
-    }
   }
 
   if (is_win) {
@@ -609,39 +610,6 @@ static_library("rtc_base") {
     deps += [ "//native_client_sdk/src/libraries/nacl_io" ]
     defines += [ "timezone=_timezone" ]
     sources -= [ "ifaddrs_converter.cc" ]
-  }
-}
-
-if (is_ios) {
-  source_set("rtc_base_objc") {
-    deps = [
-      ":rtc_base",
-    ]
-    cflags = [ "-fobjc-arc" ]
-    configs += [ "..:common_config" ]
-    public_configs = [ "..:common_inherited_config" ]
-
-    sources = [
-      "objc/NSString+StdString.h",
-      "objc/NSString+StdString.mm",
-      "objc/RTCCameraPreviewView.h",
-      "objc/RTCCameraPreviewView.m",
-      "objc/RTCDispatcher.h",
-      "objc/RTCDispatcher.m",
-      "objc/RTCFieldTrials.h",
-      "objc/RTCFieldTrials.mm",
-      "objc/RTCFileLogger.h",
-      "objc/RTCFileLogger.mm",
-      "objc/RTCLogging.h",
-      "objc/RTCLogging.mm",
-      "objc/RTCMacros.h",
-      "objc/RTCSSLAdapter.h",
-      "objc/RTCSSLAdapter.mm",
-      "objc/RTCTracing.h",
-      "objc/RTCTracing.mm",
-      "objc/RTCUIApplication.h",
-      "objc/RTCUIApplication.mm",
-    ]
   }
 }
 

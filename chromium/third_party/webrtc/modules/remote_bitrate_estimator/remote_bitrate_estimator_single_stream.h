@@ -15,6 +15,7 @@
 #include <memory>
 #include <vector>
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/rate_statistics.h"
 #include "webrtc/modules/remote_bitrate_estimator/aimd_rate_control.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
@@ -30,8 +31,7 @@ class RemoteBitrateEstimatorSingleStream : public RemoteBitrateEstimator {
 
   void IncomingPacket(int64_t arrival_time_ms,
                       size_t payload_size,
-                      const RTPHeader& header,
-                      bool was_paced) override;
+                      const RTPHeader& header) override;
   void Process() override;
   int64_t TimeUntilNextProcess() override;
   void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;

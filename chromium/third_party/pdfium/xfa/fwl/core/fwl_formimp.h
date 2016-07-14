@@ -7,7 +7,6 @@
 #ifndef XFA_FWL_CORE_FWL_FORMIMP_H_
 #define XFA_FWL_CORE_FWL_FORMIMP_H_
 
-#include "xfa/fwl/core/fwl_panelimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
 #include "xfa/fwl/core/ifwl_form.h"
 
@@ -25,6 +24,7 @@ class CFWL_FormImpDelegate;
 #define FWL_SYSBUTTONSTATE_Hover 0x0001
 #define FWL_SYSBUTTONSTATE_Pressed 0x0002
 #define FWL_SYSBUTTONSTATE_Disabled 0x0010
+
 class CFWL_SysBtn {
  public:
   CFWL_SysBtn() {
@@ -32,9 +32,8 @@ class CFWL_SysBtn {
     m_dwState = 0;
   }
 
-  FX_BOOL IsHover() { return m_dwState & FWL_SYSBUTTONSTATE_Hover; }
-  FX_BOOL IsPressed() { return m_dwState & FWL_SYSBUTTONSTATE_Pressed; }
-  FX_BOOL IsDisabled() { return m_dwState & FWL_SYSBUTTONSTATE_Disabled; }
+  bool IsDisabled() { return !!(m_dwState & FWL_SYSBUTTONSTATE_Disabled); }
+
   void SetNormal() { m_dwState &= 0xFFF0; }
   void SetPressed() {
     SetNormal();
@@ -49,56 +48,51 @@ class CFWL_SysBtn {
               : m_dwState &= ~FWL_SYSBUTTONSTATE_Disabled;
   }
   int32_t GetPartState() {
-    return (IsDisabled() ? FWL_PARTSTATE_FRM_Disabled : (m_dwState + 1));
+    return (IsDisabled() ? CFWL_PartState_Disabled : (m_dwState + 1));
   }
 
   CFX_RectF m_rtBtn;
   uint32_t m_dwState;
 };
+
 enum FORM_RESIZETYPE {
   FORM_RESIZETYPE_None = 0,
   FORM_RESIZETYPE_Cap,
-  FORM_RESIZETYPE_Left,
-  FORM_RESIZETYPE_Top,
-  FORM_RESIZETYPE_Right,
-  FORM_RESIZETYPE_Bottom,
-  FORM_RESIZETYPE_LeftTop,
-  FORM_RESIZETYPE_LeftBottom,
-  FORM_RESIZETYPE_RightTop,
-  FORM_RESIZETYPE_RightBottom
 };
+
 typedef struct RestoreResizeInfo {
   CFX_PointF m_ptStart;
   CFX_SizeF m_szStart;
 } RestoreInfo;
-class CFWL_FormImp : public CFWL_PanelImp {
+
+class CFWL_FormImp : public CFWL_WidgetImp {
  public:
   CFWL_FormImp(const CFWL_WidgetImpProperties& properties, IFWL_Widget* pOuter);
-  virtual ~CFWL_FormImp();
-  virtual FWL_ERR GetClassName(CFX_WideString& wsClass) const;
-  virtual uint32_t GetClassID() const;
-  virtual FX_BOOL IsInstance(const CFX_WideStringC& wsClass) const;
-  virtual FWL_ERR Initialize();
-  virtual FWL_ERR Finalize();
+  ~CFWL_FormImp() override;
 
-  virtual FWL_ERR GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE);
-  virtual FWL_ERR GetClientRect(CFX_RectF& rect);
-  virtual FWL_ERR Update();
-  virtual uint32_t HitTest(FX_FLOAT fx, FX_FLOAT fy);
-  virtual FWL_ERR DrawWidget(CFX_Graphics* pGraphics,
-                             const CFX_Matrix* pMatrix = NULL);
-  virtual FWL_FORMSIZE GetFormSize();
-  virtual FWL_ERR SetFormSize(FWL_FORMSIZE eFormSize);
-  virtual IFWL_Widget* DoModal();
-  virtual IFWL_Widget* DoModal(uint32_t& dwCommandID);
-  virtual FWL_ERR EndDoModal();
-  virtual FWL_ERR SetBorderRegion(CFX_Path* pPath);
-  virtual void DrawBackground(CFX_Graphics* pGraphics,
-                              IFWL_ThemeProvider* pTheme);
+  // CFWL_WidgetImp
+  FWL_Error GetClassName(CFX_WideString& wsClass) const override;
+  FWL_Type GetClassID() const override;
+  FX_BOOL IsInstance(const CFX_WideStringC& wsClass) const override;
+  FWL_Error Initialize() override;
+  FWL_Error Finalize() override;
+
+  FWL_Error GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE) override;
+  FWL_Error GetClientRect(CFX_RectF& rect) override;
+  FWL_Error Update() override;
+  FWL_WidgetHit HitTest(FX_FLOAT fx, FX_FLOAT fy) override;
+  FWL_Error DrawWidget(CFX_Graphics* pGraphics,
+                       const CFX_Matrix* pMatrix = nullptr) override;
+
+  FWL_FORMSIZE GetFormSize();
+  FWL_Error SetFormSize(FWL_FORMSIZE eFormSize);
+  IFWL_Widget* DoModal();
+  IFWL_Widget* DoModal(uint32_t& dwCommandID);
+  FWL_Error EndDoModal();
+  FWL_Error SetBorderRegion(CFX_Path* pPath);
+  void DrawBackground(CFX_Graphics* pGraphics, IFWL_ThemeProvider* pTheme);
   CFWL_WidgetImp* GetSubFocus();
   void SetSubFocus(CFWL_WidgetImp* pWidget);
-  CFX_MapAccelerators& GetAccelerator();
-  void SetAccelerator(CFX_MapAccelerators* pAccelerators);
 
  protected:
   void ShowChildWidget(IFWL_Widget* pParent);
@@ -141,7 +135,7 @@ class CFWL_FormImp : public CFWL_PanelImp {
                      FX_FLOAT fLimitMin,
                      FX_FLOAT fLimitMax,
                      FX_BOOL bTop);
-  CFX_MapAccelerators m_mapAccelerators;
+
   CFX_RectF m_rtRestore;
   CFX_RectF m_rtCaptionText;
   CFX_RectF m_rtRelative;
@@ -172,13 +166,14 @@ class CFWL_FormImp : public CFWL_PanelImp {
   FX_BOOL m_bMouseIn;
   friend class CFWL_FormImpDelegate;
 };
+
 class CFWL_FormImpDelegate : public CFWL_WidgetImpDelegate {
  public:
   CFWL_FormImpDelegate(CFWL_FormImp* pOwner);
-  int32_t OnProcessMessage(CFWL_Message* pMessage) override;
-  FWL_ERR OnProcessEvent(CFWL_Event* pEvent) override;
-  FWL_ERR OnDrawWidget(CFX_Graphics* pGraphics,
-                       const CFX_Matrix* pMatrix = NULL) override;
+  void OnProcessMessage(CFWL_Message* pMessage) override;
+  void OnProcessEvent(CFWL_Event* pEvent) override;
+  void OnDrawWidget(CFX_Graphics* pGraphics,
+                    const CFX_Matrix* pMatrix = NULL) override;
 
  protected:
   void OnLButtonDown(CFWL_MsgMouse* pMsg);

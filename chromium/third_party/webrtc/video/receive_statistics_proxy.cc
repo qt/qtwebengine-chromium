@@ -27,8 +27,8 @@ ReceiveStatisticsProxy::ReceiveStatisticsProxy(
       // 1000ms window, scale 1000 for ms to s.
       decode_fps_estimator_(1000, 1000),
       renders_fps_estimator_(1000, 1000),
-      render_fps_tracker_(100u, 10u),
-      render_pixel_tracker_(100u, 10u) {
+      render_fps_tracker_(100, 10u),
+      render_pixel_tracker_(100, 10u) {
   stats_.ssrc = config.rtp.remote_ssrc;
   for (auto it : config.rtp.rtx)
     rtx_stats_[it.second.ssrc] = StreamDataCounters();
@@ -63,8 +63,10 @@ void ReceiveStatisticsProxy::UpdateHistograms() {
                                       height);
   }
   int sync_offset_ms = sync_offset_counter_.Avg(kMinRequiredSamples);
-  if (sync_offset_ms != -1)
-    RTC_HISTOGRAM_COUNTS_10000("WebRTC.Video.AVSyncOffsetInMs", sync_offset_ms);
+  if (sync_offset_ms != -1) {
+    RTC_LOGGED_HISTOGRAM_COUNTS_10000("WebRTC.Video.AVSyncOffsetInMs",
+                                      sync_offset_ms);
+  }
 
   int qp = qp_counters_.vp8.Avg(kMinRequiredSamples);
   if (qp != -1)
@@ -76,6 +78,22 @@ void ReceiveStatisticsProxy::UpdateHistograms() {
   int decode_ms = decode_time_counter_.Avg(kMinRequiredDecodeSamples);
   if (decode_ms != -1)
     RTC_LOGGED_HISTOGRAM_COUNTS_1000("WebRTC.Video.DecodeTimeInMs", decode_ms);
+
+  int jb_delay_ms = jitter_buffer_delay_counter_.Avg(kMinRequiredDecodeSamples);
+  if (jb_delay_ms != -1) {
+    RTC_LOGGED_HISTOGRAM_COUNTS_10000("WebRTC.Video.JitterBufferDelayInMs",
+                                      jb_delay_ms);
+  }
+  int target_delay_ms = target_delay_counter_.Avg(kMinRequiredDecodeSamples);
+  if (target_delay_ms != -1) {
+    RTC_LOGGED_HISTOGRAM_COUNTS_10000("WebRTC.Video.TargetDelayInMs",
+                                      target_delay_ms);
+  }
+  int current_delay_ms = current_delay_counter_.Avg(kMinRequiredDecodeSamples);
+  if (current_delay_ms != -1) {
+    RTC_LOGGED_HISTOGRAM_COUNTS_10000("WebRTC.Video.CurrentDelayInMs",
+                                      current_delay_ms);
+  }
 
   int delay_ms = delay_counter_.Avg(kMinRequiredDecodeSamples);
   if (delay_ms != -1)
@@ -170,6 +188,9 @@ void ReceiveStatisticsProxy::OnDecoderTiming(int decode_ms,
   stats_.min_playout_delay_ms = min_playout_delay_ms;
   stats_.render_delay_ms = render_delay_ms;
   decode_time_counter_.Add(decode_ms);
+  jitter_buffer_delay_counter_.Add(jitter_buffer_ms);
+  target_delay_counter_.Add(target_delay_ms);
+  current_delay_counter_.Add(current_delay_ms);
   // Network delay (rtt/2) + target_delay_ms (jitter delay + decode time +
   // render delay).
   delay_counter_.Add(target_delay_ms + rtt_ms / 2);

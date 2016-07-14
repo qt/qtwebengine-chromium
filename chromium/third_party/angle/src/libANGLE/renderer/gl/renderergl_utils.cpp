@@ -289,6 +289,24 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
         // Doesn't impact supported version
     }
 
+    if (functions->isAtLeastGL(gl::Version(4, 1)) ||
+        functions->hasGLExtension("GL_ARB_get_program_binary") ||
+        functions->isAtLeastGLES(gl::Version(3, 0)) ||
+        functions->hasGLExtension("GL_OES_get_program_binary"))
+    {
+        // Able to support the GL_PROGRAM_BINARY_ANGLE format as long as another program binary
+        // format is available.
+        GLint numBinaryFormats = QuerySingleGLInt(functions, GL_NUM_PROGRAM_BINARY_FORMATS_OES);
+        if (numBinaryFormats > 0)
+        {
+            caps->programBinaryFormats.push_back(GL_PROGRAM_BINARY_ANGLE);
+        }
+    }
+    else
+    {
+        // Doesn't impact supported version
+    }
+
     // glGetShaderPrecisionFormat is not available until desktop GL version 4.1 or GL_ARB_ES2_compatibility exists
     if (functions->isAtLeastGL(gl::Version(4, 1)) || functions->hasGLExtension("GL_ARB_ES2_compatibility") ||
         functions->isAtLeastGLES(gl::Version(2, 0)))
@@ -564,10 +582,10 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
     // updated.
     caps->maxVertexUniformVectors = std::min(1024u, caps->maxVertexUniformVectors);
     caps->maxVertexUniformComponents =
-        std::min(caps->maxVertexUniformVectors / 4, caps->maxVertexUniformComponents);
+        std::min(caps->maxVertexUniformVectors * 4, caps->maxVertexUniformComponents);
     caps->maxFragmentUniformVectors = std::min(1024u, caps->maxFragmentUniformVectors);
     caps->maxFragmentUniformComponents =
-        std::min(caps->maxFragmentUniformVectors / 4, caps->maxFragmentUniformComponents);
+        std::min(caps->maxFragmentUniformVectors * 4, caps->maxFragmentUniformComponents);
 
     // If it is not possible to support reading buffer data back, a shadow copy of the buffers must
     // be held. This disallows writing to buffers indirectly through transform feedback, thus
@@ -581,6 +599,7 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
     extensions->setTextureExtensionSupport(*textureCapsMap);
     extensions->elementIndexUint = functions->standard == STANDARD_GL_DESKTOP ||
                                    functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_OES_element_index_uint");
+    extensions->getProgramBinary = caps->programBinaryFormats.size() > 0;
     extensions->readFormatBGRA = functions->isAtLeastGL(gl::Version(1, 2)) || functions->hasGLExtension("GL_EXT_bgra") ||
                                  functions->hasGLESExtension("GL_EXT_read_format_bgra");
     extensions->mapBuffer = functions->isAtLeastGL(gl::Version(1, 5)) ||
@@ -638,10 +657,21 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
             QueryQueryValue(functions, GL_TIMESTAMP, GL_QUERY_COUNTER_BITS);
     }
 
+    // the EXT_multisample_compatibility is written against ES3.1 but can apply
+    // to earlier versions so therefore we're only checking for the extension string
+    // and not the specific GLES version.
+    extensions->multisampleCompatibility = functions->isAtLeastGL(gl::Version(1, 3)) ||
+        functions->hasGLESExtension("GL_EXT_multisample_compatibility");
+
+    extensions->framebufferMixedSamples = functions->hasGLExtension("GL_NV_framebuffer_mixed_samples") ||
+        functions->hasGLESExtension("GL_NV_framebuffer_mixed_samples");
+
     // ANGLE emulates vertex array objects in its GL layer
     extensions->vertexArrayObject = true;
 
     extensions->noError = true;
+
+    extensions->bindUniformLocation = true;
 }
 
 void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workarounds)
@@ -666,6 +696,9 @@ void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workaround
 
     workarounds->finishDoesNotCauseQueriesToBeAvailable =
         functions->standard == STANDARD_GL_DESKTOP && vendor == VENDOR_ID_NVIDIA;
+
+    // TODO(cwallez): Disable this workaround for MacOSX versions 10.9 or later.
+    workarounds->alwaysCallUseProgramAfterLink = true;
 }
 
 }

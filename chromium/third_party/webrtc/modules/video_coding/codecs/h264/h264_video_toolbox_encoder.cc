@@ -17,12 +17,12 @@
 #include <string>
 #include <vector>
 
+#if defined(WEBRTC_IOS)
+#include "RTCUIApplication.h"
+#endif
 #include "libyuv/convert_from.h"
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
-#if defined(WEBRTC_IOS)
-#include "webrtc/base/objc/RTCUIApplication.h"
-#endif
 #include "webrtc/modules/video_coding/codecs/h264/h264_video_toolbox_nalu.h"
 #include "webrtc/system_wrappers/include/clock.h"
 
@@ -118,8 +118,14 @@ struct FrameEncodeParams {
                     int32_t w,
                     int32_t h,
                     int64_t rtms,
-                    uint32_t ts)
-      : encoder(e), width(w), height(h), render_time_ms(rtms), timestamp(ts) {
+                    uint32_t ts,
+                    webrtc::VideoRotation r)
+      : encoder(e),
+        width(w),
+        height(h),
+        render_time_ms(rtms),
+        timestamp(ts),
+        rotation(r) {
     if (csi) {
       codec_specific_info = *csi;
     } else {
@@ -133,6 +139,7 @@ struct FrameEncodeParams {
   int32_t height;
   int64_t render_time_ms;
   uint32_t timestamp;
+  webrtc::VideoRotation rotation;
 };
 
 // We receive I420Frames as input, but we need to feed CVPixelBuffers into the
@@ -161,10 +168,14 @@ bool CopyVideoFrameToPixelBuffer(const webrtc::VideoFrame& frame,
   int dst_stride_uv = CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1);
   // Convert I420 to NV12.
   int ret = libyuv::I420ToNV12(
-      frame.buffer(webrtc::kYPlane), frame.stride(webrtc::kYPlane),
-      frame.buffer(webrtc::kUPlane), frame.stride(webrtc::kUPlane),
-      frame.buffer(webrtc::kVPlane), frame.stride(webrtc::kVPlane), dst_y,
-      dst_stride_y, dst_uv, dst_stride_uv, frame.width(), frame.height());
+      frame.video_frame_buffer()->DataY(),
+      frame.video_frame_buffer()->StrideY(),
+      frame.video_frame_buffer()->DataU(),
+      frame.video_frame_buffer()->StrideU(),
+      frame.video_frame_buffer()->DataV(),
+      frame.video_frame_buffer()->StrideV(),
+      dst_y, dst_stride_y, dst_uv, dst_stride_uv,
+      frame.width(), frame.height());
   CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
   if (ret) {
     LOG(LS_ERROR) << "Error converting I420 VideoFrame to NV12 :" << ret;
@@ -185,7 +196,8 @@ void VTCompressionOutputCallback(void* encoder,
   encode_params->encoder->OnEncodedFrame(
       status, info_flags, sample_buffer, encode_params->codec_specific_info,
       encode_params->width, encode_params->height,
-      encode_params->render_time_ms, encode_params->timestamp);
+      encode_params->render_time_ms, encode_params->timestamp,
+      encode_params->rotation);
 }
 
 }  // namespace internal
@@ -248,6 +260,7 @@ int H264VideoToolboxEncoder::Encode(
     return WEBRTC_VIDEO_CODEC_OK;
   }
 #endif
+  bool is_keyframe_required = false;
   // Get a pixel buffer from the pool and copy frame data over.
   CVPixelBufferPoolRef pixel_buffer_pool =
       VTCompressionSessionGetPixelBufferPool(compression_session_);
@@ -257,9 +270,11 @@ int H264VideoToolboxEncoder::Encode(
     // invalidated, which causes this pool call to fail when the application
     // is foregrounded and frames are being sent for encoding again.
     // Resetting the session when this happens fixes the issue.
+    // In addition we request a keyframe so video can recover quickly.
     ResetCompressionSession();
     pixel_buffer_pool =
         VTCompressionSessionGetPixelBufferPool(compression_session_);
+    is_keyframe_required = true;
   }
 #endif
   if (!pixel_buffer_pool) {
@@ -283,8 +298,7 @@ int H264VideoToolboxEncoder::Encode(
   }
 
   // Check if we need a keyframe.
-  bool is_keyframe_required = false;
-  if (frame_types) {
+  if (!is_keyframe_required && frame_types) {
     for (auto frame_type : *frame_types) {
       if (frame_type == kVideoFrameKey) {
         is_keyframe_required = true;
@@ -304,7 +318,7 @@ int H264VideoToolboxEncoder::Encode(
   std::unique_ptr<internal::FrameEncodeParams> encode_params;
   encode_params.reset(new internal::FrameEncodeParams(
       this, codec_specific_info, width_, height_, input_image.render_time_ms(),
-      input_image.timestamp()));
+      input_image.timestamp(), input_image.rotation()));
 
   // Update the bitrate if needed.
   SetBitrateBps(bitrate_adjuster_.GetAdjustedBitrateBps());
@@ -469,7 +483,8 @@ void H264VideoToolboxEncoder::OnEncodedFrame(
     int32_t width,
     int32_t height,
     int64_t render_time_ms,
-    uint32_t timestamp) {
+    uint32_t timestamp,
+    VideoRotation rotation) {
   if (status != noErr) {
     LOG(LS_ERROR) << "H264 encode failed.";
     return;
@@ -509,6 +524,7 @@ void H264VideoToolboxEncoder::OnEncodedFrame(
       is_keyframe ? webrtc::kVideoFrameKey : webrtc::kVideoFrameDelta;
   frame.capture_time_ms_ = render_time_ms;
   frame._timeStamp = timestamp;
+  frame.rotation_ = rotation;
 
   int result = callback_->Encoded(frame, &codec_specific_info, header.get());
   if (result != 0) {

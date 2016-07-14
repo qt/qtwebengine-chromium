@@ -12,18 +12,48 @@
 #include "GrContextOptions.h"
 
 #include "gl/GLTestContext.h"
+#include "vk/VkTestContext.h"
 #include "SkTArray.h"
+
+struct GrVkBackendContext;
 
 namespace sk_gpu_test {
 
-struct ContextInfo {
-    ContextInfo()
-        : fGrContext(nullptr), fGLContext(nullptr) { }
-    ContextInfo(GrContext* grContext, GLTestContext* glContext)
-        : fGrContext(grContext), fGLContext(glContext) { }
-    GrContext* fGrContext;
-    GLTestContext* fGLContext; //! Valid until the factory destroys it via abandonContexts() or
-                               //! destroyContexts().
+class ContextInfo {
+public:
+    ContextInfo() = default;
+    ContextInfo& operator=(const ContextInfo&) = default;
+
+    GrBackend backend() const { return fBackend; };
+
+    GrContext* grContext() const { return fGrContext; }
+
+    TestContext* testContext() const { return fTestContext; }
+
+    GLTestContext* glContext() const {
+        SkASSERT(kOpenGL_GrBackend == fBackend);
+        return static_cast<GLTestContext*>(fTestContext);
+    }
+
+#ifdef SK_VULKAN
+    VkTestContext* vkContext() const {
+        SkASSERT(kVulkan_GrBackend == fBackend);
+        return static_cast<VkTestContext*>(fTestContext);
+    }
+#endif
+
+private:
+    ContextInfo(GrBackend backend, TestContext* testContext, GrContext* grContext)
+            : fBackend(backend)
+            , fTestContext(testContext)
+            , fGrContext(grContext) {}
+
+    GrBackend       fBackend = kOpenGL_GrBackend;
+    // Valid until the factory destroys it via abandonContexts() or destroyContexts().
+    TestContext*    fTestContext = nullptr;
+    GrContext*      fGrContext = nullptr;
+
+    friend class GrContextFactory;
 };
 
 /**
@@ -35,24 +65,19 @@ struct ContextInfo {
  */
 class GrContextFactory : SkNoncopyable {
 public:
+    // The availability of context types is subject to platform and build configuration
+    // restrictions.
     enum ContextType {
         kGL_ContextType,            //! OpenGL context.
         kGLES_ContextType,          //! OpenGL ES context.
-#if SK_ANGLE
-#ifdef SK_BUILD_FOR_WIN
         kANGLE_ContextType,         //! ANGLE on DirectX OpenGL ES context.
-#endif
         kANGLE_GL_ContextType,      //! ANGLE on OpenGL OpenGL ES context.
-#endif
-#if SK_COMMAND_BUFFER
         kCommandBuffer_ContextType, //! Chromium command buffer OpenGL ES context.
-#endif
-#if SK_MESA
         kMESA_ContextType,          //! MESA OpenGL context
-#endif
         kNullGL_ContextType,        //! Non-rendering OpenGL mock context.
         kDebugGL_ContextType,       //! Non-rendering, state verifying OpenGL context.
-        kLastContextType = kDebugGL_ContextType
+        kVulkan_ContextType,        //! Vulkan
+        kLastContextType = kVulkan_ContextType
     };
 
     //! OpenGL or OpenGL ES context depending on the platform. To be removed.
@@ -70,6 +95,18 @@ public:
         kRequireSRGBSupport_ContextOptions  = 0x2,
     };
 
+    static ContextType NativeContextTypeForBackend(GrBackend backend) {
+        switch (backend) {
+            case kOpenGL_GrBackend:
+                return kNativeGL_ContextType;
+            case kVulkan_GrBackend:
+                return kVulkan_ContextType;
+            default:
+                SkFAIL("Unknown backend");
+                return kNullGL_ContextType;
+        }
+    }
+
     static bool IsRenderingContext(ContextType type) {
         switch (type) {
             case kNullGL_ContextType:
@@ -81,8 +118,12 @@ public:
     }
 
     static GrBackend ContextTypeBackend(ContextType type) {
-        // Currently all the context types use the GL backed
-        return kOpenGL_GrBackend;
+        switch (type) {
+            case kVulkan_ContextType:
+                return kVulkan_GrBackend;
+            default:
+                return kOpenGL_GrBackend;
+        }
     }
 
     static const char* ContextTypeName(ContextType type) {
@@ -91,28 +132,20 @@ public:
                 return "gl";
             case kGLES_ContextType:
                 return "gles";
-#if SK_ANGLE
-#ifdef SK_BUILD_FOR_WIN
             case kANGLE_ContextType:
                 return "angle";
-#endif
             case kANGLE_GL_ContextType:
                 return "angle-gl";
-#endif
-#if SK_COMMAND_BUFFER
             case kCommandBuffer_ContextType:
                 return "commandbuffer";
-#endif
-#if SK_MESA
             case kMESA_ContextType:
                 return "mesa";
-#endif
             case kNullGL_ContextType:
-                return "null";
+                return "nullgl";
             case kDebugGL_ContextType:
-                return "debug";
-            default:
-                SkFAIL("Unknown GL Context type.");
+                return "debuggl";
+            case kVulkan_ContextType:
+                return "vulkan";
         }
     }
 
@@ -134,19 +167,22 @@ public:
      * Get a GrContext initialized with a type of GL context. It also makes the GL context current.
      */
     GrContext* get(ContextType type, ContextOptions options = kNone_ContextOptions) {
-        return this->getContextInfo(type, options).fGrContext;
+        return this->getContextInfo(type, options).grContext();
     }
     const GrContextOptions& getGlobalOptions() const { return fGlobalOptions; }
 
 private:
     struct Context {
-        ContextType         fType;
-        ContextOptions      fOptions;
-        GLTestContext*      fGLContext; //  null if non-GL
-        GrContext*          fGrContext;
+        ContextType     fType;
+        ContextOptions  fOptions;
+        GrBackend       fBackend;
+        TestContext*    fTestContext;
+        GrContext*      fGrContext;
+        bool            fAbandoned;
     };
-    SkTArray<Context, true> fContexts;
-    const GrContextOptions  fGlobalOptions;
+    SkTArray<Context, true>         fContexts;
+    SkAutoTDelete<GLTestContext>    fSentinelGLContext;
+    const GrContextOptions          fGlobalOptions;
 };
 }  // namespace sk_gpu_test
 #endif

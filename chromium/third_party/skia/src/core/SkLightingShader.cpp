@@ -203,13 +203,13 @@ public:
                                                    "Xform", &xformUniName);
 
             fragBuilder->codeAppend("vec4 diffuseColor = ");
-            fragBuilder->appendTextureLookupAndModulate(args.fInputColor, args.fSamplers[0],
+            fragBuilder->appendTextureLookupAndModulate(args.fInputColor, args.fTexSamplers[0],
                                                 args.fCoords[0].c_str(),
                                                 args.fCoords[0].getType());
             fragBuilder->codeAppend(";");
 
             fragBuilder->codeAppend("vec4 normalColor = ");
-            fragBuilder->appendTextureLookup(args.fSamplers[1],
+            fragBuilder->appendTextureLookup(args.fTexSamplers[1],
                                      args.fCoords[1].c_str(),
                                      args.fCoords[1].getType());
             fragBuilder->codeAppend(";");
@@ -606,7 +606,12 @@ sk_sp<SkFlattenable> SkLightingShaderImpl::CreateProc(SkReadBuffer& buf) {
 
     SkAutoTUnref<const SkLightingShader::Lights> lights(builder.finish());
 
-    return sk_make_sp<SkLightingShaderImpl>(diffuse, normal, lights, SkVector::Make(1.0f, 0.0f),
+    SkVector invNormRotation = {1,0};
+    if (!buf.isVersionLT(SkReadBuffer::kLightingShaderWritesInvNormRotation)) {
+        invNormRotation = buf.readPoint();
+    }
+
+    return sk_make_sp<SkLightingShaderImpl>(diffuse, normal, lights, invNormRotation,
                                             &diffLocalM, &normLocalM);
 }
 
@@ -634,6 +639,7 @@ void SkLightingShaderImpl::flatten(SkWriteBuffer& buf) const {
             buf.writeScalarArray(&light.dir().fX, 3);
         }
     }
+    buf.writePoint(fInvNormRotation);
 }
 
 bool SkLightingShaderImpl::computeNormTotalInverse(const ContextRec& rec,

@@ -13,8 +13,8 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_renderoptions.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_safe_types.h"
-#include "core/include/fxcodec/fx_codec.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/include/fsdk_mgr.h"
 #include "fpdfsdk/include/fsdk_rendercontext.h"
@@ -24,10 +24,10 @@
 #include "third_party/base/numerics/safe_conversions_impl.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_app.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_doc.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_page.h"
-#include "fpdfsdk/include/fpdfxfa/fpdfxfa_util.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
+#include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
 #include "public/fpdf_formfill.h"
 #endif  // PDF_ENABLE_XFA
 
@@ -244,7 +244,7 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   CPDF_ModuleMgr* pModuleMgr = CPDF_ModuleMgr::Get();
   pModuleMgr->SetCodecModule(g_pCodecModule);
   pModuleMgr->InitPageModule();
-  pModuleMgr->InitRenderModule();
+
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_App::GetInstance()->Initialize(
       (cfg && cfg->version >= 2)
@@ -256,6 +256,7 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   pModuleMgr->LoadEmbeddedCNS1CMaps();
   pModuleMgr->LoadEmbeddedKorea1CMaps();
 #endif  // PDF_ENABLE_XFA
+
   if (cfg && cfg->version >= 2)
     IJS_Runtime::Initialize(cfg->m_v8EmbedderSlot, cfg->m_pIsolate);
 }
@@ -463,7 +464,7 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_GetFileVersion(FPDF_DOCUMENT doc,
 // header).
 DLLEXPORT unsigned long STDCALL FPDF_GetDocPermissions(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
+  if (!pDoc || !pDoc->GetParser())
 #ifndef PDF_ENABLE_XFA
     return 0;
 #else   // PDF_ENABLE_XFA
@@ -476,7 +477,7 @@ DLLEXPORT unsigned long STDCALL FPDF_GetDocPermissions(FPDF_DOCUMENT document) {
 
 DLLEXPORT int STDCALL FPDF_GetSecurityHandlerRevision(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
+  if (!pDoc || !pDoc->GetParser())
     return -1;
 
   CPDF_Dictionary* pDict = pDoc->GetParser()->GetEncryptDict();
@@ -502,10 +503,10 @@ DLLEXPORT FPDF_PAGE STDCALL FPDF_LoadPage(FPDF_DOCUMENT document,
 #else   // PDF_ENABLE_XFA
   CPDF_Dictionary* pDict = pDoc->GetPage(page_index);
   if (!pDict)
-    return NULL;
-  CPDF_Page* pPage = new CPDF_Page;
-  pPage->Load(pDoc, pDict);
-  pPage->ParseContent(nullptr);
+    return nullptr;
+
+  CPDF_Page* pPage = new CPDF_Page(pDoc, pDict, true);
+  pPage->ParseContent();
   return pPage;
 #endif  // PDF_ENABLE_XFA
 }
@@ -548,13 +549,8 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
     pBitmap = new CFX_DIBitmap;
     pBitmap->Create(size_x, size_y, FXDIB_Argb);
     pBitmap->Clear(0x00ffffff);
-#ifdef _SKIA_SUPPORT_
-    pContext->m_pDevice = new CFX_SkiaDevice;
-    ((CFX_SkiaDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)pBitmap);
-#else
     pContext->m_pDevice = new CFX_FxgeDevice;
     ((CFX_FxgeDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)pBitmap);
-#endif
   } else {
     pContext->m_pDevice = new CFX_WindowsDevice(dc);
   }
@@ -647,15 +643,6 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
     return;
   CRenderContext* pContext = new CRenderContext;
   pPage->SetPrivateData((void*)1, pContext, DropContext);
-#ifdef _SKIA_SUPPORT_
-  pContext->m_pDevice = new CFX_SkiaDevice();
-
-  if (flags & FPDF_REVERSE_BYTE_ORDER)
-    ((CFX_SkiaDevice*)pContext->m_pDevice)
-        ->Attach((CFX_DIBitmap*)bitmap, 0, TRUE);
-  else
-    ((CFX_SkiaDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)bitmap);
-#else
   pContext->m_pDevice = new CFX_FxgeDevice;
 
   if (flags & FPDF_REVERSE_BYTE_ORDER)
@@ -663,7 +650,6 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
         ->Attach((CFX_DIBitmap*)bitmap, 0, TRUE);
   else
     ((CFX_FxgeDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)bitmap);
-#endif
 
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
                          rotate, flags, TRUE, NULL);
@@ -681,7 +667,7 @@ DLLEXPORT FPDF_RECORDER STDCALL FPDF_RenderPageSkp(FPDF_PAGE page,
     return nullptr;
   std::unique_ptr<CRenderContext> pContext(new CRenderContext);
   pPage->SetPrivateData((void*)1, pContext.get(), DropContext);
-  CFX_SkiaDevice* skDevice = new CFX_SkiaDevice();
+  CFX_FxgeDevice* skDevice = new CFX_FxgeDevice;
   FPDF_RECORDER recorder = skDevice->CreateRecorder(size_x, size_y);
   pContext->m_pDevice = skDevice;
 
@@ -834,11 +820,7 @@ DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
                                            FPDF_DWORD color) {
   if (!bitmap)
     return;
-#ifdef _SKIA_SUPPORT_
-  CFX_SkiaDevice device;
-#else
   CFX_FxgeDevice device;
-#endif
   device.Attach((CFX_DIBitmap*)bitmap);
   if (!((CFX_DIBitmap*)bitmap)->HasAlpha())
     color |= 0xFF000000;
@@ -958,8 +940,8 @@ DLLEXPORT int STDCALL FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
   CPDF_Dictionary* pDict = pDoc->GetPage(page_index);
   if (!pDict)
     return FALSE;
-  CPDF_Page page;
-  page.Load(pDoc, pDict);
+
+  CPDF_Page page(pDoc, pDict, true);
   *width = page.GetPageWidth();
   *height = page.GetPageHeight();
 #endif  // PDF_ENABLE_XFA
@@ -1044,7 +1026,7 @@ DLLEXPORT FPDF_DEST STDCALL FPDF_GetNamedDestByName(FPDF_DOCUMENT document,
 }
 
 #ifdef PDF_ENABLE_XFA
-FPDF_RESULT FPDF_BStr_Init(FPDF_BSTR* str) {
+DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Init(FPDF_BSTR* str) {
   if (!str)
     return -1;
 
@@ -1052,7 +1034,9 @@ FPDF_RESULT FPDF_BStr_Init(FPDF_BSTR* str) {
   return 0;
 }
 
-FPDF_RESULT FPDF_BStr_Set(FPDF_BSTR* str, FPDF_LPCSTR bstr, int length) {
+DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Set(FPDF_BSTR* str,
+                                            FPDF_LPCSTR bstr,
+                                            int length) {
   if (!str)
     return -1;
   if (!bstr || !length)
@@ -1084,7 +1068,7 @@ FPDF_RESULT FPDF_BStr_Set(FPDF_BSTR* str, FPDF_LPCSTR bstr, int length) {
   return 0;
 }
 
-FPDF_RESULT FPDF_BStr_Clear(FPDF_BSTR* str) {
+DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Clear(FPDF_BSTR* str) {
   if (!str)
     return -1;
 

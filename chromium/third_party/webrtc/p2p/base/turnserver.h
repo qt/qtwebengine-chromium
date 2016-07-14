@@ -13,6 +13,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 
@@ -125,7 +126,7 @@ class TurnServerAllocation : public rtc::MessageHandler,
   TurnServer* server_;
   rtc::Thread* thread_;
   TurnServerConnection conn_;
-  rtc::scoped_ptr<rtc::AsyncPacketSocket> external_socket_;
+  std::unique_ptr<rtc::AsyncPacketSocket> external_socket_;
   std::string key_;
   std::string transaction_id_;
   std::string username_;
@@ -143,6 +144,7 @@ class TurnAuthInterface {
   // Return true if the given username and realm are valid, or false if not.
   virtual bool GetKey(const std::string& username, const std::string& realm,
                       std::string* key) = 0;
+  virtual ~TurnAuthInterface() = default;
 };
 
 // An interface enables Turn Server to control redirection behavior.
@@ -269,8 +271,7 @@ class TurnServer : public sigslot::has_slots<> {
 
   InternalSocketMap server_sockets_;
   ServerSocketMap server_listen_sockets_;
-  rtc::scoped_ptr<rtc::PacketSocketFactory>
-      external_socket_factory_;
+  std::unique_ptr<rtc::PacketSocketFactory> external_socket_factory_;
   rtc::SocketAddress external_addr_;
 
   AllocationMap allocations_;

@@ -6,10 +6,10 @@
 
 #include <limits>
 
+#include "core/fxcodec/include/fx_codec.h"
 #include "core/fxge/ge/fx_text_int.h"
-#include "core/include/fxcodec/fx_codec.h"
-#include "core/include/fxge/fx_freetype.h"
-#include "core/include/fxge/fx_ge.h"
+#include "core/fxge/include/fx_freetype.h"
+#include "core/fxge/include/fx_ge.h"
 
 #ifdef _SKIA_SUPPORT_
 #include "third_party/skia/include/core/SkStream.h"
@@ -158,7 +158,7 @@ void _Color2Argb(FX_ARGB& argb,
   }
   uint8_t bgra[4];
   if (pIccTransform) {
-    ICodec_IccModule* pIccModule =
+    CCodec_IccModule* pIccModule =
         CFX_GEModule::Get()->GetCodecModule()->GetIccModule();
     color = FXGETFLAG_COLORTYPE(alpha_flag) ? FXCMYK_TODIB(color)
                                             : FXARGB_TODIB(color);
@@ -194,7 +194,8 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
       bool should_call_draw_device_text = true;
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
       if ((text_flags & FXFONT_CIDFONT) ||
-          (pFont->GetPsName().Find(CFX_WideString::FromLocal("+ZJHL")) != -1) ||
+          (pFont->GetPsName().Find(
+               CFX_WideString::FromLocal("+ZJHL").AsStringC()) != -1) ||
           (pFont->GetPsName() == CFX_WideString::FromLocal("CNAAJI+cmex10"))) {
         should_call_draw_device_text = false;
       }
@@ -256,7 +257,14 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
       } else {
         bClearType = text_flags & FXTEXT_CLEARTYPE;
       }
-      if ((m_RenderCaps & (FXRC_ALPHA_OUTPUT | FXRC_CMYK_OUTPUT))) {
+      if (!CFX_GEModule::Get()->GetFontMgr()->FTLibrarySupportsHinting()) {
+        // Some Freetype implementations (like the one packaged with Fedora) do
+        // not support hinting due to patents 6219025, 6239783, 6307566,
+        // 6225973, 6243070, 6393145, 6421054, 6282327, and 6624828; the latest
+        // one expires 10/7/19.  This makes LCD antialiasing very ugly, so we
+        // instead fall back on NORMAL antialiasing.
+        anti_alias = FXFT_RENDER_MODE_NORMAL;
+      } else if ((m_RenderCaps & (FXRC_ALPHA_OUTPUT | FXRC_CMYK_OUTPUT))) {
         anti_alias = FXFT_RENDER_MODE_LCD;
         bNormal = TRUE;
       } else if (m_bpp < 16) {
@@ -412,7 +420,7 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
       }
       continue;
     }
-    FX_BOOL bBGRStripe = text_flags & FXTEXT_BGR_STRIPE;
+    bool bBGRStripe = !!(text_flags & FXTEXT_BGR_STRIPE);
     ncols /= 3;
     int x_subpixel = (int)(glyph.m_fOriginX * 3) % 3;
     uint8_t* src_buf = pGlyph->GetBuffer();
@@ -1287,7 +1295,7 @@ void CFX_FaceCache::InitPlatform() {}
 CFX_GlyphBitmap* CFX_FaceCache::LookUpGlyphBitmap(
     CFX_Font* pFont,
     const CFX_Matrix* pMatrix,
-    CFX_ByteStringC& FaceGlyphsKey,
+    const CFX_ByteString& FaceGlyphsKey,
     uint32_t glyph_index,
     FX_BOOL bFontStyle,
     int dest_width,
@@ -1358,7 +1366,7 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(CFX_Font* pFont,
                       dest_width, anti_alias, 3);
   }
 #endif
-  CFX_ByteStringC FaceGlyphsKey(keygen.m_Key, keygen.m_KeyLen);
+  CFX_ByteString FaceGlyphsKey(keygen.m_Key, keygen.m_KeyLen);
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_APPLE_
   return LookUpGlyphBitmap(pFont, pMatrix, FaceGlyphsKey, glyph_index,
                            bFontStyle, dest_width, anti_alias);
@@ -1400,7 +1408,7 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(CFX_Font* pFont,
     keygen.Generate(6, (int)(pMatrix->a * 10000), (int)(pMatrix->b * 10000),
                     (int)(pMatrix->c * 10000), (int)(pMatrix->d * 10000),
                     dest_width, anti_alias);
-  CFX_ByteStringC FaceGlyphsKey2(keygen.m_Key, keygen.m_KeyLen);
+  CFX_ByteString FaceGlyphsKey2(keygen.m_Key, keygen.m_KeyLen);
   text_flags |= FXTEXT_NO_NATIVETEXT;
   return LookUpGlyphBitmap(pFont, pMatrix, FaceGlyphsKey2, glyph_index,
                            bFontStyle, dest_width, anti_alias);
@@ -1579,7 +1587,7 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
       if (pFont->IsVertical())
         ft_matrix.yx += ft_matrix.yy * skew / 100;
       else
-        ft_matrix.xy += -ft_matrix.xx * skew / 100;
+        ft_matrix.xy -= ft_matrix.xx * skew / 100;
     }
     if (pSubstFont->m_SubstFlags & FXFONT_SUBST_MM) {
       pFont->AdjustMMParams(glyph_index, dest_width,
@@ -1849,7 +1857,7 @@ CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index, int dest_width) {
       if (m_bVertical)
         ft_matrix.yx += ft_matrix.yy * skew / 100;
       else
-        ft_matrix.xy += -ft_matrix.xx * skew / 100;
+        ft_matrix.xy -= ft_matrix.xx * skew / 100;
     }
     if (m_pSubstFont->m_SubstFlags & FXFONT_SUBST_MM) {
       AdjustMMParams(glyph_index, dest_width, m_pSubstFont->m_Weight);

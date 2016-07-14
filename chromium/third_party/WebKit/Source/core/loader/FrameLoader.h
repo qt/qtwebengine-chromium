@@ -43,6 +43,7 @@
 #include "core/loader/HistoryItem.h"
 #include "core/loader/NavigationPolicy.h"
 #include "platform/Timer.h"
+#include "platform/TracedValue.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/Forward.h"
@@ -127,7 +128,9 @@ public:
     void didExplicitOpen();
 
     // Callbacks from DocumentWriter
-    void didBeginDocument(bool dispatchWindowObjectAvailable);
+    void didInstallNewDocument(bool dispatchWindowObjectAvailable);
+
+    void didBeginDocument();
 
     void receivedFirstData();
 
@@ -178,7 +181,7 @@ public:
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
-    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, HistoryScrollRestorationType, FrameLoadType);
+    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, HistoryScrollRestorationType, FrameLoadType, Document*);
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
     void saveScrollState();
@@ -212,11 +215,14 @@ private:
     };
     void setHistoryItemStateForCommit(HistoryCommitType, HistoryNavigationType);
 
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, HistoryLoadType, ClientRedirectPolicy);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, HistoryLoadType, ClientRedirectPolicy, Document*);
 
     void scheduleCheckCompleted();
 
     void detachDocumentLoader(Member<DocumentLoader>&);
+
+    PassOwnPtr<TracedValue> toTracedValue() const;
+    void takeObjectSnapshot() const;
 
     Member<LocalFrame> m_frame;
 

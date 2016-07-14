@@ -10,6 +10,8 @@
 #include "SkDraw.h"
 #include "SkDrawFilter.h"
 #include "SkImage_Base.h"
+#include "SkImageFilter.h"
+#include "SkImageFilterCache.h"
 #include "SkMetaData.h"
 #include "SkNinePatchIter.h"
 #include "SkPatchUtils.h"
@@ -409,33 +411,27 @@ void SkBaseDevice::drawSpriteWithFilter(const SkDraw& draw, const SkBitmap& bitm
     SkImageFilter* filter = paint.getImageFilter();
     SkASSERT(filter);
 
-    if (!this->canHandleImageFilter(filter)) {
-        SkImageFilter::DeviceProxy proxy(this);
-        SkIPoint offset = SkIPoint::Make(0, 0);
-        SkMatrix matrix = *draw.fMatrix;
-        matrix.postTranslate(SkIntToScalar(-x), SkIntToScalar(-y));
-        const SkIRect clipBounds = draw.fClip->getBounds().makeOffset(-x, -y);
-        SkAutoTUnref<SkImageFilter::Cache> cache(this->getImageFilterCache());
-        SkImageFilter::Context ctx(matrix, clipBounds, cache.get());
+    SkIPoint offset = SkIPoint::Make(0, 0);
+    SkMatrix matrix = *draw.fMatrix;
+    matrix.postTranslate(SkIntToScalar(-x), SkIntToScalar(-y));
+    const SkIRect clipBounds = draw.fRC->getBounds().makeOffset(-x, -y);
+    SkAutoTUnref<SkImageFilterCache> cache(this->getImageFilterCache());
+    SkImageFilter::Context ctx(matrix, clipBounds, cache.get());
 
-        sk_sp<SkSpecialImage> srcImg(SkSpecialImage::internal_fromBM(&proxy, bitmap,
-                                                                     &this->surfaceProps()));
-        if (!srcImg) {
-            return; // something disastrous happened
-        }
+    sk_sp<SkSpecialImage> srcImg(SkSpecialImage::internal_fromBM(bitmap, &this->surfaceProps()));
+    if (!srcImg) {
+        return; // something disastrous happened
+    }
 
-        sk_sp<SkSpecialImage> resultImg(filter->filterImage(srcImg.get(), ctx, &offset));
-        if (resultImg) {
-            SkPaint tmpUnfiltered(paint);
-            tmpUnfiltered.setImageFilter(nullptr);
-            SkBitmap resultBM;
-            if (resultImg->internal_getBM(&resultBM)) {
-                // TODO: add drawSprite(SkSpecialImage) to SkDevice? (see skbug.com/5073)
-                this->drawSprite(draw, resultBM, x + offset.x(), y + offset.y(), tmpUnfiltered);
-            }
+    sk_sp<SkSpecialImage> resultImg(filter->filterImage(srcImg.get(), ctx, &offset));
+    if (resultImg) {
+        SkPaint tmpUnfiltered(paint);
+        tmpUnfiltered.setImageFilter(nullptr);
+        SkBitmap resultBM;
+        if (resultImg->internal_getBM(&resultBM)) {
+            // TODO: add drawSprite(SkSpecialImage) to SkDevice? (see skbug.com/5073)
+            this->drawSprite(draw, resultBM, x + offset.x(), y + offset.y(), tmpUnfiltered);
         }
-    } else {
-        this->drawSprite(draw, bitmap, x, y, paint);
     }
 }
 
@@ -459,3 +455,58 @@ uint32_t SkBaseDevice::filterTextFlags(const SkPaint& paint) const {
 sk_sp<SkSurface> SkBaseDevice::makeSurface(SkImageInfo const&, SkSurfaceProps const&) {
     return nullptr;
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+void SkBaseDevice::LogDrawScaleFactor(const SkMatrix& matrix, SkFilterQuality filterQuality) {
+#if SK_HISTOGRAMS_ENABLED
+    enum ScaleFactor {
+        kUpscale_ScaleFactor,
+        kNoScale_ScaleFactor,
+        kDownscale_ScaleFactor,
+        kLargeDownscale_ScaleFactor,
+
+        kLast_ScaleFactor = kLargeDownscale_ScaleFactor
+    };
+
+    float rawScaleFactor = matrix.getMinScale();
+
+    ScaleFactor scaleFactor;
+    if (rawScaleFactor < 0.5f) {
+        scaleFactor = kLargeDownscale_ScaleFactor;
+    } else if (rawScaleFactor < 1.0f) {
+        scaleFactor = kDownscale_ScaleFactor;
+    } else if (rawScaleFactor > 1.0f) {
+        scaleFactor = kUpscale_ScaleFactor;
+    } else {
+        scaleFactor = kNoScale_ScaleFactor;
+    }
+
+    switch (filterQuality) {
+        case kNone_SkFilterQuality:
+            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.NoneFilterQuality", scaleFactor,
+                                     kLast_ScaleFactor + 1);
+            break;
+        case kLow_SkFilterQuality:
+            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.LowFilterQuality", scaleFactor,
+                                     kLast_ScaleFactor + 1);
+            break;
+        case kMedium_SkFilterQuality:
+            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.MediumFilterQuality", scaleFactor,
+                                     kLast_ScaleFactor + 1);
+            break;
+        case kHigh_SkFilterQuality:
+            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.HighFilterQuality", scaleFactor,
+                                     kLast_ScaleFactor + 1);
+            break;
+    }
+
+    // Also log filter quality independent scale factor.
+    SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.AnyFilterQuality", scaleFactor,
+                             kLast_ScaleFactor + 1);
+
+    // Also log an overall histogram of filter quality.
+    SK_HISTOGRAM_ENUMERATION("FilterQuality", filterQuality, kLast_SkFilterQuality + 1);
+#endif
+}
+

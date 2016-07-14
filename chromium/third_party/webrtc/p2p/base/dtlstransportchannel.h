@@ -11,13 +11,14 @@
 #ifndef WEBRTC_P2P_BASE_DTLSTRANSPORTCHANNEL_H_
 #define WEBRTC_P2P_BASE_DTLSTRANSPORTCHANNEL_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "webrtc/p2p/base/transportchannelimpl.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/bufferqueue.h"
-#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/stream.h"
 
@@ -137,7 +138,7 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
 
   // Once DTLS has been established, this method retrieves the certificate in
   // use by the remote peer, for use in external identity verification.
-  rtc::scoped_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate() const override;
+  std::unique_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate() const override;
 
   // Once DTLS has established (i.e., this channel is writable), this method
   // extracts the keys negotiated during the DTLS handshake, for use in external
@@ -226,7 +227,7 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   rtc::Thread* worker_thread_;  // Everything should occur on this thread.
   // Underlying channel, not owned by this class.
   TransportChannelImpl* const channel_;
-  rtc::scoped_ptr<rtc::SSLStreamAdapter> dtls_;  // The DTLS stream
+  std::unique_ptr<rtc::SSLStreamAdapter> dtls_;  // The DTLS stream
   StreamInterfaceChannel* downward_;  // Wrapper for channel_, owned by dtls_.
   std::vector<int> srtp_ciphers_;     // SRTP ciphers to use with DTLS.
   bool dtls_active_ = false;
@@ -235,6 +236,12 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   rtc::SSLProtocolVersion ssl_max_version_;
   rtc::Buffer remote_fingerprint_value_;
   std::string remote_fingerprint_algorithm_;
+
+  // Cached DTLS ClientHello packet that was received before we started the
+  // DTLS handshake. This could happen if the hello was received before the
+  // transport channel became writable, or before a remote fingerprint was
+  // received.
+  rtc::Buffer cached_client_hello_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(DtlsTransportChannelWrapper);
 };

@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "webrtc/api/test/peerconnectiontestwrapper.h"
 // Notice that mockpeerconnectionobservers.h must be included after the above!
 #include "webrtc/api/test/mockpeerconnectionobservers.h"
@@ -17,6 +19,7 @@
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/ssladapter.h"
+#include "webrtc/base/thread.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
@@ -35,7 +38,7 @@ using webrtc::PeerConnectionInterface;
 
 namespace {
 
-const size_t kMaxWait = 10000;
+const int kMaxWait = 10000;
 
 }  // namespace
 
@@ -46,11 +49,13 @@ class PeerConnectionEndToEndTest
   typedef std::vector<rtc::scoped_refptr<DataChannelInterface> >
       DataChannelList;
 
-  PeerConnectionEndToEndTest()
-      : caller_(new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-                    "caller")),
-        callee_(new rtc::RefCountedObject<PeerConnectionTestWrapper>(
-                    "callee")) {
+  PeerConnectionEndToEndTest() {
+    RTC_CHECK(network_thread_.Start());
+    RTC_CHECK(worker_thread_.Start());
+    caller_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
+        "caller", &network_thread_, &worker_thread_);
+    callee_ = new rtc::RefCountedObject<PeerConnectionTestWrapper>(
+        "callee", &network_thread_, &worker_thread_);
 #ifdef WEBRTC_ANDROID
     webrtc::InitializeAndroidObjects();
 #endif
@@ -110,10 +115,10 @@ class PeerConnectionEndToEndTest
   // Tests that |dc1| and |dc2| can send to and receive from each other.
   void TestDataChannelSendAndReceive(
       DataChannelInterface* dc1, DataChannelInterface* dc2) {
-    rtc::scoped_ptr<webrtc::MockDataChannelObserver> dc1_observer(
+    std::unique_ptr<webrtc::MockDataChannelObserver> dc1_observer(
         new webrtc::MockDataChannelObserver(dc1));
 
-    rtc::scoped_ptr<webrtc::MockDataChannelObserver> dc2_observer(
+    std::unique_ptr<webrtc::MockDataChannelObserver> dc2_observer(
         new webrtc::MockDataChannelObserver(dc2));
 
     static const std::string kDummyData = "abcdefg";
@@ -151,6 +156,8 @@ class PeerConnectionEndToEndTest
   }
 
  protected:
+  rtc::Thread network_thread_;
+  rtc::Thread worker_thread_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> caller_;
   rtc::scoped_refptr<PeerConnectionTestWrapper> callee_;
   DataChannelList caller_signaled_data_channels_;
@@ -291,10 +298,10 @@ TEST_F(PeerConnectionEndToEndTest,
   WaitForDataChannelsToOpen(caller_dc_1, callee_signaled_data_channels_, 0);
   WaitForDataChannelsToOpen(caller_dc_2, callee_signaled_data_channels_, 1);
 
-  rtc::scoped_ptr<webrtc::MockDataChannelObserver> dc_1_observer(
+  std::unique_ptr<webrtc::MockDataChannelObserver> dc_1_observer(
       new webrtc::MockDataChannelObserver(callee_signaled_data_channels_[0]));
 
-  rtc::scoped_ptr<webrtc::MockDataChannelObserver> dc_2_observer(
+  std::unique_ptr<webrtc::MockDataChannelObserver> dc_2_observer(
       new webrtc::MockDataChannelObserver(callee_signaled_data_channels_[1]));
 
   const std::string message_1 = "hello 1";

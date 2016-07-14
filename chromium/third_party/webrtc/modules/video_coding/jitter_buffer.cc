@@ -601,7 +601,8 @@ VCMEncodedFrame* VCMJitterBuffer::ExtractAndSetDecode(uint32_t timestamp) {
   // Frame pulled out from jitter buffer, update the jitter estimate.
   const bool retransmitted = (frame->GetNackCount() > 0);
   if (retransmitted) {
-    jitter_estimate_.FrameNacked();
+    if (WaitForRetransmissions())
+      jitter_estimate_.FrameNacked();
   } else if (frame->Length() > 0) {
     // Ignore retransmitted and empty frames.
     if (waiting_for_completion_.latest_packet_time >= 0) {
@@ -958,6 +959,8 @@ void VCMJitterBuffer::UpdateRtt(int64_t rtt_ms) {
   jitter_estimate_.UpdateRtt(rtt_ms);
   if (nack_module_)
     nack_module_->UpdateRtt(rtt_ms);
+  if (!WaitForRetransmissions())
+    jitter_estimate_.ResetNackCount();
 }
 
 void VCMJitterBuffer::SetNackMode(VCMNackMode mode,
@@ -1194,19 +1197,6 @@ int64_t VCMJitterBuffer::LastDecodedTimestamp() const {
   return last_decoded_state_.time_stamp();
 }
 
-void VCMJitterBuffer::RenderBufferSize(uint32_t* timestamp_start,
-                                       uint32_t* timestamp_end) {
-  CriticalSectionScoped cs(crit_sect_);
-  CleanUpOldOrEmptyFrames();
-  *timestamp_start = 0;
-  *timestamp_end = 0;
-  if (decodable_frames_.empty()) {
-    return;
-  }
-  *timestamp_start = decodable_frames_.Front()->TimeStamp();
-  *timestamp_end = decodable_frames_.Back()->TimeStamp();
-}
-
 void VCMJitterBuffer::RegisterStatsCallback(
     VCMReceiveStatisticsCallback* callback) {
   CriticalSectionScoped cs(crit_sect_);
@@ -1282,9 +1272,13 @@ void VCMJitterBuffer::CountFrame(const VCMFrameBuffer& frame) {
   if (frame.IsSessionComplete()) {
     if (frame.FrameType() == kVideoFrameKey) {
       ++receive_statistics_.key_frames;
+      if (receive_statistics_.key_frames == 1) {
+        LOG(LS_INFO) << "Received first complete key frame";
+      }
     } else {
       ++receive_statistics_.delta_frames;
     }
+
     if (stats_callback_ != NULL)
       stats_callback_->OnFrameCountsUpdated(receive_statistics_);
   }

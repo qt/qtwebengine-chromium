@@ -11,6 +11,8 @@
 #include "SkColorPriv.h"
 #include "SkPM4f.h"
 
+extern bool gTreatSkColorAsSRGB;
+
 static inline float get_alpha(const Sk4f& f4) {
     return f4[SkPM4f::A];
 }
@@ -42,6 +44,14 @@ static inline Sk4f linear_to_srgb(const Sk4f& l4) {
     return set_alpha(l4.sqrt(), get_alpha(l4));
 }
 
+static inline float srgb_to_linear(float x) {
+    return x * x;
+}
+
+static inline float linear_to_srgb(float x) {
+    return sqrtf(x);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static inline Sk4f Sk4f_fromL32(uint32_t src) {
@@ -50,6 +60,13 @@ static inline Sk4f Sk4f_fromL32(uint32_t src) {
 
 static inline Sk4f Sk4f_fromS32(uint32_t src) {
     return srgb_to_linear(to_4f(src) * Sk4f(1.0f/255));
+}
+
+// Color handling:
+//   SkColor has an ordering of (b, g, r, a) if cast to an Sk4f, so the code swizzles r and b to
+// produce the needed (r, g, b, a) ordering.
+static inline Sk4f Sk4f_from_SkColor(SkColor color) {
+    return swizzle_rb(gTreatSkColorAsSRGB ? Sk4f_fromS32(color) : Sk4f_fromL32(color));
 }
 
 static inline uint32_t Sk4f_toL32(const Sk4f& x4) {

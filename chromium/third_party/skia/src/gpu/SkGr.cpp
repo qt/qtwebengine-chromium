@@ -29,7 +29,6 @@
 #include "SkPixelRef.h"
 #include "SkResourceCache.h"
 #include "SkTemplates.h"
-#include "SkTextureCompressor.h"
 #include "SkYUVPlanesCache.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrConstColorProcessor.h"
@@ -87,7 +86,7 @@ GrPixelConfig GrIsCompressedTextureDataSupported(GrContext* ctx, SkData* data,
 
         *outStartOfDataToUpload = bytes + ETC_PKM_HEADER_SIZE;
         return kETC1_GrPixelConfig;
-    } else if (SkKTXFile::is_ktx(bytes)) {
+    } else if (SkKTXFile::is_ktx(bytes, data->size())) {
         SkKTXFile ktx(data);
 
         // Is it actually an ETC1 texture?
@@ -181,8 +180,8 @@ public:
     }
 };
 
-static GrTexture* create_texture_from_yuv(GrContext* ctx, const SkBitmap& bm,
-                                          const GrSurfaceDesc& desc) {
+static sk_sp<GrTexture> create_texture_from_yuv(GrContext* ctx, const SkBitmap& bm,
+                                                const GrSurfaceDesc& desc) {
     // Subsets are not supported, the whole pixelRef is loaded when using YUV decoding
     SkPixelRef* pixelRef = bm.pixelRef();
     if ((nullptr == pixelRef) ||
@@ -218,8 +217,9 @@ GrTexture* GrUploadBitmapToTexture(GrContext* ctx, const SkBitmap& bitmap) {
         return texture;
     }
 
-    if (GrTexture* texture = create_texture_from_yuv(ctx, bitmap, desc)) {
-        return texture;
+    sk_sp<GrTexture> texture(create_texture_from_yuv(ctx, bitmap, desc));
+    if (texture) {
+        return texture.release();
     }
 
     SkAutoLockPixels alp(bitmap);
@@ -339,9 +339,9 @@ GrTexture* GrGenerateMipMapsAndUploadToTexture(GrContext* ctx, const SkBitmap& b
         }
     }
 
-    GrTexture* texture = create_texture_from_yuv(ctx, bitmap, desc);
+    sk_sp<GrTexture> texture(create_texture_from_yuv(ctx, bitmap, desc));
     if (texture) {
-        return texture;
+        return texture.release();
     }
 
     // SkMipMap::Build doesn't handle sRGB data correctly (yet).
@@ -466,6 +466,9 @@ bool GrPixelConfig2ColorAndProfileType(GrPixelConfig config, SkColorType* ctOut,
         case kSBGRA_8888_GrPixelConfig:
             ct = kBGRA_8888_SkColorType;
             pt = kSRGB_SkColorProfileType;
+            break;
+        case kRGBA_half_GrPixelConfig:
+            ct = kRGBA_F16_SkColorType;
             break;
         default:
             return false;

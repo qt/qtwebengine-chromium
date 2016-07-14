@@ -18,7 +18,7 @@ class GrPath;
 class GrRenderTarget;
 class GrSingleOwner;
 class GrStencilAttachment;
-class GrStrokeInfo;
+class GrStyle;
 class SkDescriptor;
 class SkPath;
 class SkTypeface;
@@ -83,9 +83,10 @@ public:
      * Factories for GrPath and GrPathRange objects. It's an error to call these if path rendering
      * is not supported.
      */
-    GrPath* createPath(const SkPath&, const GrStrokeInfo&);
-    GrPathRange* createPathRange(GrPathRange::PathGenerator*, const GrStrokeInfo&);
-    GrPathRange* createGlyphs(const SkTypeface*, const SkDescriptor*, const GrStrokeInfo&);
+    GrPath* createPath(const SkPath&, const GrStyle&);
+    GrPathRange* createPathRange(GrPathRange::PathGenerator*, const GrStyle&);
+    GrPathRange* createGlyphs(const SkTypeface*, const SkScalerContextEffects&,
+                              const SkDescriptor*, const GrStyle&);
 
     using GrTextureProvider::assignUniqueKeyToResource;
     using GrTextureProvider::findAndRefResourceByUniqueKey;
@@ -109,10 +110,12 @@ public:
      * @param intendedType    hint to the graphics subsystem about what the buffer will be used for.
      * @param GrAccessPattern hint to the graphics subsystem about how the data will be accessed.
      * @param flags           see Flags enum.
+     * @param data            optional data with which to initialize the buffer.
      *
      * @return the buffer if successful, otherwise nullptr.
      */
-    GrBuffer* createBuffer(size_t size, GrBufferType intendedType, GrAccessPattern, uint32_t flags);
+    GrBuffer* createBuffer(size_t size, GrBufferType intendedType, GrAccessPattern, uint32_t flags,
+                           const void* data = nullptr);
 
     GrTexture* createApproxTexture(const GrSurfaceDesc& desc, uint32_t flags) {
         SkASSERT(0 == flags || kNoPendingIO_Flag == flags);

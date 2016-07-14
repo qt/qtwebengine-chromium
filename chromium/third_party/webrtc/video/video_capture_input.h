@@ -11,6 +11,7 @@
 #ifndef WEBRTC_VIDEO_VIDEO_CAPTURE_INPUT_H_
 #define WEBRTC_VIDEO_VIDEO_CAPTURE_INPUT_H_
 
+#include <memory>
 #include <vector>
 
 #include "webrtc/base/criticalsection.h"
@@ -53,7 +54,7 @@ class VideoCaptureInput : public webrtc::VideoCaptureInput {
   SendStatisticsProxy* const stats_proxy_;
   rtc::Event* const capture_event_;
 
-  VideoFrame captured_frame_ GUARDED_BY(crit_);
+  std::unique_ptr<VideoFrame> captured_frame_ GUARDED_BY(crit_);
   Clock* const clock_;
   // Used to make sure incoming time stamp is increasing for every frame.
   int64_t last_captured_timestamp_;

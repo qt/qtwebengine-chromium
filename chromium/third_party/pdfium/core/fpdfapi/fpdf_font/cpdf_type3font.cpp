@@ -57,14 +57,12 @@ FX_BOOL CPDF_Type3Font::Load() {
   int StartChar = m_pFontDict->GetIntegerBy("FirstChar");
   CPDF_Array* pWidthArray = m_pFontDict->GetArrayBy("Widths");
   if (pWidthArray && (StartChar >= 0 && StartChar < 256)) {
-    uint32_t count = pWidthArray->GetCount();
-    if (count > 256) {
+    size_t count = pWidthArray->GetCount();
+    if (count > 256)
       count = 256;
-    }
-    if (StartChar + count > 256) {
+    if (StartChar + count > 256)
       count = 256 - StartChar;
-    }
-    for (uint32_t i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
       m_CharWidthL[StartChar + i] =
           FXSYS_round(pWidthArray->GetNumberAt(i) * xscale * 1000);
     }
@@ -75,7 +73,8 @@ FX_BOOL CPDF_Type3Font::Load() {
     LoadPDFEncoding(pEncoding, m_BaseEncoding, m_pCharNames, FALSE, FALSE);
     if (m_pCharNames) {
       for (int i = 0; i < 256; i++) {
-        m_Encoding.m_Unicodes[i] = PDF_UnicodeFromAdobeName(m_pCharNames[i]);
+        m_Encoding.m_Unicodes[i] =
+            PDF_UnicodeFromAdobeName(m_pCharNames[i].c_str());
         if (m_Encoding.m_Unicodes[i] == 0) {
           m_Encoding.m_Unicodes[i] = i;
         }
@@ -114,8 +113,7 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode, int level) {
   // This can trigger recursion into this method. The content of |m_CacheMap|
   // can change as a result. Thus after it returns, check the cache again for
   // a cache hit.
-  pNewChar->m_pForm->ParseContent(nullptr, nullptr, pNewChar.get(), nullptr,
-                                  level + 1);
+  pNewChar->m_pForm->ParseContent(nullptr, nullptr, pNewChar.get(), level + 1);
   it = m_CacheMap.find(charcode);
   if (it != m_CacheMap.end())
     return it->second;
@@ -138,10 +136,8 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode, int level) {
   ASSERT(!pdfium::ContainsKey(m_CacheMap, charcode));
   CPDF_Type3Char* pCachedChar = pNewChar.release();
   m_CacheMap[charcode] = pCachedChar;
-  if (pCachedChar->m_pForm->GetPageObjectList()->empty()) {
-    delete pCachedChar->m_pForm;
-    pCachedChar->m_pForm = nullptr;
-  }
+  if (pCachedChar->m_pForm->GetPageObjectList()->empty())
+    pCachedChar->m_pForm.reset();
   return pCachedChar;
 }
 

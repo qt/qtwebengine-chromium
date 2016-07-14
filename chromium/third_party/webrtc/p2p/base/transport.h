@@ -26,8 +26,11 @@
 #define WEBRTC_P2P_BASE_TRANSPORT_H_
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/p2pconstants.h"
 #include "webrtc/p2p/base/sessiondescription.h"
@@ -214,7 +217,7 @@ class Transport : public sigslot::has_slots<> {
   }
 
   // Get a copy of the remote certificate in use by the specified channel.
-  rtc::scoped_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate();
+  std::unique_ptr<rtc::SSLCertificate> GetRemoteSSLCertificate();
 
   // Create, destroy, and lookup the channels of this type by their components.
   TransportChannelImpl* CreateChannel(int component);
@@ -312,6 +315,20 @@ class Transport : public sigslot::has_slots<> {
       TransportChannelImpl* channel,
       std::string* error_desc);
 
+  // Returns false if the certificate's identity does not match the fingerprint,
+  // or either is NULL.
+  virtual bool VerifyCertificateFingerprint(
+      const rtc::RTCCertificate* certificate,
+      const rtc::SSLFingerprint* fingerprint,
+      std::string* error_desc) const;
+
+  // Negotiates the SSL role based off the offer and answer as specified by
+  // RFC 4145, section-4.1. Returns false if the SSL role cannot be determined
+  // from the local description and remote description.
+  virtual bool NegotiateRole(ContentAction local_role,
+                             rtc::SSLRole* ssl_role,
+                             std::string* error_desc) const;
+
  private:
   // If a candidate is not acceptable, returns false and sets error.
   // Call this before calling OnRemoteCandidates.
@@ -333,8 +350,8 @@ class Transport : public sigslot::has_slots<> {
   uint64_t tiebreaker_ = 0;
   IceMode remote_ice_mode_ = ICEMODE_FULL;
   IceConfig ice_config_;
-  rtc::scoped_ptr<TransportDescription> local_description_;
-  rtc::scoped_ptr<TransportDescription> remote_description_;
+  std::unique_ptr<TransportDescription> local_description_;
+  std::unique_ptr<TransportDescription> remote_description_;
   bool local_description_set_ = false;
   bool remote_description_set_ = false;
 

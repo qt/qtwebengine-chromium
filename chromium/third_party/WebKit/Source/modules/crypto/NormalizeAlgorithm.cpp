@@ -30,10 +30,10 @@
 
 #include "modules/crypto/NormalizeAlgorithm.h"
 
+#include "bindings/core/v8/ArrayBufferOrArrayBufferView.h"
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/V8ArrayBuffer.h"
 #include "bindings/core/v8/V8ArrayBufferView.h"
-#include "bindings/modules/v8/UnionTypesModules.h"
 #include "bindings/modules/v8/V8CryptoKey.h"
 #include "core/dom/DOMArrayPiece.h"
 #include "core/dom/DOMTypedArray.h"
@@ -308,7 +308,7 @@ bool getBufferSource(const Dictionary& raw, const char* propertyName, BufferSour
     return ok;
 }
 
-bool getUint8Array(const Dictionary& raw, const char* propertyName, RefPtr<DOMUint8Array>& array, const ErrorContext& context, AlgorithmError* error)
+bool getUint8Array(const Dictionary& raw, const char* propertyName, DOMUint8Array*& array, const ErrorContext& context, AlgorithmError* error)
 {
     if (!DictionaryHelper::get(raw, propertyName, array) || !array) {
         setTypeError(context.toString(propertyName, "Missing or not a Uint8Array"), error);
@@ -320,7 +320,7 @@ bool getUint8Array(const Dictionary& raw, const char* propertyName, RefPtr<DOMUi
 // Defined by the WebCrypto spec as:
 //
 //     typedef Uint8Array BigInteger;
-bool getBigInteger(const Dictionary& raw, const char* propertyName, RefPtr<DOMUint8Array>& array, const ErrorContext& context, AlgorithmError* error)
+bool getBigInteger(const Dictionary& raw, const char* propertyName, DOMUint8Array*& array, const ErrorContext& context, AlgorithmError* error)
 {
     if (!getUint8Array(raw, propertyName, array, context, error))
         return false;
@@ -563,7 +563,7 @@ bool parseRsaHashedKeyGenParams(const Dictionary& raw, OwnPtr<WebCryptoAlgorithm
     if (!getUint32(raw, "modulusLength", modulusLength, context, error))
         return false;
 
-    RefPtr<DOMUint8Array> publicExponent;
+    DOMUint8Array* publicExponent = nullptr;
     if (!getBigInteger(raw, "publicExponent", publicExponent, context, error))
         return false;
 
@@ -946,7 +946,7 @@ bool parseAlgorithmDictionary(const String& algorithmName, const Dictionary& raw
     if (!parseAlgorithmParams(raw, paramsType, params, context, error))
         return false;
 
-    algorithm = WebCryptoAlgorithm(algorithmId, params.release());
+    algorithm = WebCryptoAlgorithm(algorithmId, std::move(params));
     return true;
 }
 

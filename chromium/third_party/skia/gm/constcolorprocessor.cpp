@@ -47,18 +47,14 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        GrRenderTarget* rt = canvas->internal_private_accessTopLayerRenderTarget();
-        if (nullptr == rt) {
-            return;
-        }
-        GrContext* context = rt->getContext();
-        if (nullptr == context) {
+        GrDrawContext* drawContext = canvas->internal_private_accessTopLayerDrawContext();
+        if (!drawContext) {
             skiagm::GM::DrawGpuOnlyMessage(canvas);
             return;
         }
 
-        SkAutoTUnref<GrDrawContext> drawContext(context->drawContext(rt));
-        if (!drawContext) {
+        GrContext* context = canvas->getGrContext();
+        if (!context) {
             return;
         }
 
@@ -111,8 +107,7 @@ protected:
                     GrColor color = kColors[procColor];
                     SkAutoTUnref<GrFragmentProcessor> fp(GrConstColorProcessor::Create(color, mode));
 
-                    GrClip clip;
-                    GrPipelineBuilder pipelineBuilder(grPaint, rt, clip);
+                    GrPipelineBuilder pipelineBuilder(grPaint, drawContext->accessRenderTarget());
                     pipelineBuilder.addColorFragmentProcessor(fp);
 
                     SkAutoTUnref<GrDrawBatch> batch(

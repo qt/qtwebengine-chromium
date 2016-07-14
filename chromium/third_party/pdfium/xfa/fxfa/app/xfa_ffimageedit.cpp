@@ -7,14 +7,14 @@
 #include "xfa/fxfa/app/xfa_ffimageedit.h"
 
 #include "xfa/fwl/core/cfwl_message.h"
+#include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
-#include "xfa/fwl/core/ifwl_notedriver.h"
 #include "xfa/fwl/lightwidget/cfwl_picturebox.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
-#include "xfa/include/fxfa/xfa_ffdoc.h"
-#include "xfa/include/fxfa/xfa_ffdocview.h"
-#include "xfa/include/fxfa/xfa_ffpageview.h"
-#include "xfa/include/fxfa/xfa_ffwidget.h"
+#include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fxfa/include/xfa_ffdocview.h"
+#include "xfa/fxfa/include/xfa_ffpageview.h"
+#include "xfa/fxfa/include/xfa_ffwidget.h"
 
 CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_FFPageView* pPageView,
                                    CXFA_WidgetAcc* pDataAcc)
@@ -30,7 +30,7 @@ FX_BOOL CXFA_FFImageEdit::LoadWidget() {
   m_pNormalWidget = (CFWL_Widget*)pPictureBox;
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
   m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
-  IFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = pPictureBox->SetDelegate(this);
   CXFA_FFField::LoadWidget();
@@ -82,79 +82,28 @@ void CXFA_FFImageEdit::RenderWidget(CFX_Graphics* pGS,
                   iImageYDpi, iHorzAlign, iVertAlign);
   }
 }
+
 FX_BOOL CXFA_FFImageEdit::OnLButtonDown(uint32_t dwFlags,
                                         FX_FLOAT fx,
                                         FX_FLOAT fy) {
-  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open) {
+  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open)
     return FALSE;
-  }
-  if (!PtInActiveRect(fx, fy)) {
+
+  if (!PtInActiveRect(fx, fy))
     return FALSE;
-  }
+
   SetButtonDown(TRUE);
   CFWL_MsgMouse ms;
-  ms.m_dwCmd = FWL_MSGMOUSECMD_LButtonDown;
+  ms.m_dwCmd = FWL_MouseCommand::LeftButtonDown;
   ms.m_dwFlags = dwFlags;
   ms.m_fx = fx;
   ms.m_fy = fy;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
   FWLToClient(ms.m_fx, ms.m_fy);
   TranslateFWLMessage(&ms);
-  IXFA_AppProvider* pAppProvider = GetAppProvider();
-  if (!pAppProvider) {
-    return TRUE;
-  }
-  CFX_WideString wsTitle;
-  CFX_WideString wsFilter;
-  pAppProvider->LoadString(XFA_IDS_ImageFilter, wsFilter);
-  CFX_WideStringArray wsPathArray;
-  pAppProvider->ShowFileDialog(wsTitle.AsWideStringC(),
-                               wsFilter.AsWideStringC(), wsPathArray);
-  int32_t iSize = wsPathArray.GetSize();
-  if (iSize < 1) {
-    return TRUE;
-  }
-  CFX_WideString wsFilePath = wsPathArray[0];
-  FX_STRSIZE nLen = wsFilePath.GetLength();
-  FX_STRSIZE nIndex = nLen - 1;
-  while (nIndex > 0 && wsFilePath[nIndex] != '.') {
-    nIndex--;
-  }
-  if (nIndex <= 0) {
-    return TRUE;
-  }
-  CFX_WideString wsContentType(L"image/");
-  wsContentType += wsFilePath.Right(nLen - nIndex - 1);
-  wsContentType.MakeLower();
-  FXCODEC_IMAGE_TYPE eImageType = XFA_GetImageType(wsContentType);
-  if (eImageType == FXCODEC_IMAGE_UNKNOWN) {
-    return TRUE;
-  }
-  CFX_WideString wsImage;
-  IFX_FileRead* pFileRead = FX_CreateFileRead(wsFilePath);
-  if (pFileRead) {
-    int32_t nDataSize = pFileRead->GetSize();
-    if (nDataSize > 0) {
-      CFX_ByteString bsBuf;
-      FX_CHAR* pImageBuffer = bsBuf.GetBuffer(nDataSize);
-      pFileRead->ReadBlock(pImageBuffer, 0, nDataSize);
-      bsBuf.ReleaseBuffer();
-      if (!bsBuf.IsEmpty()) {
-        FX_CHAR* pData = XFA_Base64Encode(bsBuf, nDataSize);
-        wsImage = CFX_WideString::FromLocal(pData);
-        FX_Free(pData);
-      }
-    }
-    m_pDataAcc->SetImageEditImage(NULL);
-    pFileRead->Release();
-  }
-  m_pDataAcc->SetImageEdit(wsContentType.AsWideStringC(), CFX_WideStringC(),
-                           wsImage.AsWideStringC());
-  m_pDataAcc->LoadImageEditImage();
-  AddInvalidateRect();
-  m_pDocView->SetChangeMark();
   return TRUE;
 }
+
 void CXFA_FFImageEdit::SetFWLRect() {
   if (!m_pNormalWidget) {
     return;
@@ -174,14 +123,17 @@ FX_BOOL CXFA_FFImageEdit::UpdateFWLData() {
   m_pDataAcc->LoadImageEditImage();
   return TRUE;
 }
-int32_t CXFA_FFImageEdit::OnProcessMessage(CFWL_Message* pMessage) {
-  return m_pOldDelegate->OnProcessMessage(pMessage);
+
+void CXFA_FFImageEdit::OnProcessMessage(CFWL_Message* pMessage) {
+  m_pOldDelegate->OnProcessMessage(pMessage);
 }
-FWL_ERR CXFA_FFImageEdit::OnProcessEvent(CFWL_Event* pEvent) {
+
+void CXFA_FFImageEdit::OnProcessEvent(CFWL_Event* pEvent) {
   CXFA_FFField::OnProcessEvent(pEvent);
-  return m_pOldDelegate->OnProcessEvent(pEvent);
+  m_pOldDelegate->OnProcessEvent(pEvent);
 }
-FWL_ERR CXFA_FFImageEdit::OnDrawWidget(CFX_Graphics* pGraphics,
-                                       const CFX_Matrix* pMatrix) {
-  return m_pOldDelegate->OnDrawWidget(pGraphics, pMatrix);
+
+void CXFA_FFImageEdit::OnDrawWidget(CFX_Graphics* pGraphics,
+                                    const CFX_Matrix* pMatrix) {
+  m_pOldDelegate->OnDrawWidget(pGraphics, pMatrix);
 }

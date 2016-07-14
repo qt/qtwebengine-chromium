@@ -4,6 +4,8 @@ Upstream cherry-picks:
   8efaee3710baa87af40556a622bf2d96a27c6425 - avformat/oggparseopus security fix.
   542f725964e52201000ec34e2f23229cf534ad3a - avformat/oggdec security fix.
   ea791c080dd5494b3bee0c618a3f52e371b5f320 - avformat/utils security fix.
+  2875745d354ab0ebc4af1ebaca5c5a8d26ccdc03 - avformat/utils security fix v2.
+  7e01d48cfd168c3dfc663f03a3b6a98e0ecba328 - avformat/mov security fix.
 
 Autorename:
   autorename_* files are renamed copies of various files that would cause
@@ -12,6 +14,10 @@ Autorename:
 
 Current patches:
   .gitignore has a "Chromium stuff" section.
+
+  Changes to configure
+    Commented out a section that creates symlink for source_path. Using symlink
+    causes windows builds to fail (cl.exe cant find the files).
 
   Remove add_cflags "-mips64" from configure
     This conflicts with --extra-cflags=-mips64r6 for mips64el. There are a

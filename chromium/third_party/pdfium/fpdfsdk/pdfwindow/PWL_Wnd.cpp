@@ -17,7 +17,7 @@ static std::map<int32_t, CPWL_Timer*>& GetPWLTimeMap() {
 }
 
 CPWL_Timer::CPWL_Timer(CPWL_TimerHandler* pAttached,
-                       IFX_SystemHandler* pSystemHandler)
+                       CFX_SystemHandler* pSystemHandler)
     : m_nTimerID(0), m_pAttached(pAttached), m_pSystemHandler(pSystemHandler) {
   ASSERT(m_pAttached);
   ASSERT(m_pSystemHandler);
@@ -398,7 +398,7 @@ void CPWL_Wnd::InvalidateRect(CFX_FloatRect* pRect) {
     rcWin.right += PWL_INVALIDATE_INFLATE;
     rcWin.bottom += PWL_INVALIDATE_INFLATE;
 
-    if (IFX_SystemHandler* pSH = GetSystemHandler()) {
+    if (CFX_SystemHandler* pSH = GetSystemHandler()) {
       if (FX_HWND hWnd = GetAttachedHWnd()) {
         pSH->InvalidateRect(hWnd, rcWin);
       }
@@ -585,11 +585,11 @@ CPWL_Color CPWL_Wnd::GetTextStrokeColor() const {
   return m_sPrivateParam.sTextStrokeColor;
 }
 
-int32_t CPWL_Wnd::GetBorderStyle() const {
+BorderStyle CPWL_Wnd::GetBorderStyle() const {
   return m_sPrivateParam.nBorderStyle;
 }
 
-void CPWL_Wnd::SetBorderStyle(int32_t nBorderStyle) {
+void CPWL_Wnd::SetBorderStyle(BorderStyle nBorderStyle) {
   if (HasFlag(PWS_BORDER))
     m_sPrivateParam.nBorderStyle = nBorderStyle;
 }
@@ -744,7 +744,7 @@ void CPWL_Wnd::CreateChildWnd(const PWL_CREATEPARAM& cp) {}
 
 void CPWL_Wnd::SetCursor() {
   if (IsValid()) {
-    if (IFX_SystemHandler* pSH = GetSystemHandler()) {
+    if (CFX_SystemHandler* pSH = GetSystemHandler()) {
       int32_t nCursorType = GetCreationParam().eCursorType;
       pSH->SetCursor(nCursorType);
     }
@@ -803,7 +803,7 @@ void CPWL_Wnd::SetFontSize(FX_FLOAT fFontSize) {
   m_sPrivateParam.fFontSize = fFontSize;
 }
 
-IFX_SystemHandler* CPWL_Wnd::GetSystemHandler() const {
+CFX_SystemHandler* CPWL_Wnd::GetSystemHandler() const {
   return m_sPrivateParam.pSystemHandler;
 }
 
@@ -819,46 +819,26 @@ IPVT_FontMap* CPWL_Wnd::GetFontMap() const {
   return m_sPrivateParam.pFontMap;
 }
 
-CPWL_Color CPWL_Wnd::GetBorderLeftTopColor(int32_t nBorderStyle) const {
-  CPWL_Color color;
-
+CPWL_Color CPWL_Wnd::GetBorderLeftTopColor(BorderStyle nBorderStyle) const {
   switch (nBorderStyle) {
-    case PBS_SOLID:
-      break;
-    case PBS_DASH:
-      break;
-    case PBS_BEVELED:
-      color = CPWL_Color(COLORTYPE_GRAY, 1);
-      break;
-    case PBS_INSET:
-      color = CPWL_Color(COLORTYPE_GRAY, 0.5f);
-      break;
-    case PBS_UNDERLINED:
-      break;
+    case BorderStyle::BEVELED:
+      return CPWL_Color(COLORTYPE_GRAY, 1);
+    case BorderStyle::INSET:
+      return CPWL_Color(COLORTYPE_GRAY, 0.5f);
+    default:
+      return CPWL_Color();
   }
-
-  return color;
 }
 
-CPWL_Color CPWL_Wnd::GetBorderRightBottomColor(int32_t nBorderStyle) const {
-  CPWL_Color color;
-
+CPWL_Color CPWL_Wnd::GetBorderRightBottomColor(BorderStyle nBorderStyle) const {
   switch (nBorderStyle) {
-    case PBS_SOLID:
-      break;
-    case PBS_DASH:
-      break;
-    case PBS_BEVELED:
-      color = CPWL_Utils::DevideColor(GetBackgroundColor(), 2);
-      break;
-    case PBS_INSET:
-      color = CPWL_Color(COLORTYPE_GRAY, 0.75f);
-      break;
-    case PBS_UNDERLINED:
-      break;
+    case BorderStyle::BEVELED:
+      return CPWL_Utils::DevideColor(GetBackgroundColor(), 2);
+    case BorderStyle::INSET:
+      return CPWL_Color(COLORTYPE_GRAY, 0.75f);
+    default:
+      return CPWL_Color();
   }
-
-  return color;
 }
 
 int32_t CPWL_Wnd::GetTransparency() {
@@ -1007,7 +987,7 @@ void CPWL_Wnd::OnEnabled() {}
 void CPWL_Wnd::OnDisabled() {}
 
 FX_BOOL CPWL_Wnd::IsCTRLpressed(uint32_t nFlag) const {
-  if (IFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
+  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
     return pSystemHandler->IsCTRLKeyDown(nFlag);
   }
 
@@ -1015,7 +995,7 @@ FX_BOOL CPWL_Wnd::IsCTRLpressed(uint32_t nFlag) const {
 }
 
 FX_BOOL CPWL_Wnd::IsSHIFTpressed(uint32_t nFlag) const {
-  if (IFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
+  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
     return pSystemHandler->IsSHIFTKeyDown(nFlag);
   }
 
@@ -1023,16 +1003,8 @@ FX_BOOL CPWL_Wnd::IsSHIFTpressed(uint32_t nFlag) const {
 }
 
 FX_BOOL CPWL_Wnd::IsALTpressed(uint32_t nFlag) const {
-  if (IFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
+  if (CFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
     return pSystemHandler->IsALTKeyDown(nFlag);
-  }
-
-  return FALSE;
-}
-
-FX_BOOL CPWL_Wnd::IsINSERTpressed(uint32_t nFlag) const {
-  if (IFX_SystemHandler* pSystemHandler = GetSystemHandler()) {
-    return pSystemHandler->IsINSERTKeyDown(nFlag);
   }
 
   return FALSE;

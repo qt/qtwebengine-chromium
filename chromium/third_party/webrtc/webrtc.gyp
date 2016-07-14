@@ -35,6 +35,18 @@
         ],
       },
     }],
+    ['build_with_chromium==0 and'
+     '(OS=="ios" or (OS=="mac" and mac_deployment_target=="10.7"))', {
+      # TODO(kjellander): Move this to webrtc_all_dependencies once all of talk/
+      # has been moved to webrtc/. It can't be processed by Chromium since the
+      # reference to buid/java.gypi is using an absolute path (and includes
+      # entries cannot contain variables).
+      'variables': {
+        'webrtc_all_dependencies': [
+          'sdk/sdk.gyp:*',
+        ],
+      },
+    }],
     ['include_tests==1', {
       'includes': [
         'webrtc_tests.gypi',
@@ -55,6 +67,24 @@
         },
       ],
     }],
+    ['enable_protobuf==1', {
+      'targets': [
+        {
+          'target_name': 'rtc_event_log_parser',
+          'type': 'static_library',
+          'sources': [
+            'call/rtc_event_log_parser.cc',
+            'call/rtc_event_log_parser.h',
+          ],
+          'dependencies': [
+            'rtc_event_log_proto',
+          ],
+          'export_dependent_settings': [
+            'rtc_event_log_proto',
+          ],
+        },
+      ],
+    }],
     ['include_tests==1 and enable_protobuf==1', {
       'targets': [
         {
@@ -63,7 +93,7 @@
           'sources': ['call/rtc_event_log2rtp_dump.cc',],
           'dependencies': [
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-            'rtc_event_log',
+            'rtc_event_log_parser',
             'rtc_event_log_proto',
             'test/test.gyp:rtp_test_utils'
           ],
@@ -97,6 +127,12 @@
             'webrtc_tests',
           ],
         }],
+        ['include_tests==1 and'
+         '(OS=="ios" or (OS=="mac" and mac_deployment_target=="10.7"))', {
+           'dependencies': [
+             'sdk/sdk_tests.gyp:*',
+           ],
+        }],
       ],
     },
     {
@@ -108,8 +144,6 @@
         'audio_state.h',
         'call.h',
         'config.h',
-        'frame_callback.h',
-        'stream.h',
         'transport.h',
         'video_receive_stream.h',
         'video_send_stream.h',
@@ -131,7 +165,6 @@
         ['build_with_chromium==1', {
           'dependencies': [
             '<(webrtc_root)/modules/modules.gyp:video_capture',
-            '<(webrtc_root)/modules/modules.gyp:video_render',
           ],
         }],
       ],
@@ -142,6 +175,8 @@
       'sources': [
         'call/rtc_event_log.cc',
         'call/rtc_event_log.h',
+        'call/rtc_event_log_helper_thread.cc',
+        'call/rtc_event_log_helper_thread.h',
       ],
       'conditions': [
         # If enable_protobuf is defined, we want to compile the protobuf

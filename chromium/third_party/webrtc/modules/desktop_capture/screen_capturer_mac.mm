@@ -22,7 +22,10 @@
 #include <OpenGL/CGLMacro.h>
 #include <OpenGL/OpenGL.h>
 
+#include "webrtc/base/checks.h"
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/base/macutils.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_geometry.h"
@@ -32,8 +35,8 @@
 #include "webrtc/modules/desktop_capture/mac/scoped_pixel_buffer_object.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
+#include "webrtc/modules/desktop_capture/shared_desktop_frame.h"
 #include "webrtc/system_wrappers/include/logging.h"
-#include "webrtc/system_wrappers/include/tick_util.h"
 
 namespace webrtc {
 
@@ -234,7 +237,7 @@ class ScreenCapturerMac : public ScreenCapturer {
   ScopedPixelBufferObject pixel_buffer_object_;
 
   // Queue of the frames buffers.
-  ScreenCaptureFrameQueue queue_;
+  ScreenCaptureFrameQueue<SharedDesktopFrame> queue_;
 
   // Current display configuration.
   MacDesktopConfiguration desktop_config_;
@@ -381,9 +384,10 @@ void ScreenCapturerMac::Start(Callback* callback) {
 }
 
 void ScreenCapturerMac::Capture(const DesktopRegion& region_to_capture) {
-  TickTime capture_start_time = TickTime::Now();
+  int64_t capture_start_time_nanos = rtc::TimeNanos();
 
   queue_.MoveToNextFrame();
+  RTC_DCHECK(!queue_.current_frame() || !queue_.current_frame()->IsShared());
 
   desktop_config_monitor_->Lock();
   MacDesktopConfiguration new_config =
@@ -405,7 +409,7 @@ void ScreenCapturerMac::Capture(const DesktopRegion& region_to_capture) {
   // Note that we can't reallocate other buffers at this point, since the caller
   // may still be reading from them.
   if (!queue_.current_frame())
-    queue_.ReplaceCurrentFrame(CreateFrame());
+    queue_.ReplaceCurrentFrame(SharedDesktopFrame::Wrap(CreateFrame()));
 
   DesktopFrame* current_frame = queue_.current_frame();
 
@@ -444,7 +448,8 @@ void ScreenCapturerMac::Capture(const DesktopRegion& region_to_capture) {
   desktop_config_monitor_->Unlock();
 
   new_frame->set_capture_time_ms(
-      (TickTime::Now() - capture_start_time).Milliseconds());
+      (rtc::TimeNanos() - capture_start_time_nanos) /
+      rtc::kNumNanosecsPerMillisec);
   callback_->OnCaptureCompleted(new_frame);
 }
 

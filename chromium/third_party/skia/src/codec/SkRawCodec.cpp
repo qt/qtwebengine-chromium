@@ -515,8 +515,16 @@ public:
         }
     }
 
-    const SkImageInfo& getImageInfo() const {
-        return fImageInfo;
+    const SkEncodedInfo& getEncodedInfo() const {
+        return fEncodedInfo;
+    }
+
+    int width() const {
+        return fWidth;
+    }
+
+    int height() const {
+        return fHeight;
     }
 
     bool isScalable() const {
@@ -545,8 +553,9 @@ private:
         return 0x2A == get_endian_short(header + 2, littleEndian);
     }
 
-    void init(const int width, const int height, const dng_point& cfaPatternSize) {
-        fImageInfo = SkImageInfo::Make(width, height, kN32_SkColorType, kOpaque_SkAlphaType);
+    void init(int width, int height, const dng_point& cfaPatternSize) {
+        fWidth = width;
+        fHeight = height;
 
         // The DNG SDK scales only during demosaicing, so scaling is only possible when
         // a mosaic info is available.
@@ -607,7 +616,10 @@ private:
     }
 
     SkDngImage(SkRawStream* stream)
-        : fStream(stream) {}
+        : fStream(stream)
+        , fEncodedInfo(SkEncodedInfo::Make(SkEncodedInfo::kRGB_Color,
+                                           SkEncodedInfo::kOpaque_Alpha, 8))
+    {}
 
     SkDngMemoryAllocator fAllocator;
     SkAutoTDelete<SkRawStream> fStream;
@@ -616,7 +628,9 @@ private:
     SkAutoTDelete<dng_negative> fNegative;
     SkAutoTDelete<dng_stream> fDngStream;
 
-    SkImageInfo fImageInfo;
+    int fWidth;
+    int fHeight;
+    SkEncodedInfo fEncodedInfo;
     bool fIsScalable;
     bool fIsXtransImage;
 };
@@ -640,7 +654,11 @@ SkCodec* SkRawCodec::NewFromStream(SkStream* stream) {
     if (::piex::IsRaw(&piexStream)) {
         ::piex::Error error = ::piex::GetPreviewImageData(&piexStream, &imageData);
 
-        if (error == ::piex::Error::kOk && imageData.preview.length > 0) {
+        //  Theoretically PIEX can return JPEG compressed image or uncompressed RGB image. We only
+        //  handle the JPEG compressed preview image here.
+        if (error == ::piex::Error::kOk && imageData.preview.length > 0 &&
+            imageData.preview.format == ::piex::Image::kJpegCompressed)
+        {
             // transferBuffer() is destructive to the rawStream. Abandon the rawStream after this
             // function call.
             // FIXME: one may avoid the copy of memoryStream and use the buffered rawStream.
@@ -671,7 +689,7 @@ SkCodec::Result SkRawCodec::onGetPixels(const SkImageInfo& requestedInfo, void* 
     }
 
     SkAutoTDelete<SkSwizzler> swizzler(SkSwizzler::CreateSwizzler(
-            SkSwizzler::kRGB, nullptr, requestedInfo, options));
+            this->getEncodedInfo(), nullptr, requestedInfo, options));
     SkASSERT(swizzler);
 
     const int width = requestedInfo.width();
@@ -760,5 +778,5 @@ bool SkRawCodec::onDimensionsSupported(const SkISize& dim) {
 SkRawCodec::~SkRawCodec() {}
 
 SkRawCodec::SkRawCodec(SkDngImage* dngImage)
-    : INHERITED(dngImage->getImageInfo(), nullptr)
+    : INHERITED(dngImage->width(), dngImage->height(), dngImage->getEncodedInfo(), nullptr)
     , fDngImage(dngImage) {}

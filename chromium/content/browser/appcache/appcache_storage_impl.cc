@@ -21,7 +21,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
-#include "base/thread_task_runner_handle.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/appcache/appcache.h"
 #include "content/browser/appcache/appcache_database.h"
@@ -82,7 +82,7 @@ void ClearSessionOnlyOrigins(
     AppCacheDatabase* database,
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
     bool force_keep_session_state) {
-  scoped_ptr<AppCacheDatabase> database_to_delete(database);
+  std::unique_ptr<AppCacheDatabase> database_to_delete(database);
 
   // If saving session state, only delete the database.
   if (force_keep_session_state)
@@ -1734,27 +1734,21 @@ void AppCacheStorageImpl::StoreEvictionTimes(AppCacheGroup* group) {
 
 AppCacheResponseReader* AppCacheStorageImpl::CreateResponseReader(
     const GURL& manifest_url,
-    int64_t group_id,
     int64_t response_id) {
   return new AppCacheResponseReader(
-      response_id, group_id,
-      is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
+      response_id, is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
 }
 
 AppCacheResponseWriter* AppCacheStorageImpl::CreateResponseWriter(
-    const GURL& manifest_url,
-    int64_t group_id) {
+    const GURL& manifest_url) {
   return new AppCacheResponseWriter(
-      NewResponseId(), group_id,
-      is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
+      NewResponseId(), is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
 }
 
 AppCacheResponseMetadataWriter*
-AppCacheStorageImpl::CreateResponseMetadataWriter(int64_t group_id,
-                                                  int64_t response_id) {
+AppCacheStorageImpl::CreateResponseMetadataWriter(int64_t response_id) {
   return new AppCacheResponseMetadataWriter(
-      response_id, group_id,
-      is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
+      response_id, is_disabled_ ? nullptr : disk_cache()->GetWeakPtr());
 }
 
 void AppCacheStorageImpl::DoomResponses(

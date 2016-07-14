@@ -10,6 +10,15 @@
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=<(skia_static_initializers)',
     'SK_SUPPORT_GPU=<(skia_gpu)',
     'SK_FORCE_DISTANCE_FIELD_TEXT=<(skia_force_distance_field_text)',
+    
+    # Indicate that all dependency libraries are present.  Clients that
+    # are missing some of the required decoding libraries may choose
+    # not to define these.  This will disable some decoder and encoder
+    # features.
+    'SK_HAS_GIF_LIBRARY',
+    'SK_HAS_JPEG_LIBRARY',
+    'SK_HAS_PNG_LIBRARY',
+    'SK_HAS_WEBP_LIBRARY',
   ],
   'conditions' : [
     [ 'skia_is_bot', {
@@ -218,7 +227,7 @@
     ],
 
     # The following section is common to linux + derivatives and android
-    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos", "android"]',
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "android"]',
       {
         'cflags': [
           '-g',
@@ -242,24 +251,20 @@
         'ldflags': [ '-rdynamic' ],
         'conditions': [
           [ 'skia_fast', { 'cflags': [ '<@(skia_fast_flags)' ] }],
-          [ 'skia_os != "chromeos"', {
-            'conditions': [
-              [ 'skia_arch_type == "x86_64" and not skia_android_framework', {
-                'cflags': [
-                  '-m64',
-                ],
-                'ldflags': [
-                  '-m64',
-                ],
-              }],
-              [ 'skia_arch_type == "x86" and not skia_android_framework', {
-                'cflags': [
-                  '-m32',
-                ],
-                'ldflags': [
-                  '-m32',
-                ],
-              }],
+          [ 'skia_arch_type == "x86_64" and not skia_android_framework', {
+            'cflags': [
+              '-m64',
+            ],
+            'ldflags': [
+              '-m64',
+            ],
+          }],
+          [ 'skia_arch_type == "x86" and not skia_android_framework', {
+            'cflags': [
+              '-m32',
+            ],
+            'ldflags': [
+              '-m32',
             ],
           }],
           [ 'skia_warnings_as_errors', {
@@ -293,12 +298,7 @@
                   '-mfpu=neon',
                 ],
               }],
-              [ 'arm_neon_optional == 1', {
-                'defines': [
-                  'SK_ARM_HAS_OPTIONAL_NEON',
-                ],
-              }],
-              [ 'skia_os != "chromeos" and skia_os != "linux"', {
+              [ 'skia_os != "linux"', {
                 'cflags': [
                   '-mfloat-abi=softfp',
                 ],
@@ -409,7 +409,7 @@
         'defines': [ 'SK_DUMP_STATS'],
     }],
 
-    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]',
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]',
       {
         'defines': [
           'SK_SAMPLES_FOR_X',
@@ -620,11 +620,14 @@
           'SK_GAMMA_SRGB',
         ],
         'configurations': {
-          'Debug': {
-            'cflags': ['-g']
-          },
           'Release': {
             'cflags': ['-O2'],
+            'conditions': [
+              [ 'skia_clang_build', {
+                'cflags!': ['-g'],
+                'cflags': [ '-gline-tables-only' ],
+              }],
+            ],
           },
         },
         'libraries': [

@@ -644,6 +644,9 @@ process_common_toolchain() {
 
     # detect tgt_isa
     case "$gcctarget" in
+      aarch64*)
+        tgt_isa=arm64
+        ;;
       armv6*)
         tgt_isa=armv6
         ;;
@@ -1015,18 +1018,7 @@ EOF
           NM="$(${XCRUN_FIND} nm)"
           RANLIB="$(${XCRUN_FIND} ranlib)"
           AS_SFX=.s
-
-          # Special handling of ld for armv6 because libclang_rt.ios.a does
-          # not contain armv6 support in Apple's clang package:
-          #   Apple LLVM version 5.1 (clang-503.0.40) (based on LLVM 3.4svn).
-          # TODO(tomfinegan): Remove this. Our minimum iOS version (6.0)
-          # renders support for armv6 unnecessary because the 3GS and up
-          # support neon.
-          if [ "${tgt_isa}" = "armv6" ]; then
-            LD="$(${XCRUN_FIND} ld)"
-          else
-            LD="${CXX:-$(${XCRUN_FIND} ld)}"
-          fi
+          LD="${CXX:-$(${XCRUN_FIND} ld)}"
 
           # ASFLAGS is written here instead of using check_add_asflags
           # because we need to overwrite all of ASFLAGS and purge the
@@ -1066,7 +1058,7 @@ EOF
           if enabled rvct; then
             # Check if we have CodeSourcery GCC in PATH. Needed for
             # libraries
-            hash arm-none-linux-gnueabi-gcc 2>&- || \
+            which arm-none-linux-gnueabi-gcc 2>&- || \
               die "Couldn't find CodeSourcery GCC from PATH"
 
             # Use armcc as a linker to enable translation of
@@ -1185,6 +1177,12 @@ EOF
               RTCD_OPTIONS="${RTCD_OPTIONS}--disable-avx --disable-avx2 "
               soft_disable avx
               soft_disable avx2
+              ;;
+          esac
+          case $vc_version in
+            7|8|9)
+              echo "${tgt_cc} omits stdint.h, disabling webm-io..."
+              soft_disable webm_io
               ;;
           esac
           ;;

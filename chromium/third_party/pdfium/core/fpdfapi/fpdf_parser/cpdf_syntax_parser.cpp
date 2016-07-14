@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/fpdfapi/fpdf_parser/cpdf_boolean.h"
+#include "core/fpdfapi/fpdf_parser/cpdf_crypto_handler.h"
 #include "core/fpdfapi/fpdf_parser/cpdf_null.h"
 #include "core/fpdfapi/fpdf_parser/fpdf_parser_utility.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
@@ -19,7 +20,6 @@
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_string.h"
 #include "core/fpdfapi/fpdf_parser/include/fpdf_parser_decode.h"
-#include "core/fpdfapi/fpdf_parser/ipdf_crypto_handler.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
 #include "core/fxcrt/include/fx_ext.h"
 #include "third_party/base/numerics/safe_math.h"
@@ -27,9 +27,8 @@
 namespace {
 
 struct SearchTagRecord {
-  const char* m_pTag;
-  uint32_t m_Len;
-  uint32_t m_Offset;
+  CFX_ByteStringC m_bsTag;
+  FX_STRSIZE m_Offset;
 };
 
 }  // namespace
@@ -218,7 +217,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadString() {
       case 0:
         if (ch == ')') {
           if (parlevel == 0) {
-            return buf.GetByteString();
+            return buf.MakeString();
           }
           parlevel--;
           buf.AppendChar(')');
@@ -291,7 +290,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadString() {
   }
 
   GetNextChar(ch);
-  return buf.GetByteString();
+  return buf.MakeString();
 }
 
 CFX_ByteString CPDF_SyntaxParser::ReadHexString() {
@@ -323,7 +322,7 @@ CFX_ByteString CPDF_SyntaxParser::ReadHexString() {
   if (!bFirst)
     buf.AppendByte(code);
 
-  return buf.GetByteString();
+  return buf.MakeString();
 }
 
 void CPDF_SyntaxParser::ToNextLine() {
@@ -394,12 +393,12 @@ CPDF_Object* CPDF_SyntaxParser::GetObject(CPDF_IndirectObjectHolder* pObjList,
     if (bIsNumber) {
       CFX_ByteString nextword2 = GetNextWord(nullptr);
       if (nextword2 == "R") {
-        uint32_t objnum = FXSYS_atoui(word);
+        uint32_t objnum = FXSYS_atoui(word.c_str());
         return new CPDF_Reference(pObjList, objnum);
       }
     }
     m_Pos = SavedPos;
-    return new CPDF_Number(word.AsByteStringC());
+    return new CPDF_Number(word.AsStringC());
   }
 
   if (word == "true" || word == "false")
@@ -471,7 +470,7 @@ CPDF_Object* CPDF_SyntaxParser::GetObject(CPDF_IndirectObjectHolder* pObjList,
       if (!pObj)
         continue;
 
-      CFX_ByteStringC keyNoSlash(key.raw_str() + 1, key.GetLength() - 1);
+      CFX_ByteString keyNoSlash(key.raw_str() + 1, key.GetLength() - 1);
       pDict->SetAt(keyNoSlash, pObj);
     }
 
@@ -518,10 +517,10 @@ CPDF_Object* CPDF_SyntaxParser::GetObjectByStrict(
     if (bIsNumber) {
       CFX_ByteString nextword2 = GetNextWord(nullptr);
       if (nextword2 == "R")
-        return new CPDF_Reference(pObjList, FXSYS_atoui(word));
+        return new CPDF_Reference(pObjList, FXSYS_atoui(word.c_str()));
     }
     m_Pos = SavedPos;
-    return new CPDF_Number(word.AsByteStringC());
+    return new CPDF_Number(word.AsStringC());
   }
 
   if (word == "true" || word == "false")
@@ -590,7 +589,7 @@ CPDF_Object* CPDF_SyntaxParser::GetObjectByStrict(
       }
 
       if (key.GetLength() > 1) {
-        pDict->SetAt(CFX_ByteStringC(key.c_str() + 1, key.GetLength() - 1),
+        pDict->SetAt(CFX_ByteString(key.c_str() + 1, key.GetLength() - 1),
                      obj.release());
       }
     }
@@ -646,7 +645,7 @@ CPDF_Stream* CPDF_SyntaxParser::ReadStream(CPDF_Dictionary* pDict,
   const CFX_ByteStringC kEndStreamStr("endstream");
   const CFX_ByteStringC kEndObjStr("endobj");
 
-  IPDF_CryptoHandler* pCryptoHandler =
+  CPDF_CryptoHandler* pCryptoHandler =
       objnum == (uint32_t)m_MetadataObjnum ? nullptr : m_pCryptoHandler.get();
   if (!pCryptoHandler) {
     FX_BOOL bSearchForKeyword = TRUE;
@@ -913,6 +912,10 @@ int32_t CPDF_SyntaxParser::SearchMultiWord(const CFX_ByteStringC& tags,
       ++ntags;
   }
 
+  // Ensure that the input byte string happens to be nul-terminated. This
+  // need not be the case, but the loop below uses this guarantee to put
+  // the last pattern into the vector.
+  ASSERT(tags[tags.GetLength()] == 0);
   std::vector<SearchTagRecord> patterns(ntags);
   uint32_t start = 0;
   uint32_t itag = 0;
@@ -921,8 +924,7 @@ int32_t CPDF_SyntaxParser::SearchMultiWord(const CFX_ByteStringC& tags,
     if (tags[i] == 0) {
       uint32_t len = i - start;
       max_len = std::max(len, max_len);
-      patterns[itag].m_pTag = tags.c_str() + start;
-      patterns[itag].m_Len = len;
+      patterns[itag].m_bsTag = tags.Mid(start, len);
       patterns[itag].m_Offset = 0;
       start = i + 1;
       ++itag;
@@ -937,22 +939,21 @@ int32_t CPDF_SyntaxParser::SearchMultiWord(const CFX_ByteStringC& tags,
 
     for (int i = 0; i < ntags; ++i) {
       SearchTagRecord& pat = patterns[i];
-      if (pat.m_pTag[pat.m_Offset] != byte) {
-        pat.m_Offset = (pat.m_pTag[0] == byte) ? 1 : 0;
+      if (pat.m_bsTag[pat.m_Offset] != byte) {
+        pat.m_Offset = (pat.m_bsTag[0] == byte) ? 1 : 0;
         continue;
       }
 
       ++pat.m_Offset;
-      if (pat.m_Offset != pat.m_Len)
+      if (pat.m_Offset != pat.m_bsTag.GetLength())
         continue;
 
-      if (!bWholeWord ||
-          IsWholeWord(pos - pat.m_Len, limit,
-                      CFX_ByteStringC(pat.m_pTag, pat.m_Len), FALSE)) {
+      if (!bWholeWord || IsWholeWord(pos - pat.m_bsTag.GetLength(), limit,
+                                     pat.m_bsTag, FALSE)) {
         return i;
       }
 
-      pat.m_Offset = (pat.m_pTag[0] == byte) ? 1 : 0;
+      pat.m_Offset = (pat.m_bsTag[0] == byte) ? 1 : 0;
     }
   }
   return -1;
@@ -985,6 +986,6 @@ FX_FILESIZE CPDF_SyntaxParser::FindTag(const CFX_ByteStringC& tag,
 }
 
 void CPDF_SyntaxParser::SetEncrypt(
-    std::unique_ptr<IPDF_CryptoHandler> pCryptoHandler) {
+    std::unique_ptr<CPDF_CryptoHandler> pCryptoHandler) {
   m_pCryptoHandler = std::move(pCryptoHandler);
 }

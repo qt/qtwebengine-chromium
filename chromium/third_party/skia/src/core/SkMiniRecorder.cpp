@@ -8,7 +8,7 @@
 #include "SkCanvas.h"
 #include "SkTLazy.h"
 #include "SkMiniRecorder.h"
-#include "SkOncePtr.h"
+#include "SkOnce.h"
 #include "SkPicture.h"
 #include "SkPictureCommon.h"
 #include "SkRecordDraw.h"
@@ -23,11 +23,9 @@ public:
     size_t approximateBytesUsed() const override { return sizeof(*this); }
     int    approximateOpCount()   const override { return 0; }
     SkRect cullRect()             const override { return SkRect::MakeEmpty(); }
-    bool   hasText()              const override { return false; }
     int    numSlowPaths()         const override { return 0; }
     bool   willPlayBackBitmaps()  const override { return false; }
 };
-SK_DECLARE_STATIC_ONCE_PTR(SkEmptyPicture, gEmptyPicture);
 
 template <typename T>
 class SkMiniPicture final : public SkPicture {
@@ -43,7 +41,6 @@ public:
     size_t approximateBytesUsed() const override { return sizeof(*this); }
     int    approximateOpCount()   const override { return 1; }
     SkRect cullRect()             const override { return fCull; }
-    bool   hasText()              const override { return SkTextHunter()(fOp); }
     bool   willPlayBackBitmaps()  const override { return SkBitmapHunter()(fOp); }
     int    numSlowPaths()         const override {
         SkPathCounter counter;
@@ -107,8 +104,13 @@ sk_sp<SkPicture> SkMiniRecorder::detachAsPicture(const SkRect& cull) {
         fState = State::kEmpty; \
         return sk_make_sp<SkMiniPicture<Type>>(cull, reinterpret_cast<Type*>(fBuffer.get()))
 
+    static SkOnce once;
+    static SkPicture* empty;
+
     switch (fState) {
-        case State::kEmpty: return sk_ref_sp(gEmptyPicture.get([]{ return new SkEmptyPicture; }));
+        case State::kEmpty:
+            once([]{ empty = new SkEmptyPicture; });
+            return sk_ref_sp(empty);
         CASE(DrawBitmapRectFixedSize);
         CASE(DrawPath);
         CASE(DrawRect);

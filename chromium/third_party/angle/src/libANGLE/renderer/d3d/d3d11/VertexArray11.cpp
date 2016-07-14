@@ -37,7 +37,7 @@ size_t GetAttribIndex(unsigned long dirtyBit)
 }
 }  // anonymous namespace
 
-VertexArray11::VertexArray11(const gl::VertexArray::Data &data)
+VertexArray11::VertexArray11(const gl::VertexArrayState &data)
     : VertexArrayImpl(data),
       mAttributeStorageTypes(data.getVertexAttributes().size(), VertexStorageType::CURRENT_VALUE),
       mTranslatedAttribs(data.getVertexAttributes().size()),
@@ -55,9 +55,13 @@ VertexArray11::VertexArray11(const gl::VertexArray::Data &data)
 
 VertexArray11::~VertexArray11()
 {
-    for (auto &binding : mCurrentBuffers)
+    for (size_t attribIndex = 0; attribIndex < mCurrentBuffers.size(); ++attribIndex)
     {
-        binding.set(nullptr);
+        if (mCurrentBuffers[attribIndex].get())
+        {
+            unlinkBuffer(attribIndex, mAttributeStorageTypes[attribIndex]);
+            mCurrentBuffers[attribIndex].set(nullptr);
+        }
     }
 }
 
@@ -114,15 +118,7 @@ void VertexArray11::updateVertexAttribStorage(size_t attribIndex)
         // we need to tag dynamic buffers with static callbacks.
         if (oldBuffer11 != nullptr)
         {
-            if (oldStorageType == VertexStorageType::DIRECT)
-            {
-                oldBuffer11->removeDirectBufferDirtyCallback(&mOnBufferDataDirty[attribIndex]);
-            }
-            else if (oldStorageType == VertexStorageType::STATIC ||
-                     oldStorageType == VertexStorageType::DYNAMIC)
-            {
-                oldBuffer11->removeStaticBufferDirtyCallback(&mOnBufferDataDirty[attribIndex]);
-            }
+            unlinkBuffer(attribIndex, oldStorageType);
         }
         if (newBuffer11 != nullptr)
         {
@@ -251,6 +247,19 @@ void VertexArray11::clearDirtyAndPromoteDynamicAttribs(const gl::State &state, G
     // Promote to static after we clear the dirty attributes, otherwise we can lose dirtyness.
     auto activeDynamicAttribs = (mDynamicAttribsMask & activeLocations);
     VertexDataManager::PromoteDynamicAttribs(mTranslatedAttribs, activeDynamicAttribs, count);
+}
+
+void VertexArray11::unlinkBuffer(size_t attribIndex, VertexStorageType storageType)
+{
+    Buffer11 *buffer = GetImplAs<Buffer11>(mCurrentBuffers[attribIndex].get());
+    if (storageType == VertexStorageType::DIRECT)
+    {
+        buffer->removeDirectBufferDirtyCallback(&mOnBufferDataDirty[attribIndex]);
+    }
+    else if (storageType == VertexStorageType::STATIC || storageType == VertexStorageType::DYNAMIC)
+    {
+        buffer->removeStaticBufferDirtyCallback(&mOnBufferDataDirty[attribIndex]);
+    }
 }
 
 }  // namespace rx

@@ -40,7 +40,7 @@ float CachingWordShaper::width(const Font* font, const TextRun& run,
     FloatRect* glyphBounds)
 {
     float width = 0;
-    RefPtr<ShapeResult> wordResult;
+    RefPtr<const ShapeResult> wordResult;
     CachingWordShapeIterator iterator(m_shapeCache, run, font);
     while (iterator.next(&wordResult)) {
         if (wordResult) {
@@ -65,7 +65,7 @@ static inline float shapeResultsForRun(ShapeCache* shapeCache, const Font* font,
     ShapeResultBuffer* resultsBuffer)
 {
     CachingWordShapeIterator iterator(shapeCache, run, font);
-    RefPtr<ShapeResult> wordResult;
+    RefPtr<const ShapeResult> wordResult;
     float totalWidth = 0;
     while (iterator.next(&wordResult)) {
         if (wordResult) {
@@ -78,12 +78,12 @@ static inline float shapeResultsForRun(ShapeCache* shapeCache, const Font* font,
     return totalWidth;
 }
 
-int CachingWordShaper::offsetForPosition(const Font* font, const TextRun& run, float targetX)
+int CachingWordShaper::offsetForPosition(const Font* font, const TextRun& run, float targetX, bool includePartialGlyphs)
 {
     ShapeResultBuffer buffer;
     shapeResultsForRun(m_shapeCache, font, run, nullptr, &buffer);
 
-    return buffer.offsetForPosition(run, targetX);
+    return buffer.offsetForPosition(run, targetX, includePartialGlyphs);
 }
 
 float CachingWordShaper::fillGlyphBuffer(const Font* font, const TextRun& run,

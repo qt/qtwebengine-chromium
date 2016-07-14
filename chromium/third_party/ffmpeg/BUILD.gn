@@ -178,7 +178,10 @@ source_set("ffmpeg_internal") {
     # Setting the optimizations to 'speed' or to 'max' on Windows results in
     # a lot of unresolved symbols. The only supported mode is 'size' (see
     # crbug.com/264459).
-    configs += [ "//build/config/compiler:optimize" ]
+    #
+    # FFMmpeg require dead code elimination to be available in all build modes
+    # and thus doesn't support wpo.
+    configs += [ "//build/config/compiler:optimize_no_wpo" ]
 
     # /analyze must be disabled for ffmpeg because of an internal compiler
     # error in VS 2015 Update 1, fixed in Update 2.
@@ -266,6 +269,7 @@ source_set("ffmpeg_internal") {
     if (is_component_ffmpeg) {
       # Export all symbols when building as component.
       configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
+      configs += [ "//build/config/gcc:symbol_visibility_default" ]
     }
     # TODO(ajwong): How to handle openbsd? Especially w/o the is_posix?
     #      if (is_openbsd) {
@@ -277,6 +281,7 @@ source_set("ffmpeg_internal") {
     if (is_component_ffmpeg) {
       # Export all symbols when building as component.
       configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
+      configs += [ "//build/config/gcc:symbol_visibility_default" ]
     }
 
     defines += [ "_DARWIN_C_SOURCE" ]
