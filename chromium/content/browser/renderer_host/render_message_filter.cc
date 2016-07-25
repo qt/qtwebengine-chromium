@@ -164,6 +164,9 @@ class OpenChannelToPpapiPluginCallback
 
   void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
                            int* renderer_id) override {
+    // base::kNullProcessHandle indicates that the channel will be used by the
+    // browser itself. Make sure we never output that value here.
+    CHECK_NE(base::kNullProcessHandle, filter()->PeerHandle());
     *renderer_handle = filter()->PeerHandle();
     *renderer_id = filter()->render_process_id();
   }
@@ -197,6 +200,9 @@ class OpenChannelToPpapiBrokerCallback
 
   void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
                            int* renderer_id) override {
+    // base::kNullProcessHandle indicates that the channel will be used by the
+    // browser itself. Make sure we never output that value here.
+    CHECK_NE(base::kNullProcessHandle, filter_->PeerHandle());
     *renderer_handle = filter_->PeerHandle();
     *renderer_id = filter_->render_process_id();
   }
