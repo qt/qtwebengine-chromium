@@ -688,6 +688,7 @@ void FrameLoader::detachDocumentLoader(RefPtrWillBeMember<DocumentLoader>& loade
     if (!loader)
         return;
 
+    FrameNavigationDisabler navigationDisabler(*m_frame);
     loader->detachFromFrame();
     loader = nullptr;
 }
@@ -1077,7 +1078,6 @@ bool FrameLoader::prepareForCommit()
     // At this point, the provisional document loader should not detach, because
     // then the FrameLoader would not have any attached DocumentLoaders.
     if (m_documentLoader) {
-        FrameNavigationDisabler navigationDisabler(*m_frame);
         TemporaryChange<bool> inDetachDocumentLoader(m_protectProvisionalLoader, true);
         detachDocumentLoader(m_documentLoader);
     }
@@ -1384,11 +1384,7 @@ void FrameLoader::startLoad(FrameLoadRequest& frameLoadRequest, FrameLoadType ty
         return;
 
     m_frame->document()->cancelParsing();
-
-    if (m_provisionalDocumentLoader) {
-        m_provisionalDocumentLoader->stopLoading();
-        detachDocumentLoader(m_provisionalDocumentLoader);
-    }
+    detachDocumentLoader(m_provisionalDocumentLoader);
 
     // beforeunload fired above, and detaching a DocumentLoader can fire
     // events, which can detach this frame.
