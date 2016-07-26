@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 #include "base/trace_event/trace_event.h"
+#include "cc/base/math_util.h"
 #include "cc/base/region.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/playback/display_item_list.h"
@@ -81,6 +82,9 @@ void DisplayListRasterSource::PlaybackToCanvas(
     const gfx::Rect& canvas_bitmap_rect,
     const gfx::Rect& canvas_playback_rect,
     float contents_scale) const {
+  // Treat all subnormal values as zero for performance.
+  ScopedSubnormalFloatDisabler disabler;
+
   PrepareForPlaybackToCanvas(canvas, canvas_bitmap_rect, canvas_playback_rect,
                              contents_scale);
   RasterCommon(canvas, NULL, canvas_bitmap_rect, canvas_playback_rect,

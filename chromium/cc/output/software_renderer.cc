@@ -647,6 +647,8 @@ skia::RefPtr<SkImage> SoftwareRenderer::ApplyImageFilter(
       skia::AdoptRef(filter->newWithLocalMatrix(localM));
 
   SkPaint paint;
+  // Treat subnormal float values as zero for performance.
+  ScopedSubnormalFloatDisabler disabler;
   paint.setImageFilter(localIMF.get());
   surface->getCanvas()->drawBitmap(*to_filter, 0, 0, &paint);
 
