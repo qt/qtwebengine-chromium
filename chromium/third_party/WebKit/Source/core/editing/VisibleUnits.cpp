@@ -1316,7 +1316,7 @@ VisiblePosition previousLinePosition(const VisiblePosition& visiblePosition, Lay
     if (root) {
         // FIXME: Can be wrong for multi-column layout and with transforms.
         LayoutPoint pointInLine = absoluteLineDirectionPointToLocalPointInBlock(root, lineDirectionPoint);
-        LayoutObject& layoutObject = root->closestLeafChildForPoint(pointInLine, isEditablePosition(p))->layoutObject();
+        LayoutObject& layoutObject = root->closestLeafChildForPoint(pointInLine, isEditablePosition(p, ContentIsEditable, DoNotUpdateStyle))->layoutObject();
         Node* node = layoutObject.node();
         if (node && editingIgnoresContent(node))
             return createVisiblePosition(positionInParentBeforeNode(*node));
