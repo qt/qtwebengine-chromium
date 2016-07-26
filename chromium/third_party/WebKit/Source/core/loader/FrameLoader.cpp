@@ -669,6 +669,7 @@ void FrameLoader::detachDocumentLoader(RefPtrWillBeMember<DocumentLoader>& loade
     if (!loader)
         return;
 
+    FrameNavigationDisabler navigationDisabler(*m_frame);
     loader->detachFromFrame();
     loader = nullptr;
 }
@@ -1065,7 +1066,6 @@ bool FrameLoader::prepareForCommit()
     // At this point, the provisional document loader should not detach, because
     // then the FrameLoader would not have any attached DocumentLoaders.
     if (m_documentLoader) {
-        FrameNavigationDisabler navigationDisabler(*m_frame);
         TemporaryChange<bool> inDetachDocumentLoader(m_protectProvisionalLoader, true);
         detachDocumentLoader(m_documentLoader);
     }
@@ -1333,10 +1333,7 @@ void FrameLoader::startLoad(FrameLoadRequest& frameLoadRequest, FrameLoadType ty
     }
     m_frame->document()->setReadyState(Document::Complete);
 
-    if (m_provisionalDocumentLoader) {
-        m_provisionalDocumentLoader->stopLoading();
-        detachDocumentLoader(m_provisionalDocumentLoader);
-    }
+    detachDocumentLoader(m_provisionalDocumentLoader);
     m_checkTimer.stop();
 
     // <rdar://problem/6250856> - In certain circumstances on pages with multiple frames, stopAllLoaders()
