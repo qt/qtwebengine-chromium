@@ -3068,22 +3068,37 @@ MaybeHandle<Object> Object::SetPropertyInternal(LookupIterator* it,
         }
         break;
 
-      case LookupIterator::INTERCEPTOR:
+      case LookupIterator::INTERCEPTOR: {
+        Handle<Map> store_target_map =
+            handle(it->GetStoreTarget()->map(), it->isolate());
         if (it->HolderIsReceiverOrHiddenPrototype()) {
           MaybeHandle<Object> maybe_result =
               JSObject::SetPropertyWithInterceptor(it, value);
           if (!maybe_result.is_null()) return maybe_result;
           if (it->isolate()->has_pending_exception()) return maybe_result;
+          // Interceptor modified the store target but failed to set the
+          // property.
+          Utils::ApiCheck(*store_target_map == it->GetStoreTarget()->map(),
+                          it->IsElement() ? "v8::IndexedPropertySetterCallback"
+                                          : "v8::NamedPropertySetterCallback",
+                          "Interceptor silently changed store target.");
         } else {
           Maybe<PropertyAttributes> maybe_attributes =
               JSObject::GetPropertyAttributesWithInterceptor(it);
           if (!maybe_attributes.IsJust()) return MaybeHandle<Object>();
-          done = maybe_attributes.FromJust() != ABSENT;
-          if (done && (maybe_attributes.FromJust() & READ_ONLY) != 0) {
+          if ((maybe_attributes.FromJust() & READ_ONLY) != 0) {
             return WriteToReadOnlyProperty(it, value, language_mode);
+          // Interceptor modified the store target but failed to set the
+          // property.
+          Utils::ApiCheck(*store_target_map == it->GetStoreTarget()->map(),
+                          it->IsElement() ? "v8::IndexedPropertySetterCallback"
+                                          : "v8::NamedPropertySetterCallback",
+                          "Interceptor silently changed store target.");
+          done = maybe_attributes.FromJust() != ABSENT;
           }
         }
         break;
+      }
 
       case LookupIterator::ACCESSOR: {
         if (it->IsReadOnly()) {
