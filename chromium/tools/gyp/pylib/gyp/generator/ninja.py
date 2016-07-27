@@ -339,6 +339,8 @@ class NinjaWriter(object):
       obj += '.' + self.toolset
 
     path_dir, path_basename = os.path.split(path)
+    if os.path.isabs(path_dir):
+        path_dir = gyp.common.RelativePath(path_dir, self.abs_build_dir)
     #assert not os.path.isabs(path_dir), (
         #"'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
 
@@ -2427,10 +2429,16 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     hash_for_rules = hashlib.md5(qualified_target_for_hash).hexdigest()
 
     base_path = os.path.dirname(build_file)
+    output_file_path = base_path
+    if os.path.commonprefix([output_file_path, os.path.pardir]) == os.path.pardir:
+        # avoid escaping the build-dir due to generated files
+        # outside the source directory
+        output_file_path = output_file_path.replace('..', '.')
+
     obj = 'obj'
     if toolset != 'target':
       obj += '.' + toolset
-    output_file = os.path.join(obj, base_path, name + '.ninja')
+    output_file = os.path.join(obj, output_file_path, name + '.ninja')
 
     ninja_output = StringIO()
     writer = NinjaWriter(hash_for_rules, target_outputs, base_path, build_dir,
