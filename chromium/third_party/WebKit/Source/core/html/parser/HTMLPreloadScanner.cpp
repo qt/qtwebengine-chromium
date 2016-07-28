@@ -687,7 +687,7 @@ CachedDocumentParameters::CachedDocumentParameters(Document* document, PassRefPt
     defaultViewportMinWidth = document->viewportDefaultMinWidth();
     viewportMetaZeroValuesQuirk = document->settings() && document->settings()->viewportMetaZeroValuesQuirk();
     viewportMetaEnabled = document->settings() && document->settings()->viewportMetaEnabled();
-    referrerPolicy = document->getReferrerPolicy();
+    referrerPolicy = document->referrerPolicy();
 }
 
 }
