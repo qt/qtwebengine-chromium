@@ -68,7 +68,6 @@ source_set("audio_device") {
   defines = []
   cflags = []
   if (rtc_include_internal_audio_device) {
-    defines += [ "WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE" ]
     sources += [
       "audio_device_impl.cc",
       "audio_device_impl.h",
@@ -135,10 +134,15 @@ source_set("audio_device") {
       libs = [
         "AudioToolbox.framework",
         "CoreAudio.framework",
+
+        # Needed for CGEventSourceKeyState in audio_device_mac.cc:
+        "CoreGraphics.framework",
       ]
     }
     if (is_ios) {
-      deps += [ "../../sdk:rtc_sdk_common_objc" ]
+      public_deps = [
+        "../../sdk:rtc_sdk_common_objc",
+      ]
       sources += [
         "ios/audio_device_ios.h",
         "ios/audio_device_ios.mm",
@@ -155,7 +159,7 @@ source_set("audio_device") {
         "ios/voice_processing_audio_unit.h",
         "ios/voice_processing_audio_unit.mm",
       ]
-      cflags += [ "-fobjc-arc" ]  # CLANG_ENABLE_OBJC_ARC = YES.
+      configs += [ "//build/config/compiler:enable_arc" ]
 
       libs = [
         "AudioToolbox.framework",

@@ -9,8 +9,6 @@
 
 #include "core/fpdfapi/fpdf_parser/include/cpdf_parser.h"
 #include "core/fpdfdoc/include/fpdf_doc.h"
-#include "core/fxge/include/fx_ge.h"
-#include "core/fxge/include/fx_ge_win32.h"
 #include "public/fpdfview.h"
 
 #ifdef PDF_ENABLE_XFA
@@ -42,12 +40,12 @@ class CPDF_CustomAccess final : public IFX_FileRead {
   ~CPDF_CustomAccess() override {}
 
   // IFX_FileRead
-  FX_FILESIZE GetSize() override { return m_FileAccess.m_FileLen; }
-  void Release() override { delete this; }
+  FX_FILESIZE GetSize() override;
+  void Release() override;
   FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
 
 #ifdef PDF_ENABLE_XFA
-  virtual CFX_ByteString GetFullPath() { return ""; }
+  virtual CFX_ByteString GetFullPath();
   virtual FX_BOOL GetByte(uint32_t pos, uint8_t& ch);
   virtual FX_BOOL GetBlock(uint32_t pos, uint8_t* pBuf, uint32_t size);
 #endif  // PDF_ENABLE_XFA
@@ -63,22 +61,23 @@ class CPDF_CustomAccess final : public IFX_FileRead {
 #ifdef PDF_ENABLE_XFA
 class CFPDF_FileStream : public IFX_FileStream {
  public:
-  CFPDF_FileStream(FPDF_FILEHANDLER* pFS);
-  virtual ~CFPDF_FileStream() {}
+  explicit CFPDF_FileStream(FPDF_FILEHANDLER* pFS);
+  ~CFPDF_FileStream() override {}
 
-  virtual IFX_FileStream* Retain();
-  virtual void Release();
+  // IFX_FileStream:
+  IFX_FileStream* Retain() override;
+  void Release() override;
+  FX_FILESIZE GetSize() override;
+  FX_BOOL IsEOF() override;
+  FX_FILESIZE GetPosition() override;
+  FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+  size_t ReadBlock(void* buffer, size_t size) override;
+  FX_BOOL WriteBlock(const void* buffer,
+                     FX_FILESIZE offset,
+                     size_t size) override;
+  FX_BOOL Flush() override;
 
-  virtual FX_FILESIZE GetSize();
-  virtual FX_BOOL IsEOF();
-  virtual FX_FILESIZE GetPosition() { return m_nCurPos; }
-  virtual void SetPosition(FX_FILESIZE pos) { m_nCurPos = pos; }
-  virtual FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size);
-  virtual size_t ReadBlock(void* buffer, size_t size);
-  virtual FX_BOOL WriteBlock(const void* buffer,
-                             FX_FILESIZE offset,
-                             size_t size);
-  virtual FX_BOOL Flush();
+  void SetPosition(FX_FILESIZE pos) { m_nCurPos = pos; }
 
  protected:
   FPDF_FILEHANDLER* m_pFS;
@@ -109,7 +108,8 @@ FPDF_DOCUMENT FPDFDocumentFromCPDFDocument(CPDF_Document* doc);
 
 CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page);
 
-void DropContext(void* data);
+CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap);
+
 void FSDK_SetSandBoxPolicy(FPDF_DWORD policy, FPDF_BOOL enable);
 FPDF_BOOL FSDK_IsSandBoxPolicyEnabled(FPDF_DWORD policy);
 void FPDF_RenderPage_Retail(CRenderContext* pContext,

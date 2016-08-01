@@ -15,7 +15,7 @@ CXFA_FFDocHandler::CXFA_FFDocHandler() {}
 
 CXFA_FFDocHandler::~CXFA_FFDocHandler() {}
 
-FXJSE_HVALUE CXFA_FFDocHandler::GetXFAScriptObject(CXFA_FFDoc* hDoc) {
+CFXJSE_Value* CXFA_FFDocHandler::GetXFAScriptObject(CXFA_FFDoc* hDoc) {
   CXFA_Document* pXFADoc = hDoc->GetXFADoc();
   if (!pXFADoc)
     return nullptr;
@@ -35,7 +35,7 @@ XFA_ATTRIBUTEENUM CXFA_FFDocHandler::GetRestoreState(CXFA_FFDoc* hDoc) {
   if (!pForm)
     return XFA_ATTRIBUTEENUM_Unknown;
 
-  CXFA_Node* pSubForm = pForm->GetFirstChildByClass(XFA_ELEMENT_Subform);
+  CXFA_Node* pSubForm = pForm->GetFirstChildByClass(XFA_Element::Subform);
   if (!pSubForm)
     return XFA_ATTRIBUTEENUM_Unknown;
   return pSubForm->GetEnum(XFA_ATTRIBUTE_RestoreState);
@@ -44,8 +44,8 @@ XFA_ATTRIBUTEENUM CXFA_FFDocHandler::GetRestoreState(CXFA_FFDoc* hDoc) {
 FX_BOOL CXFA_FFDocHandler::RunDocScript(CXFA_FFDoc* hDoc,
                                         XFA_SCRIPTTYPE eScriptType,
                                         const CFX_WideStringC& wsScript,
-                                        FXJSE_HVALUE hRetValue,
-                                        FXJSE_HVALUE hThisObject) {
+                                        CFXJSE_Value* pRetValue,
+                                        CFXJSE_Value* pThisValue) {
   CXFA_Document* pXFADoc = hDoc->GetXFADoc();
   if (!pXFADoc)
     return FALSE;
@@ -55,7 +55,6 @@ FX_BOOL CXFA_FFDocHandler::RunDocScript(CXFA_FFDoc* hDoc,
     return FALSE;
 
   return pScriptContext->RunScript(
-      (XFA_SCRIPTLANGTYPE)eScriptType, wsScript, hRetValue,
-      hThisObject ? (CXFA_Object*)FXJSE_Value_ToObject(hThisObject, nullptr)
-                  : nullptr);
+      (XFA_SCRIPTLANGTYPE)eScriptType, wsScript, pRetValue,
+      pThisValue ? CXFA_ScriptContext::ToObject(pThisValue, nullptr) : nullptr);
 }

@@ -43,6 +43,12 @@ CaretBase::CaretBase(CaretVisibility visibility)
 {
 }
 
+CaretBase::~CaretBase() = default;
+
+DEFINE_TRACE(CaretBase)
+{
+}
+
 void CaretBase::clearCaretRect()
 {
     m_caretLocalRect = LayoutRect();
@@ -206,6 +212,11 @@ void CaretBase::paintCaret(Node* node, GraphicsContext& context, const LayoutPoi
         caretColor = element->layoutObject()->resolveColor(CSSPropertyColor);
 
     context.fillRect(FloatRect(drawingRect), caretColor);
+}
+
+void CaretBase::setCaretVisibility(CaretVisibility visibility)
+{
+    m_caretVisibility = visibility;
 }
 
 } // namespace blink

@@ -355,9 +355,9 @@ int CPDF_DIBSource::ContinueLoadDIBSource(IFX_Pause* pPause) {
         }
       }
       ret = pJbig2Module->StartDecode(
-          m_pJbig2Context, m_pDocument, m_Width, m_Height, m_pStreamAcc.get(),
-          m_pGlobalStream.get(), m_pCachedBitmap->GetBuffer(),
-          m_pCachedBitmap->GetPitch(), pPause);
+          m_pJbig2Context, m_pDocument->CodecContext(), m_Width, m_Height,
+          m_pStreamAcc.get(), m_pGlobalStream.get(),
+          m_pCachedBitmap->GetBuffer(), m_pCachedBitmap->GetPitch(), pPause);
       if (ret < 0) {
         m_pCachedBitmap.reset();
         m_pGlobalStream.reset();
@@ -381,7 +381,7 @@ int CPDF_DIBSource::ContinueLoadDIBSource(IFX_Pause* pPause) {
       }
       return ret1;
     }
-    FXCODEC_STATUS ret = pJbig2Module->ContinueDecode(m_pJbig2Context, pPause);
+    ret = pJbig2Module->ContinueDecode(m_pJbig2Context, pPause);
     if (ret < 0) {
       m_pCachedBitmap.reset();
       m_pGlobalStream.reset();
@@ -561,19 +561,20 @@ int CPDF_DIBSource::CreateDecoder() {
         src_data, src_size, m_Width, m_Height, m_nComponents,
         pParams ? pParams->GetIntegerBy("ColorTransform", 1) : 1));
     if (!m_pDecoder) {
-      FX_BOOL bTransform = FALSE;
+      bool bTransform = false;
       int comps;
       int bpc;
       CCodec_JpegModule* pJpegModule = CPDF_ModuleMgr::Get()->GetJpegModule();
-      if (pJpegModule->LoadInfo(src_data, src_size, m_Width, m_Height, comps,
-                                bpc, bTransform)) {
+      if (pJpegModule->LoadInfo(src_data, src_size, &m_Width, &m_Height, &comps,
+                                &bpc, &bTransform)) {
         if (m_nComponents != static_cast<uint32_t>(comps)) {
           FX_Free(m_pCompData);
           m_pCompData = nullptr;
           m_nComponents = static_cast<uint32_t>(comps);
           if (m_pColorSpace &&
-              m_pColorSpace->CountComponents() != m_nComponents)
+              m_pColorSpace->CountComponents() != m_nComponents) {
             return 0;
+          }
           if (m_Family == PDFCS_LAB && m_nComponents != 3)
             return 0;
           m_pCompData = GetDecodeAndMaskArray(m_bDefaultDecode, m_bColorKey);
@@ -613,17 +614,14 @@ int CPDF_DIBSource::CreateDecoder() {
 
   FX_SAFE_UINT32 requested_pitch =
       CalculatePitch8(m_bpc, m_nComponents, m_Width);
-  if (!requested_pitch.IsValid()) {
+  if (!requested_pitch.IsValid())
     return 0;
-  }
   FX_SAFE_UINT32 provided_pitch = CalculatePitch8(
       m_pDecoder->GetBPC(), m_pDecoder->CountComps(), m_pDecoder->GetWidth());
-  if (!provided_pitch.IsValid()) {
+  if (!provided_pitch.IsValid())
     return 0;
-  }
-  if (provided_pitch.ValueOrDie() < requested_pitch.ValueOrDie()) {
+  if (provided_pitch.ValueOrDie() < requested_pitch.ValueOrDie())
     return 0;
-  }
   return 1;
 }
 
@@ -864,8 +862,8 @@ void CPDF_DIBSource::LoadPalette() {
           m_pColorSpace->CountComponents() > 1) {
         int nComponents = m_pColorSpace->CountComponents();
         std::vector<FX_FLOAT> temp_buf(nComponents);
-        for (int i = 0; i < nComponents; i++) {
-          temp_buf[i] = *color_value;
+        for (int k = 0; k < nComponents; k++) {
+          temp_buf[k] = *color_value;
         }
         m_pColorSpace->GetRGB(temp_buf.data(), R, G, B);
       } else {

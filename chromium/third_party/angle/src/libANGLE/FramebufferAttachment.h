@@ -15,6 +15,7 @@
 #include "libANGLE/angletypes.h"
 #include "libANGLE/Error.h"
 #include "libANGLE/ImageIndex.h"
+#include "libANGLE/signal_utils.h"
 
 namespace egl
 {
@@ -165,8 +166,12 @@ class FramebufferAttachmentObject
     Error getAttachmentRenderTarget(const FramebufferAttachment::Target &target,
                                     rx::FramebufferAttachmentRenderTarget **rtOut) const;
 
+    angle::BroadcastChannel *getDirtyChannel();
+
   protected:
     virtual rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const = 0;
+
+    angle::BroadcastChannel mDirtyChannel;
 };
 
 inline Extents FramebufferAttachment::getSize() const
@@ -190,32 +195,5 @@ inline gl::Error FramebufferAttachment::getRenderTarget(rx::FramebufferAttachmen
 }
 
 } // namespace gl
-
-namespace rx
-{
-
-class FramebufferAttachmentObjectImpl : angle::NonCopyable
-{
-  public:
-    FramebufferAttachmentObjectImpl() {}
-    virtual ~FramebufferAttachmentObjectImpl() {}
-
-    virtual gl::Error getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
-                                                FramebufferAttachmentRenderTarget **rtOut) = 0;
-};
-
-} // namespace rx
-
-namespace gl
-{
-
-inline Error FramebufferAttachmentObject::getAttachmentRenderTarget(
-    const FramebufferAttachment::Target &target,
-    rx::FramebufferAttachmentRenderTarget **rtOut) const
-{
-    return getAttachmentImpl()->getAttachmentRenderTarget(target, rtOut);
-}
-
-}
 
 #endif // LIBANGLE_FRAMEBUFFERATTACHMENT_H_

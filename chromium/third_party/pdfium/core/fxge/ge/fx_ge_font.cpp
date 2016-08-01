@@ -4,6 +4,8 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "core/fxge/include/fx_font.h"
+
 #include "core/fpdfapi/fpdf_font/include/cpdf_font.h"
 #include "core/fxge/ge/fx_text_int.h"
 #include "core/fxge/include/fx_freetype.h"
@@ -38,31 +40,31 @@ FXFT_Face FT_LoadFont(const uint8_t* pData, int size) {
 
 }  // namespace
 
-CFX_Font::CFX_Font() {
-  m_pSubstFont = NULL;
-  m_Face = NULL;
-  m_bEmbedded = FALSE;
-  m_bVertical = FALSE;
-  m_pFontData = NULL;
-  m_pFontDataAllocation = NULL;
-  m_dwSize = 0;
-  m_pGsubData = NULL;
-  m_pPlatformFont = NULL;
-  m_pPlatformFontCollection = NULL;
-  m_pDwFont = NULL;
-  m_hHandle = NULL;
-  m_bDwLoaded = FALSE;
+CFX_Font::CFX_Font()
 #ifdef PDF_ENABLE_XFA
-  m_bLogic = FALSE;
-  m_pOwnedStream = NULL;
+    : m_bLogic(FALSE),
+      m_pOwnedStream(nullptr),
+      m_Face(nullptr),
+#else
+    : m_Face(nullptr),
 #endif  // PDF_ENABLE_XFA
+      m_pSubstFont(nullptr),
+      m_pFontDataAllocation(nullptr),
+      m_pFontData(nullptr),
+      m_pGsubData(nullptr),
+      m_dwSize(0),
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+      m_pPlatformFont(nullptr),
+#endif
+      m_bEmbedded(FALSE),
+      m_bVertical(FALSE) {
 }
 
 #ifdef PDF_ENABLE_XFA
 FX_BOOL CFX_Font::LoadClone(const CFX_Font* pFont) {
-  if (pFont == NULL) {
+  if (!pFont)
     return FALSE;
-  }
+
   m_bLogic = TRUE;
   if (pFont->m_pSubstFont) {
     m_pSubstFont = new CFX_SubstFont;
@@ -83,11 +85,9 @@ FX_BOOL CFX_Font::LoadClone(const CFX_Font* pFont) {
   m_dwSize = pFont->m_dwSize;
   m_pFontData = pFont->m_pFontData;
   m_pGsubData = pFont->m_pGsubData;
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
   m_pPlatformFont = pFont->m_pPlatformFont;
-  m_pPlatformFontCollection = pFont->m_pPlatformFontCollection;
-  m_pDwFont = pFont->m_pDwFont;
-  m_hHandle = pFont->m_hHandle;
-  m_bDwLoaded = pFont->m_bDwLoaded;
+#endif
   m_pOwnedStream = pFont->m_pOwnedStream;
   return TRUE;
 }
@@ -124,7 +124,7 @@ CFX_Font::~CFX_Font() {
 }
 void CFX_Font::DeleteFace() {
   FXFT_Done_Face(m_Face);
-  m_Face = NULL;
+  m_Face = nullptr;
 }
 void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
                          FX_BOOL bTrueType,
@@ -142,7 +142,7 @@ void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
   if (m_pSubstFont->m_ExtHandle) {
     m_pPlatformFont = m_pSubstFont->m_ExtHandle;
-    m_pSubstFont->m_ExtHandle = NULL;
+    m_pSubstFont->m_ExtHandle = nullptr;
   }
 #endif
   if (m_Face) {
@@ -174,7 +174,7 @@ FX_BOOL _LoadFile(FXFT_Library library,
                   FXFT_Stream* stream,
                   int32_t faceIndex = 0) {
   FXFT_Stream stream1 = (FXFT_Stream)FX_Alloc(uint8_t, sizeof(FXFT_StreamRec));
-  stream1->base = NULL;
+  stream1->base = nullptr;
   stream1->size = (unsigned long)pFile->GetSize();
   stream1->pos = 0;
   stream1->descriptor.pointer = pFile;
@@ -239,7 +239,7 @@ FX_BOOL CFX_Font::LoadEmbedded(const uint8_t* data, uint32_t size) {
   m_pFontData = m_pFontDataAllocation;
   m_bEmbedded = TRUE;
   m_dwSize = size;
-  return m_Face != NULL;
+  return !!m_Face;
 }
 
 FX_BOOL CFX_Font::IsTTFont() const {
@@ -356,17 +356,16 @@ FX_BOOL CFX_Font::IsFixedWidth() const {
   return FXFT_Is_Face_fixedwidth(m_Face);
 }
 
-CFX_WideString CFX_Font::GetPsName() const {
-  if (!m_Face) {
-    return CFX_WideString();
-  }
-  CFX_WideString psName =
-      CFX_WideString::FromLocal(FXFT_Get_Postscript_Name(m_Face));
-  if (psName.IsEmpty()) {
-    psName = CFX_WideString::FromLocal("Untitled");
-  }
+CFX_ByteString CFX_Font::GetPsName() const {
+  if (!m_Face)
+    return CFX_ByteString();
+
+  CFX_ByteString psName = FXFT_Get_Postscript_Name(m_Face);
+  if (psName.IsEmpty())
+    psName = "Untitled";
   return psName;
 }
+
 CFX_ByteString CFX_Font::GetFamilyName() const {
   if (!m_Face && !m_pSubstFont) {
     return CFX_ByteString();
@@ -457,7 +456,8 @@ uint32_t CFX_UnicodeEncoding::GlyphFromCharCode(uint32_t charcode) {
   if (FXFT_Select_Charmap(face, FXFT_ENCODING_UNICODE) == 0)
     return FXFT_Get_Char_Index(face, charcode);
 
-  if (m_pFont->GetSubstFont() && m_pFont->GetSubstFont()->m_Charset == 2) {
+  if (m_pFont->GetSubstFont() &&
+      m_pFont->GetSubstFont()->m_Charset == FXFONT_SYMBOL_CHARSET) {
     uint32_t index = 0;
     if (FXFT_Select_Charmap(face, FXFT_ENCODING_MS_SYMBOL) == 0)
       index = FXFT_Get_Char_Index(face, charcode);
@@ -535,6 +535,6 @@ CFX_UnicodeEncodingEx* FX_CreateFontEncodingEx(CFX_Font* pFont,
       return pFontEncoding;
     }
   }
-  return NULL;
+  return nullptr;
 }
 #endif  // PDF_ENABLE_XFA

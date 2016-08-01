@@ -37,7 +37,8 @@ class AllocationBuilder final {
 
   // Primitive allocation of static size.
   void Allocate(int size, PretenureFlag pretenure = NOT_TENURED) {
-    effect_ = graph()->NewNode(common()->BeginRegion(), effect_);
+    effect_ = graph()->NewNode(
+        common()->BeginRegion(RegionObservability::kNotObservable), effect_);
     allocation_ =
         graph()->NewNode(simplified()->Allocate(pretenure),
                          jsgraph()->Constant(size), effect_, control_);
@@ -311,11 +312,10 @@ Reduction JSCreateLowering::ReduceJSCreateArguments(Node* node) {
         Operator::Properties properties = node->op()->properties();
         CallDescriptor* desc = Linkage::GetStubCallDescriptor(
             isolate(), graph()->zone(), callable.descriptor(), 0,
-            CallDescriptor::kNoFlags, properties);
+            CallDescriptor::kNeedsFrameState, properties);
         const Operator* new_op = common()->Call(desc);
         Node* stub_code = jsgraph()->HeapConstant(callable.code());
         node->InsertInput(graph()->zone(), 0, stub_code);
-        node->RemoveInput(3);  // Remove the frame state.
         NodeProperties::ChangeOp(node, new_op);
         return Changed(node);
       }
@@ -324,11 +324,10 @@ Reduction JSCreateLowering::ReduceJSCreateArguments(Node* node) {
         Operator::Properties properties = node->op()->properties();
         CallDescriptor* desc = Linkage::GetStubCallDescriptor(
             isolate(), graph()->zone(), callable.descriptor(), 0,
-            CallDescriptor::kNoFlags, properties);
+            CallDescriptor::kNeedsFrameState, properties);
         const Operator* new_op = common()->Call(desc);
         Node* stub_code = jsgraph()->HeapConstant(callable.code());
         node->InsertInput(graph()->zone(), 0, stub_code);
-        node->RemoveInput(3);  // Remove the frame state.
         NodeProperties::ChangeOp(node, new_op);
         return Changed(node);
       }
@@ -551,44 +550,40 @@ Reduction JSCreateLowering::ReduceJSCreateClosure(Node* node) {
   CreateClosureParameters const& p = CreateClosureParametersOf(node->op());
   Handle<SharedFunctionInfo> shared = p.shared_info();
 
-  // Use inline allocation for functions that don't need literals cloning.
-  if (shared->num_literals() == 0) {
-    Node* effect = NodeProperties::GetEffectInput(node);
-    Node* control = NodeProperties::GetControlInput(node);
-    Node* context = NodeProperties::GetContextInput(node);
-    Node* native_context = effect = graph()->NewNode(
-        javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
-        context, context, effect);
-    int function_map_index =
-        Context::FunctionMapIndex(shared->language_mode(), shared->kind());
-    Node* function_map = effect =
-        graph()->NewNode(javascript()->LoadContext(0, function_map_index, true),
-                         native_context, native_context, effect);
-    // Note that it is only safe to embed the raw entry point of the compile
-    // lazy stub into the code, because that stub is immortal and immovable.
-    Node* compile_entry = jsgraph()->IntPtrConstant(reinterpret_cast<intptr_t>(
-        jsgraph()->isolate()->builtins()->CompileLazy()->entry()));
-    Node* empty_fixed_array = jsgraph()->EmptyFixedArrayConstant();
-    Node* the_hole = jsgraph()->TheHoleConstant();
-    Node* undefined = jsgraph()->UndefinedConstant();
-    AllocationBuilder a(jsgraph(), effect, control);
-    STATIC_ASSERT(JSFunction::kSize == 9 * kPointerSize);
-    a.Allocate(JSFunction::kSize, p.pretenure());
-    a.Store(AccessBuilder::ForMap(), function_map);
-    a.Store(AccessBuilder::ForJSObjectProperties(), empty_fixed_array);
-    a.Store(AccessBuilder::ForJSObjectElements(), empty_fixed_array);
-    a.Store(AccessBuilder::ForJSFunctionLiterals(), empty_fixed_array);
-    a.Store(AccessBuilder::ForJSFunctionPrototypeOrInitialMap(), the_hole);
-    a.Store(AccessBuilder::ForJSFunctionSharedFunctionInfo(), shared);
-    a.Store(AccessBuilder::ForJSFunctionContext(), context);
-    a.Store(AccessBuilder::ForJSFunctionCodeEntry(), compile_entry);
-    a.Store(AccessBuilder::ForJSFunctionNextFunctionLink(), undefined);
-    RelaxControls(node);
-    a.FinishAndChange(node);
-    return Changed(node);
-  }
-
-  return NoChange();
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  Node* context = NodeProperties::GetContextInput(node);
+  Node* native_context = effect = graph()->NewNode(
+      javascript()->LoadContext(0, Context::NATIVE_CONTEXT_INDEX, true),
+      context, context, effect);
+  int function_map_index =
+      Context::FunctionMapIndex(shared->language_mode(), shared->kind());
+  Node* function_map = effect =
+      graph()->NewNode(javascript()->LoadContext(0, function_map_index, true),
+                       native_context, native_context, effect);
+  // Note that it is only safe to embed the raw entry point of the compile
+  // lazy stub into the code, because that stub is immortal and immovable.
+  Node* compile_entry = jsgraph()->IntPtrConstant(reinterpret_cast<intptr_t>(
+      jsgraph()->isolate()->builtins()->CompileLazy()->entry()));
+  Node* empty_fixed_array = jsgraph()->EmptyFixedArrayConstant();
+  Node* empty_literals_array = jsgraph()->EmptyLiteralsArrayConstant();
+  Node* the_hole = jsgraph()->TheHoleConstant();
+  Node* undefined = jsgraph()->UndefinedConstant();
+  AllocationBuilder a(jsgraph(), effect, control);
+  STATIC_ASSERT(JSFunction::kSize == 9 * kPointerSize);
+  a.Allocate(JSFunction::kSize, p.pretenure());
+  a.Store(AccessBuilder::ForMap(), function_map);
+  a.Store(AccessBuilder::ForJSObjectProperties(), empty_fixed_array);
+  a.Store(AccessBuilder::ForJSObjectElements(), empty_fixed_array);
+  a.Store(AccessBuilder::ForJSFunctionLiterals(), empty_literals_array);
+  a.Store(AccessBuilder::ForJSFunctionPrototypeOrInitialMap(), the_hole);
+  a.Store(AccessBuilder::ForJSFunctionSharedFunctionInfo(), shared);
+  a.Store(AccessBuilder::ForJSFunctionContext(), context);
+  a.Store(AccessBuilder::ForJSFunctionCodeEntry(), compile_entry);
+  a.Store(AccessBuilder::ForJSFunctionNextFunctionLink(), undefined);
+  RelaxControls(node);
+  a.FinishAndChange(node);
+  return Changed(node);
 }
 
 Reduction JSCreateLowering::ReduceJSCreateIterResultObject(Node* node) {
@@ -957,7 +952,8 @@ Node* JSCreateLowering::AllocateFastLiteral(
         site_context->ExitScope(current_site, boilerplate_object);
       } else if (property_details.representation().IsDouble()) {
         // Allocate a mutable HeapNumber box and store the value into it.
-        effect = graph()->NewNode(common()->BeginRegion(), effect);
+        effect = graph()->NewNode(
+            common()->BeginRegion(RegionObservability::kNotObservable), effect);
         value = effect = graph()->NewNode(
             simplified()->Allocate(NOT_TENURED),
             jsgraph()->Constant(HeapNumber::kSize), effect, control);
@@ -974,7 +970,7 @@ Node* JSCreateLowering::AllocateFastLiteral(
             graph()->NewNode(common()->FinishRegion(), value, effect);
       } else if (property_details.representation().IsSmi()) {
         // Ensure that value is stored as smi.
-        value = boilerplate_value->IsUninitialized()
+        value = boilerplate_value->IsUninitialized(isolate())
                     ? jsgraph()->ZeroConstant()
                     : jsgraph()->Constant(boilerplate_value);
       } else {

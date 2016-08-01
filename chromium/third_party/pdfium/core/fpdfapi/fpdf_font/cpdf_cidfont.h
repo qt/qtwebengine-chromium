@@ -7,6 +7,8 @@
 #ifndef CORE_FPDFAPI_FPDF_FONT_CPDF_CIDFONT_H_
 #define CORE_FPDFAPI_FPDF_FONT_CPDF_CIDFONT_H_
 
+#include <memory>
+
 #include "core/fpdfapi/fpdf_font/include/cpdf_font.h"
 #include "core/fxcrt/include/fx_string.h"
 #include "core/fxcrt/include/fx_system.h"
@@ -38,7 +40,7 @@ class CPDF_CIDFont : public CPDF_Font {
   bool IsCIDFont() const override;
   const CPDF_CIDFont* AsCIDFont() const override;
   CPDF_CIDFont* AsCIDFont() override;
-  int GlyphFromCharCode(uint32_t charcode, FX_BOOL* pVertGlyph = NULL) override;
+  int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) override;
   int GetCharWidthF(uint32_t charcode, int level = 0) override;
   FX_RECT GetCharBBox(uint32_t charcode, int level = 0) override;
   uint32_t GetNextChar(const FX_CHAR* pString,
@@ -58,10 +60,10 @@ class CPDF_CIDFont : public CPDF_Font {
   const uint8_t* GetCIDTransform(uint16_t CID) const;
   short GetVertWidth(uint16_t CID) const;
   void GetVertOrigin(uint16_t CID, short& vx, short& vy) const;
-  virtual FX_BOOL IsFontStyleFromCharCode(uint32_t charcode) const;
 
  protected:
-  int GetGlyphIndex(uint32_t unicodeb, FX_BOOL* pVertGlyph);
+  int GetGlyphIndex(uint32_t unicodeb, bool* pVertGlyph);
+  int GetVerticalGlyph(int index, bool* pVertGlyph);
   void LoadMetricsArray(CPDF_Array* pArray,
                         CFX_ArrayTemplate<uint32_t>& result,
                         int nElements);
@@ -69,21 +71,21 @@ class CPDF_CIDFont : public CPDF_Font {
   FX_WCHAR GetUnicodeFromCharCode(uint32_t charcode) const;
 
   CPDF_CMap* m_pCMap;
-  CPDF_CMap* m_pAllocatedCMap;
+  std::unique_ptr<CPDF_CMap> m_pAllocatedCMap;
   CPDF_CID2UnicodeMap* m_pCID2UnicodeMap;
   CIDSet m_Charset;
   FX_BOOL m_bType1;
-  CPDF_StreamAcc* m_pCIDToGIDMap;
   FX_BOOL m_bCIDIsGID;
   uint16_t m_DefaultWidth;
-  uint16_t* m_pAnsiWidths;
+  std::unique_ptr<CPDF_StreamAcc> m_pStreamAcc;
+  bool m_bAnsiWidthsFixed;
   FX_SMALL_RECT m_CharBBox[256];
   CFX_ArrayTemplate<uint32_t> m_WidthList;
   short m_DefaultVY;
   short m_DefaultW1;
   CFX_ArrayTemplate<uint32_t> m_VertMetrics;
   FX_BOOL m_bAdobeCourierStd;
-  CFX_CTTGSUBTable* m_pTTGSUBTable;
+  std::unique_ptr<CFX_CTTGSUBTable> m_pTTGSUBTable;
 };
 
 #endif  // CORE_FPDFAPI_FPDF_FONT_CPDF_CIDFONT_H_

@@ -512,7 +512,7 @@ WebRtcSession::~WebRtcSession() {
 
 bool WebRtcSession::Initialize(
     const PeerConnectionFactoryInterface::Options& options,
-    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     const PeerConnectionInterface::RTCConfiguration& rtc_configuration) {
   bundle_policy_ = rtc_configuration.bundle_policy;
   rtcp_mux_policy_ = rtc_configuration.rtcp_mux_policy;
@@ -533,7 +533,7 @@ bool WebRtcSession::Initialize(
     dtls_enabled_ = false;
   } else {
     // Enable DTLS by default if we have an identity store or a certificate.
-    dtls_enabled_ = (dtls_identity_store || certificate);
+    dtls_enabled_ = (cert_generator || certificate);
     // |rtc_configuration| can override the default |dtls_enabled_| value.
     if (rtc_configuration.enable_dtls_srtp) {
       dtls_enabled_ = *(rtc_configuration.enable_dtls_srtp);
@@ -566,19 +566,18 @@ bool WebRtcSession::Initialize(
   if (!dtls_enabled_) {
     // Construct with DTLS disabled.
     webrtc_session_desc_factory_.reset(new WebRtcSessionDescriptionFactory(
-        signaling_thread(), channel_manager_, this, id()));
+        signaling_thread(), channel_manager_, this, id(),
+        std::unique_ptr<rtc::RTCCertificateGeneratorInterface>()));
   } else {
     // Construct with DTLS enabled.
     if (!certificate) {
-      // Use the |dtls_identity_store| to generate a certificate.
-      RTC_DCHECK(dtls_identity_store);
       webrtc_session_desc_factory_.reset(new WebRtcSessionDescriptionFactory(
-          signaling_thread(), channel_manager_, std::move(dtls_identity_store),
-          this, id()));
+          signaling_thread(), channel_manager_, this, id(),
+          std::move(cert_generator)));
     } else {
       // Use the already generated certificate.
       webrtc_session_desc_factory_.reset(new WebRtcSessionDescriptionFactory(
-          signaling_thread(), channel_manager_, certificate, this, id()));
+          signaling_thread(), channel_manager_, this, id(), certificate));
     }
   }
 
@@ -1170,174 +1169,6 @@ std::string WebRtcSession::BadStateErrMsg(State state) {
   return desc.str();
 }
 
-void WebRtcSession::SetAudioPlayout(uint32_t ssrc, bool enable) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!voice_channel_) {
-    LOG(LS_ERROR) << "SetAudioPlayout: No audio channel exists.";
-    return;
-  }
-  if (!voice_channel_->SetOutputVolume(ssrc, enable ? 1 : 0)) {
-    // Allow that SetOutputVolume fail if |enable| is false but assert
-    // otherwise. This in the normal case when the underlying media channel has
-    // already been deleted.
-    ASSERT(enable == false);
-  }
-}
-
-void WebRtcSession::SetAudioSend(uint32_t ssrc,
-                                 bool enable,
-                                 const cricket::AudioOptions& options,
-                                 cricket::AudioSource* source) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!voice_channel_) {
-    LOG(LS_ERROR) << "SetAudioSend: No audio channel exists.";
-    return;
-  }
-  if (!voice_channel_->SetAudioSend(ssrc, enable, &options, source)) {
-    LOG(LS_ERROR) << "SetAudioSend: ssrc is incorrect: " << ssrc;
-  }
-}
-
-void WebRtcSession::SetAudioPlayoutVolume(uint32_t ssrc, double volume) {
-  ASSERT(signaling_thread()->IsCurrent());
-  ASSERT(volume >= 0 && volume <= 10);
-  if (!voice_channel_) {
-    LOG(LS_ERROR) << "SetAudioPlayoutVolume: No audio channel exists.";
-    return;
-  }
-
-  if (!voice_channel_->SetOutputVolume(ssrc, volume)) {
-    ASSERT(false);
-  }
-}
-
-void WebRtcSession::SetRawAudioSink(uint32_t ssrc,
-                                    std::unique_ptr<AudioSinkInterface> sink) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!voice_channel_)
-    return;
-
-  voice_channel_->SetRawAudioSink(ssrc, std::move(sink));
-}
-
-RtpParameters WebRtcSession::GetAudioRtpSendParameters(uint32_t ssrc) const {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (voice_channel_) {
-    return voice_channel_->GetRtpSendParameters(ssrc);
-  }
-  return RtpParameters();
-}
-
-bool WebRtcSession::SetAudioRtpSendParameters(uint32_t ssrc,
-                                              const RtpParameters& parameters) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!voice_channel_) {
-    return false;
-  }
-  return voice_channel_->SetRtpSendParameters(ssrc, parameters);
-}
-
-RtpParameters WebRtcSession::GetAudioRtpReceiveParameters(uint32_t ssrc) const {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (voice_channel_) {
-    return voice_channel_->GetRtpReceiveParameters(ssrc);
-  }
-  return RtpParameters();
-}
-
-bool WebRtcSession::SetAudioRtpReceiveParameters(
-    uint32_t ssrc,
-    const RtpParameters& parameters) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!voice_channel_) {
-    return false;
-  }
-  return voice_channel_->SetRtpReceiveParameters(ssrc, parameters);
-}
-
-bool WebRtcSession::SetSource(
-    uint32_t ssrc,
-    rtc::VideoSourceInterface<cricket::VideoFrame>* source) {
-  ASSERT(signaling_thread()->IsCurrent());
-
-  if (!video_channel_) {
-    // |video_channel_| doesnt't exist. Probably because the remote end doesnt't
-    // support video.
-    LOG(LS_WARNING) << "Video not used in this call.";
-    return false;
-  }
-  video_channel_->SetSource(ssrc, source);
-  return true;
-}
-
-void WebRtcSession::SetVideoPlayout(
-    uint32_t ssrc,
-    bool enable,
-    rtc::VideoSinkInterface<cricket::VideoFrame>* sink) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!video_channel_) {
-    LOG(LS_WARNING) << "SetVideoPlayout: No video channel exists.";
-    return;
-  }
-  if (!video_channel_->SetSink(ssrc, enable ? sink : NULL)) {
-    // Allow that SetSink fail if |sink| is NULL but assert otherwise.
-    // This in the normal case when the underlying media channel has already
-    // been deleted.
-    ASSERT(sink == NULL);
-  }
-}
-
-void WebRtcSession::SetVideoSend(uint32_t ssrc,
-                                 bool enable,
-                                 const cricket::VideoOptions* options) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!video_channel_) {
-    LOG(LS_WARNING) << "SetVideoSend: No video channel exists.";
-    return;
-  }
-  if (!video_channel_->SetVideoSend(ssrc, enable, options)) {
-    // Allow that MuteStream fail if |enable| is false but assert otherwise.
-    // This in the normal case when the underlying media channel has already
-    // been deleted.
-    ASSERT(enable == false);
-  }
-}
-
-RtpParameters WebRtcSession::GetVideoRtpSendParameters(uint32_t ssrc) const {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (video_channel_) {
-    return video_channel_->GetRtpSendParameters(ssrc);
-  }
-  return RtpParameters();
-}
-
-bool WebRtcSession::SetVideoRtpSendParameters(uint32_t ssrc,
-                                              const RtpParameters& parameters) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!video_channel_) {
-    return false;
-  }
-  return video_channel_->SetRtpSendParameters(ssrc, parameters);
-}
-
-RtpParameters WebRtcSession::GetVideoRtpReceiveParameters(uint32_t ssrc) const {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (video_channel_) {
-    return video_channel_->GetRtpReceiveParameters(ssrc);
-  }
-  return RtpParameters();
-}
-
-bool WebRtcSession::SetVideoRtpReceiveParameters(
-    uint32_t ssrc,
-    const RtpParameters& parameters) {
-  ASSERT(signaling_thread()->IsCurrent());
-  if (!video_channel_) {
-    return false;
-  }
-  return video_channel_->SetRtpReceiveParameters(ssrc, parameters);
-}
-
 bool WebRtcSession::CanInsertDtmf(const std::string& track_id) {
   ASSERT(signaling_thread()->IsCurrent());
   if (!voice_channel_) {
@@ -1466,46 +1297,10 @@ void WebRtcSession::SetIceConnectionState(
     return;
   }
 
-  // ASSERT that the requested transition is allowed.  Note that
-  // WebRtcSession does not implement "kIceConnectionClosed" (that is handled
-  // within PeerConnection).  This switch statement should compile away when
-  // ASSERTs are disabled.
   LOG(LS_INFO) << "Changing IceConnectionState " << ice_connection_state_
                << " => " << state;
-  switch (ice_connection_state_) {
-    case PeerConnectionInterface::kIceConnectionNew:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionChecking);
-      break;
-    case PeerConnectionInterface::kIceConnectionChecking:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionFailed ||
-             state == PeerConnectionInterface::kIceConnectionConnected);
-      break;
-    case PeerConnectionInterface::kIceConnectionConnected:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionDisconnected ||
-             state == PeerConnectionInterface::kIceConnectionChecking ||
-             state == PeerConnectionInterface::kIceConnectionCompleted);
-      break;
-    case PeerConnectionInterface::kIceConnectionCompleted:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionConnected ||
-             state == PeerConnectionInterface::kIceConnectionDisconnected);
-      break;
-    case PeerConnectionInterface::kIceConnectionFailed:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionNew);
-      break;
-    case PeerConnectionInterface::kIceConnectionDisconnected:
-      ASSERT(state == PeerConnectionInterface::kIceConnectionChecking ||
-             state == PeerConnectionInterface::kIceConnectionConnected ||
-             state == PeerConnectionInterface::kIceConnectionCompleted ||
-             state == PeerConnectionInterface::kIceConnectionFailed);
-      break;
-    case PeerConnectionInterface::kIceConnectionClosed:
-      ASSERT(false);
-      break;
-    default:
-      ASSERT(false);
-      break;
-  }
-
+  RTC_DCHECK(ice_connection_state_ !=
+             PeerConnectionInterface::kIceConnectionClosed);
   ice_connection_state_ = state;
   if (ice_observer_) {
     ice_observer_->OnIceConnectionChange(ice_connection_state_);

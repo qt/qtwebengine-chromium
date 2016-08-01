@@ -727,25 +727,6 @@ void KeyedStoreIC::GenerateMiss(MacroAssembler* masm) {
   __ TailCallRuntime(Runtime::kKeyedStoreIC_Miss);
 }
 
-
-void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
-  Register receiver = StoreDescriptor::ReceiverRegister();
-  Register name = StoreDescriptor::NameRegister();
-  DCHECK(receiver.is(a1));
-  DCHECK(name.is(a2));
-  DCHECK(StoreDescriptor::ValueRegister().is(a0));
-
-  // Get the receiver from the stack and probe the stub cache.
-  Code::Flags flags =
-      Code::RemoveHolderFromFlags(Code::ComputeHandlerFlags(Code::STORE_IC));
-  masm->isolate()->stub_cache()->GenerateProbe(masm, Code::STORE_IC, flags,
-                                               receiver, name, t1, t2, t3, t4);
-
-  // Cache miss: Jump to runtime.
-  GenerateMiss(masm);
-}
-
-
 void StoreIC::GenerateMiss(MacroAssembler* masm) {
   StoreIC_PushArgs(masm);
 
@@ -839,8 +820,9 @@ void PatchInlinedSmiCode(Isolate* isolate, Address address,
   }
 
   if (FLAG_trace_ic) {
-    PrintF("[  patching ic at %p, andi=%p, delta=%d\n", address,
-           andi_instruction_address, delta);
+    PrintF("[  patching ic at %p, andi=%p, delta=%d\n",
+           static_cast<void*>(address),
+           static_cast<void*>(andi_instruction_address), delta);
   }
 
   Address patch_address =

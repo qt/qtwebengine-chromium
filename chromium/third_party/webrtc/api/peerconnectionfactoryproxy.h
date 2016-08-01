@@ -29,20 +29,22 @@ BEGIN_SIGNALING_PROXY_MAP(PeerConnectionFactory)
       const PeerConnectionInterface::RTCConfiguration& a1,
       const MediaConstraintsInterface* a2,
       std::unique_ptr<cricket::PortAllocator> a3,
-      std::unique_ptr<DtlsIdentityStoreInterface> a4,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> a4,
       PeerConnectionObserver* a5) override {
     return signaling_thread_
         ->Invoke<rtc::scoped_refptr<PeerConnectionInterface>>(
+            RTC_FROM_HERE,
             rtc::Bind(&PeerConnectionFactoryProxy::CreatePeerConnection_ot,
                       this, a1, a2, a3.release(), a4.release(), a5));
   }
   rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
       const PeerConnectionInterface::RTCConfiguration& a1,
       std::unique_ptr<cricket::PortAllocator> a3,
-      std::unique_ptr<DtlsIdentityStoreInterface> a4,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> a4,
       PeerConnectionObserver* a5) override {
     return signaling_thread_
         ->Invoke<rtc::scoped_refptr<PeerConnectionInterface>>(
+            RTC_FROM_HERE,
             rtc::Bind(&PeerConnectionFactoryProxy::CreatePeerConnection_ot,
                       this, a1, a3.release(), a4.release(), a5));
   }
@@ -77,10 +79,10 @@ BEGIN_SIGNALING_PROXY_MAP(PeerConnectionFactory)
       const PeerConnectionInterface::RTCConfiguration& a1,
       const MediaConstraintsInterface* a2,
       cricket::PortAllocator* a3,
-      DtlsIdentityStoreInterface* a4,
+      rtc::RTCCertificateGeneratorInterface* a4,
       PeerConnectionObserver* a5) {
     std::unique_ptr<cricket::PortAllocator> ptr_a3(a3);
-    std::unique_ptr<DtlsIdentityStoreInterface> ptr_a4(a4);
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> ptr_a4(a4);
     return c_->CreatePeerConnection(a1, a2, std::move(ptr_a3),
                                     std::move(ptr_a4), a5);
   }
@@ -88,10 +90,10 @@ BEGIN_SIGNALING_PROXY_MAP(PeerConnectionFactory)
   rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection_ot(
       const PeerConnectionInterface::RTCConfiguration& a1,
       cricket::PortAllocator* a3,
-      DtlsIdentityStoreInterface* a4,
+      rtc::RTCCertificateGeneratorInterface* a4,
       PeerConnectionObserver* a5) {
     std::unique_ptr<cricket::PortAllocator> ptr_a3(a3);
-    std::unique_ptr<DtlsIdentityStoreInterface> ptr_a4(a4);
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> ptr_a4(a4);
     return c_->CreatePeerConnection(a1, std::move(ptr_a3), std::move(ptr_a4),
                                     a5);
   }

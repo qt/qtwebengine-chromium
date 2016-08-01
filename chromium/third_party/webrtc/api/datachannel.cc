@@ -13,7 +13,6 @@
 #include <memory>
 #include <string>
 
-#include "webrtc/api/mediastreamprovider.h"
 #include "webrtc/api/sctputils.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/refcount.h"
@@ -187,7 +186,7 @@ bool DataChannel::Init(const InternalDataChannelInit& config) {
     // Chrome glue and WebKit) are not wired up properly until after this
     // function returns.
     if (provider_->ReadyToSendData()) {
-      rtc::Thread::Current()->Post(this, MSG_CHANNELREADY, NULL);
+      rtc::Thread::Current()->Post(RTC_FROM_HERE, this, MSG_CHANNELREADY, NULL);
     }
   }
 
@@ -384,7 +383,8 @@ void DataChannel::OnDataReceived(cricket::DataChannel* channel,
 }
 
 void DataChannel::OnStreamClosedRemotely(uint32_t sid) {
-  if (data_channel_type_ == cricket::DCT_SCTP && sid == config_.id) {
+  if (data_channel_type_ == cricket::DCT_SCTP &&
+      sid == static_cast<uint32_t>(config_.id)) {
     Close();
   }
 }

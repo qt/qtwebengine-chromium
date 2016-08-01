@@ -7,8 +7,6 @@
 #include "core/fxcrt/include/fx_basic.h"
 #include "core/fxcrt/include/fx_ext.h"
 
-#include <cctype>
-
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 #include <dirent.h>
 #include <sys/types.h>
@@ -16,113 +14,52 @@
 #include <direct.h>
 #endif
 
-CFX_PrivateData::CFX_PrivateData() {}
+#include <algorithm>
+#include <cctype>
+#include <memory>
 
-CFX_PrivateData::~CFX_PrivateData() {
-  ClearAll();
+bool FX_atonum(const CFX_ByteStringC& strc, void* pData) {
+  if (strc.Find('.') != -1) {
+    FX_FLOAT* pFloat = static_cast<FX_FLOAT*>(pData);
+    *pFloat = FX_atof(strc);
+    return false;
+  }
+
+  int cc = 0;
+  pdfium::base::CheckedNumeric<int> integer = 0;
+  bool bNegative = false;
+  if (strc[0] == '+') {
+    cc++;
+  } else if (strc[0] == '-') {
+    bNegative = true;
+    cc++;
+  }
+  while (cc < strc.GetLength() && std::isdigit(strc[cc])) {
+    integer = integer * 10 + FXSYS_toDecimalDigit(strc.CharAt(cc));
+    if (!integer.IsValid())
+      break;
+    cc++;
+  }
+  if (bNegative)
+    integer = -integer;
+
+  int* pInt = static_cast<int*>(pData);
+  *pInt = integer.ValueOrDefault(0);
+  return true;
 }
-void FX_PRIVATEDATA::FreeData() {
-  if (!m_pData) {
-    return;
-  }
-  if (m_bSelfDestruct) {
-    delete (CFX_DestructObject*)m_pData;
-  } else if (m_pCallback) {
-    m_pCallback(m_pData);
-  }
+
+static const FX_FLOAT fraction_scales[] = {
+    0.1f,         0.01f,         0.001f,        0.0001f,
+    0.00001f,     0.000001f,     0.0000001f,    0.00000001f,
+    0.000000001f, 0.0000000001f, 0.00000000001f};
+int FXSYS_FractionalScaleCount() {
+  return FX_ArraySize(fraction_scales);
 }
-void CFX_PrivateData::AddData(void* pModuleId,
-                              void* pData,
-                              PD_CALLBACK_FREEDATA callback,
-                              FX_BOOL bSelfDestruct) {
-  if (!pModuleId) {
-    return;
-  }
-  FX_PRIVATEDATA* pList = m_DataList.GetData();
-  int count = m_DataList.GetSize();
-  for (int i = 0; i < count; i++) {
-    if (pList[i].m_pModuleId == pModuleId) {
-      pList[i].FreeData();
-      pList[i].m_pData = pData;
-      pList[i].m_pCallback = callback;
-      return;
-    }
-  }
-  FX_PRIVATEDATA data = {pModuleId, pData, callback, bSelfDestruct};
-  m_DataList.Add(data);
+
+FX_FLOAT FXSYS_FractionalScale(size_t scale_factor, int value) {
+  return fraction_scales[scale_factor] * value;
 }
-void CFX_PrivateData::SetPrivateData(void* pModuleId,
-                                     void* pData,
-                                     PD_CALLBACK_FREEDATA callback) {
-  AddData(pModuleId, pData, callback, FALSE);
-}
-void CFX_PrivateData::SetPrivateObj(void* pModuleId, CFX_DestructObject* pObj) {
-  AddData(pModuleId, pObj, NULL, TRUE);
-}
-FX_BOOL CFX_PrivateData::RemovePrivateData(void* pModuleId) {
-  if (!pModuleId) {
-    return FALSE;
-  }
-  FX_PRIVATEDATA* pList = m_DataList.GetData();
-  int count = m_DataList.GetSize();
-  for (int i = 0; i < count; i++) {
-    if (pList[i].m_pModuleId == pModuleId) {
-      m_DataList.RemoveAt(i);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-void* CFX_PrivateData::GetPrivateData(void* pModuleId) {
-  if (!pModuleId) {
-    return NULL;
-  }
-  FX_PRIVATEDATA* pList = m_DataList.GetData();
-  int count = m_DataList.GetSize();
-  for (int i = 0; i < count; i++) {
-    if (pList[i].m_pModuleId == pModuleId) {
-      return pList[i].m_pData;
-    }
-  }
-  return NULL;
-}
-void CFX_PrivateData::ClearAll() {
-  FX_PRIVATEDATA* pList = m_DataList.GetData();
-  int count = m_DataList.GetSize();
-  for (int i = 0; i < count; i++) {
-    pList[i].FreeData();
-  }
-  m_DataList.RemoveAll();
-}
-void FX_atonum(const CFX_ByteStringC& strc, FX_BOOL& bInteger, void* pData) {
-  if (strc.Find('.') == -1) {
-    bInteger = TRUE;
-    int cc = 0;
-    int integer = 0;
-    FX_STRSIZE len = strc.GetLength();
-    bool bNegative = false;
-    if (strc[0] == '+') {
-      cc++;
-    } else if (strc[0] == '-') {
-      bNegative = true;
-      cc++;
-    }
-    while (cc < len && std::isdigit(strc[cc])) {
-      // TODO(dsinclair): This is not the right way to handle overflow.
-      integer = integer * 10 + FXSYS_toDecimalDigit(strc.CharAt(cc));
-      if (integer < 0)
-        break;
-      cc++;
-    }
-    if (bNegative) {
-      integer = -integer;
-    }
-    *(int*)pData = integer;
-  } else {
-    bInteger = FALSE;
-    *(FX_FLOAT*)pData = FX_atof(strc);
-  }
-}
+
 FX_FLOAT FX_atof(const CFX_ByteStringC& strc) {
   if (strc.IsEmpty())
     return 0.0;
@@ -150,17 +87,14 @@ FX_FLOAT FX_atof(const CFX_ByteStringC& strc) {
     value = value * 10 + FXSYS_toDecimalDigit(strc.CharAt(cc));
     cc++;
   }
-  static const FX_FLOAT fraction_scales[] = {
-      0.1f,         0.01f,         0.001f,        0.0001f,
-      0.00001f,     0.000001f,     0.0000001f,    0.00000001f,
-      0.000000001f, 0.0000000001f, 0.00000000001f};
   int scale = 0;
   if (cc < len && strc[cc] == '.') {
     cc++;
     while (cc < len) {
-      value += fraction_scales[scale] * FXSYS_toDecimalDigit(strc.CharAt(cc));
+      value +=
+          FXSYS_FractionalScale(scale, FXSYS_toDecimalDigit(strc.CharAt(cc)));
       scale++;
-      if (scale == FX_ArraySize(fraction_scales))
+      if (scale == FXSYS_FractionalScaleCount())
         break;
       cc++;
     }
@@ -193,52 +127,48 @@ class CFindFileData {
   HANDLE m_Handle;
   FX_BOOL m_bEnd;
 };
+
 class CFindFileDataA : public CFindFileData {
  public:
-  virtual ~CFindFileDataA() {}
+  ~CFindFileDataA() override {}
   WIN32_FIND_DATAA m_FindData;
 };
+
 class CFindFileDataW : public CFindFileData {
  public:
-  virtual ~CFindFileDataW() {}
+  ~CFindFileDataW() override {}
   WIN32_FIND_DATAW m_FindData;
 };
 #endif
+
 void* FX_OpenFolder(const FX_CHAR* path) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-#ifndef _WIN32_WCE
-  CFindFileDataA* pData = new CFindFileDataA;
+  std::unique_ptr<CFindFileDataA> pData(new CFindFileDataA);
   pData->m_Handle = FindFirstFileExA((CFX_ByteString(path) + "/*.*").c_str(),
                                      FindExInfoStandard, &pData->m_FindData,
-                                     FindExSearchNameMatch, NULL, 0);
-#else
-  CFindFileDataW* pData = new CFindFileDataW;
-  pData->m_Handle = FindFirstFileW(CFX_WideString::FromLocal(path) + L"/*.*",
-                                   &pData->m_FindData);
-#endif
-  if (pData->m_Handle == INVALID_HANDLE_VALUE) {
-    delete pData;
-    return NULL;
-  }
+                                     FindExSearchNameMatch, nullptr, 0);
+  if (pData->m_Handle == INVALID_HANDLE_VALUE)
+    return nullptr;
+
   pData->m_bEnd = FALSE;
-  return pData;
+  return pData.release();
 #else
   DIR* dir = opendir(path);
   return dir;
 #endif
 }
+
 void* FX_OpenFolder(const FX_WCHAR* path) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-  CFindFileDataW* pData = new CFindFileDataW;
+  std::unique_ptr<CFindFileDataW> pData(new CFindFileDataW);
   pData->m_Handle = FindFirstFileExW((CFX_WideString(path) + L"/*.*").c_str(),
                                      FindExInfoStandard, &pData->m_FindData,
-                                     FindExSearchNameMatch, NULL, 0);
-  if (pData->m_Handle == INVALID_HANDLE_VALUE) {
-    delete pData;
-    return NULL;
-  }
+                                     FindExSearchNameMatch, nullptr, 0);
+  if (pData->m_Handle == INVALID_HANDLE_VALUE)
+    return nullptr;
+
   pData->m_bEnd = FALSE;
-  return pData;
+  return pData.release();
 #else
   DIR* dir = opendir(CFX_ByteString::FromUnicode(path).c_str());
   return dir;
@@ -251,29 +181,15 @@ FX_BOOL FX_GetNextFile(void* handle,
     return FALSE;
   }
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-#ifndef _WIN32_WCE
   CFindFileDataA* pData = (CFindFileDataA*)handle;
-  if (pData->m_bEnd) {
+  if (pData->m_bEnd)
     return FALSE;
-  }
+
   filename = pData->m_FindData.cFileName;
   bFolder = pData->m_FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
-  if (!FindNextFileA(pData->m_Handle, &pData->m_FindData)) {
+  if (!FindNextFileA(pData->m_Handle, &pData->m_FindData))
     pData->m_bEnd = TRUE;
-  }
   return TRUE;
-#else
-  CFindFileDataW* pData = (CFindFileDataW*)handle;
-  if (pData->m_bEnd) {
-    return FALSE;
-  }
-  filename = CFX_ByteString::FromUnicode(pData->m_FindData.cFileName);
-  bFolder = pData->m_FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
-  if (!FindNextFileW(pData->m_Handle, &pData->m_FindData)) {
-    pData->m_bEnd = TRUE;
-  }
-  return TRUE;
-#endif
 #elif defined(__native_client__)
   abort();
   return FALSE;
@@ -362,4 +278,34 @@ CFX_Vector_3by1 CFX_Matrix_3by3::TransformVector(const CFX_Vector_3by1& v) {
   return CFX_Vector_3by1(a * v.a + b * v.b + c * v.c,
                          d * v.a + e * v.b + f * v.c,
                          g * v.a + h * v.b + i * v.c);
+}
+
+uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits) {
+  ASSERT(0 < nbits && nbits <= 32);
+  const uint8_t* dataPtr = &pData[bitpos / 8];
+  int bitShift;
+  int bitMask;
+  int dstShift;
+  int bitCount = bitpos & 0x07;
+  if (nbits < 8 && nbits + bitCount <= 8) {
+    bitShift = 8 - nbits - bitCount;
+    bitMask = (1 << nbits) - 1;
+    dstShift = 0;
+  } else {
+    bitShift = 0;
+    int bitOffset = 8 - bitCount;
+    bitMask = (1 << std::min(bitOffset, nbits)) - 1;
+    dstShift = nbits - bitOffset;
+  }
+  uint32_t result = (uint32_t)(*dataPtr++ >> bitShift & bitMask) << dstShift;
+  while (dstShift >= 8) {
+    dstShift -= 8;
+    result |= *dataPtr++ << dstShift;
+  }
+  if (dstShift > 0) {
+    bitShift = 8 - dstShift;
+    bitMask = (1 << dstShift) - 1;
+    result |= *dataPtr++ >> bitShift & bitMask;
+  }
+  return result;
 }

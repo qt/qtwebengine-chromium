@@ -66,9 +66,17 @@
 #include <string.h>
 
 #if defined(OPENSSL_WINDOWS)
-#pragma warning(push, 3)
+OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <windows.h>
-#pragma warning(pop)
+
+/* Work around a clang-cl bug: SecureZeroMemory() below uses __stosb() but
+ * windows.h only declares that intrinsic and then uses `#pragma intrinsic` for
+ * it.  clang-cl doesn't implement `#pragma intrinsic` yet; it instead defines
+ * the function as an always-inline symbol in its intrin.h.
+ * TODO(thakis): Remove this once http://llvm.org/PR19898 is fixed.
+ */
+#include <intrin.h>
+OPENSSL_MSVC_PRAGMA(warning(pop))
 #else
 #include <strings.h>
 #endif
@@ -118,12 +126,11 @@ void OPENSSL_cleanse(void *ptr, size_t len) {
 }
 
 int CRYPTO_memcmp(const void *in_a, const void *in_b, size_t len) {
-  size_t i;
   const uint8_t *a = in_a;
   const uint8_t *b = in_b;
   uint8_t x = 0;
 
-  for (i = 0; i < len; i++) {
+  for (size_t i = 0; i < len; i++) {
     x |= a[i] ^ b[i];
   }
 
@@ -147,8 +154,6 @@ uint32_t OPENSSL_hash32(const void *ptr, size_t len) {
   return h;
 }
 
-char *OPENSSL_strdup(const char *s) { return strdup(s); }
-
 size_t OPENSSL_strnlen(const char *s, size_t len) {
   size_t i;
 
@@ -163,6 +168,8 @@ size_t OPENSSL_strnlen(const char *s, size_t len) {
 
 #if defined(OPENSSL_WINDOWS)
 
+char *OPENSSL_strdup(const char *s) { return _strdup(s); }
+
 int OPENSSL_strcasecmp(const char *a, const char *b) {
   return _stricmp(a, b);
 }
@@ -172,6 +179,8 @@ int OPENSSL_strncasecmp(const char *a, const char *b, size_t n) {
 }
 
 #else
+
+char *OPENSSL_strdup(const char *s) { return strdup(s); }
 
 int OPENSSL_strcasecmp(const char *a, const char *b) {
   return strcasecmp(a, b);

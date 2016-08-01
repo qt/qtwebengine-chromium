@@ -9,7 +9,6 @@
 #include "src/ic/ic-inl.h"
 #include "src/ic/ic.h"
 #include "src/isolate-inl.h"
-#include "src/profiler/cpu-profiler.h"
 
 namespace v8 {
 namespace internal {
@@ -28,7 +27,7 @@ Handle<Code> PropertyHandlerCompiler::Find(Handle<Name> name,
 Handle<Code> NamedLoadHandlerCompiler::ComputeLoadNonexistent(
     Handle<Name> name, Handle<Map> receiver_map) {
   Isolate* isolate = name->GetIsolate();
-  if (receiver_map->prototype()->IsNull()) {
+  if (receiver_map->prototype()->IsNull(isolate)) {
     // TODO(jkummerow/verwaest): If there is no prototype and the property
     // is nonexistent, introduce a builtin to handle this (fast properties
     // -> return undefined, dictionary properties -> do negative lookup).
@@ -51,7 +50,7 @@ Handle<Code> NamedLoadHandlerCompiler::ComputeLoadNonexistent(
   Handle<JSObject> last(JSObject::cast(receiver_map->prototype()));
   while (true) {
     if (current_map->is_dictionary_map()) cache_name = name;
-    if (current_map->prototype()->IsNull()) break;
+    if (current_map->prototype()->IsNull(isolate)) break;
     if (name->IsPrivate()) {
       // TODO(verwaest): Use nonexistent_private_symbol.
       cache_name = name;
@@ -79,7 +78,7 @@ Handle<Code> PropertyHandlerCompiler::GetCode(Code::Kind kind,
                                               Handle<Name> name) {
   Code::Flags flags = Code::ComputeHandlerFlags(kind, cache_holder());
   Handle<Code> code = GetCodeWithFlags(flags, name);
-  PROFILE(isolate(), CodeCreateEvent(Logger::HANDLER_TAG,
+  PROFILE(isolate(), CodeCreateEvent(CodeEventListener::HANDLER_TAG,
                                      AbstractCode::cast(*code), *name));
 #ifdef DEBUG
   code->VerifyEmbeddedObjects();
@@ -226,7 +225,11 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadNonexistent(
 Handle<Code> NamedLoadHandlerCompiler::CompileLoadCallback(
     Handle<Name> name, Handle<AccessorInfo> callback) {
   Register reg = Frontend(name);
-  GenerateLoadCallback(reg, callback);
+  if (FLAG_runtime_call_stats) {
+    TailCallBuiltin(masm(), Builtins::kLoadIC_Slow);
+  } else {
+    GenerateLoadCallback(reg, callback);
+  }
   return GetCode(kind(), name);
 }
 
@@ -236,8 +239,12 @@ Handle<Code> NamedLoadHandlerCompiler::CompileLoadCallback(
     int accessor_index) {
   DCHECK(call_optimization.is_simple_api_call());
   Register holder = Frontend(name);
-  GenerateApiAccessorCall(masm(), call_optimization, map(), receiver(),
-                          scratch2(), false, no_reg, holder, accessor_index);
+  if (FLAG_runtime_call_stats) {
+    TailCallBuiltin(masm(), Builtins::kLoadIC_Slow);
+  } else {
+    GenerateApiAccessorCall(masm(), call_optimization, map(), receiver(),
+                            scratch2(), false, no_reg, holder, accessor_index);
+  }
   return GetCode(kind(), name);
 }
 
@@ -420,7 +427,6 @@ void NamedLoadHandlerCompiler::GenerateLoadPostInterceptor(
   }
 }
 
-
 Handle<Code> NamedLoadHandlerCompiler::CompileLoadViaGetter(
     Handle<Name> name, int accessor_index, int expected_arguments) {
   Register holder = Frontend(name);
@@ -445,8 +451,7 @@ Handle<Code> NamedStoreHandlerCompiler::CompileStoreTransition(
     PrototypeIterator::WhereToEnd end =
         name->IsPrivate() ? PrototypeIterator::END_AT_NON_HIDDEN
                           : PrototypeIterator::END_AT_NULL;
-    PrototypeIterator iter(isolate(), holder(),
-                           PrototypeIterator::START_AT_PROTOTYPE, end);
+    PrototypeIterator iter(isolate(), holder(), kStartAtPrototype, end);
     while (!iter.IsAtEnd()) {
       last = PrototypeIterator::GetCurrent<JSObject>(iter);
       iter.Advance();
@@ -563,9 +568,14 @@ Handle<Code> NamedStoreHandlerCompiler::CompileStoreCallback(
     Handle<JSObject> object, Handle<Name> name,
     const CallOptimization& call_optimization, int accessor_index) {
   Register holder = Frontend(name);
-  GenerateApiAccessorCall(masm(), call_optimization, handle(object->map()),
-                          receiver(), scratch2(), true, value(), holder,
-                          accessor_index);
+  if (FLAG_runtime_call_stats) {
+    GenerateRestoreName(name);
+    TailCallBuiltin(masm(), Builtins::kStoreIC_Slow);
+  } else {
+    GenerateApiAccessorCall(masm(), call_optimization, handle(object->map()),
+                            receiver(), scratch2(), true, value(), holder,
+                            accessor_index);
+  }
   return GetCode(kind(), name);
 }
 
@@ -593,7 +603,8 @@ void ElementHandlerCompiler::CompileElementHandlers(
            *receiver_map == isolate()->get_initial_js_array_map(elements_kind));
 
       if (receiver_map->has_indexed_interceptor() &&
-          !receiver_map->GetIndexedInterceptor()->getter()->IsUndefined() &&
+          !receiver_map->GetIndexedInterceptor()->getter()->IsUndefined(
+              isolate()) &&
           !receiver_map->GetIndexedInterceptor()->non_masking()) {
         cached_stub = LoadIndexedInterceptorStub(isolate()).GetCode();
       } else if (IsSloppyArgumentsElements(elements_kind)) {
@@ -604,8 +615,7 @@ void ElementHandlerCompiler::CompileElementHandlers(
                                           convert_hole_to_undefined).GetCode();
       } else {
         DCHECK(elements_kind == DICTIONARY_ELEMENTS);
-        LoadICState state = LoadICState(kNoExtraICState);
-        cached_stub = LoadDictionaryElementStub(isolate(), state).GetCode();
+        cached_stub = LoadDictionaryElementStub(isolate()).GetCode();
       }
     }
 

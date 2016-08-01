@@ -17,8 +17,10 @@
 #include "base/command_line.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
+#include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -191,10 +193,9 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       chunk_demuxer_(NULL),
       url_index_(url_index),
       // Threaded compositing isn't enabled universally yet.
-      compositor_task_runner_(
-          params.compositor_task_runner()
-              ? params.compositor_task_runner()
-              : base::MessageLoop::current()->task_runner()),
+      compositor_task_runner_(params.compositor_task_runner()
+                                  ? params.compositor_task_runner()
+                                  : base::ThreadTaskRunnerHandle::Get()),
       compositor_(new VideoFrameCompositor(compositor_task_runner_)),
       is_cdm_attached_(false),
 #if defined(OS_ANDROID)  // WMPI_CAST
@@ -234,25 +235,13 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
-  client_->setWebLayer(NULL);
-
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
+  suppress_destruction_errors_ = true;
   if (delegate_) {
     delegate_->PlayerGone(delegate_id_);
     delegate_->RemoveObserver(delegate_id_);
   }
-
-  // Abort any pending IO so stopping the pipeline doesn't get blocked.
-  suppress_destruction_errors_ = true;
-  if (data_source_)
-    data_source_->Abort();
-  if (chunk_demuxer_) {
-    chunk_demuxer_->Shutdown();
-    chunk_demuxer_ = nullptr;
-  }
-
-  renderer_factory_.reset();
 
   // Pipeline must be stopped before it is destroyed.
   pipeline_.Stop();
@@ -844,21 +833,17 @@ void WebMediaPlayerImpl::OnFFmpegMediaTracksUpdated(
   // Report the media track information to blink.
   for (const auto& track : tracks->tracks()) {
     if (track->type() == MediaTrack::Audio) {
-      auto track_id = client_->addAudioTrack(
-          blink::WebString::fromUTF8(track->id()),
-          blink::WebMediaPlayerClient::AudioTrackKindMain,
-          blink::WebString::fromUTF8(track->label()),
-          blink::WebString::fromUTF8(track->language()),
-          /*enabled*/ true);
-      (void)track_id;
+      client_->addAudioTrack(blink::WebString::fromUTF8(track->id()),
+                             blink::WebMediaPlayerClient::AudioTrackKindMain,
+                             blink::WebString::fromUTF8(track->label()),
+                             blink::WebString::fromUTF8(track->language()),
+                             /*enabled*/ true);
     } else if (track->type() == MediaTrack::Video) {
-      auto track_id = client_->addVideoTrack(
-          blink::WebString::fromUTF8(track->id()),
-          blink::WebMediaPlayerClient::VideoTrackKindMain,
-          blink::WebString::fromUTF8(track->label()),
-          blink::WebString::fromUTF8(track->language()),
-          /*selected*/ true);
-      (void)track_id;
+      client_->addVideoTrack(blink::WebString::fromUTF8(track->id()),
+                             blink::WebMediaPlayerClient::VideoTrackKindMain,
+                             blink::WebString::fromUTF8(track->label()),
+                             blink::WebString::fromUTF8(track->language()),
+                             /*selected*/ true);
     } else {
       // Text tracks are not supported through this code path yet.
       NOTREACHED();
@@ -1424,7 +1409,8 @@ WebMediaPlayerImpl::GetCurrentFrameFromCompositor() {
   // Use a posted task and waitable event instead of a lock otherwise
   // WebGL/Canvas can see different content than what the compositor is seeing.
   scoped_refptr<VideoFrame> video_frame;
-  base::WaitableEvent event(false, false);
+  base::WaitableEvent event(base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                            base::WaitableEvent::InitialState::NOT_SIGNALED);
   compositor_task_runner_->PostTask(FROM_HERE,
                                     base::Bind(&GetCurrentFrameAndSignal,
                                                base::Unretained(compositor_),
@@ -1504,10 +1490,12 @@ void WebMediaPlayerImpl::SetSuspendState(bool is_suspended) {
   if (IsNetworkStateError(network_state_))
     return;
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
-  // TODO(sandersd): Idle suspend is disabled on OSX and Windows for hardware
-  // decoding / opaque video frames since these frames are owned by the decoder
-  // in the GPU process. http://crbug.com/595716 and http://crbug.com/602708
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  // TODO(sandersd): idle suspend is disabled if decoder owns video frame.
+  // Used on OSX,Windows+Chromecast. Since GetCurrentFrameFromCompositor is
+  // a synchronous cross-thread post, avoid the cost on platforms that
+  // always allow suspend. Need to find a better mechanism for this. See
+  // http://crbug.com/595716 and http://crbug.com/602708
   if (can_suspend_state_ == CanSuspendState::UNKNOWN) {
     scoped_refptr<VideoFrame> frame = GetCurrentFrameFromCompositor();
     if (frame) {

@@ -35,6 +35,8 @@
         'data_reduction_proxy/core/browser/data_reduction_proxy_mutable_config_values.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate.h',
+        'data_reduction_proxy/core/browser/data_reduction_proxy_pingback_client.cc',
+        'data_reduction_proxy/core/browser/data_reduction_proxy_pingback_client.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_prefs.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_prefs.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_request_options.cc',
@@ -63,8 +65,6 @@
         # Note: sources list duplicated in GN build.
         'data_reduction_proxy/core/common/data_reduction_proxy_bypass_action_list.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_bypass_type_list.h',
-        'data_reduction_proxy/core/common/data_reduction_proxy_client_config_parser.cc',
-        'data_reduction_proxy/core/common/data_reduction_proxy_client_config_parser.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_config_values.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_event_creator.cc',
         'data_reduction_proxy/core/common/data_reduction_proxy_event_creator.h',
@@ -73,6 +73,7 @@
         'data_reduction_proxy/core/common/data_reduction_proxy_event_store.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_headers.cc',
         'data_reduction_proxy/core/common/data_reduction_proxy_headers.h',
+        'data_reduction_proxy/core/common/data_reduction_proxy_page_load_timing.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_params.cc',
         'data_reduction_proxy/core/common/data_reduction_proxy_params.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_pref_names.cc',
@@ -192,8 +193,12 @@
       # GN version: //components/data_reduction_proxy/core/common
       'target_name': 'data_reduction_proxy_core_common',
       'type': 'static_library',
+      'defines': [
+        'USE_GOOGLE_API_KEYS'
+      ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../google_apis/google_apis.gyp:google_apis',
         '../url/url.gyp:url_lib',
         'data_reduction_proxy_proto',
       ],
@@ -251,6 +256,7 @@
         # Note: sources list duplicated in GN build.
         'data_reduction_proxy/proto/client_config.proto',
         'data_reduction_proxy/proto/data_store.proto',
+        'data_reduction_proxy/proto/pageload_metrics.proto',
       ],
       'variables': {
         'proto_in_dir': 'data_reduction_proxy/proto',

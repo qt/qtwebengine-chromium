@@ -19,7 +19,70 @@
 
 namespace webrtc {
 
-int ExpectedSize(int plane_stride, int image_height, PlaneType type);
+namespace {
+
+int ExpectedSize(int plane_stride, int image_height, PlaneType type) {
+  if (type == kYPlane)
+    return plane_stride * image_height;
+  return plane_stride * ((image_height + 1) / 2);
+}
+
+rtc::scoped_refptr<I420Buffer> CreateGradient(int width, int height) {
+  rtc::scoped_refptr<I420Buffer> buffer(
+      I420Buffer::Create(width, height));
+  // Initialize with gradient, Y = 128(x/w + y/h), U = 256 x/w, V = 256 y/h
+  for (int x = 0; x < width; x++) {
+    for (int y = 0; y < height; y++) {
+      buffer->MutableDataY()[x + y * width] =
+          128 * (x * height + y * width) / (width * height);
+    }
+  }
+  int chroma_width = (width + 1) / 2;
+  int chroma_height = (height + 1) / 2;
+  for (int x = 0; x < chroma_width; x++) {
+    for (int y = 0; y < chroma_height; y++) {
+      buffer->MutableDataU()[x + y * chroma_width] =
+          255 * x / (chroma_width - 1);
+      buffer->MutableDataV()[x + y * chroma_width] =
+          255 * y / (chroma_height - 1);
+    }
+  }
+  return buffer;
+}
+
+// The offsets and sizes describe the rectangle extracted from the
+// original (gradient) frame, in relative coordinates where the
+// original frame correspond to the unit square, 0.0 <= x, y < 1.0.
+void CheckCrop(webrtc::VideoFrameBuffer* frame,
+               double offset_x,
+               double offset_y,
+               double rel_width,
+               double rel_height) {
+  int width = frame->width();
+  int height = frame->height();
+  // Check that pixel values in the corners match the gradient used
+  // for initialization.
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 2; j++) {
+      // Pixel coordinates of the corner.
+      int x = i * (width - 1);
+      int y = j * (height - 1);
+      // Relative coordinates, range 0.0 - 1.0 correspond to the
+      // size of the uncropped input frame.
+      double orig_x = offset_x + i * rel_width;
+      double orig_y = offset_y + j * rel_height;
+
+      EXPECT_NEAR(frame->DataY()[x + y * frame->StrideY()] / 256.0,
+                  (orig_x + orig_y) / 2, 0.02);
+      EXPECT_NEAR(frame->DataU()[x / 2 + (y / 2) * frame->StrideU()] / 256.0,
+                  orig_x, 0.02);
+      EXPECT_NEAR(frame->DataV()[x / 2 + (y / 2) * frame->StrideV()] / 256.0,
+                  orig_y, 0.02);
+    }
+  }
+}
+
+}  // namespace
 
 TEST(TestVideoFrame, InitialValues) {
   VideoFrame frame;
@@ -200,18 +263,6 @@ TEST(TestVideoFrame, CopyBuffer) {
   EXPECT_LE(kSizeUv, frame2.allocated_size(kVPlane));
 }
 
-TEST(TestVideoFrame, ReuseAllocation) {
-  VideoFrame frame;
-  frame.CreateEmptyFrame(640, 320, 640, 320, 320);
-  const uint8_t* y = frame.video_frame_buffer()->DataY();
-  const uint8_t* u = frame.video_frame_buffer()->DataU();
-  const uint8_t* v = frame.video_frame_buffer()->DataV();
-  frame.CreateEmptyFrame(640, 320, 640, 320, 320);
-  EXPECT_EQ(y, frame.video_frame_buffer()->DataY());
-  EXPECT_EQ(u, frame.video_frame_buffer()->DataU());
-  EXPECT_EQ(v, frame.video_frame_buffer()->DataV());
-}
-
 TEST(TestVideoFrame, FailToReuseAllocation) {
   VideoFrame frame1;
   frame1.CreateEmptyFrame(640, 320, 640, 320, 320);
@@ -245,12 +296,78 @@ TEST(TestVideoFrame, TextureInitialValues) {
 
 TEST(TestI420FrameBuffer, Copy) {
   rtc::scoped_refptr<I420Buffer> buf1(
-      new rtc::RefCountedObject<I420Buffer>(20, 10));
+      I420Buffer::Create(20, 10));
   memset(buf1->MutableDataY(), 1, 200);
   memset(buf1->MutableDataU(), 2, 50);
   memset(buf1->MutableDataV(), 3, 50);
   rtc::scoped_refptr<I420Buffer> buf2 = I420Buffer::Copy(buf1);
   EXPECT_TRUE(test::FrameBufsEqual(buf1, buf2));
+}
+
+TEST(TestI420FrameBuffer, Scale) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(200, 100);
+
+  // Pure scaling, no cropping.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(150, 75));
+
+  scaled_buffer->ScaleFrom(buf);
+  CheckCrop(scaled_buffer, 0.0, 0.0, 1.0, 1.0);
+}
+
+TEST(TestI420FrameBuffer, CropXCenter) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(200, 100);
+
+  // Pure center cropping, no scaling.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(100, 100));
+
+  scaled_buffer->CropAndScaleFrom(buf, 50, 0, 100, 100);
+  CheckCrop(scaled_buffer, 0.25, 0.0, 0.5, 1.0);
+}
+
+TEST(TestI420FrameBuffer, CropXNotCenter) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(200, 100);
+
+  // Non-center cropping, no scaling.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(100, 100));
+
+  scaled_buffer->CropAndScaleFrom(buf, 25, 0, 100, 100);
+  CheckCrop(scaled_buffer, 0.125, 0.0, 0.5, 1.0);
+}
+
+TEST(TestI420FrameBuffer, CropYCenter) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(100, 200);
+
+  // Pure center cropping, no scaling.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(100, 100));
+
+  scaled_buffer->CropAndScaleFrom(buf, 0, 50, 100, 100);
+  CheckCrop(scaled_buffer, 0.0, 0.25, 1.0, 0.5);
+}
+
+TEST(TestI420FrameBuffer, CropYNotCenter) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(100, 200);
+
+  // Non-center cropping, no scaling.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(100, 100));
+
+  scaled_buffer->CropAndScaleFrom(buf, 0, 25, 100, 100);
+  CheckCrop(scaled_buffer, 0.0, 0.125, 1.0, 0.5);
+}
+
+TEST(TestI420FrameBuffer, CropAndScale16x9) {
+  rtc::scoped_refptr<I420Buffer> buf = CreateGradient(640, 480);
+
+  // Center crop to 640 x 360 (16/9 aspect), then scale down by 2.
+  rtc::scoped_refptr<I420Buffer> scaled_buffer(
+      I420Buffer::Create(320, 180));
+
+  scaled_buffer->CropAndScaleFrom(buf);
+  CheckCrop(scaled_buffer, 0.0, 0.125, 1.0, 0.75);
 }
 
 }  // namespace webrtc

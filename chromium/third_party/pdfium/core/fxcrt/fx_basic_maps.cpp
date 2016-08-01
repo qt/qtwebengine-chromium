@@ -8,22 +8,26 @@
 #include "core/fxcrt/plex.h"
 
 CFX_MapPtrToPtr::CFX_MapPtrToPtr(int nBlockSize)
-    : m_pHashTable(NULL),
+    : m_pHashTable(nullptr),
       m_nHashTableSize(17),
       m_nCount(0),
-      m_pFreeList(NULL),
-      m_pBlocks(NULL),
+      m_pFreeList(nullptr),
+      m_pBlocks(nullptr),
       m_nBlockSize(nBlockSize) {
   ASSERT(m_nBlockSize > 0);
 }
+
 void CFX_MapPtrToPtr::RemoveAll() {
   FX_Free(m_pHashTable);
-  m_pHashTable = NULL;
+  m_pHashTable = nullptr;
   m_nCount = 0;
-  m_pFreeList = NULL;
-  m_pBlocks->FreeDataChain();
-  m_pBlocks = NULL;
+  m_pFreeList = nullptr;
+  if (m_pBlocks) {
+    m_pBlocks->FreeDataChain();
+    m_pBlocks = nullptr;
+  }
 }
+
 CFX_MapPtrToPtr::~CFX_MapPtrToPtr() {
   RemoveAll();
   ASSERT(m_nCount == 0);
@@ -63,21 +67,19 @@ FX_BOOL CFX_MapPtrToPtr::Lookup(void* key, void*& rValue) const {
   rValue = pAssoc->value;
   return TRUE;
 }
+
 void* CFX_MapPtrToPtr::GetValueAt(void* key) const {
   uint32_t nHash;
   CAssoc* pAssoc = GetAssocAt(key, nHash);
-  if (!pAssoc) {
-    return NULL;
-  }
-  return pAssoc->value;
+  return pAssoc ? pAssoc->value : nullptr;
 }
+
 void*& CFX_MapPtrToPtr::operator[](void* key) {
   uint32_t nHash;
-  CAssoc* pAssoc;
-  if ((pAssoc = GetAssocAt(key, nHash)) == NULL) {
-    if (!m_pHashTable) {
+  CAssoc* pAssoc = GetAssocAt(key, nHash);
+  if (!pAssoc) {
+    if (!m_pHashTable)
       InitHashTable(m_nHashTableSize);
-    }
     pAssoc = NewAssoc();
     pAssoc->key = key;
     pAssoc->pNext = m_pHashTable[nHash];
@@ -89,14 +91,14 @@ CFX_MapPtrToPtr::CAssoc* CFX_MapPtrToPtr::GetAssocAt(void* key,
                                                      uint32_t& nHash) const {
   nHash = HashKey(key) % m_nHashTableSize;
   if (!m_pHashTable) {
-    return NULL;
+    return nullptr;
   }
   CAssoc* pAssoc;
   for (pAssoc = m_pHashTable[nHash]; pAssoc; pAssoc = pAssoc->pNext) {
     if (pAssoc->key == key)
       return pAssoc;
   }
-  return NULL;
+  return nullptr;
 }
 CFX_MapPtrToPtr::CAssoc* CFX_MapPtrToPtr::NewAssoc() {
   if (!m_pFreeList) {
@@ -122,7 +124,7 @@ void CFX_MapPtrToPtr::InitHashTable(uint32_t nHashSize, FX_BOOL bAllocNow) {
   ASSERT(m_nCount == 0);
   ASSERT(nHashSize > 0);
   FX_Free(m_pHashTable);
-  m_pHashTable = NULL;
+  m_pHashTable = nullptr;
   if (bAllocNow) {
     m_pHashTable = FX_Alloc(CAssoc*, nHashSize);
   }

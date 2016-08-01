@@ -6,6 +6,7 @@
 
 #include "core/dom/Document.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -62,15 +63,15 @@ TEST_F(CSPSourceTest, RedirectMatching)
     KURL base;
     CSPSource source(csp.get(), "http", "example.com", 8000, "/bar/", CSPSource::NoWildcard, CSPSource::NoWildcard);
 
-    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/"), ContentSecurityPolicy::DidRedirect));
-    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
-    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/"), ResourceRequest::RedirectStatus::FollowedRedirect));
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:8000/foo"), ResourceRequest::RedirectStatus::FollowedRedirect));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/foo"), ResourceRequest::RedirectStatus::FollowedRedirect));
 
-    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:8000/foo"), ContentSecurityPolicy::DidRedirect));
-    EXPECT_FALSE(source.matches(KURL(base, "http://example.com:9000/foo/"), ContentSecurityPolicy::DidNotRedirect));
+    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:8000/foo"), ResourceRequest::RedirectStatus::FollowedRedirect));
+    EXPECT_FALSE(source.matches(KURL(base, "http://example.com:9000/foo/"), ResourceRequest::RedirectStatus::NoRedirect));
 }
 
-TEST_F(CSPSourceTest, InsecureSourceMatchesSecure)
+TEST_F(CSPSourceTest, InsecureSchemeMatchesSecureScheme)
 {
     KURL base;
     CSPSource source(csp.get(), "http", "", 0, "/", CSPSource::NoWildcard, CSPSource::HasWildcard);
@@ -82,7 +83,7 @@ TEST_F(CSPSourceTest, InsecureSourceMatchesSecure)
     EXPECT_FALSE(source.matches(KURL(base, "ftp://example.com:8000/")));
 }
 
-TEST_F(CSPSourceTest, InsecureHostMatchesSecure)
+TEST_F(CSPSourceTest, InsecureHostSchemeMatchesSecureScheme)
 {
     KURL base;
     CSPSource source(csp.get(), "http", "example.com", 0, "/", CSPSource::NoWildcard, CSPSource::HasWildcard);
@@ -92,5 +93,29 @@ TEST_F(CSPSourceTest, InsecureHostMatchesSecure)
     EXPECT_TRUE(source.matches(KURL(base, "https://example.com:8000/")));
     EXPECT_FALSE(source.matches(KURL(base, "https://not-example.com:8000/")));
 }
+
+TEST_F(CSPSourceTest, InsecureHostSchemePortMatchesSecurePort)
+{
+    KURL base;
+    CSPSource source(csp.get(), "http", "example.com", 80, "/", CSPSource::NoWildcard, CSPSource::NoWildcard);
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com/")));
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:80/")));
+    EXPECT_TRUE(source.matches(KURL(base, "http://example.com:443/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:80/")));
+    EXPECT_TRUE(source.matches(KURL(base, "https://example.com:443/")));
+
+    EXPECT_FALSE(source.matches(KURL(base, "http://example.com:8443/")));
+    EXPECT_FALSE(source.matches(KURL(base, "https://example.com:8443/")));
+
+    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com/")));
+    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:80/")));
+    EXPECT_FALSE(source.matches(KURL(base, "http://not-example.com:443/")));
+    EXPECT_FALSE(source.matches(KURL(base, "https://not-example.com/")));
+    EXPECT_FALSE(source.matches(KURL(base, "https://not-example.com:80/")));
+    EXPECT_FALSE(source.matches(KURL(base, "https://not-example.com:443/")));
+}
+
+
 
 } // namespace blink

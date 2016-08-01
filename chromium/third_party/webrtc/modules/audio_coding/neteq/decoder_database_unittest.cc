@@ -22,18 +22,19 @@
 #include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
 
+using testing::_;
+using testing::Invoke;
+
 namespace webrtc {
 
 TEST(DecoderDatabase, CreateAndDestroy) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   EXPECT_EQ(0, db.Size());
   EXPECT_TRUE(db.Empty());
 }
 
 TEST(DecoderDatabase, InsertAndRemove) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -47,8 +48,16 @@ TEST(DecoderDatabase, InsertAndRemove) {
 }
 
 TEST(DecoderDatabase, GetDecoderInfo) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  rtc::scoped_refptr<MockAudioDecoderFactory> factory(
+      new rtc::RefCountedObject<MockAudioDecoderFactory>);
+  auto* decoder = new MockAudioDecoder;
+  EXPECT_CALL(*factory, MakeAudioDecoderMock(_, _))
+      .WillOnce(Invoke([decoder](const SdpAudioFormat& format,
+                                 std::unique_ptr<AudioDecoder>* dec) {
+        EXPECT_EQ("pcmu", format.name);
+        dec->reset(decoder);
+      }));
+  DecoderDatabase db(factory);
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -58,16 +67,14 @@ TEST(DecoderDatabase, GetDecoderInfo) {
   info = db.GetDecoderInfo(kPayloadType);
   ASSERT_TRUE(info != NULL);
   EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
-  EXPECT_EQ(nullptr, info->external_decoder);
-  EXPECT_EQ(8000, info->fs_hz);
   EXPECT_EQ(kCodecName, info->name);
+  EXPECT_EQ(decoder, db.GetDecoder(kPayloadType));
   info = db.GetDecoderInfo(kPayloadType + 1);  // Other payload type.
   EXPECT_TRUE(info == NULL);  // Should not be found.
 }
 
 TEST(DecoderDatabase, GetRtpPayloadType) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   EXPECT_EQ(
@@ -92,8 +99,7 @@ TEST(DecoderDatabase, GetDecoder) {
 }
 
 TEST(DecoderDatabase, TypeTests) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   const uint8_t kPayloadTypePcmU = 0;
   const uint8_t kPayloadTypeCng = 13;
   const uint8_t kPayloadTypeDtmf = 100;
@@ -128,15 +134,14 @@ TEST(DecoderDatabase, TypeTests) {
 }
 
 TEST(DecoderDatabase, ExternalDecoder) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   const uint8_t kPayloadType = 0;
   const std::string kCodecName = "Robert\'); DROP TABLE Students;";
   MockAudioDecoder decoder;
   // Load into database.
   EXPECT_EQ(DecoderDatabase::kOK,
             db.InsertExternal(kPayloadType, NetEqDecoder::kDecoderPCMu,
-                              kCodecName, 8000, &decoder));
+                              kCodecName, &decoder));
   EXPECT_EQ(1, db.Size());
   // Get decoder and make sure we get the external one.
   EXPECT_EQ(&decoder, db.GetDecoder(kPayloadType));
@@ -146,8 +151,6 @@ TEST(DecoderDatabase, ExternalDecoder) {
   ASSERT_TRUE(info != NULL);
   EXPECT_EQ(NetEqDecoder::kDecoderPCMu, info->codec_type);
   EXPECT_EQ(kCodecName, info->name);
-  EXPECT_EQ(&decoder, info->external_decoder);
-  EXPECT_EQ(8000, info->fs_hz);
   // Expect not to delete the decoder when removing it from the database, since
   // it was declared externally.
   EXPECT_CALL(decoder, Die()).Times(0);
@@ -158,8 +161,7 @@ TEST(DecoderDatabase, ExternalDecoder) {
 }
 
 TEST(DecoderDatabase, CheckPayloadTypes) {
-  std::unique_ptr<MockAudioDecoderFactory> factory(new MockAudioDecoderFactory);
-  DecoderDatabase db(std::move(factory));
+  DecoderDatabase db(new rtc::RefCountedObject<MockAudioDecoderFactory>);
   // Load a number of payloads into the database. Payload types are 0, 1, ...,
   // while the decoder type is the same for all payload types (this does not
   // matter for the test).

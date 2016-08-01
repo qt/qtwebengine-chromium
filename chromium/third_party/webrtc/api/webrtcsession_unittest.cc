@@ -19,7 +19,7 @@
 #include "webrtc/api/jsepsessiondescription.h"
 #include "webrtc/api/peerconnection.h"
 #include "webrtc/api/sctputils.h"
-#include "webrtc/api/test/fakedtlsidentitystore.h"
+#include "webrtc/api/test/fakertccertificategenerator.h"
 #include "webrtc/api/videotrack.h"
 #include "webrtc/api/webrtcsession.h"
 #include "webrtc/api/webrtcsessiondescriptionfactory.h"
@@ -109,6 +109,8 @@ static const int kMediaContentIndex1 = 1;
 static const char kMediaContentName1[] = "video";
 
 static const int kIceCandidatesTimeout = 10000;
+// STUN timeout with all retransmissions is a total of 9500ms.
+static const int kStunTimeout = 9500;
 
 static const char kFakeDtlsFingerprint[] =
     "BB:CD:72:F7:2F:D0:BA:43:F3:68:B1:0C:23:72:B6:4A:"
@@ -251,12 +253,6 @@ class WebRtcSessionForTest : public webrtc::WebRtcSession {
     return rtcp_transport_channel(data_channel());
   }
 
-  using webrtc::WebRtcSession::SetAudioPlayout;
-  using webrtc::WebRtcSession::SetAudioSend;
-  using webrtc::WebRtcSession::SetSource;
-  using webrtc::WebRtcSession::SetVideoPlayout;
-  using webrtc::WebRtcSession::SetVideoSend;
-
  private:
   cricket::TransportChannel* rtp_transport_channel(cricket::BaseChannel* ch) {
     if (!ch) {
@@ -376,13 +372,12 @@ class WebRtcSessionTest
     network_manager_.RemoveInterface(addr);
   }
 
-  // If |dtls_identity_store| != null or |rtc_configuration| contains
-  // |certificates| then DTLS will be enabled unless explicitly disabled by
-  // |rtc_configuration| options. When DTLS is enabled a certificate will be
-  // used if provided, otherwise one will be generated using the
-  // |dtls_identity_store|.
+  // If |cert_generator| != null or |rtc_configuration| contains |certificates|
+  // then DTLS will be enabled unless explicitly disabled by |rtc_configuration|
+  // options. When DTLS is enabled a certificate will be used if provided,
+  // otherwise one will be generated using the |cert_generator|.
   void Init(
-      std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store) {
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator) {
     ASSERT_TRUE(session_.get() == NULL);
     session_.reset(new WebRtcSessionForTest(
         media_controller_.get(), rtc::Thread::Current(), rtc::Thread::Current(),
@@ -397,7 +392,7 @@ class WebRtcSessionTest
     EXPECT_EQ(PeerConnectionInterface::kIceGatheringNew,
         observer_.ice_gathering_state_);
 
-    EXPECT_TRUE(session_->Initialize(options_, std::move(dtls_identity_store),
+    EXPECT_TRUE(session_->Initialize(options_, std::move(cert_generator),
                                      configuration_));
     session_->set_metrics_observer(metrics_observer_);
   }
@@ -428,25 +423,25 @@ class WebRtcSessionTest
   // Successfully init with DTLS; with a certificate generated and supplied or
   // with a store that generates it for us.
   void InitWithDtls(RTCCertificateGenerationMethod cert_gen_method) {
-    std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store;
+    std::unique_ptr<FakeRTCCertificateGenerator> cert_generator;
     if (cert_gen_method == ALREADY_GENERATED) {
       configuration_.certificates.push_back(
-          FakeDtlsIdentityStore::GenerateCertificate());
+          FakeRTCCertificateGenerator::GenerateCertificate());
     } else if (cert_gen_method == DTLS_IDENTITY_STORE) {
-      dtls_identity_store.reset(new FakeDtlsIdentityStore());
-      dtls_identity_store->set_should_fail(false);
+      cert_generator.reset(new FakeRTCCertificateGenerator());
+      cert_generator->set_should_fail(false);
     } else {
       RTC_CHECK(false);
     }
-    Init(std::move(dtls_identity_store));
+    Init(std::move(cert_generator));
   }
 
   // Init with DTLS with a store that will fail to generate a certificate.
   void InitWithDtlsIdentityGenFail() {
-    std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store(
-        new FakeDtlsIdentityStore());
-    dtls_identity_store->set_should_fail(true);
-    Init(std::move(dtls_identity_store));
+    std::unique_ptr<FakeRTCCertificateGenerator> cert_generator(
+        new FakeRTCCertificateGenerator());
+    cert_generator->set_should_fail(true);
+    Init(std::move(cert_generator));
   }
 
   void InitWithDtmfCodec() {
@@ -456,7 +451,7 @@ class WebRtcSessionTest
     std::vector<cricket::AudioCodec> codecs;
     codecs.push_back(kTelephoneEventCodec);
     media_engine_->SetAudioCodecs(codecs);
-    desc_factory_->set_audio_codecs(codecs);
+    desc_factory_->set_audio_codecs(codecs, codecs);
     Init();
   }
 
@@ -1326,7 +1321,8 @@ class WebRtcSessionTest
         ->SendRtp(test_packet, sizeof(test_packet), options);
 
     const int kPacketTimeout = 2000;
-    EXPECT_EQ_WAIT(fake_call_.last_sent_packet().packet_id, 10, kPacketTimeout);
+    EXPECT_EQ_WAIT(10, fake_call_.last_sent_nonnegative_packet_id(),
+                   kPacketTimeout);
     EXPECT_GT(fake_call_.last_sent_packet().send_time_ms, -1);
   }
 
@@ -1336,11 +1332,12 @@ class WebRtcSessionTest
     const cricket::AudioCodec kCNCodec2(103, "CN", 16000, 0, 1);
 
     // Add kCNCodec for dtmf test.
-    std::vector<cricket::AudioCodec> codecs = media_engine_->audio_codecs();;
+    std::vector<cricket::AudioCodec> codecs =
+        media_engine_->audio_send_codecs();
     codecs.push_back(kCNCodec1);
     codecs.push_back(kCNCodec2);
     media_engine_->SetAudioCodecs(codecs);
-    desc_factory_->set_audio_codecs(codecs);
+    desc_factory_->set_audio_codecs(codecs, codecs);
   }
 
   bool VerifyNoCNCodecs(const cricket::ContentInfo* content) {
@@ -1506,13 +1503,9 @@ TEST_F(WebRtcSessionTest, TestMultihomeCandidates) {
   EXPECT_EQ(8u, observer_.mline_1_candidates_.size());
 }
 
-// Crashes on Win only. See webrtc:5411.
-#if defined(WEBRTC_WIN)
-#define MAYBE_TestStunError DISABLED_TestStunError
-#else
-#define MAYBE_TestStunError TestStunError
-#endif
-TEST_F(WebRtcSessionTest, MAYBE_TestStunError) {
+TEST_F(WebRtcSessionTest, TestStunError) {
+  rtc::ScopedFakeClock clock;
+
   AddInterface(rtc::SocketAddress(kClientAddrHost1, kClientAddrPort));
   AddInterface(rtc::SocketAddress(kClientAddrHost2, kClientAddrPort));
   fss_->AddRule(false,
@@ -1523,9 +1516,13 @@ TEST_F(WebRtcSessionTest, MAYBE_TestStunError) {
   SendAudioVideoStream1();
   InitiateCall();
   // Since kClientAddrHost1 is blocked, not expecting stun candidates for it.
-  EXPECT_TRUE_WAIT(observer_.oncandidatesready_, kIceCandidatesTimeout);
+  EXPECT_TRUE_SIMULATED_WAIT(observer_.oncandidatesready_, kStunTimeout, clock);
   EXPECT_EQ(6u, observer_.mline_0_candidates_.size());
   EXPECT_EQ(6u, observer_.mline_1_candidates_.size());
+  // Destroy session before scoped fake clock goes out of scope to avoid TSan
+  // warning.
+  session_->Close();
+  session_.reset(nullptr);
 }
 
 TEST_F(WebRtcSessionTest, SetSdpFailedOnInvalidSdp) {
@@ -2245,7 +2242,7 @@ TEST_F(WebRtcSessionTest,
   candidates = local_desc->candidates(kMediaContentIndex0);
   size_t num_local_candidates = candidates->count();
   // Enable Continual Gathering
-  session_->SetIceConfig(cricket::IceConfig(-1, -1, true, false, -1));
+  session_->SetIceConfig(cricket::IceConfig(-1, -1, true, false, -1, true));
   // Bring down the network interface to trigger candidate removals.
   RemoveInterface(rtc::SocketAddress(kClientAddrHost1, kClientAddrPort));
   // Verify that all local candidates are removed.
@@ -3390,163 +3387,6 @@ TEST_F(WebRtcSessionTest, TestDisabledRtcpMuxWithBundleEnabled) {
   SetLocalDescriptionWithoutError(offer);
 }
 
-TEST_F(WebRtcSessionTest, SetAudioPlayout) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVoiceMediaChannel* channel = media_engine_->GetVoiceChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  ASSERT_EQ(1u, channel->recv_streams().size());
-  uint32_t receive_ssrc = channel->recv_streams()[0].first_ssrc();
-  double volume;
-  EXPECT_TRUE(channel->GetOutputVolume(receive_ssrc, &volume));
-  EXPECT_EQ(1, volume);
-  session_->SetAudioPlayout(receive_ssrc, false);
-  EXPECT_TRUE(channel->GetOutputVolume(receive_ssrc, &volume));
-  EXPECT_EQ(0, volume);
-  session_->SetAudioPlayout(receive_ssrc, true);
-  EXPECT_TRUE(channel->GetOutputVolume(receive_ssrc, &volume));
-  EXPECT_EQ(1, volume);
-}
-
-TEST_F(WebRtcSessionTest, SetAudioMaxSendBitrate) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVoiceMediaChannel* channel = media_engine_->GetVoiceChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  uint32_t send_ssrc = channel->send_streams()[0].first_ssrc();
-  EXPECT_EQ(-1, channel->max_bps());
-  webrtc::RtpParameters params = session_->GetAudioRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(-1, params.encodings[0].max_bitrate_bps);
-  params.encodings[0].max_bitrate_bps = 1000;
-  EXPECT_TRUE(session_->SetAudioRtpSendParameters(send_ssrc, params));
-
-  // Read back the parameters and verify they have been changed.
-  params = session_->GetAudioRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(1000, params.encodings[0].max_bitrate_bps);
-
-  // Verify that the audio channel received the new parameters.
-  params = channel->GetRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(1000, params.encodings[0].max_bitrate_bps);
-
-  // Verify that the global bitrate limit has not been changed.
-  EXPECT_EQ(-1, channel->max_bps());
-}
-
-TEST_F(WebRtcSessionTest, SetAudioSend) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVoiceMediaChannel* channel = media_engine_->GetVoiceChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  ASSERT_EQ(1u, channel->send_streams().size());
-  uint32_t send_ssrc = channel->send_streams()[0].first_ssrc();
-  EXPECT_FALSE(channel->IsStreamMuted(send_ssrc));
-
-  cricket::AudioOptions options;
-  options.echo_cancellation = rtc::Optional<bool>(true);
-
-  std::unique_ptr<FakeAudioSource> source(new FakeAudioSource());
-  session_->SetAudioSend(send_ssrc, false, options, source.get());
-  EXPECT_TRUE(channel->IsStreamMuted(send_ssrc));
-  EXPECT_EQ(rtc::Optional<bool>(), channel->options().echo_cancellation);
-  EXPECT_TRUE(source->sink() != nullptr);
-
-  // This will trigger SetSink(nullptr) to the |source|.
-  session_->SetAudioSend(send_ssrc, true, options, nullptr);
-  EXPECT_FALSE(channel->IsStreamMuted(send_ssrc));
-  EXPECT_EQ(rtc::Optional<bool>(true), channel->options().echo_cancellation);
-  EXPECT_TRUE(source->sink() == nullptr);
-}
-
-TEST_F(WebRtcSessionTest, AudioSourceForLocalStream) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVoiceMediaChannel* channel = media_engine_->GetVoiceChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  ASSERT_EQ(1u, channel->send_streams().size());
-  uint32_t send_ssrc = channel->send_streams()[0].first_ssrc();
-
-  std::unique_ptr<FakeAudioSource> source(new FakeAudioSource());
-  cricket::AudioOptions options;
-  session_->SetAudioSend(send_ssrc, true, options, source.get());
-  EXPECT_TRUE(source->sink() != nullptr);
-
-  // Delete the |source| and it will trigger OnClose() to the sink, and this
-  // will invalidate the |source_| pointer in the sink and prevent getting a
-  // SetSink(nullptr) callback afterwards.
-  source.reset();
-
-  // This will trigger SetSink(nullptr) if no OnClose() callback.
-  session_->SetAudioSend(send_ssrc, true, options, nullptr);
-}
-
-TEST_F(WebRtcSessionTest, SetVideoPlayout) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVideoMediaChannel* channel = media_engine_->GetVideoChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  ASSERT_LT(0u, channel->sinks().size());
-  EXPECT_TRUE(channel->sinks().begin()->second == NULL);
-  ASSERT_EQ(1u, channel->recv_streams().size());
-  uint32_t receive_ssrc = channel->recv_streams()[0].first_ssrc();
-  cricket::FakeVideoRenderer renderer;
-  session_->SetVideoPlayout(receive_ssrc, true, &renderer);
-  EXPECT_TRUE(channel->sinks().begin()->second == &renderer);
-  session_->SetVideoPlayout(receive_ssrc, false, &renderer);
-  EXPECT_TRUE(channel->sinks().begin()->second == NULL);
-}
-
-TEST_F(WebRtcSessionTest, SetVideoMaxSendBitrate) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVideoMediaChannel* channel = media_engine_->GetVideoChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  uint32_t send_ssrc = channel->send_streams()[0].first_ssrc();
-  EXPECT_EQ(-1, channel->max_bps());
-  webrtc::RtpParameters params = session_->GetVideoRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(-1, params.encodings[0].max_bitrate_bps);
-  params.encodings[0].max_bitrate_bps = 1000;
-  EXPECT_TRUE(session_->SetVideoRtpSendParameters(send_ssrc, params));
-
-  // Read back the parameters and verify they have been changed.
-  params = session_->GetVideoRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(1000, params.encodings[0].max_bitrate_bps);
-
-  // Verify that the video channel received the new parameters.
-  params = channel->GetRtpSendParameters(send_ssrc);
-  EXPECT_EQ(1, params.encodings.size());
-  EXPECT_EQ(1000, params.encodings[0].max_bitrate_bps);
-
-  // Verify that the global bitrate limit has not been changed.
-  EXPECT_EQ(-1, channel->max_bps());
-}
-
-TEST_F(WebRtcSessionTest, SetVideoSend) {
-  Init();
-  SendAudioVideoStream1();
-  CreateAndSetRemoteOfferAndLocalAnswer();
-  cricket::FakeVideoMediaChannel* channel = media_engine_->GetVideoChannel(0);
-  ASSERT_TRUE(channel != NULL);
-  ASSERT_EQ(1u, channel->send_streams().size());
-  uint32_t send_ssrc = channel->send_streams()[0].first_ssrc();
-  EXPECT_FALSE(channel->IsStreamMuted(send_ssrc));
-  cricket::VideoOptions* options = NULL;
-  session_->SetVideoSend(send_ssrc, false, options);
-  EXPECT_TRUE(channel->IsStreamMuted(send_ssrc));
-  session_->SetVideoSend(send_ssrc, true, options);
-  EXPECT_FALSE(channel->IsStreamMuted(send_ssrc));
-}
-
 TEST_F(WebRtcSessionTest, CanNotInsertDtmf) {
   TestCanInsertDtmf(false);
 }
@@ -4103,7 +3943,7 @@ TEST_P(WebRtcSessionTest, TestSctpDataChannelOpenMessage) {
 
 TEST_P(WebRtcSessionTest, TestUsesProvidedCertificate) {
   rtc::scoped_refptr<rtc::RTCCertificate> certificate =
-      FakeDtlsIdentityStore::GenerateCertificate();
+      FakeRTCCertificateGenerator::GenerateCertificate();
 
   configuration_.certificates.push_back(certificate);
   Init();

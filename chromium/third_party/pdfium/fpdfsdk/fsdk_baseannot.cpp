@@ -115,12 +115,12 @@ CPDFSDK_DateTime& CPDFSDK_DateTime::operator=(
 CPDFSDK_DateTime& CPDFSDK_DateTime::operator=(const FX_SYSTEMTIME& st) {
   tzset();
 
-  dt.year = (int16_t)st.wYear;
-  dt.month = (uint8_t)st.wMonth;
-  dt.day = (uint8_t)st.wDay;
-  dt.hour = (uint8_t)st.wHour;
-  dt.minute = (uint8_t)st.wMinute;
-  dt.second = (uint8_t)st.wSecond;
+  dt.year = static_cast<int16_t>(st.wYear);
+  dt.month = static_cast<uint8_t>(st.wMonth);
+  dt.day = static_cast<uint8_t>(st.wDay);
+  dt.hour = static_cast<uint8_t>(st.wHour);
+  dt.minute = static_cast<uint8_t>(st.wMinute);
+  dt.second = static_cast<uint8_t>(st.wSecond);
   return *this;
 }
 
@@ -132,67 +132,7 @@ bool CPDFSDK_DateTime::operator!=(const CPDFSDK_DateTime& datetime) const {
   return !(*this == datetime);
 }
 
-bool CPDFSDK_DateTime::operator>(const CPDFSDK_DateTime& datetime) const {
-  CPDFSDK_DateTime dt1 = ToGMT();
-  CPDFSDK_DateTime dt2 = datetime.ToGMT();
-  int d1 =
-      (((int)dt1.dt.year) << 16) | (((int)dt1.dt.month) << 8) | (int)dt1.dt.day;
-  int d2 = (((int)dt1.dt.hour) << 16) | (((int)dt1.dt.minute) << 8) |
-           (int)dt1.dt.second;
-  int d3 =
-      (((int)dt2.dt.year) << 16) | (((int)dt2.dt.month) << 8) | (int)dt2.dt.day;
-  int d4 = (((int)dt2.dt.hour) << 16) | (((int)dt2.dt.minute) << 8) |
-           (int)dt2.dt.second;
-
-  return d1 > d3 || d2 > d4;
-}
-
-bool CPDFSDK_DateTime::operator>=(const CPDFSDK_DateTime& datetime) const {
-  CPDFSDK_DateTime dt1 = ToGMT();
-  CPDFSDK_DateTime dt2 = datetime.ToGMT();
-  int d1 =
-      (((int)dt1.dt.year) << 16) | (((int)dt1.dt.month) << 8) | (int)dt1.dt.day;
-  int d2 = (((int)dt1.dt.hour) << 16) | (((int)dt1.dt.minute) << 8) |
-           (int)dt1.dt.second;
-  int d3 =
-      (((int)dt2.dt.year) << 16) | (((int)dt2.dt.month) << 8) | (int)dt2.dt.day;
-  int d4 = (((int)dt2.dt.hour) << 16) | (((int)dt2.dt.minute) << 8) |
-           (int)dt2.dt.second;
-
-  return d1 >= d3 || d2 >= d4;
-}
-
-bool CPDFSDK_DateTime::operator<(const CPDFSDK_DateTime& datetime) const {
-  CPDFSDK_DateTime dt1 = ToGMT();
-  CPDFSDK_DateTime dt2 = datetime.ToGMT();
-  int d1 =
-      (((int)dt1.dt.year) << 16) | (((int)dt1.dt.month) << 8) | (int)dt1.dt.day;
-  int d2 = (((int)dt1.dt.hour) << 16) | (((int)dt1.dt.minute) << 8) |
-           (int)dt1.dt.second;
-  int d3 =
-      (((int)dt2.dt.year) << 16) | (((int)dt2.dt.month) << 8) | (int)dt2.dt.day;
-  int d4 = (((int)dt2.dt.hour) << 16) | (((int)dt2.dt.minute) << 8) |
-           (int)dt2.dt.second;
-
-  return d1 < d3 || d2 < d4;
-}
-
-bool CPDFSDK_DateTime::operator<=(const CPDFSDK_DateTime& datetime) const {
-  CPDFSDK_DateTime dt1 = ToGMT();
-  CPDFSDK_DateTime dt2 = datetime.ToGMT();
-  int d1 =
-      (((int)dt1.dt.year) << 16) | (((int)dt1.dt.month) << 8) | (int)dt1.dt.day;
-  int d2 = (((int)dt1.dt.hour) << 16) | (((int)dt1.dt.minute) << 8) |
-           (int)dt1.dt.second;
-  int d3 =
-      (((int)dt2.dt.year) << 16) | (((int)dt2.dt.month) << 8) | (int)dt2.dt.day;
-  int d4 = (((int)dt2.dt.hour) << 16) | (((int)dt2.dt.minute) << 8) |
-           (int)dt2.dt.second;
-
-  return d1 <= d3 || d2 <= d4;
-}
-
-CPDFSDK_DateTime::operator time_t() {
+time_t CPDFSDK_DateTime::ToTime_t() const {
   struct tm newtime;
 
   newtime.tm_year = dt.year - 1900;
@@ -208,152 +148,148 @@ CPDFSDK_DateTime::operator time_t() {
 CPDFSDK_DateTime& CPDFSDK_DateTime::FromPDFDateTimeString(
     const CFX_ByteString& dtStr) {
   int strLength = dtStr.GetLength();
-  if (strLength > 0) {
-    int i = 0;
-    int j, k;
-    FX_CHAR ch;
-    while (i < strLength && !std::isdigit(dtStr[i]))
-      ++i;
+  if (strLength <= 0)
+    return *this;
 
-    if (i >= strLength)
-      return *this;
+  int i = 0;
+  while (i < strLength && !std::isdigit(dtStr[i]))
+    ++i;
 
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 4) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.year = (int16_t)k;
-    if (i >= strLength || j < 4)
-      return *this;
+  if (i >= strLength)
+    return *this;
 
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.month = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.day = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.hour = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.minute = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.second = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    ch = dtStr[i++];
-    if (ch != '-' && ch != '+')
-      return *this;
-    if (ch == '-')
-      dt.tzHour = -1;
-    else
-      dt.tzHour = 1;
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.tzHour *= (FX_CHAR)k;
-    if (i >= strLength || j < 2)
-      return *this;
-
-    ch = dtStr[i++];
-    if (ch != '\'')
-      return *this;
-    j = 0;
-    k = 0;
-    while (i < strLength && j < 2) {
-      ch = dtStr[i];
-      k = k * 10 + FXSYS_toDecimalDigit(ch);
-      j++;
-      if (!std::isdigit(ch))
-        break;
-      i++;
-    }
-    dt.tzMinute = (uint8_t)k;
-    if (i >= strLength || j < 2)
-      return *this;
+  int j = 0;
+  int k = 0;
+  FX_CHAR ch;
+  while (i < strLength && j < 4) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
   }
+  dt.year = static_cast<int16_t>(k);
+  if (i >= strLength || j < 4)
+    return *this;
 
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.month = static_cast<uint8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.day = static_cast<uint8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.hour = static_cast<uint8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.minute = static_cast<uint8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.second = static_cast<uint8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  ch = dtStr[i++];
+  if (ch != '-' && ch != '+')
+    return *this;
+  if (ch == '-')
+    dt.tzHour = -1;
+  else
+    dt.tzHour = 1;
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.tzHour *= static_cast<int8_t>(k);
+  if (i >= strLength || j < 2)
+    return *this;
+
+  if (dtStr[i++] != '\'')
+    return *this;
+  j = 0;
+  k = 0;
+  while (i < strLength && j < 2) {
+    ch = dtStr[i];
+    k = k * 10 + FXSYS_toDecimalDigit(ch);
+    j++;
+    if (!std::isdigit(ch))
+      break;
+    i++;
+  }
+  dt.tzMinute = static_cast<uint8_t>(k);
   return *this;
 }
 
 CFX_ByteString CPDFSDK_DateTime::ToCommonDateTimeString() {
   CFX_ByteString str1;
-  str1.Format("%04d-%02d-%02d %02d:%02d:%02d ", dt.year, dt.month, dt.day,
+  str1.Format("%04d-%02u-%02u %02u:%02u:%02u ", dt.year, dt.month, dt.day,
               dt.hour, dt.minute, dt.second);
   if (dt.tzHour < 0)
     str1 += "-";
   else
     str1 += "+";
   CFX_ByteString str2;
-  str2.Format("%02d:%02d", abs(dt.tzHour), dt.tzMinute);
+  str2.Format("%02d:%02u", abs(dt.tzHour), dt.tzMinute);
   return str1 + str2;
 }
 
@@ -361,7 +297,7 @@ CFX_ByteString CPDFSDK_DateTime::ToPDFDateTimeString() {
   CFX_ByteString dtStr;
   char tempStr[32];
   memset(tempStr, 0, sizeof(tempStr));
-  FXSYS_snprintf(tempStr, sizeof(tempStr) - 1, "D:%04d%02d%02d%02d%02d%02d",
+  FXSYS_snprintf(tempStr, sizeof(tempStr) - 1, "D:%04d%02u%02u%02u%02u%02u",
                  dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
   dtStr = CFX_ByteString(tempStr);
   if (dt.tzHour < 0)
@@ -369,51 +305,51 @@ CFX_ByteString CPDFSDK_DateTime::ToPDFDateTimeString() {
   else
     dtStr += CFX_ByteString("+");
   memset(tempStr, 0, sizeof(tempStr));
-  FXSYS_snprintf(tempStr, sizeof(tempStr) - 1, "%02d'%02d'", abs(dt.tzHour),
+  FXSYS_snprintf(tempStr, sizeof(tempStr) - 1, "%02d'%02u'", abs(dt.tzHour),
                  dt.tzMinute);
   dtStr += CFX_ByteString(tempStr);
   return dtStr;
 }
 
 void CPDFSDK_DateTime::ToSystemTime(FX_SYSTEMTIME& st) {
-  CPDFSDK_DateTime dt = *this;
-  time_t t = (time_t)dt;
+  time_t t = this->ToTime_t();
   struct tm* pTime = localtime(&t);
   if (pTime) {
-    st.wYear = (uint16_t)pTime->tm_year + 1900;
-    st.wMonth = (uint16_t)pTime->tm_mon + 1;
-    st.wDay = (uint16_t)pTime->tm_mday;
-    st.wDayOfWeek = (uint16_t)pTime->tm_wday;
-    st.wHour = (uint16_t)pTime->tm_hour;
-    st.wMinute = (uint16_t)pTime->tm_min;
-    st.wSecond = (uint16_t)pTime->tm_sec;
+    st.wYear = static_cast<uint16_t>(pTime->tm_year) + 1900;
+    st.wMonth = static_cast<uint16_t>(pTime->tm_mon) + 1;
+    st.wDay = static_cast<uint16_t>(pTime->tm_mday);
+    st.wDayOfWeek = static_cast<uint16_t>(pTime->tm_wday);
+    st.wHour = static_cast<uint16_t>(pTime->tm_hour);
+    st.wMinute = static_cast<uint16_t>(pTime->tm_min);
+    st.wSecond = static_cast<uint16_t>(pTime->tm_sec);
     st.wMilliseconds = 0;
   }
 }
 
 CPDFSDK_DateTime CPDFSDK_DateTime::ToGMT() const {
-  CPDFSDK_DateTime dt = *this;
-  dt.AddSeconds(-gAfxGetTimeZoneInSeconds(dt.dt.tzHour, dt.dt.tzMinute));
-  dt.dt.tzHour = 0;
-  dt.dt.tzMinute = 0;
-  return dt;
+  CPDFSDK_DateTime new_dt = *this;
+  new_dt.AddSeconds(
+      -gAfxGetTimeZoneInSeconds(new_dt.dt.tzHour, new_dt.dt.tzMinute));
+  new_dt.dt.tzHour = 0;
+  new_dt.dt.tzMinute = 0;
+  return new_dt;
 }
 
 CPDFSDK_DateTime& CPDFSDK_DateTime::AddDays(short days) {
   if (days == 0)
     return *this;
 
-  int16_t y = dt.year, yy;
+  int16_t y = dt.year;
   uint8_t m = dt.month;
   uint8_t d = dt.day;
-  int mdays, ydays, ldays;
 
-  ldays = days;
+  int ldays = days;
   if (ldays > 0) {
-    yy = y;
-    if (((uint16_t)m * 100 + d) > 300)
+    int16_t yy = y;
+    if ((static_cast<uint16_t>(m) * 100 + d) > 300)
       yy++;
-    ydays = gAfxGetYearDays(yy);
+    int ydays = gAfxGetYearDays(yy);
+    int mdays;
     while (ldays >= ydays) {
       y++;
       ldays -= ydays;
@@ -435,15 +371,15 @@ CPDFSDK_DateTime& CPDFSDK_DateTime::AddDays(short days) {
     d += ldays;
   } else {
     ldays *= -1;
-    yy = y;
-    if (((uint16_t)m * 100 + d) < 300)
+    int16_t yy = y;
+    if ((static_cast<uint16_t>(m) * 100 + d) < 300)
       yy--;
-    ydays = gAfxGetYearDays(yy);
+    int ydays = gAfxGetYearDays(yy);
     while (ldays >= ydays) {
       y--;
       ldays -= ydays;
       yy--;
-      mdays = gAfxGetMonthDays(y, m);
+      int mdays = gAfxGetMonthDays(y, m);
       if (d > mdays) {
         m++;
         d -= mdays;
@@ -453,8 +389,7 @@ CPDFSDK_DateTime& CPDFSDK_DateTime::AddDays(short days) {
     while (ldays >= d) {
       ldays -= d;
       m--;
-      mdays = gAfxGetMonthDays(y, m);
-      d = mdays;
+      d = gAfxGetMonthDays(y, m);
     }
     d -= ldays;
   }
@@ -481,11 +416,11 @@ CPDFSDK_DateTime& CPDFSDK_DateTime::AddSeconds(int seconds) {
     days = n / 86400;
     n %= 86400;
   }
-  dt.hour = (uint8_t)(n / 3600);
+  dt.hour = static_cast<uint8_t>(n / 3600);
   dt.hour %= 24;
   n %= 3600;
-  dt.minute = (uint8_t)(n / 60);
-  dt.second = (uint8_t)(n % 60);
+  dt.minute = static_cast<uint8_t>(n / 60);
+  dt.second = static_cast<uint8_t>(n % 60);
   if (days != 0)
     AddDays(days);
 
@@ -495,9 +430,59 @@ CPDFSDK_DateTime& CPDFSDK_DateTime::AddSeconds(int seconds) {
 CPDFSDK_Annot::CPDFSDK_Annot(CPDFSDK_PageView* pPageView)
     : m_pPageView(pPageView), m_bSelected(FALSE), m_nTabOrder(-1) {}
 
+CPDFSDK_Annot::~CPDFSDK_Annot() {}
+
+#ifdef PDF_ENABLE_XFA
+
+FX_BOOL CPDFSDK_Annot::IsXFAField() {
+  return FALSE;
+}
+
+CXFA_FFWidget* CPDFSDK_Annot::GetXFAWidget() const {
+  return nullptr;
+}
+
+#endif  // PDF_ENABLE_XFA
+
+FX_FLOAT CPDFSDK_Annot::GetMinWidth() const {
+  return kMinWidth;
+}
+
+FX_FLOAT CPDFSDK_Annot::GetMinHeight() const {
+  return kMinHeight;
+}
+
+int CPDFSDK_Annot::GetLayoutOrder() const {
+  return 5;
+}
+
+CPDF_Annot* CPDFSDK_Annot::GetPDFAnnot() const {
+  return nullptr;
+}
+
+CFX_ByteString CPDFSDK_Annot::GetType() const {
+  return "";
+}
+
+CFX_ByteString CPDFSDK_Annot::GetSubType() const {
+  return "";
+}
+
+void CPDFSDK_Annot::SetRect(const CFX_FloatRect& rect) {}
+
+CFX_FloatRect CPDFSDK_Annot::GetRect() const {
+  return CFX_FloatRect();
+}
+
+void CPDFSDK_Annot::Annot_OnDraw(CFX_RenderDevice* pDevice,
+                                 CFX_Matrix* pUser2Device,
+                                 CPDF_RenderOptions* pOptions) {}
+
 CPDFSDK_BAAnnot::CPDFSDK_BAAnnot(CPDF_Annot* pAnnot,
                                  CPDFSDK_PageView* pPageView)
     : CPDFSDK_Annot(pPageView), m_pAnnot(pAnnot) {}
+
+CPDFSDK_BAAnnot::~CPDFSDK_BAAnnot() {}
 
 CPDF_Annot* CPDFSDK_BAAnnot::GetPDFAnnot() const {
   return m_pAnnot;
@@ -511,7 +496,6 @@ void CPDFSDK_Annot::SetSelected(FX_BOOL bSelected) {
   m_bSelected = bSelected;
 }
 
-// Tab Order
 int CPDFSDK_Annot::GetTabOrder() {
   return m_nTabOrder;
 }
@@ -554,7 +538,7 @@ void CPDFSDK_BAAnnot::DrawAppearance(CFX_RenderDevice* pDevice,
 }
 
 FX_BOOL CPDFSDK_BAAnnot::IsAppearanceValid() {
-  return m_pAnnot->GetAnnotDict()->GetDictBy("AP") != NULL;
+  return !!m_pAnnot->GetAnnotDict()->GetDictBy("AP");
 }
 
 FX_BOOL CPDFSDK_BAAnnot::IsAppearanceValid(CPDF_Annot::AppearanceMode mode) {
@@ -841,14 +825,6 @@ void CPDFSDK_BAAnnot::WriteAppearance(const CFX_ByteString& sAPType,
                    FALSE);
 }
 
-FX_FLOAT CPDFSDK_Annot::GetMinWidth() const {
-  return kMinWidth;
-}
-
-FX_FLOAT CPDFSDK_Annot::GetMinHeight() const {
-  return kMinHeight;
-}
-
 FX_BOOL CPDFSDK_BAAnnot::CreateFormFiller() {
   return TRUE;
 }
@@ -903,18 +879,12 @@ CPDF_Action CPDFSDK_BAAnnot::GetAAction(CPDF_AAction::AActionType eAAT) {
   return CPDF_Action();
 }
 
-#ifdef PDF_ENABLE_XFA
-FX_BOOL CPDFSDK_BAAnnot::IsXFAField() {
-  return FALSE;
-}
-#endif  // PDF_ENABLE_XFA
-
 void CPDFSDK_BAAnnot::Annot_OnDraw(CFX_RenderDevice* pDevice,
                                    CFX_Matrix* pUser2Device,
                                    CPDF_RenderOptions* pOptions) {
   m_pAnnot->GetAPForm(m_pPageView->GetPDFPage(), CPDF_Annot::Normal);
   m_pAnnot->DrawAppearance(m_pPageView->GetPDFPage(), pDevice, pUser2Device,
-                           CPDF_Annot::Normal, NULL);
+                           CPDF_Annot::Normal, nullptr);
 }
 
 UnderlyingPageType* CPDFSDK_Annot::GetUnderlyingPage() {
@@ -930,7 +900,9 @@ CPDF_Page* CPDFSDK_Annot::GetPDFPage() {
 }
 
 #ifdef PDF_ENABLE_XFA
+
 CPDFXFA_Page* CPDFSDK_Annot::GetPDFXFAPage() {
   return m_pPageView ? m_pPageView->GetPDFXFAPage() : nullptr;
 }
+
 #endif  // PDF_ENABLE_XFA

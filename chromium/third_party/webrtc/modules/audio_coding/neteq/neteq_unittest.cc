@@ -24,6 +24,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/sha1digest.h"
 #include "webrtc/base/stringencode.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/neteq/tools/audio_loop.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_file_source.h"
 #include "webrtc/modules/audio_coding/codecs/pcm16b/pcm16b.h"
@@ -315,7 +316,7 @@ NetEqDecodingTest::NetEqDecodingTest()
 }
 
 void NetEqDecodingTest::SetUp() {
-  neteq_ = NetEq::Create(config_);
+  neteq_ = NetEq::Create(config_, CreateBuiltinAudioDecoderFactory());
   NetEqNetworkStatistics stat;
   ASSERT_EQ(0, neteq_->NetworkStatistics(&stat));
   algorithmic_delay_ms_ = stat.current_buffer_size_ms;
@@ -349,7 +350,7 @@ void NetEqDecodingTest::Process() {
                                              (output_sample_rate_ / 1000))));
     }
     // Get next packet.
-    packet_.reset(rtp_source_->NextPacket());
+    packet_ = rtp_source_->NextPacket();
   }
 
   // Get audio from NetEq.
@@ -387,7 +388,7 @@ void NetEqDecodingTest::DecodeAndCompare(
       gen_ref ? webrtc::test::OutputPath() + "neteq_rtcp_stats.dat" : "";
   ResultSink rtcp_stats(rtcp_out_file);
 
-  packet_.reset(rtp_source_->NextPacket());
+  packet_ = rtp_source_->NextPacket();
   int i = 0;
   while (packet_) {
     std::ostringstream ss;
@@ -1675,7 +1676,7 @@ class NetEqDecodingTestTwoInstances : public NetEqDecodingTest {
   }
 
   void CreateSecondInstance() {
-    neteq2_.reset(NetEq::Create(config2_));
+    neteq2_.reset(NetEq::Create(config2_, CreateBuiltinAudioDecoderFactory()));
     ASSERT_TRUE(neteq2_);
     LoadDecoders(neteq2_.get());
   }

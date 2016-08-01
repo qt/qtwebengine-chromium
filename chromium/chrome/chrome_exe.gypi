@@ -399,6 +399,7 @@
             'installer_util',
             'install_static_util',
             'metrics_constants_util_win',
+            'visual_elements_resources',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
@@ -409,11 +410,10 @@
             '../components/components.gyp:crash_core_common',
             '../components/components.gyp:flags_ui_switches',
             '../components/components.gyp:policy',
-            '../components/components.gyp:startup_metric_utils_common',
+            '../components/components.gyp:startup_metric_utils_win',
             '../crypto/crypto.gyp:crypto',
             '../sandbox/sandbox.gyp:sandbox',
             '../ui/gfx/gfx.gyp:gfx',
-            '../win8/win8.gyp:visual_elements_resources',
           ],
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
@@ -503,7 +503,23 @@
           ],
           'dependencies': [
              '../base/base.gyp:base',
-             '../components/components.gyp:startup_metric_utils_common',
+             '../components/components.gyp:startup_metric_utils_win',
+          ],
+        },
+        {
+          'target_name': 'visual_elements_resources',
+          'type': 'none',
+          'copies': [
+            {
+              # GN version: //chrome/visual_elements_resources
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                'app/visual_elements_resources/Logo.png',
+                'app/visual_elements_resources/SecondaryTile.png',
+                'app/visual_elements_resources/SmallLogo.png',
+                'app/visual_elements_resources/chrome.VisualElementsManifest.xml',
+              ],
+            },
           ],
         },
       ],
@@ -544,7 +560,7 @@
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',
                 '../sandbox/sandbox.gyp:sandbox_win64',
-                '../third_party/kasko/kasko.gyp:kasko_features',
+                '../third_party/kasko/kasko.gyp:kasko',
               ],
               'defines': [
                 '<@(nacl_win64_defines)',

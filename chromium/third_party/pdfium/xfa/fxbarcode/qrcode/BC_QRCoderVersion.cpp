@@ -25,9 +25,27 @@
 #include "xfa/fxbarcode/qrcode/BC_QRCoderECB.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoderECBlocks.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoderErrorCorrectionLevel.h"
-#include "xfa/fxbarcode/qrcode/BC_QRCoderFormatInformation.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoderVersion.h"
 #include "xfa/fxbarcode/utils.h"
+
+namespace {
+
+const uint8_t BITS_SET_IN_HALF_BYTE[] = {0, 1, 1, 2, 1, 2, 2, 3,
+                                         1, 2, 2, 3, 2, 3, 3, 4};
+
+int32_t NumBitsDiffering(int32_t a, int32_t b) {
+  a ^= b;
+  return BITS_SET_IN_HALF_BYTE[a & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 4) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 8) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 12) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 16) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 20) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 24) & 0x0F] +
+         BITS_SET_IN_HALF_BYTE[(a >> 28) & 0x0F];
+}
+
+}  // namespace
 
 const int32_t CBC_QRCoderVersion::VERSION_DECODE_INFO[] = {
     0x07C94, 0x085BC, 0x09A99, 0x0A4D3, 0x0BBF6, 0x0C762, 0x0D847,
@@ -354,10 +372,10 @@ CBC_QRCoderVersion* CBC_QRCoderVersion::GetProvisionalVersionForDimension(
     int32_t& e) {
   if ((dimension % 4) != 1) {
     e = BCExceptionRead;
-    BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   }
   CBC_QRCoderVersion* qcv = GetVersionForNumber((dimension - 17) >> 2, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   return qcv;
 }
 CBC_QRCoderVersion* CBC_QRCoderVersion::DecodeVersionInformation(
@@ -369,11 +387,10 @@ CBC_QRCoderVersion* CBC_QRCoderVersion::DecodeVersionInformation(
     int32_t targetVersion = VERSION_DECODE_INFO[i];
     if (targetVersion == versionBits) {
       CBC_QRCoderVersion* qcv = GetVersionForNumber(i + 7, e);
-      BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+      BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
       return qcv;
     }
-    int32_t bitsDifference = CBC_QRCoderFormatInformation::NumBitsDiffering(
-        versionBits, targetVersion);
+    int32_t bitsDifference = NumBitsDiffering(versionBits, targetVersion);
     if (bitsDifference < bestDifference) {
       bestVersion = i + 7;
       bestDifference = bitsDifference;
@@ -381,21 +398,21 @@ CBC_QRCoderVersion* CBC_QRCoderVersion::DecodeVersionInformation(
   }
   if (bestDifference <= 3) {
     CBC_QRCoderVersion* qcv = GetVersionForNumber(bestVersion, e);
-    BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
     return qcv;
   }
-  return NULL;
+  return nullptr;
 }
 CBC_CommonBitMatrix* CBC_QRCoderVersion::BuildFunctionPattern(int32_t& e) {
   int32_t dimension = GetDimensionForVersion();
   CBC_CommonBitMatrix* bitMatrix = new CBC_CommonBitMatrix();
   bitMatrix->Init(dimension);
   bitMatrix->SetRegion(0, 0, 9, 9, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   bitMatrix->SetRegion(dimension - 8, 0, 8, 9, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   bitMatrix->SetRegion(0, dimension - 8, 9, 8, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   int32_t max = m_alignmentPatternCenters.GetSize();
   for (int32_t x = 0; x < max; x++) {
     int32_t i = m_alignmentPatternCenters[x] - 2;
@@ -404,18 +421,18 @@ CBC_CommonBitMatrix* CBC_QRCoderVersion::BuildFunctionPattern(int32_t& e) {
         continue;
       }
       bitMatrix->SetRegion(m_alignmentPatternCenters[y] - 2, i, 5, 5, e);
-      BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+      BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
     }
   }
   bitMatrix->SetRegion(6, 9, 1, dimension - 17, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   bitMatrix->SetRegion(9, 6, dimension - 17, 1, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   if (m_versionNumber > 6) {
     bitMatrix->SetRegion(dimension - 11, 0, 3, 6, e);
-    BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
     bitMatrix->SetRegion(0, dimension - 11, 6, 3, e);
-    BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   }
   return bitMatrix;
 }
@@ -754,7 +771,7 @@ CBC_QRCoderVersion* CBC_QRCoderVersion::GetVersionForNumber(
   }
   if (versionNumber < 1 || versionNumber > 40) {
     e = BCExceptionIllegalArgument;
-    BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+    BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   }
   return (*VERSION)[versionNumber - 1];
 }

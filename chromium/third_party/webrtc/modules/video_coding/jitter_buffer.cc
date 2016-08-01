@@ -124,10 +124,10 @@ void FrameList::Reset(UnorderedFrameList* free_frames) {
 }
 
 bool Vp9SsMap::Insert(const VCMPacket& packet) {
-  if (!packet.codecSpecificHeader.codecHeader.VP9.ss_data_available)
+  if (!packet.video_header.codecHeader.VP9.ss_data_available)
     return false;
 
-  ss_map_[packet.timestamp] = packet.codecSpecificHeader.codecHeader.VP9.gof;
+  ss_map_[packet.timestamp] = packet.video_header.codecHeader.VP9.gof;
   return true;
 }
 
@@ -175,7 +175,7 @@ void Vp9SsMap::AdvanceFront(uint32_t timestamp) {
 
 // TODO(asapersson): Update according to updates in RTP payload profile.
 bool Vp9SsMap::UpdatePacket(VCMPacket* packet) {
-  uint8_t gof_idx = packet->codecSpecificHeader.codecHeader.VP9.gof_idx;
+  uint8_t gof_idx = packet->video_header.codecHeader.VP9.gof_idx;
   if (gof_idx == kNoGofIdx)
     return false;  // No update needed.
 
@@ -186,7 +186,7 @@ bool Vp9SsMap::UpdatePacket(VCMPacket* packet) {
   if (gof_idx >= it->second.num_frames_in_gof)
     return false;  // Assume corresponding SS not yet received.
 
-  RTPVideoHeaderVP9* vp9 = &packet->codecSpecificHeader.codecHeader.VP9;
+  RTPVideoHeaderVP9* vp9 = &packet->video_header.codecHeader.VP9;
   vp9->temporal_idx = it->second.temporal_idx[gof_idx];
   vp9->temporal_up_switch = it->second.temporal_up_switch[gof_idx];
 
@@ -475,34 +475,13 @@ void VCMJitterBuffer::IncomingRateStatistics(unsigned int* framerate,
   }
 }
 
-// Answers the question:
-// Will the packet sequence be complete if the next frame is grabbed for
-// decoding right now? That is, have we lost a frame between the last decoded
-// frame and the next, or is the next
-// frame missing one or more packets?
-bool VCMJitterBuffer::CompleteSequenceWithNextFrame() {
-  CriticalSectionScoped cs(crit_sect_);
-  // Finding oldest frame ready for decoder, check sequence number and size
-  CleanUpOldOrEmptyFrames();
-  if (!decodable_frames_.empty()) {
-    if (decodable_frames_.Front()->GetState() == kStateComplete) {
-      return true;
-    }
-  } else if (incomplete_frames_.size() <= 1) {
-    // Frame not ready to be decoded.
-    return true;
-  }
-  return false;
-}
-
 // Returns immediately or a |max_wait_time_ms| ms event hang waiting for a
 // complete frame, |max_wait_time_ms| decided by caller.
-bool VCMJitterBuffer::NextCompleteTimestamp(uint32_t max_wait_time_ms,
-                                            uint32_t* timestamp) {
+VCMEncodedFrame* VCMJitterBuffer::NextCompleteFrame(uint32_t max_wait_time_ms) {
   crit_sect_->Enter();
   if (!running_) {
     crit_sect_->Leave();
-    return false;
+    return nullptr;
   }
   CleanUpOldOrEmptyFrames();
 
@@ -520,7 +499,7 @@ bool VCMJitterBuffer::NextCompleteTimestamp(uint32_t max_wait_time_ms,
         // Are we shutting down the jitter buffer?
         if (!running_) {
           crit_sect_->Leave();
-          return false;
+          return nullptr;
         }
         // Finding oldest frame ready for decoder.
         CleanUpOldOrEmptyFrames();
@@ -538,11 +517,11 @@ bool VCMJitterBuffer::NextCompleteTimestamp(uint32_t max_wait_time_ms,
   if (decodable_frames_.empty() ||
       decodable_frames_.Front()->GetState() != kStateComplete) {
     crit_sect_->Leave();
-    return false;
+    return nullptr;
   }
-  *timestamp = decodable_frames_.Front()->TimeStamp();
+  VCMEncodedFrame* encoded_frame = decodable_frames_.Front();
   crit_sect_->Leave();
-  return true;
+  return encoded_frame;
 }
 
 bool VCMJitterBuffer::NextMaybeIncompleteTimestamp(uint32_t* timestamp) {
@@ -1190,11 +1169,6 @@ void VCMJitterBuffer::DropPacketsFromNackList(
   missing_sequence_numbers_.erase(
       missing_sequence_numbers_.begin(),
       missing_sequence_numbers_.upper_bound(last_decoded_sequence_number));
-}
-
-int64_t VCMJitterBuffer::LastDecodedTimestamp() const {
-  CriticalSectionScoped cs(crit_sect_);
-  return last_decoded_state_.time_stamp();
 }
 
 void VCMJitterBuffer::RegisterStatsCallback(

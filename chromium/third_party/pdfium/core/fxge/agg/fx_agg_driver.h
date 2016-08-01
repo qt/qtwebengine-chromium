@@ -7,11 +7,12 @@
 #ifndef CORE_FXGE_AGG_FX_AGG_DRIVER_H_
 #define CORE_FXGE_AGG_FX_AGG_DRIVER_H_
 
-#include "core/fxge/include/fx_ge.h"
+#include "core/fxge/include/ifx_renderdevicedriver.h"
 #include "third_party/agg23/agg_clip_liang_barsky.h"
 #include "third_party/agg23/agg_path_storage.h"
 #include "third_party/agg23/agg_rasterizer_scanline_aa.h"
 
+class CFX_ClipRgn;
 class CFX_Matrix;
 class CFX_PathData;
 
@@ -28,7 +29,6 @@ class CAgg_PathData {
 class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
  public:
   CFX_AggDeviceDriver(CFX_DIBitmap* pBitmap,
-                      int dither_bits,
                       FX_BOOL bRgbByteOrder,
                       CFX_DIBitmap* pOriDevice,
                       FX_BOOL bGroupKnockout);
@@ -38,9 +38,9 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
   void DestroyPlatform();
 
   // IFX_RenderDeviceDriver
-  int GetDeviceCaps(int caps_id) override;
+  int GetDeviceCaps(int caps_id) const override;
   void SaveState() override;
-  void RestoreState(FX_BOOL bKeepSaved) override;
+  void RestoreState(bool bKeepSaved) override;
   FX_BOOL SetClip_PathFill(const CFX_PathData* pPathData,
                            const CFX_Matrix* pObject2Device,
                            int fill_mode) override;
@@ -53,44 +53,20 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
                    uint32_t fill_color,
                    uint32_t stroke_color,
                    int fill_mode,
-                   int alpha_flag,
-                   void* pIccTransform,
                    int blend_type) override;
-  FX_BOOL SetPixel(int x,
-                   int y,
-                   uint32_t color,
-                   int alpha_flag,
-                   void* pIccTransform) override;
-  FX_BOOL FillRect(const FX_RECT* pRect,
-                   uint32_t fill_color,
-                   int alpha_flag,
-                   void* pIccTransform,
-                   int blend_type) override;
-  FX_BOOL DrawCosmeticLine(FX_FLOAT x1,
-                           FX_FLOAT y1,
-                           FX_FLOAT x2,
-                           FX_FLOAT y2,
-                           uint32_t color,
-                           int alpha_flag,
-                           void* pIccTransform,
-                           int blend_type) override {
-    return FALSE;
-  }
+  FX_BOOL SetPixel(int x, int y, uint32_t color) override;
+  FX_BOOL FillRectWithBlend(const FX_RECT* pRect,
+                            uint32_t fill_color,
+                            int blend_type) override;
   FX_BOOL GetClipBox(FX_RECT* pRect) override;
-  FX_BOOL GetDIBits(CFX_DIBitmap* pBitmap,
-                    int left,
-                    int top,
-                    void* pIccTransform = NULL,
-                    FX_BOOL bDEdge = FALSE) override;
-  CFX_DIBitmap* GetBackDrop() override { return m_pOriDevice; }
+  FX_BOOL GetDIBits(CFX_DIBitmap* pBitmap, int left, int top) override;
+  CFX_DIBitmap* GetBackDrop() override;
   FX_BOOL SetDIBits(const CFX_DIBSource* pBitmap,
                     uint32_t color,
                     const FX_RECT* pSrcRect,
                     int left,
                     int top,
-                    int blend_type,
-                    int alpha_flag,
-                    void* pIccTransform) override;
+                    int blend_type) override;
   FX_BOOL StretchDIBits(const CFX_DIBSource* pBitmap,
                         uint32_t color,
                         int dest_left,
@@ -99,8 +75,6 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
                         int dest_height,
                         const FX_RECT* pClipRect,
                         uint32_t flags,
-                        int alpha_flag,
-                        void* pIccTransform,
                         int blend_type) override;
   FX_BOOL StartDIBits(const CFX_DIBSource* pBitmap,
                       int bitmap_alpha,
@@ -108,8 +82,6 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
                       const CFX_Matrix* pMatrix,
                       uint32_t flags,
                       void*& handle,
-                      int alpha_flag,
-                      void* pIccTransform,
                       int blend_type) override;
   FX_BOOL ContinueDIBits(void* handle, IFX_Pause* pPause) override;
   void CancelDIBits(void* handle) override;
@@ -119,10 +91,8 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
                          CFX_FontCache* pCache,
                          const CFX_Matrix* pObject2Device,
                          FX_FLOAT font_size,
-                         uint32_t color,
-                         int alpha_flag,
-                         void* pIccTransform) override;
-  int GetDriverType() const override { return 1; }
+                         uint32_t color) override;
+  int GetDriverType() const override;
 
   FX_BOOL RenderRasterizer(agg::rasterizer_scanline_aa& rasterizer,
                            uint32_t color,
@@ -134,7 +104,7 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
   void SetClipMask(agg::rasterizer_scanline_aa& rasterizer);
 
   virtual uint8_t* GetBuffer() const;
-  const CFX_DIBitmap* GetBitmap() const { return m_pBitmap; }
+  const CFX_DIBitmap* GetBitmap() const;
 
  private:
   CFX_DIBitmap* m_pBitmap;
@@ -144,7 +114,6 @@ class CFX_AggDeviceDriver : public IFX_RenderDeviceDriver {
   void* m_pPlatformBitmap;
   void* m_pDwRenderTartget;
   int m_FillFlags;
-  int m_DitherBits;
   FX_BOOL m_bRgbByteOrder;
   CFX_DIBitmap* m_pOriDevice;
   FX_BOOL m_bGroupKnockout;

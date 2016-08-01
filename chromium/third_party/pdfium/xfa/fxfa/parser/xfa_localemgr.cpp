@@ -9,7 +9,6 @@
 #include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_xml.h"
 #include "core/fxge/include/fx_ge.h"
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_locale.h"
@@ -1034,19 +1033,19 @@ const uint8_t g_ruRU_Locale[] = {
     0xB3, 0x85, 0xFA, 0x59, 0x2A, 0x7A, 0xFF, 0x3D, 0xC4, 0x3F, 0xDE, 0xCB,
     0x8B, 0xC4};
 static IFX_Locale* XFA_GetLocaleFromBuffer(const uint8_t* pBuf, int nBufLen) {
-  if (pBuf == NULL || nBufLen <= 0) {
-    return NULL;
+  if (!pBuf || nBufLen <= 0) {
+    return nullptr;
   }
   CFX_GEModule* pGeModule = CFX_GEModule::Get();
   if (!pGeModule) {
-    return NULL;
+    return nullptr;
   }
   CCodec_ModuleMgr* pCodecMgr = pGeModule->GetCodecModule();
   if (!pCodecMgr) {
-    return NULL;
+    return nullptr;
   }
-  CXML_Element* pLocale = NULL;
-  uint8_t* pOut = NULL;
+  CXML_Element* pLocale = nullptr;
+  uint8_t* pOut = nullptr;
   uint32_t dwSize;
   pCodecMgr->GetFlateModule()->FlateOrLZWDecode(FALSE, pBuf, nBufLen, TRUE, 0,
                                                 0, 0, 0, 0, pOut, dwSize);
@@ -1057,7 +1056,7 @@ static IFX_Locale* XFA_GetLocaleFromBuffer(const uint8_t* pBuf, int nBufLen) {
   if (pLocale) {
     return new CXFA_XMLLocale(pLocale);
   }
-  return NULL;
+  return nullptr;
 }
 static uint16_t XFA_GetLanguage(CFX_WideString wsLanguage) {
   uint16_t dwLangueID = XFA_LANGID_en_US;
@@ -1123,9 +1122,8 @@ static uint16_t XFA_GetLanguage(CFX_WideString wsLanguage) {
 CXFA_LocaleMgr::CXFA_LocaleMgr(CXFA_Node* pLocaleSet, CFX_WideString wsDeflcid)
     : m_dwLocaleFlags(0x00) {
   m_dwDeflcid = XFA_GetLanguage(wsDeflcid);
-  CXFA_Node* pNodeLocale = NULL;
-  if (pLocaleSet &&
-      (pNodeLocale = pLocaleSet->GetNodeItem(XFA_NODEITEM_FirstChild))) {
+  if (pLocaleSet) {
+    CXFA_Node* pNodeLocale = pLocaleSet->GetNodeItem(XFA_NODEITEM_FirstChild);
     while (pNodeLocale) {
       m_LocaleArray.Add(new CXFA_NodeLocale(pNodeLocale));
       pNodeLocale = pNodeLocale->GetNodeItem(XFA_NODEITEM_NextSibling);
@@ -1165,7 +1163,7 @@ IFX_Locale* CXFA_LocaleMgr::GetDefLocale() {
 }
 
 IFX_Locale* CXFA_LocaleMgr::GetLocale(uint16_t lcid) {
-  IFX_Locale* pLocal = NULL;
+  IFX_Locale* pLocal = nullptr;
   switch (lcid) {
     case XFA_LANGID_zh_CN:
       pLocal = XFA_GetLocaleFromBuffer(g_zhCN_Locale, sizeof(g_zhCN_Locale));
@@ -1228,7 +1226,7 @@ IFX_Locale* CXFA_LocaleMgr::GetLocaleByName(
   }
   int32_t iLen = wsLocaleName.GetLength();
   if (iLen < 2) {
-    return NULL;
+    return nullptr;
   }
   iCount = m_XMLLocaleArray.GetSize();
   for (i = 0; i < iCount; i++) {
@@ -1251,16 +1249,17 @@ CFX_WideStringC CXFA_LocaleMgr::GetConfigLocaleName(CXFA_Node* pConfig) {
     m_wsConfigLocale.clear();
     if (pConfig) {
       CXFA_Node* pChildfConfig =
-          pConfig->GetFirstChildByClass(XFA_ELEMENT_Acrobat);
+          pConfig->GetFirstChildByClass(XFA_Element::Acrobat);
       if (!pChildfConfig) {
-        pChildfConfig = pConfig->GetFirstChildByClass(XFA_ELEMENT_Present);
+        pChildfConfig = pConfig->GetFirstChildByClass(XFA_Element::Present);
       }
       CXFA_Node* pCommon =
           pChildfConfig
-              ? pChildfConfig->GetFirstChildByClass(XFA_ELEMENT_Common)
-              : NULL;
+              ? pChildfConfig->GetFirstChildByClass(XFA_Element::Common)
+              : nullptr;
       CXFA_Node* pLocale =
-          pCommon ? pCommon->GetFirstChildByClass(XFA_ELEMENT_Locale) : NULL;
+          pCommon ? pCommon->GetFirstChildByClass(XFA_Element::Locale)
+                  : nullptr;
       if (pLocale) {
         pLocale->TryCData(XFA_ATTRIBUTE_Value, m_wsConfigLocale, FALSE);
       }
@@ -1269,7 +1268,7 @@ CFX_WideStringC CXFA_LocaleMgr::GetConfigLocaleName(CXFA_Node* pConfig) {
   }
   return m_wsConfigLocale.AsStringC();
 }
-static CXFA_TimeZoneProvider* g_pProvider = NULL;
+static CXFA_TimeZoneProvider* g_pProvider = nullptr;
 
 // Static.
 CXFA_TimeZoneProvider* CXFA_TimeZoneProvider::Create() {
@@ -1289,7 +1288,7 @@ CXFA_TimeZoneProvider* CXFA_TimeZoneProvider::Get() {
 // Static.
 void CXFA_TimeZoneProvider::Destroy() {
   delete g_pProvider;
-  g_pProvider = NULL;
+  g_pProvider = nullptr;
 }
 
 #include <time.h>

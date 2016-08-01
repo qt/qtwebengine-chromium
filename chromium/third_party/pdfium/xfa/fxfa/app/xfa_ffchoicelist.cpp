@@ -13,6 +13,7 @@
 #include "xfa/fwl/lightwidget/cfwl_listbox.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
+#include "xfa/fxfa/include/cxfa_eventparam.h"
 #include "xfa/fxfa/include/xfa_ffdoc.h"
 #include "xfa/fxfa/include/xfa_ffdocview.h"
 #include "xfa/fxfa/include/xfa_ffpageview.h"
@@ -20,7 +21,7 @@
 
 CXFA_FFListBox::CXFA_FFListBox(CXFA_FFPageView* pPageView,
                                CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(NULL) {}
+    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(nullptr) {}
 CXFA_FFListBox::~CXFA_FFListBox() {
   if (m_pNormalWidget) {
     IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
@@ -34,8 +35,8 @@ FX_BOOL CXFA_FFListBox::LoadWidget() {
   pListBox->ModifyStyles(FWL_WGTSTYLE_VScroll | FWL_WGTSTYLE_NoBackground,
                          0xFFFFFFFF);
   m_pNormalWidget = (CFWL_Widget*)pListBox;
+  m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
   CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
@@ -56,50 +57,47 @@ FX_BOOL CXFA_FFListBox::LoadWidget() {
   m_pDataAcc->GetSelectedItems(iSelArray);
   int32_t iSelCount = iSelArray.GetSize();
   for (int32_t j = 0; j < iSelCount; j++) {
-    FWL_HLISTITEM item = pListBox->GetItem(iSelArray[j]);
+    IFWL_ListItem* item = pListBox->GetItem(iSelArray[j]);
     pListBox->SetSelItem(item, TRUE);
   }
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
 }
+
 FX_BOOL CXFA_FFListBox::OnKillFocus(CXFA_FFWidget* pNewFocus) {
-  FX_BOOL flag = ProcessCommittedData();
-  if (!flag) {
+  if (!ProcessCommittedData())
     UpdateFWLData();
-  }
   CXFA_FFField::OnKillFocus(pNewFocus);
   return TRUE;
 }
+
 FX_BOOL CXFA_FFListBox::CommitData() {
   CFWL_ListBox* pListBox = static_cast<CFWL_ListBox*>(m_pNormalWidget);
   int32_t iSels = pListBox->CountSelItems();
   CFX_Int32Array iSelArray;
-  for (int32_t i = 0; i < iSels; i++) {
+  for (int32_t i = 0; i < iSels; ++i)
     iSelArray.Add(pListBox->GetSelIndex(i));
-  }
-  m_pDataAcc->SetSelectedItems(iSelArray, TRUE);
+  m_pDataAcc->SetSelectedItems(iSelArray, true, FALSE, TRUE);
   return TRUE;
 }
+
 FX_BOOL CXFA_FFListBox::IsDataChanged() {
   CFX_Int32Array iSelArray;
   m_pDataAcc->GetSelectedItems(iSelArray);
   int32_t iOldSels = iSelArray.GetSize();
   CFWL_ListBox* pListBox = (CFWL_ListBox*)m_pNormalWidget;
   int32_t iSels = pListBox->CountSelItems();
-  if (iOldSels == iSels) {
-    int32_t iIndex = 0;
-    for (; iIndex < iSels; iIndex++) {
-      FWL_HLISTITEM hlistItem = pListBox->GetItem(iSelArray[iIndex]);
-      if (!(pListBox->GetItemStates(hlistItem) && FWL_ITEMSTATE_LTB_Selected)) {
-        break;
-      }
-    }
-    if (iIndex == iSels) {
-      return FALSE;
-    }
+  if (iOldSels != iSels)
+    return TRUE;
+
+  for (int32_t i = 0; i < iSels; ++i) {
+    IFWL_ListItem* hlistItem = pListBox->GetItem(iSelArray[i]);
+    if (!(pListBox->GetItemStates(hlistItem) & FWL_ITEMSTATE_LTB_Selected))
+      return TRUE;
   }
-  return TRUE;
+  return FALSE;
 }
+
 uint32_t CXFA_FFListBox::GetAlignment() {
   uint32_t dwExtendedStyle = 0;
   if (CXFA_Para para = m_pDataAcc->GetPara()) {
@@ -129,12 +127,12 @@ FX_BOOL CXFA_FFListBox::UpdateFWLData() {
     return FALSE;
   }
   CFWL_ListBox* pListBox = ((CFWL_ListBox*)m_pNormalWidget);
-  CFX_ArrayTemplate<FWL_HLISTITEM> selItemArray;
+  CFX_ArrayTemplate<IFWL_ListItem*> selItemArray;
   CFX_Int32Array iSelArray;
   m_pDataAcc->GetSelectedItems(iSelArray);
   int32_t iSelCount = iSelArray.GetSize();
   for (int32_t j = 0; j < iSelCount; j++) {
-    FWL_HLISTITEM lpItemSel = pListBox->GetSelItem(iSelArray[j]);
+    IFWL_ListItem* lpItemSel = pListBox->GetSelItem(iSelArray[j]);
     selItemArray.Add(lpItemSel);
   }
   pListBox->SetSelItem(pListBox->GetSelItem(-1), FALSE);
@@ -158,7 +156,7 @@ void CXFA_FFListBox::OnSelectChanged(IFWL_Widget* pWidget,
   m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Change, &eParam);
 }
 void CXFA_FFListBox::SetItemState(int32_t nIndex, FX_BOOL bSelected) {
-  FWL_HLISTITEM item = ((CFWL_ListBox*)m_pNormalWidget)->GetSelItem(nIndex);
+  IFWL_ListItem* item = ((CFWL_ListBox*)m_pNormalWidget)->GetSelItem(nIndex);
   ((CFWL_ListBox*)m_pNormalWidget)->SetSelItem(item, bSelected);
   m_pNormalWidget->Update();
   AddInvalidateRect();
@@ -205,7 +203,7 @@ void CXFA_FFListBox::OnDrawWidget(CFX_Graphics* pGraphics,
 
 CXFA_FFComboBox::CXFA_FFComboBox(CXFA_FFPageView* pPageView,
                                  CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(NULL) {}
+    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(nullptr) {}
 
 CXFA_FFComboBox::~CXFA_FFComboBox() {}
 
@@ -232,8 +230,8 @@ FX_BOOL CXFA_FFComboBox::LoadWidget() {
   CFWL_ComboBox* pComboBox = CFWL_ComboBox::Create();
   pComboBox->Initialize();
   m_pNormalWidget = (CFWL_Widget*)pComboBox;
+  m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
   CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
@@ -481,7 +479,7 @@ void CXFA_FFComboBox::OnSelectChanged(IFWL_Widget* pWidget,
   FWLEventSelChange(&eParam);
   if (m_pDataAcc->GetChoiceListCommitOn() == XFA_ATTRIBUTEENUM_Select &&
       bLButtonUp) {
-    m_pDocView->SetFocusWidgetAcc(NULL);
+    m_pDocView->SetFocusWidgetAcc(nullptr);
   }
 }
 void CXFA_FFComboBox::OnPreOpen(IFWL_Widget* pWidget) {

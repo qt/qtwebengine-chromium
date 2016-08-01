@@ -47,13 +47,17 @@ bool FakeAudioSendStream::SendTelephoneEvent(int payload_type, int event,
   return true;
 }
 
+void FakeAudioSendStream::SetMuted(bool muted) {
+  muted_ = muted;
+}
+
 webrtc::AudioSendStream::Stats FakeAudioSendStream::GetStats() const {
   return stats_;
 }
 
 FakeAudioReceiveStream::FakeAudioReceiveStream(
     const webrtc::AudioReceiveStream::Config& config)
-    : config_(config), received_packets_(0) {
+    : config_(config) {
   RTC_DCHECK(config.voe_channel_id != -1);
 }
 
@@ -87,6 +91,10 @@ webrtc::AudioReceiveStream::Stats FakeAudioReceiveStream::GetStats() const {
 void FakeAudioReceiveStream::SetSink(
     std::unique_ptr<webrtc::AudioSinkInterface> sink) {
   sink_ = std::move(sink);
+}
+
+void FakeAudioReceiveStream::SetGain(float gain) {
+  gain_ = gain;
 }
 
 FakeVideoSendStream::FakeVideoSendStream(
@@ -208,11 +216,10 @@ void FakeVideoSendStream::Stop() {
 }
 
 FakeVideoReceiveStream::FakeVideoReceiveStream(
-    const webrtc::VideoReceiveStream::Config& config)
-    : config_(config), receiving_(false) {
-}
+    webrtc::VideoReceiveStream::Config config)
+    : config_(std::move(config)), receiving_(false) {}
 
-webrtc::VideoReceiveStream::Config FakeVideoReceiveStream::GetConfig() {
+const webrtc::VideoReceiveStream::Config& FakeVideoReceiveStream::GetConfig() {
   return config_;
 }
 
@@ -374,8 +381,9 @@ void FakeCall::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
 }
 
 webrtc::VideoReceiveStream* FakeCall::CreateVideoReceiveStream(
-    const webrtc::VideoReceiveStream::Config& config) {
-  video_receive_streams_.push_back(new FakeVideoReceiveStream(config));
+    webrtc::VideoReceiveStream::Config config) {
+  video_receive_streams_.push_back(
+      new FakeVideoReceiveStream(std::move(config)));
   ++num_created_receive_streams_;
   return video_receive_streams_.back();
 }
@@ -465,5 +473,9 @@ void FakeCall::SignalChannelNetworkState(webrtc::MediaType media,
 
 void FakeCall::OnSentPacket(const rtc::SentPacket& sent_packet) {
   last_sent_packet_ = sent_packet;
+  if (sent_packet.packet_id >= 0) {
+    last_sent_nonnegative_packet_id_ = sent_packet.packet_id;
+  }
 }
+
 }  // namespace cricket

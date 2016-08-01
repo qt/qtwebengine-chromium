@@ -16,8 +16,27 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-SimplifiedOperatorReducer::SimplifiedOperatorReducer(JSGraph* jsgraph)
-    : jsgraph_(jsgraph), type_cache_(TypeCache::Get()) {}
+namespace {
+
+Decision DecideObjectIsSmi(Node* const input) {
+  NumberMatcher m(input);
+  if (m.HasValue()) {
+    return IsSmiDouble(m.Value()) ? Decision::kTrue : Decision::kFalse;
+  }
+  if (m.IsAllocate()) return Decision::kFalse;
+  if (m.IsChangeBitToTagged()) return Decision::kFalse;
+  if (m.IsChangeInt31ToTaggedSigned()) return Decision::kTrue;
+  if (m.IsHeapConstant()) return Decision::kFalse;
+  return Decision::kUnknown;
+}
+
+}  // namespace
+
+SimplifiedOperatorReducer::SimplifiedOperatorReducer(Editor* editor,
+                                                     JSGraph* jsgraph)
+    : AdvancedReducer(editor),
+      jsgraph_(jsgraph),
+      type_cache_(TypeCache::Get()) {}
 
 SimplifiedOperatorReducer::~SimplifiedOperatorReducer() {}
 
@@ -60,7 +79,8 @@ Reduction SimplifiedOperatorReducer::Reduce(Node* node) {
       }
       break;
     }
-    case IrOpcode::kChangeTaggedToFloat64: {
+    case IrOpcode::kChangeTaggedToFloat64:
+    case IrOpcode::kTruncateTaggedToFloat64: {
       NumberMatcher m(node->InputAt(0));
       if (m.HasValue()) return ReplaceFloat64(m.Value());
       if (m.IsChangeFloat64ToTagged()) return Replace(m.node()->InputAt(0));
@@ -107,6 +127,39 @@ Reduction SimplifiedOperatorReducer::Reduce(Node* node) {
       if (m.IsChangeFloat64ToTagged()) {
         return Change(node, machine()->TruncateFloat64ToWord32(), m.InputAt(0));
       }
+      break;
+    }
+    case IrOpcode::kCheckTaggedPointer: {
+      Node* const input = node->InputAt(0);
+      if (DecideObjectIsSmi(input) == Decision::kFalse) {
+        ReplaceWithValue(node, input);
+        return Replace(input);
+      }
+      break;
+    }
+    case IrOpcode::kCheckTaggedSigned: {
+      Node* const input = node->InputAt(0);
+      if (DecideObjectIsSmi(input) == Decision::kTrue) {
+        ReplaceWithValue(node, input);
+        return Replace(input);
+      }
+      break;
+    }
+    case IrOpcode::kObjectIsSmi: {
+      Node* const input = node->InputAt(0);
+      switch (DecideObjectIsSmi(input)) {
+        case Decision::kTrue:
+          return ReplaceBoolean(true);
+        case Decision::kFalse:
+          return ReplaceBoolean(false);
+        case Decision::kUnknown:
+          break;
+      }
+      break;
+    }
+    case IrOpcode::kNumberAbs: {
+      NumberMatcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceNumber(std::fabs(m.Value()));
       break;
     }
     case IrOpcode::kNumberCeil:
@@ -164,6 +217,9 @@ Reduction SimplifiedOperatorReducer::Change(Node* node, const Operator* op,
   return Changed(node);
 }
 
+Reduction SimplifiedOperatorReducer::ReplaceBoolean(bool value) {
+  return Replace(jsgraph()->BooleanConstant(value));
+}
 
 Reduction SimplifiedOperatorReducer::ReplaceFloat64(double value) {
   return Replace(jsgraph()->Float64Constant(value));

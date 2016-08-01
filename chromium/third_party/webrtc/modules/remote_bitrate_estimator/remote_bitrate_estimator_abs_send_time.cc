@@ -85,6 +85,7 @@ bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
         estimator_(),
         detector_(OverUseDetectorOptions()),
         incoming_bitrate_(kBitrateWindowMs, 8000),
+        incoming_bitrate_initialized_(false),
         total_probes_received_(0),
         first_packet_time_ms_(-1),
         last_update_ms_(-1),
@@ -135,8 +136,6 @@ RemoteBitrateEstimatorAbsSendTime::FindBestProbe(
        ++it) {
     if (it->send_mean_ms == 0 || it->recv_mean_ms == 0)
       continue;
-    int send_bitrate_bps = it->mean_size * 8 * 1000 / it->send_mean_ms;
-    int recv_bitrate_bps = it->mean_size * 8 * 1000 / it->recv_mean_ms;
     if (it->num_above_min_delta > it->count / 2 &&
         (it->recv_mean_ms - it->send_mean_ms <= 2.0f &&
          it->send_mean_ms - it->recv_mean_ms <= 5.0f)) {
@@ -147,6 +146,8 @@ RemoteBitrateEstimatorAbsSendTime::FindBestProbe(
         best_it = it;
       }
     } else {
+      int send_bitrate_bps = it->mean_size * 8 * 1000 / it->send_mean_ms;
+      int recv_bitrate_bps = it->mean_size * 8 * 1000 / it->recv_mean_ms;
       LOG(LS_INFO) << "Probe failed, sent at " << send_bitrate_bps
                    << " bps, received at " << recv_bitrate_bps
                    << " bps. Mean send delta: " << it->send_mean_ms
@@ -242,6 +243,18 @@ void RemoteBitrateEstimatorAbsSendTime::IncomingPacketInfo(
   int64_t now_ms = arrival_time_ms;
   // TODO(holmer): SSRCs are only needed for REMB, should be broken out from
   // here.
+
+  // Check if incoming bitrate estimate is valid, and if it needs to be reset.
+  rtc::Optional<uint32_t> incoming_bitrate = incoming_bitrate_.Rate(now_ms);
+  if (incoming_bitrate) {
+    incoming_bitrate_initialized_ = true;
+  } else if (incoming_bitrate_initialized_) {
+    // Incoming bitrate had a previous valid value, but now not enough data
+    // point are left within the current window. Reset incoming bitrate
+    // estimator so that the window size will only contain new data points.
+    incoming_bitrate_.Reset();
+    incoming_bitrate_initialized_ = false;
+  }
   incoming_bitrate_.Update(payload_size, now_ms);
 
   if (first_packet_time_ms_ == -1)
@@ -301,10 +314,12 @@ void RemoteBitrateEstimatorAbsSendTime::IncomingPacketInfo(
       if (last_update_ms_ == -1 ||
           now_ms - last_update_ms_ > remote_rate_.GetFeedbackInterval()) {
         update_estimate = true;
-      } else if (detector_.State() == kBwOverusing &&
-                 remote_rate_.TimeToReduceFurther(
-                     now_ms, incoming_bitrate_.Rate(now_ms))) {
-        update_estimate = true;
+      } else if (detector_.State() == kBwOverusing) {
+        rtc::Optional<uint32_t> incoming_rate = incoming_bitrate_.Rate(now_ms);
+        if (incoming_rate &&
+            remote_rate_.TimeToReduceFurther(now_ms, *incoming_rate)) {
+          update_estimate = true;
+        }
       }
     }
 

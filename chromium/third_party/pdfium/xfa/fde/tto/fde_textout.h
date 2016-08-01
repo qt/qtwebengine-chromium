@@ -14,7 +14,6 @@
 #include "xfa/fde/fde_object.h"
 #include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fgas/font/fgas_font.h"
-#include "xfa/fgas/layout/fgas_textbreak.h"
 
 #define FDE_TTOSTYLE_Underline 0x0001
 #define FDE_TTOSTYLE_Strikeout 0x0002
@@ -43,6 +42,7 @@
 
 class CFDE_RenderDevice;
 class CFX_TxtBreak;
+struct FX_TXTRUN;
 
 struct FDE_TTOPIECE {
   int32_t iStartChar;
@@ -56,7 +56,8 @@ class CFDE_TTOLine : public CFX_Target {
  public:
   CFDE_TTOLine();
   CFDE_TTOLine(const CFDE_TTOLine& ttoLine);
-  ~CFDE_TTOLine();
+  ~CFDE_TTOLine() override;
+
   int32_t AddPiece(int32_t index, const FDE_TTOPIECE& ttoPiece);
   int32_t GetSize() const;
   FDE_TTOPIECE* GetPtrAt(int32_t index);
@@ -76,7 +77,7 @@ class CFDE_TextOut : public CFX_Target {
   CFDE_TextOut();
   ~CFDE_TextOut() override;
 
-  void SetFont(IFX_Font* pFont);
+  void SetFont(CFGAS_GEFont* pFont);
   void SetFontSize(FX_FLOAT fFontSize);
   void SetTextColor(FX_ARGB color);
   void SetStyles(uint32_t dwStyles);
@@ -152,7 +153,7 @@ class CFDE_TextOut : public CFX_Target {
   void DrawLine(const FDE_TTOPIECE* pPiece, CFDE_Pen*& pPen);
 
   CFX_TxtBreak* m_pTxtBreak;
-  IFX_Font* m_pFont;
+  CFGAS_GEFont* m_pFont;
   FX_FLOAT m_fFontSize;
   FX_FLOAT m_fLineSpace;
   FX_FLOAT m_fLinePos;

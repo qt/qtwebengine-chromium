@@ -70,6 +70,11 @@ class CongestionController : public CallStatsObserver, public Module {
   virtual void SetBweBitrates(int min_bitrate_bps,
                               int start_bitrate_bps,
                               int max_bitrate_bps);
+  // Resets both the BWE state and the bitrate estimator. Note the first
+  // argument is the bitrate_bps.
+  virtual void ResetBweAndBitrates(int bitrate_bps,
+                                   int min_bitrate_bps,
+                                   int max_bitrate_bps);
   virtual void SignalNetworkState(NetworkState state);
   virtual BitrateController* GetBitrateController() const;
   virtual RemoteBitrateEstimator* GetRemoteBitrateEstimator(
@@ -79,8 +84,18 @@ class CongestionController : public CallStatsObserver, public Module {
   virtual PacketRouter* packet_router() { return packet_router_.get(); }
   virtual TransportFeedbackObserver* GetTransportFeedbackObserver();
 
-  void SetAllocatedSendBitrate(int allocated_bitrate_bps,
-                               int padding_bitrate_bps);
+  // SetAllocatedSendBitrateLimits sets bitrates limits imposed by send codec
+  // settings.
+  // |min_send_bitrate_bps| is the total minimum send bitrate required by all
+  // sending streams.  This is the minimum bitrate the PacedSender will use.
+  // Note that CongestionController::OnNetworkChanged can still be called with
+  // a lower bitrate estimate.
+  // |max_padding_bitrate_bps| is the max bitrate the send streams request for
+  // padding. This can be higher than the current network estimate and tells
+  // the PacedSender how much it should max pad unless there is real packets to
+  // send.
+  void SetAllocatedSendBitrateLimits(int min_send_bitrate_bps,
+                                     int max_padding_bitrate_bps);
 
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet);
 

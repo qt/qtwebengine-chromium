@@ -216,12 +216,9 @@ struct FWL_DATEINFO {
                int32_t dayofweek,
                uint32_t dwSt,
                CFX_RectF rc,
-               CFX_WideString& wsday)
-      : iDay(day),
-        iDayOfWeek(dayofweek),
-        dwStates(dwSt),
-        rect(rc),
-        wsDay(wsday) {}
+               CFX_WideString& wsday);
+  ~FWL_DATEINFO();
+
   int32_t iDay;
   int32_t iDayOfWeek;
   uint32_t dwStates;
@@ -234,7 +231,7 @@ class CFWL_MonthCalendarImpDelegate : public CFWL_WidgetImpDelegate {
   CFWL_MonthCalendarImpDelegate(CFWL_MonthCalendarImp* pOwner);
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
 
  protected:
   void OnActivate(CFWL_Message* pMsg);

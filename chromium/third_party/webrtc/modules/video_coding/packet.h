@@ -39,6 +39,7 @@ class VCMPacket {
   const uint8_t* dataPtr;
   size_t sizeBytes;
   bool markerBit;
+  int timesNacked;
 
   FrameType frameType;
   VideoCodecType codec;
@@ -49,7 +50,7 @@ class VCMPacket {
                          // packet.
   int width;
   int height;
-  RTPVideoHeader codecSpecificHeader;
+  RTPVideoHeader video_header;
 
  protected:
   void CopyCodecSpecifics(const RTPVideoHeader& videoHeader);

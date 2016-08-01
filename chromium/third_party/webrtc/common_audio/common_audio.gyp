@@ -94,6 +94,7 @@
         'signal_processing/resample_by_2_internal.h',
         'signal_processing/resample_fractional.c',
         'signal_processing/spl_init.c',
+        'signal_processing/spl_inl.c',
         'signal_processing/spl_sqrt.c',
         'signal_processing/spl_sqrt_floor.c',
         'signal_processing/splitting_filter.c',
@@ -290,7 +291,7 @@
               'target_name': 'common_audio_unittests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):common_audio_unittests_apk',
+                '<(android_tests_path):common_audio_unittests_apk',
               ],
             },
           ],
@@ -302,7 +303,7 @@
                     'target_name': 'common_audio_unittests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):common_audio_unittests_apk',
+                      '<(android_tests_path):common_audio_unittests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',

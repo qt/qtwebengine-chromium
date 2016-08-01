@@ -8,6 +8,7 @@
 
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_progressiverenderer.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/include/fsdk_rendercontext.h"
 #include "public/fpdfview.h"
@@ -40,15 +41,13 @@ DLLEXPORT int STDCALL FPDF_RenderPageBitmap_Start(FPDF_BITMAP bitmap,
     return FPDF_RENDER_FAILED;
 
   CRenderContext* pContext = new CRenderContext;
-  pPage->SetPrivateData((void*)1, pContext, DropContext);
-  pContext->m_pDevice = new CFX_FxgeDevice;
-  if (flags & FPDF_REVERSE_BYTE_ORDER)
-    ((CFX_FxgeDevice*)pContext->m_pDevice)
-        ->Attach((CFX_DIBitmap*)bitmap, 0, TRUE);
-  else
-    ((CFX_FxgeDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)bitmap);
-  IFSDK_PAUSE_Adapter IPauseAdapter(pause);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>(pContext));
+  CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
+  pContext->m_pDevice = pDevice;
+  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
+  IFSDK_PAUSE_Adapter IPauseAdapter(pause);
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
                          rotate, flags, FALSE, &IPauseAdapter);
 
@@ -68,7 +67,8 @@ DLLEXPORT int STDCALL FPDF_RenderPage_Continue(FPDF_PAGE page,
   if (!pPage)
     return FPDF_RENDER_FAILED;
 
-  CRenderContext* pContext = (CRenderContext*)pPage->GetPrivateData((void*)1);
+  CRenderContext* pContext =
+      static_cast<CRenderContext*>(pPage->GetRenderContext());
   if (pContext && pContext->m_pRenderer) {
     IFSDK_PAUSE_Adapter IPauseAdapter(pause);
     pContext->m_pRenderer->Continue(&IPauseAdapter);
@@ -83,11 +83,11 @@ DLLEXPORT void STDCALL FPDF_RenderPage_Close(FPDF_PAGE page) {
   if (!pPage)
     return;
 
-  CRenderContext* pContext = (CRenderContext*)pPage->GetPrivateData((void*)1);
+  CRenderContext* pContext =
+      static_cast<CRenderContext*>(pPage->GetRenderContext());
   if (!pContext)
     return;
 
-  pContext->m_pDevice->RestoreState();
-  delete pContext;
-  pPage->RemovePrivateData((void*)1);
+  pContext->m_pDevice->RestoreState(false);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>());
 }

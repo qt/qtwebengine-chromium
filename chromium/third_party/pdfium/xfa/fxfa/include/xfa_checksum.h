@@ -7,7 +7,7 @@
 #ifndef XFA_FXFA_INCLUDE_XFA_CHECKSUM_H_
 #define XFA_FXFA_INCLUDE_XFA_CHECKSUM_H_
 
-#include "xfa/fgas/xml/fgas_sax.h"
+#include "xfa/fde/xml/cfx_saxreader.h"
 #include "xfa/fxfa/include/fxfa.h"
 
 class CXFA_SAXReaderHandler;
@@ -15,11 +15,11 @@ class CXFA_ChecksumContext;
 
 class CXFA_SAXContext {
  public:
-  CXFA_SAXContext() : m_eNode(FX_SAXNODE_Unknown) {}
+  CXFA_SAXContext() : m_eNode(CFX_SAXItem::Type::Unknown) {}
 
   CFX_ByteTextBuf m_TextBuf;
   CFX_ByteString m_bsTagName;
-  FX_SAXNODE m_eNode;
+  CFX_SAXItem::Type m_eNode;
 };
 
 class CXFA_SAXReaderHandler {
@@ -27,24 +27,24 @@ class CXFA_SAXReaderHandler {
   CXFA_SAXReaderHandler(CXFA_ChecksumContext* pContext);
   ~CXFA_SAXReaderHandler();
 
-  void* OnTagEnter(const CFX_ByteStringC& bsTagName,
-                   FX_SAXNODE eType,
-                   uint32_t dwStartPos);
-  void OnTagAttribute(void* pTag,
+  CXFA_SAXContext* OnTagEnter(const CFX_ByteStringC& bsTagName,
+                              CFX_SAXItem::Type eType,
+                              uint32_t dwStartPos);
+  void OnTagAttribute(CXFA_SAXContext* pTag,
                       const CFX_ByteStringC& bsAttri,
                       const CFX_ByteStringC& bsValue);
-  void OnTagBreak(void* pTag);
-  void OnTagData(void* pTag,
-                 FX_SAXNODE eType,
+  void OnTagBreak(CXFA_SAXContext* pTag);
+  void OnTagData(CXFA_SAXContext* pTag,
+                 CFX_SAXItem::Type eType,
                  const CFX_ByteStringC& bsData,
                  uint32_t dwStartPos);
-  void OnTagClose(void* pTag, uint32_t dwEndPos);
-  void OnTagEnd(void* pTag,
+  void OnTagClose(CXFA_SAXContext* pTag, uint32_t dwEndPos);
+  void OnTagEnd(CXFA_SAXContext* pTag,
                 const CFX_ByteStringC& bsTagName,
                 uint32_t dwEndPos);
 
-  void OnTargetData(void* pTag,
-                    FX_SAXNODE eType,
+  void OnTargetData(CXFA_SAXContext* pTag,
+                    CFX_SAXItem::Type eType,
                     const CFX_ByteStringC& bsData,
                     uint32_t dwStartPos);
 
@@ -60,14 +60,13 @@ class CXFA_ChecksumContext {
   CXFA_ChecksumContext();
   ~CXFA_ChecksumContext();
 
-  void Release() { delete this; }
   void StartChecksum();
+  void Update(const CFX_ByteStringC& bsText);
   FX_BOOL UpdateChecksum(IFX_FileRead* pSrcFile,
                          FX_FILESIZE offset = 0,
                          size_t size = 0);
   void FinishChecksum();
-  void GetChecksum(CFX_ByteString& bsChecksum);
-  void Update(const CFX_ByteStringC& bsText);
+  CFX_ByteString GetChecksum() const;
 
  protected:
   CFX_SAXReader* m_pSAXReader;

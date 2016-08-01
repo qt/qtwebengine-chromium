@@ -35,12 +35,10 @@ namespace media {
 DefaultRendererFactory::DefaultRendererFactory(
     const scoped_refptr<MediaLog>& media_log,
     DecoderFactory* decoder_factory,
-    const GetGpuFactoriesCB& get_gpu_factories_cb,
-    const AudioHardwareConfig& audio_hardware_config)
+    const GetGpuFactoriesCB& get_gpu_factories_cb)
     : media_log_(media_log),
       decoder_factory_(decoder_factory),
-      get_gpu_factories_cb_(get_gpu_factories_cb),
-      audio_hardware_config_(audio_hardware_config) {}
+      get_gpu_factories_cb_(get_gpu_factories_cb) {}
 
 DefaultRendererFactory::~DefaultRendererFactory() {
 }
@@ -74,18 +72,19 @@ ScopedVector<VideoDecoder> DefaultRendererFactory::CreateVideoDecoders(
 
   // Prefer an external decoder since one will only exist if it is hardware
   // accelerated.
-  if (decoder_factory_)
-    decoder_factory_->CreateVideoDecoders(media_task_runner, &video_decoders);
+  if (gpu_factories) {
+    // |gpu_factories_| requires that its entry points be called on its
+    // |GetTaskRunner()|.  Since |pipeline_| will own decoders created from the
+    // factories, require that their message loops are identical.
+    DCHECK(gpu_factories->GetTaskRunner() == media_task_runner.get());
 
-  // |gpu_factories_| requires that its entry points be called on its
-  // |GetTaskRunner()|.  Since |pipeline_| will own decoders created from the
-  // factories, require that their message loops are identical.
-  DCHECK(!gpu_factories ||
-         (gpu_factories->GetTaskRunner() == media_task_runner.get()));
-
-  if (gpu_factories)
+    if (decoder_factory_) {
+      decoder_factory_->CreateVideoDecoders(media_task_runner, gpu_factories,
+                                            &video_decoders);
+    }
     video_decoders.push_back(
-        new GpuVideoDecoder(gpu_factories, request_surface_cb));
+        new GpuVideoDecoder(gpu_factories, request_surface_cb, media_log_));
+  }
 
 #if !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(new VpxVideoDecoder());
@@ -106,10 +105,9 @@ std::unique_ptr<Renderer> DefaultRendererFactory::CreateRenderer(
     const RequestSurfaceCB& request_surface_cb) {
   DCHECK(audio_renderer_sink);
 
-  std::unique_ptr<AudioRenderer> audio_renderer(
-      new AudioRendererImpl(media_task_runner, audio_renderer_sink,
-                            CreateAudioDecoders(media_task_runner),
-                            audio_hardware_config_, media_log_));
+  std::unique_ptr<AudioRenderer> audio_renderer(new AudioRendererImpl(
+      media_task_runner, audio_renderer_sink,
+      CreateAudioDecoders(media_task_runner), media_log_));
 
   GpuVideoAcceleratorFactories* gpu_factories = nullptr;
   if (!get_gpu_factories_cb_.is_null())

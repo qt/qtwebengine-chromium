@@ -261,7 +261,7 @@ uint8_t FX_GetCsFromLangCode(uint32_t uCode) {
     else
       iStart = iMid + 1;
   }
-  return 0;
+  return FXFONT_ANSI_CHARSET;
 }
 
 uint8_t FX_GetCharsetFromLang(const FX_CHAR* pLang, int32_t iLength) {
@@ -394,9 +394,10 @@ int InsertDeletePDFPage(CPDF_Document* pDoc,
     } else {
       int nPages = pKid->GetIntegerBy("Count");
       if (nPagesToGo < nPages) {
-        if (pdfium::ContainsValue(*pVisited, pKid))
+        if (pdfium::ContainsKey(*pVisited, pKid))
           return -1;
-        pdfium::ScopedSetInsertion<CPDF_Dictionary*>(pVisited, pKid);
+
+        pdfium::ScopedSetInsertion<CPDF_Dictionary*> insertion(pVisited, pKid);
         if (InsertDeletePDFPage(pDoc, pKid, nPagesToGo, pPage, bInsert,
                                 pVisited) < 0) {
           return -1;
@@ -718,9 +719,16 @@ int CPDF_Document::RetrievePageCount() const {
   return CountPages(pPages, &visited_pages);
 }
 
-uint32_t CPDF_Document::GetUserPermissions(FX_BOOL bCheckRevision) const {
-  return m_pParser ? m_pParser->GetPermissions(bCheckRevision)
-                   : static_cast<uint32_t>(-1);
+uint32_t CPDF_Document::GetUserPermissions() const {
+  // https://bugs.chromium.org/p/pdfium/issues/detail?id=499
+  if (!m_pParser) {
+#ifndef PDF_ENABLE_XFA
+    return 0;
+#else  // PDF_ENABLE_XFA
+    return 0xFFFFFFFF;
+#endif
+  }
+  return m_pParser->GetPermissions();
 }
 
 FX_BOOL CPDF_Document::IsFormStream(uint32_t objnum, FX_BOOL& bForm) const {

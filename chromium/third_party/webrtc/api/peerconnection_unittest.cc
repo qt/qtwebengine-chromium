@@ -26,8 +26,8 @@
 #include "webrtc/api/peerconnectioninterface.h"
 #include "webrtc/api/test/fakeaudiocapturemodule.h"
 #include "webrtc/api/test/fakeconstraints.h"
-#include "webrtc/api/test/fakedtlsidentitystore.h"
 #include "webrtc/api/test/fakeperiodicvideocapturer.h"
+#include "webrtc/api/test/fakertccertificategenerator.h"
 #include "webrtc/api/test/fakevideotrackrenderer.h"
 #include "webrtc/api/test/mockpeerconnectionobservers.h"
 #include "webrtc/base/gunit.h"
@@ -146,6 +146,25 @@ class SignalingMessageReceiver {
   virtual ~SignalingMessageReceiver() {}
 };
 
+class MockRtpReceiverObserver : public webrtc::RtpReceiverObserverInterface {
+ public:
+  MockRtpReceiverObserver(cricket::MediaType media_type)
+      : expected_media_type_(media_type) {}
+
+  void OnFirstPacketReceived(cricket::MediaType media_type) override {
+    ASSERT_EQ(expected_media_type_, media_type);
+    first_packet_received_ = true;
+  }
+
+  bool first_packet_received() { return first_packet_received_; }
+
+  virtual ~MockRtpReceiverObserver() {}
+
+ private:
+  bool first_packet_received_ = false;
+  cricket::MediaType expected_media_type_;
+};
+
 class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
                                  public SignalingMessageReceiver,
                                  public ObserverInterface {
@@ -154,12 +173,12 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
       const std::string& id,
       const MediaConstraintsInterface* constraints,
       const PeerConnectionFactory::Options* options,
-      std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
       bool prefer_constraint_apis,
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread) {
     PeerConnectionTestClient* client(new PeerConnectionTestClient(id));
-    if (!client->Init(constraints, options, std::move(dtls_identity_store),
+    if (!client->Init(constraints, options, std::move(cert_generator),
                       prefer_constraint_apis, network_thread, worker_thread)) {
       delete client;
       return nullptr;
@@ -173,12 +192,12 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
       const PeerConnectionFactory::Options* options,
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread) {
-    std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store(
-        rtc::SSLStreamAdapter::HaveDtlsSrtp() ? new FakeDtlsIdentityStore()
-                                              : nullptr);
+    std::unique_ptr<FakeRTCCertificateGenerator> cert_generator(
+        rtc::SSLStreamAdapter::HaveDtlsSrtp() ?
+            new FakeRTCCertificateGenerator() : nullptr);
 
     return CreateClientWithDtlsIdentityStore(
-        id, constraints, options, std::move(dtls_identity_store), true,
+        id, constraints, options, std::move(cert_generator), true,
         network_thread, worker_thread);
   }
 
@@ -187,12 +206,12 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
       const PeerConnectionFactory::Options* options,
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread) {
-    std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store(
-        rtc::SSLStreamAdapter::HaveDtlsSrtp() ? new FakeDtlsIdentityStore()
-                                              : nullptr);
+    std::unique_ptr<FakeRTCCertificateGenerator> cert_generator(
+        rtc::SSLStreamAdapter::HaveDtlsSrtp() ?
+            new FakeRTCCertificateGenerator() : nullptr);
 
     return CreateClientWithDtlsIdentityStore(
-        id, nullptr, options, std::move(dtls_identity_store), false,
+        id, nullptr, options, std::move(cert_generator), false,
         network_thread, worker_thread);
   }
 
@@ -244,7 +263,8 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
       webrtc::PeerConnectionInterface::SignalingState new_state) override {
     EXPECT_EQ(pc()->signaling_state(), new_state);
   }
-  void OnAddStream(MediaStreamInterface* media_stream) override {
+  void OnAddStream(
+      rtc::scoped_refptr<MediaStreamInterface> media_stream) override {
     media_stream->RegisterObserver(this);
     for (size_t i = 0; i < media_stream->GetVideoTracks().size(); ++i) {
       const std::string id = media_stream->GetVideoTracks()[i]->id();
@@ -254,7 +274,8 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
           media_stream->GetVideoTracks()[i]));
     }
   }
-  void OnRemoveStream(MediaStreamInterface* media_stream) override {}
+  void OnRemoveStream(
+      rtc::scoped_refptr<MediaStreamInterface> media_stream) override {}
   void OnRenegotiationNeeded() override {}
   void OnIceConnectionChange(
       webrtc::PeerConnectionInterface::IceConnectionState new_state) override {
@@ -428,7 +449,8 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
                PeerConnectionInterface::RTCOfferAnswerOptions::kUndefined;
   }
 
-  void OnDataChannel(DataChannelInterface* data_channel) override {
+  void OnDataChannel(
+      rtc::scoped_refptr<DataChannelInterface> data_channel) override {
     LOG(INFO) << id_ << "OnDataChannel";
     data_channel_ = data_channel;
     data_observer_.reset(new MockDataChannelObserver(data_channel));
@@ -777,6 +799,21 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
     return pc()->ice_gathering_state();
   }
 
+  std::vector<std::unique_ptr<MockRtpReceiverObserver>> const&
+  rtp_receiver_observers() {
+    return rtp_receiver_observers_;
+  }
+
+  void SetRtpReceiverObservers() {
+    rtp_receiver_observers_.clear();
+    for (auto receiver : pc()->GetReceivers()) {
+      std::unique_ptr<MockRtpReceiverObserver> observer(
+          new MockRtpReceiverObserver(receiver->media_type()));
+      receiver->SetObserver(observer.get());
+      rtp_receiver_observers_.push_back(std::move(observer));
+    }
+  }
+
  private:
   class DummyDtmfObserver : public DtmfSenderObserverInterface {
    public:
@@ -807,7 +844,7 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
   bool Init(
       const MediaConstraintsInterface* constraints,
       const PeerConnectionFactory::Options* options,
-      std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
       bool prefer_constraint_apis,
       rtc::Thread* network_thread,
       rtc::Thread* worker_thread) {
@@ -839,14 +876,14 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
       peer_connection_factory_->SetOptions(*options);
     }
     peer_connection_ = CreatePeerConnection(
-        std::move(port_allocator), constraints, std::move(dtls_identity_store));
+        std::move(port_allocator), constraints, std::move(cert_generator));
     return peer_connection_.get() != nullptr;
   }
 
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> CreatePeerConnection(
       std::unique_ptr<cricket::PortAllocator> port_allocator,
       const MediaConstraintsInterface* constraints,
-      std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store) {
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator) {
     // CreatePeerConnection with RTCConfiguration.
     webrtc::PeerConnectionInterface::RTCConfiguration config;
     webrtc::PeerConnectionInterface::IceServer ice_server;
@@ -855,7 +892,7 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
 
     return peer_connection_factory_->CreatePeerConnection(
         config, constraints, std::move(port_allocator),
-        std::move(dtls_identity_store), this);
+        std::move(cert_generator), this);
   }
 
   void HandleIncomingOffer(const std::string& msg) {
@@ -867,6 +904,8 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
     std::unique_ptr<SessionDescriptionInterface> desc(
         webrtc::CreateSessionDescription("offer", msg, nullptr));
     EXPECT_TRUE(DoSetRemoteDescription(desc.release()));
+    // Set the RtpReceiverObserver after receivers are created.
+    SetRtpReceiverObservers();
     std::unique_ptr<SessionDescriptionInterface> answer;
     EXPECT_TRUE(DoCreateAnswer(&answer));
     std::string sdp;
@@ -883,6 +922,8 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
     std::unique_ptr<SessionDescriptionInterface> desc(
         webrtc::CreateSessionDescription("answer", msg, nullptr));
     EXPECT_TRUE(DoSetRemoteDescription(desc.release()));
+    // Set the RtpReceiverObserver after receivers are created.
+    SetRtpReceiverObservers();
   }
 
   bool DoCreateOfferAnswer(std::unique_ptr<SessionDescriptionInterface>* desc,
@@ -1023,16 +1064,17 @@ class PeerConnectionTestClient : public webrtc::PeerConnectionObserver,
 
   rtc::scoped_refptr<DataChannelInterface> data_channel_;
   std::unique_ptr<MockDataChannelObserver> data_observer_;
+
+  std::vector<std::unique_ptr<MockRtpReceiverObserver>> rtp_receiver_observers_;
 };
 
 class P2PTestConductor : public testing::Test {
  public:
   P2PTestConductor()
-      : network_thread_(rtc::Thread::CreateWithSocketServer()),
-        worker_thread_(rtc::Thread::Create()),
-        pss_(new rtc::PhysicalSocketServer),
+      : pss_(new rtc::PhysicalSocketServer),
         ss_(new rtc::VirtualSocketServer(pss_.get())),
-        ss_scope_(ss_.get()) {
+        network_thread_(new rtc::Thread(ss_.get())),
+        worker_thread_(rtc::Thread::Create()) {
     RTC_CHECK(network_thread_->Start());
     RTC_CHECK(worker_thread_->Start());
   }
@@ -1264,15 +1306,15 @@ class P2PTestConductor : public testing::Test {
     setup_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                                    true);
 
-    std::unique_ptr<FakeDtlsIdentityStore> dtls_identity_store(
-        rtc::SSLStreamAdapter::HaveDtlsSrtp() ? new FakeDtlsIdentityStore()
-                                              : nullptr);
-    dtls_identity_store->use_alternate_key();
+    std::unique_ptr<FakeRTCCertificateGenerator> cert_generator(
+        rtc::SSLStreamAdapter::HaveDtlsSrtp() ?
+            new FakeRTCCertificateGenerator() : nullptr);
+    cert_generator->use_alternate_key();
 
     // Make sure the new client is using a different certificate.
     return PeerConnectionTestClient::CreateClientWithDtlsIdentityStore(
         "New Peer: ", &setup_constraints, nullptr,
-        std::move(dtls_identity_store), prefer_constraint_apis_,
+        std::move(cert_generator), prefer_constraint_apis_,
         network_thread_.get(), worker_thread_.get());
   }
 
@@ -1312,14 +1354,25 @@ class P2PTestConductor : public testing::Test {
     return old;
   }
 
+  bool AllObserversReceived(
+      const std::vector<std::unique_ptr<MockRtpReceiverObserver>>& observers) {
+    for (auto& observer : observers) {
+      if (!observer->first_packet_received()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
  private:
-  // |worker_thread_| is used by both |initiating_client_| and
-  // |receiving_client_|. Must be destroyed last.
-  std::unique_ptr<rtc::Thread> network_thread_;
-  std::unique_ptr<rtc::Thread> worker_thread_;
+  // |ss_| is used by |network_thread_| so it must be destroyed later.
   std::unique_ptr<rtc::PhysicalSocketServer> pss_;
   std::unique_ptr<rtc::VirtualSocketServer> ss_;
-  rtc::SocketServerScope ss_scope_;
+  // |network_thread_| and |worker_thread_| are used by both
+  // |initiating_client_| and |receiving_client_| so they must be destroyed
+  // later.
+  std::unique_ptr<rtc::Thread> network_thread_;
+  std::unique_ptr<rtc::Thread> worker_thread_;
   std::unique_ptr<PeerConnectionTestClient> initiating_client_;
   std::unique_ptr<PeerConnectionTestClient> receiving_client_;
   bool prefer_constraint_apis_ = true;
@@ -1328,6 +1381,33 @@ class P2PTestConductor : public testing::Test {
 // Disable for TSan v2, see
 // https://code.google.com/p/webrtc/issues/detail?id=1205 for details.
 #if !defined(THREAD_SANITIZER)
+
+TEST_F(P2PTestConductor, TestRtpReceiverObserverCallbackFunction) {
+  ASSERT_TRUE(CreateTestClients());
+  LocalP2PTest();
+  EXPECT_TRUE_WAIT(
+      AllObserversReceived(initializing_client()->rtp_receiver_observers()),
+      kMaxWaitForFramesMs);
+  EXPECT_TRUE_WAIT(
+      AllObserversReceived(receiving_client()->rtp_receiver_observers()),
+      kMaxWaitForFramesMs);
+}
+
+// The observers are expected to fire the signal even if they are set after the
+// first packet is received.
+TEST_F(P2PTestConductor, TestSetRtpReceiverObserverAfterFirstPacketIsReceived) {
+  ASSERT_TRUE(CreateTestClients());
+  LocalP2PTest();
+  // Reset the RtpReceiverObservers.
+  initializing_client()->SetRtpReceiverObservers();
+  receiving_client()->SetRtpReceiverObservers();
+  EXPECT_TRUE_WAIT(
+      AllObserversReceived(initializing_client()->rtp_receiver_observers()),
+      kMaxWaitForFramesMs);
+  EXPECT_TRUE_WAIT(
+      AllObserversReceived(receiving_client()->rtp_receiver_observers()),
+      kMaxWaitForFramesMs);
+}
 
 // This test sets up a Jsep call between two parties and test Dtmf.
 // TODO(holmer): Disabled due to sometimes crashing on buildbots.

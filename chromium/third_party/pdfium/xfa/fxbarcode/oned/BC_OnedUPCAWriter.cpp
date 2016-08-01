@@ -26,7 +26,7 @@
 #include "xfa/fxbarcode/oned/BC_OnedUPCAWriter.h"
 
 CBC_OnedUPCAWriter::CBC_OnedUPCAWriter() {
-  m_subWriter = NULL;
+  m_subWriter = nullptr;
   m_bLeftPadding = TRUE;
   m_bRightPadding = TRUE;
 }
@@ -36,18 +36,16 @@ void CBC_OnedUPCAWriter::Init() {
 CBC_OnedUPCAWriter::~CBC_OnedUPCAWriter() {
   delete m_subWriter;
 }
+
 FX_BOOL CBC_OnedUPCAWriter::CheckContentValidity(
     const CFX_WideStringC& contents) {
-  int32_t i = 0;
-  for (i = 0; i < contents.GetLength(); i++) {
-    if (contents.GetAt(i) >= '0' && contents.GetAt(i) <= '9') {
-      continue;
-    } else {
+  for (FX_STRSIZE i = 0; i < contents.GetLength(); ++i) {
+    if (contents.GetAt(i) < '0' || contents.GetAt(i) > '9')
       return FALSE;
-    }
   }
   return TRUE;
 }
+
 CFX_WideString CBC_OnedUPCAWriter::FilterContents(
     const CFX_WideStringC& contents) {
   CFX_WideString filtercontents;
@@ -86,7 +84,7 @@ uint8_t* CBC_OnedUPCAWriter::Encode(const CFX_ByteString& contents,
                                     int32_t& outHeight,
                                     int32_t& e) {
   uint8_t* ret = Encode(contents, format, outWidth, outHeight, 0, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   return ret;
 }
 uint8_t* CBC_OnedUPCAWriter::Encode(const CFX_ByteString& contents,
@@ -97,15 +95,22 @@ uint8_t* CBC_OnedUPCAWriter::Encode(const CFX_ByteString& contents,
                                     int32_t& e) {
   if (format != BCFORMAT_UPC_A) {
     e = BCExceptionOnlyEncodeUPC_A;
-    return NULL;
+    return nullptr;
   }
   CFX_ByteString toEAN13String = '0' + contents;
   m_iDataLenth = 13;
   uint8_t* ret = m_subWriter->Encode(toEAN13String, BCFORMAT_EAN_13, outWidth,
                                      outHeight, hints, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   return ret;
 }
+
+uint8_t* CBC_OnedUPCAWriter::Encode(const CFX_ByteString& contents,
+                                    int32_t& outLength,
+                                    int32_t& e) {
+  return nullptr;
+}
+
 void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
                                    CFX_DIBitmap* pOutBitmap,
                                    CFX_RenderDevice* device,
@@ -113,10 +118,11 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
                                    int32_t barWidth,
                                    int32_t multiple,
                                    int32_t& e) {
-  if (device == NULL && pOutBitmap == NULL) {
+  if (!device && !pOutBitmap) {
     e = BCExceptionIllegalArgument;
     return;
   }
+
   int32_t leftPadding = 7 * multiple;
   int32_t leftPosition = 10 * multiple + leftPadding;
   CFX_ByteString str = FX_UTF8Encode(contents);
@@ -127,13 +133,13 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
   FX_FLOAT strWidth = (FX_FLOAT)35 * multiple;
   FX_FLOAT blank = 0.0;
   CFX_FxgeDevice geBitmap;
-  if (pOutBitmap) {
-    geBitmap.Attach(pOutBitmap);
-  }
+  if (pOutBitmap)
+    geBitmap.Attach(pOutBitmap, false, nullptr, false);
+
   iLen = tempStr.GetLength();
   int32_t iFontSize = (int32_t)fabs(m_fFontSize);
   int32_t iTextHeight = iFontSize + 1;
-  if (pOutBitmap == NULL) {
+  if (!pOutBitmap) {
     CFX_Matrix matr(m_outputHScale, 0.0, 0.0, 1.0, 0.0, 0.0);
     CFX_FloatRect rect(
         (FX_FLOAT)leftPosition, (FX_FLOAT)(m_Height - iTextHeight),
@@ -171,19 +177,18 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     re = rect3.GetOutterRect();
     device->FillRect(&re, m_backgroundColor);
   }
-  if (pOutBitmap == NULL) {
+  if (!pOutBitmap)
     strWidth = strWidth * m_outputHScale;
-  }
+
   CalcTextInfo(tempStr, pCharPos + 1, m_pFont, strWidth, iFontSize, blank);
   CFX_Matrix affine_matrix(1.0, 0.0, 0.0, -1.0, 0.0, (FX_FLOAT)iFontSize);
   CFX_FxgeDevice ge;
   if (pOutBitmap) {
-    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb);
+    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb, nullptr);
     ge.GetBitmap()->Clear(m_backgroundColor);
     ge.DrawNormalText(iLen, pCharPos + 1, m_pFont,
                       CFX_GEModule::Get()->GetFontCache(), (FX_FLOAT)iFontSize,
-                      (CFX_Matrix*)&affine_matrix, m_fontColor,
-                      FXTEXT_CLEARTYPE);
+                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), leftPosition, m_Height - iTextHeight);
   } else {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
@@ -192,10 +197,9 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos + 1, m_pFont,
-                           CFX_GEModule::Get()->GetFontCache(),
-                           (FX_FLOAT)iFontSize, (CFX_Matrix*)&affine_matrix1,
-                           m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(
+        iLen, pCharPos + 1, m_pFont, CFX_GEModule::Get()->GetFontCache(),
+        (FX_FLOAT)iFontSize, &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
   }
   tempStr = str.Mid(6, 5);
   iLen = tempStr.GetLength();
@@ -205,8 +209,7 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     ge.FillRect(&rect2, m_backgroundColor);
     ge.DrawNormalText(iLen, pCharPos + 6, m_pFont,
                       CFX_GEModule::Get()->GetFontCache(), (FX_FLOAT)iFontSize,
-                      (CFX_Matrix*)&affine_matrix, m_fontColor,
-                      FXTEXT_CLEARTYPE);
+                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), leftPosition + 40 * multiple,
                        m_Height - iTextHeight);
   } else {
@@ -217,26 +220,24 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos + 6, m_pFont,
-                           CFX_GEModule::Get()->GetFontCache(),
-                           (FX_FLOAT)iFontSize, (CFX_Matrix*)&affine_matrix1,
-                           m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(
+        iLen, pCharPos + 6, m_pFont, CFX_GEModule::Get()->GetFontCache(),
+        (FX_FLOAT)iFontSize, &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
   }
   tempStr = str.Mid(0, 1);
   iLen = tempStr.GetLength();
   strWidth = (FX_FLOAT)multiple * 7;
-  if (pOutBitmap == NULL) {
+  if (!pOutBitmap)
     strWidth = strWidth * m_outputHScale;
-  }
+
   CalcTextInfo(tempStr, pCharPos, m_pFont, strWidth, iFontSize, blank);
   if (pOutBitmap) {
     delete ge.GetBitmap();
-    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb);
+    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb, nullptr);
     ge.GetBitmap()->Clear(m_backgroundColor);
     ge.DrawNormalText(iLen, pCharPos, m_pFont,
                       CFX_GEModule::Get()->GetFontCache(), (FX_FLOAT)iFontSize,
-                      (CFX_Matrix*)&affine_matrix, m_fontColor,
-                      FXTEXT_CLEARTYPE);
+                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), 0, m_Height - iTextHeight);
   } else {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0, 0,
@@ -244,22 +245,20 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos, m_pFont,
-                           CFX_GEModule::Get()->GetFontCache(),
-                           (FX_FLOAT)iFontSize, (CFX_Matrix*)&affine_matrix1,
-                           m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(
+        iLen, pCharPos, m_pFont, CFX_GEModule::Get()->GetFontCache(),
+        (FX_FLOAT)iFontSize, &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
   }
   tempStr = str.Mid(11, 1);
   iLen = tempStr.GetLength();
   CalcTextInfo(tempStr, pCharPos + 11, m_pFont, strWidth, iFontSize, blank);
   if (pOutBitmap) {
     delete ge.GetBitmap();
-    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb);
+    ge.Create((int)strWidth, iTextHeight, FXDIB_Argb, nullptr);
     ge.GetBitmap()->Clear(m_backgroundColor);
     ge.DrawNormalText(iLen, pCharPos + 11, m_pFont,
                       CFX_GEModule::Get()->GetFontCache(), (FX_FLOAT)iFontSize,
-                      (CFX_Matrix*)&affine_matrix, m_fontColor,
-                      FXTEXT_CLEARTYPE);
+                      &affine_matrix, m_fontColor, FXTEXT_CLEARTYPE);
     geBitmap.SetDIBits(ge.GetBitmap(), leftPosition + 85 * multiple,
                        m_Height - iTextHeight);
   } else {
@@ -270,13 +269,13 @@ void CBC_OnedUPCAWriter::ShowChars(const CFX_WideStringC& contents,
     if (matrix) {
       affine_matrix1.Concat(*matrix);
     }
-    device->DrawNormalText(iLen, pCharPos + 11, m_pFont,
-                           CFX_GEModule::Get()->GetFontCache(),
-                           (FX_FLOAT)iFontSize, (CFX_Matrix*)&affine_matrix1,
-                           m_fontColor, FXTEXT_CLEARTYPE);
+    device->DrawNormalText(
+        iLen, pCharPos + 11, m_pFont, CFX_GEModule::Get()->GetFontCache(),
+        (FX_FLOAT)iFontSize, &affine_matrix1, m_fontColor, FXTEXT_CLEARTYPE);
   }
   FX_Free(pCharPos);
 }
+
 void CBC_OnedUPCAWriter::RenderResult(const CFX_WideStringC& contents,
                                       uint8_t* code,
                                       int32_t codeLength,

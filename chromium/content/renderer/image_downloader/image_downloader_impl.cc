@@ -7,17 +7,16 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "content/child/image_decoder.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/fetchers/multi_resolution_image_resource_fetcher.h"
-#include "mojo/common/url_type_converters.h"
-#include "mojo/converters/geometry/geometry_type_converters.h"
 #include "net/base/data_url.h"
 #include "skia/ext/image_operations.h"
-#include "skia/public/type_converters.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
@@ -145,13 +144,11 @@ void ImageDownloaderImpl::OnRenderProcessShutdown() {
 }
 
 // ImageDownloader methods:
-void ImageDownloaderImpl::DownloadImage(const mojo::String& url,
+void ImageDownloaderImpl::DownloadImage(const GURL& image_url,
                                         bool is_favicon,
                                         uint32_t max_bitmap_size,
                                         bool bypass_cache,
                                         const DownloadImageCallback& callback) {
-  const GURL image_url = url.To<GURL>();
-
   std::vector<SkBitmap> result_images;
   std::vector<gfx::Size> result_original_image_sizes;
 
@@ -211,7 +208,7 @@ void ImageDownloaderImpl::DidFetchImage(
       std::find(image_fetchers_.begin(), image_fetchers_.end(), fetcher);
   if (iter != image_fetchers_.end()) {
     image_fetchers_.weak_erase(iter);
-    base::MessageLoop::current()->DeleteSoon(FROM_HERE, fetcher);
+    base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, fetcher);
   }
 }
 
@@ -220,9 +217,12 @@ void ImageDownloaderImpl::ReplyDownloadResult(
     const std::vector<SkBitmap>& result_images,
     const std::vector<gfx::Size>& result_original_image_sizes,
     const DownloadImageCallback& callback) {
-  callback.Run(http_status_code,
-               mojo::Array<skia::mojom::BitmapPtr>::From(result_images),
-               mojo::Array<mojo::SizePtr>::From(result_original_image_sizes));
+  callback.Run(http_status_code, mojo::Array<SkBitmap>::From(result_images),
+               result_original_image_sizes);
+}
+
+void ImageDownloaderImpl::OnDestruct() {
+  delete this;
 }
 
 }  // namespace content

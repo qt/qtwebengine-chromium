@@ -30,9 +30,6 @@ CPDFDoc_Environment* CJS_Context::GetReaderApp() {
 FX_BOOL CJS_Context::RunScript(const CFX_WideString& script,
                                CFX_WideString* info) {
   v8::Isolate::Scope isolate_scope(m_pRuntime->GetIsolate());
-#ifdef PDF_ENABLE_XFA
-  v8::Locker locker(m_pRuntime->GetIsolate());
-#endif  // PDF_ENABLE_XFA
   v8::HandleScope handle_scope(m_pRuntime->GetIsolate());
   v8::Local<v8::Context> context = m_pRuntime->NewJSContext();
   v8::Context::Scope context_scope(context);
@@ -54,7 +51,7 @@ FX_BOOL CJS_Context::RunScript(const CFX_WideString& script,
   CFX_WideString sErrorMessage;
   int nRet = 0;
   if (script.GetLength() > 0) {
-    nRet = m_pRuntime->Execute(this, script.c_str(), &sErrorMessage);
+    nRet = m_pRuntime->Execute(script.c_str(), &sErrorMessage);
   }
 
   if (nRet < 0) {
@@ -269,6 +266,10 @@ void CJS_Context::OnConsole_Exec() {
 
 void CJS_Context::OnExternal_Exec() {
   m_pEventHandler->OnExternal_Exec();
+}
+
+void CJS_Context::EnableMessageBox(FX_BOOL bEnable) {
+  m_bMsgBoxEnable = bEnable;
 }
 
 void CJS_Context::OnBatchExec(CPDFSDK_Document* pTarget) {

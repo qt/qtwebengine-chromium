@@ -14,11 +14,15 @@
 
 #include <string>
 
-#include "libANGLE/renderer/gl/DisplayGL.h"
-#include "libANGLE/renderer/gl/egl/FunctionsEGLDL.h"
+#include "libANGLE/renderer/gl/egl/DisplayEGL.h"
 
 struct gbm_device;
 struct gbm_bo;
+
+namespace gl
+{
+class FramebufferState;
+}
 
 namespace rx
 {
@@ -40,7 +44,7 @@ struct SwapControlData final
     int currentSwapInterval;
 };
 
-class DisplayOzone final : public DisplayGL
+class DisplayOzone final : public DisplayEGL
 {
   public:
     struct NativeWindow
@@ -109,19 +113,23 @@ class DisplayOzone final : public DisplayGL
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
 
-    SurfaceImpl *createWindowSurface(const egl::Config *configuration,
+    SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
+                                     const egl::Config *configuration,
                                      EGLNativeWindowType window,
                                      const egl::AttributeMap &attribs) override;
-    SurfaceImpl *createPbufferSurface(const egl::Config *configuration,
+    SurfaceImpl *createPbufferSurface(const egl::SurfaceState &state,
+                                      const egl::Config *configuration,
                                       const egl::AttributeMap &attribs) override;
-    SurfaceImpl *createPbufferFromClientBuffer(const egl::Config *configuration,
+    SurfaceImpl *createPbufferFromClientBuffer(const egl::SurfaceState &state,
+                                               const egl::Config *configuration,
                                                EGLClientBuffer shareHandle,
                                                const egl::AttributeMap &attribs) override;
-    SurfaceImpl *createPixmapSurface(const egl::Config *configuration,
+    SurfaceImpl *createPixmapSurface(const egl::SurfaceState &state,
+                                     const egl::Config *configuration,
                                      NativePixmapType nativePixmap,
                                      const egl::AttributeMap &attribs) override;
 
-    egl::ConfigSet generateConfigs() const override;
+    egl::ConfigSet generateConfigs() override;
 
     bool isDeviceLost() const override;
     bool testDeviceLost() override;
@@ -130,8 +138,6 @@ class DisplayOzone final : public DisplayGL
     bool isValidNativeWindow(EGLNativeWindowType window) const override;
 
     egl::Error getDevice(DeviceImpl **device) override;
-
-    std::string getVendorString() const override;
 
     egl::Error waitClient() const override;
     egl::Error waitNative(EGLint engine,
@@ -147,13 +153,6 @@ class DisplayOzone final : public DisplayGL
     egl::Error getDriverVersion(std::string *version) const override;
 
   private:
-    const FunctionsGL *getFunctionsGL() const override;
-
-    EGLContext initializeContext(EGLConfig config, const egl::AttributeMap &eglAttributes);
-
-    void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
-    void generateCaps(egl::Caps *outCaps) const override;
-
     GLuint makeShader(GLuint type, const char *src);
     void drawBuffer(Buffer *buffer);
     void drawWithBlit(Buffer *buffer);
@@ -167,9 +166,6 @@ class DisplayOzone final : public DisplayGL
                                 void *data);
     void pageFlipHandler(unsigned int sequence, uint64_t tv);
 
-    EGLConfig mContextConfig;
-    EGLContext mContext;
-
     // TODO(fjhenigman) Implement swap control.  The following stuff will be used for that.
     enum class SwapControl
     {
@@ -182,9 +178,6 @@ class DisplayOzone final : public DisplayGL
     int mMinSwapInterval;
     int mMaxSwapInterval;
     int mCurrentSwapInterval;
-
-    FunctionsEGLDL *mEGL;
-    FunctionsGL *mFunctionsGL;
 
     gbm_device *mGBM;
     drmModeConnectorPtr mConnector;

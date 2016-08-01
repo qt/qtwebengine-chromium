@@ -4,7 +4,6 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_localemgr.h"
@@ -12,8 +11,6 @@
 #include "xfa/fxfa/parser/xfa_parser.h"
 #include "xfa/fxfa/parser/xfa_script.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
-
-#define XFA_HASHCODE_Group 0xf7f75fcd
 
 class CXFA_TraverseStrategy_DDGroup {
  public:
@@ -34,18 +31,17 @@ void XFA_DataDescription_UpdateDataRelation(CXFA_Node* pDataNode,
        pDataChild;
        pDataChild = pDataChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
     uint32_t dwNameHash = pDataChild->GetNameHash();
-    XFA_ELEMENT eType = pDataChild->GetClassID();
-    if (!dwNameHash) {
+    if (!dwNameHash)
       continue;
-    }
+
     CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_DDGroup>
         sIterator(pDataDescriptionNode);
     for (CXFA_Node* pDDGroupNode = sIterator.GetCurrent(); pDDGroupNode;
          pDDGroupNode = sIterator.MoveToNext()) {
       if (pDDGroupNode != pDataDescriptionNode) {
-        if (pDDGroupNode->GetClassID() != XFA_ELEMENT_DataGroup) {
+        if (pDDGroupNode->GetElementType() != XFA_Element::DataGroup)
           continue;
-        }
+
         CFX_WideString wsNamespace;
         if (!pDDGroupNode->TryNamespace(wsNamespace) ||
             wsNamespace != FX_WSTRC(L"http://ns.adobe.com/data-description/")) {
@@ -53,12 +49,11 @@ void XFA_DataDescription_UpdateDataRelation(CXFA_Node* pDataNode,
         }
       }
       CXFA_Node* pDDNode = pDDGroupNode->GetFirstChildByName(dwNameHash);
-      if (!pDDNode) {
+      if (!pDDNode)
         continue;
-      }
-      if (pDDNode->GetClassID() != eType) {
+      if (pDDNode->GetElementType() != pDataChild->GetElementType())
         break;
-      }
+
       pDataChild->SetDataDescriptionNode(pDDNode);
       XFA_DataDescription_UpdateDataRelation(pDataChild, pDDNode);
       break;
@@ -68,10 +63,10 @@ void XFA_DataDescription_UpdateDataRelation(CXFA_Node* pDataNode,
 CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
     CXFA_Document* pDocument,
     CXFA_Node* pDataParent,
-    XFA_ELEMENT eNodeType,
+    XFA_Element eNodeType,
     const CFX_WideString& wsName) {
   if (!pDataParent) {
-    return NULL;
+    return nullptr;
   }
   CXFA_Node* pParentDDNode = pDataParent->GetDataDescriptionNode();
   if (!pParentDDNode) {
@@ -81,7 +76,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
     pDataNode->SetCData(XFA_ATTRIBUTE_Name, wsName);
     pDataNode->CreateXMLMappingNode();
     pDataParent->InsertChild(pDataNode);
-    pDataNode->SetFlag(XFA_NODEFLAG_Initialized, false);
+    pDataNode->SetFlag(XFA_NodeFlag_Initialized, false);
     return pDataNode;
   } else {
     CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_DDGroup>
@@ -89,7 +84,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
     for (CXFA_Node* pDDGroupNode = sIterator.GetCurrent(); pDDGroupNode;
          pDDGroupNode = sIterator.MoveToNext()) {
       if (pDDGroupNode != pParentDDNode) {
-        if (pDDGroupNode->GetClassID() != XFA_ELEMENT_DataGroup) {
+        if (pDDGroupNode->GetElementType() != XFA_Element::DataGroup) {
           continue;
         }
         CFX_WideString wsNamespace;
@@ -103,7 +98,7 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
       if (!pDDNode) {
         continue;
       }
-      if (pDDNode->GetClassID() != eNodeType) {
+      if (pDDNode->GetElementType() != eNodeType) {
         break;
       }
       CXFA_Node* pDataNode =
@@ -111,16 +106,16 @@ CXFA_Node* XFA_DataDescription_MaybeCreateDataNode(
       ASSERT(pDataNode);
       pDataNode->SetCData(XFA_ATTRIBUTE_Name, wsName);
       pDataNode->CreateXMLMappingNode();
-      if (eNodeType == XFA_ELEMENT_DataValue &&
+      if (eNodeType == XFA_Element::DataValue &&
           pDDNode->GetEnum(XFA_ATTRIBUTE_Contains) ==
               XFA_ATTRIBUTEENUM_MetaData) {
         pDataNode->SetEnum(XFA_ATTRIBUTE_Contains, XFA_ATTRIBUTEENUM_MetaData);
       }
       pDataParent->InsertChild(pDataNode);
       pDataNode->SetDataDescriptionNode(pDDNode);
-      pDataNode->SetFlag(XFA_NODEFLAG_Initialized, false);
+      pDataNode->SetFlag(XFA_NodeFlag_Initialized, false);
       return pDataNode;
     }
-    return NULL;
+    return nullptr;
   }
 }

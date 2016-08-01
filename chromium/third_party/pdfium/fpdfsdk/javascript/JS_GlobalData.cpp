@@ -61,21 +61,21 @@ void CJS_GlobalVariableArray::Copy(const CJS_GlobalVariableArray& array) {
 }
 
 void CJS_GlobalVariableArray::Add(CJS_KeyValue* p) {
-  array.Add(p);
+  m_Array.Add(p);
 }
 
 int CJS_GlobalVariableArray::Count() const {
-  return array.GetSize();
+  return m_Array.GetSize();
 }
 
 CJS_KeyValue* CJS_GlobalVariableArray::GetAt(int index) const {
-  return array.GetAt(index);
+  return m_Array.GetAt(index);
 }
 
 void CJS_GlobalVariableArray::Empty() {
-  for (int i = 0, sz = array.GetSize(); i < sz; i++)
-    delete array.GetAt(i);
-  array.RemoveAll();
+  for (int i = 0, sz = m_Array.GetSize(); i < sz; i++)
+    delete m_Array.GetAt(i);
+  m_Array.RemoveAll();
 }
 
 #define READER_JS_GLOBALDATA_FILENAME L"Reader_JsGlobal.Data"
@@ -280,7 +280,7 @@ CJS_GlobalData_Element* CJS_GlobalData::GetAt(int index) const {
 }
 
 void CJS_GlobalData::LoadGlobalPersistentVariables() {
-  uint8_t* pBuffer = NULL;
+  uint8_t* pBuffer = nullptr;
   int32_t nLength = 0;
 
   LoadFileBuffer(m_sFilePath.c_str(), pBuffer, nLength);
@@ -453,3 +453,7 @@ void CJS_GlobalData::MakeByteString(const CFX_ByteString& name,
       break;
   }
 }
+
+CJS_KeyValue::CJS_KeyValue() {}
+
+CJS_KeyValue::~CJS_KeyValue() {}

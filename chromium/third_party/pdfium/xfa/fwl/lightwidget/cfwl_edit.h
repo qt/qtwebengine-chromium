@@ -12,11 +12,15 @@
 #include "xfa/fwl/lightwidget/cfwl_widget.h"
 
 class CFWL_WidgetProperties;
+class IFDE_TxtEdtDoRecord;
 
 class CFWL_Edit : public CFWL_Widget {
  public:
+  CFWL_Edit();
+  ~CFWL_Edit() override;
+
   static CFWL_Edit* Create();
-  FWL_Error Initialize(const CFWL_WidgetProperties* pProperties = NULL);
+  FWL_Error Initialize(const CFWL_WidgetProperties* pProperties = nullptr);
   FWL_Error SetText(const CFX_WideString& wsText);
   int32_t GetTextLength() const;
   FWL_Error GetText(CFX_WideString& wsText,
@@ -40,8 +44,8 @@ class CFWL_Edit : public CFWL_Widget {
                     int32_t nLen,
                     const CFX_WideStringC& wsReplace);
   FWL_Error DoClipboard(int32_t iCmd);
-  FX_BOOL Redo(const CFX_ByteStringC& bsRecord);
-  FX_BOOL Undo(const CFX_ByteStringC& bsRecord);
+  FX_BOOL Redo(const IFDE_TxtEdtDoRecord* pRecord);
+  FX_BOOL Undo(const IFDE_TxtEdtDoRecord* pRecord);
   FWL_Error SetTabWidth(FX_FLOAT fTabWidth, FX_BOOL bEquidistant);
   FWL_Error SetNumberRange(int32_t iMin, int32_t iMax);
   FWL_Error SetBackColor(uint32_t dwColor);
@@ -59,8 +63,6 @@ class CFWL_Edit : public CFWL_Widget {
                           std::vector<CFX_ByteString>& sSuggest);
   FX_BOOL ReplaceSpellCheckWord(CFX_PointF pointf,
                                 const CFX_ByteStringC& bsReplace);
-  CFWL_Edit();
-  virtual ~CFWL_Edit();
 };
 
 #endif  // XFA_FWL_LIGHTWIDGET_CFWL_EDIT_H_

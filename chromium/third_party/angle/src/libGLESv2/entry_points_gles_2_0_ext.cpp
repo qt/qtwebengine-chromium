@@ -557,7 +557,7 @@ void GL_APIENTRY RenderbufferStorageMultisampleANGLE(GLenum target, GLsizei samp
             return;
         }
 
-        Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
+        Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
         Error error = renderbuffer->setStorageMultisample(samples, internalformat, width, height);
         if (error.isError())
         {
@@ -1027,7 +1027,7 @@ ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target
             return;
         }
 
-        Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
+        Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
         Error error = renderbuffer->setStorageEGLImageTarget(imageObject);
         if (error.isError())
         {
@@ -1139,9 +1139,7 @@ void GL_APIENTRY DebugMessageControlKHR(GLenum source,
             return;
         }
 
-        std::vector<GLuint> idVector(ids, ids + count);
-        context->getState().getDebug().setMessageControl(
-            source, type, severity, std::move(idVector), (enabled != GL_FALSE));
+        context->debugMessageControl(source, type, severity, count, ids, enabled);
     }
 }
 
@@ -1165,8 +1163,7 @@ void GL_APIENTRY DebugMessageInsertKHR(GLenum source,
             return;
         }
 
-        std::string msg(buf, (length > 0) ? static_cast<size_t>(length) : strlen(buf));
-        context->getState().getDebug().insertMessage(source, type, id, severity, std::move(msg));
+        context->debugMessageInsert(source, type, id, severity, length, buf);
     }
 }
 
@@ -1183,7 +1180,7 @@ void GL_APIENTRY DebugMessageCallbackKHR(GLDEBUGPROCKHR callback, const void *us
             return;
         }
 
-        context->getState().getDebug().setCallback(callback, userParam);
+        context->debugMessageCallback(callback, userParam);
     }
 }
 
@@ -1211,8 +1208,8 @@ GLuint GL_APIENTRY GetDebugMessageLogKHR(GLuint count,
             return 0;
         }
 
-        return static_cast<GLuint>(context->getState().getDebug().getMessages(
-            count, bufSize, sources, types, ids, severities, lengths, messageLog));
+        return context->getDebugMessageLog(count, bufSize, sources, types, ids, severities, lengths,
+                                           messageLog);
     }
 
     return 0;
@@ -1234,7 +1231,7 @@ void GL_APIENTRY PushDebugGroupKHR(GLenum source, GLuint id, GLsizei length, con
         }
 
         std::string msg(message, (length > 0) ? static_cast<size_t>(length) : strlen(message));
-        context->getState().getDebug().pushGroup(source, id, std::move(msg));
+        context->pushDebugGroup(source, id, length, message);
     }
 }
 
@@ -1250,7 +1247,7 @@ void GL_APIENTRY PopDebugGroupKHR(void)
             return;
         }
 
-        context->getState().getDebug().popGroup();
+        context->popDebugGroup();
     }
 }
 
@@ -1393,7 +1390,7 @@ ANGLE_EXPORT void GL_APIENTRY CoverageModulationCHROMIUM(GLenum components)
 {
     EVENT("(GLenum components = %u)", components);
 
-    Context* context = GetValidGlobalContext();
+    Context *context = GetValidGlobalContext();
     if (context)
     {
         if (!ValidateCoverageModulationCHROMIUM(context, components))
@@ -1404,4 +1401,268 @@ ANGLE_EXPORT void GL_APIENTRY CoverageModulationCHROMIUM(GLenum components)
     }
 }
 
+// CHROMIUM_path_rendering
+ANGLE_EXPORT void GL_APIENTRY MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat *matrix)
+{
+    EVENT("(GLenum matrixMode = %u)", matrixMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateMatrix(context, matrixMode, matrix))
+        {
+            return;
+        }
+        context->loadPathRenderingMatrix(matrixMode, matrix);
+    }
 }
+
+ANGLE_EXPORT void GL_APIENTRY MatrixLoadIdentityCHROMIUM(GLenum matrixMode)
+{
+    EVENT("(GLenum matrixMode = %u)", matrixMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateMatrixMode(context, matrixMode))
+        {
+            return;
+        }
+        context->loadPathRenderingIdentityMatrix(matrixMode);
+    }
+}
+
+ANGLE_EXPORT GLuint GL_APIENTRY GenPathsCHROMIUM(GLsizei range)
+{
+    EVENT("(GLsizei range = %d)", range);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateGenPaths(context, range))
+        {
+            return 0;
+        }
+        return context->createPaths(range);
+    }
+    return 0;
+}
+
+ANGLE_EXPORT void GL_APIENTRY DeletePathsCHROMIUM(GLuint first, GLsizei range)
+{
+    EVENT("(GLuint first = %u, GLsizei range = %d)", first, range);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateDeletePaths(context, first, range))
+        {
+            return;
+        }
+        context->deletePaths(first, range);
+    }
+}
+
+ANGLE_EXPORT GLboolean GL_APIENTRY IsPathCHROMIUM(GLuint path)
+{
+    EVENT("(GLuint path = %u)", path);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateIsPath(context))
+        {
+            return GL_FALSE;
+        }
+        return context->hasPathData(path);
+    }
+    return GL_FALSE;
+}
+
+ANGLE_EXPORT void GL_APIENTRY PathCommandsCHROMIUM(GLuint path,
+                                                   GLsizei numCommands,
+                                                   const GLubyte *commands,
+                                                   GLsizei numCoords,
+                                                   GLenum coordType,
+                                                   const void *coords)
+{
+    EVENT(
+        "(GLuint path = %u, GLsizei numCommands = %d, commands = %p, "
+        "GLsizei numCoords = %d, GLenum coordType = %u, void* coords = %p)",
+        path, numCommands, commands, numCoords, coordType, coords);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation())
+        {
+            if (!ValidatePathCommands(context, path, numCommands, commands, numCoords, coordType,
+                                      coords))
+            {
+                return;
+            }
+        }
+        context->setPathCommands(path, numCommands, commands, numCoords, coordType, coords);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY PathParameterfCHROMIUM(GLuint path, GLenum pname, GLfloat value)
+{
+    EVENT("(GLuint path = %u, GLenum pname = %u, GLfloat value = %f)", path, pname, value);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateSetPathParameter(context, path, pname, value))
+        {
+            return;
+        }
+        context->setPathParameterf(path, pname, value);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY PathParameteriCHROMIUM(GLuint path, GLenum pname, GLint value)
+{
+    PathParameterfCHROMIUM(path, pname, static_cast<GLfloat>(value));
+}
+
+ANGLE_EXPORT void GL_APIENTRY GetPathParameterfCHROMIUM(GLuint path, GLenum pname, GLfloat *value)
+{
+    EVENT("(GLuint path = %u, GLenum pname = %u)", path, pname);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateGetPathParameter(context, path, pname, value))
+        {
+            return;
+        }
+        context->getPathParameterfv(path, pname, value);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY GetPathParameteriCHROMIUM(GLuint path, GLenum pname, GLint *value)
+{
+    GLfloat val = 0.0f;
+    GetPathParameterfCHROMIUM(path, pname, value != nullptr ? &val : nullptr);
+    if (value)
+        *value = static_cast<GLint>(val);
+}
+
+ANGLE_EXPORT void GL_APIENTRY PathStencilFuncCHROMIUM(GLenum func, GLint ref, GLuint mask)
+{
+    EVENT("(GLenum func = %u, GLint ref = %d, GLuint mask = %u)", func, ref, mask);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidatePathStencilFunc(context, func, ref, mask))
+        {
+            return;
+        }
+        context->setPathStencilFunc(func, ref, mask);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY StencilFillPathCHROMIUM(GLuint path, GLenum fillMode, GLuint mask)
+{
+    EVENT("(GLuint path = %u, GLenum fillMode = %u, GLuint mask = %u)", path, fillMode, mask);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateStencilFillPath(context, path, fillMode, mask))
+        {
+            return;
+        }
+        context->stencilFillPath(path, fillMode, mask);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY StencilStrokePathCHROMIUM(GLuint path, GLint reference, GLuint mask)
+{
+    EVENT("(GLuint path = %u, GLint ference = %d, GLuint mask = %u)", path, reference, mask);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() &&
+            !ValidateStencilStrokePath(context, path, reference, mask))
+        {
+            return;
+        }
+        context->stencilStrokePath(path, reference, mask);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY CoverFillPathCHROMIUM(GLuint path, GLenum coverMode)
+{
+    EVENT("(GLuint path = %u, GLenum coverMode = %u)", path, coverMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateCoverPath(context, path, coverMode))
+        {
+            return;
+        }
+        context->coverFillPath(path, coverMode);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY CoverStrokePathCHROMIUM(GLuint path, GLenum coverMode)
+{
+    EVENT("(GLuint path = %u, GLenum coverMode = %u)", path, coverMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() && !ValidateCoverPath(context, path, coverMode))
+        {
+            return;
+        }
+        context->coverStrokePath(path, coverMode);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY StencilThenCoverFillPathCHROMIUM(GLuint path,
+                                                               GLenum fillMode,
+                                                               GLuint mask,
+                                                               GLenum coverMode)
+{
+    EVENT("(GLuint path = %u, GLenum fillMode = %u, GLuint mask = %u, GLenum coverMode = %u)", path,
+          fillMode, mask, coverMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() &&
+            !ValidateStencilThenCoverFillPath(context, path, fillMode, mask, coverMode))
+        {
+            return;
+        }
+        context->stencilThenCoverFillPath(path, fillMode, mask, coverMode);
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY StencilThenCoverStrokePathCHROMIUM(GLuint path,
+                                                                 GLint reference,
+                                                                 GLuint mask,
+                                                                 GLenum coverMode)
+{
+    EVENT("(GLuint path = %u, GLint reference = %d, GLuint mask = %u, GLenum coverMode = %u)", path,
+          reference, mask, coverMode);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        if (!context->skipValidation() &&
+            !ValidateStencilThenCoverStrokePath(context, path, reference, mask, coverMode))
+        {
+            return;
+        }
+        context->stencilThenCoverStrokePath(path, reference, mask, coverMode);
+    }
+}
+
+}  // gl

@@ -91,10 +91,6 @@ static_assert(TRUE == true, "true_needs_to_be_true");
 static_assert(FALSE == false, "false_needs_to_be_false");
 #endif
 
-#ifndef NULL
-#define NULL 0
-#endif
-
 #ifndef ASSERT
 #ifndef NDEBUG
 #define ASSERT assert
@@ -232,7 +228,7 @@ extern "C" {
 #define FXSYS_GetFullPathName GetFullPathName
 #define FXSYS_GetModuleFileName GetModuleFileName
 #else
-int FXSYS_GetACP(void);
+int FXSYS_GetACP();
 char* FXSYS_itoa(int value, char* str, int radix);
 int FXSYS_WideCharToMultiByte(uint32_t codepage,
                               uint32_t dwFlags,

@@ -76,7 +76,7 @@ bool PageWidgetFilter(CXFA_FFWidget* pWidget,
   CXFA_WidgetAcc* pWidgetAcc = pWidget->GetDataAcc();
 
   if (!!(dwFilter & XFA_WidgetStatus_Focused) &&
-      pWidgetAcc->GetClassID() != XFA_ELEMENT_Field) {
+      pWidgetAcc->GetElementType() != XFA_Element::Field) {
     return false;
   }
 
@@ -100,10 +100,6 @@ CXFA_FFPageView::~CXFA_FFPageView() {}
 
 CXFA_FFDocView* CXFA_FFPageView::GetDocView() const {
   return m_pDocView;
-}
-
-int32_t CXFA_FFPageView::GetPageViewIndex() const {
-  return GetPageIndex();
 }
 
 void CXFA_FFPageView::GetPageViewRect(CFX_RectF& rtPage) const {
@@ -138,9 +134,9 @@ CXFA_FFPageWidgetIterator::CXFA_FFPageWidgetIterator(CXFA_FFPageView* pPageView,
   m_pPageView = pPageView;
   m_dwFilter = dwFilter;
   m_sIterator.Init(pPageView);
-  m_bIgnorerelevant = ((CXFA_FFDoc*)m_pPageView->GetDocView()->GetDoc())
-                          ->GetXFADoc()
-                          ->GetCurVersionMode() < XFA_VERSION_205;
+  m_bIgnorerelevant =
+      m_pPageView->GetDocView()->GetDoc()->GetXFADoc()->GetCurVersionMode() <
+      XFA_VERSION_205;
 }
 CXFA_FFPageWidgetIterator::~CXFA_FFPageWidgetIterator() {}
 void CXFA_FFPageWidgetIterator::Reset() {
@@ -154,10 +150,10 @@ CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToFirst() {
       return hWidget;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToLast() {
-  m_sIterator.SetCurrent(NULL);
+  m_sIterator.SetCurrent(nullptr);
   return MoveToPrevious();
 }
 CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToNext() {
@@ -167,7 +163,7 @@ CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToNext() {
       return hWidget;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToPrevious() {
   for (CXFA_LayoutItem* pLayoutItem = m_sIterator.MoveToPrev(); pLayoutItem;
@@ -176,11 +172,11 @@ CXFA_FFWidget* CXFA_FFPageWidgetIterator::MoveToPrevious() {
       return hWidget;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFPageWidgetIterator::GetCurrentWidget() {
   CXFA_LayoutItem* pLayoutItem = m_sIterator.GetCurrent();
-  return pLayoutItem ? XFA_GetWidgetFromLayoutItem(pLayoutItem) : NULL;
+  return pLayoutItem ? XFA_GetWidgetFromLayoutItem(pLayoutItem) : nullptr;
 }
 FX_BOOL CXFA_FFPageWidgetIterator::SetCurrentWidget(CXFA_FFWidget* hWidget) {
   return hWidget && m_sIterator.SetCurrent(hWidget);
@@ -189,7 +185,7 @@ CXFA_FFWidget* CXFA_FFPageWidgetIterator::GetWidget(
     CXFA_LayoutItem* pLayoutItem) {
   if (CXFA_FFWidget* pWidget = XFA_GetWidgetFromLayoutItem(pLayoutItem)) {
     if (!PageWidgetFilter(pWidget, m_dwFilter, FALSE, m_bIgnorerelevant)) {
-      return NULL;
+      return nullptr;
     }
     if (!pWidget->IsLoaded() &&
         (pWidget->GetStatus() & XFA_WidgetStatus_Visible) != 0) {
@@ -197,16 +193,16 @@ CXFA_FFWidget* CXFA_FFPageWidgetIterator::GetWidget(
     }
     return pWidget;
   }
-  return NULL;
+  return nullptr;
 }
 
 CXFA_FFTabOrderPageWidgetIterator::CXFA_FFTabOrderPageWidgetIterator(
     CXFA_FFPageView* pPageView,
     uint32_t dwFilter)
     : m_pPageView(pPageView), m_dwFilter(dwFilter), m_iCurWidget(-1) {
-  m_bIgnorerelevant = ((CXFA_FFDoc*)m_pPageView->GetDocView()->GetDoc())
-                          ->GetXFADoc()
-                          ->GetCurVersionMode() < XFA_VERSION_205;
+  m_bIgnorerelevant =
+      m_pPageView->GetDocView()->GetDoc()->GetXFADoc()->GetCurVersionMode() <
+      XFA_VERSION_205;
   Reset();
 }
 
@@ -226,7 +222,7 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToFirst() {
       }
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToLast() {
   if (m_TabOrderWidgetArray.GetSize() > 0) {
@@ -238,7 +234,7 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToLast() {
       }
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToNext() {
   for (int32_t i = m_iCurWidget + 1; i < m_TabOrderWidgetArray.GetSize(); i++) {
@@ -249,7 +245,7 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToNext() {
     }
   }
   m_iCurWidget = -1;
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToPrevious() {
   for (int32_t i = m_iCurWidget - 1; i >= 0; i--) {
@@ -260,13 +256,13 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::MoveToPrevious() {
     }
   }
   m_iCurWidget = -1;
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::GetCurrentWidget() {
   if (m_iCurWidget >= 0) {
     return m_TabOrderWidgetArray[m_iCurWidget];
   }
-  return NULL;
+  return nullptr;
 }
 FX_BOOL CXFA_FFTabOrderPageWidgetIterator::SetCurrentWidget(
     CXFA_FFWidget* hWidget) {
@@ -280,9 +276,9 @@ FX_BOOL CXFA_FFTabOrderPageWidgetIterator::SetCurrentWidget(
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::GetTraverseWidget(
     CXFA_FFWidget* pWidget) {
   CXFA_WidgetAcc* pAcc = pWidget->GetDataAcc();
-  CXFA_Node* pTraversal = pAcc->GetNode()->GetChild(0, XFA_ELEMENT_Traversal);
+  CXFA_Node* pTraversal = pAcc->GetNode()->GetChild(0, XFA_Element::Traversal);
   if (pTraversal) {
-    CXFA_Node* pTraverse = pTraversal->GetChild(0, XFA_ELEMENT_Traverse);
+    CXFA_Node* pTraverse = pTraversal->GetChild(0, XFA_Element::Traverse);
     if (pTraverse) {
       CFX_WideString wsTraverseWidgetName;
       if (pTraverse->GetAttribute(XFA_ATTRIBUTE_Ref, wsTraverseWidgetName)) {
@@ -290,7 +286,7 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::GetTraverseWidget(
       }
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::FindWidgetByName(
     const CFX_WideString& wsWidgetName,
@@ -310,7 +306,7 @@ void CXFA_FFTabOrderPageWidgetIterator::CreateTabOrderWidgetArray() {
     if (m_TabOrderWidgetArray.Find(hWidget) < 0) {
       m_TabOrderWidgetArray.Add(hWidget);
       CXFA_WidgetAcc* pWidgetAcc = hWidget->GetDataAcc();
-      if (pWidgetAcc->GetUIType() == XFA_ELEMENT_ExclGroup) {
+      if (pWidgetAcc->GetUIType() == XFA_Element::ExclGroup) {
         int32_t iWidgetIndex = SpaceOrderWidgetArray.Find(hWidget) + 1;
         while (TRUE) {
           CXFA_FFWidget* pRadio =
@@ -377,7 +373,8 @@ void CXFA_FFTabOrderPageWidgetIterator::OrderContainer(
       CXFA_TabParam* pParam = new CXFA_TabParam;
       pParam->m_pWidget = hWidget;
       tabParams.Add(pParam);
-      if (XFA_IsLayoutElement(pSearchItem->GetFormNode()->GetClassID(), TRUE)) {
+      if (XFA_IsLayoutElement(pSearchItem->GetFormNode()->GetElementType(),
+                              TRUE)) {
         OrderContainer(sIterator, pSearchItem, pParam, bCurrentItem,
                        bContentArea, bMarsterPage);
       }
@@ -411,7 +408,7 @@ void CXFA_FFTabOrderPageWidgetIterator::CreateSpaceOrderWidgetArray(
   CXFA_TabParam* pParam = new CXFA_TabParam;
   FX_BOOL bCurrentItem = FALSE;
   FX_BOOL bContentArea = FALSE;
-  OrderContainer(&sIterator, NULL, pParam, bCurrentItem, bContentArea);
+  OrderContainer(&sIterator, nullptr, pParam, bCurrentItem, bContentArea);
   if (pParam->m_Children.GetSize() > 0) {
     WidgetArray.Append(pParam->m_Children);
   }
@@ -419,7 +416,7 @@ void CXFA_FFTabOrderPageWidgetIterator::CreateSpaceOrderWidgetArray(
   bCurrentItem = FALSE;
   bContentArea = FALSE;
   pParam->m_Children.RemoveAll();
-  OrderContainer(&sIterator, NULL, pParam, bCurrentItem, bContentArea, TRUE);
+  OrderContainer(&sIterator, nullptr, pParam, bCurrentItem, bContentArea, TRUE);
   if (pParam->m_Children.GetSize() > 0) {
     WidgetArray.Append(pParam->m_Children);
   }
@@ -434,5 +431,9 @@ CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::GetWidget(
     }
     return pWidget;
   }
-  return NULL;
+  return nullptr;
 }
+
+CXFA_TabParam::CXFA_TabParam() : m_pWidget(nullptr) {}
+
+CXFA_TabParam::~CXFA_TabParam() {}

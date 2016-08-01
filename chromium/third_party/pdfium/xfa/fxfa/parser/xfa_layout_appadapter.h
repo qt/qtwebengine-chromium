@@ -13,10 +13,10 @@ class CXFA_TraverseStrategy_PageAreaContainerLayoutItem {
  public:
   static inline CXFA_ContainerLayoutItem* GetFirstChild(
       CXFA_ContainerLayoutItem* pLayoutItem) {
-    if (pLayoutItem->m_pFormNode->GetClassID() == XFA_ELEMENT_PageSet) {
-      return (CXFA_ContainerLayoutItem*)pLayoutItem->m_pFirstChild;
+    if (pLayoutItem->m_pFormNode->GetElementType() == XFA_Element::PageSet) {
+      return static_cast<CXFA_ContainerLayoutItem*>(pLayoutItem->m_pFirstChild);
     }
-    return NULL;
+    return nullptr;
   }
   static inline CXFA_ContainerLayoutItem* GetNextSibling(
       CXFA_ContainerLayoutItem* pLayoutItem) {
@@ -24,9 +24,10 @@ class CXFA_TraverseStrategy_PageAreaContainerLayoutItem {
   }
   static inline CXFA_ContainerLayoutItem* GetParent(
       CXFA_ContainerLayoutItem* pLayoutItem) {
-    return (CXFA_ContainerLayoutItem*)pLayoutItem->m_pParent;
+    return static_cast<CXFA_ContainerLayoutItem*>(pLayoutItem->m_pParent);
   }
 };
+
 class CXFA_TraverseStrategy_ContentAreaContainerLayoutItem {
  public:
   static inline CXFA_ContainerLayoutItem* GetFirstChild(
@@ -53,22 +54,23 @@ class CXFA_TraverseStrategy_ContentAreaContainerLayoutItem {
   }
   static inline CXFA_ContainerLayoutItem* GetParent(
       CXFA_ContainerLayoutItem* pLayoutItem) {
-    return (CXFA_ContainerLayoutItem*)pLayoutItem->m_pParent;
+    return static_cast<CXFA_ContainerLayoutItem*>(pLayoutItem->m_pParent);
   }
 };
+
 class CXFA_TraverseStrategy_ContentLayoutItem {
  public:
   static inline CXFA_ContentLayoutItem* GetFirstChild(
       CXFA_ContentLayoutItem* pLayoutItem) {
-    return (CXFA_ContentLayoutItem*)pLayoutItem->m_pFirstChild;
+    return static_cast<CXFA_ContentLayoutItem*>(pLayoutItem->m_pFirstChild);
   }
   static inline CXFA_ContentLayoutItem* GetNextSibling(
       CXFA_ContentLayoutItem* pLayoutItem) {
-    return (CXFA_ContentLayoutItem*)pLayoutItem->m_pNextSibling;
+    return static_cast<CXFA_ContentLayoutItem*>(pLayoutItem->m_pNextSibling);
   }
   static inline CXFA_ContentLayoutItem* GetParent(
       CXFA_ContentLayoutItem* pLayoutItem) {
-    return (CXFA_ContentLayoutItem*)pLayoutItem->m_pParent;
+    return static_cast<CXFA_ContentLayoutItem*>(pLayoutItem->m_pParent);
   }
 };
 

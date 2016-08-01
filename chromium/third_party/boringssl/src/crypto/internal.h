@@ -123,9 +123,9 @@
 
 #if defined(OPENSSL_NO_THREADS)
 #elif defined(OPENSSL_WINDOWS)
-#pragma warning(push, 3)
+OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <windows.h>
-#pragma warning(pop)
+OPENSSL_MSVC_PRAGMA(warning(pop))
 #else
 #include <pthread.h>
 #endif
@@ -150,6 +150,19 @@ void OPENSSL_cpuid_setup(void);
 typedef __int128_t int128_t;
 typedef __uint128_t uint128_t;
 #endif
+
+
+/* buffers_alias returns one if |a| and |b| alias and zero otherwise. */
+static inline int buffers_alias(const uint8_t *a, size_t a_len,
+                                const uint8_t *b, size_t b_len) {
+  /* Cast |a| and |b| to integers. In C, pointer comparisons between unrelated
+   * objects are undefined whereas pointer to integer conversions are merely
+   * implementation-defined. We assume the implementation defined it in a sane
+   * way. */
+  uintptr_t a_u = (uintptr_t)a;
+  uintptr_t b_u = (uintptr_t)b;
+  return a_u + a_len > b_u && b_u + b_len > a_u;
+}
 
 
 /* Constant-time utility functions.
@@ -355,12 +368,8 @@ OPENSSL_EXPORT int CRYPTO_refcount_dec_and_test_zero(CRYPTO_refcount_t *count);
  * |CRYPTO_STATIC_MUTEX_INIT|.
  *
  * |CRYPTO_MUTEX| can appear in public structures and so is defined in
- * thread.h.
- *
- * The global lock is a different type because there's no static initialiser
- * value on Windows for locks, so global locks have to be coupled with a
- * |CRYPTO_once_t| to ensure that the lock is setup before use. This is done
- * automatically by |CRYPTO_STATIC_MUTEX_lock_*|. */
+ * thread.h as a structure large enough to fit the real type. The global lock is
+ * a different type so it may be initialized with platform initializer macros.*/
 
 #if defined(OPENSSL_NO_THREADS)
 struct CRYPTO_STATIC_MUTEX {
@@ -369,10 +378,9 @@ struct CRYPTO_STATIC_MUTEX {
 #define CRYPTO_STATIC_MUTEX_INIT { 0 }
 #elif defined(OPENSSL_WINDOWS)
 struct CRYPTO_STATIC_MUTEX {
-  CRYPTO_once_t once;
-  CRITICAL_SECTION lock;
+  SRWLOCK lock;
 };
-#define CRYPTO_STATIC_MUTEX_INIT { CRYPTO_ONCE_INIT, { 0 } }
+#define CRYPTO_STATIC_MUTEX_INIT { SRWLOCK_INIT }
 #else
 struct CRYPTO_STATIC_MUTEX {
   pthread_rwlock_t lock;
@@ -385,16 +393,18 @@ struct CRYPTO_STATIC_MUTEX {
 OPENSSL_EXPORT void CRYPTO_MUTEX_init(CRYPTO_MUTEX *lock);
 
 /* CRYPTO_MUTEX_lock_read locks |lock| such that other threads may also have a
- * read lock, but none may have a write lock. (On Windows, read locks are
- * actually fully exclusive.) */
+ * read lock, but none may have a write lock. */
 OPENSSL_EXPORT void CRYPTO_MUTEX_lock_read(CRYPTO_MUTEX *lock);
 
 /* CRYPTO_MUTEX_lock_write locks |lock| such that no other thread has any type
  * of lock on it. */
 OPENSSL_EXPORT void CRYPTO_MUTEX_lock_write(CRYPTO_MUTEX *lock);
 
-/* CRYPTO_MUTEX_unlock unlocks |lock|. */
-OPENSSL_EXPORT void CRYPTO_MUTEX_unlock(CRYPTO_MUTEX *lock);
+/* CRYPTO_MUTEX_unlock_read unlocks |lock| for reading. */
+OPENSSL_EXPORT void CRYPTO_MUTEX_unlock_read(CRYPTO_MUTEX *lock);
+
+/* CRYPTO_MUTEX_unlock_write unlocks |lock| for writing. */
+OPENSSL_EXPORT void CRYPTO_MUTEX_unlock_write(CRYPTO_MUTEX *lock);
 
 /* CRYPTO_MUTEX_cleanup releases all resources held by |lock|. */
 OPENSSL_EXPORT void CRYPTO_MUTEX_cleanup(CRYPTO_MUTEX *lock);
@@ -413,8 +423,12 @@ OPENSSL_EXPORT void CRYPTO_STATIC_MUTEX_lock_read(
 OPENSSL_EXPORT void CRYPTO_STATIC_MUTEX_lock_write(
     struct CRYPTO_STATIC_MUTEX *lock);
 
-/* CRYPTO_STATIC_MUTEX_unlock unlocks |lock|. */
-OPENSSL_EXPORT void CRYPTO_STATIC_MUTEX_unlock(
+/* CRYPTO_STATIC_MUTEX_unlock_read unlocks |lock| for reading. */
+OPENSSL_EXPORT void CRYPTO_STATIC_MUTEX_unlock_read(
+    struct CRYPTO_STATIC_MUTEX *lock);
+
+/* CRYPTO_STATIC_MUTEX_unlock_write unlocks |lock| for writing. */
+OPENSSL_EXPORT void CRYPTO_STATIC_MUTEX_unlock_write(
     struct CRYPTO_STATIC_MUTEX *lock);
 
 

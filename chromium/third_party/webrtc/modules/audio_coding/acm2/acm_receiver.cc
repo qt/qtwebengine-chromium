@@ -49,7 +49,7 @@ bool IsCng(int codec_id) {
 AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
     : last_audio_decoder_(nullptr),
       last_audio_buffer_(new int16_t[AudioFrame::kMaxDataSizeSamples]),
-      neteq_(NetEq::Create(config.neteq_config)),
+      neteq_(NetEq::Create(config.neteq_config, config.decoder_factory)),
       clock_(config.clock),
       resampled_last_output_frame_(true) {
   assert(clock_);
@@ -242,7 +242,7 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
     ret_val = neteq_->RegisterPayloadType(neteq_decoder, name, payload_type);
   } else {
     ret_val = neteq_->RegisterExternalDecoder(
-        audio_decoder, neteq_decoder, name, payload_type, sample_rate_hz);
+        audio_decoder, neteq_decoder, name, payload_type);
   }
   if (ret_val != NetEq::kOK) {
     LOG(LERROR) << "AcmReceiver::AddCodec " << acm_codec_id

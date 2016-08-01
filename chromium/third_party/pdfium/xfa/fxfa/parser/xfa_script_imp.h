@@ -8,11 +8,14 @@
 #define XFA_FXFA_PARSER_XFA_SCRIPT_IMP_H_
 
 #include <map>
+#include <memory>
+#include <vector>
 
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
+#include "fxjse/include/cfxjse_arguments.h"
+#include "xfa/fxfa/fm2js/xfa_fm2jscontext.h"
+#include "xfa/fxfa/include/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_script.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
 #define XFA_RESOLVENODE_TagName 0x0002
 
@@ -23,24 +26,23 @@ class CXFA_ScriptContext {
   explicit CXFA_ScriptContext(CXFA_Document* pDocument);
   ~CXFA_ScriptContext();
 
-  void Release();
-  void Initialize(FXJSE_HRUNTIME hRuntime);
+  void Initialize(v8::Isolate* pIsolate);
   void SetEventParam(CXFA_EventParam param) { m_eventParam = param; }
   CXFA_EventParam* GetEventParam() { return &m_eventParam; }
   FX_BOOL RunScript(XFA_SCRIPTLANGTYPE eScriptType,
                     const CFX_WideStringC& wsScript,
-                    FXJSE_HVALUE hRetValue,
-                    CXFA_Object* pThisObject = NULL);
+                    CFXJSE_Value* pRetValue,
+                    CXFA_Object* pThisObject = nullptr);
 
   int32_t ResolveObjects(CXFA_Object* refNode,
                          const CFX_WideStringC& wsExpression,
                          XFA_RESOLVENODE_RS& resolveNodeRS,
                          uint32_t dwStyles = XFA_RESOLVENODE_Children,
-                         CXFA_Node* bindNode = NULL);
-  FXJSE_HVALUE GetJSValueFromMap(CXFA_Object* pObject);
-  void CacheList(CXFA_NodeList* pList) { m_CacheListArray.Add(pList); }
+                         CXFA_Node* bindNode = nullptr);
+  CFXJSE_Value* GetJSValueFromMap(CXFA_Object* pObject);
+  void AddToCacheList(std::unique_ptr<CXFA_NodeList> pList);
   CXFA_Object* GetThisObject() const { return m_pThisObject; }
-  FXJSE_HRUNTIME GetRuntime() const { return m_hJsRuntime; }
+  v8::Isolate* GetRuntime() const { return m_pIsolate; }
 
   int32_t GetIndexByName(CXFA_Node* refNode);
   int32_t GetIndexByClassName(CXFA_Node* refNode);
@@ -49,74 +51,73 @@ class CXFA_ScriptContext {
   void SetNodesOfRunScript(CXFA_NodeArray* pArray);
   void AddNodesOfRunScript(const CXFA_NodeArray& nodes);
   void AddNodesOfRunScript(CXFA_Node* pNode);
-  FXJSE_HCLASS GetJseNormalClass();
+  CFXJSE_Class* GetJseNormalClass();
 
   void SetRunAtType(XFA_ATTRIBUTEENUM eRunAt) { m_eRunAtType = eRunAt; }
   FX_BOOL IsRunAtClient() { return m_eRunAtType != XFA_ATTRIBUTEENUM_Server; }
   FX_BOOL QueryNodeByFlag(CXFA_Node* refNode,
                           const CFX_WideStringC& propname,
-                          FXJSE_HVALUE hValue,
+                          CFXJSE_Value* pValue,
                           uint32_t dwFlag,
                           FX_BOOL bSetting);
-  FX_BOOL QueryVariableHValue(CXFA_Node* pScriptNode,
-                              const CFX_ByteStringC& szPropName,
-                              FXJSE_HVALUE hValue,
-                              FX_BOOL bGetter);
-  FX_BOOL QueryBuiltinHValue(const CFX_ByteStringC& szPropName,
-                             FXJSE_HVALUE hValue);
-  static void GlobalPropertyGetter(FXJSE_HOBJECT hObject,
+  FX_BOOL QueryVariableValue(CXFA_Node* pScriptNode,
+                             const CFX_ByteStringC& szPropName,
+                             CFXJSE_Value* pValue,
+                             FX_BOOL bGetter);
+  FX_BOOL QueryBuiltinValue(const CFX_ByteStringC& szPropName,
+                            CFXJSE_Value* pValue);
+  static void GlobalPropertyGetter(CFXJSE_Value* pObject,
                                    const CFX_ByteStringC& szPropName,
-                                   FXJSE_HVALUE hValue);
-  static void GlobalPropertySetter(FXJSE_HOBJECT hObject,
+                                   CFXJSE_Value* pValue);
+  static void GlobalPropertySetter(CFXJSE_Value* pObject,
                                    const CFX_ByteStringC& szPropName,
-                                   FXJSE_HVALUE hValue);
-  static void NormalPropertyGetter(FXJSE_HOBJECT hObject,
+                                   CFXJSE_Value* pValue);
+  static void NormalPropertyGetter(CFXJSE_Value* pObject,
                                    const CFX_ByteStringC& szPropName,
-                                   FXJSE_HVALUE hValue);
-  static void NormalPropertySetter(FXJSE_HOBJECT hObject,
+                                   CFXJSE_Value* pValue);
+  static void NormalPropertySetter(CFXJSE_Value* pObject,
                                    const CFX_ByteStringC& szPropName,
-                                   FXJSE_HVALUE hValue);
-  static void NormalMethodCall(FXJSE_HOBJECT hThis,
+                                   CFXJSE_Value* pValue);
+  static void NormalMethodCall(CFXJSE_Value* hThis,
                                const CFX_ByteStringC& szFuncName,
                                CFXJSE_Arguments& args);
-  static int32_t NormalPropTypeGetter(FXJSE_HOBJECT hObject,
+  static int32_t NormalPropTypeGetter(CFXJSE_Value* pObject,
                                       const CFX_ByteStringC& szPropName,
                                       FX_BOOL bQueryIn);
-  static int32_t GlobalPropTypeGetter(FXJSE_HOBJECT hObject,
+  static int32_t GlobalPropTypeGetter(CFXJSE_Value* pObject,
                                       const CFX_ByteStringC& szPropName,
                                       FX_BOOL bQueryIn);
   FX_BOOL RunVariablesScript(CXFA_Node* pScriptNode);
   CXFA_Object* GetVariablesThis(CXFA_Object* pObject,
                                 FX_BOOL bScriptNode = FALSE);
-  void ReleaseVariablesMap();
   FX_BOOL IsStrictScopeInJavaScript();
   XFA_SCRIPTLANGTYPE GetType();
   CXFA_NodeArray& GetUpObjectArray() { return m_upObjectArray; }
   CXFA_Document* GetDocument() const { return m_pDocument; }
 
- protected:
+  static CXFA_Object* ToObject(CFXJSE_Value* pValue, CFXJSE_Class* pClass);
+
+ private:
   void DefineJsContext();
-  FXJSE_HCONTEXT CreateVariablesContext(CXFA_Node* pScriptNode,
-                                        CXFA_Node* pSubform);
+  CFXJSE_Context* CreateVariablesContext(CXFA_Node* pScriptNode,
+                                         CXFA_Node* pSubform);
   void DefineJsClass();
-  void RemoveBuiltInObjs(FXJSE_HCONTEXT jsContext) const;
+  void RemoveBuiltInObjs(CFXJSE_Context* pContext) const;
 
   CXFA_Document* m_pDocument;
-  FXJSE_HCONTEXT m_hJsContext;
-  FXJSE_HRUNTIME m_hJsRuntime;
-  FXJSE_HCLASS m_hJsClass;
+  std::unique_ptr<CFXJSE_Context> m_JsContext;
+  v8::Isolate* m_pIsolate;
+  CFXJSE_Class* m_pJsClass;
   XFA_SCRIPTLANGTYPE m_eScriptType;
-  FXJSE_CLASS m_JsGlobalClass;
-  FXJSE_CLASS m_JsNormalClass;
-  CFX_MapPtrTemplate<CXFA_Object*, FXJSE_HVALUE> m_mapXFAToHValue;
-  FXJSE_CLASS m_JsGlobalVariablesClass;
-  CFX_MapPtrTemplate<CXFA_Object*, FXJSE_HCONTEXT> m_mapVariableToHValue;
+  std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
+  CFX_MapPtrTemplate<CXFA_Object*, CFXJSE_Context*> m_mapVariableToContext;
   CXFA_EventParam m_eventParam;
   CXFA_NodeArray m_upObjectArray;
-  CFX_ArrayTemplate<CXFA_NodeList*> m_CacheListArray;
+  // CacheList holds the NodeList items so we can clean them up when we're done.
+  std::vector<std::unique_ptr<CXFA_NodeList>> m_CacheList;
   CXFA_NodeArray* m_pScriptNodeArray;
-  CXFA_ResolveProcessor* m_pResolveProcessor;
-  XFA_HFM2JSCONTEXT m_hFM2JSContext;
+  std::unique_ptr<CXFA_ResolveProcessor> m_ResolveProcessor;
+  std::unique_ptr<CXFA_FM2JSContext> m_FM2JSContext;
   CXFA_Object* m_pThisObject;
   uint32_t m_dwBuiltInInFlags;
   XFA_ATTRIBUTEENUM m_eRunAtType;

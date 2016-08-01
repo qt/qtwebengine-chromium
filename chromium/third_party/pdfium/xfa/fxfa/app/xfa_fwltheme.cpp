@@ -8,6 +8,7 @@
 
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
+#include "xfa/fgas/font/fgas_gefont.h"
 #include "xfa/fwl/basewidget/ifwl_barcode.h"
 #include "xfa/fwl/basewidget/ifwl_caret.h"
 #include "xfa/fwl/basewidget/ifwl_checkbox.h"
@@ -35,18 +36,17 @@ const FX_WCHAR* const g_FWLTheme_CalFonts[] = {
 
 CXFA_FFWidget* XFA_ThemeGetOuterWidget(IFWL_Widget* pWidget) {
   IFWL_Widget* pOuter = pWidget;
-  while (pOuter->GetOuter()) {
+  while (pOuter && pOuter->GetOuter())
     pOuter = pOuter->GetOuter();
-  }
-  if (pOuter) {
-    return (CXFA_FFWidget*)pOuter->GetPrivateData(pOuter);
-  }
-  return NULL;
+
+  return pOuter ? static_cast<CXFA_FFWidget*>(pOuter->GetLayoutItem())
+                : nullptr;
 }
+
 CXFA_FWLTheme::CXFA_FWLTheme(CXFA_FFApp* pApp) : m_pApp(pApp) {
   m_dwCapacity = 0;
   m_fCapacity = 0;
-  m_pCalendarFont = NULL;
+  m_pCalendarFont = nullptr;
   m_Rect.Set(0, 0, 0, 0);
   m_pCheckBoxTP = new CXFA_FWLCheckBoxTP;
   m_pListBoxTP = new CFWL_ListBoxTP;
@@ -79,20 +79,20 @@ FWL_Error CXFA_FWLTheme::Initialize() {
   m_pTextOut.reset(new CFDE_TextOut);
   for (size_t i = 0; !m_pCalendarFont && i < FX_ArraySize(g_FWLTheme_CalFonts);
        ++i) {
-    m_pCalendarFont = IFX_Font::LoadFont(g_FWLTheme_CalFonts[i], 0, 0,
-                                         m_pApp->GetFDEFontMgr());
+    m_pCalendarFont = CFGAS_GEFont::LoadFont(g_FWLTheme_CalFonts[i], 0, 0,
+                                             m_pApp->GetFDEFontMgr());
   }
   if (!m_pCalendarFont) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
     m_pCalendarFont = m_pApp->GetFDEFontMgr()->GetDefFontByCodePage(
-        FX_CODEPAGE_MSWin_WesternEuropean, 0, NULL);
+        FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
 #else
     m_pCalendarFont = m_pApp->GetFDEFontMgr()->GetFontByCodePage(
-        FX_CODEPAGE_MSWin_WesternEuropean, 0, NULL);
+        FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
 #endif
   }
 
-  ASSERT(NULL != m_pCalendarFont);
+  ASSERT(m_pCalendarFont);
   FWLTHEME_Init();
   return FWL_Error::Succeeded;
 }
@@ -118,6 +118,16 @@ uint32_t CXFA_FWLTheme::SetThemeID(IFWL_Widget* pWidget,
                                    uint32_t dwThemeID,
                                    FX_BOOL bChildren) {
   return 0;
+}
+
+FWL_Error CXFA_FWLTheme::GetThemeMatrix(IFWL_Widget* pWidget,
+                                        CFX_Matrix& matrix) {
+  return FWL_Error::Succeeded;
+}
+
+FWL_Error CXFA_FWLTheme::SetThemeMatrix(IFWL_Widget* pWidget,
+                                        const CFX_Matrix& matrix) {
+  return FWL_Error::Succeeded;
 }
 
 FX_BOOL CXFA_FWLTheme::DrawBackground(CFWL_ThemeBackground* pParams) {
@@ -236,11 +246,11 @@ void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
             m_Rect.width += para.GetMarginRight();
           }
         }
-        if (pItem->GetPrev() == NULL) {
+        if (!pItem->GetPrev()) {
           if (pItem->GetNext()) {
             m_Rect.height = 0;
           }
-        } else if (pItem->GetNext() == NULL) {
+        } else if (!pItem->GetNext()) {
           m_Rect.top = 0;
         } else {
           m_Rect.top = 0;
@@ -344,6 +354,11 @@ void* CXFA_FWLTheme::GetCapacity(CFWL_ThemePart* pThemePart,
 }
 FX_BOOL CXFA_FWLTheme::IsCustomizedLayout(IFWL_Widget* pWidget) {
   return GetTheme(pWidget)->IsCustomizedLayout(pWidget);
+}
+
+FWL_Error CXFA_FWLTheme::GetPartRect(CFWL_ThemePart* pThemePart,
+                                     CFX_RectF& rtPart) {
+  return FWL_Error::Succeeded;
 }
 FWL_Error CXFA_FWLTheme::GetPartRect(CFWL_ThemePart* pThemePart) {
   CFX_RectF rect;

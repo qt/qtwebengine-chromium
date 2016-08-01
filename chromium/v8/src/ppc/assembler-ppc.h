@@ -166,8 +166,6 @@ struct Register {
     Register r = {code};
     return r;
   }
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -206,6 +204,8 @@ const Register kConstantPoolRegister = r28;  // Constant pool.
 const Register kRootRegister = r29;          // Roots array pointer.
 const Register cp = r30;                     // JavaScript context pointer.
 
+static const bool kSimpleFPAliasing = true;
+
 // Double word FP register.
 struct DoubleRegister {
   enum Code {
@@ -219,8 +219,6 @@ struct DoubleRegister {
   static const int kNumRegisters = Code::kAfterLast;
   static const int kMaxNumRegisters = kNumRegisters;
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(DoubleRegister reg) const { return reg_code == reg.reg_code; }
   int code() const {

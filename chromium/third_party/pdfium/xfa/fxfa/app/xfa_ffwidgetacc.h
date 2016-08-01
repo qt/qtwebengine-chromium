@@ -16,11 +16,12 @@ enum XFA_TEXTPROVIDERTYPE {
   XFA_TEXTPROVIDERTYPE_Rollover,
   XFA_TEXTPROVIDERTYPE_Down,
 };
+
 class CXFA_TextProvider {
  public:
   CXFA_TextProvider(CXFA_WidgetAcc* pWidgetAcc,
                     XFA_TEXTPROVIDERTYPE eType,
-                    CXFA_Node* pTextNode = NULL)
+                    CXFA_Node* pTextNode = nullptr)
       : m_pWidgetAcc(pWidgetAcc), m_eType(eType), m_pTextNode(pTextNode) {
     ASSERT(m_pWidgetAcc);
   }

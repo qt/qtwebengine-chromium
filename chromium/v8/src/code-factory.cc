@@ -12,8 +12,12 @@ namespace internal {
 
 
 // static
-Callable CodeFactory::LoadIC(Isolate* isolate, TypeofMode typeof_mode) {
-  LoadICTrampolineStub stub(isolate, LoadICState(typeof_mode));
+Callable CodeFactory::LoadIC(Isolate* isolate) {
+  if (FLAG_tf_load_ic_stub) {
+    LoadICTrampolineTFStub stub(isolate);
+    return Callable(stub.GetCode(), LoadDescriptor(isolate));
+  }
+  LoadICTrampolineStub stub(isolate);
   return Callable(stub.GetCode(), LoadDescriptor(isolate));
 }
 
@@ -24,32 +28,37 @@ Callable CodeFactory::ApiGetter(Isolate* isolate) {
 }
 
 // static
-Callable CodeFactory::LoadICInOptimizedCode(
-    Isolate* isolate, TypeofMode typeof_mode,
-    InlineCacheState initialization_state) {
-  auto code = LoadIC::initialize_stub_in_optimized_code(
-      isolate, LoadICState(typeof_mode).GetExtraICState(),
-      initialization_state);
+Callable CodeFactory::LoadICInOptimizedCode(Isolate* isolate) {
+  auto code = LoadIC::initialize_stub_in_optimized_code(isolate);
   return Callable(code, LoadWithVectorDescriptor(isolate));
 }
 
+// static
+Callable CodeFactory::LoadGlobalIC(Isolate* isolate, TypeofMode typeof_mode) {
+  LoadGlobalICTrampolineStub stub(isolate, LoadGlobalICState(typeof_mode));
+  return Callable(stub.GetCode(), LoadGlobalDescriptor(isolate));
+}
+
+// static
+Callable CodeFactory::LoadGlobalICInOptimizedCode(Isolate* isolate,
+                                                  TypeofMode typeof_mode) {
+  auto code = LoadGlobalIC::initialize_stub_in_optimized_code(
+      isolate, LoadGlobalICState(typeof_mode).GetExtraICState());
+  return Callable(code, LoadGlobalWithVectorDescriptor(isolate));
+}
 
 // static
 Callable CodeFactory::KeyedLoadIC(Isolate* isolate) {
-  KeyedLoadICTrampolineStub stub(isolate, LoadICState(kNoExtraICState));
+  KeyedLoadICTrampolineStub stub(isolate);
   return Callable(stub.GetCode(), LoadDescriptor(isolate));
 }
 
 
 // static
-Callable CodeFactory::KeyedLoadICInOptimizedCode(
-    Isolate* isolate, InlineCacheState initialization_state) {
-  auto code = KeyedLoadIC::initialize_stub_in_optimized_code(
-      isolate, initialization_state, kNoExtraICState);
-  if (initialization_state != MEGAMORPHIC) {
-    return Callable(code, LoadWithVectorDescriptor(isolate));
-  }
-  return Callable(code, LoadDescriptor(isolate));
+Callable CodeFactory::KeyedLoadICInOptimizedCode(Isolate* isolate) {
+  auto code =
+      KeyedLoadIC::initialize_stub_in_optimized_code(isolate, kNoExtraICState);
+  return Callable(code, LoadWithVectorDescriptor(isolate));
 }
 
 
@@ -80,15 +89,12 @@ Callable CodeFactory::StoreIC(Isolate* isolate, LanguageMode language_mode) {
 
 
 // static
-Callable CodeFactory::StoreICInOptimizedCode(
-    Isolate* isolate, LanguageMode language_mode,
-    InlineCacheState initialization_state) {
-  CallInterfaceDescriptor descriptor = initialization_state != MEGAMORPHIC
-                                           ? VectorStoreICDescriptor(isolate)
-                                           : StoreDescriptor(isolate);
-  return Callable(StoreIC::initialize_stub_in_optimized_code(
-                      isolate, language_mode, initialization_state),
-                  descriptor);
+Callable CodeFactory::StoreICInOptimizedCode(Isolate* isolate,
+                                             LanguageMode language_mode) {
+  CallInterfaceDescriptor descriptor = VectorStoreICDescriptor(isolate);
+  return Callable(
+      StoreIC::initialize_stub_in_optimized_code(isolate, language_mode),
+      descriptor);
 }
 
 
@@ -101,15 +107,12 @@ Callable CodeFactory::KeyedStoreIC(Isolate* isolate,
 
 
 // static
-Callable CodeFactory::KeyedStoreICInOptimizedCode(
-    Isolate* isolate, LanguageMode language_mode,
-    InlineCacheState initialization_state) {
-  CallInterfaceDescriptor descriptor = initialization_state != MEGAMORPHIC
-                                           ? VectorStoreICDescriptor(isolate)
-                                           : StoreDescriptor(isolate);
-  return Callable(KeyedStoreIC::initialize_stub_in_optimized_code(
-                      isolate, language_mode, initialization_state),
-                  descriptor);
+Callable CodeFactory::KeyedStoreICInOptimizedCode(Isolate* isolate,
+                                                  LanguageMode language_mode) {
+  CallInterfaceDescriptor descriptor = VectorStoreICDescriptor(isolate);
+  return Callable(
+      KeyedStoreIC::initialize_stub_in_optimized_code(isolate, language_mode),
+      descriptor);
 }
 
 
@@ -143,21 +146,21 @@ Callable CodeFactory::ToBoolean(Isolate* isolate) {
 
 // static
 Callable CodeFactory::ToNumber(Isolate* isolate) {
-  ToNumberStub stub(isolate);
-  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+  return Callable(isolate->builtins()->ToNumber(),
+                  TypeConversionDescriptor(isolate));
 }
 
 
 // static
 Callable CodeFactory::NonNumberToNumber(Isolate* isolate) {
-  NonNumberToNumberStub stub(isolate);
-  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+  return Callable(isolate->builtins()->NonNumberToNumber(),
+                  TypeConversionDescriptor(isolate));
 }
 
 // static
 Callable CodeFactory::StringToNumber(Isolate* isolate) {
-  StringToNumberStub stub(isolate);
-  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+  return Callable(isolate->builtins()->StringToNumber(),
+                  TypeConversionDescriptor(isolate));
 }
 
 // static
@@ -548,6 +551,12 @@ Callable CodeFactory::ConstructFunction(Isolate* isolate) {
 // static
 Callable CodeFactory::HasProperty(Isolate* isolate) {
   HasPropertyStub stub(isolate);
+  return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
+}
+
+// static
+Callable CodeFactory::MathPow(Isolate* isolate) {
+  MathPowStub stub(isolate, MathPowStub::ON_STACK);
   return Callable(stub.GetCode(), stub.GetCallInterfaceDescriptor());
 }
 

@@ -13,8 +13,7 @@
 
 FDE_CSSCacheItem::FDE_CSSCacheItem(IFDE_CSSStyleSheet* p)
     : pStylesheet(p), dwActivity(0) {
-  ASSERT(pStylesheet);
-  pStylesheet->AddRef();
+  pStylesheet->Retain();
 }
 
 FDE_CSSCacheItem::~FDE_CSSCacheItem() {
@@ -56,6 +55,12 @@ FDE_CSSTagCache::FDE_CSSTagCache(const FDE_CSSTagCache& it)
   if (it.dwClassHashs.GetSize() > 0)
     dwClassHashs.Copy(it.dwClassHashs);
 }
+
+FDE_CSSTagCache::~FDE_CSSTagCache() {}
+
+CFDE_CSSAccelerator::CFDE_CSSAccelerator() {}
+
+CFDE_CSSAccelerator::~CFDE_CSSAccelerator() {}
 
 void CFDE_CSSAccelerator::OnEnterTag(CXFA_CSSTagProvider* pTag) {
   FDE_CSSTagCache* pTop = GetTopElement();

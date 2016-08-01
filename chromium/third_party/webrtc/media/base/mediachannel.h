@@ -11,6 +11,7 @@
 #ifndef WEBRTC_MEDIA_BASE_MEDIACHANNEL_H_
 #define WEBRTC_MEDIA_BASE_MEDIACHANNEL_H_
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "webrtc/base/sigslot.h"
 #include "webrtc/base/socket.h"
 #include "webrtc/base/window.h"
+#include "webrtc/config.h"
 #include "webrtc/media/base/codec.h"
 #include "webrtc/media/base/mediaconstants.h"
 #include "webrtc/media/base/streamparams.h"
@@ -52,8 +54,6 @@ class VideoFrame;
 struct RtpHeader;
 struct VideoFormat;
 
-const int kMinRtpHeaderExtensionId = 1;
-const int kMaxRtpHeaderExtensionId = 255;
 const int kScreencastDefaultFps = 5;
 
 template <class T>
@@ -321,16 +321,10 @@ struct VideoOptions {
   }
 };
 
+// TODO(isheriff): Remove this once client usage is fixed to use RtpExtension.
 struct RtpHeaderExtension {
   RtpHeaderExtension() : id(0) {}
-  RtpHeaderExtension(const std::string& u, int i) : uri(u), id(i) {}
-
-  bool operator==(const RtpHeaderExtension& ext) const {
-    // id is a reserved word in objective-c. Therefore the id attribute has to
-    // be a fully qualified name in order to compile on IOS.
-    return this->id == ext.id &&
-        uri == ext.uri;
-  }
+  RtpHeaderExtension(const std::string& uri, int id) : uri(uri), id(id) {}
 
   std::string ToString() const {
     std::ostringstream ost;
@@ -343,21 +337,7 @@ struct RtpHeaderExtension {
 
   std::string uri;
   int id;
-  // TODO(juberti): SendRecv direction;
 };
-
-// Returns the named header extension if found among all extensions, NULL
-// otherwise.
-inline const RtpHeaderExtension* FindHeaderExtension(
-    const std::vector<RtpHeaderExtension>& extensions,
-    const std::string& name) {
-  for (std::vector<RtpHeaderExtension>::const_iterator it = extensions.begin();
-       it != extensions.end(); ++it) {
-    if (it->uri == name)
-      return &(*it);
-  }
-  return NULL;
-}
 
 class MediaChannel : public sigslot::has_slots<> {
  public:
@@ -373,7 +353,7 @@ class MediaChannel : public sigslot::has_slots<> {
     virtual ~NetworkInterface() {}
   };
 
-  MediaChannel(const MediaConfig& config)
+  explicit MediaChannel(const MediaConfig& config)
       : enable_dscp_(config.enable_dscp), network_interface_(NULL) {}
   MediaChannel() : enable_dscp_(false), network_interface_(NULL) {}
   virtual ~MediaChannel() {}
@@ -842,7 +822,7 @@ struct RtpParameters {
   }
 
   std::vector<Codec> codecs;
-  std::vector<RtpHeaderExtension> extensions;
+  std::vector<webrtc::RtpExtension> extensions;
   // TODO(pthatcher): Add streams.
   RtcpParameters rtcp;
   virtual ~RtpParameters() = default;
@@ -907,7 +887,8 @@ class VoiceMediaChannel : public MediaChannel {
   };
 
   VoiceMediaChannel() {}
-  VoiceMediaChannel(const MediaConfig& config) : MediaChannel(config) {}
+  explicit VoiceMediaChannel(const MediaConfig& config)
+      : MediaChannel(config) {}
   virtual ~VoiceMediaChannel() {}
   virtual bool SetSendParameters(const AudioSendParameters& params) = 0;
   virtual bool SetRecvParameters(const AudioRecvParameters& params) = 0;
@@ -991,7 +972,8 @@ class VideoMediaChannel : public MediaChannel {
   };
 
   VideoMediaChannel() {}
-  VideoMediaChannel(const MediaConfig& config) : MediaChannel(config) {}
+  explicit VideoMediaChannel(const MediaConfig& config)
+      : MediaChannel(config) {}
   virtual ~VideoMediaChannel() {}
 
   virtual bool SetSendParameters(const VideoSendParameters& params) = 0;
@@ -1009,18 +991,17 @@ class VideoMediaChannel : public MediaChannel {
   virtual bool GetSendCodec(VideoCodec* send_codec) = 0;
   // Starts or stops transmission (and potentially capture) of local video.
   virtual bool SetSend(bool send) = 0;
-  // Configure stream for sending.
-  virtual bool SetVideoSend(uint32_t ssrc,
-                            bool enable,
-                            const VideoOptions* options) = 0;
+  // Configure stream for sending and register a source.
+  // The |ssrc| must correspond to a registered send stream.
+  virtual bool SetVideoSend(
+      uint32_t ssrc,
+      bool enable,
+      const VideoOptions* options,
+      rtc::VideoSourceInterface<cricket::VideoFrame>* source) = 0;
   // Sets the sink object to be used for the specified stream.
   // If SSRC is 0, the renderer is used for the 'default' stream.
   virtual bool SetSink(uint32_t ssrc,
                        rtc::VideoSinkInterface<cricket::VideoFrame>* sink) = 0;
-  // Register a source. The |ssrc| must correspond to a registered send stream.
-  virtual void SetSource(
-      uint32_t ssrc,
-      rtc::VideoSourceInterface<cricket::VideoFrame>* source) = 0;
   // Gets quality stats for the channel.
   virtual bool GetStats(VideoMediaInfo* info) = 0;
 };

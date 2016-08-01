@@ -7,15 +7,16 @@
 #ifndef XFA_FXBARCODE_BC_TWODIMWRITER_H_
 #define XFA_FXBARCODE_BC_TWODIMWRITER_H_
 
-#include "core/fxge/include/fx_ge.h"
 #include "xfa/fxbarcode/BC_Writer.h"
 
 class CBC_CommonBitMatrix;
+class CFX_RenderDevice;
 
 class CBC_TwoDimWriter : public CBC_Writer {
  public:
   CBC_TwoDimWriter();
-  virtual ~CBC_TwoDimWriter();
+  ~CBC_TwoDimWriter() override;
+
   virtual void RenderResult(uint8_t* code,
                             int32_t codeWidth,
                             int32_t codeHeight,
@@ -24,7 +25,7 @@ class CBC_TwoDimWriter : public CBC_Writer {
   virtual void RenderDeviceResult(CFX_RenderDevice* device,
                                   const CFX_Matrix* matrix);
   virtual FX_BOOL SetErrorCorrectionLevel(int32_t level) = 0;
-  virtual int32_t GetErrorCorrectionLevel() { return m_iCorrectLevel; }
+  virtual int32_t GetErrorCorrectionLevel();
 
  protected:
   int32_t m_iCorrectLevel;

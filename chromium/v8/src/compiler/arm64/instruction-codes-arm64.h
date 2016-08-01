@@ -78,6 +78,7 @@ namespace compiler {
   V(Arm64TestAndBranch32)          \
   V(Arm64TestAndBranch)            \
   V(Arm64CompareAndBranch32)       \
+  V(Arm64CompareAndBranch)         \
   V(Arm64ClaimCSP)                 \
   V(Arm64ClaimJSSP)                \
   V(Arm64PokeCSP)                  \
@@ -91,6 +92,7 @@ namespace compiler {
   V(Arm64Float32Max)               \
   V(Arm64Float32Min)               \
   V(Arm64Float32Abs)               \
+  V(Arm64Float32Neg)               \
   V(Arm64Float32Sqrt)              \
   V(Arm64Float32RoundDown)         \
   V(Arm64Float64Cmp)               \
@@ -112,6 +114,7 @@ namespace compiler {
   V(Arm64Float64RoundTruncate)     \
   V(Arm64Float32RoundTiesEven)     \
   V(Arm64Float64RoundTiesEven)     \
+  V(Arm64Float64SilenceNaN)        \
   V(Arm64Float32ToFloat64)         \
   V(Arm64Float64ToFloat32)         \
   V(Arm64Float32ToInt32)           \

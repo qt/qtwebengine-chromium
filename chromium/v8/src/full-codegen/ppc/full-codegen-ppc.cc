@@ -516,10 +516,12 @@ void FullCodeGenerator::StackValueContext::Plug(Handle<Object> lit) const {
 void FullCodeGenerator::TestContext::Plug(Handle<Object> lit) const {
   codegen()->PrepareForBailoutBeforeSplit(condition(), true, true_label_,
                                           false_label_);
-  DCHECK(lit->IsNull() || lit->IsUndefined() || !lit->IsUndetectable());
-  if (lit->IsUndefined() || lit->IsNull() || lit->IsFalse()) {
+  DCHECK(lit->IsNull(isolate()) || lit->IsUndefined(isolate()) ||
+         !lit->IsUndetectable());
+  if (lit->IsUndefined(isolate()) || lit->IsNull(isolate()) ||
+      lit->IsFalse(isolate())) {
     if (false_label_ != fall_through_) __ b(false_label_);
-  } else if (lit->IsTrue() || lit->IsJSObject()) {
+  } else if (lit->IsTrue(isolate()) || lit->IsJSObject()) {
     if (true_label_ != fall_through_) __ b(true_label_);
   } else if (lit->IsString()) {
     if (String::cast(*lit)->length() == 0) {
@@ -761,21 +763,11 @@ void FullCodeGenerator::VisitVariableDeclaration(
 
     case VariableLocation::LOOKUP: {
       Comment cmnt(masm_, "[ VariableDeclaration");
+      DCHECK_EQ(VAR, mode);
+      DCHECK(!hole_init);
       __ mov(r5, Operand(variable->name()));
-      // Declaration nodes are always introduced in one of four modes.
-      DCHECK(IsDeclaredVariableMode(mode));
-      // Push initial value, if any.
-      // Note: For variables we must not push an initial value (such as
-      // 'undefined') because we may have a (legal) redeclaration and we
-      // must not destroy the current value.
-      if (hole_init) {
-        __ LoadRoot(r3, Heap::kTheHoleValueRootIndex);
-      } else {
-        __ LoadSmiLiteral(r3, Smi::FromInt(0));  // Indicates no initial value.
-      }
-      __ Push(r5, r3);
-      __ Push(Smi::FromInt(variable->DeclarationPropertyAttributes()));
-      __ CallRuntime(Runtime::kDeclareLookupSlot);
+      __ Push(r5);
+      __ CallRuntime(Runtime::kDeclareEvalVar);
       PrepareForBailoutForId(proxy->id(), BailoutState::NO_REGISTERS);
       break;
     }
@@ -828,8 +820,7 @@ void FullCodeGenerator::VisitFunctionDeclaration(
       PushOperand(r5);
       // Push initial value for function declaration.
       VisitForStackValue(declaration->fun());
-      PushOperand(Smi::FromInt(variable->DeclarationPropertyAttributes()));
-      CallRuntimeWithOperands(Runtime::kDeclareLookupSlot);
+      CallRuntimeWithOperands(Runtime::kDeclareEvalFunction);
       PrepareForBailoutForId(proxy->id(), BailoutState::NO_REGISTERS);
       break;
     }
@@ -1265,14 +1256,14 @@ void FullCodeGenerator::EmitDynamicLookupFastCase(VariableProxy* proxy,
 
 void FullCodeGenerator::EmitGlobalVariableLoad(VariableProxy* proxy,
                                                TypeofMode typeof_mode) {
+#ifdef DEBUG
   Variable* var = proxy->var();
   DCHECK(var->IsUnallocatedOrGlobalSlot() ||
          (var->IsLookupSlot() && var->mode() == DYNAMIC_GLOBAL));
-  __ LoadGlobalObject(LoadDescriptor::ReceiverRegister());
-  __ mov(LoadDescriptor::NameRegister(), Operand(var->name()));
-  __ mov(LoadDescriptor::SlotRegister(),
+#endif
+  __ mov(LoadGlobalDescriptor::SlotRegister(),
          Operand(SmiFromSlot(proxy->VariableFeedbackSlot())));
-  CallLoadIC(typeof_mode);
+  CallLoadGlobalIC(typeof_mode);
 }
 
 
@@ -1338,18 +1329,6 @@ void FullCodeGenerator::EmitVariableLoad(VariableProxy* proxy,
       context()->Plug(r3);
     }
   }
-}
-
-
-void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
-  Comment cmnt(masm_, "[ RegExpLiteral");
-  __ LoadP(r6, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  __ LoadSmiLiteral(r5, Smi::FromInt(expr->literal_index()));
-  __ mov(r4, Operand(expr->pattern()));
-  __ LoadSmiLiteral(r3, Smi::FromInt(expr->flags()));
-  FastCloneRegExpStub stub(isolate());
-  __ CallStub(&stub);
-  context()->Plug(r3);
 }
 
 
@@ -1529,6 +1508,8 @@ void FullCodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
             PushOperand(Smi::FromInt(NONE));
             PushOperand(Smi::FromInt(property->NeedsSetFunctionName()));
             CallRuntimeWithOperands(Runtime::kDefineDataPropertyInLiteral);
+            PrepareForBailoutForId(expr->GetIdForPropertySet(property_index),
+                                   BailoutState::NO_REGISTERS);
           } else {
             DropOperands(3);
           }
@@ -1807,7 +1788,7 @@ void FullCodeGenerator::VisitYield(Yield* expr) {
   // When we arrive here, r3 holds the generator object.
   __ RecordGeneratorContinuation();
   __ LoadP(r4, FieldMemOperand(r3, JSGeneratorObject::kResumeModeOffset));
-  __ LoadP(r3, FieldMemOperand(r3, JSGeneratorObject::kInputOffset));
+  __ LoadP(r3, FieldMemOperand(r3, JSGeneratorObject::kInputOrDebugPosOffset));
   STATIC_ASSERT(JSGeneratorObject::kNext < JSGeneratorObject::kReturn);
   STATIC_ASSERT(JSGeneratorObject::kThrow > JSGeneratorObject::kReturn);
   __ CmpSmiLiteral(r4, Smi::FromInt(JSGeneratorObject::kReturn), r0);
@@ -2898,70 +2879,6 @@ void FullCodeGenerator::EmitValueOf(CallRuntime* expr) {
 }
 
 
-void FullCodeGenerator::EmitOneByteSeqStringSetChar(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(3, args->length());
-
-  Register string = r3;
-  Register index = r4;
-  Register value = r5;
-
-  VisitForStackValue(args->at(0));        // index
-  VisitForStackValue(args->at(1));        // value
-  VisitForAccumulatorValue(args->at(2));  // string
-  PopOperands(index, value);
-
-  if (FLAG_debug_code) {
-    __ TestIfSmi(value, r0);
-    __ Check(eq, kNonSmiValue, cr0);
-    __ TestIfSmi(index, r0);
-    __ Check(eq, kNonSmiIndex, cr0);
-    __ SmiUntag(index, index);
-    static const uint32_t one_byte_seq_type = kSeqStringTag | kOneByteStringTag;
-    __ EmitSeqStringSetCharCheck(string, index, value, one_byte_seq_type);
-    __ SmiTag(index, index);
-  }
-
-  __ SmiUntag(value);
-  __ addi(ip, string, Operand(SeqOneByteString::kHeaderSize - kHeapObjectTag));
-  __ SmiToByteArrayOffset(r0, index);
-  __ stbx(value, MemOperand(ip, r0));
-  context()->Plug(string);
-}
-
-
-void FullCodeGenerator::EmitTwoByteSeqStringSetChar(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK_EQ(3, args->length());
-
-  Register string = r3;
-  Register index = r4;
-  Register value = r5;
-
-  VisitForStackValue(args->at(0));        // index
-  VisitForStackValue(args->at(1));        // value
-  VisitForAccumulatorValue(args->at(2));  // string
-  PopOperands(index, value);
-
-  if (FLAG_debug_code) {
-    __ TestIfSmi(value, r0);
-    __ Check(eq, kNonSmiValue, cr0);
-    __ TestIfSmi(index, r0);
-    __ Check(eq, kNonSmiIndex, cr0);
-    __ SmiUntag(index, index);
-    static const uint32_t two_byte_seq_type = kSeqStringTag | kTwoByteStringTag;
-    __ EmitSeqStringSetCharCheck(string, index, value, two_byte_seq_type);
-    __ SmiTag(index, index);
-  }
-
-  __ SmiUntag(value);
-  __ addi(ip, string, Operand(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  __ SmiToShortArrayOffset(r0, index);
-  __ sthx(value, MemOperand(ip, r0));
-  context()->Plug(string);
-}
-
-
 void FullCodeGenerator::EmitStringCharFromCode(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   DCHECK(args->length() == 1);
@@ -2996,8 +2913,7 @@ void FullCodeGenerator::EmitStringCharCodeAt(CallRuntime* expr) {
   Label index_out_of_range;
   Label done;
   StringCharCodeAtGenerator generator(object, index, result, &need_conversion,
-                                      &need_conversion, &index_out_of_range,
-                                      STRING_INDEX_IS_NUMBER);
+                                      &need_conversion, &index_out_of_range);
   generator.GenerateFast(masm_);
   __ b(&done);
 
@@ -3011,48 +2927,6 @@ void FullCodeGenerator::EmitStringCharCodeAt(CallRuntime* expr) {
   // Load the undefined value into the result register, which will
   // trigger conversion.
   __ LoadRoot(result, Heap::kUndefinedValueRootIndex);
-  __ b(&done);
-
-  NopRuntimeCallHelper call_helper;
-  generator.GenerateSlow(masm_, NOT_PART_OF_IC_HANDLER, call_helper);
-
-  __ bind(&done);
-  context()->Plug(result);
-}
-
-
-void FullCodeGenerator::EmitStringCharAt(CallRuntime* expr) {
-  ZoneList<Expression*>* args = expr->arguments();
-  DCHECK(args->length() == 2);
-  VisitForStackValue(args->at(0));
-  VisitForAccumulatorValue(args->at(1));
-
-  Register object = r4;
-  Register index = r3;
-  Register scratch = r6;
-  Register result = r3;
-
-  PopOperand(object);
-
-  Label need_conversion;
-  Label index_out_of_range;
-  Label done;
-  StringCharAtGenerator generator(object, index, scratch, result,
-                                  &need_conversion, &need_conversion,
-                                  &index_out_of_range, STRING_INDEX_IS_NUMBER);
-  generator.GenerateFast(masm_);
-  __ b(&done);
-
-  __ bind(&index_out_of_range);
-  // When the index is out of range, the spec requires us to return
-  // the empty string.
-  __ LoadRoot(result, Heap::kempty_stringRootIndex);
-  __ b(&done);
-
-  __ bind(&need_conversion);
-  // Move smi zero into the result register, which will trigger
-  // conversion.
-  __ LoadSmiLiteral(result, Smi::FromInt(0));
   __ b(&done);
 
   NopRuntimeCallHelper call_helper;
@@ -3430,8 +3304,7 @@ void FullCodeGenerator::VisitCountOperation(CountOperation* expr) {
   }
 
   // Convert old value into a number.
-  ToNumberStub convert_stub(isolate());
-  __ CallStub(&convert_stub);
+  __ Call(isolate()->builtins()->ToNumber(), RelocInfo::CODE_TARGET);
   PrepareForBailoutForId(expr->ToNumberId(), BailoutState::TOS_REGISTER);
 
   // Save result for postfix expressions.

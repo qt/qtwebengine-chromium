@@ -22,41 +22,33 @@
 
 #include "xfa/fxbarcode/qrcode/BC_QRCoderErrorCorrectionLevel.h"
 
-CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::L = NULL;
-CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::M = NULL;
-CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::Q = NULL;
-CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::H = NULL;
+CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::L = nullptr;
+CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::M = nullptr;
+CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::Q = nullptr;
+CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::H = nullptr;
 
 CBC_QRCoderErrorCorrectionLevel::CBC_QRCoderErrorCorrectionLevel(
     int32_t ordinal,
     int32_t bits,
-    FX_CHAR* name) {
-  m_name += name;
-  m_ordinal = ordinal;
-  m_bits = bits;
-}
+    const FX_CHAR* name)
+    : m_ordinal(ordinal), m_bits(bits), m_name(name) {}
+
 CBC_QRCoderErrorCorrectionLevel::~CBC_QRCoderErrorCorrectionLevel() {}
+
 void CBC_QRCoderErrorCorrectionLevel::Initialize() {
-  L = new CBC_QRCoderErrorCorrectionLevel(0, 0x01, (FX_CHAR*)"L");
-  M = new CBC_QRCoderErrorCorrectionLevel(1, 0x00, (FX_CHAR*)"M");
-  Q = new CBC_QRCoderErrorCorrectionLevel(2, 0x03, (FX_CHAR*)"Q");
-  H = new CBC_QRCoderErrorCorrectionLevel(3, 0x02, (FX_CHAR*)"H");
+  L = new CBC_QRCoderErrorCorrectionLevel(0, 0x01, "L");
+  M = new CBC_QRCoderErrorCorrectionLevel(1, 0x00, "M");
+  Q = new CBC_QRCoderErrorCorrectionLevel(2, 0x03, "Q");
+  H = new CBC_QRCoderErrorCorrectionLevel(3, 0x02, "H");
 }
+
 void CBC_QRCoderErrorCorrectionLevel::Finalize() {
   delete L;
   delete M;
   delete Q;
   delete H;
 }
-int32_t CBC_QRCoderErrorCorrectionLevel::Ordinal() {
-  return m_ordinal;
-}
-int32_t CBC_QRCoderErrorCorrectionLevel::GetBits() {
-  return m_bits;
-}
-CFX_ByteString CBC_QRCoderErrorCorrectionLevel::GetName() {
-  return m_name;
-}
+
 CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::ForBits(
     int32_t bits) {
   switch (bits) {
@@ -69,24 +61,24 @@ CBC_QRCoderErrorCorrectionLevel* CBC_QRCoderErrorCorrectionLevel::ForBits(
     case 0x03:
       return Q;
     default:
-      return NULL;
+      return nullptr;
   }
 }
 void CBC_QRCoderErrorCorrectionLevel::Destroy() {
   if (L) {
     delete CBC_QRCoderErrorCorrectionLevel::L;
-    L = NULL;
+    L = nullptr;
   }
   if (M) {
     delete CBC_QRCoderErrorCorrectionLevel::M;
-    M = NULL;
+    M = nullptr;
   }
   if (H) {
     delete CBC_QRCoderErrorCorrectionLevel::H;
-    H = NULL;
+    H = nullptr;
   }
   if (Q) {
     delete CBC_QRCoderErrorCorrectionLevel::Q;
-    Q = NULL;
+    Q = nullptr;
   }
 }

@@ -62,23 +62,23 @@ FDE_RENDERSTATUS CFDE_RenderContext::DoRender(IFX_Pause* pPause) {
   }
   rm.TransformRect(rtDocClip);
   IFDE_VisualSet* pVisualSet;
-  FDE_HVISUALOBJ hVisualObj;
+  FDE_TEXTEDITPIECE* pPiece;
   CFX_RectF rtObj;
   int32_t iCount = 0;
   while (TRUE) {
-    hVisualObj = m_pIterator->GetNext(pVisualSet);
-    if (!hVisualObj || !pVisualSet) {
+    pPiece = m_pIterator->GetNext(pVisualSet);
+    if (!pPiece || !pVisualSet) {
       eStatus = FDE_RENDERSTATUS_Done;
       break;
     }
     rtObj.Empty();
-    pVisualSet->GetRect(hVisualObj, rtObj);
+    pVisualSet->GetRect(pPiece, rtObj);
     if (!rtDocClip.IntersectWith(rtObj))
       continue;
 
     switch (pVisualSet->GetType()) {
       case FDE_VISUALOBJ_Text:
-        RenderText((IFDE_TextSet*)pVisualSet, hVisualObj);
+        RenderText(static_cast<IFDE_TextSet*>(pVisualSet), pPiece);
         iCount += 5;
         break;
       case FDE_VISUALOBJ_Canvas:
@@ -107,15 +107,15 @@ void CFDE_RenderContext::StopRender() {
 }
 
 void CFDE_RenderContext::RenderText(IFDE_TextSet* pTextSet,
-                                    FDE_HVISUALOBJ hText) {
+                                    FDE_TEXTEDITPIECE* pText) {
   ASSERT(m_pRenderDevice);
-  ASSERT(pTextSet && hText);
+  ASSERT(pTextSet && pText);
 
-  IFX_Font* pFont = pTextSet->GetFont(hText);
+  CFGAS_GEFont* pFont = pTextSet->GetFont();
   if (!pFont)
     return;
 
-  int32_t iCount = pTextSet->GetDisplayPos(hText, nullptr, FALSE);
+  int32_t iCount = pTextSet->GetDisplayPos(pText, nullptr, FALSE);
   if (iCount < 1)
     return;
 
@@ -130,35 +130,11 @@ void CFDE_RenderContext::RenderText(IFDE_TextSet* pTextSet,
   if (m_iCharPosCount < iCount)
     m_iCharPosCount = iCount;
 
-  iCount = pTextSet->GetDisplayPos(hText, m_pCharPos, FALSE);
-  FX_FLOAT fFontSize = pTextSet->GetFontSize(hText);
-  FX_ARGB dwColor = pTextSet->GetFontColor(hText);
+  iCount = pTextSet->GetDisplayPos(pText, m_pCharPos, FALSE);
+  FX_FLOAT fFontSize = pTextSet->GetFontSize();
+  FX_ARGB dwColor = pTextSet->GetFontColor();
   m_pBrush->SetColor(dwColor);
-  FDE_HDEVICESTATE hState;
-  FX_BOOL bClip = ApplyClip(pTextSet, hText, hState);
   m_pRenderDevice->DrawString(m_pBrush.get(), pFont, m_pCharPos, iCount,
                               fFontSize, &m_Transform);
-  if (bClip)
-    RestoreClip(hState);
 }
 
-FX_BOOL CFDE_RenderContext::ApplyClip(IFDE_VisualSet* pVisualSet,
-                                      FDE_HVISUALOBJ hObj,
-                                      FDE_HDEVICESTATE& hState) {
-  CFX_RectF rtClip;
-  if (!pVisualSet->GetClip(hObj, rtClip))
-    return FALSE;
-
-  CFX_RectF rtObj;
-  pVisualSet->GetRect(hObj, rtObj);
-  rtClip.Offset(rtObj.left, rtObj.top);
-  m_Transform.TransformRect(rtClip);
-  const CFX_RectF& rtDevClip = m_pRenderDevice->GetClipRect();
-  rtClip.Intersect(rtDevClip);
-  hState = m_pRenderDevice->SaveState();
-  return m_pRenderDevice->SetClipRect(rtClip);
-}
-
-void CFDE_RenderContext::RestoreClip(FDE_HDEVICESTATE hState) {
-  m_pRenderDevice->RestoreState(hState);
-}

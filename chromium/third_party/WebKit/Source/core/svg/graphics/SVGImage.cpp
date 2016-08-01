@@ -47,6 +47,7 @@
 #include "core/svg/graphics/SVGImageChromeClient.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/LengthFunctions.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -337,7 +338,8 @@ void SVGImage::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dst
 void SVGImage::drawInternal(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dstRect, const FloatRect& srcRect,
     RespectImageOrientationEnum, ImageClampingMode, const KURL& url)
 {
-    FrameView* view = frameView();
+    DCHECK(m_page);
+    FrameView* view = toLocalFrame(m_page->mainFrame())->view();
     view->resize(containerSize());
 
     // Always call processUrlFragment, even if the url is empty, because
@@ -346,7 +348,7 @@ void SVGImage::drawInternal(SkCanvas* canvas, const SkPaint& paint, const FloatR
 
     SkPictureBuilder imagePicture(dstRect);
     {
-        ClipRecorder clipRecorder(imagePicture.context(), imagePicture, DisplayItem::ClipNodeImage, LayoutRect(enclosingIntRect(dstRect)));
+        ClipRecorder clipRecorder(imagePicture.context(), imagePicture, DisplayItem::ClipNodeImage, enclosingIntRect(dstRect));
 
         // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
         // of the image would be if we were drawing without clipping, and translate accordingly.
@@ -389,21 +391,15 @@ LayoutReplaced* SVGImage::embeddedReplacedContent() const
     return toLayoutSVGRoot(rootElement->layoutObject());
 }
 
-FrameView* SVGImage::frameView() const
-{
-    if (!m_page)
-        return nullptr;
-
-    return toLocalFrame(m_page->mainFrame())->view();
-}
-
 // FIXME: support CatchUpAnimation = CatchUp.
 void SVGImage::startAnimation(CatchUpAnimation)
 {
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
-    if (!rootElement || !rootElement->animationsPaused())
+    if (!rootElement)
         return;
-    rootElement->unpauseAnimations();
+    m_chromeClient->resumeAnimation();
+    if (rootElement->animationsPaused())
+        rootElement->unpauseAnimations();
 }
 
 void SVGImage::stopAnimation()
@@ -411,6 +407,7 @@ void SVGImage::stopAnimation()
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
         return;
+    m_chromeClient->suspendAnimation();
     rootElement->pauseAnimations();
 }
 
@@ -419,6 +416,7 @@ void SVGImage::resetAnimation()
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
         return;
+    m_chromeClient->suspendAnimation();
     rootElement->pauseAnimations();
     rootElement->setCurrentTime(0);
 }
@@ -428,7 +426,30 @@ bool SVGImage::hasAnimations() const
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
         return false;
-    return rootElement->timeContainer()->hasAnimations() || toLocalFrame(m_page->mainFrame())->document()->timeline().hasPendingUpdates();
+    return rootElement->timeContainer()->hasAnimations()
+        || toLocalFrame(m_page->mainFrame())->document()->timeline().hasPendingUpdates();
+}
+
+void SVGImage::serviceAnimations(double monotonicAnimationStartTime)
+{
+    // If none of our observers (sic!) are visible, or for some other reason
+    // does not want us to keep running animations, stop them until further
+    // notice (next paint.)
+    if (getImageObserver()->shouldPauseAnimation(this)) {
+        stopAnimation();
+        return;
+    }
+
+    // serviceScriptedAnimations runs requestAnimationFrame callbacks, but SVG
+    // images can't have any so we assert there's no script.
+    ScriptForbiddenScope forbidScript;
+
+    // The calls below may trigger GCs, so set up the required persistent
+    // reference on the ImageResource which owns this SVGImage. By transitivity,
+    // that will keep the associated SVGImageChromeClient object alive.
+    Persistent<ImageObserver> protect(getImageObserver());
+    m_page->animator().serviceScriptedAnimations(monotonicAnimationStartTime);
+    m_page->animator().updateAllLifecyclePhases(*toLocalFrame(m_page->mainFrame()));
 }
 
 void SVGImage::advanceAnimationForTesting()
@@ -440,9 +461,14 @@ void SVGImage::advanceAnimationForTesting()
         // but will not permanently change the animation timeline.
         // TODO(pdr): Actually advance the document timeline so CSS animations
         // can be properly tested.
-        rootElement->document().page()->animator().serviceScriptedAnimations(rootElement->getCurrentTime());
+        m_page->animator().serviceScriptedAnimations(rootElement->getCurrentTime());
         getImageObserver()->animationAdvanced(this);
     }
+}
+
+SVGImageChromeClient& SVGImage::chromeClientForTesting()
+{
+    return *m_chromeClient;
 }
 
 void SVGImage::updateUseCounters(Document& document) const
@@ -530,7 +556,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
             AtomicString("UTF-8"), KURL(), ForceSynchronousLoad)));
 
         // Set the concrete object size before a container size is available.
-        m_intrinsicSize = roundedIntSize(concreteObjectSize(FloatSize(300, 150)));
+        m_intrinsicSize = roundedIntSize(concreteObjectSize(FloatSize(LayoutReplaced::defaultWidth, LayoutReplaced::defaultHeight)));
     }
 
     return m_page;

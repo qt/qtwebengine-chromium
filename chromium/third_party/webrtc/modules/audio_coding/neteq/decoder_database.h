@@ -41,9 +41,9 @@ class DecoderDatabase {
   // Class that stores decoder info in the database.
   class DecoderInfo {
    public:
+    DecoderInfo(NetEqDecoder ct, const std::string& nm);
     DecoderInfo(NetEqDecoder ct,
                 const std::string& nm,
-                int fs,
                 AudioDecoder* ext_dec);
     DecoderInfo(DecoderInfo&&);
     ~DecoderInfo();
@@ -55,21 +55,37 @@ class DecoderDatabase {
     // always recreate it later if we need it.)
     void DropDecoder() { decoder_.reset(); }
 
+    int SampleRateHz() const {
+      RTC_DCHECK_EQ(1, !!decoder_ + !!external_decoder_ + !!cng_decoder_);
+      return decoder_ ? decoder_->SampleRateHz()
+                      : external_decoder_ ? external_decoder_->SampleRateHz()
+                                          : cng_decoder_->sample_rate_hz;
+    }
+
     const NetEqDecoder codec_type;
     const std::string name;
-    const int fs_hz;
-    AudioDecoder* const external_decoder;
 
    private:
     const rtc::Optional<SdpAudioFormat> audio_format_;
     std::unique_ptr<AudioDecoder> decoder_;
+
+    // Set iff this is an external decoder.
+    AudioDecoder* const external_decoder_;
+
+    // Set iff this is a comfort noise decoder.
+    struct CngDecoder {
+      static rtc::Optional<CngDecoder> Create(NetEqDecoder ct);
+      int sample_rate_hz;
+    };
+    const rtc::Optional<CngDecoder> cng_decoder_;
   };
 
   // Maximum value for 8 bits, and an invalid RTP payload type (since it is
   // only 7 bits).
   static const uint8_t kRtpPayloadTypeError = 0xFF;
 
-  DecoderDatabase(std::unique_ptr<AudioDecoderFactory> decoder_factory);
+  DecoderDatabase(
+      const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory);
 
   virtual ~DecoderDatabase();
 
@@ -97,7 +113,6 @@ class DecoderDatabase {
   virtual int InsertExternal(uint8_t rtp_payload_type,
                              NetEqDecoder codec_type,
                              const std::string& codec_name,
-                             int fs_hz,
                              AudioDecoder* decoder);
 
   // Removes the entry for |rtp_payload_type| from the database.
@@ -160,7 +175,7 @@ class DecoderDatabase {
   int active_decoder_type_;
   int active_cng_decoder_type_;
   std::unique_ptr<ComfortNoiseDecoder> active_cng_decoder_;
-  const std::unique_ptr<AudioDecoderFactory> decoder_factory_;
+  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(DecoderDatabase);
 };

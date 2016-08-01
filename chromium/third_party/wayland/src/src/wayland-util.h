@@ -31,14 +31,14 @@
 #ifndef WAYLAND_UTIL_H
 #define WAYLAND_UTIL_H
 
-#ifdef  __cplusplus
-extern "C" {
-#endif
-
 #include <math.h>
 #include <stddef.h>
 #include <inttypes.h>
 #include <stdarg.h>
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
 /* GCC visibility */
 #if defined(__GNUC__) && __GNUC__ >= 4
@@ -300,7 +300,7 @@ union wl_argument {
  * A dispatcher takes five arguments:  The first is the dispatcher-specific
  * implementation data associated with the target object.  The second is the
  * object on which the callback is being invoked (either wl_proxy or
- * wl_resource).  The third and fourth arguments are the opcode the wl_messsage
+ * wl_resource).  The third and fourth arguments are the opcode the wl_message
  * structure corresponding to the callback being emitted.  The final argument
  * is an array of arguments received from the other process via the wire
  * protocol.

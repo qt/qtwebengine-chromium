@@ -84,10 +84,6 @@ void MacroAssembler::Call(Register target) {
   Label start;
   bind(&start);
 
-  // Statement positions are expected to be recorded when the target
-  // address is loaded.
-  positions_recorder()->WriteRecordedPositions();
-
   // branch via link register and set LK bit for return point
   mtctr(target);
   bctrl();
@@ -128,11 +124,6 @@ void MacroAssembler::Call(Address target, RelocInfo::Mode rmode,
   Label start;
   bind(&start);
 #endif
-
-  // Statement positions are expected to be recorded when the target
-  // address is loaded.
-  positions_recorder()->WriteRecordedPositions();
-
   // This can likely be optimized to make use of bc() with 24bit relative
   //
   // RecordRelocInfo(x.rmode_, x.imm_);
@@ -725,8 +716,7 @@ MemOperand MacroAssembler::SafepointRegisterSlot(Register reg) {
 
 MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
   // General purpose registers are pushed last on the stack.
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   int doubles_size = config->num_allocatable_double_registers() * kDoubleSize;
   int register_offset = SafepointRegisterStackIndex(reg.code()) * kPointerSize;
   return MemOperand(sp, doubles_size + register_offset);
@@ -1047,9 +1037,8 @@ void MacroAssembler::Prologue(bool code_pre_aging, Register base,
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   LoadP(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  LoadP(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  LoadP(vector,
-        FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  LoadP(vector, FieldMemOperand(vector, JSFunction::kLiteralsOffset));
+  LoadP(vector, FieldMemOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 
@@ -1387,12 +1376,14 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  mov(r7, Operand(step_in_enabled));
-  lbz(r7, MemOperand(r7));
-  cmpi(r7, Operand::Zero());
-  beq(&skip_flooding);
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  STATIC_ASSERT(StepFrame > StepIn);
+  mov(r7, Operand(last_step_action));
+  LoadByte(r7, MemOperand(r7), r0);
+  extsb(r7, r7);
+  cmpi(r7, Operand(StepIn));
+  blt(&skip_flooding);
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -4750,8 +4741,7 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2, Register reg3,
   if (reg5.is_valid()) regs |= reg5.bit();
   if (reg6.is_valid()) regs |= reg6.bit();
 
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   for (int i = 0; i < config->num_allocatable_general_registers(); ++i) {
     int code = config->GetAllocatableGeneralCode(i);
     Register candidate = Register::from_code(code);

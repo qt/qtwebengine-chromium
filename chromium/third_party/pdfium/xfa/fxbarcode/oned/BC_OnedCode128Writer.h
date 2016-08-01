@@ -15,35 +15,32 @@ class CBC_OnedCode128Writer : public CBC_OneDimWriter {
  public:
   CBC_OnedCode128Writer();
   explicit CBC_OnedCode128Writer(BC_TYPE type);
-  virtual ~CBC_OnedCode128Writer();
+  ~CBC_OnedCode128Writer() override;
 
+  // CBC_OneDimWriter
   uint8_t* Encode(const CFX_ByteString& contents,
                   BCFORMAT format,
                   int32_t& outWidth,
                   int32_t& outHeight,
                   int32_t hints,
-                  int32_t& e);
+                  int32_t& e) override;
   uint8_t* Encode(const CFX_ByteString& contents,
                   BCFORMAT format,
                   int32_t& outWidth,
                   int32_t& outHeight,
-                  int32_t& e);
+                  int32_t& e) override;
   uint8_t* Encode(const CFX_ByteString& contents,
                   int32_t& outLength,
-                  int32_t& e);
+                  int32_t& e) override;
 
-  FX_BOOL CheckContentValidity(const CFX_WideStringC& contents);
-  CFX_WideString FilterContents(const CFX_WideStringC& contents);
+  FX_BOOL CheckContentValidity(const CFX_WideStringC& contents) override;
+  CFX_WideString FilterContents(const CFX_WideStringC& contents) override;
+
   FX_BOOL SetTextLocation(BC_TEXT_LOC location);
+
   BC_TYPE GetType();
 
  private:
-  static const int32_t CODE_CODE_B = 100;
-  static const int32_t CODE_CODE_C = 99;
-  static const int32_t CODE_START_B = 104;
-  static const int32_t CODE_START_C = 105;
-  static const int32_t CODE_STOP = 106;
-
   FX_BOOL IsDigits(const CFX_ByteString& contents,
                    int32_t start,
                    int32_t length);

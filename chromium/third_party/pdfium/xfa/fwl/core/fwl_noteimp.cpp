@@ -7,15 +7,15 @@
 #include "xfa/fwl/core/fwl_noteimp.h"
 
 #include "core/fxcrt/include/fx_ext.h"
+#include "third_party/base/stl_util.h"
 #include "xfa/fwl/basewidget/fwl_tooltipctrlimp.h"
 #include "xfa/fwl/basewidget/ifwl_tooltip.h"
 #include "xfa/fwl/core/cfwl_message.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_appimp.h"
 #include "xfa/fwl/core/fwl_formimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
-#include "xfa/fwl/core/ifwl_tooltiptarget.h"
 
 CFWL_NoteLoop::CFWL_NoteLoop(CFWL_WidgetImp* pForm)
     : m_pForm(pForm), m_bContinueModal(TRUE) {}
@@ -80,20 +80,7 @@ CFWL_NoteDriver::~CFWL_NoteDriver() {
 void CFWL_NoteDriver::SendEvent(CFWL_Event* pNote) {
   if (m_eventTargets.empty())
     return;
-  if (CFWL_EventType::Mouse == pNote->GetClassID()) {
-    CFWL_EvtMouse* pMouse = static_cast<CFWL_EvtMouse*>(pNote);
-    if (FWL_MouseCommand::Hover == pMouse->m_dwCmd) {
-      if (m_pNoteLoop->GetForm() &&
-          CFWL_ToolTipContainer::getInstance()->ProcessEnter(
-              pMouse, m_pNoteLoop->GetForm()->GetInterface())) {
-      }
-    } else if (FWL_MouseCommand::Leave == pMouse->m_dwCmd) {
-      CFWL_ToolTipContainer::getInstance()->ProcessLeave(pMouse);
-    } else if ((FWL_MouseCommand::LeftButtonDown <= pMouse->m_dwCmd) &&
-               (FWL_MouseCommand::MiddleButtonDblClk >= pMouse->m_dwCmd)) {
-      CFWL_ToolTipContainer::getInstance()->ProcessLeave(pMouse);
-    }
-  }
+
   for (const auto& pair : m_eventTargets) {
     CFWL_EventTarget* pEventTarget = pair.second;
     if (pEventTarget && !pEventTarget->IsInvalid())
@@ -101,18 +88,15 @@ void CFWL_NoteDriver::SendEvent(CFWL_Event* pNote) {
   }
 }
 
-#define FWL_NoteDriver_EventKey 1100
 FWL_Error CFWL_NoteDriver::RegisterEventTarget(IFWL_Widget* pListener,
                                                IFWL_Widget* pEventSource,
                                                uint32_t dwFilter) {
-  uint32_t key = (uint32_t)(uintptr_t)pListener->GetPrivateData(
-      (void*)(uintptr_t)FWL_NoteDriver_EventKey);
+  uint32_t key = pListener->GetEventKey();
   if (key == 0) {
-    void* random = FX_Random_MT_Start(0);
-    key = rand();
-    FX_Random_MT_Close(random);
-    pListener->SetPrivateData((void*)(uintptr_t)FWL_NoteDriver_EventKey,
-                              (void*)(uintptr_t)key, NULL);
+    do {
+      key = rand();
+    } while (key == 0 || pdfium::ContainsKey(m_eventTargets, key));
+    pListener->SetEventKey(key);
   }
   if (!m_eventTargets[key])
     m_eventTargets[key] = new CFWL_EventTarget(this, pListener);
@@ -122,8 +106,7 @@ FWL_Error CFWL_NoteDriver::RegisterEventTarget(IFWL_Widget* pListener,
 }
 
 FWL_Error CFWL_NoteDriver::UnregisterEventTarget(IFWL_Widget* pListener) {
-  uint32_t key = (uint32_t)(uintptr_t)pListener->GetPrivateData(
-      (void*)(uintptr_t)FWL_NoteDriver_EventKey);
+  uint32_t key = pListener->GetEventKey();
   if (key == 0)
     return FWL_Error::Indefinite;
 
@@ -166,14 +149,14 @@ FX_BOOL CFWL_NoteDriver::SetFocus(IFWL_Widget* pFocus, FX_BOOL bNotify) {
     if (bNotify) {
       ms.m_dwExtend = 1;
     }
-    IFWL_WidgetDelegate* pDelegate = pPrev->SetDelegate(NULL);
+    IFWL_WidgetDelegate* pDelegate = pPrev->SetDelegate(nullptr);
     if (pDelegate) {
       pDelegate->OnProcessMessage(&ms);
     }
   }
   if (pFocus) {
     IFWL_Widget* pWidget =
-        FWL_GetWidgetMgr()->GetWidget(pFocus, FWL_WGTRELATION_SystemForm);
+        CFWL_WidgetMgr::GetInstance()->GetSystemFormWidget(pFocus);
     CFWL_FormImp* pForm =
         pWidget ? static_cast<CFWL_FormImp*>(pWidget->GetImpl()) : nullptr;
     if (pForm) {
@@ -186,7 +169,7 @@ FX_BOOL CFWL_NoteDriver::SetFocus(IFWL_Widget* pFocus, FX_BOOL bNotify) {
     if (bNotify) {
       ms.m_dwExtend = 1;
     }
-    IFWL_WidgetDelegate* pDelegate = pFocus->SetDelegate(NULL);
+    IFWL_WidgetDelegate* pDelegate = pFocus->SetDelegate(nullptr);
     if (pDelegate) {
       pDelegate->OnProcessMessage(&ms);
     }
@@ -194,13 +177,13 @@ FX_BOOL CFWL_NoteDriver::SetFocus(IFWL_Widget* pFocus, FX_BOOL bNotify) {
   return TRUE;
 }
 FWL_Error CFWL_NoteDriver::Run() {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return FWL_Error::Indefinite;
 
 #if (_FX_OS_ == _FX_LINUX_DESKTOP_ || _FX_OS_ == _FX_WIN32_DESKTOP_ || \
      _FX_OS_ == _FX_WIN64_)
-  CFWL_NoteLoop* pTopLoop = NULL;
+  CFWL_NoteLoop* pTopLoop = nullptr;
   for (;;) {
     pTopLoop = GetTopLoop();
     if (!pTopLoop || !pTopLoop->ContinueModal())
@@ -223,28 +206,28 @@ void CFWL_NoteDriver::SetHover(IFWL_Widget* pHover) {
   m_pHover = pHover;
 }
 void CFWL_NoteDriver::SetGrab(IFWL_Widget* pGrab, FX_BOOL bSet) {
-  m_pGrab = bSet ? pGrab : NULL;
+  m_pGrab = bSet ? pGrab : nullptr;
 }
 void CFWL_NoteDriver::NotifyTargetHide(IFWL_Widget* pNoteTarget) {
   if (m_pFocus == pNoteTarget) {
-    m_pFocus = NULL;
+    m_pFocus = nullptr;
   }
   if (m_pHover == pNoteTarget) {
-    m_pHover = NULL;
+    m_pHover = nullptr;
   }
   if (m_pGrab == pNoteTarget) {
-    m_pGrab = NULL;
+    m_pGrab = nullptr;
   }
 }
 void CFWL_NoteDriver::NotifyTargetDestroy(IFWL_Widget* pNoteTarget) {
   if (m_pFocus == pNoteTarget) {
-    m_pFocus = NULL;
+    m_pFocus = nullptr;
   }
   if (m_pHover == pNoteTarget) {
-    m_pHover = NULL;
+    m_pHover = nullptr;
   }
   if (m_pGrab == pNoteTarget) {
-    m_pGrab = NULL;
+    m_pGrab = nullptr;
   }
   UnregisterEventTarget(pNoteTarget);
   int32_t count = m_forms.GetSize();
@@ -257,7 +240,7 @@ void CFWL_NoteDriver::NotifyTargetDestroy(IFWL_Widget* pNoteTarget) {
     if (!pSubFocus)
       return;
     if (pSubFocus && pSubFocus->GetInterface() == pNoteTarget) {
-      pForm->SetSubFocus(NULL);
+      pForm->SetSubFocus(nullptr);
     }
   }
 }
@@ -319,7 +302,7 @@ int32_t CFWL_NoteDriver::CountLoop() {
 }
 
 FX_BOOL CFWL_NoteDriver::ProcessMessage(CFWL_Message* pMessage) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   IFWL_Widget* pMessageForm = pWidgetMgr->IsFormDisabled()
                                   ? pMessage->m_pDstTarget
                                   : GetMessageForm(pMessage->m_pDstTarget);
@@ -391,7 +374,8 @@ FX_BOOL CFWL_NoteDriver::DispatchMessage(CFWL_Message* pMessage,
     }
   }
   if (bRet) {
-    IFWL_WidgetDelegate* pDelegate = pMessage->m_pDstTarget->SetDelegate(NULL);
+    IFWL_WidgetDelegate* pDelegate =
+        pMessage->m_pDstTarget->SetDelegate(nullptr);
     if (pDelegate)
       pDelegate->OnProcessMessage(pMessage);
   }
@@ -436,22 +420,21 @@ FX_BOOL CFWL_NoteDriver::DoDeactivate(CFWL_MsgDeactivate* pMsg,
 }
 FX_BOOL CFWL_NoteDriver::DoSetFocus(CFWL_MsgSetFocus* pMsg,
                                     IFWL_Widget* pMessageForm) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (pWidgetMgr->IsFormDisabled()) {
     m_pFocus = pMsg->m_pDstTarget;
     return TRUE;
-  } else {
-    IFWL_Widget* pWidget = pMsg->m_pDstTarget;
-    CFWL_FormImp* pForm =
-        pWidget ? static_cast<CFWL_FormImp*>(pWidget->GetImpl()) : nullptr;
-    if (pForm) {
-      CFWL_WidgetImp* pSubFocus = pForm->GetSubFocus();
-      if (pSubFocus && ((pSubFocus->GetStates() & FWL_WGTSTATE_Focused) == 0)) {
-        pMsg->m_pDstTarget = pSubFocus->GetInterface();
-        if (m_pFocus != pMsg->m_pDstTarget) {
-          m_pFocus = pMsg->m_pDstTarget;
-          return TRUE;
-        }
+  }
+  IFWL_Widget* pWidget = pMsg->m_pDstTarget;
+  CFWL_FormImp* pForm =
+      pWidget ? static_cast<CFWL_FormImp*>(pWidget->GetImpl()) : nullptr;
+  if (pForm) {
+    CFWL_WidgetImp* pSubFocus = pForm->GetSubFocus();
+    if (pSubFocus && ((pSubFocus->GetStates() & FWL_WGTSTATE_Focused) == 0)) {
+      pMsg->m_pDstTarget = pSubFocus->GetInterface();
+      if (m_pFocus != pMsg->m_pDstTarget) {
+        m_pFocus = pMsg->m_pDstTarget;
+        return TRUE;
       }
     }
   }
@@ -459,10 +442,10 @@ FX_BOOL CFWL_NoteDriver::DoSetFocus(CFWL_MsgSetFocus* pMsg,
 }
 FX_BOOL CFWL_NoteDriver::DoKillFocus(CFWL_MsgKillFocus* pMsg,
                                      IFWL_Widget* pMessageForm) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (pWidgetMgr->IsFormDisabled()) {
     if (m_pFocus == pMsg->m_pDstTarget) {
-      m_pFocus = NULL;
+      m_pFocus = nullptr;
     }
     return TRUE;
   }
@@ -474,7 +457,7 @@ FX_BOOL CFWL_NoteDriver::DoKillFocus(CFWL_MsgKillFocus* pMsg,
     if (pSubFocus && (pSubFocus->GetStates() & FWL_WGTSTATE_Focused)) {
       pMsg->m_pDstTarget = pSubFocus->GetInterface();
       if (m_pFocus == pMsg->m_pDstTarget) {
-        m_pFocus = NULL;
+        m_pFocus = nullptr;
         return TRUE;
       }
     }
@@ -485,21 +468,18 @@ FX_BOOL CFWL_NoteDriver::DoKey(CFWL_MsgKey* pMsg, IFWL_Widget* pMessageForm) {
 #if (_FX_OS_ != _FX_MACOSX_)
   if (pMsg->m_dwCmd == FWL_KeyCommand::KeyDown &&
       pMsg->m_dwKeyCode == FWL_VKEY_Tab) {
-    CFWL_WidgetMgr* pWidgetMgr =
-        static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+    CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
     IFWL_Widget* pForm = GetMessageForm(pMsg->m_pDstTarget);
     IFWL_Widget* pFocus = m_pFocus;
     if (m_pFocus) {
-      if (pWidgetMgr->GetWidget(m_pFocus, FWL_WGTRELATION_SystemForm) !=
-          pForm) {
-        pFocus = NULL;
-      }
+      if (pWidgetMgr->GetSystemFormWidget(m_pFocus) != pForm)
+        pFocus = nullptr;
     }
     FX_BOOL bFind = FALSE;
     IFWL_Widget* pNextTabStop = pWidgetMgr->nextTab(pForm, pFocus, bFind);
     if (!pNextTabStop) {
       bFind = FALSE;
-      pNextTabStop = pWidgetMgr->nextTab(pForm, NULL, bFind);
+      pNextTabStop = pWidgetMgr->nextTab(pForm, nullptr, bFind);
     }
     if (pNextTabStop == pFocus) {
       return TRUE;
@@ -513,8 +493,7 @@ FX_BOOL CFWL_NoteDriver::DoKey(CFWL_MsgKey* pMsg, IFWL_Widget* pMessageForm) {
   if (!m_pFocus) {
     if (pMsg->m_dwCmd == FWL_KeyCommand::KeyDown &&
         pMsg->m_dwKeyCode == FWL_VKEY_Return) {
-      CFWL_WidgetMgr* pWidgetMgr =
-          static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+      CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
       IFWL_Widget* defButton = pWidgetMgr->GetDefaultButton(pMessageForm);
       if (defButton) {
         pMsg->m_pDstTarget = defButton;
@@ -531,7 +510,7 @@ FX_BOOL CFWL_NoteDriver::DoMouse(CFWL_MsgMouse* pMsg,
   if (pMsg->m_dwCmd == FWL_MouseCommand::Leave ||
       pMsg->m_dwCmd == FWL_MouseCommand::Hover ||
       pMsg->m_dwCmd == FWL_MouseCommand::Enter) {
-    return pMsg->m_pDstTarget != NULL;
+    return !!pMsg->m_pDstTarget;
   }
   if (pMsg->m_pDstTarget != pMessageForm) {
     pMsg->m_pDstTarget->TransformTo(pMessageForm, pMsg->m_fx, pMsg->m_fy);
@@ -543,7 +522,7 @@ FX_BOOL CFWL_NoteDriver::DoMouse(CFWL_MsgMouse* pMsg,
 }
 FX_BOOL CFWL_NoteDriver::DoWheel(CFWL_MsgMouseWheel* pMsg,
                                  IFWL_Widget* pMessageForm) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return FALSE;
 
@@ -557,7 +536,7 @@ FX_BOOL CFWL_NoteDriver::DoWheel(CFWL_MsgMouseWheel* pMsg,
   return TRUE;
 }
 FX_BOOL CFWL_NoteDriver::DoSize(CFWL_MsgSize* pMsg) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return FALSE;
   pWidgetMgr->NotifySizeChanged(pMsg->m_pDstTarget, (FX_FLOAT)pMsg->m_iWidth,
@@ -574,10 +553,10 @@ FX_BOOL CFWL_NoteDriver::DoDragFiles(CFWL_MsgDropFiles* pMsg,
 }
 FX_BOOL CFWL_NoteDriver::DoMouseEx(CFWL_MsgMouse* pMsg,
                                    IFWL_Widget* pMessageForm) {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return FALSE;
-  IFWL_Widget* pTarget = NULL;
+  IFWL_Widget* pTarget = nullptr;
   if (m_pGrab)
     pTarget = m_pGrab;
   if (!pTarget) {
@@ -655,12 +634,10 @@ IFWL_Widget* CFWL_NoteDriver::GetMessageForm(IFWL_Widget* pDstTarget) {
     pMessageForm = pDstTarget;
   }
   if (!pMessageForm && pDstTarget) {
-    CFWL_WidgetMgr* pWidgetMgr =
-        static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+    CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
     if (!pWidgetMgr)
       return nullptr;
-    pMessageForm =
-        pWidgetMgr->GetWidget(pDstTarget, FWL_WGTRELATION_SystemForm);
+    pMessageForm = pWidgetMgr->GetSystemFormWidget(pDstTarget);
   }
   return pMessageForm;
 }
@@ -678,11 +655,14 @@ void CFWL_NoteDriver::ClearInvalidEventTargets(FX_BOOL bRemoveAll) {
 
 class CFWL_CoreToolTipDP : public IFWL_ToolTipDP {
  public:
-  FWL_Error GetCaption(IFWL_Widget* pWidget, CFX_WideString& wsCaption);
-  int32_t GetInitialDelay(IFWL_Widget* pWidget);
-  int32_t GetAutoPopDelay(IFWL_Widget* pWidget);
-  CFX_DIBitmap* GetToolTipIcon(IFWL_Widget* pWidget);
-  CFX_SizeF GetToolTipIconSize(IFWL_Widget* pWidget);
+  // IFWL_ToolTipDP
+  FWL_Error GetCaption(IFWL_Widget* pWidget,
+                       CFX_WideString& wsCaption) override;
+  int32_t GetInitialDelay(IFWL_Widget* pWidget) override;
+  int32_t GetAutoPopDelay(IFWL_Widget* pWidget) override;
+  CFX_DIBitmap* GetToolTipIcon(IFWL_Widget* pWidget) override;
+  CFX_SizeF GetToolTipIconSize(IFWL_Widget* pWidget) override;
+
   CFX_RectF GetAnchor();
   CFWL_CoreToolTipDP();
 
@@ -691,34 +671,46 @@ class CFWL_CoreToolTipDP : public IFWL_ToolTipDP {
   int32_t m_nAutoPopDelayTime;
   CFX_RectF m_fAnchor;
 };
+
 CFWL_CoreToolTipDP::CFWL_CoreToolTipDP() {
   m_nInitDelayTime = 500;
   m_nAutoPopDelayTime = 50000;
   m_fAnchor.Set(0.0, 0.0, 0.0, 0.0);
 }
+
 FWL_Error CFWL_CoreToolTipDP::GetCaption(IFWL_Widget* pWidget,
                                          CFX_WideString& wsCaption) {
   wsCaption = m_wsCaption;
   return FWL_Error::Succeeded;
 }
+
 int32_t CFWL_CoreToolTipDP::GetInitialDelay(IFWL_Widget* pWidget) {
   return m_nInitDelayTime;
 }
+
 int32_t CFWL_CoreToolTipDP::GetAutoPopDelay(IFWL_Widget* pWidget) {
   return m_nAutoPopDelayTime;
 }
+
 CFX_DIBitmap* CFWL_CoreToolTipDP::GetToolTipIcon(IFWL_Widget* pWidget) {
-  return NULL;
+  return nullptr;
 }
+
 CFX_SizeF CFWL_CoreToolTipDP::GetToolTipIconSize(IFWL_Widget* pWidget) {
   return CFX_SizeF();
 }
+
 CFX_RectF CFWL_CoreToolTipDP::GetAnchor() {
   return m_fAnchor;
 }
+
+CFWL_EventTarget::CFWL_EventTarget(CFWL_NoteDriver* pNoteDriver,
+                                   IFWL_Widget* pListener)
+    : m_pListener(pListener), m_pNoteDriver(pNoteDriver), m_bInvalid(FALSE) {}
 CFWL_EventTarget::~CFWL_EventTarget() {
   m_eventSources.RemoveAll();
 }
+
 int32_t CFWL_EventTarget::SetEventSource(IFWL_Widget* pSource,
                                          uint32_t dwFilter) {
   if (pSource) {
@@ -729,7 +721,7 @@ int32_t CFWL_EventTarget::SetEventSource(IFWL_Widget* pSource,
 }
 
 FX_BOOL CFWL_EventTarget::ProcessEvent(CFWL_Event* pEvent) {
-  IFWL_WidgetDelegate* pDelegate = m_pListener->SetDelegate(NULL);
+  IFWL_WidgetDelegate* pDelegate = m_pListener->SetDelegate(nullptr);
   if (!pDelegate)
     return FALSE;
   if (m_eventSources.GetCount() == 0) {
@@ -738,7 +730,7 @@ FX_BOOL CFWL_EventTarget::ProcessEvent(CFWL_Event* pEvent) {
   }
   FX_POSITION pos = m_eventSources.GetStartPosition();
   while (pos) {
-    IFWL_Widget* pSource = NULL;
+    IFWL_Widget* pSource = nullptr;
     uint32_t dwFilter = 0;
     m_eventSources.GetNextAssoc(pos, (void*&)pSource, dwFilter);
     if (pSource == pEvent->m_pSrcTarget ||
@@ -779,10 +771,9 @@ FX_BOOL CFWL_EventTarget::IsFilterEvent(CFWL_Event* pEvent, uint32_t dwFilter) {
   }
 }
 
-CFWL_ToolTipContainer* CFWL_ToolTipContainer::s_pInstance = NULL;
+CFWL_ToolTipContainer* CFWL_ToolTipContainer::s_pInstance = nullptr;
 
-CFWL_ToolTipContainer::CFWL_ToolTipContainer()
-    : pCurTarget(NULL), m_pToolTipImp(NULL) {
+CFWL_ToolTipContainer::CFWL_ToolTipContainer() : m_pToolTipImp(nullptr) {
   m_ToolTipDp = new CFWL_CoreToolTipDP;
   m_ToolTipDp->m_nInitDelayTime = 0;
   m_ToolTipDp->m_nAutoPopDelayTime = 2000;
@@ -807,98 +798,5 @@ CFWL_ToolTipContainer* CFWL_ToolTipContainer::getInstance() {
 // static
 void CFWL_ToolTipContainer::DeleteInstance() {
   delete s_pInstance;
-  s_pInstance = NULL;
-}
-
-FWL_Error CFWL_ToolTipContainer::AddToolTipTarget(IFWL_ToolTipTarget* pTarget) {
-  if (m_arrWidget.Find(pTarget) < 0) {
-    m_arrWidget.Add(pTarget);
-    return FWL_Error::Succeeded;
-  }
-  return FWL_Error::Indefinite;
-}
-FWL_Error CFWL_ToolTipContainer::RemoveToolTipTarget(
-    IFWL_ToolTipTarget* pTarget) {
-  int index = m_arrWidget.Find(pTarget);
-  if (index >= 0) {
-    m_arrWidget.RemoveAt(index);
-    return FWL_Error::Succeeded;
-  }
-  return FWL_Error::Indefinite;
-}
-FX_BOOL CFWL_ToolTipContainer::HasToolTip(IFWL_Widget* pWedget) {
-  int32_t iCount = m_arrWidget.GetSize();
-  for (int32_t i = 0; i < iCount; i++) {
-    IFWL_ToolTipTarget* p = m_arrWidget[i];
-    if (p->GetWidget() == pWedget) {
-      pCurTarget = p;
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-FX_BOOL CFWL_ToolTipContainer::ProcessEnter(CFWL_EvtMouse* pEvt,
-                                            IFWL_Widget* pOwner) {
-  if (HasToolTip(pEvt->m_pDstTarget)) {
-    if (NULL == m_pToolTipImp) {
-      CFWL_WidgetImpProperties prop;
-      prop.m_pDataProvider = m_ToolTipDp;
-      prop.m_pOwner = pOwner;
-      CFX_RectF rtTooltip;
-      rtTooltip.Set(150, 150, 100, 50);
-      prop.m_rtWidget = rtTooltip;
-      IFWL_ToolTip* pToolTip = IFWL_ToolTip::Create(prop, nullptr);
-      pToolTip->Initialize();
-      m_pToolTipImp = static_cast<CFWL_ToolTipImp*>(pToolTip->GetImpl());
-      m_pToolTipImp->ModifyStylesEx(FWL_STYLEEXT_TTP_Multiline, 0);
-      m_pToolTipImp->SetStates(FWL_WGTSTATE_Invisible, TRUE);
-    }
-    if (pCurTarget->IsShowed()) {
-      CFX_WideString wsCaption;
-      pCurTarget->GetCaption(wsCaption);
-      if (!wsCaption.IsEmpty()) {
-        m_ToolTipDp->m_wsCaption = wsCaption;
-      }
-      CFX_RectF rt;
-      CFX_SizeF sz;
-      pCurTarget->GetToolTipSize(sz);
-      if (sz.x > 0 && sz.y > 0) {
-        rt.width = sz.x;
-        rt.height = sz.y;
-      } else {
-        CFX_RectF r;
-        m_pToolTipImp->GetWidgetRect(r, TRUE);
-        rt.width = r.width;
-        rt.height = r.height;
-      }
-      CFX_PointF pt(pEvt->m_fx, pEvt->m_fy);
-      if (pCurTarget->GetToolTipPos(pt) == FWL_Error::Succeeded) {
-        rt.left = pt.x;
-        rt.top = pt.y;
-        m_pToolTipImp->ModifyStylesEx(FWL_STYLEEXT_TTP_NoAnchor, 0);
-      } else {
-        CFX_RectF rtAnchor;
-        pCurTarget->GetWidget()->GetClientRect(rtAnchor);
-        pCurTarget->GetWidget()->TransformTo(NULL, rtAnchor.left, rtAnchor.top);
-        m_pToolTipImp->SetAnchor(rtAnchor);
-        m_pToolTipImp->ModifyStylesEx(0, FWL_STYLEEXT_TTP_NoAnchor);
-      }
-      m_pToolTipImp->SetWidgetRect(rt);
-      m_pToolTipImp->Update();
-      m_pToolTipImp->Show();
-    }
-    return TRUE;
-  }
-  return FALSE;
-}
-FX_BOOL CFWL_ToolTipContainer::ProcessLeave(CFWL_EvtMouse* pEvt) {
-  if (HasToolTip(pEvt->m_pDstTarget) && NULL != m_pToolTipImp) {
-    m_pToolTipImp->Hide();
-    pCurTarget = NULL;
-    return TRUE;
-  }
-  return FALSE;
-}
-IFWL_ToolTipTarget* CFWL_ToolTipContainer::GetCurrentToolTipTarget() {
-  return pCurTarget;
+  s_pInstance = nullptr;
 }

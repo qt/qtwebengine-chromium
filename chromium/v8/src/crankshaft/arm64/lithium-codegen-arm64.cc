@@ -12,7 +12,6 @@
 #include "src/crankshaft/hydrogen-osr.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
-#include "src/profiler/cpu-profiler.h"
 
 namespace v8 {
 namespace internal {
@@ -365,15 +364,7 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
   DCHECK(ToRegister(instr->constructor()).is(x1));
 
   __ Mov(x0, Operand(instr->arity()));
-  if (instr->arity() == 1) {
-    // We only need the allocation site for the case we have a length argument.
-    // The case may bail out to the runtime, which will determine the correct
-    // elements kind with the site.
-    __ Mov(x2, instr->hydrogen()->site());
-  } else {
-    __ LoadRoot(x2, Heap::kUndefinedValueRootIndex);
-  }
-
+  __ Mov(x2, instr->hydrogen()->site());
 
   ElementsKind kind = instr->hydrogen()->elements_kind();
   AllocationSiteOverrideMode override_mode =
@@ -406,7 +397,7 @@ void LCodeGen::DoCallNewArray(LCallNewArray* instr) {
     CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
     __ Bind(&done);
   } else {
-    ArrayNArgumentsConstructorStub stub(isolate(), kind, override_mode);
+    ArrayNArgumentsConstructorStub stub(isolate());
     CallCode(stub.GetCode(), RelocInfo::CODE_TARGET, instr);
   }
   RecordPushedArgumentsDelta(instr->hydrogen()->argument_delta());
@@ -457,7 +448,6 @@ void LCodeGen::CallRuntimeFromDeferred(Runtime::FunctionId id,
 void LCodeGen::RecordAndWritePosition(int position) {
   if (position == RelocInfo::kNoPosition) return;
   masm()->positions_recorder()->RecordPosition(position);
-  masm()->positions_recorder()->WriteRecordedPositions();
 }
 
 
@@ -904,7 +894,7 @@ void LCodeGen::DeoptimizeBranch(
             entry, deopt_info, bailout_type, !frame_is_built_);
     // We often have several deopts to the same entry, reuse the last
     // jump entry if this is the case.
-    if (FLAG_trace_deopt || isolate()->cpu_profiler()->is_profiling() ||
+    if (FLAG_trace_deopt || isolate()->is_profiling() ||
         jump_table_.is_empty() ||
         !table_entry->IsEquivalentTo(*jump_table_.last())) {
       jump_table_.Add(table_entry, zone());
@@ -2227,18 +2217,6 @@ void LCodeGen::DoDoubleBits(LDoubleBits* instr) {
 }
 
 
-void LCodeGen::DoConstructDouble(LConstructDouble* instr) {
-  Register hi_reg = ToRegister(instr->hi());
-  Register lo_reg = ToRegister(instr->lo());
-  DoubleRegister result_reg = ToDoubleRegister(instr->result());
-
-  // Insert the least significant 32 bits of hi_reg into the most significant
-  // 32 bits of lo_reg, and move to a floating point register.
-  __ Bfi(lo_reg, hi_reg, 32, 32);
-  __ Fmov(result_reg, lo_reg);
-}
-
-
 void LCodeGen::DoClassOfTestAndBranch(LClassOfTestAndBranch* instr) {
   Handle<String> class_name = instr->hydrogen()->class_name();
   Label* true_label = instr->TrueLabel(chunk_);
@@ -2833,10 +2811,10 @@ void LCodeGen::DoHasInPrototypeChainAndBranch(
   DeoptimizeIf(eq, instr, Deoptimizer::kProxy);
 
   __ Ldr(object_prototype, FieldMemOperand(object_map, Map::kPrototypeOffset));
-  __ Cmp(object_prototype, prototype);
-  __ B(eq, instr->TrueLabel(chunk_));
   __ CompareRoot(object_prototype, Heap::kNullValueRootIndex);
   __ B(eq, instr->FalseLabel(chunk_));
+  __ Cmp(object_prototype, prototype);
+  __ B(eq, instr->TrueLabel(chunk_));
   __ Ldr(object_map, FieldMemOperand(object_prototype, HeapObject::kMapOffset));
   __ B(&loop);
 }
@@ -2865,7 +2843,9 @@ void LCodeGen::PrepareForTailCall(const ParameterCount& actual,
 #endif
   if (FLAG_code_comments) {
     if (actual.is_reg()) {
-      Comment(";;; PrepareForTailCall, actual: %s {", actual.reg().ToString());
+      Comment(";;; PrepareForTailCall, actual: %s {",
+              RegisterConfiguration::Crankshaft()->GetGeneralRegisterName(
+                  actual.reg().code()));
     } else {
       Comment(";;; PrepareForTailCall, actual: %d {", actual.immediate());
     }
@@ -3086,14 +3066,12 @@ void LCodeGen::EmitVectorStoreICRegisters(T* instr) {
 
 void LCodeGen::DoLoadGlobalGeneric(LLoadGlobalGeneric* instr) {
   DCHECK(ToRegister(instr->context()).is(cp));
-  DCHECK(ToRegister(instr->global_object())
-             .is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->result()).Is(x0));
-  __ Mov(LoadDescriptor::NameRegister(), Operand(instr->name()));
+
   EmitVectorLoadICRegisters<LLoadGlobalGeneric>(instr);
-  Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(
-                        isolate(), instr->typeof_mode(), PREMONOMORPHIC)
-                        .code();
+  Handle<Code> ic =
+      CodeFactory::LoadGlobalICInOptimizedCode(isolate(), instr->typeof_mode())
+          .code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -3351,13 +3329,9 @@ void LCodeGen::DoLoadKeyedGeneric(LLoadKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->key()).is(LoadDescriptor::NameRegister()));
 
-  if (instr->hydrogen()->HasVectorAndSlot()) {
-    EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
-  }
+  EmitVectorLoadICRegisters<LLoadKeyedGeneric>(instr);
 
-  Handle<Code> ic = CodeFactory::KeyedLoadICInOptimizedCode(
-                        isolate(), instr->hydrogen()->initialization_state())
-                        .code();
+  Handle<Code> ic = CodeFactory::KeyedLoadICInOptimizedCode(isolate()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 
   DCHECK(ToRegister(instr->result()).Is(x0));
@@ -3411,10 +3385,7 @@ void LCodeGen::DoLoadNamedGeneric(LLoadNamedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(LoadDescriptor::ReceiverRegister()));
   __ Mov(LoadDescriptor::NameRegister(), Operand(instr->name()));
   EmitVectorLoadICRegisters<LLoadNamedGeneric>(instr);
-  Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(
-                        isolate(), NOT_INSIDE_TYPEOF,
-                        instr->hydrogen()->initialization_state())
-                        .code();
+  Handle<Code> ic = CodeFactory::LoadICInOptimizedCode(isolate()).code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 
   DCHECK(ToRegister(instr->result()).is(x0));
@@ -3562,19 +3533,25 @@ void LCodeGen::DoMathAbsTagged(LMathAbsTagged* instr) {
   __ Bind(&done);
 }
 
+void LCodeGen::DoMathCos(LMathCos* instr) {
+  DCHECK(instr->IsMarkedAsCall());
+  DCHECK(ToDoubleRegister(instr->value()).is(d0));
+  __ CallCFunction(ExternalReference::ieee754_cos_function(isolate()), 0, 1);
+  DCHECK(ToDoubleRegister(instr->result()).Is(d0));
+}
+
+void LCodeGen::DoMathSin(LMathSin* instr) {
+  DCHECK(instr->IsMarkedAsCall());
+  DCHECK(ToDoubleRegister(instr->value()).is(d0));
+  __ CallCFunction(ExternalReference::ieee754_sin_function(isolate()), 0, 1);
+  DCHECK(ToDoubleRegister(instr->result()).Is(d0));
+}
 
 void LCodeGen::DoMathExp(LMathExp* instr) {
-  DoubleRegister input = ToDoubleRegister(instr->value());
-  DoubleRegister result = ToDoubleRegister(instr->result());
-  DoubleRegister double_temp1 = ToDoubleRegister(instr->double_temp1());
-  DoubleRegister double_temp2 = double_scratch();
-  Register temp1 = ToRegister(instr->temp1());
-  Register temp2 = ToRegister(instr->temp2());
-  Register temp3 = ToRegister(instr->temp3());
-
-  MathExpGenerator::EmitMathExp(masm(), input, result,
-                                double_temp1, double_temp2,
-                                temp1, temp2, temp3);
+  DCHECK(instr->IsMarkedAsCall());
+  DCHECK(ToDoubleRegister(instr->value()).is(d0));
+  __ CallCFunction(ExternalReference::ieee754_exp_function(isolate()), 0, 1);
+  DCHECK(ToDoubleRegister(instr->result()).Is(d0));
 }
 
 
@@ -3743,8 +3720,7 @@ void LCodeGen::DoFlooringDivI(LFlooringDivI* instr) {
 void LCodeGen::DoMathLog(LMathLog* instr) {
   DCHECK(instr->IsMarkedAsCall());
   DCHECK(ToDoubleRegister(instr->value()).is(d0));
-  __ CallCFunction(ExternalReference::math_log_double_function(isolate()),
-                   0, 1);
+  __ CallCFunction(ExternalReference::ieee754_log_function(isolate()), 0, 1);
   DCHECK(ToDoubleRegister(instr->result()).Is(d0));
 }
 
@@ -4995,13 +4971,11 @@ void LCodeGen::DoStoreKeyedGeneric(LStoreKeyedGeneric* instr) {
   DCHECK(ToRegister(instr->key()).is(StoreDescriptor::NameRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  if (instr->hydrogen()->HasVectorAndSlot()) {
-    EmitVectorStoreICRegisters<LStoreKeyedGeneric>(instr);
-  }
+  EmitVectorStoreICRegisters<LStoreKeyedGeneric>(instr);
 
   Handle<Code> ic = CodeFactory::KeyedStoreICInOptimizedCode(
-                        isolate(), instr->language_mode(),
-                        instr->hydrogen()->initialization_state()).code();
+                        isolate(), instr->language_mode())
+                        .code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -5195,14 +5169,12 @@ void LCodeGen::DoStoreNamedGeneric(LStoreNamedGeneric* instr) {
   DCHECK(ToRegister(instr->object()).is(StoreDescriptor::ReceiverRegister()));
   DCHECK(ToRegister(instr->value()).is(StoreDescriptor::ValueRegister()));
 
-  if (instr->hydrogen()->HasVectorAndSlot()) {
-    EmitVectorStoreICRegisters<LStoreNamedGeneric>(instr);
-  }
+  EmitVectorStoreICRegisters<LStoreNamedGeneric>(instr);
 
   __ Mov(StoreDescriptor::NameRegister(), Operand(instr->name()));
-  Handle<Code> ic = CodeFactory::StoreICInOptimizedCode(
-                        isolate(), instr->language_mode(),
-                        instr->hydrogen()->initialization_state()).code();
+  Handle<Code> ic =
+      CodeFactory::StoreICInOptimizedCode(isolate(), instr->language_mode())
+          .code();
   CallCode(ic, RelocInfo::CODE_TARGET, instr);
 }
 
@@ -5477,8 +5449,7 @@ void LCodeGen::DoTransitionElementsKind(LTransitionElementsKind* instr) {
     DCHECK(ToRegister(instr->context()).is(cp));
     PushSafepointRegistersScope scope(this);
     __ Mov(x1, Operand(to_map));
-    bool is_js_array = from_map->instance_type() == JS_ARRAY_TYPE;
-    TransitionElementsKindStub stub(isolate(), from_kind, to_kind, is_js_array);
+    TransitionElementsKindStub stub(isolate(), from_kind, to_kind);
     __ CallStub(&stub);
     RecordSafepointWithRegisters(
         instr->pointer_map(), 0, Safepoint::kLazyDeopt);

@@ -39,6 +39,7 @@ std::string AudioSendStream::Config::Rtp::ToString() const {
     }
   }
   ss << ']';
+  ss << ", nack: " << nack.ToString();
   ss << ", c_name: " << c_name;
   ss << '}';
   return ss.str();
@@ -50,7 +51,6 @@ std::string AudioSendStream::Config::ToString() const {
   ss << ", voe_channel_id: " << voe_channel_id;
   // TODO(solenberg): Encoder config.
   ss << ", cng_payload_type: " << cng_payload_type;
-  ss << ", red_payload_type: " << red_payload_type;
   ss << '}';
   return ss.str();
 }
@@ -75,15 +75,19 @@ AudioSendStream::AudioSendStream(
   channel_proxy_->SetRTCPStatus(true);
   channel_proxy_->SetLocalSSRC(config.rtp.ssrc);
   channel_proxy_->SetRTCP_CNAME(config.rtp.c_name);
+  // TODO(solenberg): Config NACK history window (which is a packet count),
+  // using the actual packet size for the configured codec.
+  channel_proxy_->SetNACKStatus(config_.rtp.nack.rtp_history_ms != 0,
+                                config_.rtp.nack.rtp_history_ms / 20);
 
   channel_proxy_->RegisterExternalTransport(config.send_transport);
 
   for (const auto& extension : config.rtp.extensions) {
-    if (extension.name == RtpExtension::kAbsSendTime) {
+    if (extension.uri == RtpExtension::kAbsSendTimeUri) {
       channel_proxy_->SetSendAbsoluteSenderTimeStatus(true, extension.id);
-    } else if (extension.name == RtpExtension::kAudioLevel) {
+    } else if (extension.uri == RtpExtension::kAudioLevelUri) {
       channel_proxy_->SetSendAudioLevelIndicationStatus(true, extension.id);
-    } else if (extension.name == RtpExtension::kTransportSequenceNumber) {
+    } else if (extension.uri == RtpExtension::kTransportSequenceNumberUri) {
       channel_proxy_->EnableSendTransportSequenceNumber(extension.id);
     } else {
       RTC_NOTREACHED() << "Registering unsupported RTP extension.";
@@ -121,6 +125,11 @@ bool AudioSendStream::SendTelephoneEvent(int payload_type, int event,
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   return channel_proxy_->SetSendTelephoneEventPayloadType(payload_type) &&
          channel_proxy_->SendTelephoneEventOutband(event, duration_ms);
+}
+
+void AudioSendStream::SetMuted(bool muted) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel_proxy_->SetInputMute(muted);
 }
 
 webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {

@@ -26,6 +26,7 @@
  */
 
 #include "config.h"
+#include "wayland-version.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -40,13 +41,13 @@
 
 #if HAVE_LIBXML
 #include <libxml/parser.h>
-#endif
-
-#include "wayland-util.h"
 
 /* Embedded wayland.dtd file, see dtddata.S */
 extern char DTD_DATA_begin;
 extern int DTD_DATA_len;
+#endif
+
+#include "wayland-util.h"
 
 enum side {
 	CLIENT,
@@ -64,14 +65,23 @@ usage(int ret)
 			"headers, server headers, or protocol marshalling code.\n\n");
 	fprintf(stderr, "options:\n");
 	fprintf(stderr, "    -h,  --help                  display this help and exit.\n"
+			"    -v,  --version               print the wayland library version that\n"
+			"                                 the scanner was built against.\n"
 		        "    -c,  --include-core-only     include the core version of the headers,\n"
 	                "                                 that is e.g. wayland-client-core.h instead\n"
 	                "                                 of wayland-client.h.\n");
 	exit(ret);
 }
 
+static int
+scanner_version(int ret)
+{
+	fprintf(stderr, "wayland-scanner %s\n", WAYLAND_VERSION);
+	exit(ret);
+}
+
 static bool
-is_dtd_valid(FILE *input)
+is_dtd_valid(FILE *input, const char *filename)
 {
 	bool rc = true;
 #if HAVE_LIBXML
@@ -101,7 +111,7 @@ is_dtd_valid(FILE *input)
 		abort();
 	}
 
-	doc = xmlCtxtReadFd(ctx, fd, "protocol", NULL, 0);
+	doc = xmlCtxtReadFd(ctx, fd, filename, NULL, 0);
 	if (!doc) {
 		fprintf(stderr, "Failed to read XML\n");
 		abort();
@@ -752,8 +762,8 @@ start_element(void *data, const char *element_name, const char **atts)
 			enumeration->bitfield = true;
 		else
 			fail(&ctx->loc,
-                             "invalid value (%s) for bitfield attribute (only true/false are accepted)",
-                             bitfield);
+			     "invalid value (%s) for bitfield attribute (only true/false are accepted)",
+			     bitfield);
 
 		wl_list_insert(ctx->interface->enumeration_list.prev,
 			       &enumeration->link);
@@ -790,32 +800,68 @@ start_element(void *data, const char *element_name, const char **atts)
 	}
 }
 
+static struct enumeration *
+find_enumeration(struct protocol *protocol,
+		 struct interface *interface,
+		 char *enum_attribute)
+{
+	struct interface *i;
+	struct enumeration *e;
+	char *enum_name;
+	uint idx = 0, j;
+
+	for (j = 0; j + 1 < strlen(enum_attribute); j++) {
+		if (enum_attribute[j] == '.') {
+			idx = j;
+		}
+	}
+
+	if (idx > 0) {
+		enum_name = enum_attribute + idx + 1;
+
+		wl_list_for_each(i, &protocol->interface_list, link)
+			if (strncmp(i->name, enum_attribute, idx) == 0)
+				wl_list_for_each(e, &i->enumeration_list, link)
+					if (strcmp(e->name, enum_name) == 0)
+						return e;
+	} else if (interface) {
+		enum_name = enum_attribute;
+
+		wl_list_for_each(e, &interface->enumeration_list, link)
+			if (strcmp(e->name, enum_name) == 0)
+				return e;
+	}
+
+	return NULL;
+}
+
 static void
-verify_arguments(struct parse_context *ctx, struct wl_list *messages, struct wl_list *enumerations)
+verify_arguments(struct parse_context *ctx,
+		 struct interface *interface,
+		 struct wl_list *messages,
+		 struct wl_list *enumerations)
 {
 	struct message *m;
 	wl_list_for_each(m, messages, link) {
 		struct arg *a;
 		wl_list_for_each(a, &m->arg_list, link) {
-			struct enumeration *e, *f;
+			struct enumeration *e;
 
 			if (!a->enumeration_name)
 				continue;
 
-			f = NULL;
-			wl_list_for_each(e, enumerations, link) {
-				if(strcmp(e->name, a->enumeration_name) == 0)
-					f = e;
-			}
 
-			if (f == NULL)
+			e = find_enumeration(ctx->protocol, interface,
+					     a->enumeration_name);
+
+			if (e == NULL)
 				fail(&ctx->loc,
 				     "could not find enumeration %s",
 				     a->enumeration_name);
 
 			switch (a->type) {
 			case INT:
-				if (f->bitfield)
+				if (e->bitfield)
 					fail(&ctx->loc,
 					     "bitfield-style enum must only be referenced by uint");
 				break;
@@ -853,12 +899,13 @@ end_element(void *data, const XML_Char *name)
 			     ctx->enumeration->name);
 		}
 		ctx->enumeration = NULL;
-	} else if (strcmp(name, "interface") == 0) {
-		struct interface *i = ctx->interface;
+	} else if (strcmp(name, "protocol") == 0) {
+		struct interface *i;
 
-		verify_arguments(ctx, &i->request_list, &i->enumeration_list);
-		verify_arguments(ctx, &i->event_list, &i->enumeration_list);
-
+		wl_list_for_each(i, &ctx->protocol->interface_list, link) {
+			verify_arguments(ctx, i, &i->request_list, &i->enumeration_list);
+			verify_arguments(ctx, i, &i->event_list, &i->enumeration_list);
+		}
 	}
 }
 
@@ -874,6 +921,34 @@ character_data(void *data, const XML_Char *s, int len)
 
 	memcpy(ctx->character_data + ctx->character_data_length, s, len);
 	ctx->character_data_length += len;
+}
+
+static void
+format_text_to_comment(const char *text, bool standalone_comment)
+{
+	int bol = 1, start = 0, i, length;
+	bool comment_started = !standalone_comment;
+
+	length = strlen(text);
+	for (i = 0; i <= length; i++) {
+		if (bol && (text[i] == ' ' || text[i] == '\t')) {
+			continue;
+		} else if (bol) {
+			bol = 0;
+			start = i;
+		}
+		if (text[i] == '\n' ||
+		    (text[i] == '\0' && !(start == i))) {
+			printf("%s%s%.*s\n",
+			       comment_started ? " *" : "/*",
+			       i > start ? " " : "",
+			       i - start, text + start);
+			bol = 1;
+			comment_started = true;
+		}
+	}
+	if (comment_started && standalone_comment)
+		printf(" */\n\n");
 }
 
 static void
@@ -898,9 +973,11 @@ emit_opcode_versions(struct wl_list *message_list, struct interface *interface)
 {
 	struct message *m;
 
-	wl_list_for_each(m, message_list, link)
+	wl_list_for_each(m, message_list, link) {
+		printf("/**\n * @ingroup iface_%s\n */\n", interface->name);
 		printf("#define %s_%s_SINCE_VERSION\t%d\n",
 		       interface->uppercase_name, m->uppercase_name, m->since);
+	}
 
 	printf("\n");
 }
@@ -940,6 +1017,7 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 	struct arg *a, *ret;
 	int has_destructor, has_destroy;
 
+	printf("/** @ingroup iface_%s */\n", interface->name);
 	printf("static inline void\n"
 	       "%s_set_user_data(struct %s *%s, void *user_data)\n"
 	       "{\n"
@@ -948,6 +1026,7 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 	       interface->name, interface->name, interface->name,
 	       interface->name);
 
+	printf("/** @ingroup iface_%s */\n", interface->name);
 	printf("static inline void *\n"
 	       "%s_get_user_data(struct %s *%s)\n"
 	       "{\n"
@@ -981,7 +1060,8 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 		exit(EXIT_FAILURE);
 	}
 
-	if (!has_destroy && strcmp(interface->name, "wl_display") != 0)
+	if (!has_destroy && strcmp(interface->name, "wl_display") != 0) {
+		printf("/** @ingroup iface_%s */\n", interface->name);
 		printf("static inline void\n"
 		       "%s_destroy(struct %s *%s)\n"
 		       "{\n"
@@ -990,6 +1070,7 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 		       "}\n\n",
 		       interface->name, interface->name, interface->name,
 		       interface->name);
+	}
 
 	if (wl_list_empty(message_list))
 		return;
@@ -1009,6 +1090,11 @@ emit_stubs(struct wl_list *message_list, struct interface *interface)
 				ret = a;
 		}
 
+		printf("/**\n"
+		       " * @ingroup iface_%s\n", interface->name);
+		if (m->description && m->description->text)
+			format_text_to_comment(m->description->text, false);
+		printf(" */\n");
 		if (ret && ret->interface_name == NULL)
 			printf("static inline void *\n");
 		else if (ret)
@@ -1104,6 +1190,17 @@ emit_event_wrappers(struct wl_list *message_list, struct interface *interface)
 		return;
 
 	wl_list_for_each(m, message_list, link) {
+		printf("/**\n"
+		       " * @ingroup iface_%s\n"
+		       " * Sends an %s event to the client owning the resource.\n",
+		       interface->name,
+		       m->name);
+		printf(" * @param resource_ The client's resource\n");
+		wl_list_for_each(a, &m->arg_list, link) {
+			if (a->summary)
+				printf(" * @param %s %s\n", a->name, a->summary);
+		}
+		printf(" */\n");
 		printf("static inline void\n"
 		       "%s_send_%s(struct wl_resource *resource_",
 		       interface->name, m->name);
@@ -1150,28 +1247,23 @@ emit_enumerations(struct interface *interface)
 
 		if (desc) {
 			printf("/**\n");
-			desc_dump(desc->summary,
-				  " * %s_%s - ",
-				  interface->name, e->name);
-			wl_list_for_each(entry, &e->entry_list, link) {
-				desc_dump(entry->summary,
-					  " * @%s_%s_%s: ",
-					  interface->uppercase_name,
-					  e->uppercase_name,
-					  entry->uppercase_name);
-			}
-			if (desc->text) {
-				printf(" *\n");
-				desc_dump(desc->text, " * ");
-			}
+			printf(" * @ingroup iface_%s\n", interface->name);
+			format_text_to_comment(desc->summary, false);
+			if (desc->text)
+				format_text_to_comment(desc->text, false);
 			printf(" */\n");
 		}
 		printf("enum %s_%s {\n", interface->name, e->name);
-		wl_list_for_each(entry, &e->entry_list, link)
+		wl_list_for_each(entry, &e->entry_list, link) {
+			if (entry->summary)
+				printf("\t/**\n"
+				       "\t * %s\n"
+				       "\t */\n", entry->summary);
 			printf("\t%s_%s_%s = %s,\n",
 			       interface->uppercase_name,
 			       e->uppercase_name,
 			       entry->uppercase_name, entry->value);
+		}
 		printf("};\n");
 		printf("#endif /* %s_%s_ENUM */\n\n",
 		       interface->uppercase_name, e->uppercase_name);
@@ -1188,20 +1280,11 @@ emit_structs(struct wl_list *message_list, struct interface *interface, enum sid
 	if (wl_list_empty(message_list))
 		return;
 
-	if (interface->description) {
-		struct description *desc = interface->description;
-		printf("/**\n");
-		desc_dump(desc->summary, " * %s - ", interface->name);
-		wl_list_for_each(m, message_list, link) {
-			struct description *mdesc = m->description;
-			desc_dump(mdesc ? mdesc->summary : "(none)",
-				  " * @%s: ",
-				  m->name);
-		}
-		printf(" *\n");
-		desc_dump(desc->text, " * ");
-		printf(" */\n");
-	}
+	printf("/**\n");
+	printf(" * @ingroup iface_%s\n", interface->name);
+	printf(" * @struct %s_%s\n", interface->name,
+	       (side == SERVER) ? "interface" : "listener");
+	printf(" */\n");
 	printf("struct %s_%s {\n", interface->name,
 	       (side == SERVER) ? "interface" : "listener");
 
@@ -1209,24 +1292,24 @@ emit_structs(struct wl_list *message_list, struct interface *interface, enum sid
 		struct description *mdesc = m->description;
 
 		printf("\t/**\n");
-		desc_dump(mdesc ? mdesc->summary : "(none)",
-			  "\t * %s - ", m->name);
-		wl_list_for_each(a, &m->arg_list, link) {
-			if (side == SERVER && a->type == NEW_ID &&
-			    a->interface_name == NULL)
-				printf("\t * @interface: name of the objects interface\n"
-				       "\t * @version: version of the objects interface\n");
-
-
-			desc_dump(a->summary ? a->summary : "(none)",
-				  "\t * @%s: ", a->name);
-		}
 		if (mdesc) {
+			if (mdesc->summary)
+				printf("\t * %s\n", mdesc->summary);
 			printf("\t *\n");
 			desc_dump(mdesc->text, "\t * ");
 		}
+		wl_list_for_each(a, &m->arg_list, link) {
+			if (side == SERVER && a->type == NEW_ID &&
+			    a->interface_name == NULL)
+				printf("\t * @param interface name of the objects interface\n"
+				       "\t * @param version version of the objects interface\n");
+
+			if (a->summary)
+				printf("\t * @param %s %s\n", a->name,
+				       a->summary);
+		}
 		if (m->since > 1) {
-			printf("\t * @since: %d\n", m->since);
+			printf("\t * @since %d\n", m->since);
 		}
 		printf("\t */\n");
 		printf("\tvoid (*%s)(", m->name);
@@ -1266,6 +1349,9 @@ emit_structs(struct wl_list *message_list, struct interface *interface, enum sid
 	printf("};\n\n");
 
 	if (side == CLIENT) {
+	    printf("/**\n"
+		   " * @ingroup %s_iface\n"
+		   " */\n", interface->name);
 	    printf("static inline int\n"
 		   "%s_add_listener(struct %s *%s,\n"
 		   "%sconst struct %s_listener *listener, void *data)\n"
@@ -1279,30 +1365,6 @@ emit_structs(struct wl_list *message_list, struct interface *interface, enum sid
 		   interface->name,
 		   indent(37));
 	}
-}
-
-static void
-format_copyright(const char *copyright)
-{
-	int bol = 1, start = 0, i;
-
-	for (i = 0; copyright[i]; i++) {
-		if (bol && (copyright[i] == ' ' || copyright[i] == '\t')) {
-			continue;
-		} else if (bol) {
-			bol = 0;
-			start = i;
-		}
-
-		if (copyright[i] == '\n' || copyright[i] == '\0') {
-			printf("%s%s%.*s\n",
-			       i == 0 ? "/*" : " *",
-			       i > start ? " " : "",
-			       i - start, copyright + start);
-			bol = 1;
-		}
-	}
-	printf(" */\n\n");
 }
 
 static void
@@ -1358,6 +1420,46 @@ get_include_name(bool core, enum side side)
 }
 
 static void
+emit_mainpage_blurb(const struct protocol *protocol, enum side side)
+{
+	struct interface *i;
+
+	printf("/**\n"
+	       " * @page page_%s The %s protocol\n",
+	       protocol->name, protocol->name);
+
+	if (protocol->description) {
+		if (protocol->description->summary) {
+			printf(" * %s\n"
+			       " *\n", protocol->description->summary);
+		}
+
+		if (protocol->description->text) {
+			printf(" * @section page_desc_%s Description\n", protocol->name);
+			format_text_to_comment(protocol->description->text, false);
+			printf(" *\n");
+		}
+	}
+
+	printf(" * @section page_ifaces_%s Interfaces\n", protocol->name);
+	wl_list_for_each(i, &protocol->interface_list, link) {
+		printf(" * - @subpage page_iface_%s - %s\n",
+		       i->name,
+		       i->description && i->description->summary ?  i->description->summary : "");
+	}
+
+	if (protocol->copyright) {
+		printf(" * @section page_copyright_%s Copyright\n",
+		       protocol->name);
+		printf(" * <pre>\n");
+		format_text_to_comment(protocol->copyright, false);
+		printf(" * </pre>\n");
+	}
+
+	printf(" */\n");
+}
+
+static void
 emit_header(struct protocol *protocol, enum side side)
 {
 	struct interface *i, *i_next;
@@ -1365,24 +1467,25 @@ emit_header(struct protocol *protocol, enum side side)
 	const char *s = (side == SERVER) ? "SERVER" : "CLIENT";
 	char **p, *prev;
 
-	if (protocol->copyright)
-		format_copyright(protocol->copyright);
+	printf("/* Generated by wayland-scanner %s */\n\n", WAYLAND_VERSION);
 
 	printf("#ifndef %s_%s_PROTOCOL_H\n"
 	       "#define %s_%s_PROTOCOL_H\n"
 	       "\n"
-	       "#ifdef  __cplusplus\n"
-	       "extern \"C\" {\n"
-	       "#endif\n"
-	       "\n"
 	       "#include <stdint.h>\n"
 	       "#include <stddef.h>\n"
 	       "#include \"%s\"\n\n"
-	       "struct wl_client;\n"
-	       "struct wl_resource;\n\n",
+	       "#ifdef  __cplusplus\n"
+	       "extern \"C\" {\n"
+	       "#endif\n\n",
 	       protocol->uppercase_name, s,
 	       protocol->uppercase_name, s,
 	       get_include_name(protocol->core_headers, side));
+	if (side == SERVER)
+		printf("struct wl_client;\n"
+		       "struct wl_resource;\n\n");
+
+	emit_mainpage_blurb(protocol, side);
 
 	wl_array_init(&types);
 	wl_list_for_each(i, &protocol->interface_list, link) {
@@ -1407,6 +1510,24 @@ emit_header(struct protocol *protocol, enum side side)
 	printf("\n");
 
 	wl_list_for_each(i, &protocol->interface_list, link) {
+		printf("/**\n"
+		       " * @page page_iface_%s %s\n",
+		       i->name, i->name);
+		if (i->description && i->description->text) {
+			printf(" * @section page_iface_%s_desc Description\n",
+			       i->name);
+			format_text_to_comment(i->description->text, false);
+		}
+		printf(" * @section page_iface_%s_api API\n"
+		       " * See @ref iface_%s.\n"
+		       " */\n",
+		       i->name, i->name);
+		printf("/**\n"
+		       " * @defgroup iface_%s The %s interface\n",
+		       i->name, i->name);
+		if (i->description && i->description->text)
+			format_text_to_comment(i->description->text, false);
+		printf(" */\n");
 		printf("extern const struct wl_interface "
 		       "%s_interface;\n", i->name);
 	}
@@ -1549,8 +1670,10 @@ emit_code(struct protocol *protocol)
 	struct wl_array types;
 	char **p, *prev;
 
+	printf("/* Generated by wayland-scanner %s */\n\n", WAYLAND_VERSION);
+
 	if (protocol->copyright)
-		format_copyright(protocol->copyright);
+		format_text_to_comment(protocol->copyright, true);
 
 	printf("#include <stdlib.h>\n"
 	       "#include <stdint.h>\n"
@@ -1623,9 +1746,12 @@ int main(int argc, char *argv[])
 	struct parse_context ctx;
 	struct protocol protocol;
 	FILE *input = stdin;
+	char *input_filename = NULL;
 	int len;
 	void *buf;
-	bool help = false, core_headers = false;
+	bool help = false;
+	bool core_headers = false;
+	bool version = false;
 	bool fail = false;
 	int opt;
 	enum {
@@ -1636,12 +1762,13 @@ int main(int argc, char *argv[])
 
 	static const struct option options[] = {
 		{ "help",              no_argument, NULL, 'h' },
+		{ "version",           no_argument, NULL, 'v' },
 		{ "include-core-only", no_argument, NULL, 'c' },
 		{ 0,                   0,           NULL, 0 }
 	};
 
 	while (1) {
-		opt = getopt_long(argc, argv, "hc", options, NULL);
+		opt = getopt_long(argc, argv, "hvc", options, NULL);
 
 		if (opt == -1)
 			break;
@@ -1649,6 +1776,9 @@ int main(int argc, char *argv[])
 		switch (opt) {
 		case 'h':
 			help = true;
+			break;
+		case 'v':
+			version = true;
 			break;
 		case 'c':
 			core_headers = true;
@@ -1664,6 +1794,8 @@ int main(int argc, char *argv[])
 
 	if (help)
 		usage(EXIT_SUCCESS);
+	else if (version)
+		scanner_version(EXIT_SUCCESS);
 	else if ((argc != 1 && argc != 3) || fail)
 		usage(EXIT_FAILURE);
 	else if (strcmp(argv[0], "help") == 0)
@@ -1678,7 +1810,8 @@ int main(int argc, char *argv[])
 		usage(EXIT_FAILURE);
 
 	if (argc == 3) {
-		input = fopen(argv[1], "r");
+		input_filename = argv[1];
+		input = fopen(input_filename, "r");
 		if (input == NULL) {
 			fprintf(stderr, "Could not open input file: %s\n",
 				strerror(errno));
@@ -1700,9 +1833,12 @@ int main(int argc, char *argv[])
 	/* initialize context */
 	memset(&ctx, 0, sizeof ctx);
 	ctx.protocol = &protocol;
-	ctx.loc.filename = "<stdin>";
+	if (input == stdin)
+		ctx.loc.filename = "<stdin>";
+	else
+		ctx.loc.filename = input_filename;
 
-	if (!is_dtd_valid(input)) {
+	if (!is_dtd_valid(input, ctx.loc.filename)) {
 		fprintf(stderr,
 		"*******************************************************\n"
 		"*                                                     *\n"

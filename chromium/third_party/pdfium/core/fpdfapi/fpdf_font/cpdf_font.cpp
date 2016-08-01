@@ -60,7 +60,7 @@ CPDF_Font::CPDF_Font()
 
 CPDF_Font::~CPDF_Font() {
   delete m_pToUnicodeMap;
-  m_pToUnicodeMap = NULL;
+  m_pToUnicodeMap = nullptr;
 
   if (m_pFontFile) {
     m_pDocument->GetPageData()->ReleaseFontFileStreamAcc(
@@ -128,24 +128,13 @@ int CPDF_Font::GetCharSize(uint32_t charcode) const {
   return 1;
 }
 
-int CPDF_Font::GlyphFromCharCode(uint32_t charcode, FX_BOOL* pVertGlyph) {
-  ASSERT(false);
-  return 0;
-}
-
 int CPDF_Font::GlyphFromCharCodeExt(uint32_t charcode) {
-  return GlyphFromCharCode(charcode);
+  return GlyphFromCharCode(charcode, nullptr);
 }
 
 FX_BOOL CPDF_Font::IsVertWriting() const {
-  FX_BOOL bVertWriting = FALSE;
   const CPDF_CIDFont* pCIDFont = AsCIDFont();
-  if (pCIDFont) {
-    bVertWriting = pCIDFont->IsVertWriting();
-  } else {
-    bVertWriting = m_Font.IsVertical();
-  }
-  return bVertWriting;
+  return pCIDFont ? pCIDFont->IsVertWriting() : m_Font.IsVertical();
 }
 
 int CPDF_Font::AppendChar(FX_CHAR* buf, uint32_t charcode) const {
@@ -165,20 +154,16 @@ void CPDF_Font::AppendChar(CFX_ByteString& str, uint32_t charcode) const {
 
 CFX_WideString CPDF_Font::UnicodeFromCharCode(uint32_t charcode) const {
   if (!m_bToUnicodeLoaded)
-    ((CPDF_Font*)this)->LoadUnicodeMap();
+    LoadUnicodeMap();
 
-  if (m_pToUnicodeMap)
-    return m_pToUnicodeMap->Lookup(charcode);
-  return CFX_WideString();
+  return m_pToUnicodeMap ? m_pToUnicodeMap->Lookup(charcode) : CFX_WideString();
 }
 
 uint32_t CPDF_Font::CharCodeFromUnicode(FX_WCHAR unicode) const {
   if (!m_bToUnicodeLoaded)
-    ((CPDF_Font*)this)->LoadUnicodeMap();
+    LoadUnicodeMap();
 
-  if (m_pToUnicodeMap)
-    return m_pToUnicodeMap->ReverseLookup(unicode);
-  return 0;
+  return m_pToUnicodeMap ? m_pToUnicodeMap->ReverseLookup(unicode) : 0;
 }
 
 void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
@@ -294,7 +279,7 @@ void CPDF_Font::CheckFontMetrics() {
   }
 }
 
-void CPDF_Font::LoadUnicodeMap() {
+void CPDF_Font::LoadUnicodeMap() const {
   m_bToUnicodeLoaded = TRUE;
   CPDF_Stream* pStream = m_pFontDict->GetStreamBy("ToUnicode");
   if (!pStream) {
@@ -332,7 +317,7 @@ CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
   pDict->SetAtName("Subtype", "Type1");
   pDict->SetAtName("BaseFont", fontname);
   pDict->SetAtName("Encoding", "WinAnsiEncoding");
-  pFont = CPDF_Font::CreateFontF(NULL, pDict);
+  pFont = CPDF_Font::CreateFontF(nullptr, pDict);
   pFontGlobals->Set(pDoc, font_id, pFont);
   return pFont;
 }
@@ -458,14 +443,16 @@ FX_BOOL CPDF_Font::IsStandardFont() const {
 const FX_CHAR* CPDF_Font::GetAdobeCharName(int iBaseEncoding,
                                            const CFX_ByteString* pCharNames,
                                            int charcode) {
-  ASSERT(charcode >= 0 && charcode < 256);
-  if (charcode < 0 || charcode >= 256)
+  if (charcode < 0 || charcode >= 256) {
+    ASSERT(false);
     return nullptr;
+  }
+
+  if (pCharNames && !pCharNames[charcode].IsEmpty())
+    return pCharNames[charcode].c_str();
 
   const FX_CHAR* name = nullptr;
-  if (pCharNames)
-    name = pCharNames[charcode].c_str();
-  if ((!name || name[0] == 0) && iBaseEncoding)
+  if (iBaseEncoding)
     name = PDF_CharNameFromPredefinedCharSet(iBaseEncoding, charcode);
   return name && name[0] ? name : nullptr;
 }

@@ -193,13 +193,13 @@ class CompareICState {
 
   static const char* GetStateName(CompareICState::State state);
 
-  static State TargetState(State old_state, State old_left, State old_right,
-                           Token::Value op, bool has_inlined_smi_code,
-                           Handle<Object> x, Handle<Object> y);
+  static State TargetState(Isolate* isolate, State old_state, State old_left,
+                           State old_right, Token::Value op,
+                           bool has_inlined_smi_code, Handle<Object> x,
+                           Handle<Object> y);
 };
 
-
-class LoadICState final BASE_EMBEDDED {
+class LoadGlobalICState final BASE_EMBEDDED {
  private:
   class TypeofModeBits : public BitField<TypeofMode, 0, 1> {};
   STATIC_ASSERT(static_cast<int>(INSIDE_TYPEOF) == 0);
@@ -208,9 +208,10 @@ class LoadICState final BASE_EMBEDDED {
  public:
   static const uint32_t kNextBitFieldOffset = TypeofModeBits::kNext;
 
-  explicit LoadICState(ExtraICState extra_ic_state) : state_(extra_ic_state) {}
+  explicit LoadGlobalICState(ExtraICState extra_ic_state)
+      : state_(extra_ic_state) {}
 
-  explicit LoadICState(TypeofMode typeof_mode)
+  explicit LoadGlobalICState(TypeofMode typeof_mode)
       : state_(TypeofModeBits::encode(typeof_mode)) {}
 
   ExtraICState GetExtraICState() const { return state_; }
@@ -218,7 +219,7 @@ class LoadICState final BASE_EMBEDDED {
   TypeofMode typeof_mode() const { return TypeofModeBits::decode(state_); }
 
   static TypeofMode GetTypeofMode(ExtraICState state) {
-    return LoadICState(state).typeof_mode();
+    return LoadGlobalICState(state).typeof_mode();
   }
 };
 

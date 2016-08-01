@@ -21,15 +21,6 @@ namespace internal {
     }                                              \
   } while (0)
 
-#define RUNTIME_ASSERT_HANDLIFIED(value, T)        \
-  do {                                             \
-    if (!(value)) {                                \
-      V8_RuntimeError(__FILE__, __LINE__, #value); \
-      isolate->ThrowIllegalOperation();            \
-      return MaybeHandle<T>();                     \
-    }                                              \
-  } while (0)
-
 #else
 
 #define RUNTIME_ASSERT(value)                  \
@@ -37,14 +28,6 @@ namespace internal {
     if (!(value)) {                            \
       return isolate->ThrowIllegalOperation(); \
     }                                          \
-  } while (0)
-
-#define RUNTIME_ASSERT_HANDLIFIED(value, T) \
-  do {                                      \
-    if (!(value)) {                         \
-      isolate->ThrowIllegalOperation();     \
-      return MaybeHandle<T>();              \
-    }                                       \
   } while (0)
 
 #endif
@@ -69,7 +52,7 @@ namespace internal {
 // and return.
 #define CONVERT_BOOLEAN_ARG_CHECKED(name, index) \
   RUNTIME_ASSERT(args[index]->IsBoolean());      \
-  bool name = args[index]->IsTrue();
+  bool name = args[index]->IsTrue(isolate);
 
 // Cast the given argument to a Smi and store its value in an int variable
 // with the given name.  If the argument is not a Smi call IllegalOperation

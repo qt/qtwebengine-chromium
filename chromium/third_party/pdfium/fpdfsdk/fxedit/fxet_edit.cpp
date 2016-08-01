@@ -339,7 +339,7 @@ IFX_Edit_UndoItem* CFX_Edit_Undo::GetItem(int32_t nIndex) {
   if (nIndex >= 0 && nIndex < m_UndoItemStack.GetSize())
     return m_UndoItemStack.GetAt(nIndex);
 
-  return NULL;
+  return nullptr;
 }
 
 void CFX_Edit_Undo::RemoveHeads() {
@@ -362,6 +362,30 @@ void CFX_Edit_Undo::Reset() {
   }
   m_nCurUndoPos = 0;
   m_UndoItemStack.RemoveAll();
+}
+
+CFX_Edit_UndoItem::CFX_Edit_UndoItem() : m_bFirst(TRUE), m_bLast(TRUE) {}
+
+CFX_Edit_UndoItem::~CFX_Edit_UndoItem() {}
+
+CFX_WideString CFX_Edit_UndoItem::GetUndoTitle() {
+  return L"";
+}
+
+void CFX_Edit_UndoItem::SetFirst(FX_BOOL bFirst) {
+  m_bFirst = bFirst;
+}
+
+FX_BOOL CFX_Edit_UndoItem::IsFirst() {
+  return m_bFirst;
+}
+
+void CFX_Edit_UndoItem::SetLast(FX_BOOL bLast) {
+  m_bLast = bLast;
+}
+
+FX_BOOL CFX_Edit_UndoItem::IsLast() {
+  return m_bLast;
 }
 
 CFX_Edit_GroupUndoItem::CFX_Edit_GroupUndoItem(const CFX_WideString& sTitle)
@@ -576,8 +600,8 @@ void CFXEU_Clear::Undo() {
   if (m_pEdit) {
     m_pEdit->SelectNone();
     m_pEdit->SetCaret(m_wrSel.BeginPos);
-    m_pEdit->InsertText(m_swText.c_str(), DEFAULT_CHARSET, NULL, NULL, FALSE,
-                        TRUE);
+    m_pEdit->InsertText(m_swText.c_str(), DEFAULT_CHARSET, nullptr, nullptr,
+                        FALSE, TRUE);
     m_pEdit->SetSel(m_wrSel.BeginPos, m_wrSel.EndPos);
   }
 }
@@ -756,7 +780,6 @@ CFX_Edit::CFX_Edit(CPDF_VariableText* pVT)
       m_ptScrollPos(0, 0),
       m_ptRefreshScrollPos(0, 0),
       m_bEnableScroll(FALSE),
-      m_pIterator(nullptr),
       m_ptCaret(0.0f, 0.0f),
       m_Undo(kEditUndoMaxItems),
       m_nAlignment(0),
@@ -1080,83 +1103,83 @@ void CFX_Edit::SetRichText(FX_BOOL bRichText, FX_BOOL bPaint) {
 FX_BOOL CFX_Edit::SetRichFontIndex(int32_t nFontIndex) {
   CPVT_WordProps WordProps;
   WordProps.nFontIndex = nFontIndex;
-  return SetRichTextProps(EP_FONTINDEX, NULL, &WordProps);
+  return SetRichTextProps(EP_FONTINDEX, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichFontSize(FX_FLOAT fFontSize) {
   CPVT_WordProps WordProps;
   WordProps.fFontSize = fFontSize;
-  return SetRichTextProps(EP_FONTSIZE, NULL, &WordProps);
+  return SetRichTextProps(EP_FONTSIZE, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextColor(FX_COLORREF dwColor) {
   CPVT_WordProps WordProps;
   WordProps.dwWordColor = dwColor;
-  return SetRichTextProps(EP_WORDCOLOR, NULL, &WordProps);
+  return SetRichTextProps(EP_WORDCOLOR, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextScript(CPDF_VariableText::ScriptType nScriptType) {
   CPVT_WordProps WordProps;
   WordProps.nScriptType = nScriptType;
-  return SetRichTextProps(EP_SCRIPTTYPE, NULL, &WordProps);
+  return SetRichTextProps(EP_SCRIPTTYPE, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextBold(FX_BOOL bBold) {
   CPVT_WordProps WordProps;
   if (bBold)
     WordProps.nWordStyle |= PVTWORD_STYLE_BOLD;
-  return SetRichTextProps(EP_BOLD, NULL, &WordProps);
+  return SetRichTextProps(EP_BOLD, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextItalic(FX_BOOL bItalic) {
   CPVT_WordProps WordProps;
   if (bItalic)
     WordProps.nWordStyle |= PVTWORD_STYLE_ITALIC;
-  return SetRichTextProps(EP_ITALIC, NULL, &WordProps);
+  return SetRichTextProps(EP_ITALIC, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextUnderline(FX_BOOL bUnderline) {
   CPVT_WordProps WordProps;
   if (bUnderline)
     WordProps.nWordStyle |= PVTWORD_STYLE_UNDERLINE;
-  return SetRichTextProps(EP_UNDERLINE, NULL, &WordProps);
+  return SetRichTextProps(EP_UNDERLINE, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextCrossout(FX_BOOL bCrossout) {
   CPVT_WordProps WordProps;
   if (bCrossout)
     WordProps.nWordStyle |= PVTWORD_STYLE_CROSSOUT;
-  return SetRichTextProps(EP_CROSSOUT, NULL, &WordProps);
+  return SetRichTextProps(EP_CROSSOUT, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextCharSpace(FX_FLOAT fCharSpace) {
   CPVT_WordProps WordProps;
   WordProps.fCharSpace = fCharSpace;
-  return SetRichTextProps(EP_CHARSPACE, NULL, &WordProps);
+  return SetRichTextProps(EP_CHARSPACE, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextHorzScale(int32_t nHorzScale) {
   CPVT_WordProps WordProps;
   WordProps.nHorzScale = nHorzScale;
-  return SetRichTextProps(EP_HORZSCALE, NULL, &WordProps);
+  return SetRichTextProps(EP_HORZSCALE, nullptr, &WordProps);
 }
 
 FX_BOOL CFX_Edit::SetRichTextLineLeading(FX_FLOAT fLineLeading) {
   CPVT_SecProps SecProps;
   SecProps.fLineLeading = fLineLeading;
-  return SetRichTextProps(EP_LINELEADING, &SecProps, NULL);
+  return SetRichTextProps(EP_LINELEADING, &SecProps, nullptr);
 }
 
 FX_BOOL CFX_Edit::SetRichTextLineIndent(FX_FLOAT fLineIndent) {
   CPVT_SecProps SecProps;
   SecProps.fLineIndent = fLineIndent;
-  return SetRichTextProps(EP_LINEINDENT, &SecProps, NULL);
+  return SetRichTextProps(EP_LINEINDENT, &SecProps, nullptr);
 }
 
 FX_BOOL CFX_Edit::SetRichTextAlignment(int32_t nAlignment) {
   CPVT_SecProps SecProps;
   SecProps.nAlignment = nAlignment;
-  return SetRichTextProps(EP_ALIGNMENT, &SecProps, NULL);
+  return SetRichTextProps(EP_ALIGNMENT, &SecProps, nullptr);
 }
 
 FX_BOOL CFX_Edit::SetRichTextProps(EDIT_PROPS_E eProps,
@@ -2962,7 +2985,7 @@ void CFX_Edit::EndGroupUndo() {
   m_Undo.AddItem(m_pGroupUndoItem);
   if (m_bOprNotify && m_pOprNotify)
     m_pOprNotify->OnAddUndo(m_pGroupUndoItem);
-  m_pGroupUndoItem = NULL;
+  m_pGroupUndoItem = nullptr;
 }
 
 void CFX_Edit::AddEditUndoItem(CFX_Edit_UndoItem* pEditUndoItem) {
@@ -2979,4 +3002,122 @@ void CFX_Edit::AddUndoItem(IFX_Edit_UndoItem* pUndoItem) {
   m_Undo.AddItem(pUndoItem);
   if (m_bOprNotify && m_pOprNotify)
     m_pOprNotify->OnAddUndo(pUndoItem);
+}
+
+CFX_Edit_LineRectArray::CFX_Edit_LineRectArray() {}
+
+CFX_Edit_LineRectArray::~CFX_Edit_LineRectArray() {
+  Empty();
+}
+
+void CFX_Edit_LineRectArray::Empty() {
+  for (int32_t i = 0, sz = m_LineRects.GetSize(); i < sz; i++)
+    delete m_LineRects.GetAt(i);
+
+  m_LineRects.RemoveAll();
+}
+
+void CFX_Edit_LineRectArray::RemoveAll() {
+  m_LineRects.RemoveAll();
+}
+
+void CFX_Edit_LineRectArray::operator=(CFX_Edit_LineRectArray& rects) {
+  Empty();
+  for (int32_t i = 0, sz = rects.GetSize(); i < sz; i++)
+    m_LineRects.Add(rects.GetAt(i));
+
+  rects.RemoveAll();
+}
+
+void CFX_Edit_LineRectArray::Add(const CPVT_WordRange& wrLine,
+                                 const CFX_FloatRect& rcLine) {
+  m_LineRects.Add(new CFX_Edit_LineRect(wrLine, rcLine));
+}
+
+int32_t CFX_Edit_LineRectArray::GetSize() const {
+  return m_LineRects.GetSize();
+}
+
+CFX_Edit_LineRect* CFX_Edit_LineRectArray::GetAt(int32_t nIndex) const {
+  if (nIndex < 0 || nIndex >= m_LineRects.GetSize())
+    return nullptr;
+
+  return m_LineRects.GetAt(nIndex);
+}
+
+CFX_Edit_Select::CFX_Edit_Select() {}
+
+CFX_Edit_Select::CFX_Edit_Select(const CPVT_WordPlace& begin,
+                                 const CPVT_WordPlace& end) {
+  Set(begin, end);
+}
+
+CFX_Edit_Select::CFX_Edit_Select(const CPVT_WordRange& range) {
+  Set(range.BeginPos, range.EndPos);
+}
+
+CPVT_WordRange CFX_Edit_Select::ConvertToWordRange() const {
+  return CPVT_WordRange(BeginPos, EndPos);
+}
+
+void CFX_Edit_Select::Default() {
+  BeginPos.Default();
+  EndPos.Default();
+}
+
+void CFX_Edit_Select::Set(const CPVT_WordPlace& begin,
+                          const CPVT_WordPlace& end) {
+  BeginPos = begin;
+  EndPos = end;
+}
+
+void CFX_Edit_Select::SetBeginPos(const CPVT_WordPlace& begin) {
+  BeginPos = begin;
+}
+
+void CFX_Edit_Select::SetEndPos(const CPVT_WordPlace& end) {
+  EndPos = end;
+}
+
+FX_BOOL CFX_Edit_Select::IsExist() const {
+  return BeginPos != EndPos;
+}
+
+FX_BOOL CFX_Edit_Select::operator!=(const CPVT_WordRange& wr) const {
+  return wr.BeginPos != BeginPos || wr.EndPos != EndPos;
+}
+
+CFX_Edit_RectArray::CFX_Edit_RectArray() {}
+
+CFX_Edit_RectArray::~CFX_Edit_RectArray() {
+  Empty();
+}
+
+void CFX_Edit_RectArray::Empty() {
+  for (int32_t i = 0, sz = m_Rects.GetSize(); i < sz; i++)
+    delete m_Rects.GetAt(i);
+
+  m_Rects.RemoveAll();
+}
+
+void CFX_Edit_RectArray::Add(const CFX_FloatRect& rect) {
+  // check for overlapped area
+  for (int32_t i = 0, sz = m_Rects.GetSize(); i < sz; i++) {
+    CFX_FloatRect* pRect = m_Rects.GetAt(i);
+    if (pRect && pRect->Contains(rect))
+      return;
+  }
+
+  m_Rects.Add(new CFX_FloatRect(rect));
+}
+
+int32_t CFX_Edit_RectArray::GetSize() const {
+  return m_Rects.GetSize();
+}
+
+CFX_FloatRect* CFX_Edit_RectArray::GetAt(int32_t nIndex) const {
+  if (nIndex < 0 || nIndex >= m_Rects.GetSize())
+    return nullptr;
+
+  return m_Rects.GetAt(nIndex);
 }

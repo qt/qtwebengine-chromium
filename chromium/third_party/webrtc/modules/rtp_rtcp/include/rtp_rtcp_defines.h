@@ -67,6 +67,8 @@ enum RTPExtensionType {
   kRtpExtensionAbsoluteSendTime,
   kRtpExtensionVideoRotation,
   kRtpExtensionTransportSequenceNumber,
+  kRtpExtensionPlayoutDelay,
+  kRtpExtensionNumberOfExtensions,
 };
 
 enum RTCPAppSubTypes { kAppSubtypeBwe = 0x00 };
@@ -188,7 +190,7 @@ class RtpData {
   virtual ~RtpData() {}
 
   virtual int32_t OnReceivedPayloadData(const uint8_t* payloadData,
-                                        const size_t payloadSize,
+                                        size_t payloadSize,
                                         const WebRtcRTPHeader* rtpHeader) = 0;
 
   virtual bool OnRecoveredPacket(const uint8_t* packet,
@@ -245,28 +247,39 @@ class RtcpBandwidthObserver {
 
 struct PacketInfo {
   PacketInfo(int64_t arrival_time_ms, uint16_t sequence_number)
-      : PacketInfo(-1, arrival_time_ms, -1, sequence_number, 0) {}
+      : PacketInfo(-1,
+                   arrival_time_ms,
+                   -1,
+                   sequence_number,
+                   0,
+                   kNotAProbe) {}
 
   PacketInfo(int64_t arrival_time_ms,
              int64_t send_time_ms,
              uint16_t sequence_number,
-             size_t payload_size)
+             size_t payload_size,
+             int probe_cluster_id)
       : PacketInfo(-1,
                    arrival_time_ms,
                    send_time_ms,
                    sequence_number,
-                   payload_size) {}
+                   payload_size,
+                   probe_cluster_id) {}
 
   PacketInfo(int64_t creation_time_ms,
              int64_t arrival_time_ms,
              int64_t send_time_ms,
              uint16_t sequence_number,
-             size_t payload_size)
+             size_t payload_size,
+             int probe_cluster_id)
       : creation_time_ms(creation_time_ms),
         arrival_time_ms(arrival_time_ms),
         send_time_ms(send_time_ms),
         sequence_number(sequence_number),
-        payload_size(payload_size) {}
+        payload_size(payload_size),
+        probe_cluster_id(probe_cluster_id) {}
+
+  static constexpr int kNotAProbe = -1;
 
   // Time corresponding to when this object was created.
   int64_t creation_time_ms;
@@ -281,6 +294,8 @@ struct PacketInfo {
   uint16_t sequence_number;
   // Size of the packet excluding RTP headers.
   size_t payload_size;
+  // Which probing cluster this packets belongs to.
+  int probe_cluster_id;
 };
 
 class TransportFeedbackObserver {
@@ -290,7 +305,9 @@ class TransportFeedbackObserver {
 
   // Note: Transport-wide sequence number as sequence number. Arrival time
   // must be set to 0.
-  virtual void AddPacket(uint16_t sequence_number, size_t length) = 0;
+  virtual void AddPacket(uint16_t sequence_number,
+                         size_t length,
+                         int probe_cluster_id) = 0;
 
   virtual void OnTransportFeedback(const rtcp::TransportFeedback& feedback) = 0;
 };
@@ -327,7 +344,7 @@ class NullRtpData : public RtpData {
   virtual ~NullRtpData() {}
 
   int32_t OnReceivedPayloadData(const uint8_t* payloadData,
-                                const size_t payloadSize,
+                                size_t payloadSize,
                                 const WebRtcRTPHeader* rtpHeader) override {
     return 0;
   }

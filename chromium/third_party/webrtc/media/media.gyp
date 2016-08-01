@@ -17,10 +17,7 @@
         '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/webrtc.gyp:webrtc',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
-        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-        '<(webrtc_root)/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
-        '<(webrtc_root)/libjingle/xmpp/xmpp.gyp:rtc_xmpp',
         '<(webrtc_root)/p2p/p2p.gyp:rtc_p2p',
       ],
       'direct_dependent_settings': {
@@ -70,8 +67,6 @@
         'base/videoframefactory.h',
         'base/videosourcebase.cc',
         'base/videosourcebase.h',
-        'base/yuvframegenerator.cc',
-        'base/yuvframegenerator.h',
         'devices/videorendererfactory.h',
         'engine/nullwebrtcvideoengine.h',
         'engine/simulcast.cc',
@@ -254,6 +249,8 @@
           'dependencies': [
             '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
             '<(webrtc_root)/media/media.gyp:rtc_media',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
+            '<(webrtc_root)/test/test.gyp:test_support',
             'rtc_unittest_main',
           ],
           'sources': [
@@ -327,9 +324,6 @@
               },
             }],
             ['OS=="ios"', {
-              'sources!': [
-                'sctp/sctpdataengine_unittest.cc',
-              ],
               'mac_bundle_resources': [
                 '<(DEPTH)/resources/media/captured-320x240-2s-48.frames',
                 '<(DEPTH)/resources/media/faces.1280x720_P420.yuv',

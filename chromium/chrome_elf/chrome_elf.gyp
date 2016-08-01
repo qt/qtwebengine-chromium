@@ -37,6 +37,8 @@
         'chrome_elf.def',
         'chrome_elf_main.cc',
         'chrome_elf_main.h',
+        '../chrome/app/chrome_crash_reporter_client_win.cc',
+        '../chrome/app/chrome_crash_reporter_client_win.h',
         '<(SHARED_INTERMEDIATE_DIR)/chrome_elf/chrome_elf_version.rc',
       ],
       'dependencies': [
@@ -44,6 +46,8 @@
         'chrome_elf_breakpad',
         'chrome_elf_resources',
         '../chrome/chrome.gyp:install_static_util',
+        '../components/components.gyp:crash_component',
+        '../components/components.gyp:crash_core_common',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -72,6 +76,7 @@
         'blacklist/test/blacklist_test.cc',
         'chrome_elf_util_unittest.cc',
         'elf_imports_unittest.cc',
+        'run_all_unittests.cc',
       ],
       'include_dirs': [
         '..',
@@ -90,6 +95,22 @@
         'blacklist_test_dll_3',
         'blacklist_test_main_dll',
       ],
+      'msvs_settings': {
+        'VCLinkerTool': {
+          'DelayLoadDLLs': [
+            'dbghelp.dll',
+            'ole32.dll',
+            'psapi.dll',
+            'rpcrt4.dll',
+            'shell32.dll',
+            'shlwapi.dll',
+            'user32.dll',
+            'winhttp.dll',
+            'winmm.dll',
+            'ws2_32.dll',
+          ],
+        },
+      },
     },
     {
       # A dummy target to ensure that chrome_elf.dll and chrome.exe gets built

@@ -37,7 +37,6 @@ VideoSender::VideoSender(Clock* clock,
       frame_dropper_enabled_(true),
       _sendStatsTimer(1000, clock_),
       current_codec_(),
-      protection_callback_(nullptr),
       encoder_params_({0, 0, 0, 0}),
       encoder_has_internal_source_(false),
       next_frame_types_(1, kVideoFrameDelta) {
@@ -140,7 +139,7 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
                   << " start bitrate " << sendCodec->startBitrate
                   << " max frame rate " << sendCodec->maxFramerate
                   << " max payload size " << maxPayloadSize;
-  _mediaOpt.SetEncodingData(sendCodec->codecType, sendCodec->maxBitrate * 1000,
+  _mediaOpt.SetEncodingData(sendCodec->maxBitrate * 1000,
                             sendCodec->startBitrate * 1000, sendCodec->width,
                             sendCodec->height, sendCodec->maxFramerate,
                             numLayers, maxPayloadSize);
@@ -200,8 +199,8 @@ int VideoSender::FrameRate(unsigned int* framerate) const {
 int32_t VideoSender::SetChannelParameters(uint32_t target_bitrate,
                                           uint8_t lossRate,
                                           int64_t rtt) {
-  uint32_t target_rate = _mediaOpt.SetTargetRates(target_bitrate, lossRate, rtt,
-                                                  protection_callback_);
+  uint32_t target_rate =
+      _mediaOpt.SetTargetRates(target_bitrate, lossRate, rtt);
 
   uint32_t input_frame_rate = _mediaOpt.InputFrameRate();
 
@@ -220,19 +219,23 @@ int32_t VideoSender::SetChannelParameters(uint32_t target_bitrate,
   if (encoder_has_internal_source) {
     rtc::CritScope cs(&encoder_crit_);
     if (_encoder) {
-      SetEncoderParameters(encoder_params);
+      SetEncoderParameters(encoder_params, encoder_has_internal_source);
     }
   }
 
   return VCM_OK;
 }
 
-void VideoSender::SetEncoderParameters(EncoderParameters params) {
+void VideoSender::SetEncoderParameters(EncoderParameters params,
+                                       bool has_internal_source) {
   // |target_bitrate == 0 | means that the network is down or the send pacer is
-  // full.
-  // TODO(perkj): Consider setting |target_bitrate| == 0 to the encoders.
-  // Especially if |encoder_has_internal_source_ | == true.
-  if (params.target_bitrate == 0)
+  // full. We currently only report this if the encoder has an internal source.
+  // If the encoder does not have an internal source, higher levels are expected
+  // to not call AddVideoFrame. We do this since its unclear how current
+  // encoder implementations behave when given a zero target bitrate.
+  // TODO(perkj): Make sure all known encoder implementations handle zero
+  // target bitrate and remove this check.
+  if (!has_internal_source && params.target_bitrate == 0)
     return;
 
   if (params.input_frame_rate == 0) {
@@ -243,49 +246,33 @@ void VideoSender::SetEncoderParameters(EncoderParameters params) {
     _encoder->SetEncoderParameters(params);
 }
 
-// Register a video protection callback which will be called to deliver the
-// requested FEC rate and NACK status (on/off).
-// Note: this callback is assumed to only be registered once and before it is
-// used in this class.
+// Deprecated:
+// TODO(perkj): Remove once no projects call this method. It currently do
+// nothing.
 int32_t VideoSender::RegisterProtectionCallback(
     VCMProtectionCallback* protection_callback) {
-  RTC_DCHECK(protection_callback == nullptr || protection_callback_ == nullptr);
-  protection_callback_ = protection_callback;
+  // Deprecated:
+  // TODO(perkj): Remove once no projects call this method. It currently do
+  // nothing.
   return VCM_OK;
 }
 
-// Enable or disable a video protection method.
-void VideoSender::SetVideoProtection(VCMVideoProtection videoProtection) {
-  rtc::CritScope lock(&encoder_crit_);
-  switch (videoProtection) {
-    case kProtectionNone:
-      _mediaOpt.SetProtectionMethod(media_optimization::kNone);
-      break;
-    case kProtectionNack:
-      _mediaOpt.SetProtectionMethod(media_optimization::kNack);
-      break;
-    case kProtectionNackFEC:
-      _mediaOpt.SetProtectionMethod(media_optimization::kNackFec);
-      break;
-    case kProtectionFEC:
-      _mediaOpt.SetProtectionMethod(media_optimization::kFec);
-      break;
-  }
-}
 // Add one raw video frame to the encoder, blocking.
 int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
                                    const CodecSpecificInfo* codecSpecificInfo) {
   EncoderParameters encoder_params;
   std::vector<FrameType> next_frame_types;
+  bool encoder_has_internal_source = false;
   {
     rtc::CritScope lock(&params_crit_);
     encoder_params = encoder_params_;
     next_frame_types = next_frame_types_;
+    encoder_has_internal_source = encoder_has_internal_source_;
   }
   rtc::CritScope lock(&encoder_crit_);
   if (_encoder == nullptr)
     return VCM_UNINITIALIZED;
-  SetEncoderParameters(encoder_params);
+  SetEncoderParameters(encoder_params, encoder_has_internal_source);
   if (_mediaOpt.DropFrame()) {
     LOG(LS_VERBOSE) << "Drop Frame "
                     << "target bitrate " << encoder_params.target_bitrate
@@ -307,9 +294,17 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
       !_encoder->SupportsNativeHandle()) {
     // This module only supports software encoding.
     // TODO(pbos): Offload conversion from the encoder thread.
-    converted_frame = converted_frame.ConvertNativeToI420Frame();
-    RTC_CHECK(!converted_frame.IsZeroSize())
-        << "Frame conversion failed, won't be able to encode frame.";
+    rtc::scoped_refptr<VideoFrameBuffer> converted_buffer(
+        converted_frame.video_frame_buffer()->NativeToI420Buffer());
+
+    if (!converted_buffer) {
+      LOG(LS_ERROR) << "Frame conversion failed, dropping frame.";
+      return VCM_PARAMETER_ERROR;
+    }
+    converted_frame = VideoFrame(converted_buffer,
+                                 converted_frame.timestamp(),
+                                 converted_frame.render_time_ms(),
+                                 converted_frame.rotation());
   }
   int32_t ret =
       _encoder->Encode(converted_frame, codecSpecificInfo, next_frame_types);

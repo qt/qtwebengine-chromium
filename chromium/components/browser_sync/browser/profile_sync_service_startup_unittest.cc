@@ -199,7 +199,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
 
-  sync_service_->SetSetupInProgress(true);
+  auto sync_blocker = sync_service_->GetSetupInProgressHandle();
 
   // Simulate successful signin as test_user.
   std::string account_id = SimulateTestUserSignin(sync_service_.get());
@@ -207,7 +207,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   IssueTestTokens(account_id);
 
   // Simulate the UI telling sync it has finished setting up.
-  sync_service_->SetSetupInProgress(false);
+  sync_blocker.reset();
   sync_service_->SetFirstSetupComplete();
   EXPECT_TRUE(sync_service_->IsSyncActive());
 }
@@ -232,14 +232,14 @@ TEST_F(ProfileSyncServiceStartupTest, DISABLED_StartNoCredentials) {
       pref_service()->GetBoolean(sync_driver::prefs::kSyncFirstSetupComplete));
 
   // Then start things up.
-  sync_service_->SetSetupInProgress(true);
+  auto sync_blocker = sync_service_->GetSetupInProgressHandle();
 
   // Simulate successful signin as test_user.
   std::string account_id = SimulateTestUserSignin(sync_service_.get());
 
   profile_sync_service_bundle_.auth_service()->LoadCredentials(account_id);
 
-  sync_service_->SetSetupInProgress(false);
+  sync_blocker.reset();
   // ProfileSyncService should try to start by requesting access token.
   // This request should fail as login token was not issued.
   EXPECT_FALSE(sync_service_->IsSyncActive());
@@ -271,12 +271,12 @@ TEST_F(ProfileSyncServiceStartupTest, DISABLED_StartInvalidCredentials) {
       WillRepeatedly(Return(DataTypeManager::CONFIGURED));
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
-  sync_service_->SetSetupInProgress(true);
+  auto sync_blocker = sync_service_->GetSetupInProgressHandle();
 
   // Simulate successful signin.
   SimulateTestUserSignin(sync_service_.get());
 
-  sync_service_->SetSetupInProgress(false);
+  sync_blocker.reset();
 
   // Verify we successfully finish startup and configuration.
   EXPECT_TRUE(sync_service_->IsSyncActive());
@@ -292,7 +292,7 @@ TEST_F(ProfileSyncServiceStartupCrosTest, StartCrosNoCredentials) {
   sync_service_->Initialize();
   // Sync should not start because there are no tokens yet.
   EXPECT_FALSE(sync_service_->IsSyncActive());
-  sync_service_->SetSetupInProgress(false);
+  sync_service_->SetFirstSetupComplete();
 
   // Sync should not start because there are still no tokens.
   EXPECT_FALSE(sync_service_->IsSyncActive());
@@ -429,14 +429,14 @@ TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
   EXPECT_FALSE(sync_service_->IsBackendInitialized());
   // Note that PSS no longer references |data_type_manager| after stopping.
 
-  // When switching back to unmanaged, the state should change and sync should
-  // start but not become active because IsFirstSetupComplete() will be false.
-  SetUpSyncBackendHost();
+  // When switching back to unmanaged, the state should change but sync should
+  // not start automatically because IsFirstSetupComplete() will be false.
   // A new DataTypeManager should not be created.
+  Mock::VerifyAndClearExpectations(data_type_manager);
   EXPECT_CALL(*component_factory_, CreateDataTypeManager(_, _, _, _, _))
       .Times(0);
   pref_service()->ClearPref(sync_driver::prefs::kSyncManaged);
-  EXPECT_TRUE(sync_service_->IsBackendInitialized());
+  EXPECT_FALSE(sync_service_->IsBackendInitialized());
   EXPECT_FALSE(sync_service_->IsSyncActive());
 }
 
@@ -478,8 +478,8 @@ TEST_F(ProfileSyncServiceStartupTest, StartDownloadFailed) {
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
   sync_service_->Initialize();
 
-  sync_service_->SetSetupInProgress(true);
+  auto sync_blocker = sync_service_->GetSetupInProgressHandle();
   IssueTestTokens(account_id);
-  sync_service_->SetSetupInProgress(false);
+  sync_blocker.reset();
   EXPECT_FALSE(sync_service_->IsSyncActive());
 }

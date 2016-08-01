@@ -21,16 +21,11 @@ class CBC_QRCode : public CBC_CodeBase {
   FX_BOOL Encode(const CFX_WideStringC& contents,
                  FX_BOOL isDevice,
                  int32_t& e) override;
-  CFX_WideString Decode(uint8_t* buf,
-                        int32_t width,
-                        int32_t height,
-                        int32_t& e) override;
-  CFX_WideString Decode(CFX_DIBitmap* pBitmap, int32_t& e) override;
   FX_BOOL RenderDevice(CFX_RenderDevice* device,
                        const CFX_Matrix* matrix,
                        int32_t& e) override;
   FX_BOOL RenderBitmap(CFX_DIBitmap*& pOutBitmap, int32_t& e) override;
-  BC_TYPE GetType() override { return BC_QR_CODE; }
+  BC_TYPE GetType() override;
 
   FX_BOOL SetVersion(int32_t version);
   FX_BOOL SetErrorCorrectionLevel(int32_t level);

@@ -88,6 +88,7 @@ class EmbedderTest : public ::testing::Test,
   // The filename is relative to the test data directory where we store all the
   // test files.
   virtual bool OpenDocument(const std::string& filename,
+                            const char* password = nullptr,
                             bool must_linearize = false);
 
   // Perform JavaScript actions that are to run at document open time.
@@ -124,8 +125,6 @@ class EmbedderTest : public ::testing::Test,
   FX_FILEAVAIL file_avail_;
 #ifdef PDF_ENABLE_V8
   v8::Platform* platform_;
-  v8::StartupData natives_;
-  v8::StartupData snapshot_;
 #endif  // PDF_ENABLE_V8
   void* external_isolate_;
   TestLoader* loader_;

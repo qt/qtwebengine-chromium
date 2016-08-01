@@ -7,7 +7,9 @@
 #ifndef XFA_FXFA_PARSER_XFA_SCRIPT_H_
 #define XFA_FXFA_PARSER_XFA_SCRIPT_H_
 
+#include "fxjse/include/cfxjse_value.h"
 #include "xfa/fxfa/include/fxfa.h"
+#include "xfa/fxfa/parser/cxfa_valuearray.h"
 
 #define XFA_RESOLVENODE_Children 0x0001
 #define XFA_RESOLVENODE_Attributes 0x0004
@@ -35,38 +37,21 @@ enum XFA_RESOVENODE_RSTYPE {
   XFA_RESOVENODE_RSTYPE_ExistNodes,
 };
 
-class CXFA_HVALUEArray : public CFX_ArrayTemplate<FXJSE_HVALUE> {
- public:
-  CXFA_HVALUEArray(FXJSE_HRUNTIME hRunTime) : m_hRunTime(hRunTime) {}
-  ~CXFA_HVALUEArray() {
-    for (int32_t i = 0; i < GetSize(); i++) {
-      FXJSE_Value_Release(GetAt(i));
-    }
-  }
-  void GetAttributeObject(CXFA_ObjArray& objArray) {
-    for (int32_t i = 0; i < GetSize(); i++) {
-      CXFA_Object* pObject = (CXFA_Object*)FXJSE_Value_ToObject(GetAt(i), NULL);
-      objArray.Add(pObject);
-    }
-  }
-  FXJSE_HRUNTIME m_hRunTime;
-};
-
 struct XFA_RESOLVENODE_RS {
-  XFA_RESOLVENODE_RS()
-      : dwFlags(XFA_RESOVENODE_RSTYPE_Nodes), pScriptAttribute(NULL) {}
-  ~XFA_RESOLVENODE_RS() { nodes.RemoveAll(); }
-  int32_t GetAttributeResult(CXFA_HVALUEArray& hValueArray) const {
+  XFA_RESOLVENODE_RS();
+  ~XFA_RESOLVENODE_RS();
+
+  int32_t GetAttributeResult(CXFA_ValueArray& valueArray) const {
     if (pScriptAttribute && pScriptAttribute->eValueType == XFA_SCRIPT_Object) {
-      FXJSE_HRUNTIME hRunTime = hValueArray.m_hRunTime;
+      v8::Isolate* pIsolate = valueArray.m_pIsolate;
       for (int32_t i = 0; i < nodes.GetSize(); i++) {
-        FXJSE_HVALUE hValue = FXJSE_Value_Create(hRunTime);
+        std::unique_ptr<CFXJSE_Value> pValue(new CFXJSE_Value(pIsolate));
         (nodes[i]->*(pScriptAttribute->lpfnCallback))(
-            hValue, FALSE, (XFA_ATTRIBUTE)pScriptAttribute->eAttribute);
-        hValueArray.Add(hValue);
+            pValue.get(), FALSE, (XFA_ATTRIBUTE)pScriptAttribute->eAttribute);
+        valueArray.Add(pValue.release());
       }
     }
-    return hValueArray.GetSize();
+    return valueArray.GetSize();
   }
 
   CXFA_ObjArray nodes;
@@ -74,4 +59,10 @@ struct XFA_RESOLVENODE_RS {
   const XFA_SCRIPTATTRIBUTEINFO* pScriptAttribute;
 };
 
+inline XFA_RESOLVENODE_RS::XFA_RESOLVENODE_RS()
+    : dwFlags(XFA_RESOVENODE_RSTYPE_Nodes), pScriptAttribute(nullptr) {}
+
+inline XFA_RESOLVENODE_RS::~XFA_RESOLVENODE_RS() {
+  nodes.RemoveAll();
+}
 #endif  // XFA_FXFA_PARSER_XFA_SCRIPT_H_

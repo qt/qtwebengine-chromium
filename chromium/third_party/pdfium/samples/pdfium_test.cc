@@ -42,6 +42,7 @@
 
 enum OutputFormat {
   OUTPUT_NONE,
+  OUTPUT_TEXT,
   OUTPUT_PPM,
   OUTPUT_PNG,
 #ifdef _WIN32
@@ -110,6 +111,37 @@ static void WritePpm(const char* pdf_name, int num, const void* buffer_void,
   fwrite(result, out_len, 1, fp);
   delete[] result;
   fclose(fp);
+}
+
+void WriteText(FPDF_PAGE page, const char* pdf_name, int num) {
+  char filename[256];
+  int chars_formatted =
+      snprintf(filename, sizeof(filename), "%s.%d.txt", pdf_name, num);
+  if (chars_formatted < 0 ||
+      static_cast<size_t>(chars_formatted) >= sizeof(filename)) {
+    fprintf(stderr, "Filename %s is too long\n", filename);
+    return;
+  }
+
+  FILE* fp = fopen(filename, "w");
+  if (!fp) {
+    fprintf(stderr, "Failed to open %s for output\n", filename);
+    return;
+  }
+
+  // Output in UTF32-LE.
+  uint32_t bom = 0x0000FEFF;
+  fwrite(&bom, sizeof(bom), 1, fp);
+
+  FPDF_TEXTPAGE textpage = FPDFText_LoadPage(page);
+  for (int i = 0; i < FPDFText_CountChars(textpage); i++) {
+    uint32_t c = FPDFText_GetUnicode(textpage, i);
+    fwrite(&c, sizeof(c), 1, fp);
+  }
+
+  FPDFText_ClosePage(textpage);
+
+  (void)fclose(fp);
 }
 
 static void WritePng(const char* pdf_name, int num, const void* buffer_void,
@@ -354,6 +386,12 @@ bool ParseCommandLine(const std::vector<std::string>& args,
         return false;
       }
       options->output_format = OUTPUT_PNG;
+    } else if (cur_arg == "--txt") {
+      if (options->output_format != OUTPUT_NONE) {
+        fprintf(stderr, "Duplicate or conflicting --txt argument\n");
+        return false;
+      }
+      options->output_format = OUTPUT_TEXT;
 #ifdef PDF_ENABLE_SKIA
     } else if (cur_arg == "--skp") {
       if (options->output_format != OUTPUT_NONE) {
@@ -508,55 +546,59 @@ bool RenderPage(const std::string& name,
   int height = static_cast<int>(FPDF_GetPageHeight(page) * scale);
   int alpha = FPDFPage_HasTransparency(page) ? 1 : 0;
   FPDF_BITMAP bitmap = FPDFBitmap_Create(width, height, alpha);
-  if (!bitmap) {
-    fprintf(stderr, "Page was too large to be rendered.\n");
-    return false;
-  }
-  FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
-  FPDFBitmap_FillRect(bitmap, 0, 0, width, height, fill_color);
-  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0);
+  if (bitmap) {
+    FPDF_DWORD fill_color = alpha ? 0x00000000 : 0xFFFFFFFF;
+    FPDFBitmap_FillRect(bitmap, 0, 0, width, height, fill_color);
+    FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0);
 
-  FPDF_FFLDraw(form, bitmap, page, 0, 0, width, height, 0, 0);
-  int stride = FPDFBitmap_GetStride(bitmap);
-  const char* buffer =
-      reinterpret_cast<const char*>(FPDFBitmap_GetBuffer(bitmap));
+    FPDF_FFLDraw(form, bitmap, page, 0, 0, width, height, 0, 0);
+    int stride = FPDFBitmap_GetStride(bitmap);
+    const char* buffer =
+        reinterpret_cast<const char*>(FPDFBitmap_GetBuffer(bitmap));
 
-  switch (options.output_format) {
+    switch (options.output_format) {
 #ifdef _WIN32
-    case OUTPUT_BMP:
-      WriteBmp(name.c_str(), page_index, buffer, stride, width, height);
-      break;
+      case OUTPUT_BMP:
+        WriteBmp(name.c_str(), page_index, buffer, stride, width, height);
+        break;
 
-    case OUTPUT_EMF:
-      WriteEmf(page, name.c_str(), page_index);
-      break;
+      case OUTPUT_EMF:
+        WriteEmf(page, name.c_str(), page_index);
+        break;
 #endif
-    case OUTPUT_PNG:
-      WritePng(name.c_str(), page_index, buffer, stride, width, height);
-      break;
+      case OUTPUT_TEXT:
+        WriteText(page, name.c_str(), page_index);
+        break;
 
-    case OUTPUT_PPM:
-      WritePpm(name.c_str(), page_index, buffer, stride, width, height);
-      break;
+      case OUTPUT_PNG:
+        WritePng(name.c_str(), page_index, buffer, stride, width, height);
+        break;
+
+      case OUTPUT_PPM:
+        WritePpm(name.c_str(), page_index, buffer, stride, width, height);
+        break;
 
 #ifdef PDF_ENABLE_SKIA
-    case OUTPUT_SKP: {
-      std::unique_ptr<SkPictureRecorder> recorder(
-          (SkPictureRecorder*)FPDF_RenderPageSkp(page, width, height));
-      FPDF_FFLRecord(form, recorder.get(), page, 0, 0, width, height, 0, 0);
-      WriteSkp(name.c_str(), page_index, recorder.get());
-    } break;
+      case OUTPUT_SKP: {
+        std::unique_ptr<SkPictureRecorder> recorder(
+            (SkPictureRecorder*)FPDF_RenderPageSkp(page, width, height));
+        FPDF_FFLRecord(form, recorder.get(), page, 0, 0, width, height, 0, 0);
+        WriteSkp(name.c_str(), page_index, recorder.get());
+      } break;
 #endif
-    default:
-      break;
-  }
+      default:
+        break;
+    }
 
-  FPDFBitmap_Destroy(bitmap);
+    FPDFBitmap_Destroy(bitmap);
+  } else {
+    fprintf(stderr, "Page was too large to be rendered.\n");
+  }
   FORM_DoPageAAction(page, form, FPDFPAGE_AACTION_CLOSE);
   FORM_OnBeforeClosePage(page, form);
   FPDFText_ClosePage(text_page);
   FPDF_ClosePage(page);
-  return true;
+  return !!bitmap;
 }
 
 void RenderPdf(const std::string& name,
@@ -746,6 +788,7 @@ static const char usage_string[] =
     "  --bin-dir=<path>  - override path to v8 external data\n"
     "  --font-dir=<path> - override path to external fonts\n"
     "  --scale=<number>  - scale output size by number (e.g. 0.5)\n"
+    "  --txt - write page text in UTF32-LE <pdf-name>.<page-number>.txt\n"
 #ifdef _WIN32
     "  --bmp - write page images <pdf-name>.<page-number>.bmp\n"
     "  --emf - write page meta files <pdf-name>.<page-number>.emf\n"
@@ -783,7 +826,7 @@ int main(int argc, const char* argv[]) {
   InitializeV8ForPDFium(options.exe_path, options.bin_directory, &natives,
                         &snapshot, &platform);
 #else   // V8_USE_EXTERNAL_STARTUP_DATA
-  InitializeV8ForPDFium(&platform);
+  InitializeV8ForPDFium(options.exe_path, &platform);
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 #endif  // PDF_ENABLE_V8
 
@@ -839,6 +882,11 @@ int main(int argc, const char* argv[]) {
 #ifdef PDF_ENABLE_V8
   v8::V8::ShutdownPlatform();
   delete platform;
+
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  free(const_cast<char*>(natives.data));
+  free(const_cast<char*>(snapshot.data));
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
 #endif  // PDF_ENABLE_V8
 
   return 0;

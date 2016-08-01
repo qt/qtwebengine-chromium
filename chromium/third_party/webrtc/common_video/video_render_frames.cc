@@ -17,14 +17,21 @@
 #include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
+namespace {
 
-const uint32_t KEventMaxWaitTimeMs = 200;
+const uint32_t kEventMaxWaitTimeMs = 200;
 const uint32_t kMinRenderDelayMs = 10;
 const uint32_t kMaxRenderDelayMs = 500;
 
-VideoRenderFrames::VideoRenderFrames()
-    : render_delay_ms_(10) {
+uint32_t EnsureValidRenderDelay(uint32_t render_delay) {
+  return (render_delay < kMinRenderDelayMs || render_delay > kMaxRenderDelayMs)
+             ? kMinRenderDelayMs
+             : render_delay;
 }
+}  // namespace
+
+VideoRenderFrames::VideoRenderFrames(uint32_t render_delay_ms)
+    : render_delay_ms_(EnsureValidRenderDelay(render_delay_ms)) {}
 
 int32_t VideoRenderFrames::AddFrame(const VideoFrame& new_frame) {
   const int64_t time_now = rtc::TimeMillis();
@@ -53,43 +60,24 @@ int32_t VideoRenderFrames::AddFrame(const VideoFrame& new_frame) {
   return static_cast<int32_t>(incoming_frames_.size());
 }
 
-VideoFrame VideoRenderFrames::FrameToRender() {
-  VideoFrame render_frame;
+rtc::Optional<VideoFrame> VideoRenderFrames::FrameToRender() {
+  rtc::Optional<VideoFrame> render_frame;
   // Get the newest frame that can be released for rendering.
   while (!incoming_frames_.empty() && TimeToNextFrameRelease() <= 0) {
-    render_frame = incoming_frames_.front();
+    render_frame = rtc::Optional<VideoFrame>(incoming_frames_.front());
     incoming_frames_.pop_front();
   }
   return render_frame;
 }
 
-int32_t VideoRenderFrames::ReleaseAllFrames() {
-  incoming_frames_.clear();
-  return 0;
-}
-
 uint32_t VideoRenderFrames::TimeToNextFrameRelease() {
   if (incoming_frames_.empty()) {
-    return KEventMaxWaitTimeMs;
+    return kEventMaxWaitTimeMs;
   }
   const int64_t time_to_release = incoming_frames_.front().render_time_ms() -
                                   render_delay_ms_ -
                                   rtc::TimeMillis();
   return time_to_release < 0 ? 0u : static_cast<uint32_t>(time_to_release);
-}
-
-int32_t VideoRenderFrames::SetRenderDelay(
-    const uint32_t render_delay) {
-  if (render_delay < kMinRenderDelayMs ||
-      render_delay > kMaxRenderDelayMs) {
-    WEBRTC_TRACE(kTraceWarning, kTraceVideoRenderer,
-                 -1, "%s(%d): Invalid argument.", __FUNCTION__,
-                 render_delay);
-    return -1;
-  }
-
-  render_delay_ms_ = render_delay;
-  return 0;
 }
 
 }  // namespace webrtc

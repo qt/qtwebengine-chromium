@@ -19,19 +19,14 @@
         '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/media/media.gyp:rtc_unittest_main',
         '<(webrtc_root)/pc/pc.gyp:rtc_pc',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(DEPTH)/testing/gmock/include',
-        ],
-      },
       'defines': [
         # Feature selection.
         'HAVE_SCTP',
       ],
       'sources': [
         'datachannel_unittest.cc',
-        'dtlsidentitystore_unittest.cc',
         'dtmfsender_unittest.cc',
         'fakemetricsobserver.cc',
         'fakemetricsobserver.h',
@@ -51,8 +46,8 @@
         'test/fakeaudiocapturemodule_unittest.cc',
         'test/fakeconstraints.h',
         'test/fakedatachannelprovider.h',
-        'test/fakedtlsidentitystore.h',
         'test/fakeperiodicvideocapturer.h',
+        'test/fakertccertificategenerator.h',
         'test/fakevideotrackrenderer.h',
         'test/mockpeerconnectionobservers.h',
         'test/peerconnectiontestwrapper.h',
@@ -134,7 +129,7 @@
           'target_name': 'libjingle_peerconnection_android_unittest',
           'type': 'none',
           'dependencies': [
-            '<(webrtc_root)/api/api.gyp:libjingle_peerconnection_java',
+            '<(webrtc_root)/api/api_java.gyp:libjingle_peerconnection_java',
           ],
           'variables': {
             'apk_name': 'libjingle_peerconnection_android_unittest',
@@ -159,7 +154,7 @@
           'target_name': 'peerconnection_unittests_apk_target',
           'type': 'none',
           'dependencies': [
-            '<(apk_tests_path):peerconnection_unittests_apk',
+            '<(android_tests_path):peerconnection_unittests_apk',
           ],
         },
       ],
@@ -171,7 +166,7 @@
                 'target_name': 'peerconnection_unittests_apk_run',
                 'type': 'none',
                 'dependencies': [
-                  '<(apk_tests_path):peerconnection_unittests_apk',
+                  '<(android_tests_path):peerconnection_unittests_apk',
                 ],
                 'includes': [
                   '../build/isolate.gypi',

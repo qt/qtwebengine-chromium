@@ -7,9 +7,10 @@
 #include "xfa/fxfa/include/xfa_ffapp.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "xfa/fgas/font/fgas_stdfontmgr.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
 #include "xfa/fxfa/include/xfa_ffdoc.h"
@@ -24,6 +25,9 @@ CXFA_FileRead::CXFA_FileRead(const CFX_ArrayTemplate<CPDF_Stream*>& streams) {
     acc.LoadAllData(streams[i]);
   }
 }
+
+CXFA_FileRead::~CXFA_FileRead() {}
+
 FX_FILESIZE CXFA_FileRead::GetSize() {
   uint32_t dwSize = 0;
   int32_t iCount = m_Data.GetSize();
@@ -63,6 +67,10 @@ FX_BOOL CXFA_FileRead::ReadBlock(void* buffer,
   return FALSE;
 }
 
+void CXFA_FileRead::Release() {
+  delete this;
+}
+
 CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider)
     : m_pDocHandler(nullptr),
       m_pFWLTheme(nullptr),
@@ -79,6 +87,7 @@ CXFA_FFApp::CXFA_FFApp(IXFA_AppProvider* pProvider)
   m_pFWLApp->Initialize();
   CXFA_TimeZoneProvider::Create();
 }
+
 CXFA_FFApp::~CXFA_FFApp() {
   delete m_pDocHandler;
   if (m_pFWLApp) {
@@ -86,8 +95,7 @@ CXFA_FFApp::~CXFA_FFApp() {
     m_pFWLApp->Release();
     delete m_pFWLApp;
   }
-  if (m_pFWLTheme)
-    m_pFWLTheme->Release();
+  delete m_pFWLTheme;
   delete m_pAdapterWidgetMgr;
 
   CXFA_TimeZoneProvider::Destroy();
@@ -101,52 +109,45 @@ CXFA_FFApp::~CXFA_FFApp() {
 }
 
 CXFA_FFDocHandler* CXFA_FFApp::GetDocHandler() {
-  if (!m_pDocHandler) {
+  if (!m_pDocHandler)
     m_pDocHandler = new CXFA_FFDocHandler;
-  }
   return m_pDocHandler;
 }
 CXFA_FFDoc* CXFA_FFApp::CreateDoc(IXFA_DocProvider* pProvider,
                                   IFX_FileRead* pStream,
                                   FX_BOOL bTakeOverFile) {
-  CXFA_FFDoc* pDoc = new CXFA_FFDoc(this, pProvider);
+  std::unique_ptr<CXFA_FFDoc> pDoc(new CXFA_FFDoc(this, pProvider));
   FX_BOOL bSuccess = pDoc->OpenDoc(pStream, bTakeOverFile);
-  if (!bSuccess) {
-    delete pDoc;
-    pDoc = NULL;
-  }
-  return pDoc;
-}
-CXFA_FFDoc* CXFA_FFApp::CreateDoc(IXFA_DocProvider* pProvider,
-                                  CPDF_Document* pPDFDoc) {
-  if (pPDFDoc == NULL) {
-    return NULL;
-  }
-  CXFA_FFDoc* pDoc = new CXFA_FFDoc(this, pProvider);
-  FX_BOOL bSuccess = pDoc->OpenDoc(pPDFDoc);
-  if (!bSuccess) {
-    delete pDoc;
-    pDoc = NULL;
-  }
-  return pDoc;
+  return bSuccess ? pDoc.release() : nullptr;
 }
 
-void CXFA_FFApp::SetDefaultFontMgr(CXFA_DefFontMgr* pFontMgr) {
-  if (!m_pFontMgr) {
-    m_pFontMgr = new CXFA_FontMgr();
-  }
-  m_pFontMgr->SetDefFontMgr(pFontMgr);
+CXFA_FFDoc* CXFA_FFApp::CreateDoc(IXFA_DocProvider* pProvider,
+                                  CPDF_Document* pPDFDoc) {
+  if (!pPDFDoc)
+    return nullptr;
+
+  std::unique_ptr<CXFA_FFDoc> pDoc(new CXFA_FFDoc(this, pProvider));
+  FX_BOOL bSuccess = pDoc->OpenDoc(pPDFDoc);
+  return bSuccess ? pDoc.release() : nullptr;
 }
+
+void CXFA_FFApp::SetDefaultFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr) {
+  if (!m_pFontMgr)
+    m_pFontMgr = new CXFA_FontMgr();
+  m_pFontMgr->SetDefFontMgr(std::move(pFontMgr));
+}
+
 CXFA_FontMgr* CXFA_FFApp::GetXFAFontMgr() {
   return m_pFontMgr;
 }
-IFX_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
+
+IFGAS_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
   if (!m_pFDEFontMgr) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    m_pFDEFontMgr = IFX_FontMgr::Create(FX_GetDefFontEnumerator());
+    m_pFDEFontMgr = IFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
 #else
     m_pFontSource = new CFX_FontSourceEnum_File;
-    m_pFDEFontMgr = IFX_FontMgr::Create(m_pFontSource);
+    m_pFDEFontMgr = IFGAS_FontMgr::Create(m_pFontSource);
 #endif
   }
   return m_pFDEFontMgr;

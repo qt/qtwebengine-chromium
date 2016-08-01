@@ -7,6 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../build/webrtc.gni")
+import("//testing/test.gni")
 
 config("common_video_config") {
   include_dirs = [
@@ -18,6 +19,14 @@ config("common_video_config") {
 source_set("common_video") {
   sources = [
     "bitrate_adjuster.cc",
+    "h264/h264_common.cc",
+    "h264/h264_common.h",
+    "h264/pps_parser.cc",
+    "h264/pps_parser.h",
+    "h264/sps_parser.cc",
+    "h264/sps_parser.h",
+    "h264/sps_vui_rewriter.cc",
+    "h264/sps_vui_rewriter.h",
     "i420_buffer_pool.cc",
     "include/bitrate_adjuster.h",
     "include/frame_callback.h",
@@ -25,9 +34,7 @@ source_set("common_video") {
     "include/incoming_video_stream.h",
     "include/video_frame_buffer.h",
     "incoming_video_stream.cc",
-    "libyuv/include/scaler.h",
     "libyuv/include/webrtc_libyuv.h",
-    "libyuv/scaler.cc",
     "libyuv/webrtc_libyuv.cc",
     "video_frame.cc",
     "video_frame_buffer.cc",
@@ -70,5 +77,52 @@ source_set("common_video") {
       "include/corevideo_frame_buffer.h",
     ]
     libs = [ "CoreVideo.framework" ]
+  }
+}
+
+if (rtc_include_tests) {
+  test("common_video_unittests") {
+    testonly = true
+
+    sources = [
+      "bitrate_adjuster_unittest.cc",
+      "h264/pps_parser_unittest.cc",
+      "h264/sps_parser_unittest.cc",
+      "h264/sps_vui_rewriter_unittest.cc",
+      "i420_buffer_pool_unittest.cc",
+      "i420_video_frame_unittest.cc",
+      "libyuv/libyuv_unittest.cc",
+    ]
+
+    configs += [ "..:common_config" ]
+    public_configs = [ "..:common_inherited_config" ]
+
+    # TODO(jschuh): Bug 1348: fix this warning.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
+    if (is_clang) {
+      # Suppress warnings from the Chromium Clang plugin.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      configs -= [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    deps = [
+      ":common_video",
+      "../system_wrappers:system_wrappers",
+      "../test:test_support_main",
+      "../test:video_test_common",
+      "//testing/gmock",
+      "//testing/gtest",
+    ]
+
+    if (is_android) {
+      deps += [ "//testing/android/native_test:native_test_support" ]
+
+      # This needs to be kept in sync with the .isolate file.
+      # TODO(kjellander); Move this to android_assets targets instead.
+      data = [
+        "//resources/foreman_cif.yuv",
+      ]
+    }
   }
 }

@@ -25,7 +25,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/device_event_log/device_event_log.h"
-#include "device/usb/usb_device_impl.h"
+#include "device/usb/usb_device_linux.h"
 #include "net/base/io_buffer.h"
 
 namespace device {
@@ -346,9 +346,7 @@ void UsbDeviceHandleUsbfs::Close() {
   // see if the handle is closed.
   for (const auto& transfer : transfers_)
     CancelTransfer(transfer.get(), USB_TRANSFER_CANCELLED);
-#if !defined(OS_ANDROID)
-  static_cast<UsbDeviceImpl*>(device_.get())->HandleClosed(this);
-#endif
+  device_->HandleClosed(this);
   device_ = nullptr;
   blocking_task_runner_->PostTask(
       FROM_HERE, base::Bind(&UsbDeviceHandleUsbfs::CloseBlocking, this));
@@ -526,6 +524,11 @@ UsbDeviceHandleUsbfs::~UsbDeviceHandleUsbfs() {
   DCHECK(!device_) << "Handle must be closed before it is destroyed.";
 }
 
+void UsbDeviceHandleUsbfs::ReleaseFileDescriptor() {
+  ignore_result(fd_.release());
+  delete helper_;
+}
+
 void UsbDeviceHandleUsbfs::CloseBlocking() {
   fd_.reset(-1);
   delete helper_;
@@ -553,10 +556,7 @@ void UsbDeviceHandleUsbfs::SetConfigurationComplete(
     bool success,
     const ResultCallback& callback) {
   if (success && device_) {
-#if !defined(OS_ANDROID)
-    static_cast<UsbDeviceImpl*>(device_.get())
-        ->ActiveConfigurationChanged(configuration_value);
-#endif
+    device_->ActiveConfigurationChanged(configuration_value);
     // TODO(reillyg): If all interfaces are unclaimed before a new configuration
     // is set then this will do nothing. Investigate.
     RefreshEndpointInfo();
@@ -790,7 +790,7 @@ void UsbDeviceHandleUsbfs::TransferComplete(
 void UsbDeviceHandleUsbfs::RefreshEndpointInfo() {
   endpoints_.clear();
 
-  const UsbConfigDescriptor* config = device_->GetActiveConfiguration();
+  const UsbConfigDescriptor* config = device_->active_configuration();
   if (!config)
     return;
 

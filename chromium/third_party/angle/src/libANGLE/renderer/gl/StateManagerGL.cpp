@@ -8,7 +8,12 @@
 
 #include "libANGLE/renderer/gl/StateManagerGL.h"
 
+#include <limits>
+#include <string.h>
+
 #include "common/BitSetIterator.h"
+#include "common/mathutil.h"
+#include "common/matrix_utils.h"
 #include "libANGLE/ContextState.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/TransformFeedback.h"
@@ -116,6 +121,9 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions, const gl::Caps &ren
       mMultisamplingEnabled(true),
       mSampleAlphaToOneEnabled(false),
       mCoverageModulation(GL_NONE),
+      mPathStencilFunc(GL_ALWAYS),
+      mPathStencilRef(0),
+      mPathStencilMask(std::numeric_limits<GLuint>::max()),
       mLocalDirtyBits()
 {
     ASSERT(mFunctions);
@@ -145,6 +153,9 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions, const gl::Caps &ren
             mFunctions->enable(GL_POINT_SPRITE);
         }
     }
+
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixMV);
 }
 
 void StateManagerGL::deleteProgram(GLuint program)
@@ -432,7 +443,7 @@ void StateManagerGL::setPixelUnpackState(GLint alignment,
         mUnpackSkipRows = skipRows;
         mFunctions->pixelStorei(GL_UNPACK_SKIP_ROWS, mUnpackSkipRows);
 
-        // TODO: set dirty bit once one exists
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_UNPACK_SKIP_ROWS);
     }
 
     if (mUnpackSkipPixels != skipPixels)
@@ -440,7 +451,7 @@ void StateManagerGL::setPixelUnpackState(GLint alignment,
         mUnpackSkipPixels = skipPixels;
         mFunctions->pixelStorei(GL_UNPACK_SKIP_PIXELS, mUnpackSkipPixels);
 
-        // TODO: set dirty bit once one exists
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_UNPACK_SKIP_PIXELS);
     }
 
     if (mUnpackImageHeight != imageHeight)
@@ -448,7 +459,7 @@ void StateManagerGL::setPixelUnpackState(GLint alignment,
         mUnpackImageHeight = imageHeight;
         mFunctions->pixelStorei(GL_UNPACK_IMAGE_HEIGHT, mUnpackImageHeight);
 
-        // TODO: set dirty bit once one exists
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_UNPACK_IMAGE_HEIGHT);
     }
 
     if (mUnpackSkipImages != skipImages)
@@ -456,7 +467,7 @@ void StateManagerGL::setPixelUnpackState(GLint alignment,
         mUnpackSkipImages = skipImages;
         mFunctions->pixelStorei(GL_UNPACK_SKIP_IMAGES, mUnpackSkipImages);
 
-        // TODO: set dirty bit once one exists
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_UNPACK_SKIP_IMAGES);
     }
 
     bindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
@@ -601,7 +612,7 @@ gl::Error StateManagerGL::setDrawArraysState(const gl::ContextState &data,
                                              GLsizei count,
                                              GLsizei instanceCount)
 {
-    const gl::State &state = *data.state;
+    const gl::State &state = data.getState();
 
     const gl::Program *program = state.getProgram();
 
@@ -627,7 +638,7 @@ gl::Error StateManagerGL::setDrawElementsState(const gl::ContextState &data,
                                                GLsizei instanceCount,
                                                const GLvoid **outIndices)
 {
-    const gl::State &state = *data.state;
+    const gl::State &state = data.getState();
 
     const gl::Program *program = state.getProgram();
 
@@ -649,10 +660,10 @@ gl::Error StateManagerGL::setDrawElementsState(const gl::ContextState &data,
 
 gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
 {
-    const gl::State &state = *data.state;
+    const gl::State &state = data.getState();
 
     // If the context has changed, pause the previous context's transform feedback and queries
-    if (data.context != mPrevDrawContext)
+    if (data.getContext() != mPrevDrawContext)
     {
         if (mPrevDrawTransformFeedback != nullptr)
         {
@@ -666,7 +677,7 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
     }
     mCurrentQueries.clear();
     mPrevDrawTransformFeedback = nullptr;
-    mPrevDrawContext = data.context;
+    mPrevDrawContext           = data.getContext();
 
     // Set the current query state
     for (GLenum queryType : QueryTypes)
@@ -686,7 +697,7 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::ContextState &data)
 
 gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
 {
-    const gl::State &state = *data.state;
+    const gl::State &state = data.getState();
 
     // Sync the current program state
     const gl::Program *program = state.getProgram();
@@ -697,8 +708,7 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
          uniformBlockIndex++)
     {
         GLuint binding = program->getUniformBlockBinding(static_cast<GLuint>(uniformBlockIndex));
-        const OffsetBindingPointer<gl::Buffer> &uniformBuffer =
-            data.state->getIndexedUniformBuffer(binding);
+        const auto &uniformBuffer = state.getIndexedUniformBuffer(binding);
 
         if (uniformBuffer.get() != nullptr)
         {
@@ -764,7 +774,7 @@ gl::Error StateManagerGL::setGenericDrawState(const gl::ContextState &data)
     framebufferGL->syncDrawState();
 
     // Seamless cubemaps are required for ES3 and higher contexts.
-    setTextureCubemapSeamlessEnabled(data.clientVersion >= 3);
+    setTextureCubemapSeamlessEnabled(data.getClientVersion() >= 3);
 
     // Set the current transform feedback state
     gl::TransformFeedback *transformFeedback = state.getCurrentTransformFeedback();
@@ -1524,6 +1534,18 @@ void StateManagerGL::syncState(const gl::State &state, const gl::State::DirtyBit
             case gl::State::DIRTY_BIT_COVERAGE_MODULATION:
                 setCoverageModulation(state.getCoverageModulation());
                 break;
+            case gl::State::DIRTY_BIT_PATH_RENDERING_MATRIX_MV:
+                setPathRenderingModelViewMatrix(
+                    state.getPathRenderingMatrix(GL_PATH_MODELVIEW_MATRIX_CHROMIUM));
+                break;
+            case gl::State::DIRTY_BIT_PATH_RENDERING_MATRIX_PROJ:
+                setPathRenderingProjectionMatrix(
+                    state.getPathRenderingMatrix(GL_PATH_PROJECTION_MATRIX_CHROMIUM));
+                break;
+            case gl::State::DIRTY_BIT_PATH_RENDERING_STENCIL_STATE:
+                setPathRenderingStencilState(state.getPathStencilFunc(), state.getPathStencilRef(),
+                                             state.getPathStencilMask());
+                break;
             default:
             {
                 ASSERT(dirtyBit >= gl::State::DIRTY_BIT_CURRENT_VALUE_0 &&
@@ -1601,6 +1623,41 @@ void StateManagerGL::setCoverageModulation(GLenum components)
     }
 }
 
+void StateManagerGL::setPathRenderingModelViewMatrix(const GLfloat *m)
+{
+    if (memcmp(mPathMatrixMV, m, sizeof(mPathMatrixMV)) != 0)
+    {
+        memcpy(mPathMatrixMV, m, sizeof(mPathMatrixMV));
+        mFunctions->matrixLoadEXT(GL_PATH_MODELVIEW_CHROMIUM, m);
+
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_PATH_RENDERING_MATRIX_MV);
+    }
+}
+
+void StateManagerGL::setPathRenderingProjectionMatrix(const GLfloat *m)
+{
+    if (memcmp(mPathMatrixProj, m, sizeof(mPathMatrixProj)) != 0)
+    {
+        memcpy(mPathMatrixProj, m, sizeof(mPathMatrixProj));
+        mFunctions->matrixLoadEXT(GL_PATH_PROJECTION_CHROMIUM, m);
+
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_PATH_RENDERING_MATRIX_PROJ);
+    }
+}
+
+void StateManagerGL::setPathRenderingStencilState(GLenum func, GLint ref, GLuint mask)
+{
+    if (func != mPathStencilFunc || ref != mPathStencilRef || mask != mPathStencilMask)
+    {
+        mPathStencilFunc = func;
+        mPathStencilRef  = ref;
+        mPathStencilMask = mask;
+        mFunctions->pathStencilFuncNV(func, ref, mask);
+
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_PATH_RENDERING_STENCIL_STATE);
+    }
+}
+
 void StateManagerGL::setTextureCubemapSeamlessEnabled(bool enabled)
 {
     if (mTextureCubemapSeamlessEnabled != enabled)
@@ -1617,4 +1674,9 @@ void StateManagerGL::setTextureCubemapSeamlessEnabled(bool enabled)
     }
 }
 
+GLuint StateManagerGL::getBoundBuffer(GLenum type)
+{
+    ASSERT(mBuffers.find(type) != mBuffers.end());
+    return mBuffers[type];
+}
 }

@@ -162,7 +162,7 @@ Connection* TCPPort::CreateConnection(const Candidate& address,
   } else {
     conn = new TCPConnection(this, address);
   }
-  AddConnection(conn);
+  AddOrReplaceConnection(conn);
   return conn;
 }
 
@@ -351,10 +351,10 @@ int TCPConnection::Send(const void* data, size_t size,
     error_ = EWOULDBLOCK;
     return SOCKET_ERROR;
   }
-  sent_packets_total_++;
+  stats_.sent_total_packets++;
   int sent = socket_->Send(data, size, options);
   if (sent < 0) {
-    sent_packets_discarded_++;
+    stats_.sent_discarded_packets++;
     error_ = socket_->GetError();
   } else {
     send_rate_tracker_.AddSamples(sent);
@@ -434,7 +434,7 @@ void TCPConnection::OnClose(rtc::AsyncPacketSocket* socket, int error) {
     // We don't attempt reconnect right here. This is to avoid a case where the
     // shutdown is intentional and reconnect is not necessary. We only reconnect
     // when the connection is used to Send() or Ping().
-    port()->thread()->PostDelayed(reconnection_timeout(), this,
+    port()->thread()->PostDelayed(RTC_FROM_HERE, reconnection_timeout(), this,
                                   MSG_TCPCONNECTION_DELAYED_ONCLOSE);
   } else if (!pretending_to_be_writable_) {
     // OnClose could be called when the underneath socket times out during the

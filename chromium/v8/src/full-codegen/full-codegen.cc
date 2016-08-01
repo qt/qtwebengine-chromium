@@ -34,7 +34,8 @@ bool FullCodeGenerator::MakeCode(CompilationInfo* info) {
   TRACE_EVENT0("v8", "V8.CompileFullCode");
 
   Handle<Script> script = info->script();
-  if (!script->IsUndefined() && !script->source()->IsUndefined()) {
+  if (!script->IsUndefined(isolate) &&
+      !script->source()->IsUndefined(isolate)) {
     int len = String::cast(script->source())->length();
     isolate->counters()->total_full_codegen_source_size()->Increment(len);
   }
@@ -169,13 +170,16 @@ void FullCodeGenerator::PrepareForBailout(Expression* node,
   PrepareForBailoutForId(node->id(), state);
 }
 
-
-void FullCodeGenerator::CallLoadIC(TypeofMode typeof_mode,
-                                   TypeFeedbackId id) {
-  Handle<Code> ic = CodeFactory::LoadIC(isolate(), typeof_mode).code();
+void FullCodeGenerator::CallLoadIC(TypeFeedbackId id) {
+  Handle<Code> ic = CodeFactory::LoadIC(isolate()).code();
   CallIC(ic, id);
 }
 
+void FullCodeGenerator::CallLoadGlobalIC(TypeofMode typeof_mode,
+                                         TypeFeedbackId id) {
+  Handle<Code> ic = CodeFactory::LoadGlobalIC(isolate(), typeof_mode).code();
+  CallIC(ic, id);
+}
 
 void FullCodeGenerator::CallStoreIC(TypeFeedbackId id) {
   Handle<Code> ic = CodeFactory::StoreIC(isolate(), language_mode()).code();
@@ -611,18 +615,14 @@ void FullCodeGenerator::EmitHasProperty() {
   RestoreContext();
 }
 
-bool RecordStatementPosition(MacroAssembler* masm, int pos) {
-  if (pos == RelocInfo::kNoPosition) return false;
+void RecordStatementPosition(MacroAssembler* masm, int pos) {
+  if (pos == RelocInfo::kNoPosition) return;
   masm->positions_recorder()->RecordStatementPosition(pos);
-  masm->positions_recorder()->RecordPosition(pos);
-  return masm->positions_recorder()->WriteRecordedPositions();
 }
 
-
-bool RecordPosition(MacroAssembler* masm, int pos) {
-  if (pos == RelocInfo::kNoPosition) return false;
+void RecordPosition(MacroAssembler* masm, int pos) {
+  if (pos == RelocInfo::kNoPosition) return;
   masm->positions_recorder()->RecordPosition(pos);
-  return masm->positions_recorder()->WriteRecordedPositions();
 }
 
 
@@ -646,8 +646,8 @@ void FullCodeGenerator::SetReturnPosition(FunctionLiteral* fun) {
 void FullCodeGenerator::SetStatementPosition(
     Statement* stmt, FullCodeGenerator::InsertBreak insert_break) {
   if (stmt->position() == RelocInfo::kNoPosition) return;
-  bool recorded = RecordStatementPosition(masm_, stmt->position());
-  if (recorded && insert_break == INSERT_BREAK && info_->is_debug() &&
+  RecordStatementPosition(masm_, stmt->position());
+  if (insert_break == INSERT_BREAK && info_->is_debug() &&
       !stmt->IsDebuggerStatement()) {
     DebugCodegen::GenerateSlot(masm_, RelocInfo::DEBUG_BREAK_SLOT_AT_POSITION);
   }
@@ -661,8 +661,8 @@ void FullCodeGenerator::SetExpressionPosition(Expression* expr) {
 
 void FullCodeGenerator::SetExpressionAsStatementPosition(Expression* expr) {
   if (expr->position() == RelocInfo::kNoPosition) return;
-  bool recorded = RecordStatementPosition(masm_, expr->position());
-  if (recorded && info_->is_debug()) {
+  RecordStatementPosition(masm_, expr->position());
+  if (info_->is_debug()) {
     DebugCodegen::GenerateSlot(masm_, RelocInfo::DEBUG_BREAK_SLOT_AT_POSITION);
   }
 }
@@ -1032,17 +1032,12 @@ void FullCodeGenerator::EmitUnwindAndReturn() {
 
 void FullCodeGenerator::EmitNewClosure(Handle<SharedFunctionInfo> info,
                                        bool pretenure) {
-  // Use the fast case closure allocation code that allocates in new
-  // space for nested functions that don't need literals cloning. If
-  // we're running with the --always-opt or the --prepare-always-opt
+  // If we're running with the --always-opt or the --prepare-always-opt
   // flag, we need to use the runtime function so that the new function
   // we are creating here gets a chance to have its code optimized and
   // doesn't just get a copy of the existing unoptimized code.
-  if (!FLAG_always_opt &&
-      !FLAG_prepare_always_opt &&
-      !pretenure &&
-      scope()->is_function_scope() &&
-      info->num_literals() == 0) {
+  if (!FLAG_always_opt && !FLAG_prepare_always_opt && !pretenure &&
+      scope()->is_function_scope()) {
     FastNewClosureStub stub(isolate(), info->language_mode(), info->kind());
     __ Move(stub.GetCallInterfaceDescriptor().GetRegisterParameter(0), info);
     __ CallStub(&stub);
@@ -1063,7 +1058,7 @@ void FullCodeGenerator::EmitNamedPropertyLoad(Property* prop) {
   __ Move(LoadDescriptor::NameRegister(), key->value());
   __ Move(LoadDescriptor::SlotRegister(),
           SmiFromSlot(prop->PropertyFeedbackSlot()));
-  CallLoadIC(NOT_INSIDE_TYPEOF);
+  CallLoadIC();
 }
 
 void FullCodeGenerator::EmitNamedSuperPropertyLoad(Property* prop) {
@@ -1526,7 +1521,7 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
     __ LoadRoot(LoadDescriptor::NameRegister(),
                 Heap::kprototype_stringRootIndex);
     __ Move(LoadDescriptor::SlotRegister(), SmiFromSlot(lit->PrototypeSlot()));
-    CallLoadIC(NOT_INSIDE_TYPEOF);
+    CallLoadIC();
     PrepareForBailoutForId(lit->PrototypeId(), BailoutState::TOS_REGISTER);
     PushOperand(result_register());
 
@@ -1545,6 +1540,19 @@ void FullCodeGenerator::VisitClassLiteral(ClassLiteral* lit) {
   context()->Plug(result_register());
 }
 
+void FullCodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
+  Comment cmnt(masm_, "[ RegExpLiteral");
+  Callable callable = CodeFactory::FastCloneRegExp(isolate());
+  CallInterfaceDescriptor descriptor = callable.descriptor();
+  LoadFromFrameField(JavaScriptFrameConstants::kFunctionOffset,
+                     descriptor.GetRegisterParameter(0));
+  __ Move(descriptor.GetRegisterParameter(1),
+          Smi::FromInt(expr->literal_index()));
+  __ Move(descriptor.GetRegisterParameter(2), expr->pattern());
+  __ Move(descriptor.GetRegisterParameter(3), Smi::FromInt(expr->flags()));
+  __ Call(callable.code(), RelocInfo::CODE_TARGET);
+  context()->Plug(result_register());
+}
 
 void FullCodeGenerator::VisitNativeFunctionLiteral(
     NativeFunctionLiteral* expr) {

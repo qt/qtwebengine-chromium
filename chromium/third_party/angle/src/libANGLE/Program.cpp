@@ -462,6 +462,13 @@ Error Program::link(const ContextState &data)
     }
     ASSERT(mState.mAttachedVertexShader->getType() == GL_VERTEX_SHADER);
 
+    if (mState.mAttachedFragmentShader->getShaderVersion() !=
+        mState.mAttachedVertexShader->getShaderVersion())
+    {
+        mInfoLog << "Fragment shader version does not match vertex shader version.";
+        return Error(GL_NO_ERROR);
+    }
+
     if (!linkAttributes(data, mInfoLog, mAttributeBindings, mState.mAttachedVertexShader))
     {
         return Error(GL_NO_ERROR);
@@ -472,19 +479,19 @@ Error Program::link(const ContextState &data)
         return Error(GL_NO_ERROR);
     }
 
-    if (!linkUniforms(mInfoLog, *data.caps, mUniformBindings))
+    if (!linkUniforms(mInfoLog, data.getCaps(), mUniformBindings))
     {
         return Error(GL_NO_ERROR);
     }
 
-    if (!linkUniformBlocks(mInfoLog, *data.caps))
+    if (!linkUniformBlocks(mInfoLog, data.getCaps()))
     {
         return Error(GL_NO_ERROR);
     }
 
     const auto &mergedVaryings = getMergedVaryings();
 
-    if (!linkValidateTransformFeedback(mInfoLog, mergedVaryings, *data.caps))
+    if (!linkValidateTransformFeedback(mInfoLog, mergedVaryings, data.getCaps()))
     {
         return Error(GL_NO_ERROR);
     }
@@ -758,7 +765,7 @@ Error Program::saveBinary(GLenum *binaryFormat, void *binary, GLsizei bufSize, G
     for (const auto &outputPair : mState.mOutputVariables)
     {
         stream.writeInt(outputPair.first);
-        stream.writeInt(outputPair.second.element);
+        stream.writeIntOrNegOne(outputPair.second.element);
         stream.writeInt(outputPair.second.index);
         stream.writeString(outputPair.second.name);
     }
@@ -1122,7 +1129,7 @@ GLint Program::getActiveUniformi(GLuint index, GLenum pname) const
 
 bool Program::isValidUniformLocation(GLint location) const
 {
-    ASSERT(rx::IsIntegerCastSafe<GLint>(mState.mUniformLocations.size()));
+    ASSERT(angle::IsValueInRangeForNumericType<GLint>(mState.mUniformLocations.size()));
     return (location >= 0 && static_cast<size_t>(location) < mState.mUniformLocations.size() &&
             mState.mUniformLocations[static_cast<size_t>(location)].used);
 }
@@ -1621,6 +1628,8 @@ bool Program::linkVaryings(InfoLog &infoLog,
                            const Shader *vertexShader,
                            const Shader *fragmentShader)
 {
+    ASSERT(vertexShader->getShaderVersion() == fragmentShader->getShaderVersion());
+
     const std::vector<sh::Varying> &vertexVaryings   = vertexShader->getVaryings();
     const std::vector<sh::Varying> &fragmentVaryings = fragmentShader->getVaryings();
 
@@ -1639,7 +1648,8 @@ bool Program::linkVaryings(InfoLog &infoLog,
             if (output.name == input.name)
             {
                 ASSERT(!input.isBuiltIn());
-                if (!linkValidateVaryings(infoLog, output.name, input, output))
+                if (!linkValidateVaryings(infoLog, output.name, input, output,
+                                          vertexShader->getShaderVersion()))
                 {
                     return false;
                 }
@@ -1825,7 +1835,7 @@ bool Program::linkAttributes(const ContextState &data,
 {
     unsigned int usedLocations = 0;
     mState.mAttributes         = vertexShader->getActiveAttributes();
-    GLuint maxAttribs = data.caps->maxVertexAttributes;
+    GLuint maxAttribs          = data.getCaps().maxVertexAttributes;
 
     // TODO(jmadill): handle aliasing robustly
     if (mState.mAttributes.size() > maxAttribs)
@@ -1834,7 +1844,7 @@ bool Program::linkAttributes(const ContextState &data,
         return false;
     }
 
-    std::vector<sh::Attribute *> usedAttribMap(data.caps->maxVertexAttributes, nullptr);
+    std::vector<sh::Attribute *> usedAttribMap(maxAttribs, nullptr);
 
     // Link attributes that have a binding location
     for (sh::Attribute &attribute : mState.mAttributes)
@@ -2096,7 +2106,11 @@ bool Program::linkValidateUniforms(InfoLog &infoLog, const std::string &uniformN
     return true;
 }
 
-bool Program::linkValidateVaryings(InfoLog &infoLog, const std::string &varyingName, const sh::Varying &vertexVarying, const sh::Varying &fragmentVarying)
+bool Program::linkValidateVaryings(InfoLog &infoLog,
+                                   const std::string &varyingName,
+                                   const sh::Varying &vertexVarying,
+                                   const sh::Varying &fragmentVarying,
+                                   int shaderVersion)
 {
     if (!linkValidateVariablesBase(infoLog, varyingName, vertexVarying, fragmentVarying, false))
     {
@@ -2105,7 +2119,15 @@ bool Program::linkValidateVaryings(InfoLog &infoLog, const std::string &varyingN
 
     if (!sh::InterpolationTypesMatch(vertexVarying.interpolation, fragmentVarying.interpolation))
     {
-        infoLog << "Interpolation types for " << varyingName << " differ between vertex and fragment shaders";
+        infoLog << "Interpolation types for " << varyingName
+                << " differ between vertex and fragment shaders.";
+        return false;
+    }
+
+    if (shaderVersion == 100 && vertexVarying.isInvariant != fragmentVarying.isInvariant)
+    {
+        infoLog << "Invariance for " << varyingName
+                << " differs between vertex and fragment shaders.";
         return false;
     }
 

@@ -525,8 +525,8 @@ class VideoProcessorIntegrationTest : public testing::Test {
     EXPECT_GT(psnr_result.min, quality_metrics.minimum_min_psnr);
     EXPECT_GT(ssim_result.average, quality_metrics.minimum_avg_ssim);
     EXPECT_GT(ssim_result.min, quality_metrics.minimum_min_ssim);
-    if (!remove(config_.output_filename.c_str())) {
-      fprintf(stderr, "Failed to remove temporary file!");
+    if (remove(config_.output_filename.c_str()) < 0) {
+      fprintf(stderr, "Failed to remove temporary file!\n");
     }
   }
 };
@@ -707,8 +707,17 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRateVP9) {
 // for the rate control metrics can be lower. One key frame (first frame only).
 // Note: quality after update should be higher but we currently compute quality
 // metrics averaged over whole sequence run.
+
+#if defined(WEBRTC_ANDROID)
+// Flaky on Android: https://bugs.chromium.org/p/webrtc/issues/detail?id=6057.
+#define MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9 \
+  DISABLED_ProcessNoLossChangeFrameRateFrameDropVP9
+#else
+#define MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9 \
+  ProcessNoLossChangeFrameRateFrameDropVP9
+#endif
 TEST_F(VideoProcessorIntegrationTest,
-       ProcessNoLossChangeFrameRateFrameDropVP9) {
+       MAYBE_ProcessNoLossChangeFrameRateFrameDropVP9) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;

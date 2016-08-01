@@ -48,7 +48,7 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "java/nio/ByteBuffer");
   LoadClass(jni, "java/util/ArrayList");
   LoadClass(jni, "org/webrtc/AudioTrack");
-  LoadClass(jni, "org/webrtc/CameraEnumerator");
+  LoadClass(jni, "org/webrtc/Camera1Enumerator");
   LoadClass(jni, "org/webrtc/Camera2Enumerator");
   LoadClass(jni, "org/webrtc/CameraEnumerationAndroid");
   LoadClass(jni, "org/webrtc/DataChannel");
@@ -69,6 +69,8 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "org/webrtc/MediaSource$State");
   LoadClass(jni, "org/webrtc/MediaStream");
   LoadClass(jni, "org/webrtc/MediaStreamTrack$State");
+  LoadClass(jni, "org/webrtc/Metrics");
+  LoadClass(jni, "org/webrtc/Metrics$HistogramInfo");
   LoadClass(jni, "org/webrtc/NetworkMonitor");
   LoadClass(jni, "org/webrtc/NetworkMonitorAutoDetect$ConnectionType");
   LoadClass(jni, "org/webrtc/NetworkMonitorAutoDetect$IPAddress");
@@ -81,6 +83,7 @@ ClassReferenceHolder::ClassReferenceHolder(JNIEnv* jni) {
   LoadClass(jni, "org/webrtc/PeerConnection$IceGatheringState");
   LoadClass(jni, "org/webrtc/PeerConnection$IceTransportsType");
   LoadClass(jni, "org/webrtc/PeerConnection$TcpCandidatePolicy");
+  LoadClass(jni, "org/webrtc/PeerConnection$CandidateNetworkPolicy");
   LoadClass(jni, "org/webrtc/PeerConnection$KeyType");
   LoadClass(jni, "org/webrtc/PeerConnection$SignalingState");
   LoadClass(jni, "org/webrtc/RtpReceiver");

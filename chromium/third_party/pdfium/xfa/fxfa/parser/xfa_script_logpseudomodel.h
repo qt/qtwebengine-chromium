@@ -7,13 +7,13 @@
 #ifndef XFA_FXFA_PARSER_XFA_SCRIPT_LOGPSEUDOMODEL_H_
 #define XFA_FXFA_PARSER_XFA_SCRIPT_LOGPSEUDOMODEL_H_
 
+#include "fxjse/include/cfxjse_arguments.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
-class CScript_LogPseudoModel : public CXFA_OrdinaryObject {
+class CScript_LogPseudoModel : public CXFA_Object {
  public:
   explicit CScript_LogPseudoModel(CXFA_Document* pDocument);
-  virtual ~CScript_LogPseudoModel();
+  ~CScript_LogPseudoModel() override;
 
   void Script_LogPseudoModel_Message(CFXJSE_Arguments* pArguments);
   void Script_LogPseudoModel_TraceEnabled(CFXJSE_Arguments* pArguments);

@@ -22,7 +22,6 @@
 #include "webrtc/base/trace_event.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
-#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/neteq/accelerate.h"
 #include "webrtc/modules/audio_coding/neteq/background_noise.h"
 #include "webrtc/modules/audio_coding/neteq/buffer_level_filter.h"
@@ -36,7 +35,7 @@
 #include "webrtc/modules/audio_coding/neteq/dtmf_tone_generator.h"
 #include "webrtc/modules/audio_coding/neteq/expand.h"
 #include "webrtc/modules/audio_coding/neteq/merge.h"
-#include "webrtc/modules/audio_coding/neteq/nack.h"
+#include "webrtc/modules/audio_coding/neteq/nack_tracker.h"
 #include "webrtc/modules/audio_coding/neteq/normal.h"
 #include "webrtc/modules/audio_coding/neteq/packet_buffer.h"
 #include "webrtc/modules/audio_coding/neteq/packet.h"
@@ -55,10 +54,12 @@
 
 namespace webrtc {
 
-NetEqImpl::Dependencies::Dependencies(const NetEq::Config& config)
+NetEqImpl::Dependencies::Dependencies(
+    const NetEq::Config& config,
+    const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory)
     : tick_timer(new TickTimer),
       buffer_level_filter(new BufferLevelFilter),
-      decoder_database(new DecoderDatabase(CreateBuiltinAudioDecoderFactory())),
+      decoder_database(new DecoderDatabase(decoder_factory)),
       delay_peak_detector(new DelayPeakDetector(tick_timer.get())),
       delay_manager(new DelayManager(config.max_packets_in_buffer,
                                      delay_peak_detector.get(),
@@ -259,8 +260,7 @@ int NetEqImpl::RegisterPayloadType(NetEqDecoder codec,
 int NetEqImpl::RegisterExternalDecoder(AudioDecoder* decoder,
                                        NetEqDecoder codec,
                                        const std::string& codec_name,
-                                       uint8_t rtp_payload_type,
-                                       int sample_rate_hz) {
+                                       uint8_t rtp_payload_type) {
   rtc::CritScope lock(&crit_sect_);
   LOG(LS_VERBOSE) << "RegisterExternalDecoder "
                   << static_cast<int>(rtp_payload_type) << " "
@@ -270,8 +270,8 @@ int NetEqImpl::RegisterExternalDecoder(AudioDecoder* decoder,
     assert(false);
     return kFail;
   }
-  int ret = decoder_database_->InsertExternal(
-      rtp_payload_type, codec, codec_name, sample_rate_hz, decoder);
+  int ret = decoder_database_->InsertExternal(rtp_payload_type, codec,
+                                              codec_name, decoder);
   if (ret != DecoderDatabase::kOK) {
     switch (ret) {
       case DecoderDatabase::kInvalidRtpPayloadType:
@@ -475,7 +475,7 @@ void NetEqImpl::EnableNack(size_t max_nack_list_size) {
   rtc::CritScope lock(&crit_sect_);
   if (!nack_enabled_) {
     const int kNackThresholdPackets = 2;
-    nack_.reset(Nack::Create(kNackThresholdPackets));
+    nack_.reset(NackTracker::Create(kNackThresholdPackets));
     nack_enabled_ = true;
     nack_->UpdateSampleRate(fs_hz_);
   }
@@ -760,9 +760,10 @@ int NetEqImpl::InsertPacketInternal(const WebRtcRTPHeader& rtp_header,
     const DecoderDatabase::DecoderInfo* decoder_info =
         decoder_database_->GetDecoderInfo(payload_type);
     assert(decoder_info);
-    if (decoder_info->fs_hz != fs_hz_ ||
+    if (decoder_info->SampleRateHz() != fs_hz_ ||
         channels != algorithm_buffer_->Channels()) {
-      SetSampleRateAndChannels(decoder_info->fs_hz, channels);
+      SetSampleRateAndChannels(decoder_info->SampleRateHz(),
+                               channels);
     }
     if (nack_enabled_) {
       RTC_DCHECK(nack_);
@@ -1346,10 +1347,11 @@ int NetEqImpl::Decode(PacketList* packet_list, Operations* operation,
         }
         // If sampling rate or number of channels has changed, we need to make
         // a reset.
-        if (decoder_info->fs_hz != fs_hz_ ||
+        if (decoder_info->SampleRateHz() != fs_hz_ ||
             decoder->Channels() != algorithm_buffer_->Channels()) {
           // TODO(tlegrand): Add unittest to cover this event.
-          SetSampleRateAndChannels(decoder_info->fs_hz, decoder->Channels());
+          SetSampleRateAndChannels(decoder_info->SampleRateHz(),
+                                   decoder->Channels());
         }
         sync_buffer_->set_end_timestamp(timestamp_);
         playout_timestamp_ = timestamp_;

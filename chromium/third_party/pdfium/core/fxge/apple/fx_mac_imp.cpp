@@ -25,25 +25,31 @@ static const struct {
     {"Times-BoldItalic", "Times New Roman Bold Italic"},
     {"Times-Italic", "Times New Roman Italic"},
 };
+
 class CFX_MacFontInfo : public CFX_FolderFontInfo {
  public:
-  virtual void* MapFont(int weight,
-                        FX_BOOL bItalic,
-                        int charset,
-                        int pitch_family,
-                        const FX_CHAR* family,
-                        int& iExact);
+  CFX_MacFontInfo() {}
+  ~CFX_MacFontInfo() override {}
+
+  // CFX_FolderFontInfo
+  void* MapFont(int weight,
+                FX_BOOL bItalic,
+                int charset,
+                int pitch_family,
+                const FX_CHAR* family,
+                int& iExact) override;
 };
+
 #define JAPAN_GOTHIC "Hiragino Kaku Gothic Pro W6"
 #define JAPAN_MINCHO "Hiragino Mincho Pro W6"
 static void GetJapanesePreference(CFX_ByteString& face,
                                   int weight,
-                                  int picth_family) {
+                                  int pitch_family) {
   if (face.Find("Gothic") >= 0) {
     face = JAPAN_GOTHIC;
     return;
   }
-  if (!(picth_family & FXFONT_FF_ROMAN) && weight > 400) {
+  if (!(pitch_family & FXFONT_FF_ROMAN) && weight > 400) {
     face = JAPAN_GOTHIC;
   } else {
     face = JAPAN_MINCHO;
@@ -74,7 +80,7 @@ void* CFX_MacFontInfo::MapFont(int weight,
     return GetFont("Courier New");
   }
   if (charset == FXFONT_ANSI_CHARSET || charset == FXFONT_SYMBOL_CHARSET) {
-    return NULL;
+    return nullptr;
   }
   switch (charset) {
     case FXFONT_SHIFTJIS_CHARSET:
@@ -90,24 +96,24 @@ void* CFX_MacFontInfo::MapFont(int weight,
       face = "LiSong Pro Light";
   }
   it = m_FontList.find(face);
-  if (it != m_FontList.end())
-    return it->second;
-
-  return NULL;
+  return it != m_FontList.end() ? it->second : nullptr;
 }
-IFX_SystemFontInfo* IFX_SystemFontInfo::CreateDefault(const char** pUnused) {
-  CFX_MacFontInfo* pInfo = new CFX_MacFontInfo;
+
+std::unique_ptr<IFX_SystemFontInfo> IFX_SystemFontInfo::CreateDefault(
+    const char** pUnused) {
+  CFX_MacFontInfo* pInfo(new CFX_MacFontInfo);
   pInfo->AddPath("~/Library/Fonts");
   pInfo->AddPath("/Library/Fonts");
   pInfo->AddPath("/System/Library/Fonts");
-  return pInfo;
+  return std::unique_ptr<CFX_MacFontInfo>(pInfo);
 }
+
 void CFX_GEModule::InitPlatform() {
   m_pPlatformData = new CApplePlatform;
   m_pFontMgr->SetSystemFontInfo(IFX_SystemFontInfo::CreateDefault(nullptr));
 }
 void CFX_GEModule::DestroyPlatform() {
   delete (CApplePlatform*)m_pPlatformData;
-  m_pPlatformData = NULL;
+  m_pPlatformData = nullptr;
 }
 #endif

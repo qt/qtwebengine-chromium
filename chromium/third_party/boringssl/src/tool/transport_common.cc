@@ -33,10 +33,10 @@
 #include <unistd.h>
 #else
 #include <io.h>
-#pragma warning(push, 3)
+OPENSSL_MSVC_PRAGMA(warning(push, 3))
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#pragma warning(pop)
+OPENSSL_MSVC_PRAGMA(warning(pop))
 
 typedef int ssize_t;
 #pragma comment(lib, "Ws2_32.lib")
@@ -181,6 +181,8 @@ void PrintConnectionInfo(const SSL *ssl) {
   }
   fprintf(stderr, "  Secure renegotiation: %s\n",
           SSL_get_secure_renegotiation_support(ssl) ? "yes" : "no");
+  fprintf(stderr, "  Extended master secret: %s\n",
+          SSL_get_extms_support(ssl) ? "yes" : "no");
 
   const uint8_t *next_proto;
   unsigned next_proto_len;
@@ -265,7 +267,7 @@ bool TransferData(SSL *ssl, int sock) {
       ssize_t n;
 
       do {
-        n = read(0, buffer, sizeof(buffer));
+        n = BORINGSSL_READ(0, buffer, sizeof(buffer));
       } while (n == -1 && errno == EINTR);
 
       if (n == 0) {
@@ -319,7 +321,7 @@ bool TransferData(SSL *ssl, int sock) {
 
       ssize_t n;
       do {
-        n = write(1, buffer, ssl_ret);
+        n = BORINGSSL_WRITE(1, buffer, ssl_ret);
       } while (n == -1 && errno == EINTR);
 
       if (n != ssl_ret) {

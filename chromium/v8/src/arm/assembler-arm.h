@@ -118,8 +118,6 @@ struct Register {
     Register r = {code};
     return r;
   }
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -147,9 +145,22 @@ GENERAL_REGISTERS(DECLARE_REGISTER)
 #undef DECLARE_REGISTER
 const Register no_reg = {Register::kCode_no_reg};
 
+static const bool kSimpleFPAliasing = false;
+
 // Single word VFP register.
 struct SwVfpRegister {
+  enum Code {
+#define REGISTER_CODE(R) kCode_##R,
+    FLOAT_REGISTERS(REGISTER_CODE)
+#undef REGISTER_CODE
+        kAfterLast,
+    kCode_no_reg = -1
+  };
+
+  static const int kMaxNumRegisters = Code::kAfterLast;
+
   static const int kSizeInBytes = 4;
+
   bool is_valid() const { return 0 <= reg_code && reg_code < 32; }
   bool is(SwVfpRegister reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -195,8 +206,6 @@ struct DwVfpRegister {
   //  d15: scratch register.
   static const int kSizeInBytes = 8;
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kMaxNumRegisters; }
   bool is(DwVfpRegister reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -986,6 +995,14 @@ class Assembler : public AssemblerBase {
             Register src2,
             const MemOperand& dst, Condition cond = al);
 
+  // Load/Store exclusive instructions
+  void ldrex(Register dst, Register src, Condition cond = al);
+  void strex(Register src1, Register src2, Register dst, Condition cond = al);
+  void ldrexb(Register dst, Register src, Condition cond = al);
+  void strexb(Register src1, Register src2, Register dst, Condition cond = al);
+  void ldrexh(Register dst, Register src, Condition cond = al);
+  void strexh(Register src1, Register src2, Register dst, Condition cond = al);
+
   // Preload instructions
   void pld(const MemOperand& address);
 
@@ -1312,6 +1329,10 @@ class Assembler : public AssemblerBase {
     vstm(db_w, sp, src, src, cond);
   }
 
+  void vpush(SwVfpRegister src, Condition cond = al) {
+    vstm(db_w, sp, src, src, cond);
+  }
+
   void vpop(DwVfpRegister dst, Condition cond = al) {
     vldm(ia_w, sp, dst, dst, cond);
   }
@@ -1545,10 +1566,10 @@ class Assembler : public AssemblerBase {
       // Max pool start (if we need a jump and an alignment).
       int start = pc_offset() + kInstrSize + 2 * kPointerSize;
       // Check the constant pool hasn't been blocked for too long.
-      DCHECK((num_pending_32_bit_constants_ == 0) ||
-             (start + num_pending_64_bit_constants_ * kDoubleSize <
+      DCHECK(pending_32_bit_constants_.empty() ||
+             (start + pending_64_bit_constants_.size() * kDoubleSize <
               (first_const_pool_32_use_ + kMaxDistToIntPool)));
-      DCHECK((num_pending_64_bit_constants_ == 0) ||
+      DCHECK(pending_64_bit_constants_.empty() ||
              (start < (first_const_pool_64_use_ + kMaxDistToFPPool)));
 #endif
       // Two cases:
@@ -1615,14 +1636,8 @@ class Assembler : public AssemblerBase {
   // pending relocation entry per instruction.
 
   // The buffers of pending constant pool entries.
-  ConstantPoolEntry pending_32_bit_constants_buffer_[kMinNumPendingConstants];
-  ConstantPoolEntry pending_64_bit_constants_buffer_[kMinNumPendingConstants];
-  ConstantPoolEntry* pending_32_bit_constants_;
-  ConstantPoolEntry* pending_64_bit_constants_;
-  // Number of pending constant pool entries in the 32 bits buffer.
-  int num_pending_32_bit_constants_;
-  // Number of pending constant pool entries in the 64 bits buffer.
-  int num_pending_64_bit_constants_;
+  std::vector<ConstantPoolEntry> pending_32_bit_constants_;
+  std::vector<ConstantPoolEntry> pending_64_bit_constants_;
 
   ConstantPoolBuilder constant_pool_builder_;
 

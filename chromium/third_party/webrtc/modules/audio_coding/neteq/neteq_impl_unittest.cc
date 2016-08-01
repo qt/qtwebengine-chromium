@@ -16,6 +16,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/base/safe_conversions.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
+#include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/neteq/accelerate.h"
 #include "webrtc/modules/audio_coding/neteq/expand.h"
 #include "webrtc/modules/audio_coding/neteq/mock/mock_audio_decoder.h"
@@ -59,7 +61,7 @@ class NetEqImplTest : public ::testing::Test {
   NetEqImplTest() { config_.sample_rate_hz = 8000; }
 
   void CreateInstance() {
-    NetEqImpl::Dependencies deps(config_);
+    NetEqImpl::Dependencies deps(config_, CreateBuiltinAudioDecoderFactory());
 
     // Get a local pointer to NetEq's TickTimer object.
     tick_timer_ = deps.tick_timer.get();
@@ -205,7 +207,7 @@ class NetEqImplTest : public ::testing::Test {
 // TODO(hlundin): Move to separate file?
 TEST(NetEq, CreateAndDestroy) {
   NetEq::Config config;
-  NetEq* neteq = NetEq::Create(config);
+  NetEq* neteq = NetEq::Create(config, CreateBuiltinAudioDecoderFactory());
   delete neteq;
 }
 
@@ -243,22 +245,31 @@ TEST_F(NetEqImplTest, InsertPacket) {
   rtp_header.header.timestamp = kFirstTimestamp;
   rtp_header.header.ssrc = kSsrc;
 
-  // Create a mock decoder object.
-  MockAudioDecoder mock_decoder;
-  EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
-  // BWE update function called with first packet.
-  EXPECT_CALL(mock_decoder, IncomingPacket(_,
-                                           kPayloadLength,
-                                           kFirstSequenceNumber,
-                                           kFirstTimestamp,
-                                           kFirstReceiveTime));
-  // BWE update function called with second packet.
-  EXPECT_CALL(mock_decoder, IncomingPacket(_,
-                                           kPayloadLength,
-                                           kFirstSequenceNumber + 1,
-                                           kFirstTimestamp + 160,
-                                           kFirstReceiveTime + 155));
-  EXPECT_CALL(mock_decoder, Die()).Times(1);  // Called when deleted.
+  rtc::scoped_refptr<MockAudioDecoderFactory> mock_decoder_factory(
+      new rtc::RefCountedObject<MockAudioDecoderFactory>);
+  EXPECT_CALL(*mock_decoder_factory, MakeAudioDecoderMock(_, _))
+      .WillOnce(Invoke([kPayloadLength, kFirstSequenceNumber, kFirstTimestamp,
+                        kFirstReceiveTime](const SdpAudioFormat& format,
+                                           std::unique_ptr<AudioDecoder>* dec) {
+        EXPECT_EQ("pcmu", format.name);
+
+        std::unique_ptr<MockAudioDecoder> mock_decoder(new MockAudioDecoder);
+        EXPECT_CALL(*mock_decoder, Channels()).WillRepeatedly(Return(1));
+        EXPECT_CALL(*mock_decoder, SampleRateHz()).WillRepeatedly(Return(8000));
+        // BWE update function called with first packet.
+        EXPECT_CALL(*mock_decoder,
+                    IncomingPacket(_, kPayloadLength, kFirstSequenceNumber,
+                                   kFirstTimestamp, kFirstReceiveTime));
+        // BWE update function called with second packet.
+        EXPECT_CALL(
+            *mock_decoder,
+            IncomingPacket(_, kPayloadLength, kFirstSequenceNumber + 1,
+                           kFirstTimestamp + 160, kFirstReceiveTime + 155));
+        EXPECT_CALL(*mock_decoder, Die()).Times(1);  // Called when deleted.
+
+        *dec = std::move(mock_decoder);
+      }));
+  DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, "");
 
   // Expectations for decoder database.
   EXPECT_CALL(*mock_decoder_database_, IsRed(kPayloadType))
@@ -270,11 +281,12 @@ TEST_F(NetEqImplTest, InsertPacket) {
       .WillRepeatedly(Return(false));  // This is not DTMF.
   EXPECT_CALL(*mock_decoder_database_, GetDecoder(kPayloadType))
       .Times(3)
-      .WillRepeatedly(Return(&mock_decoder));
+      .WillRepeatedly(
+          Invoke([&info, mock_decoder_factory](uint8_t payload_type) {
+            return info.GetDecoder(mock_decoder_factory);
+          }));
   EXPECT_CALL(*mock_decoder_database_, IsComfortNoise(kPayloadType))
       .WillRepeatedly(Return(false));  // This is not CNG.
-  DecoderDatabase::DecoderInfo info(NetEqDecoder::kDecoderPCMu, "", 8000,
-                                    nullptr);
   EXPECT_CALL(*mock_decoder_database_, GetDecoderInfo(kPayloadType))
       .WillRepeatedly(Return(&info));
 
@@ -422,6 +434,8 @@ TEST_F(NetEqImplTest, VerifyTimestampPropagation) {
 
     void Reset() override { next_value_ = 1; }
 
+    int SampleRateHz() const override { return kSampleRateHz; }
+
     size_t Channels() const override { return 1; }
 
     uint16_t next_value() const { return next_value_; }
@@ -432,7 +446,7 @@ TEST_F(NetEqImplTest, VerifyTimestampPropagation) {
 
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &decoder_, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert one packet.
   EXPECT_EQ(NetEq::kOK,
@@ -495,6 +509,8 @@ TEST_F(NetEqImplTest, ReorderedPacket) {
   // Create a mock decoder object.
   MockAudioDecoder mock_decoder;
   EXPECT_CALL(mock_decoder, Reset()).WillRepeatedly(Return());
+  EXPECT_CALL(mock_decoder, SampleRateHz())
+      .WillRepeatedly(Return(kSampleRateHz));
   EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
   EXPECT_CALL(mock_decoder, IncomingPacket(_, kPayloadLengthBytes, _, _, _))
       .WillRepeatedly(Return(0));
@@ -511,7 +527,7 @@ TEST_F(NetEqImplTest, ReorderedPacket) {
                       Return(kPayloadLengthSamples)));
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &mock_decoder, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert one packet.
   EXPECT_EQ(NetEq::kOK,
@@ -644,6 +660,8 @@ TEST_F(NetEqImplTest, CodecInternalCng) {
   // Create a mock decoder object.
   MockAudioDecoder mock_decoder;
   EXPECT_CALL(mock_decoder, Reset()).WillRepeatedly(Return());
+  EXPECT_CALL(mock_decoder, SampleRateHz())
+      .WillRepeatedly(Return(kSampleRateKhz * 1000));
   EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
   EXPECT_CALL(mock_decoder, IncomingPacket(_, kPayloadLengthBytes, _, _, _))
       .WillRepeatedly(Return(0));
@@ -686,7 +704,7 @@ TEST_F(NetEqImplTest, CodecInternalCng) {
 
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &mock_decoder, NetEqDecoder::kDecoderOpus,
-                            "dummy name", kPayloadType, kSampleRateKhz * 1000));
+                            "dummy name", kPayloadType));
 
   // Insert one packet (decoder will return speech).
   EXPECT_EQ(NetEq::kOK,
@@ -796,6 +814,7 @@ TEST_F(NetEqImplTest, UnsupportedDecoder) {
     MOCK_CONST_METHOD2(PacketDuration, int(const uint8_t*, size_t));
     MOCK_METHOD5(DecodeInternal, int(const uint8_t*, size_t, int, int16_t*,
                                      SpeechType*));
+    int SampleRateHz() const /* override */ { return kSampleRateHz; }
     size_t Channels() const /* override */ { return kChannels; }
   } decoder_;
 
@@ -829,7 +848,7 @@ TEST_F(NetEqImplTest, UnsupportedDecoder) {
 
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &decoder_, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert one packet.
   payload[0] = kFirstPayloadValue;  // This will make Decode() fail.
@@ -923,6 +942,8 @@ TEST_F(NetEqImplTest, DecodedPayloadTooShort) {
   // Create a mock decoder object.
   MockAudioDecoder mock_decoder;
   EXPECT_CALL(mock_decoder, Reset()).WillRepeatedly(Return());
+  EXPECT_CALL(mock_decoder, SampleRateHz())
+      .WillRepeatedly(Return(kSampleRateHz));
   EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
   EXPECT_CALL(mock_decoder, IncomingPacket(_, kPayloadLengthBytes, _, _, _))
       .WillRepeatedly(Return(0));
@@ -941,7 +962,7 @@ TEST_F(NetEqImplTest, DecodedPayloadTooShort) {
                 Return(kPayloadLengthSamples - 5)));
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &mock_decoder, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert one packet.
   EXPECT_EQ(NetEq::kOK,
@@ -988,6 +1009,8 @@ TEST_F(NetEqImplTest, DecodingError) {
   // Create a mock decoder object.
   MockAudioDecoder mock_decoder;
   EXPECT_CALL(mock_decoder, Reset()).WillRepeatedly(Return());
+  EXPECT_CALL(mock_decoder, SampleRateHz())
+      .WillRepeatedly(Return(kSampleRateHz));
   EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
   EXPECT_CALL(mock_decoder, IncomingPacket(_, kPayloadLengthBytes, _, _, _))
       .WillRepeatedly(Return(0));
@@ -1032,7 +1055,7 @@ TEST_F(NetEqImplTest, DecodingError) {
 
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &mock_decoder, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert packets.
   for (int i = 0; i < 6; ++i) {
@@ -1102,6 +1125,8 @@ TEST_F(NetEqImplTest, DecodingErrorDuringInternalCng) {
   // Create a mock decoder object.
   MockAudioDecoder mock_decoder;
   EXPECT_CALL(mock_decoder, Reset()).WillRepeatedly(Return());
+  EXPECT_CALL(mock_decoder, SampleRateHz())
+      .WillRepeatedly(Return(kSampleRateHz));
   EXPECT_CALL(mock_decoder, Channels()).WillRepeatedly(Return(1));
   EXPECT_CALL(mock_decoder, IncomingPacket(_, kPayloadLengthBytes, _, _, _))
       .WillRepeatedly(Return(0));
@@ -1142,7 +1167,7 @@ TEST_F(NetEqImplTest, DecodingErrorDuringInternalCng) {
 
   EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                             &mock_decoder, NetEqDecoder::kDecoderPCM16B,
-                            "dummy name", kPayloadType, kSampleRateHz));
+                            "dummy name", kPayloadType));
 
   // Insert 2 packets. This will make netEq into codec internal CNG mode.
   for (int i = 0; i < 2; ++i) {
@@ -1201,8 +1226,9 @@ TEST_F(NetEqImplTest, TickTimerIncrement) {
 
 class Decoder120ms : public AudioDecoder {
  public:
-  Decoder120ms(SpeechType speech_type)
-      : next_value_(1),
+  Decoder120ms(int sample_rate_hz, SpeechType speech_type)
+      : sample_rate_hz_(sample_rate_hz),
+        next_value_(1),
         speech_type_(speech_type) {}
 
   int DecodeInternal(const uint8_t* encoded,
@@ -1210,6 +1236,7 @@ class Decoder120ms : public AudioDecoder {
                      int sample_rate_hz,
                      int16_t* decoded,
                      SpeechType* speech_type) override {
+    EXPECT_EQ(sample_rate_hz_, sample_rate_hz);
     size_t decoded_len =
         rtc::CheckedDivExact(sample_rate_hz, 1000) * 120 * Channels();
     for (size_t i = 0; i < decoded_len; ++i) {
@@ -1220,9 +1247,11 @@ class Decoder120ms : public AudioDecoder {
   }
 
   void Reset() override { next_value_ = 1; }
+  int SampleRateHz() const override { return sample_rate_hz_; }
   size_t Channels() const override { return 2; }
 
  private:
+  int sample_rate_hz_;
   int16_t next_value_;
   SpeechType speech_type_;
 };
@@ -1270,11 +1299,11 @@ class NetEqImplTest120ms : public NetEqImplTest {
   }
 
   void Register120msCodec(AudioDecoder::SpeechType speech_type) {
-    decoder_.reset(new Decoder120ms(speech_type));
+    decoder_.reset(new Decoder120ms(kSamplingFreq_, speech_type));
     ASSERT_EQ(2u, decoder_->Channels());
     EXPECT_EQ(NetEq::kOK, neteq_->RegisterExternalDecoder(
                               decoder_.get(), NetEqDecoder::kDecoderOpus_2ch,
-                              "120ms codec", kPayloadType, kSamplingFreq_));
+                              "120ms codec", kPayloadType));
   }
 
   std::unique_ptr<Decoder120ms> decoder_;

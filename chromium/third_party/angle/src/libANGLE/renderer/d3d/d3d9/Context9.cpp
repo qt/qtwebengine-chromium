@@ -9,6 +9,7 @@
 
 #include "libANGLE/renderer/d3d/d3d9/Context9.h"
 
+#include "common/string_utils.h"
 #include "libANGLE/renderer/d3d/CompilerD3D.h"
 #include "libANGLE/renderer/d3d/ShaderD3D.h"
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
@@ -63,12 +64,14 @@ FramebufferImpl *Context9::createFramebuffer(const gl::FramebufferState &data)
 
 TextureImpl *Context9::createTexture(const gl::TextureState &state)
 {
-    switch (state.target)
+    switch (state.getTarget())
     {
         case GL_TEXTURE_2D:
             return new TextureD3D_2D(state, mRenderer);
         case GL_TEXTURE_CUBE_MAP:
             return new TextureD3D_Cube(state, mRenderer);
+        case GL_TEXTURE_EXTERNAL_OES:
+            return new TextureD3D_External(state, mRenderer);
         default:
             UNREACHABLE();
     }
@@ -115,6 +118,11 @@ TransformFeedbackImpl *Context9::createTransformFeedback()
 SamplerImpl *Context9::createSampler()
 {
     return new SamplerD3D();
+}
+
+std::vector<PathImpl *> Context9::createPaths(GLsizei)
+{
+    return std::vector<PathImpl *>();
 }
 
 gl::Error Context9::flush()
@@ -202,17 +210,25 @@ std::string Context9::getRendererDescription() const
 
 void Context9::insertEventMarker(GLsizei length, const char *marker)
 {
-    mRenderer->insertEventMarker(length, marker);
+    auto optionalString = angle::WidenString(static_cast<size_t>(length), marker);
+    if (optionalString.valid())
+    {
+        mRenderer->getAnnotator()->setMarker(optionalString.value().data());
+    }
 }
 
 void Context9::pushGroupMarker(GLsizei length, const char *marker)
 {
-    mRenderer->pushGroupMarker(length, marker);
+    auto optionalString = angle::WidenString(static_cast<size_t>(length), marker);
+    if (optionalString.valid())
+    {
+        mRenderer->getAnnotator()->beginEvent(optionalString.value().data());
+    }
 }
 
 void Context9::popGroupMarker()
 {
-    mRenderer->popGroupMarker();
+    mRenderer->getAnnotator()->endEvent();
 }
 
 void Context9::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)

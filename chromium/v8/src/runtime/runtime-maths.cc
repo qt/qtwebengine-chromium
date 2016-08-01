@@ -9,23 +9,9 @@
 #include "src/base/utils/random-number-generator.h"
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
-#include "src/third_party/fdlibm/fdlibm.h"
 
 namespace v8 {
 namespace internal {
-
-#define RUNTIME_UNARY_MATH(Name, name)                         \
-  RUNTIME_FUNCTION(Runtime_Math##Name) {                       \
-    HandleScope scope(isolate);                                \
-    DCHECK(args.length() == 1);                                \
-    isolate->counters()->math_##name##_runtime()->Increment(); \
-    CONVERT_DOUBLE_ARG_CHECKED(x, 0);                          \
-    return *isolate->factory()->NewHeapNumber(std::name(x));   \
-  }
-
-RUNTIME_UNARY_MATH(LogRT, log)
-#undef RUNTIME_UNARY_MATH
-
 
 RUNTIME_FUNCTION(Runtime_DoubleHi) {
   HandleScope scope(isolate);
@@ -46,65 +32,6 @@ RUNTIME_FUNCTION(Runtime_DoubleLo) {
   uint32_t unsigned32 = static_cast<uint32_t>(unsigned64);
   int32_t signed32 = bit_cast<int32_t, uint32_t>(unsigned32);
   return *isolate->factory()->NewNumber(signed32);
-}
-
-
-RUNTIME_FUNCTION(Runtime_ConstructDouble) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  CONVERT_NUMBER_CHECKED(uint32_t, hi, Uint32, args[0]);
-  CONVERT_NUMBER_CHECKED(uint32_t, lo, Uint32, args[1]);
-  uint64_t result = (static_cast<uint64_t>(hi) << 32) | lo;
-  return *isolate->factory()->NewNumber(uint64_to_double(result));
-}
-
-
-RUNTIME_FUNCTION(Runtime_RemPiO2) {
-  SealHandleScope shs(isolate);
-  DisallowHeapAllocation no_gc;
-  DCHECK(args.length() == 2);
-  CONVERT_DOUBLE_ARG_CHECKED(x, 0);
-  CONVERT_ARG_CHECKED(JSTypedArray, result, 1);
-  RUNTIME_ASSERT(result->byte_length() == Smi::FromInt(2 * sizeof(double)));
-  FixedFloat64Array* array = FixedFloat64Array::cast(result->elements());
-  double* y = static_cast<double*>(array->DataPtr());
-  return Smi::FromInt(fdlibm::rempio2(x, y));
-}
-
-
-static const double kPiDividedBy4 = 0.78539816339744830962;
-
-
-RUNTIME_FUNCTION(Runtime_MathAtan2) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 2);
-  isolate->counters()->math_atan2_runtime()->Increment();
-  CONVERT_DOUBLE_ARG_CHECKED(x, 0);
-  CONVERT_DOUBLE_ARG_CHECKED(y, 1);
-  double result;
-  if (std::isinf(x) && std::isinf(y)) {
-    // Make sure that the result in case of two infinite arguments
-    // is a multiple of Pi / 4. The sign of the result is determined
-    // by the first argument (x) and the sign of the second argument
-    // determines the multiplier: one or three.
-    int multiplier = (x < 0) ? -1 : 1;
-    if (y < 0) multiplier *= 3;
-    result = multiplier * kPiDividedBy4;
-  } else {
-    result = std::atan2(x, y);
-  }
-  return *isolate->factory()->NewNumber(result);
-}
-
-
-RUNTIME_FUNCTION(Runtime_MathExpRT) {
-  HandleScope scope(isolate);
-  DCHECK(args.length() == 1);
-  isolate->counters()->math_exp_runtime()->Increment();
-
-  CONVERT_DOUBLE_ARG_CHECKED(x, 0);
-  lazily_initialize_fast_exp(isolate);
-  return *isolate->factory()->NewNumber(fast_exp(x, isolate));
 }
 
 

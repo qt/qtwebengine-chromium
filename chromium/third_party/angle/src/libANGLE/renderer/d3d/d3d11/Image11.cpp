@@ -245,14 +245,26 @@ DXGI_FORMAT Image11::getDXGIFormat() const
 
 // Store the pixel rectangle designated by xoffset,yoffset,width,height with pixels stored as format/type at input
 // into the target pixel rectangle.
-gl::Error Image11::loadData(const gl::Box &area, const gl::PixelUnpackState &unpack, GLenum type, const void *input)
+gl::Error Image11::loadData(const gl::Box &area,
+                            const gl::PixelUnpackState &unpack,
+                            GLenum type,
+                            const void *input,
+                            bool applySkipImages)
 {
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(mInternalFormat);
-    GLsizei inputRowPitch = formatInfo.computeRowPitch(type, area.width, unpack.alignment, unpack.rowLength);
-    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(
-        type, area.width, area.height, unpack.alignment, unpack.rowLength, unpack.imageHeight);
-    GLsizei inputSkipBytes = formatInfo.computeSkipPixels(
-        inputRowPitch, inputDepthPitch, unpack.skipImages, unpack.skipRows, unpack.skipPixels);
+    GLuint inputRowPitch                 = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeRowPitch(type, area.width, unpack.alignment, unpack.rowLength),
+        inputRowPitch);
+    GLuint inputDepthPitch = 0;
+    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, area.width, area.height, unpack.alignment,
+                                                  unpack.rowLength, unpack.imageHeight),
+                     inputDepthPitch);
+    GLuint inputSkipBytes = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeSkipBytes(inputRowPitch, inputDepthPitch, unpack.skipImages,
+                                    unpack.skipRows, unpack.skipPixels, applySkipImages),
+        inputSkipBytes);
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
@@ -280,9 +292,12 @@ gl::Error Image11::loadData(const gl::Box &area, const gl::PixelUnpackState &unp
 gl::Error Image11::loadCompressedData(const gl::Box &area, const void *input)
 {
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(mInternalFormat);
-    GLsizei inputRowPitch = formatInfo.computeRowPitch(GL_UNSIGNED_BYTE, area.width, 1, 0);
-    GLsizei inputDepthPitch =
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0);
+    GLsizei inputRowPitch                = 0;
+    ANGLE_TRY_RESULT(formatInfo.computeRowPitch(GL_UNSIGNED_BYTE, area.width, 1, 0), inputRowPitch);
+    GLsizei inputDepthPitch = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0),
+        inputDepthPitch);
 
     const d3d11::DXGIFormatSize &dxgiFormatInfo = d3d11::GetDXGIFormatSizeInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
@@ -341,10 +356,11 @@ gl::Error Image11::copyFromFramebuffer(const gl::Offset &destOffset,
     const gl::FramebufferAttachment *srcAttachment = sourceFBO->getReadColorbuffer();
     ASSERT(srcAttachment);
 
-    const auto &d3d11Format = d3d11::GetTextureFormatInfo(srcAttachment->getInternalFormat(),
-                                                          mRenderer->getRenderer11DeviceCaps());
+    GLenum sourceInternalFormat = srcAttachment->getInternalFormat();
+    const auto &d3d11Format =
+        d3d11::GetTextureFormatInfo(sourceInternalFormat, mRenderer->getRenderer11DeviceCaps());
 
-    if (d3d11Format.formatSet->texFormat == mDXGIFormat)
+    if (d3d11Format.formatSet->texFormat == mDXGIFormat && sourceInternalFormat == mInternalFormat)
     {
         RenderTargetD3D *renderTarget = nullptr;
         gl::Error error = srcAttachment->getRenderTarget(&renderTarget);
@@ -381,11 +397,32 @@ gl::Error Image11::copyFromFramebuffer(const gl::Offset &destOffset,
                           mappedImage.RowPitch * destOffset.y + rowOffset +
                           destOffset.z * mappedImage.DepthPitch;
 
-    const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(mInternalFormat);
+    const gl::InternalFormat &destFormatInfo = gl::GetInternalFormatInfo(mInternalFormat);
+    const auto &destD3D11Format =
+        d3d11::GetTextureFormatInfo(mInternalFormat, mRenderer->getRenderer11DeviceCaps());
 
-    error = mRenderer->readFromAttachment(*srcAttachment, sourceArea, formatInfo.format,
-                                          formatInfo.type, mappedImage.RowPitch,
-                                          gl::PixelPackState(), dataOffset);
+    auto loadFunction = destD3D11Format.loadFunctions.at(destFormatInfo.type);
+    if (loadFunction.requiresConversion)
+    {
+        size_t bufferSize = destFormatInfo.pixelBytes * sourceArea.width * sourceArea.height;
+        MemoryBuffer *memoryBuffer = nullptr;
+        mRenderer->getScratchMemoryBuffer(bufferSize, &memoryBuffer);
+        GLuint memoryBufferRowPitch = destFormatInfo.pixelBytes * sourceArea.width;
+
+        error = mRenderer->readFromAttachment(*srcAttachment, sourceArea, destFormatInfo.format,
+                                              destFormatInfo.type, memoryBufferRowPitch,
+                                              gl::PixelPackState(), memoryBuffer->data());
+
+        loadFunction.loadFunction(sourceArea.width, sourceArea.height, 1, memoryBuffer->data(),
+                                  memoryBufferRowPitch, 0, dataOffset, mappedImage.RowPitch,
+                                  mappedImage.DepthPitch);
+    }
+    else
+    {
+        error = mRenderer->readFromAttachment(*srcAttachment, sourceArea, destFormatInfo.format,
+                                              destFormatInfo.type, mappedImage.RowPitch,
+                                              gl::PixelPackState(), dataOffset);
+    }
 
     unmap();
     mDirty = true;

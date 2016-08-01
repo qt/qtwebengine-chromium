@@ -10,9 +10,8 @@
 
 #include "webrtc/video/vie_encoder.h"
 
-#include <assert.h>
-
 #include <algorithm>
+#include <limits>
 
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
@@ -28,22 +27,20 @@
 
 namespace webrtc {
 
-static const float kStopPaddingThresholdMs = 2000;
-
 ViEEncoder::ViEEncoder(uint32_t number_of_cores,
                        ProcessThread* module_process_thread,
                        SendStatisticsProxy* stats_proxy,
-                       OveruseFrameDetector* overuse_detector)
+                       OveruseFrameDetector* overuse_detector,
+                       EncodedImageCallback* sink)
     : number_of_cores_(number_of_cores),
+      sink_(sink),
       vp_(VideoProcessing::Create()),
       video_sender_(Clock::GetRealTimeClock(), this, this, this),
       stats_proxy_(stats_proxy),
       overuse_detector_(overuse_detector),
-      time_of_last_frame_activity_ms_(0),
+      time_of_last_frame_activity_ms_(std::numeric_limits<int64_t>::max()),
       encoder_config_(),
-      min_transmit_bitrate_bps_(0),
       last_observed_bitrate_bps_(0),
-      encoder_paused_(true),
       encoder_paused_and_dropped_frame_(false),
       module_process_thread_(module_process_thread),
       has_received_sli_(false),
@@ -63,16 +60,6 @@ ViEEncoder::~ViEEncoder() {
   module_process_thread_->DeRegisterModule(&video_sender_);
 }
 
-void ViEEncoder::Pause() {
-  rtc::CritScope lock(&data_cs_);
-  encoder_paused_ = true;
-}
-
-void ViEEncoder::Start() {
-  rtc::CritScope lock(&data_cs_);
-  encoder_paused_ = false;
-}
-
 int32_t ViEEncoder::RegisterExternalEncoder(webrtc::VideoEncoder* encoder,
                                             uint8_t pl_type,
                                             bool internal_source) {
@@ -84,30 +71,22 @@ int32_t ViEEncoder::DeRegisterExternalEncoder(uint8_t pl_type) {
   video_sender_.RegisterExternalEncoder(nullptr, pl_type, false);
   return 0;
 }
+
 void ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec,
-                            int min_transmit_bitrate_bps,
-                            size_t max_data_payload_length,
-                            EncodedImageCallback* sink) {
+                            size_t max_data_payload_length) {
   // Setting target width and height for VPM.
   RTC_CHECK_EQ(VPM_OK,
                vp_->SetTargetResolution(video_codec.width, video_codec.height,
                                         video_codec.maxFramerate));
-
-  // Cache codec before calling AddBitrateObserver (which calls OnBitrateUpdated
-  // that makes use of the number of simulcast streams configured).
   {
     rtc::CritScope lock(&data_cs_);
     encoder_config_ = video_codec;
-    min_transmit_bitrate_bps_ = min_transmit_bitrate_bps;
-  }
-  {
-    rtc::CritScope lock(&sink_cs_);
-    sink_ = sink;
   }
 
   bool success = video_sender_.RegisterSendCodec(
                      &video_codec, number_of_cores_,
                      static_cast<uint32_t>(max_data_payload_length)) == VCM_OK;
+
   if (!success) {
     LOG(LS_ERROR) << "Failed to configure encoder.";
     RTC_DCHECK(success);
@@ -131,69 +110,12 @@ void ViEEncoder::SetEncoder(const webrtc::VideoCodec& video_codec,
   }
 }
 
-int ViEEncoder::GetPaddingNeededBps() const {
-  int64_t time_of_last_frame_activity_ms;
-  int min_transmit_bitrate_bps;
-  int bitrate_bps;
-  VideoCodec send_codec;
-  {
-    rtc::CritScope lock(&data_cs_);
-    bool send_padding = encoder_config_.numberOfSimulcastStreams > 1 ||
-                        video_suspended_ || min_transmit_bitrate_bps_ > 0;
-    if (!send_padding)
-      return 0;
-    time_of_last_frame_activity_ms = time_of_last_frame_activity_ms_;
-    min_transmit_bitrate_bps = min_transmit_bitrate_bps_;
-    bitrate_bps = last_observed_bitrate_bps_;
-    send_codec = encoder_config_;
-  }
-
-  bool video_is_suspended = video_sender_.VideoSuspended();
-
-  // Find the max amount of padding we can allow ourselves to send at this
-  // point, based on which streams are currently active and what our current
-  // available bandwidth is.
-  int pad_up_to_bitrate_bps = 0;
-  if (send_codec.numberOfSimulcastStreams == 0) {
-    pad_up_to_bitrate_bps = send_codec.minBitrate * 1000;
-  } else {
-    SimulcastStream* stream_configs = send_codec.simulcastStream;
-    pad_up_to_bitrate_bps =
-        stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate *
-        1000;
-    for (int i = 0; i < send_codec.numberOfSimulcastStreams - 1; ++i) {
-      pad_up_to_bitrate_bps += stream_configs[i].targetBitrate * 1000;
-    }
-  }
-
-  // Disable padding if only sending one stream and video isn't suspended and
-  // min-transmit bitrate isn't used (applied later).
-  if (!video_is_suspended && send_codec.numberOfSimulcastStreams <= 1)
-    pad_up_to_bitrate_bps = 0;
-
-  // The amount of padding should decay to zero if no frames are being
-  // captured/encoded unless a min-transmit bitrate is used.
-  int64_t now_ms = rtc::TimeMillis();
-  if (now_ms - time_of_last_frame_activity_ms > kStopPaddingThresholdMs)
-    pad_up_to_bitrate_bps = 0;
-
-  // Pad up to min bitrate.
-  if (pad_up_to_bitrate_bps < min_transmit_bitrate_bps)
-    pad_up_to_bitrate_bps = min_transmit_bitrate_bps;
-
-  // Padding may never exceed bitrate estimate.
-  if (pad_up_to_bitrate_bps > bitrate_bps)
-    pad_up_to_bitrate_bps = bitrate_bps;
-
-  return pad_up_to_bitrate_bps;
-}
-
 bool ViEEncoder::EncoderPaused() const {
   // Pause video if paused by caller or as long as the network is down or the
   // pacer queue has grown too large in buffered mode.
-  // If the pacer queue has grown to large or the network is down,
+  // If the pacer queue has grown too large or the network is down,
   // last_observed_bitrate_bps_ will be 0.
-  return encoder_paused_ || video_suspended_ || last_observed_bitrate_bps_ == 0;
+  return video_suspended_ || last_observed_bitrate_bps_ == 0;
 }
 
 void ViEEncoder::TraceFrameDropStart() {
@@ -266,16 +188,9 @@ void ViEEncoder::SendKeyFrame() {
   video_sender_.IntraFrameRequest(0);
 }
 
-void ViEEncoder::SetProtectionMethod(bool nack, bool fec) {
-  // Set Video Protection for VCM.
-  VCMVideoProtection protection_mode;
-  if (fec) {
-    protection_mode =
-        nack ? webrtc::kProtectionNackFEC : kProtectionFEC;
-  } else {
-    protection_mode = nack ? kProtectionNack : kProtectionNone;
-  }
-  video_sender_.SetVideoProtection(protection_mode);
+int64_t ViEEncoder::time_of_last_frame_activity_ms() {
+  rtc::CritScope lock(&data_cs_);
+  return time_of_last_frame_activity_ms_;
 }
 
 void ViEEncoder::OnSetRates(uint32_t bitrate_bps, int framerate) {
@@ -294,11 +209,8 @@ int32_t ViEEncoder::Encoded(const EncodedImage& encoded_image,
     stats_proxy_->OnSendEncodedImage(encoded_image, codec_specific_info);
   }
 
-  int success = 0;
-  {
-    rtc::CritScope lock(&sink_cs_);
-    success = sink_->Encoded(encoded_image, codec_specific_info, fragmentation);
-  }
+  int success =
+      sink_->Encoded(encoded_image, codec_specific_info, fragmentation);
 
   overuse_detector_->FrameSent(encoded_image._timeStamp);
   return success;
@@ -337,22 +249,30 @@ void ViEEncoder::OnBitrateUpdated(uint32_t bitrate_bps,
                   << " rtt " << round_trip_time_ms;
   video_sender_.SetChannelParameters(bitrate_bps, fraction_lost,
                                      round_trip_time_ms);
-  bool video_is_suspended = video_sender_.VideoSuspended();
   bool video_suspension_changed;
+  bool video_is_suspended = bitrate_bps == 0;
   {
     rtc::CritScope lock(&data_cs_);
     last_observed_bitrate_bps_ = bitrate_bps;
     video_suspension_changed = video_suspended_ != video_is_suspended;
     video_suspended_ = video_is_suspended;
+    // Set |time_of_last_frame_activity_ms_| to now if this is the first time
+    // the encoder is supposed to produce encoded frames.
+    // TODO(perkj): Remove this hack. It is here to avoid a race that the
+    // encoder report that it has timed out before it has processed the first
+    // frame.
+    if (last_observed_bitrate_bps_ != 0 &&
+        time_of_last_frame_activity_ms_ ==
+            std::numeric_limits<int64_t>::max()) {
+      time_of_last_frame_activity_ms_ = rtc::TimeMillis();
+    }
   }
 
-  if (!video_suspension_changed)
-    return;
-  // Video suspend-state changed, inform codec observer.
-  LOG(LS_INFO) << "Video suspend state changed " << video_is_suspended;
-
-  if (stats_proxy_)
+  if (stats_proxy_ && video_suspension_changed) {
+    LOG(LS_INFO) << "Video suspend state changed to: "
+                 << (video_is_suspended ? "suspended" : "not suspended");
     stats_proxy_->OnSuspendChange(video_is_suspended);
+  }
 }
 
 }  // namespace webrtc

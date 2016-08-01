@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "core/fxge/include/fx_ge.h"
 #include "third_party/base/numerics/safe_math.h"
 #include "xfa/fxbarcode/BC_TwoDimWriter.h"
 #include "xfa/fxbarcode/BC_Writer.h"
@@ -14,7 +15,7 @@
 CBC_TwoDimWriter::CBC_TwoDimWriter() {
   m_iCorrectLevel = 1;
   m_bFixedSize = TRUE;
-  m_output = NULL;
+  m_output = nullptr;
 }
 CBC_TwoDimWriter::~CBC_TwoDimWriter() {
   delete m_output;
@@ -45,13 +46,16 @@ void CBC_TwoDimWriter::RenderDeviceResult(CFX_RenderDevice* device,
       CFX_PathData rect;
       rect.AppendRect((FX_FLOAT)leftPos + x, (FX_FLOAT)topPos + y,
                       (FX_FLOAT)(leftPos + x + 1), (FX_FLOAT)(topPos + y + 1));
-      CFX_GraphStateData stateData;
       if (m_output->Get(x, y)) {
-        device->DrawPath(&rect, &matri, &stateData, m_barColor, 0,
-                         FXFILL_WINDING);
+        CFX_GraphStateData data;
+        device->DrawPath(&rect, &matri, &data, m_barColor, 0, FXFILL_WINDING);
       }
     }
   }
+}
+
+int32_t CBC_TwoDimWriter::GetErrorCorrectionLevel() {
+  return m_iCorrectLevel;
 }
 
 void CBC_TwoDimWriter::RenderBitmapResult(CFX_DIBitmap*& pOutBitmap,

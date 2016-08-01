@@ -29,22 +29,11 @@
 namespace rx
 {
 
-namespace
-{
-// If we request a scratch buffer requesting a smaller size this many times,
-// release and recreate the scratch buffer. This ensures we don't have a
-// degenerate case where we are stuck hogging memory.
-const int ScratchMemoryBufferLifetime = 1000;
-
-}  // anonymous namespace
-
 RendererD3D::RendererD3D(egl::Display *display)
     : mDisplay(display),
       mDeviceLost(false),
-      mAnnotator(nullptr),
       mPresentPathFastEnabled(false),
       mCapsInitialized(false),
-      mScratchMemoryBufferResetCounter(0),
       mWorkaroundsInitialized(false),
       mDisjoint(false)
 {
@@ -57,57 +46,20 @@ RendererD3D::~RendererD3D()
 
 void RendererD3D::cleanup()
 {
-    mScratchMemoryBuffer.resize(0);
     for (auto &incompleteTexture : mIncompleteTextures)
     {
         incompleteTexture.second.set(nullptr);
     }
     mIncompleteTextures.clear();
-
-    if (mAnnotator != nullptr)
-    {
-        gl::UninitializeDebugAnnotations();
-        SafeDelete(mAnnotator);
-    }
-}
-
-gl::Error RendererD3D::generateSwizzles(const gl::ContextState &data, gl::SamplerType type)
-{
-    ProgramD3D *programD3D = GetImplAs<ProgramD3D>(data.state->getProgram());
-
-    unsigned int samplerRange = programD3D->getUsedSamplerRange(type);
-
-    for (unsigned int i = 0; i < samplerRange; i++)
-    {
-        GLenum textureType = programD3D->getSamplerTextureType(type, i);
-        GLint textureUnit = programD3D->getSamplerMapping(type, i, *data.caps);
-        if (textureUnit != -1)
-        {
-            gl::Texture *texture = data.state->getSamplerTexture(textureUnit, textureType);
-            ASSERT(texture);
-            if (texture->getTextureState().swizzleRequired())
-            {
-                ANGLE_TRY(generateSwizzle(texture));
-            }
-        }
-    }
-
-    return gl::NoError();
-}
-
-gl::Error RendererD3D::generateSwizzles(const gl::ContextState &data)
-{
-    ANGLE_TRY(generateSwizzles(data, gl::SAMPLER_VERTEX));
-    ANGLE_TRY(generateSwizzles(data, gl::SAMPLER_PIXEL));
-    return gl::NoError();
 }
 
 unsigned int RendererD3D::GetBlendSampleMask(const gl::ContextState &data, int samples)
 {
+    const auto &glState = data.getState();
     unsigned int mask = 0;
-    if (data.state->isSampleCoverageEnabled())
+    if (glState.isSampleCoverageEnabled())
     {
-        GLclampf coverageValue = data.state->getSampleCoverageValue();
+        GLclampf coverageValue = glState.getSampleCoverageValue();
         if (coverageValue != 0)
         {
             float threshold = 0.5f;
@@ -124,7 +76,7 @@ unsigned int RendererD3D::GetBlendSampleMask(const gl::ContextState &data, int s
             }
         }
 
-        bool coverageInvert = data.state->getSampleCoverageInvert();
+        bool coverageInvert = glState.getSampleCoverageInvert();
         if (coverageInvert)
         {
             mask = ~mask;
@@ -138,18 +90,6 @@ unsigned int RendererD3D::GetBlendSampleMask(const gl::ContextState &data, int s
     return mask;
 }
 
-// Applies the shaders and shader constants to the Direct3D device
-gl::Error RendererD3D::applyShaders(const gl::ContextState &data, GLenum drawMode)
-{
-    gl::Program *program = data.state->getProgram();
-    ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
-    programD3D->updateCachedInputLayout(*data.state);
-
-    ANGLE_TRY(applyShadersImpl(data, drawMode));
-
-    return programD3D->applyUniforms(drawMode);
-}
-
 // For each Direct3D sampler of either the pixel or vertex stage,
 // looks up the corresponding OpenGL texture image unit and texture type,
 // and sets the texture and its addressing/filtering state (or NULL when inactive).
@@ -160,7 +100,9 @@ gl::Error RendererD3D::applyTextures(GLImplFactory *implFactory,
                                      const FramebufferTextureArray &framebufferTextures,
                                      size_t framebufferTextureCount)
 {
-    ProgramD3D *programD3D = GetImplAs<ProgramD3D>(data.state->getProgram());
+    const auto &glState    = data.getState();
+    const auto &caps       = data.getCaps();
+    ProgramD3D *programD3D = GetImplAs<ProgramD3D>(glState.getProgram());
 
     ASSERT(!programD3D->isSamplerMappingDirty());
 
@@ -168,19 +110,19 @@ gl::Error RendererD3D::applyTextures(GLImplFactory *implFactory,
     for (unsigned int samplerIndex = 0; samplerIndex < samplerRange; samplerIndex++)
     {
         GLenum textureType = programD3D->getSamplerTextureType(shaderType, samplerIndex);
-        GLint textureUnit = programD3D->getSamplerMapping(shaderType, samplerIndex, *data.caps);
+        GLint textureUnit  = programD3D->getSamplerMapping(shaderType, samplerIndex, caps);
         if (textureUnit != -1)
         {
-            gl::Texture *texture = data.state->getSamplerTexture(textureUnit, textureType);
+            gl::Texture *texture = glState.getSamplerTexture(textureUnit, textureType);
             ASSERT(texture);
 
-            gl::Sampler *samplerObject = data.state->getSampler(textureUnit);
+            gl::Sampler *samplerObject = glState.getSampler(textureUnit);
 
             const gl::SamplerState &samplerState =
                 samplerObject ? samplerObject->getSamplerState() : texture->getSamplerState();
 
             // TODO: std::binary_search may become unavailable using older versions of GCC
-            if (texture->isSamplerComplete(samplerState, data) &&
+            if (texture->getTextureState().isSamplerComplete(samplerState, data) &&
                 !std::binary_search(framebufferTextures.begin(),
                                     framebufferTextures.begin() + framebufferTextureCount, texture))
             {
@@ -205,8 +147,8 @@ gl::Error RendererD3D::applyTextures(GLImplFactory *implFactory,
     }
 
     // Set all the remaining textures to NULL
-    size_t samplerCount = (shaderType == gl::SAMPLER_PIXEL) ? data.caps->maxTextureImageUnits
-                                                            : data.caps->maxVertexTextureImageUnits;
+    size_t samplerCount = (shaderType == gl::SAMPLER_PIXEL) ? caps.maxTextureImageUnits
+                                                            : caps.maxVertexTextureImageUnits;
     clearTextures(shaderType, samplerRange, samplerCount);
 
     return gl::NoError();
@@ -226,7 +168,7 @@ gl::Error RendererD3D::applyTextures(GLImplFactory *implFactory, const gl::Conte
 
 bool RendererD3D::skipDraw(const gl::ContextState &data, GLenum drawMode)
 {
-    const gl::State &state = *data.state;
+    const gl::State &state = data.getState();
 
     if (drawMode == GL_POINTS)
     {
@@ -258,7 +200,7 @@ bool RendererD3D::skipDraw(const gl::ContextState &data, GLenum drawMode)
 
 gl::Error RendererD3D::markTransformFeedbackUsage(const gl::ContextState &data)
 {
-    const gl::TransformFeedback *transformFeedback = data.state->getCurrentTransformFeedback();
+    const gl::TransformFeedback *transformFeedback = data.getState().getCurrentTransformFeedback();
     for (size_t i = 0; i < transformFeedback->getIndexedBufferCount(); i++)
     {
         const OffsetBindingPointer<gl::Buffer> &binding = transformFeedback->getIndexedBuffer(i);
@@ -277,7 +219,7 @@ size_t RendererD3D::getBoundFramebufferTextures(const gl::ContextState &data,
 {
     size_t textureCount = 0;
 
-    const gl::Framebuffer *drawFramebuffer = data.state->getDrawFramebuffer();
+    const gl::Framebuffer *drawFramebuffer = data.getState().getDrawFramebuffer();
     for (size_t i = 0; i < drawFramebuffer->getNumColorBuffers(); i++)
     {
         const gl::FramebufferAttachment *attachment = drawFramebuffer->getColorbuffer(i);
@@ -358,63 +300,6 @@ std::string RendererD3D::getVendorString() const
     return std::string("");
 }
 
-gl::Error RendererD3D::getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer **bufferOut)
-{
-    if (mScratchMemoryBuffer.size() == requestedSize)
-    {
-        mScratchMemoryBufferResetCounter = ScratchMemoryBufferLifetime;
-        *bufferOut = &mScratchMemoryBuffer;
-        return gl::Error(GL_NO_ERROR);
-    }
-
-    if (mScratchMemoryBuffer.size() > requestedSize)
-    {
-        mScratchMemoryBufferResetCounter--;
-    }
-
-    if (mScratchMemoryBufferResetCounter <= 0 || mScratchMemoryBuffer.size() < requestedSize)
-    {
-        mScratchMemoryBuffer.resize(0);
-        if (!mScratchMemoryBuffer.resize(requestedSize))
-        {
-            return gl::Error(GL_OUT_OF_MEMORY, "Failed to allocate internal buffer.");
-        }
-        mScratchMemoryBufferResetCounter = ScratchMemoryBufferLifetime;
-    }
-
-    ASSERT(mScratchMemoryBuffer.size() >= requestedSize);
-
-    *bufferOut = &mScratchMemoryBuffer;
-    return gl::Error(GL_NO_ERROR);
-}
-
-void RendererD3D::insertEventMarker(GLsizei length, const char *marker)
-{
-    std::vector<wchar_t> wcstring (length + 1);
-    size_t convertedChars = 0;
-    errno_t err = mbstowcs_s(&convertedChars, wcstring.data(), length + 1, marker, _TRUNCATE);
-    if (err == 0)
-    {
-        getAnnotator()->setMarker(wcstring.data());
-    }
-}
-
-void RendererD3D::pushGroupMarker(GLsizei length, const char *marker)
-{
-    std::vector<wchar_t> wcstring(length + 1);
-    size_t convertedChars = 0;
-    errno_t err = mbstowcs_s(&convertedChars, wcstring.data(), length + 1, marker, _TRUNCATE);
-    if (err == 0)
-    {
-        getAnnotator()->beginEvent(wcstring.data());
-    }
-}
-
-void RendererD3D::popGroupMarker()
-{
-    getAnnotator()->endEvent();
-}
-
 void RendererD3D::setGPUDisjoint()
 {
     mDisjoint = true;
@@ -434,19 +319,6 @@ GLint64 RendererD3D::getTimestamp()
 {
     // D3D has no way to get an actual timestamp reliably so 0 is returned
     return 0;
-}
-
-void RendererD3D::initializeDebugAnnotator()
-{
-    createAnnotator();
-    ASSERT(mAnnotator);
-    gl::InitializeDebugAnnotations(mAnnotator);
-}
-
-gl::DebugAnnotator *RendererD3D::getAnnotator()
-{
-    ASSERT(mAnnotator);
-    return mAnnotator;
 }
 
 void RendererD3D::ensureCapsInitialized() const

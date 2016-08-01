@@ -30,8 +30,16 @@
 
 namespace rtc {
 
-uint64_t TimeNanos() {
-  int64_t ticks = 0;
+ClockInterface* g_clock = nullptr;
+
+ClockInterface* SetClockForTesting(ClockInterface* clock) {
+  ClockInterface* prev = g_clock;
+  g_clock = clock;
+  return prev;
+}
+
+uint64_t SystemTimeNanos() {
+  int64_t ticks;
 #if defined(WEBRTC_MAC)
   static mach_timebase_info_data_t timebase;
   if (timebase.denom == 0) {
@@ -45,8 +53,8 @@ uint64_t TimeNanos() {
   ticks = mach_absolute_time() * timebase.numer / timebase.denom;
 #elif defined(WEBRTC_POSIX)
   struct timespec ts;
-  // TODO: Do we need to handle the case when CLOCK_MONOTONIC
-  // is not supported?
+  // TODO(deadbeef): Do we need to handle the case when CLOCK_MONOTONIC is not
+  // supported?
   clock_gettime(CLOCK_MONOTONIC, &ts);
   ticks = kNumNanosecsPerSec * static_cast<int64_t>(ts.tv_sec) +
           static_cast<int64_t>(ts.tv_nsec);
@@ -58,8 +66,7 @@ uint64_t TimeNanos() {
   // Atomically update the last gotten time
   DWORD old = InterlockedExchange(last_timegettime_ptr, now);
   if (now < old) {
-    // If now is earlier than old, there may have been a race between
-    // threads.
+    // If now is earlier than old, there may have been a race between threads.
     // 0x0fffffff ~3.1 days, the code will not take that long to execute
     // so it must have been a wrap around.
     if (old > 0xf0000000 && now < 0x0fffffff) {
@@ -67,13 +74,24 @@ uint64_t TimeNanos() {
     }
   }
   ticks = now + (num_wrap_timegettime << 32);
-  // TODO: Calculate with nanosecond precision.  Otherwise, we're just
-  // wasting a multiply and divide when doing Time() on Windows.
+  // TODO(deadbeef): Calculate with nanosecond precision. Otherwise, we're
+  // just wasting a multiply and divide when doing Time() on Windows.
   ticks = ticks * kNumNanosecsPerMillisec;
 #else
 #error Unsupported platform.
 #endif
   return ticks;
+}
+
+int64_t SystemTimeMillis() {
+  return static_cast<int64_t>(SystemTimeNanos() / kNumNanosecsPerMillisec);
+}
+
+uint64_t TimeNanos() {
+  if (g_clock) {
+    return g_clock->TimeNanos();
+  }
+  return SystemTimeNanos();
 }
 
 uint32_t Time32() {

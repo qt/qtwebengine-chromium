@@ -8,6 +8,7 @@
 
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/formfiller/cffl_checkbox.h"
 #include "fpdfsdk/formfiller/cffl_combobox.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
@@ -33,9 +34,7 @@ FX_BOOL CFFL_IFormFiller::Annot_HitTest(CPDFSDK_PageView* pPageView,
                                         CPDFSDK_Annot* pAnnot,
                                         CFX_FloatPoint point) {
   CFX_FloatRect rc = pAnnot->GetRect();
-  if (rc.Contains(point.x, point.y))
-    return TRUE;
-  return FALSE;
+  return rc.Contains(point.x, point.y);
 }
 
 FX_RECT CFFL_IFormFiller::GetViewBBox(CPDFSDK_PageView* pPageView,
@@ -61,46 +60,48 @@ void CFFL_IFormFiller::OnDraw(CPDFSDK_PageView* pPageView,
   ASSERT(pPageView);
   CPDFSDK_Widget* pWidget = (CPDFSDK_Widget*)pAnnot;
 
-  if (IsVisible(pWidget)) {
-    if (CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, FALSE)) {
-      if (pFormFiller->IsValid()) {
-        pFormFiller->OnDraw(pPageView, pAnnot, pDevice, pUser2Device, dwFlags);
-        pAnnot->GetPDFPage();
+  if (!IsVisible(pWidget))
+    return;
 
-        CPDFSDK_Document* pDocument = m_pApp->GetSDKDocument();
-        if (pDocument->GetFocusAnnot() == pAnnot) {
-          CFX_FloatRect rcFocus = pFormFiller->GetFocusBox(pPageView);
-          if (!rcFocus.IsEmpty()) {
-            CFX_PathData path;
-            path.SetPointCount(5);
-            path.SetPoint(0, rcFocus.left, rcFocus.top, FXPT_MOVETO);
-            path.SetPoint(1, rcFocus.left, rcFocus.bottom, FXPT_LINETO);
-            path.SetPoint(2, rcFocus.right, rcFocus.bottom, FXPT_LINETO);
-            path.SetPoint(3, rcFocus.right, rcFocus.top, FXPT_LINETO);
-            path.SetPoint(4, rcFocus.left, rcFocus.top, FXPT_LINETO);
+  if (CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, FALSE)) {
+    if (pFormFiller->IsValid()) {
+      pFormFiller->OnDraw(pPageView, pAnnot, pDevice, pUser2Device, dwFlags);
+      pAnnot->GetPDFPage();
 
-            CFX_GraphStateData gsd;
-            gsd.SetDashCount(1);
-            gsd.m_DashArray[0] = 1.0f;
-            gsd.m_DashPhase = 0;
-            gsd.m_LineWidth = 1.0f;
-            pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
-                              ArgbEncode(255, 0, 0, 0), FXFILL_ALTERNATE);
-          }
+      CPDFSDK_Document* pDocument = m_pApp->GetSDKDocument();
+      if (pDocument->GetFocusAnnot() == pAnnot) {
+        CFX_FloatRect rcFocus = pFormFiller->GetFocusBox(pPageView);
+        if (!rcFocus.IsEmpty()) {
+          CFX_PathData path;
+          path.SetPointCount(5);
+          path.SetPoint(0, rcFocus.left, rcFocus.top, FXPT_MOVETO);
+          path.SetPoint(1, rcFocus.left, rcFocus.bottom, FXPT_LINETO);
+          path.SetPoint(2, rcFocus.right, rcFocus.bottom, FXPT_LINETO);
+          path.SetPoint(3, rcFocus.right, rcFocus.top, FXPT_LINETO);
+          path.SetPoint(4, rcFocus.left, rcFocus.top, FXPT_LINETO);
+
+          CFX_GraphStateData gsd;
+          gsd.SetDashCount(1);
+          gsd.m_DashArray[0] = 1.0f;
+          gsd.m_DashPhase = 0;
+          gsd.m_LineWidth = 1.0f;
+          pDevice->DrawPath(&path, pUser2Device, &gsd, 0,
+                            ArgbEncode(255, 0, 0, 0), FXFILL_ALTERNATE);
         }
-        return;
       }
+      return;
     }
-
-    if (CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, FALSE))
-      pFormFiller->OnDrawDeactive(pPageView, pAnnot, pDevice, pUser2Device,
-                                  dwFlags);
-    else
-      pWidget->DrawAppearance(pDevice, pUser2Device, CPDF_Annot::Normal, NULL);
-
-    if (!IsReadOnly(pWidget) && IsFillingAllowed(pWidget))
-      pWidget->DrawShadow(pDevice, pPageView);
   }
+
+  if (CFFL_FormFiller* pFormFiller = GetFormFiller(pAnnot, FALSE)) {
+    pFormFiller->OnDrawDeactive(pPageView, pAnnot, pDevice, pUser2Device,
+                                dwFlags);
+  } else {
+    pWidget->DrawAppearance(pDevice, pUser2Device, CPDF_Annot::Normal, nullptr);
+  }
+
+  if (!IsReadOnly(pWidget) && IsFillingAllowed(pWidget))
+    pWidget->DrawShadow(pDevice, pPageView);
 }
 
 void CFFL_IFormFiller::OnCreate(CPDFSDK_Annot* pAnnot) {
@@ -439,9 +440,9 @@ FX_BOOL CFFL_IFormFiller::OnSetFocus(CPDFSDK_Annot* pAnnot, FX_UINT nFlag) {
       m_bNotifying = FALSE;
 
       if (pWidget->IsAppModified()) {
-        if (CFFL_FormFiller* pFormFiller = GetFormFiller(pWidget, FALSE)) {
-          pFormFiller->ResetPDFWindow(pPageView,
-                                      nValueAge == pWidget->GetValueAge());
+        if (CFFL_FormFiller* pFiller = GetFormFiller(pWidget, FALSE)) {
+          pFiller->ResetPDFWindow(pPageView,
+                                  nValueAge == pWidget->GetValueAge());
         }
       }
     }
@@ -661,7 +662,6 @@ void CFFL_IFormFiller::OnKeyStrokeCommit(CPDFSDK_Widget* pWidget,
       pFormFiller->GetActionData(pPageView, CPDF_AAction::KeyStroke, fa);
       pFormFiller->SaveState(pPageView);
 
-      PDFSDK_FieldAction faOld = fa;
       pWidget->OnAAction(CPDF_AAction::KeyStroke, fa, pPageView);
 
       bRC = fa.bRC;
@@ -692,7 +692,6 @@ void CFFL_IFormFiller::OnValidate(CPDFSDK_Widget* pWidget,
       pFormFiller->GetActionData(pPageView, CPDF_AAction::Validate, fa);
       pFormFiller->SaveState(pPageView);
 
-      PDFSDK_FieldAction faOld = fa;
       pWidget->OnAAction(CPDF_AAction::Validate, fa, pPageView);
 
       bRC = fa.bRC;
@@ -708,10 +707,8 @@ void CFFL_IFormFiller::OnCalculate(CPDFSDK_Widget* pWidget,
   if (!m_bNotifying) {
     ASSERT(pWidget);
     CPDFSDK_Document* pDocument = pPageView->GetSDKDocument();
-    CPDFSDK_InterForm* pInterForm =
-        (CPDFSDK_InterForm*)pDocument->GetInterForm();
+    CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();
     pInterForm->OnCalculate(pWidget->GetFormField());
-
     m_bNotifying = FALSE;
   }
 }
@@ -723,8 +720,7 @@ void CFFL_IFormFiller::OnFormat(CPDFSDK_Widget* pWidget,
   if (!m_bNotifying) {
     ASSERT(pWidget);
     CPDFSDK_Document* pDocument = pPageView->GetSDKDocument();
-    CPDFSDK_InterForm* pInterForm =
-        (CPDFSDK_InterForm*)pDocument->GetInterForm();
+    CPDFSDK_InterForm* pInterForm = pDocument->GetInterForm();
 
     FX_BOOL bFormated = FALSE;
     CFX_WideString sValue =

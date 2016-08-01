@@ -533,10 +533,10 @@ void HttpCache::Transaction::SetBeforeNetworkStartCallback(
   before_network_start_callback_ = callback;
 }
 
-void HttpCache::Transaction::SetBeforeProxyHeadersSentCallback(
-    const BeforeProxyHeadersSentCallback& callback) {
+void HttpCache::Transaction::SetBeforeHeadersSentCallback(
+    const BeforeHeadersSentCallback& callback) {
   DCHECK(!network_trans_);
-  before_proxy_headers_sent_callback_ = callback;
+  before_headers_sent_callback_ = callback;
 }
 
 int HttpCache::Transaction::ResumeNetworkStart() {
@@ -1134,6 +1134,8 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
     return OK;
   }
 
+  open_entry_last_used_ = entry_->disk_entry->GetLastUsed();
+
   if (result != OK) {
     NOTREACHED();
     return result;
@@ -1171,10 +1173,30 @@ int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
     return OnCacheReadError(result, true);
   }
 
-  // Some resources may have slipped in as truncated when they're not.
   int current_size = entry_->disk_entry->GetDataSize(kResponseContentIndex);
-  if (response_.headers->GetContentLength() == current_size)
+  int64_t full_response_length = response_.headers->GetContentLength();
+
+  // Some resources may have slipped in as truncated when they're not.
+  if (full_response_length == current_size)
     truncated_ = false;
+
+  // The state machine's handling of StopCaching unfortunately doesn't deal well
+  // with resources that are larger than 2GB when there is a truncated or sparse
+  // cache entry. While the state machine is reworked to resolve this, the
+  // following logic is put in place to defer such requests to the network. The
+  // cache should not be storing multi gigabyte resources. See
+  // http://crbug.com/89567.
+  if ((truncated_ || response_.headers->response_code() == 206) &&
+      !range_requested_ &&
+      full_response_length > std::numeric_limits<int32_t>::max()) {
+    // Does not release the cache entry. If another transaction wants to use
+    // this cache entry while this transaction is active, the second transaction
+    // will fall back to the network after the timeout.
+    DCHECK(!partial_);
+    mode_ = NONE;
+    next_state_ = STATE_SEND_REQUEST;
+    return OK;
+  }
 
   if ((response_.unused_since_prefetch &&
        !(request_->load_flags & LOAD_PREFETCH)) ||
@@ -1304,8 +1326,7 @@ int HttpCache::Transaction::DoSendRequest() {
   if (rv != OK)
     return rv;
   network_trans_->SetBeforeNetworkStartCallback(before_network_start_callback_);
-  network_trans_->SetBeforeProxyHeadersSentCallback(
-      before_proxy_headers_sent_callback_);
+  network_trans_->SetBeforeHeadersSentCallback(before_headers_sent_callback_);
 
   // Old load timing information, if any, is now obsolete.
   old_network_trans_load_timing_.reset();
@@ -2190,11 +2211,17 @@ ValidationType HttpCache::Transaction::RequiresValidation() {
                                             cache_->clock_->Now());
 
   if (validation_required_by_headers != VALIDATION_NONE) {
-    validation_cause_ =
-        response_.headers->GetFreshnessLifetimes(response_.response_time)
-                    .freshness == base::TimeDelta()
-            ? VALIDATION_CAUSE_ZERO_FRESHNESS
-            : VALIDATION_CAUSE_STALE;
+    HttpResponseHeaders::FreshnessLifetimes lifetimes =
+        response_.headers->GetFreshnessLifetimes(response_.response_time);
+    if (lifetimes.freshness == base::TimeDelta()) {
+      validation_cause_ = VALIDATION_CAUSE_ZERO_FRESHNESS;
+    } else {
+      validation_cause_ = VALIDATION_CAUSE_STALE;
+      stale_entry_freshness_ = lifetimes.freshness;
+      stale_entry_age_ = response_.headers->GetCurrentAge(
+          response_.request_time, response_.response_time,
+          cache_->clock_->Now());
+    }
   }
 
   if (validation_required_by_headers == VALIDATION_ASYNCHRONOUS) {
@@ -2719,6 +2746,45 @@ void HttpCache::Transaction::RecordHistograms() {
 
   bool validation_request = transaction_pattern_ == PATTERN_ENTRY_VALIDATED ||
                             transaction_pattern_ == PATTERN_ENTRY_UPDATED;
+
+  bool stale_request =
+      validation_cause_ == VALIDATION_CAUSE_STALE &&
+      (validation_request ||
+       transaction_pattern_ == PATTERN_ENTRY_CANT_CONDITIONALIZE);
+  int64_t freshness_periods_since_last_used = 0;
+
+  if (stale_request) {
+    // For stale entries, record how many freshness periods have elapsed since
+    // the entry was last used.
+    DCHECK(!open_entry_last_used_.is_null());
+    DCHECK(!stale_entry_freshness_.is_zero());
+    base::TimeDelta time_since_use = base::Time::Now() - open_entry_last_used_;
+    freshness_periods_since_last_used =
+        (time_since_use * 1000) / stale_entry_freshness_;
+
+    UMA_HISTOGRAM_COUNTS("HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed",
+                         freshness_periods_since_last_used);
+
+    if (validation_request) {
+      int64_t age_in_freshness_periods =
+          (stale_entry_age_ * 100) / stale_entry_freshness_;
+      if (transaction_pattern_ == PATTERN_ENTRY_VALIDATED) {
+        UMA_HISTOGRAM_COUNTS("HttpCache.StaleEntry.Validated.Age",
+                             stale_entry_age_.InSeconds());
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.Validated.AgeInFreshnessPeriods",
+            age_in_freshness_periods);
+
+      } else {
+        UMA_HISTOGRAM_COUNTS("HttpCache.StaleEntry.Updated.Age",
+                             stale_entry_age_.InSeconds());
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.Updated.AgeInFreshnessPeriods",
+            age_in_freshness_periods);
+      }
+    }
+  }
+
   std::string mime_type;
   HttpResponseHeaders* response_headers = GetResponseInfo()->headers.get();
   if (response_headers && response_headers->GetMimeType(&mime_type)) {
@@ -2732,6 +2798,11 @@ void HttpCache::Transaction::RecordHistograms() {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.MainFrameHTML",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
       }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.MainFrameHTML",
+            freshness_periods_since_last_used);
+      }
     } else if (mime_type == "text/html") {
       UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern.NonMainFrameHTML",
                                 transaction_pattern_, PATTERN_MAX);
@@ -2739,12 +2810,23 @@ void HttpCache::Transaction::RecordHistograms() {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.NonMainFrameHTML",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
       }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed."
+            "NonMainFrameHTML",
+            freshness_periods_since_last_used);
+      }
     } else if (mime_type == "text/css") {
       UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern.CSS", transaction_pattern_,
                                 PATTERN_MAX);
       if (validation_request) {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.CSS",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
+      }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.CSS",
+            freshness_periods_since_last_used);
       }
     } else if (base::StartsWith(mime_type, "image/",
                                 base::CompareCase::SENSITIVE)) {
@@ -2756,6 +2838,11 @@ void HttpCache::Transaction::RecordHistograms() {
           UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.TinyImage",
                                     validation_cause_, VALIDATION_CAUSE_MAX);
         }
+        if (stale_request) {
+          UMA_HISTOGRAM_COUNTS(
+              "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.TinyImage",
+              freshness_periods_since_last_used);
+        }
       } else if (content_length >= 100) {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern.NonTinyImage",
                                   transaction_pattern_, PATTERN_MAX);
@@ -2763,12 +2850,22 @@ void HttpCache::Transaction::RecordHistograms() {
           UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.NonTinyImage",
                                     validation_cause_, VALIDATION_CAUSE_MAX);
         }
+        if (stale_request) {
+          UMA_HISTOGRAM_COUNTS(
+              "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.NonTinyImage",
+              freshness_periods_since_last_used);
+        }
       }
       UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern.Image", transaction_pattern_,
                                 PATTERN_MAX);
       if (validation_request) {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.Image",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
+      }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.Image",
+            freshness_periods_since_last_used);
       }
     } else if (base::EndsWith(mime_type, "javascript",
                               base::CompareCase::SENSITIVE) ||
@@ -2780,6 +2877,11 @@ void HttpCache::Transaction::RecordHistograms() {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.JavaScript",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
       }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.JavaScript",
+            freshness_periods_since_last_used);
+      }
     } else if (mime_type.find("font") != std::string::npos) {
       UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern.Font", transaction_pattern_,
                                 PATTERN_MAX);
@@ -2787,11 +2889,16 @@ void HttpCache::Transaction::RecordHistograms() {
         UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause.Font",
                                   validation_cause_, VALIDATION_CAUSE_MAX);
       }
+      if (stale_request) {
+        UMA_HISTOGRAM_COUNTS(
+            "HttpCache.StaleEntry.FreshnessPeriodsSinceLastUsed.Font",
+            freshness_periods_since_last_used);
+      }
     }
   }
 
-  UMA_HISTOGRAM_ENUMERATION(
-      "HttpCache.Pattern", transaction_pattern_, PATTERN_MAX);
+  UMA_HISTOGRAM_ENUMERATION("HttpCache.Pattern", transaction_pattern_,
+                            PATTERN_MAX);
 
   if (validation_request) {
     UMA_HISTOGRAM_ENUMERATION("HttpCache.ValidationCause", validation_cause_,

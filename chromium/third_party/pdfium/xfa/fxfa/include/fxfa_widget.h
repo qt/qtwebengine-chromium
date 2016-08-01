@@ -17,15 +17,15 @@
 #include "xfa/fxfa/parser/cxfa_value.h"
 #include "xfa/fxfa/parser/cxfa_widgetdata.h"
 
-class CXFA_Node;
-class CXFA_FFDocView;
-class CXFA_FFDoc;
-class CXFA_FFApp;
+class CFGAS_GEFont;
 class CXFA_EventParam;
+class CXFA_FFApp;
+class CXFA_FFDoc;
+class CXFA_FFDocView;
 class CXFA_FFWidget;
+class CXFA_Node;
 class CXFA_TextLayout;
 class CXFA_WidgetLayoutData;
-class IFX_Font;
 class IXFA_AppProvider;
 
 class CXFA_WidgetAcc : public CXFA_WidgetData {
@@ -53,7 +53,7 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   int32_t ProcessValidate(int32_t iFlags = 0);
   int32_t ExecuteScript(CXFA_Script script,
                         CXFA_EventParam* pEventParam,
-                        FXJSE_HVALUE* pRetValue = NULL);
+                        CFXJSE_Value** pRetValue = nullptr);
 
   CXFA_FFWidget* GetNextWidget(CXFA_FFWidget* pWidget);
   void StartWidgetLayout(FX_FLOAT& fCalcWidth, FX_FLOAT& fCalcHeight);
@@ -70,10 +70,10 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   CFX_DIBitmap* GetImageEditImage();
   void SetImageImage(CFX_DIBitmap* newImage);
   void SetImageEditImage(CFX_DIBitmap* newImage);
-  void UpdateUIDisplay(CXFA_FFWidget* pExcept = NULL);
+  void UpdateUIDisplay(CXFA_FFWidget* pExcept = nullptr);
 
   CXFA_Node* GetDatasets();
-  IFX_Font* GetFDEFont();
+  CFGAS_GEFont* GetFDEFont();
   FX_FLOAT GetFontSize();
   FX_ARGB GetTextColor();
   FX_FLOAT GetLineHeight();
@@ -82,7 +82,7 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
  protected:
   void ProcessScriptTestValidate(CXFA_Validate validate,
                                  int32_t iRet,
-                                 FXJSE_HVALUE pRetValue,
+                                 CFXJSE_Value* pRetValue,
                                  FX_BOOL bVersionFlag);
   int32_t ProcessFormatTestValidate(CXFA_Validate validate,
                                     FX_BOOL bVersionFlag);
@@ -109,13 +109,14 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   FX_FLOAT GetWidthWithoutMargin(FX_FLOAT fWidthCalc);
   FX_FLOAT GetHeightWithoutMargin(FX_FLOAT fHeightCalc);
   void CalculateTextContentSize(CFX_SizeF& size);
-  void CalculateAccWidthAndHeight(XFA_ELEMENT eUIType,
+  void CalculateAccWidthAndHeight(XFA_Element eUIType,
                                   FX_FLOAT& fWidth,
                                   FX_FLOAT& fCalcHeight);
   void InitLayoutData();
   void StartTextLayout(FX_FLOAT& fCalcWidth, FX_FLOAT& fCalcHeight);
+
   CXFA_FFDocView* m_pDocView;
-  CXFA_WidgetLayoutData* m_pLayoutData;
+  std::unique_ptr<CXFA_WidgetLayoutData> m_pLayoutData;
   uint32_t m_nRecursionDepth;
 };
 

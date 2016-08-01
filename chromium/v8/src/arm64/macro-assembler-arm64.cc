@@ -1971,9 +1971,6 @@ void MacroAssembler::Call(Address target, RelocInfo::Mode rmode) {
   Label start_call;
   Bind(&start_call);
 #endif
-  // Statement positions are expected to be recorded when the target
-  // address is loaded.
-  positions_recorder()->WriteRecordedPositions();
 
   // Addresses always have 64 bits, so we shouldn't encounter NONE32.
   DCHECK(rmode != RelocInfo::NONE32);
@@ -2496,11 +2493,12 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  Mov(x4, Operand(step_in_enabled));
-  ldrb(x4, MemOperand(x4));
-  CompareAndBranch(x4, Operand(0), eq, &skip_flooding);
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  STATIC_ASSERT(StepFrame > StepIn);
+  Mov(x4, Operand(last_step_action));
+  Ldrsb(x4, MemOperand(x4));
+  CompareAndBranch(x4, Operand(StepIn), lt, &skip_flooding);
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -2761,9 +2759,8 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   Ldr(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  Ldr(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  Ldr(vector,
-      FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  Ldr(vector, FieldMemOperand(vector, JSFunction::kLiteralsOffset));
+  Ldr(vector, FieldMemOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 
@@ -4132,16 +4129,14 @@ void MacroAssembler::PushSafepointRegistersAndDoubles() {
   PushSafepointRegisters();
   PushCPURegList(CPURegList(
       CPURegister::kFPRegister, kDRegSizeInBits,
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT)
-          ->allocatable_double_codes_mask()));
+      RegisterConfiguration::Crankshaft()->allocatable_double_codes_mask()));
 }
 
 
 void MacroAssembler::PopSafepointRegistersAndDoubles() {
   PopCPURegList(CPURegList(
       CPURegister::kFPRegister, kDRegSizeInBits,
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT)
-          ->allocatable_double_codes_mask()));
+      RegisterConfiguration::Crankshaft()->allocatable_double_codes_mask()));
   PopSafepointRegisters();
 }
 

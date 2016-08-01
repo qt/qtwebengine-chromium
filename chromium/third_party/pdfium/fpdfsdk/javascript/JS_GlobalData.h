@@ -34,13 +34,13 @@ class CJS_GlobalVariableArray {
   void Empty();
 
  private:
-  CFX_ArrayTemplate<CJS_KeyValue*> array;
+  CFX_ArrayTemplate<CJS_KeyValue*> m_Array;
 };
 
 class CJS_KeyValue {
  public:
-  CJS_KeyValue() {}
-  virtual ~CJS_KeyValue() {}
+  CJS_KeyValue();
+  virtual ~CJS_KeyValue();
 
   CFX_ByteString sKey;
   int nType;  // 0:int 1:bool 2:string 3:obj

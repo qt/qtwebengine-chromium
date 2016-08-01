@@ -27,29 +27,15 @@ class CFWL_FormImpDelegate;
 
 class CFWL_SysBtn {
  public:
-  CFWL_SysBtn() {
-    m_rtBtn.Set(0, 0, 0, 0);
-    m_dwState = 0;
-  }
+  CFWL_SysBtn();
 
-  bool IsDisabled() { return !!(m_dwState & FWL_SYSBUTTONSTATE_Disabled); }
+  bool IsDisabled() const;
+  uint32_t GetPartState() const;
 
-  void SetNormal() { m_dwState &= 0xFFF0; }
-  void SetPressed() {
-    SetNormal();
-    m_dwState |= FWL_SYSBUTTONSTATE_Pressed;
-  }
-  void SetHover() {
-    SetNormal();
-    m_dwState |= FWL_SYSBUTTONSTATE_Hover;
-  }
-  void SetDisabled(FX_BOOL bDisabled) {
-    bDisabled ? m_dwState |= FWL_SYSBUTTONSTATE_Disabled
-              : m_dwState &= ~FWL_SYSBUTTONSTATE_Disabled;
-  }
-  int32_t GetPartState() {
-    return (IsDisabled() ? CFWL_PartState_Disabled : (m_dwState + 1));
-  }
+  void SetNormal();
+  void SetPressed();
+  void SetHover();
+  void SetDisabled(FX_BOOL bDisabled);
 
   CFX_RectF m_rtBtn;
   uint32_t m_dwState;
@@ -61,6 +47,9 @@ enum FORM_RESIZETYPE {
 };
 
 typedef struct RestoreResizeInfo {
+  RestoreResizeInfo();
+  ~RestoreResizeInfo();
+
   CFX_PointF m_ptStart;
   CFX_SizeF m_szStart;
 } RestoreInfo;
@@ -105,10 +94,10 @@ class CFWL_FormImp : public CFWL_WidgetImp {
   FX_FLOAT GetCaptionHeight();
   void DrawCaptionText(CFX_Graphics* pGs,
                        IFWL_ThemeProvider* pTheme,
-                       const CFX_Matrix* pMatrix = NULL);
+                       const CFX_Matrix* pMatrix = nullptr);
   void DrawIconImage(CFX_Graphics* pGs,
                      IFWL_ThemeProvider* pTheme,
-                     const CFX_Matrix* pMatrix = NULL);
+                     const CFX_Matrix* pMatrix = nullptr);
   void GetEdgeRect(CFX_RectF& rtEdge);
   void SetWorkAreaRect();
   void SetCursor(FX_FLOAT fx, FX_FLOAT fy);
@@ -154,7 +143,7 @@ class CFWL_FormImp : public CFWL_WidgetImp {
   int32_t m_iSysBox;
   int32_t m_eResizeType;
   FX_BOOL m_bLButtonDown;
-  FX_BOOL m_bMaximized;
+  bool m_bMaximized;
   FX_BOOL m_bSetMaximize;
   FX_BOOL m_bCustomizeLayout;
   FWL_FORMSIZE m_eFormSize;
@@ -173,7 +162,7 @@ class CFWL_FormImpDelegate : public CFWL_WidgetImpDelegate {
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
 
  protected:
   void OnLButtonDown(CFWL_MsgMouse* pMsg);

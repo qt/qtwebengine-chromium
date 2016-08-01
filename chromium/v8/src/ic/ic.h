@@ -47,7 +47,8 @@ class IC {
 
 #ifdef DEBUG
   bool IsLoadStub() const {
-    return kind_ == Code::LOAD_IC || kind_ == Code::KEYED_LOAD_IC;
+    return kind_ == Code::LOAD_IC || kind_ == Code::LOAD_GLOBAL_IC ||
+           kind_ == Code::KEYED_LOAD_IC;
   }
   bool IsStoreStub() const {
     return kind_ == Code::STORE_IC || kind_ == Code::KEYED_STORE_IC;
@@ -63,21 +64,18 @@ class IC {
                                              Isolate* isolate,
                                              CacheHolderFlag* flag);
 
-  static bool IsCleared(Code* code) {
-    InlineCacheState state = code->ic_state();
-    return !FLAG_use_ic || state == UNINITIALIZED || state == PREMONOMORPHIC;
-  }
-
   static bool IsCleared(FeedbackNexus* nexus) {
     InlineCacheState state = nexus->StateFromFeedback();
     return !FLAG_use_ic || state == UNINITIALIZED || state == PREMONOMORPHIC;
   }
 
   static bool ICUseVector(Code::Kind kind) {
-    return kind == Code::LOAD_IC || kind == Code::KEYED_LOAD_IC ||
-           kind == Code::CALL_IC || kind == Code::STORE_IC ||
-           kind == Code::KEYED_STORE_IC;
+    return kind == Code::LOAD_IC || kind == Code::LOAD_GLOBAL_IC ||
+           kind == Code::KEYED_LOAD_IC || kind == Code::CALL_IC ||
+           kind == Code::STORE_IC || kind == Code::KEYED_STORE_IC;
   }
+
+  static InlineCacheState StateFromCode(Code* code);
 
  protected:
   Address fp() const { return fp_; }
@@ -271,18 +269,16 @@ class CallIC : public IC {
 
 class LoadIC : public IC {
  public:
-  TypeofMode typeof_mode() const {
-    return LoadICState::GetTypeofMode(extra_ic_state());
-  }
-
   LoadIC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus = NULL)
       : IC(depth, isolate, nexus) {
     DCHECK(nexus != NULL);
     DCHECK(IsLoadStub());
   }
 
-  bool ShouldThrowReferenceError(Handle<Object> receiver) {
-    return receiver->IsJSGlobalObject() && typeof_mode() == NOT_INSIDE_TYPEOF;
+  bool ShouldThrowReferenceError() const {
+    return kind() == Code::LOAD_GLOBAL_IC &&
+           LoadGlobalICState::GetTypeofMode(extra_ic_state()) ==
+               NOT_INSIDE_TYPEOF;
   }
 
   // Code generator routines.
@@ -291,8 +287,7 @@ class LoadIC : public IC {
   static void GenerateRuntimeGetProperty(MacroAssembler* masm);
   static void GenerateNormal(MacroAssembler* masm);
 
-  static Handle<Code> initialize_stub_in_optimized_code(
-      Isolate* isolate, ExtraICState extra_state, State initialization_state);
+  static Handle<Code> initialize_stub_in_optimized_code(Isolate* isolate);
 
   MUST_USE_RESULT MaybeHandle<Object> Load(Handle<Object> object,
                                            Handle<Name> name);
@@ -300,7 +295,7 @@ class LoadIC : public IC {
   static void Clear(Isolate* isolate, Code* host, LoadICNexus* nexus);
 
  protected:
-  Handle<Code> slow_stub() const {
+  virtual Handle<Code> slow_stub() const {
     return isolate()->builtins()->LoadIC_Slow();
   }
 
@@ -319,6 +314,28 @@ class LoadIC : public IC {
   friend class IC;
 };
 
+class LoadGlobalIC : public LoadIC {
+ public:
+  LoadGlobalIC(FrameDepth depth, Isolate* isolate, FeedbackNexus* nexus = NULL)
+      : LoadIC(depth, isolate, nexus) {}
+
+  static Handle<Code> initialize_stub_in_optimized_code(
+      Isolate* isolate, ExtraICState extra_state);
+
+  MUST_USE_RESULT MaybeHandle<Object> Load(Handle<Name> name);
+
+  static void Clear(Isolate* isolate, Code* host, LoadGlobalICNexus* nexus);
+
+ protected:
+  Handle<Code> slow_stub() const override {
+    if (LoadGlobalICState::GetTypeofMode(extra_ic_state()) ==
+        NOT_INSIDE_TYPEOF) {
+      return isolate()->builtins()->LoadGlobalIC_SlowNotInsideTypeof();
+    } else {
+      return isolate()->builtins()->LoadGlobalIC_SlowInsideTypeof();
+    }
+  }
+};
 
 class KeyedLoadIC : public LoadIC {
  public:
@@ -337,7 +354,7 @@ class KeyedLoadIC : public LoadIC {
   static void GenerateMegamorphic(MacroAssembler* masm);
 
   static Handle<Code> initialize_stub_in_optimized_code(
-      Isolate* isolate, State initialization_state, ExtraICState extra_state);
+      Isolate* isolate, ExtraICState extra_state);
   static Handle<Code> ChooseMegamorphicStub(Isolate* isolate,
                                             ExtraICState extra_state);
 
@@ -366,13 +383,10 @@ class StoreIC : public IC {
   // Code generators for stub routines. Only called once at startup.
   static void GenerateSlow(MacroAssembler* masm);
   static void GenerateMiss(MacroAssembler* masm);
-  static void GenerateMegamorphic(MacroAssembler* masm);
   static void GenerateNormal(MacroAssembler* masm);
-  static void GenerateRuntimeSetProperty(MacroAssembler* masm,
-                                         LanguageMode language_mode);
 
   static Handle<Code> initialize_stub_in_optimized_code(
-      Isolate* isolate, LanguageMode language_mode, State initialization_state);
+      Isolate* isolate, LanguageMode language_mode);
 
   MUST_USE_RESULT MaybeHandle<Object> Store(
       Handle<Object> object, Handle<Name> name, Handle<Object> value,
@@ -386,7 +400,9 @@ class StoreIC : public IC {
 
  protected:
   // Stub accessors.
-  Handle<Code> slow_stub() const;
+  Handle<Code> slow_stub() const {
+    return isolate()->builtins()->StoreIC_Slow();
+  }
 
   // Update the inline cache and the global stub cache based on the
   // lookup result.
@@ -428,7 +444,7 @@ class KeyedStoreIC : public StoreIC {
                                   LanguageMode language_mode);
 
   static Handle<Code> initialize_stub_in_optimized_code(
-      Isolate* isolate, LanguageMode language_mode, State initialization_state);
+      Isolate* isolate, LanguageMode language_mode);
   static Handle<Code> ChooseMegamorphicStub(Isolate* isolate,
                                             ExtraICState extra_state);
 

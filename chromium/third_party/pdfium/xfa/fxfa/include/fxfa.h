@@ -12,6 +12,7 @@
 #include "xfa/fxfa/include/fxfa_basic.h"
 #include "xfa/fxfa/include/fxfa_widget.h"
 
+class CFGAS_GEFont;
 class CFX_Graphics;
 class CPDF_Document;
 class CXFA_FFPageView;
@@ -19,7 +20,6 @@ class CXFA_Node;
 class CXFA_NodeList;
 class CXFA_WidgetAcc;
 class IFWL_AdapterTimerMgr;
-class IFX_Font;
 class IXFA_AppProvider;
 class IXFA_DocProvider;
 class IXFA_WidgetAccIterator;
@@ -42,72 +42,22 @@ class IXFA_WidgetIterator;
 #define XFA_IDS_ModifyField 3
 #define XFA_IDS_NotModifyField 4
 #define XFA_IDS_AppName 5
-#define XFA_IDS_ImageFilter 6
-#define XFA_IDS_UNKNOW_CATCHED 7
 #define XFA_IDS_Unable_TO_SET 8
-#define XFA_IDS_VALUE_EXCALMATORY 9
-#define XFA_IDS_INVALID_ENUM_VALUE 10
-#define XFA_IDS_UNSUPPORT_METHOD 11
-#define XFA_IDS_UNSUPPORT_PROP 12
 #define XFA_IDS_INVAlID_PROP_SET 13
 #define XFA_IDS_NOT_DEFAUL_VALUE 14
 #define XFA_IDS_UNABLE_SET_LANGUAGE 15
 #define XFA_IDS_UNABLE_SET_NUMPAGES 16
 #define XFA_IDS_UNABLE_SET_PLATFORM 17
-#define XFA_IDS_UNABLE_SET_VALIDATIONENABLE 18
 #define XFA_IDS_UNABLE_SET_VARIATION 19
 #define XFA_IDS_UNABLE_SET_VERSION 20
 #define XFA_IDS_UNABLE_SET_READY 21
-#define XFA_IDS_NUMBER_OF_OCCUR 22
-#define XFA_IDS_UNABLE_SET_CLASS_NAME 23
-#define XFA_IDS_UNABLE_SET_LENGTH_VALUE 24
-#define XFA_IDS_UNSUPPORT_CHAR 25
-#define XFA_IDS_BAD_SUFFIX 26
-#define XFA_IDS_EXPECTED_IDENT 27
-#define XFA_IDS_EXPECTED_STRING 28
-#define XFA_IDS_INVALIDATE_CHAR 29
-#define XFA_IDS_REDEFINITION 30
-#define XFA_IDS_INVALIDATE_TOKEN 31
-#define XFA_IDS_INVALIDATE_EXPRESSION 32
-#define XFA_IDS_UNDEFINE_IDENTIFIER 33
-#define XFA_IDS_INVALIDATE_LEFTVALUE 34
 #define XFA_IDS_COMPILER_ERROR 35
-#define XFA_IDS_CANNOT_MODIFY_VALUE 36
-#define XFA_IDS_ERROR_PARAMETERS 37
-#define XFA_IDS_EXPECT_ENDIF 38
-#define XFA_IDS_UNEXPECTED_EXPRESSION 39
-#define XFA_IDS_CONDITION_IS_NULL 40
-#define XFA_IDS_ILLEGALBREAK 41
-#define XFA_IDS_ILLEGALCONTINUE 42
-#define XFA_IDS_EXPECTED_OPERATOR 43
 #define XFA_IDS_DIVIDE_ZERO 44
-#define XFA_IDS_CANNOT_COVERT_OBJECT 45
-#define XFA_IDS_NOT_FOUND_CONTAINER 46
-#define XFA_IDS_NOT_FOUND_PROPERTY 47
-#define XFA_IDS_NOT_FOUND_METHOD 48
-#define XFA_IDS_NOT_FOUND_CONST 49
-#define XFA_IDS_NOT_ASSIGN_OBJECT 50
-#define XFA_IDS_IVALIDATE_INSTRUCTION 51
-#define XFA_IDS_EXPECT_NUMBER 52
-#define XFA_IDS_VALIDATE_OUT_ARRAY 53
-#define XFA_IDS_CANNOT_ASSIGN_IDENT 54
-#define XFA_IDS_NOT_FOUNT_FUNCTION 55
-#define XFA_IDS_NOT_ARRAY 56
-#define XFA_IDS_OUT_ARRAY 57
-#define XFA_IDS_NOT_SUPPORT_CALC 58
-#define XFA_IDS_ARGUMENT_NOT_ARRAY 59
-#define XFA_IDS_ARGUMENT_EXPECT_CONTAINER 60
 #define XFA_IDS_ACCESS_PROPERTY_IN_NOT_OBJECT 61
-#define XFA_IDS_FUNCTION_IS_BUILDIN 62
-#define XFA_IDS_ERROR_MSG 63
 #define XFA_IDS_INDEX_OUT_OF_BOUNDS 64
 #define XFA_IDS_INCORRECT_NUMBER_OF_METHOD 65
 #define XFA_IDS_ARGUMENT_MISMATCH 66
-#define XFA_IDS_INVALID_ENUMERATE 67
-#define XFA_IDS_INVALID_APPEND 68
-#define XFA_IDS_SOM_EXPECTED_LIST 69
 #define XFA_IDS_NOT_HAVE_PROPERTY 70
-#define XFA_IDS_INVALID_NODE_TYPE 71
 #define XFA_IDS_VIOLATE_BOUNDARY 72
 #define XFA_IDS_SERVER_DENY 73
 #define XFA_IDS_StringWeekDay_Sun 74
@@ -193,40 +143,6 @@ enum XFA_WidgetStatus {
   XFA_WidgetStatus_Visible = 1 << 9
 };
 
-enum XFA_EVENTTYPE {
-  XFA_EVENT_Click,
-  XFA_EVENT_Change,
-  XFA_EVENT_DocClose,
-  XFA_EVENT_DocReady,
-  XFA_EVENT_Enter,
-  XFA_EVENT_Exit,
-  XFA_EVENT_Full,
-  XFA_EVENT_IndexChange,
-  XFA_EVENT_Initialize,
-  XFA_EVENT_MouseDown,
-  XFA_EVENT_MouseEnter,
-  XFA_EVENT_MouseExit,
-  XFA_EVENT_MouseUp,
-  XFA_EVENT_PostExecute,
-  XFA_EVENT_PostOpen,
-  XFA_EVENT_PostPrint,
-  XFA_EVENT_PostSave,
-  XFA_EVENT_PostSign,
-  XFA_EVENT_PostSubmit,
-  XFA_EVENT_PreExecute,
-  XFA_EVENT_PreOpen,
-  XFA_EVENT_PrePrint,
-  XFA_EVENT_PreSave,
-  XFA_EVENT_PreSign,
-  XFA_EVENT_PreSubmit,
-  XFA_EVENT_Ready,
-  XFA_EVENT_InitCalculate,
-  XFA_EVENT_InitVariables,
-  XFA_EVENT_Calculate,
-  XFA_EVENT_Validate,
-  XFA_EVENT_Unknown,
-};
-
 enum XFA_WIDGETORDER {
   XFA_WIDGETORDER_PreOrder,
 };
@@ -266,10 +182,8 @@ class IXFA_AppProvider {
    */
   virtual void SetAppType(const CFX_WideStringC& wsAppType) = 0;
   virtual void GetAppType(CFX_WideString& wsAppType) = 0;
-  virtual void SetFoxitAppType(const CFX_WideStringC& wsFoxitAppType) {}
-  virtual void GetFoxitAppType(CFX_WideString& wsFoxitAppType) {
-    wsFoxitAppType.clear();
-  }
+  virtual void SetFoxitAppType(const CFX_WideStringC& wsFoxitAppType) = 0;
+  virtual void GetFoxitAppType(CFX_WideString& wsFoxitAppType) = 0;
 
   /**
    * Returns the language of the running host application. Such as zh_CN
@@ -291,17 +205,13 @@ class IXFA_AppProvider {
    * Indicates the version number of the current application. Such as 9
    */
   virtual void GetVersion(CFX_WideString& wsVersion) = 0;
-  virtual void GetFoxitVersion(CFX_WideString& wsFoxitVersion) {
-    wsFoxitVersion.clear();
-  }
+  virtual void GetFoxitVersion(CFX_WideString& wsFoxitVersion) = 0;
 
   /**
    * Get application name, such as Phantom.
    */
   virtual void GetAppName(CFX_WideString& wsName) = 0;
-  virtual void GetFoxitAppName(CFX_WideString& wsFoxitName) {
-    wsFoxitName.clear();
-  }
+  virtual void GetFoxitAppName(CFX_WideString& wsFoxitName) = 0;
 
   /**
    * Causes the system to play a sound.
@@ -403,7 +313,7 @@ class IXFA_DocProvider {
                               CFX_RectF& rtPopup) = 0;
   virtual FX_BOOL PopupMenu(CXFA_FFWidget* hWidget,
                             CFX_PointF ptPopup,
-                            const CFX_RectF* pRectExclude = NULL) = 0;
+                            const CFX_RectF* pRectExclude = nullptr) = 0;
   virtual void PageViewEvent(CXFA_FFPageView* pPageView, uint32_t dwFlags) = 0;
   virtual void WidgetPostAdd(CXFA_FFWidget* hWidget,
                              CXFA_WidgetAcc* pWidgetData) = 0;
@@ -412,9 +322,8 @@ class IXFA_DocProvider {
   virtual FX_BOOL RenderCustomWidget(CXFA_FFWidget* hWidget,
                                      CFX_Graphics* pGS,
                                      CFX_Matrix* pMatrix,
-                                     const CFX_RectF& rtUI) {
-    return FALSE;
-  }
+                                     const CFX_RectF& rtUI) = 0;
+
   virtual int32_t CountPages(CXFA_FFDoc* hDoc) = 0;
   virtual int32_t GetCurrentPage(CXFA_FFDoc* hDoc) = 0;
   virtual void SetCurrentPage(CXFA_FFDoc* hDoc, int32_t iCurPage) = 0;
@@ -443,23 +352,17 @@ class IXFA_DocProvider {
   virtual int32_t SheetInBatch(CXFA_FFDoc* hDoc, CXFA_FFWidget* hWidget) = 0;
   virtual int32_t Verify(CXFA_FFDoc* hDoc,
                          CXFA_Node* pSigNode,
-                         FX_BOOL bUsed = TRUE) {
-    return 0;
-  }
+                         FX_BOOL bUsed = TRUE) = 0;
   virtual FX_BOOL Sign(CXFA_FFDoc* hDoc,
                        CXFA_NodeList* pNodeList,
                        const CFX_WideStringC& wsExpression,
                        const CFX_WideStringC& wsXMLIdent,
                        const CFX_WideStringC& wsValue = FX_WSTRC(L"open"),
-                       FX_BOOL bUsed = TRUE) {
-    return 0;
-  }
-  virtual CXFA_NodeList* Enumerate(CXFA_FFDoc* hDoc) { return 0; }
+                       FX_BOOL bUsed = TRUE) = 0;
+  virtual CXFA_NodeList* Enumerate(CXFA_FFDoc* hDoc) = 0;
   virtual FX_BOOL Clear(CXFA_FFDoc* hDoc,
                         CXFA_Node* pSigNode,
-                        FX_BOOL bCleared = TRUE) {
-    return 0;
-  }
+                        FX_BOOL bCleared = TRUE) = 0;
   virtual void GetURL(CXFA_FFDoc* hDoc, CFX_WideString& wsDocURL) = 0;
   virtual FX_ARGB GetHighlightColor(CXFA_FFDoc* hDoc) = 0;
 
@@ -470,75 +373,18 @@ class IXFA_DocProvider {
                                   std::vector<CFX_ByteString>& sSuggest) = 0;
   virtual FX_BOOL GetPDFScriptObject(CXFA_FFDoc* hDoc,
                                      const CFX_ByteStringC& utf8Name,
-                                     FXJSE_HVALUE hValue) = 0;
+                                     CFXJSE_Value* pValue) = 0;
   virtual FX_BOOL GetGlobalProperty(CXFA_FFDoc* hDoc,
                                     const CFX_ByteStringC& szPropName,
-                                    FXJSE_HVALUE hValue) = 0;
+                                    CFXJSE_Value* pValue) = 0;
   virtual FX_BOOL SetGlobalProperty(CXFA_FFDoc* hDoc,
                                     const CFX_ByteStringC& szPropName,
-                                    FXJSE_HVALUE hValue) = 0;
+                                    CFXJSE_Value* pValue) = 0;
   virtual CPDF_Document* OpenPDF(CXFA_FFDoc* hDoc,
                                  IFX_FileRead* pFile,
                                  FX_BOOL bTakeOverFile) = 0;
   virtual IFX_FileRead* OpenLinkedFile(CXFA_FFDoc* hDoc,
                                        const CFX_WideString& wsLink) = 0;
-};
-
-class CXFA_EventParam {
- public:
-  CXFA_EventParam() {
-    m_pTarget = NULL;
-    m_eType = XFA_EVENT_Unknown;
-    m_wsResult.clear();
-    Reset();
-  }
-  void Reset() {
-    m_wsChange.clear();
-    m_iCommitKey = 0;
-    m_wsFullText.clear();
-    m_bKeyDown = FALSE;
-    m_bModifier = FALSE;
-    m_wsNewContentType.clear();
-    m_wsNewText.clear();
-    m_wsPrevContentType.clear();
-    m_wsPrevText.clear();
-    m_bReenter = FALSE;
-    m_iSelEnd = 0;
-    m_iSelStart = 0;
-    m_bShift = FALSE;
-    m_wsSoapFaultCode.clear();
-    m_wsSoapFaultString.clear();
-    m_bIsFormReady = FALSE;
-    m_iValidateActivities = XFA_VALIDATE_preSubmit;
-  }
-  CXFA_WidgetAcc* m_pTarget;
-  XFA_EVENTTYPE m_eType;
-  CFX_WideString m_wsResult;
-  FX_BOOL m_bCancelAction;
-  int32_t m_iCommitKey;
-  FX_BOOL m_bKeyDown;
-  FX_BOOL m_bModifier;
-  FX_BOOL m_bReenter;
-  int32_t m_iSelEnd;
-  int32_t m_iSelStart;
-  FX_BOOL m_bShift;
-  CFX_WideString m_wsChange;
-  CFX_WideString m_wsFullText;
-  CFX_WideString m_wsNewContentType;
-  CFX_WideString m_wsNewText;
-  CFX_WideString m_wsPrevContentType;
-  CFX_WideString m_wsPrevText;
-  CFX_WideString m_wsSoapFaultCode;
-  CFX_WideString m_wsSoapFaultString;
-  FX_BOOL m_bIsFormReady;
-  int32_t m_iValidateActivities;
-};
-
-class CXFA_RenderOptions {
- public:
-  CXFA_RenderOptions() : m_bPrint(FALSE), m_bHighlight(TRUE) {}
-  FX_BOOL m_bPrint;
-  FX_BOOL m_bHighlight;
 };
 
 class IXFA_WidgetIterator {

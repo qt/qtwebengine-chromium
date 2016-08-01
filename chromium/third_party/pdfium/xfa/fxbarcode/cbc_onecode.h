@@ -17,7 +17,7 @@ class CFX_RenderDevice;
 
 class CBC_OneCode : public CBC_CodeBase {
  public:
-  CBC_OneCode();
+  explicit CBC_OneCode(CBC_Writer* pWriter);
   ~CBC_OneCode() override;
 
   virtual FX_BOOL CheckContentValidity(const CFX_WideStringC& contents);

@@ -24,10 +24,14 @@ FrameObject::FrameObject()
 
 RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
                                uint16_t first_seq_num,
-                               uint16_t last_seq_num)
+                               uint16_t last_seq_num,
+                               size_t frame_size,
+                               int times_nacked)
     : packet_buffer_(packet_buffer),
       first_seq_num_(first_seq_num),
-      last_seq_num_(last_seq_num) {
+      last_seq_num_(last_seq_num),
+      times_nacked_(times_nacked) {
+  size = frame_size;
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num);
   if (packet) {
     frame_type_ = packet->frameType;
@@ -47,6 +51,10 @@ uint16_t RtpFrameObject::last_seq_num() const {
   return last_seq_num_;
 }
 
+int RtpFrameObject::times_nacked() const {
+  return times_nacked_;
+}
+
 FrameType RtpFrameObject::frame_type() const {
   return frame_type_;
 }
@@ -63,7 +71,7 @@ RTPVideoTypeHeader* RtpFrameObject::GetCodecHeader() const {
   VCMPacket* packet = packet_buffer_->GetPacket(first_seq_num_);
   if (!packet)
     return nullptr;
-  return &packet->codecSpecificHeader.codecHeader;
+  return &packet->video_header.codecHeader;
 }
 
 }  // namespace video_coding

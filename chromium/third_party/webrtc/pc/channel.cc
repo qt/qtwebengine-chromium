@@ -43,6 +43,20 @@ struct SendPacketMessageData : public rtc::MessageData {
   rtc::PacketOptions options;
 };
 
+#if defined(ENABLE_EXTERNAL_AUTH)
+// Returns the named header extension if found among all extensions,
+// nullptr otherwise.
+const webrtc::RtpExtension* FindHeaderExtension(
+    const std::vector<webrtc::RtpExtension>& extensions,
+    const std::string& uri) {
+  for (const auto& extension : extensions) {
+    if (extension.uri == uri)
+      return &extension;
+  }
+  return nullptr;
+}
+#endif
+
 }  // namespace
 
 enum {
@@ -193,7 +207,7 @@ BaseChannel::~BaseChannel() {
   // Note that we don't just call SetTransportChannel_n(nullptr) because that
   // would call a pure virtual method which we can't do from a destructor.
   network_thread_->Invoke<void>(
-      Bind(&BaseChannel::DestroyTransportChannels_n, this));
+      RTC_FROM_HERE, Bind(&BaseChannel::DestroyTransportChannels_n, this));
   LOG(LS_INFO) << "Destroyed channel";
 }
 
@@ -231,6 +245,7 @@ void BaseChannel::DestroyTransportChannels_n() {
 
 bool BaseChannel::Init_w(const std::string* bundle_transport_name) {
   if (!network_thread_->Invoke<bool>(
+          RTC_FROM_HERE,
           Bind(&BaseChannel::InitNetwork_n, this, bundle_transport_name))) {
     return false;
   }
@@ -267,12 +282,12 @@ void BaseChannel::Deinit() {
   // functions, so need to stop this process in Deinit that is called in
   // derived classes destructor.
   network_thread_->Invoke<void>(
-      Bind(&BaseChannel::DisconnectTransportChannels_n, this));
+      RTC_FROM_HERE, Bind(&BaseChannel::DisconnectTransportChannels_n, this));
 }
 
 bool BaseChannel::SetTransport(const std::string& transport_name) {
   return network_thread_->Invoke<bool>(
-      Bind(&BaseChannel::SetTransport_n, this, transport_name));
+      RTC_FROM_HERE, Bind(&BaseChannel::SetTransport_n, this, transport_name));
 }
 
 bool BaseChannel::SetTransport_n(const std::string& transport_name) {
@@ -416,44 +431,47 @@ void BaseChannel::DisconnectFromTransportChannel(TransportChannel* tc) {
 }
 
 bool BaseChannel::Enable(bool enable) {
-  worker_thread_->Invoke<void>(Bind(
-      enable ? &BaseChannel::EnableMedia_w : &BaseChannel::DisableMedia_w,
-      this));
+  worker_thread_->Invoke<void>(
+      RTC_FROM_HERE,
+      Bind(enable ? &BaseChannel::EnableMedia_w : &BaseChannel::DisableMedia_w,
+           this));
   return true;
 }
 
 bool BaseChannel::AddRecvStream(const StreamParams& sp) {
-  return InvokeOnWorker(Bind(&BaseChannel::AddRecvStream_w, this, sp));
+  return InvokeOnWorker(RTC_FROM_HERE,
+                        Bind(&BaseChannel::AddRecvStream_w, this, sp));
 }
 
 bool BaseChannel::RemoveRecvStream(uint32_t ssrc) {
-  return InvokeOnWorker(Bind(&BaseChannel::RemoveRecvStream_w, this, ssrc));
+  return InvokeOnWorker(RTC_FROM_HERE,
+                        Bind(&BaseChannel::RemoveRecvStream_w, this, ssrc));
 }
 
 bool BaseChannel::AddSendStream(const StreamParams& sp) {
   return InvokeOnWorker(
-      Bind(&MediaChannel::AddSendStream, media_channel(), sp));
+      RTC_FROM_HERE, Bind(&MediaChannel::AddSendStream, media_channel(), sp));
 }
 
 bool BaseChannel::RemoveSendStream(uint32_t ssrc) {
-  return InvokeOnWorker(
-      Bind(&MediaChannel::RemoveSendStream, media_channel(), ssrc));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&MediaChannel::RemoveSendStream,
+                                            media_channel(), ssrc));
 }
 
 bool BaseChannel::SetLocalContent(const MediaContentDescription* content,
                                   ContentAction action,
                                   std::string* error_desc) {
   TRACE_EVENT0("webrtc", "BaseChannel::SetLocalContent");
-  return InvokeOnWorker(Bind(&BaseChannel::SetLocalContent_w,
-                             this, content, action, error_desc));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&BaseChannel::SetLocalContent_w,
+                                            this, content, action, error_desc));
 }
 
 bool BaseChannel::SetRemoteContent(const MediaContentDescription* content,
                                    ContentAction action,
                                    std::string* error_desc) {
   TRACE_EVENT0("webrtc", "BaseChannel::SetRemoteContent");
-  return InvokeOnWorker(Bind(&BaseChannel::SetRemoteContent_w,
-                             this, content, action, error_desc));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&BaseChannel::SetRemoteContent_w,
+                                            this, content, action, error_desc));
 }
 
 void BaseChannel::StartConnectionMonitor(int cms) {
@@ -493,7 +511,7 @@ bool BaseChannel::IsReadyToSend_w() const {
   return enabled() && IsReceiveContentDirection(remote_content_direction_) &&
          IsSendContentDirection(local_content_direction_) &&
          network_thread_->Invoke<bool>(
-             Bind(&BaseChannel::IsTransportReadyToSend_n, this));
+             RTC_FROM_HERE, Bind(&BaseChannel::IsTransportReadyToSend_n, this));
 }
 
 bool BaseChannel::IsTransportReadyToSend_n() const {
@@ -514,7 +532,7 @@ bool BaseChannel::SendRtcp(rtc::CopyOnWriteBuffer* packet,
 int BaseChannel::SetOption(SocketType type, rtc::Socket::Option opt,
                            int value) {
   return network_thread_->Invoke<int>(
-      Bind(&BaseChannel::SetOption_n, this, type, opt, value));
+      RTC_FROM_HERE, Bind(&BaseChannel::SetOption_n, this, type, opt, value));
 }
 
 int BaseChannel::SetOption_n(SocketType type,
@@ -583,20 +601,22 @@ void BaseChannel::OnDtlsState(TransportChannel* channel,
 void BaseChannel::OnSelectedCandidatePairChanged(
     TransportChannel* channel,
     CandidatePairInterface* selected_candidate_pair,
-    int last_sent_packet_id) {
+    int last_sent_packet_id,
+    bool ready_to_send) {
   ASSERT(channel == transport_channel_ || channel == rtcp_transport_channel_);
   RTC_DCHECK(network_thread_->IsCurrent());
   std::string transport_name = channel->transport_name();
   rtc::NetworkRoute network_route;
   if (selected_candidate_pair) {
     network_route = rtc::NetworkRoute(
-        selected_candidate_pair->local_candidate().network_id(),
+        ready_to_send, selected_candidate_pair->local_candidate().network_id(),
         selected_candidate_pair->remote_candidate().network_id(),
         last_sent_packet_id);
   }
   invoker_.AsyncInvoke<void>(
-      worker_thread_, Bind(&MediaChannel::OnNetworkRouteChanged, media_channel_,
-                           transport_name, network_route));
+      RTC_FROM_HERE, worker_thread_,
+      Bind(&MediaChannel::OnNetworkRouteChanged, media_channel_, transport_name,
+           network_route));
 }
 
 void BaseChannel::SetReadyToSend(bool rtcp, bool ready) {
@@ -613,7 +633,7 @@ void BaseChannel::SetReadyToSend(bool rtcp, bool ready) {
        (rtcp_ready_to_send_ || !rtcp_transport_channel_));
 
   invoker_.AsyncInvoke<void>(
-      worker_thread_,
+      RTC_FROM_HERE, worker_thread_,
       Bind(&MediaChannel::OnReadyToSend, media_channel_, ready_to_send));
 }
 
@@ -639,7 +659,7 @@ bool BaseChannel::SendPacket(bool rtcp,
     SendPacketMessageData* data = new SendPacketMessageData;
     data->packet = std::move(*packet);
     data->options = options;
-    network_thread_->Post(this, message_id, data);
+    network_thread_->Post(RTC_FROM_HERE, this, message_id, data);
     return true;
   }
   TRACE_EVENT0("webrtc", "BaseChannel::SendPacket");
@@ -774,7 +794,7 @@ void BaseChannel::HandlePacket(bool rtcp, rtc::CopyOnWriteBuffer* packet,
   // indicates the media has started flowing.
   if (!has_received_packet_ && !rtcp) {
     has_received_packet_ = true;
-    signaling_thread()->Post(this, MSG_FIRSTPACKETRECEIVED);
+    signaling_thread()->Post(RTC_FROM_HERE, this, MSG_FIRSTPACKETRECEIVED);
   }
 
   // Unprotect the packet, if needed.
@@ -824,7 +844,7 @@ void BaseChannel::HandlePacket(bool rtcp, rtc::CopyOnWriteBuffer* packet,
   }
 
   invoker_.AsyncInvoke<void>(
-      worker_thread_,
+      RTC_FROM_HERE, worker_thread_,
       Bind(&BaseChannel::OnPacketReceived, this, rtcp, *packet, packet_time));
 }
 
@@ -928,7 +948,7 @@ void BaseChannel::ChannelWritable_n() {
 void BaseChannel::SignalDtlsSetupFailure_n(bool rtcp) {
   RTC_DCHECK(network_thread_->IsCurrent());
   invoker_.AsyncInvoke<void>(
-      signaling_thread(),
+      RTC_FROM_HERE, signaling_thread(),
       Bind(&BaseChannel::SignalDtlsSetupFailure_s, this, rtcp));
 }
 
@@ -1087,8 +1107,8 @@ bool BaseChannel::SetRtpTransportParameters(
 
   // Cache secure_required_ for belt and suspenders check on SendPacket
   return network_thread_->Invoke<bool>(
-      Bind(&BaseChannel::SetRtpTransportParameters_n, this, content, action,
-           src, error_desc));
+      RTC_FROM_HERE, Bind(&BaseChannel::SetRtpTransportParameters_n, this,
+                          content, action, src, error_desc));
 }
 
 bool BaseChannel::SetRtpTransportParameters_n(
@@ -1174,7 +1194,8 @@ bool BaseChannel::SetSrtp_n(const std::vector<CryptoParams>& cryptos,
 }
 
 void BaseChannel::ActivateRtcpMux() {
-  network_thread_->Invoke<void>(Bind(&BaseChannel::ActivateRtcpMux_n, this));
+  network_thread_->Invoke<void>(RTC_FROM_HERE,
+                                Bind(&BaseChannel::ActivateRtcpMux_n, this));
 }
 
 void BaseChannel::ActivateRtcpMux_n() {
@@ -1390,18 +1411,19 @@ bool BaseChannel::UpdateRemoteStreams_w(
 }
 
 void BaseChannel::MaybeCacheRtpAbsSendTimeHeaderExtension_w(
-    const std::vector<RtpHeaderExtension>& extensions) {
+    const std::vector<webrtc::RtpExtension>& extensions) {
 // Absolute Send Time extension id is used only with external auth,
 // so do not bother searching for it and making asyncronious call to set
 // something that is not used.
 #if defined(ENABLE_EXTERNAL_AUTH)
-  const RtpHeaderExtension* send_time_extension =
-      FindHeaderExtension(extensions, kRtpAbsoluteSenderTimeHeaderExtension);
+  const webrtc::RtpExtension* send_time_extension =
+      FindHeaderExtension(extensions, webrtc::RtpExtension::kAbsSendTimeUri);
   int rtp_abs_sendtime_extn_id =
       send_time_extension ? send_time_extension->id : -1;
   invoker_.AsyncInvoke<void>(
-      network_thread_, Bind(&BaseChannel::CacheRtpAbsSendTimeHeaderExtension_n,
-                            this, rtp_abs_sendtime_extn_id));
+      RTC_FROM_HERE, network_thread_,
+      Bind(&BaseChannel::CacheRtpAbsSendTimeHeaderExtension_n, this,
+           rtp_abs_sendtime_extn_id));
 #endif
 }
 
@@ -1437,7 +1459,8 @@ void BaseChannel::FlushRtcpMessages_n() {
   rtc::MessageList rtcp_messages;
   network_thread_->Clear(this, MSG_SEND_RTCP_PACKET, &rtcp_messages);
   for (const auto& message : rtcp_messages) {
-    network_thread_->Send(this, MSG_SEND_RTCP_PACKET, message.pdata);
+    network_thread_->Send(RTC_FROM_HERE, this, MSG_SEND_RTCP_PACKET,
+                          message.pdata);
   }
 }
 
@@ -1445,7 +1468,7 @@ void BaseChannel::SignalSentPacket_n(TransportChannel* /* channel */,
                                      const rtc::SentPacket& sent_packet) {
   RTC_DCHECK(network_thread_->IsCurrent());
   invoker_.AsyncInvoke<void>(
-      worker_thread_,
+      RTC_FROM_HERE, worker_thread_,
       rtc::Bind(&BaseChannel::SignalSentPacket_w, this, sent_packet));
 }
 
@@ -1490,7 +1513,8 @@ bool VoiceChannel::SetAudioSend(uint32_t ssrc,
                                 bool enable,
                                 const AudioOptions* options,
                                 AudioSource* source) {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::SetAudioSend, media_channel(),
+  return InvokeOnWorker(RTC_FROM_HERE,
+                        Bind(&VoiceMediaChannel::SetAudioSend, media_channel(),
                              ssrc, enable, options, source));
 }
 
@@ -1502,8 +1526,8 @@ bool VoiceChannel::SetAudioSend(uint32_t ssrc,
 void VoiceChannel::SetEarlyMedia(bool enable) {
   if (enable) {
     // Start the early media timeout
-    worker_thread()->PostDelayed(kEarlyMediaTimeout, this,
-                                MSG_EARLYMEDIATIMEOUT);
+    worker_thread()->PostDelayed(RTC_FROM_HERE, kEarlyMediaTimeout, this,
+                                 MSG_EARLYMEDIATIMEOUT);
   } else {
     // Stop the timeout if currently going.
     worker_thread()->Clear(this, MSG_EARLYMEDIATIMEOUT);
@@ -1511,20 +1535,20 @@ void VoiceChannel::SetEarlyMedia(bool enable) {
 }
 
 bool VoiceChannel::CanInsertDtmf() {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::CanInsertDtmf,
-                             media_channel()));
+  return InvokeOnWorker(
+      RTC_FROM_HERE, Bind(&VoiceMediaChannel::CanInsertDtmf, media_channel()));
 }
 
 bool VoiceChannel::InsertDtmf(uint32_t ssrc,
                               int event_code,
                               int duration) {
-  return InvokeOnWorker(Bind(&VoiceChannel::InsertDtmf_w, this,
-                             ssrc, event_code, duration));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&VoiceChannel::InsertDtmf_w, this,
+                                            ssrc, event_code, duration));
 }
 
 bool VoiceChannel::SetOutputVolume(uint32_t ssrc, double volume) {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::SetOutputVolume,
-                             media_channel(), ssrc, volume));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&VoiceMediaChannel::SetOutputVolume,
+                                            media_channel(), ssrc, volume));
 }
 
 void VoiceChannel::SetRawAudioSink(
@@ -1533,12 +1557,13 @@ void VoiceChannel::SetRawAudioSink(
   // We need to work around Bind's lack of support for unique_ptr and ownership
   // passing.  So we invoke to our own little routine that gets a pointer to
   // our local variable.  This is OK since we're synchronously invoking.
-  InvokeOnWorker(Bind(&SetRawAudioSink_w, media_channel(), ssrc, &sink));
+  InvokeOnWorker(RTC_FROM_HERE,
+                 Bind(&SetRawAudioSink_w, media_channel(), ssrc, &sink));
 }
 
 webrtc::RtpParameters VoiceChannel::GetRtpSendParameters(uint32_t ssrc) const {
   return worker_thread()->Invoke<webrtc::RtpParameters>(
-      Bind(&VoiceChannel::GetRtpSendParameters_w, this, ssrc));
+      RTC_FROM_HERE, Bind(&VoiceChannel::GetRtpSendParameters_w, this, ssrc));
 }
 
 webrtc::RtpParameters VoiceChannel::GetRtpSendParameters_w(
@@ -1550,6 +1575,7 @@ bool VoiceChannel::SetRtpSendParameters(
     uint32_t ssrc,
     const webrtc::RtpParameters& parameters) {
   return InvokeOnWorker(
+      RTC_FROM_HERE,
       Bind(&VoiceChannel::SetRtpSendParameters_w, this, ssrc, parameters));
 }
 
@@ -1561,6 +1587,7 @@ bool VoiceChannel::SetRtpSendParameters_w(uint32_t ssrc,
 webrtc::RtpParameters VoiceChannel::GetRtpReceiveParameters(
     uint32_t ssrc) const {
   return worker_thread()->Invoke<webrtc::RtpParameters>(
+      RTC_FROM_HERE,
       Bind(&VoiceChannel::GetRtpReceiveParameters_w, this, ssrc));
 }
 
@@ -1573,6 +1600,7 @@ bool VoiceChannel::SetRtpReceiveParameters(
     uint32_t ssrc,
     const webrtc::RtpParameters& parameters) {
   return InvokeOnWorker(
+      RTC_FROM_HERE,
       Bind(&VoiceChannel::SetRtpReceiveParameters_w, this, ssrc, parameters));
 }
 
@@ -1582,8 +1610,8 @@ bool VoiceChannel::SetRtpReceiveParameters_w(uint32_t ssrc,
 }
 
 bool VoiceChannel::GetStats(VoiceMediaInfo* stats) {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::GetStats,
-                             media_channel(), stats));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&VoiceMediaChannel::GetStats,
+                                            media_channel(), stats));
 }
 
 void VoiceChannel::StartMediaMonitor(int cms) {
@@ -1647,7 +1675,7 @@ void VoiceChannel::OnChannelRead(TransportChannel* channel,
 
 void BaseChannel::ChangeState() {
   RTC_DCHECK(network_thread_->IsCurrent());
-  invoker_.AsyncInvoke<void>(worker_thread_,
+  invoker_.AsyncInvoke<void>(RTC_FROM_HERE, worker_thread_,
                              Bind(&BaseChannel::ChangeState_w, this));
 }
 
@@ -1853,27 +1881,24 @@ VideoChannel::~VideoChannel() {
 bool VideoChannel::SetSink(uint32_t ssrc,
                            rtc::VideoSinkInterface<VideoFrame>* sink) {
   worker_thread()->Invoke<void>(
+      RTC_FROM_HERE,
       Bind(&VideoMediaChannel::SetSink, media_channel(), ssrc, sink));
   return true;
 }
 
-void VideoChannel::SetSource(
+bool VideoChannel::SetVideoSend(
     uint32_t ssrc,
+    bool mute,
+    const VideoOptions* options,
     rtc::VideoSourceInterface<cricket::VideoFrame>* source) {
-  worker_thread()->Invoke<void>(
-      Bind(&VideoMediaChannel::SetSource, media_channel(), ssrc, source));
-}
-
-bool VideoChannel::SetVideoSend(uint32_t ssrc,
-                                bool mute,
-                                const VideoOptions* options) {
-  return InvokeOnWorker(Bind(&VideoMediaChannel::SetVideoSend, media_channel(),
-                             ssrc, mute, options));
+  return InvokeOnWorker(RTC_FROM_HERE,
+                        Bind(&VideoMediaChannel::SetVideoSend, media_channel(),
+                             ssrc, mute, options, source));
 }
 
 webrtc::RtpParameters VideoChannel::GetRtpSendParameters(uint32_t ssrc) const {
   return worker_thread()->Invoke<webrtc::RtpParameters>(
-      Bind(&VideoChannel::GetRtpSendParameters_w, this, ssrc));
+      RTC_FROM_HERE, Bind(&VideoChannel::GetRtpSendParameters_w, this, ssrc));
 }
 
 webrtc::RtpParameters VideoChannel::GetRtpSendParameters_w(
@@ -1885,6 +1910,7 @@ bool VideoChannel::SetRtpSendParameters(
     uint32_t ssrc,
     const webrtc::RtpParameters& parameters) {
   return InvokeOnWorker(
+      RTC_FROM_HERE,
       Bind(&VideoChannel::SetRtpSendParameters_w, this, ssrc, parameters));
 }
 
@@ -1896,6 +1922,7 @@ bool VideoChannel::SetRtpSendParameters_w(uint32_t ssrc,
 webrtc::RtpParameters VideoChannel::GetRtpReceiveParameters(
     uint32_t ssrc) const {
   return worker_thread()->Invoke<webrtc::RtpParameters>(
+      RTC_FROM_HERE,
       Bind(&VideoChannel::GetRtpReceiveParameters_w, this, ssrc));
 }
 
@@ -1908,6 +1935,7 @@ bool VideoChannel::SetRtpReceiveParameters(
     uint32_t ssrc,
     const webrtc::RtpParameters& parameters) {
   return InvokeOnWorker(
+      RTC_FROM_HERE,
       Bind(&VideoChannel::SetRtpReceiveParameters_w, this, ssrc, parameters));
 }
 
@@ -1929,8 +1957,8 @@ void VideoChannel::ChangeState_w() {
 }
 
 bool VideoChannel::GetStats(VideoMediaInfo* stats) {
-  return InvokeOnWorker(
-      Bind(&VideoMediaChannel::GetStats, media_channel(), stats));
+  return InvokeOnWorker(RTC_FROM_HERE, Bind(&VideoMediaChannel::GetStats,
+                                            media_channel(), stats));
 }
 
 void VideoChannel::StartMediaMonitor(int cms) {
@@ -2122,8 +2150,9 @@ bool DataChannel::Init_w(const std::string* bundle_transport_name) {
 bool DataChannel::SendData(const SendDataParams& params,
                            const rtc::CopyOnWriteBuffer& payload,
                            SendDataResult* result) {
-  return InvokeOnWorker(Bind(&DataMediaChannel::SendData,
-                             media_channel(), params, payload, result));
+  return InvokeOnWorker(
+      RTC_FROM_HERE, Bind(&DataMediaChannel::SendData, media_channel(), params,
+                          payload, result));
 }
 
 const ContentInfo* DataChannel::GetFirstContent(
@@ -2372,21 +2401,21 @@ void DataChannel::OnDataReceived(
     const ReceiveDataParams& params, const char* data, size_t len) {
   DataReceivedMessageData* msg = new DataReceivedMessageData(
       params, data, len);
-  signaling_thread()->Post(this, MSG_DATARECEIVED, msg);
+  signaling_thread()->Post(RTC_FROM_HERE, this, MSG_DATARECEIVED, msg);
 }
 
 void DataChannel::OnDataChannelError(uint32_t ssrc,
                                      DataMediaChannel::Error err) {
   DataChannelErrorMessageData* data = new DataChannelErrorMessageData(
       ssrc, err);
-  signaling_thread()->Post(this, MSG_CHANNEL_ERROR, data);
+  signaling_thread()->Post(RTC_FROM_HERE, this, MSG_CHANNEL_ERROR, data);
 }
 
 void DataChannel::OnDataChannelReadyToSend(bool writable) {
   // This is usded for congestion control to indicate that the stream is ready
   // to send by the MediaChannel, as opposed to OnReadyToSend, which indicates
   // that the transport channel is ready.
-  signaling_thread()->Post(this, MSG_READYTOSENDDATA,
+  signaling_thread()->Post(RTC_FROM_HERE, this, MSG_READYTOSENDDATA,
                            new DataChannelReadyToSendMessageData(writable));
 }
 
@@ -2401,7 +2430,8 @@ bool DataChannel::ShouldSetupDtlsSrtp_n() const {
 void DataChannel::OnStreamClosedRemotely(uint32_t sid) {
   rtc::TypedMessageData<uint32_t>* message =
       new rtc::TypedMessageData<uint32_t>(sid);
-  signaling_thread()->Post(this, MSG_STREAMCLOSEDREMOTELY, message);
+  signaling_thread()->Post(RTC_FROM_HERE, this, MSG_STREAMCLOSEDREMOTELY,
+                           message);
 }
 
 }  // namespace cricket

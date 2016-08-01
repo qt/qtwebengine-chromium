@@ -24,11 +24,12 @@ class IFWL_AdapterTimerMgr;
 class CXFA_FileRead : public IFX_FileRead {
  public:
   explicit CXFA_FileRead(const CFX_ArrayTemplate<CPDF_Stream*>& streams);
+  ~CXFA_FileRead() override;
 
-  virtual FX_FILESIZE GetSize();
-  virtual FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size);
-
-  virtual void Release() { delete this; }
+  // IFX_FileRead
+  FX_FILESIZE GetSize() override;
+  FX_BOOL ReadBlock(void* buffer, FX_FILESIZE offset, size_t size) override;
+  void Release() override;
 
  protected:
   CFX_ObjectArray<CPDF_StreamAcc> m_Data;
@@ -36,7 +37,7 @@ class CXFA_FileRead : public IFX_FileRead {
 
 class CXFA_FFApp {
  public:
-  CXFA_FFApp(IXFA_AppProvider* pProvider);
+  explicit CXFA_FFApp(IXFA_AppProvider* pProvider);
   ~CXFA_FFApp();
 
   CXFA_FFDocHandler* GetDocHandler();
@@ -45,13 +46,13 @@ class CXFA_FFApp {
                         FX_BOOL bTakeOverFile);
   CXFA_FFDoc* CreateDoc(IXFA_DocProvider* pProvider, CPDF_Document* pPDFDoc);
   IXFA_AppProvider* GetAppProvider() { return m_pProvider; }
-  void SetDefaultFontMgr(CXFA_DefFontMgr* pFontMgr);
+  void SetDefaultFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr);
 
   CXFA_FWLAdapterWidgetMgr* GetWidgetMgr(CFWL_WidgetMgrDelegate* pDelegate);
   IFWL_AdapterTimerMgr* GetTimerMgr();
 
   CXFA_FontMgr* GetXFAFontMgr();
-  IFX_FontMgr* GetFDEFontMgr();
+  IFGAS_FontMgr* GetFDEFontMgr();
   CXFA_FWLTheme* GetFWLTheme();
   CFWL_WidgetMgrDelegate* GetWidgetMgrDelegate() {
     return m_pWidgetMgrDelegate;
@@ -68,7 +69,7 @@ class CXFA_FFApp {
 #endif
   CXFA_FWLAdapterWidgetMgr* m_pAdapterWidgetMgr;
   CFWL_WidgetMgrDelegate* m_pWidgetMgrDelegate;
-  IFX_FontMgr* m_pFDEFontMgr;
+  IFGAS_FontMgr* m_pFDEFontMgr;
 };
 
 #endif  // XFA_FXFA_INCLUDE_XFA_FFAPP_H_

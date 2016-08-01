@@ -108,71 +108,6 @@ class CFX_WideTextBuf : public CFX_BinaryBuf {
   CFX_WideTextBuf& operator<<(const CFX_WideTextBuf& buf);
 };
 
-#ifdef PDF_ENABLE_XFA
-class CFX_ArchiveSaver {
- public:
-  CFX_ArchiveSaver() : m_pStream(NULL) {}
-
-  CFX_ArchiveSaver& operator<<(uint8_t i);
-
-  CFX_ArchiveSaver& operator<<(int i);
-
-  CFX_ArchiveSaver& operator<<(uint32_t i);
-
-  CFX_ArchiveSaver& operator<<(FX_FLOAT i);
-
-  CFX_ArchiveSaver& operator<<(double i);
-
-  CFX_ArchiveSaver& operator<<(const CFX_ByteStringC& bstr);
-
-  CFX_ArchiveSaver& operator<<(const FX_WCHAR* bstr);
-
-  CFX_ArchiveSaver& operator<<(const CFX_WideString& wstr);
-
-  void Write(const void* pData, FX_STRSIZE dwSize);
-
-  intptr_t GetLength() { return m_SavingBuf.GetSize(); }
-
-  const uint8_t* GetBuffer() { return m_SavingBuf.GetBuffer(); }
-
-  void SetStream(IFX_FileStream* pStream) { m_pStream = pStream; }
-
- protected:
-  CFX_BinaryBuf m_SavingBuf;
-
-  IFX_FileStream* m_pStream;
-};
-class CFX_ArchiveLoader {
- public:
-  CFX_ArchiveLoader(const uint8_t* pData, uint32_t dwSize);
-
-  CFX_ArchiveLoader& operator>>(uint8_t& i);
-
-  CFX_ArchiveLoader& operator>>(int& i);
-
-  CFX_ArchiveLoader& operator>>(uint32_t& i);
-
-  CFX_ArchiveLoader& operator>>(FX_FLOAT& i);
-
-  CFX_ArchiveLoader& operator>>(double& i);
-
-  CFX_ArchiveLoader& operator>>(CFX_ByteString& bstr);
-
-  CFX_ArchiveLoader& operator>>(CFX_WideString& wstr);
-
-  FX_BOOL IsEOF();
-
-  FX_BOOL Read(void* pBuf, uint32_t dwSize);
-
- protected:
-  uint32_t m_LoadingPos;
-
-  const uint8_t* m_pLoadingBuf;
-
-  uint32_t m_LoadingSize;
-};
-#endif  // PDF_ENABLE_XFA
-
 class CFX_FileBufferArchive {
  public:
   CFX_FileBufferArchive();
@@ -243,7 +178,7 @@ class CFX_UTF8Encoder {
 
 class CFX_BasicArray {
  protected:
-  CFX_BasicArray(int unit_size);
+  explicit CFX_BasicArray(int unit_size);
   CFX_BasicArray(const CFX_BasicArray&) = delete;
   ~CFX_BasicArray();
 
@@ -389,9 +324,7 @@ typedef CFX_ArrayTemplate<CFX_WideStringC> CFX_WideStringCArray;
 typedef CFX_ArrayTemplate<FX_FLOAT> CFX_FloatArray;
 typedef CFX_ArrayTemplate<uint8_t> CFX_ByteArray;
 typedef CFX_ArrayTemplate<int32_t> CFX_Int32Array;
-#endif  // PDF_ENABLE_XFA
 
-#ifdef PDF_ENABLE_XFA
 template <class ObjectClass>
 class CFX_ObjectArray : public CFX_BasicArray {
  public:
@@ -543,7 +476,7 @@ class CFX_MapPtrToPtr {
   void RemoveAll();
 
   FX_POSITION GetStartPosition() const {
-    return (m_nCount == 0) ? NULL : (FX_POSITION)-1;
+    return m_nCount == 0 ? nullptr : (FX_POSITION)-1;
   }
 
   void GetNextAssoc(FX_POSITION& rNextPosition,
@@ -582,7 +515,7 @@ class CFX_MapPtrTemplate : public CFX_MapPtrToPtr {
   CFX_MapPtrTemplate() : CFX_MapPtrToPtr(10) {}
 
   FX_BOOL Lookup(KeyType key, ValueType& rValue) const {
-    void* pValue = NULL;
+    void* pValue = nullptr;
     if (!CFX_MapPtrToPtr::Lookup((void*)(uintptr_t)key, pValue)) {
       return FALSE;
     }
@@ -605,8 +538,8 @@ class CFX_MapPtrTemplate : public CFX_MapPtrToPtr {
   void GetNextAssoc(FX_POSITION& rNextPosition,
                     KeyType& rKey,
                     ValueType& rValue) const {
-    void* pKey = NULL;
-    void* pValue = NULL;
+    void* pKey = nullptr;
+    void* pValue = nullptr;
     CFX_MapPtrToPtr::GetNextAssoc(rNextPosition, pKey, pValue);
     rKey = (KeyType)(uintptr_t)pKey;
     rValue = (ValueType)(uintptr_t)pValue;
@@ -663,7 +596,7 @@ class CFX_PtrList {
   }
   FX_POSITION InsertAfter(FX_POSITION pos, void* newElement);
 
-  FX_POSITION Find(void* searchValue, FX_POSITION startAfter = NULL) const;
+  FX_POSITION Find(void* searchValue, FX_POSITION startAfter = nullptr) const;
   FX_POSITION FindIndex(int index) const;
 
   void RemoveAt(FX_POSITION pos);
@@ -683,54 +616,10 @@ class CFX_PtrList {
  public:
   ~CFX_PtrList();
 };
+
+#ifdef PDF_ENABLE_XFA
 typedef void (*PD_CALLBACK_FREEDATA)(void* pData);
-
-struct FX_PRIVATEDATA {
-  void FreeData();
-
-  void* m_pModuleId;
-  void* m_pData;
-  PD_CALLBACK_FREEDATA m_pCallback;
-  FX_BOOL m_bSelfDestruct;
-};
-
-class CFX_PrivateData {
- public:
-  CFX_PrivateData();
-  ~CFX_PrivateData();
-
-  void ClearAll();
-
-  void SetPrivateData(void* module_id,
-                      void* pData,
-                      PD_CALLBACK_FREEDATA callback);
-  void SetPrivateObj(void* module_id, CFX_DestructObject* pObj);
-
-  void* GetPrivateData(void* module_id);
-  FX_BOOL LookupPrivateData(void* module_id, void*& pData) const {
-    if (!module_id) {
-      return FALSE;
-    }
-    uint32_t nCount = m_DataList.GetSize();
-    for (uint32_t n = 0; n < nCount; n++) {
-      if (m_DataList[n].m_pModuleId == module_id) {
-        pData = m_DataList[n].m_pData;
-        return TRUE;
-      }
-    }
-    return FALSE;
-  }
-
-  FX_BOOL RemovePrivateData(void* module_id);
-
- protected:
-  CFX_ArrayTemplate<FX_PRIVATEDATA> m_DataList;
-
-  void AddData(void* module_id,
-               void* pData,
-               PD_CALLBACK_FREEDATA callback,
-               FX_BOOL bSelfDestruct);
-};
+#endif  // PDF_ENABLE_XFA
 
 class CFX_BitStream {
  public:
@@ -759,84 +648,46 @@ class CFX_BitStream {
 
   const uint8_t* m_pData;
 };
+
 template <class ObjClass>
 class CFX_CountRef {
  public:
-  typedef CFX_CountRef<ObjClass> Ref;
+  using Ref = CFX_CountRef<ObjClass>;
 
   class CountedObj : public ObjClass {
    public:
     CountedObj() {}
-
     CountedObj(const CountedObj& src) : ObjClass(src) {}
 
     int m_RefCount;
   };
 
-  CFX_CountRef() { m_pObject = NULL; }
-
-  CFX_CountRef(const Ref& ref) {
-    m_pObject = ref.m_pObject;
-    if (m_pObject) {
+  CFX_CountRef() : m_pObject(nullptr) {}
+  CFX_CountRef(const Ref& ref) : m_pObject(ref.m_pObject) {
+    if (m_pObject)
       m_pObject->m_RefCount++;
-    }
   }
 
-  ~CFX_CountRef() {
-    if (!m_pObject) {
-      return;
-    }
-    m_pObject->m_RefCount--;
-    if (m_pObject->m_RefCount <= 0) {
-      delete m_pObject;
-    }
-  }
+  ~CFX_CountRef() { SetNull(); }
 
   ObjClass* New() {
-    if (m_pObject) {
-      m_pObject->m_RefCount--;
-      if (m_pObject->m_RefCount <= 0) {
-        delete m_pObject;
-      }
-    }
+    SetNull();
     m_pObject = new CountedObj;
     m_pObject->m_RefCount = 1;
     return m_pObject;
   }
 
   void operator=(const Ref& ref) {
-    if (ref.m_pObject) {
+    if (ref.m_pObject)
       ref.m_pObject->m_RefCount++;
-    }
-    if (m_pObject) {
-      m_pObject->m_RefCount--;
-      if (m_pObject->m_RefCount <= 0) {
-        delete m_pObject;
-      }
-    }
+    SetNull();
     m_pObject = ref.m_pObject;
   }
 
-  void operator=(void* p) {
-    ASSERT(p == 0);
-    if (!m_pObject) {
-      return;
-    }
-    m_pObject->m_RefCount--;
-    if (m_pObject->m_RefCount <= 0) {
-      delete m_pObject;
-    }
-    m_pObject = NULL;
-  }
+  bool IsNull() const { return !m_pObject; }
+  bool NotNull() const { return !IsNull(); }
 
   const ObjClass* GetObject() const { return m_pObject; }
-
-  operator const ObjClass*() const { return m_pObject; }
-
-  FX_BOOL IsNull() const { return !m_pObject; }
-
-  FX_BOOL NotNull() const { return !IsNull(); }
-
   ObjClass* GetModify() {
     if (!m_pObject) {
       m_pObject = new CountedObj;
@@ -858,7 +709,7 @@ class CFX_CountRef {
     if (m_pObject->m_RefCount <= 0) {
       delete m_pObject;
     }
-    m_pObject = NULL;
+    m_pObject = nullptr;
   }
 
   bool operator==(const Ref& ref) const { return m_pObject == ref.m_pObject; }
@@ -866,6 +717,7 @@ class CFX_CountRef {
  protected:
   CountedObj* m_pObject;
 };
+
 class IFX_Pause {
  public:
   virtual ~IFX_Pause() {}
@@ -927,15 +779,15 @@ class CFX_SortListArray {
 
   uint8_t* GetAt(int32_t nIndex) {
     if (nIndex < 0) {
-      return NULL;
+      return nullptr;
     }
     if (m_CurList < 0 || m_CurList >= m_DataLists.GetSize()) {
-      return NULL;
+      return nullptr;
     }
     DataList* pCurList = m_DataLists.GetDataPtr(m_CurList);
     if (!pCurList || nIndex < pCurList->start ||
         nIndex >= pCurList->start + pCurList->count) {
-      pCurList = NULL;
+      pCurList = nullptr;
       int32_t iStart = 0;
       int32_t iEnd = m_DataLists.GetUpperBound();
       int32_t iMid = 0;
@@ -953,7 +805,8 @@ class CFX_SortListArray {
         }
       }
     }
-    return pCurList ? pCurList->data + (nIndex - pCurList->start) * unit : NULL;
+    return pCurList ? pCurList->data + (nIndex - pCurList->start) * unit
+                    : nullptr;
   }
 
  protected:
@@ -1007,11 +860,13 @@ typedef CFX_ListArrayTemplate<CFX_SortListArray<sizeof(FX_FILESIZE)>,
                               FX_FILESIZE> CFX_FileSizeListArray;
 
 #ifdef PDF_ENABLE_XFA
-class IFX_Unknown {
+class IFX_Retainable {
  public:
-  virtual ~IFX_Unknown() {}
+  virtual uint32_t Retain() = 0;
   virtual uint32_t Release() = 0;
-  virtual uint32_t AddRef() = 0;
+
+ protected:
+  virtual ~IFX_Retainable() {}
 };
 #define FX_IsOdd(a) ((a)&1)
 #endif  // PDF_ENABLE_XFA
@@ -1067,5 +922,7 @@ class CFX_Matrix_3by3 {
   FX_FLOAT h;
   FX_FLOAT i;
 };
+
+uint32_t GetBits32(const uint8_t* pData, int bitpos, int nbits);
 
 #endif  // CORE_FXCRT_INCLUDE_FX_BASIC_H_

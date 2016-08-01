@@ -405,6 +405,12 @@ wl_message_count_arrays(const struct wl_message *message)
 	return arrays;
 }
 
+int
+wl_connection_get_fd(struct wl_connection *connection)
+{
+	return connection->fd;
+}
+
 static int
 wl_connection_put_fd(struct wl_connection *connection, int32_t fd)
 {
@@ -792,19 +798,6 @@ wl_connection_demarshal(struct wl_connection *connection,
 }
 
 int
-wl_interface_equal(const struct wl_interface *a, const struct wl_interface *b)
-{
-	/* In most cases the pointer equality test is sufficient.
-	 * However, in some cases, depending on how things are split
-	 * across shared objects, we can end up with multiple
-	 * instances of the interface metadata constants.  So if the
-	 * pointers match, the interfaces are equal, if they don't
-	 * match we have to compare the interface names. */
-
-	return a == b || strcmp(a->name, b->name) == 0;
-}
-
-int
 wl_closure_lookup_objects(struct wl_closure *closure, struct wl_map *objects)
 {
 	struct wl_object *object;
@@ -832,7 +825,6 @@ wl_closure_lookup_objects(struct wl_closure *closure, struct wl_map *objects)
 			} else if (object == NULL && id != 0) {
 				wl_log("unknown object (%u), message %s(%s)\n",
 				       id, message->name, message->signature);
-				object = NULL;
 				errno = EINVAL;
 				return -1;
 			}
@@ -1131,7 +1123,7 @@ wl_closure_send(struct wl_closure *closure, struct wl_connection *connection)
 		return -1;
 
 	buffer_size = buffer_size_for_closure(closure);
-	buffer = malloc(buffer_size * sizeof buffer[0]);
+	buffer = zalloc(buffer_size * sizeof buffer[0]);
 	if (buffer == NULL)
 		return -1;
 

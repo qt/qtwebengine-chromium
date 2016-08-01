@@ -28,7 +28,7 @@ class CFPF_SkiaFont;
 class CFPF_SkiaFontDescriptor {
  public:
   CFPF_SkiaFontDescriptor()
-      : m_pFamily(NULL),
+      : m_pFamily(nullptr),
         m_dwStyle(0),
         m_iFaceIndex(0),
         m_dwCharsets(0),
@@ -53,7 +53,7 @@ class CFPF_SkiaFontDescriptor {
 
 class CFPF_SkiaPathFont : public CFPF_SkiaFontDescriptor {
  public:
-  CFPF_SkiaPathFont() : m_pPath(NULL) {}
+  CFPF_SkiaPathFont() : m_pPath(nullptr) {}
   ~CFPF_SkiaPathFont() override { FX_Free(m_pPath); }
 
   // CFPF_SkiaFontDescriptor
@@ -71,7 +71,7 @@ class CFPF_SkiaPathFont : public CFPF_SkiaFontDescriptor {
 
 class CFPF_SkiaFileFont : public CFPF_SkiaFontDescriptor {
  public:
-  CFPF_SkiaFileFont() : m_pFile(NULL) {}
+  CFPF_SkiaFileFont() : m_pFile(nullptr) {}
 
   // CFPF_SkiaFontDescriptor
   int32_t GetType() const override { return FPF_SKIAFONTTYPE_File; }
@@ -80,7 +80,7 @@ class CFPF_SkiaFileFont : public CFPF_SkiaFontDescriptor {
 
 class CFPF_SkiaBufferFont : public CFPF_SkiaFontDescriptor {
  public:
-  CFPF_SkiaBufferFont() : m_pBuffer(NULL), m_szBuffer(0) {}
+  CFPF_SkiaBufferFont() : m_pBuffer(nullptr), m_szBuffer(0) {}
 
   // CFPF_SkiaFontDescriptor
   int32_t GetType() const override { return FPF_SKIAFONTTYPE_Buffer; }
@@ -111,8 +111,8 @@ class CFPF_SkiaFontMgr {
                         int32_t iFaceIndex = 0);
 
  protected:
-  void ScanPath(const CFX_ByteStringC& path);
-  void ScanFile(const CFX_ByteStringC& file);
+  void ScanPath(const CFX_ByteString& path);
+  void ScanFile(const CFX_ByteString& file);
   void ReportFace(FXFT_Face face, CFPF_SkiaFontDescriptor* pFontDesc);
   void OutputSystemFonts();
 

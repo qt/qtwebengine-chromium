@@ -11,6 +11,7 @@
 #include "xfa/fde/cfde_path.h"
 #include "xfa/fde/fde_object.h"
 #include "xfa/fgas/font/fgas_font.h"
+#include "xfa/fgas/font/fgas_gefont.h"
 
 CFDE_RenderDevice::CFDE_RenderDevice(CFX_RenderDevice* pDevice,
                                      FX_BOOL bOwnerDevice)
@@ -36,12 +37,11 @@ int32_t CFDE_RenderDevice::GetWidth() const {
 int32_t CFDE_RenderDevice::GetHeight() const {
   return m_pDevice->GetHeight();
 }
-FDE_HDEVICESTATE CFDE_RenderDevice::SaveState() {
+void CFDE_RenderDevice::SaveState() {
   m_pDevice->SaveState();
-  return NULL;
 }
-void CFDE_RenderDevice::RestoreState(FDE_HDEVICESTATE hState) {
-  m_pDevice->RestoreState();
+void CFDE_RenderDevice::RestoreState() {
+  m_pDevice->RestoreState(false);
   const FX_RECT& rt = m_pDevice->GetClipBox();
   m_rtClip.Set((FX_FLOAT)rt.left, (FX_FLOAT)rt.top, (FX_FLOAT)rt.Width(),
                (FX_FLOAT)rt.Height());
@@ -60,7 +60,7 @@ FX_BOOL CFDE_RenderDevice::SetClipPath(const CFDE_Path* pClip) {
   return FALSE;
 }
 CFDE_Path* CFDE_RenderDevice::GetClipPath() const {
-  return NULL;
+  return nullptr;
 }
 FX_FLOAT CFDE_RenderDevice::GetDpiX() const {
   return 96;
@@ -73,7 +73,6 @@ FX_BOOL CFDE_RenderDevice::DrawImage(CFX_DIBSource* pDib,
                                      const CFX_RectF& dstRect,
                                      const CFX_Matrix* pImgMatrix,
                                      const CFX_Matrix* pDevMatrix) {
-  ASSERT(pDib != NULL);
   CFX_RectF srcRect;
   if (pSrcRect) {
     srcRect = *pSrcRect;
@@ -96,24 +95,23 @@ FX_BOOL CFDE_RenderDevice::DrawImage(CFX_DIBSource* pDib,
   if (pDevMatrix) {
     dib2fxdev.Concat(*pDevMatrix);
   }
-  void* handle = NULL;
+  void* handle = nullptr;
   m_pDevice->StartDIBits(pDib, 255, 0, (const CFX_Matrix*)&dib2fxdev, 0,
                          handle);
-  while (m_pDevice->ContinueDIBits(handle, NULL)) {
+  while (m_pDevice->ContinueDIBits(handle, nullptr)) {
   }
   m_pDevice->CancelDIBits(handle);
-  return handle != NULL;
+  return !!handle;
 }
 FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
-                                      IFX_Font* pFont,
+                                      CFGAS_GEFont* pFont,
                                       const FXTEXT_CHARPOS* pCharPos,
                                       int32_t iCount,
                                       FX_FLOAT fFontSize,
                                       const CFX_Matrix* pMatrix) {
-  ASSERT(pBrush != NULL && pFont != NULL && pCharPos != NULL && iCount > 0);
+  ASSERT(pBrush && pFont && pCharPos && iCount > 0);
   CFX_FontCache* pCache = CFX_GEModule::Get()->GetFontCache();
-  CFX_Font* pFxFont = (CFX_Font*)pFont->GetDevFont();
-
+  CFX_Font* pFxFont = pFont->GetDevFont();
   FX_ARGB argb = pBrush->GetColor();
   if ((pFont->GetFontStyles() & FX_FONTSTYLE_Italic) != 0 &&
       !pFxFont->IsItalic()) {
@@ -128,9 +126,9 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
     }
   }
   FXTEXT_CHARPOS* pCP = (FXTEXT_CHARPOS*)pCharPos;
-  IFX_Font* pCurFont = NULL;
-  IFX_Font* pSTFont = NULL;
-  FXTEXT_CHARPOS* pCurCP = NULL;
+  CFGAS_GEFont* pCurFont = nullptr;
+  CFGAS_GEFont* pSTFont = nullptr;
+  FXTEXT_CHARPOS* pCurCP = nullptr;
   int32_t iCurCount = 0;
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
@@ -139,19 +137,18 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
   CFX_SubstFont SubstFxFont;
   FxFont.SetSubstFont(&SubstFxFont);
   SubstFxFont.m_Weight = dwFontStyle & FX_FONTSTYLE_Bold ? 700 : 400;
-  SubstFxFont.m_WeightCJK = SubstFxFont.m_Weight;
   SubstFxFont.m_ItalicAngle = dwFontStyle & FX_FONTSTYLE_Italic ? -12 : 0;
-  SubstFxFont.m_bItlicCJK = !!(dwFontStyle & FX_FONTSTYLE_Italic);
+  SubstFxFont.m_WeightCJK = SubstFxFont.m_Weight;
+  SubstFxFont.m_bItalicCJK = !!(dwFontStyle & FX_FONTSTYLE_Italic);
 #endif  // _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 
   for (int32_t i = 0; i < iCount; ++i) {
     pSTFont = pFont->GetSubstFont((int32_t)pCP->m_GlyphIndex);
     pCP->m_GlyphIndex &= 0x00FFFFFF;
-    pCP->m_bFontStyle = FALSE;
+    pCP->m_bFontStyle = false;
     if (pCurFont != pSTFont) {
-      if (pCurFont != NULL) {
-        pFxFont = (CFX_Font*)pCurFont->GetDevFont();
-
+      if (pCurFont) {
+        pFxFont = pCurFont->GetDevFont();
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
         FxFont.SetFace(pFxFont->GetFace());
         m_pDevice->DrawNormalText(iCurCount, pCurCP, &FxFont, pCache,
@@ -171,9 +168,8 @@ FX_BOOL CFDE_RenderDevice::DrawString(CFDE_Brush* pBrush,
     }
     pCP++;
   }
-  if (pCurFont != NULL && iCurCount) {
-    pFxFont = (CFX_Font*)pCurFont->GetDevFont();
-
+  if (pCurFont && iCurCount) {
+    pFxFont = pCurFont->GetDevFont();
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
     FxFont.SetFace(pFxFont->GetFace());
     FX_BOOL bRet = m_pDevice->DrawNormalText(
@@ -253,9 +249,9 @@ FX_BOOL CFDE_RenderDevice::DrawPath(CFDE_Pen* pPen,
                                     const CFDE_Path* pPath,
                                     const CFX_Matrix* pMatrix) {
   CFDE_Path* pGePath = (CFDE_Path*)pPath;
-  if (pGePath == NULL) {
+  if (!pGePath)
     return FALSE;
-  }
+
   CFX_GraphStateData graphState;
   if (!CreatePen(pPen, fPenWidth, graphState)) {
     return FALSE;

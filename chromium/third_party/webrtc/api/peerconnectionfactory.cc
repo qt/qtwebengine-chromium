@@ -28,36 +28,12 @@
 #include "webrtc/media/engine/webrtcmediaengine.h"
 #include "webrtc/media/engine/webrtcvideodecoderfactory.h"
 #include "webrtc/media/engine/webrtcvideoencoderfactory.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 #include "webrtc/p2p/base/basicpacketsocketfactory.h"
 #include "webrtc/p2p/client/basicportallocator.h"
 
 namespace webrtc {
-
-namespace {
-
-// Passes down the calls to |store_|. See usage in CreatePeerConnection.
-class DtlsIdentityStoreWrapper : public DtlsIdentityStoreInterface {
- public:
-  DtlsIdentityStoreWrapper(
-      const rtc::scoped_refptr<RefCountedDtlsIdentityStore>& store)
-      : store_(store) {
-    RTC_DCHECK(store_);
-  }
-
-  void RequestIdentity(
-      const rtc::KeyParams& key_params,
-      const rtc::Optional<uint64_t>& expires_ms,
-      const rtc::scoped_refptr<webrtc::DtlsIdentityRequestObserver>&
-          observer) override {
-    store_->RequestIdentity(key_params, expires_ms, observer);
-  }
-
- private:
-  rtc::scoped_refptr<RefCountedDtlsIdentityStore> store_;
-};
-
-}  // anonymous namespace
 
 rtc::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory() {
@@ -83,15 +59,20 @@ rtc::scoped_refptr<PeerConnectionFactoryInterface> CreatePeerConnectionFactory(
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
   rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
       new rtc::RefCountedObject<PeerConnectionFactory>(
-          network_thread, worker_thread, signaling_thread, default_adm,
-          encoder_factory, decoder_factory));
+          network_thread,
+          worker_thread,
+          signaling_thread,
+          default_adm,
+          CreateBuiltinAudioDecoderFactory(),
+          encoder_factory,
+          decoder_factory));
 
   // Call Initialize synchronously but make sure its executed on
   // |signaling_thread|.
   MethodCall0<PeerConnectionFactory, bool> call(
       pc_factory.get(),
       &PeerConnectionFactory::Initialize);
-  bool result =  call.Marshal(signaling_thread);
+  bool result = call.Marshal(RTC_FROM_HERE, signaling_thread);
 
   if (!result) {
     return nullptr;
@@ -104,7 +85,8 @@ PeerConnectionFactory::PeerConnectionFactory()
       wraps_current_thread_(false),
       network_thread_(rtc::Thread::CreateWithSocketServer().release()),
       worker_thread_(rtc::Thread::Create().release()),
-      signaling_thread_(rtc::Thread::Current()) {
+      signaling_thread_(rtc::Thread::Current()),
+      audio_decoder_factory_(CreateBuiltinAudioDecoderFactory()) {
   if (!signaling_thread_) {
     signaling_thread_ = rtc::ThreadManager::Instance()->WrapCurrentThread();
     wraps_current_thread_ = true;
@@ -118,6 +100,8 @@ PeerConnectionFactory::PeerConnectionFactory(
     rtc::Thread* worker_thread,
     rtc::Thread* signaling_thread,
     AudioDeviceModule* default_adm,
+    const rtc::scoped_refptr<webrtc::AudioDecoderFactory>&
+        audio_decoder_factory,
     cricket::WebRtcVideoEncoderFactory* video_encoder_factory,
     cricket::WebRtcVideoDecoderFactory* video_decoder_factory)
     : owns_ptrs_(false),
@@ -126,6 +110,7 @@ PeerConnectionFactory::PeerConnectionFactory(
       worker_thread_(worker_thread),
       signaling_thread_(signaling_thread),
       default_adm_(default_adm),
+      audio_decoder_factory_(audio_decoder_factory),
       video_encoder_factory_(video_encoder_factory),
       video_decoder_factory_(video_decoder_factory) {
   RTC_DCHECK(network_thread);
@@ -141,9 +126,7 @@ PeerConnectionFactory::~PeerConnectionFactory() {
   channel_manager_.reset(nullptr);
 
   // Make sure |worker_thread_| and |signaling_thread_| outlive
-  // |dtls_identity_store_|, |default_socket_factory_| and
-  // |default_network_manager_|.
-  dtls_identity_store_ = nullptr;
+  // |default_socket_factory_| and |default_network_manager_|.
   default_socket_factory_ = nullptr;
   default_network_manager_ = nullptr;
 
@@ -173,8 +156,9 @@ bool PeerConnectionFactory::Initialize() {
   // TODO:  Need to make sure only one VoE is created inside
   // WebRtcMediaEngine.
   cricket::MediaEngineInterface* media_engine =
-      worker_thread_->Invoke<cricket::MediaEngineInterface*>(rtc::Bind(
-      &PeerConnectionFactory::CreateMediaEngine_w, this));
+      worker_thread_->Invoke<cricket::MediaEngineInterface*>(
+          RTC_FROM_HERE,
+          rtc::Bind(&PeerConnectionFactory::CreateMediaEngine_w, this));
 
   channel_manager_.reset(new cricket::ChannelManager(
       media_engine, worker_thread_, network_thread_));
@@ -183,9 +167,6 @@ bool PeerConnectionFactory::Initialize() {
   if (!channel_manager_->Init()) {
     return false;
   }
-
-  dtls_identity_store_ =
-      new RefCountedDtlsIdentityStore(signaling_thread_, network_thread_);
 
   return true;
 }
@@ -255,7 +236,7 @@ PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration_in,
     const MediaConstraintsInterface* constraints,
     std::unique_ptr<cricket::PortAllocator> allocator,
-    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     PeerConnectionObserver* observer) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
 
@@ -264,38 +245,36 @@ PeerConnectionFactory::CreatePeerConnection(
   CopyConstraintsIntoRtcConfiguration(constraints, &configuration);
 
   return CreatePeerConnection(configuration, std::move(allocator),
-                              std::move(dtls_identity_store), observer);
+                              std::move(cert_generator), observer);
 }
 
 rtc::scoped_refptr<PeerConnectionInterface>
 PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     std::unique_ptr<cricket::PortAllocator> allocator,
-    std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     PeerConnectionObserver* observer) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
 
-  if (!dtls_identity_store.get()) {
-    // Because |pc|->Initialize takes ownership of the store we need a new
-    // wrapper object that can be deleted without deleting the underlying
-    // |dtls_identity_store_|, protecting it from being deleted multiple times.
-    dtls_identity_store.reset(
-        new DtlsIdentityStoreWrapper(dtls_identity_store_));
+  if (!cert_generator.get()) {
+    // No certificate generator specified, use the default one.
+    cert_generator.reset(
+        new rtc::RTCCertificateGenerator(signaling_thread_, network_thread_));
   }
 
   if (!allocator) {
     allocator.reset(new cricket::BasicPortAllocator(
         default_network_manager_.get(), default_socket_factory_.get()));
   }
-  worker_thread_->Invoke<void>(
-      rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask, allocator.get(),
-                options_.network_ignore_mask));
+  network_thread_->Invoke<void>(
+      RTC_FROM_HERE, rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask,
+                               allocator.get(), options_.network_ignore_mask));
 
   rtc::scoped_refptr<PeerConnection> pc(
       new rtc::RefCountedObject<PeerConnection>(this));
 
   if (!pc->Initialize(configuration, std::move(allocator),
-                      std::move(dtls_identity_store), observer)) {
+                      std::move(cert_generator), observer)) {
     return nullptr;
   }
   return PeerConnectionProxy::Create(signaling_thread(), pc);
@@ -350,7 +329,9 @@ rtc::Thread* PeerConnectionFactory::network_thread() {
 cricket::MediaEngineInterface* PeerConnectionFactory::CreateMediaEngine_w() {
   ASSERT(worker_thread_ == rtc::Thread::Current());
   return cricket::WebRtcMediaEngineFactory::Create(
-      default_adm_.get(), video_encoder_factory_.get(),
+      default_adm_.get(),
+      audio_decoder_factory_,
+      video_encoder_factory_.get(),
       video_decoder_factory_.get());
 }
 

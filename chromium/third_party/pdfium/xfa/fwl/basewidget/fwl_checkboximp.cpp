@@ -13,9 +13,9 @@
 #include "xfa/fwl/core/cfwl_message.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 
 namespace {
@@ -368,12 +368,11 @@ void CFWL_CheckBoxImp::NextStates() {
   if (m_pProperties->m_dwStyleExes & FWL_STYLEEXT_CKB_RadioButton) {
     if ((m_pProperties->m_dwStates & FWL_STATE_CKB_CheckMask) ==
         FWL_STATE_CKB_Unchecked) {
-      CFWL_WidgetMgr* pWidgetMgr =
-          static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+      CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
       if (!pWidgetMgr->IsFormDisabled()) {
         CFX_ArrayTemplate<IFWL_Widget*> radioarr;
         pWidgetMgr->GetSameGroupRadioButton(m_pInterface, radioarr);
-        IFWL_CheckBox* pCheckBox = NULL;
+        IFWL_CheckBox* pCheckBox = nullptr;
         int32_t iCount = radioarr.GetSize();
         for (int32_t i = 0; i < iCount; i++) {
           pCheckBox = static_cast<IFWL_CheckBox*>(radioarr[i]);

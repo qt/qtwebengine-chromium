@@ -2178,6 +2178,45 @@ TFunction *TParseContext::parseFunctionDeclarator(const TSourceLoc &location, TF
     return function;
 }
 
+TFunction *TParseContext::parseFunctionHeader(const TPublicType &type,
+                                              const TString *name,
+                                              const TSourceLoc &location)
+{
+    if (type.qualifier != EvqGlobal && type.qualifier != EvqTemporary)
+    {
+        error(location, "no qualifiers allowed for function return",
+              getQualifierString(type.qualifier));
+        recover();
+    }
+    if (!type.layoutQualifier.isEmpty())
+    {
+        error(location, "no qualifiers allowed for function return", "layout");
+        recover();
+    }
+    // make sure a sampler is not involved as well...
+    if (samplerErrorCheck(location, type, "samplers can't be function return values"))
+    {
+        recover();
+    }
+    if (mShaderVersion < 300)
+    {
+        // Array return values are forbidden, but there's also no valid syntax for declaring array
+        // return values in ESSL 1.00.
+        ASSERT(type.arraySize == 0 || mDiagnostics.numErrors() > 0);
+
+        if (type.isStructureContainingArrays())
+        {
+            // ESSL 1.00.17 section 6.1 Function Definitions
+            error(location, "structures containing arrays can't be function return values",
+                  TType(type).getCompleteString().c_str());
+            recover();
+        }
+    }
+
+    // Add the function as a prototype after parsing it (we do not support recursion)
+    return new TFunction(name, new TType(type));
+}
+
 TFunction *TParseContext::addConstructorFunc(const TPublicType &publicTypeIn)
 {
     TPublicType publicType = publicTypeIn;

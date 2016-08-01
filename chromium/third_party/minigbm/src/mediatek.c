@@ -14,8 +14,9 @@
 #include "gbm_priv.h"
 #include "helpers.h"
 
-int gbm_mediatek_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
-			   uint32_t format, uint32_t flags)
+static int gbm_mediatek_bo_create(struct gbm_bo *bo,
+				  uint32_t width, uint32_t height,
+				  uint32_t format, uint32_t flags)
 {
 	size_t size;
 	struct drm_mtk_gem_create gem_create;
@@ -41,16 +42,16 @@ int gbm_mediatek_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
 	return 0;
 }
 
-struct gbm_driver gbm_driver_mediatek =
+const struct gbm_driver gbm_driver_mediatek =
 {
 	.name = "mediatek",
 	.bo_create = gbm_mediatek_bo_create,
 	.bo_destroy = gbm_gem_bo_destroy,
 	.format_list = {
-		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING | GBM_BO_USE_WRITE},
-		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
-		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING | GBM_BO_USE_WRITE},
-		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING},
+		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING},
+		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
 	}
 };
 

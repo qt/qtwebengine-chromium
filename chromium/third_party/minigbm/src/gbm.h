@@ -68,14 +68,6 @@ union gbm_bo_handle {
    uint64_t u64;
 };
 
-/** Format of the allocated buffer */
-enum gbm_bo_format {
-   /** RGB with 8 bits per channel in a 32 bit value */
-   GBM_BO_FORMAT_XRGB8888,
-   /** ARGB with 8 bits per channel in a 32 bit value */
-   GBM_BO_FORMAT_ARGB8888
-};
-
 #define __gbm_fourcc_code(a,b,c,d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | \
 			      ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
 
@@ -83,6 +75,13 @@ enum gbm_bo_format {
 
 /* color index */
 #define GBM_FORMAT_C8		__gbm_fourcc_code('C', '8', ' ', ' ') /* [7:0] C */
+
+/* 8 bpp Red */
+#define GBM_FORMAT_R8		__gbm_fourcc_code('R', '8', ' ', ' ') /* [7:0] R */
+
+/* 16 bpp RG */
+#define GBM_FORMAT_RG88		__gbm_fourcc_code('R', 'G', '8', '8') /* [15:0] R:G 8:8 little endian */
+#define GBM_FORMAT_GR88		__gbm_fourcc_code('G', 'R', '8', '8') /* [15:0] G:R 8:8 little endian */
 
 /* 8 bpp RGB */
 #define GBM_FORMAT_RGB332	__gbm_fourcc_code('R', 'G', 'B', '8') /* [7:0] R:G:B 3:3:2 */
@@ -177,6 +176,28 @@ enum gbm_bo_format {
 #define GBM_FORMAT_YUV444	__gbm_fourcc_code('Y', 'U', '2', '4') /* non-subsampled Cb (1) and Cr (2) planes */
 #define GBM_FORMAT_YVU444	__gbm_fourcc_code('Y', 'V', '2', '4') /* non-subsampled Cr (1) and Cb (2) planes */
 
+/*
+ * Format Modifiers:
+ *
+ * Format modifiers describe, typically, a re-ordering or modification
+ * of the data in a plane of an FB.  This can be used to express tiled/
+ * swizzled formats, or compression, or a combination of the two.
+ *
+ * The upper 8 bits of the format modifier are a vendor-id as assigned
+ * below.  The lower 56 bits are assigned as vendor sees fit.
+ */
+
+/* Vendor Ids: */
+#define GBM_FORMAT_MOD_NONE           0
+#define GBM_FORMAT_MOD_VENDOR_INTEL   0x01
+#define GBM_FORMAT_MOD_VENDOR_AMD     0x02
+#define GBM_FORMAT_MOD_VENDOR_NV      0x03
+#define GBM_FORMAT_MOD_VENDOR_SAMSUNG 0x04
+#define GBM_FORMAT_MOD_VENDOR_QCOM    0x05
+/* add more to the end as needed */
+
+#define gbm_fourcc_mod_code(vendor, val) \
+	((((__u64)GBM_FORMAT_MOD_VENDOR_## vendor) << 56) | (val & 0x00ffffffffffffffULL))
 
 /**
  * Flags to indicate the intended use for the buffer - these are passed into
@@ -205,8 +226,7 @@ enum gbm_bo_flags {
     */
    GBM_BO_USE_RENDERING    = (1 << 2),
    /**
-    * Buffer can be used for gbm_bo_write.  This is guaranteed to work
-    * with GBM_BO_USE_CURSOR. but may not work for other combinations.
+    * Deprecated
     */
    GBM_BO_USE_WRITE    = (1 << 3),
    /**
@@ -271,6 +291,9 @@ gbm_bo_get_stride_or_tiling(struct gbm_bo *bo);
 uint32_t
 gbm_bo_get_format(struct gbm_bo *bo);
 
+uint64_t
+gbm_bo_get_format_modifier(struct gbm_bo *bo);
+
 struct gbm_device *
 gbm_bo_get_device(struct gbm_bo *bo);
 
@@ -298,8 +321,8 @@ gbm_bo_get_plane_size(struct gbm_bo *bo, size_t plane);
 uint32_t
 gbm_bo_get_plane_stride(struct gbm_bo *bo, size_t plane);
 
-int
-gbm_bo_write(struct gbm_bo *bo, const void *buf, size_t count);
+uint64_t
+gbm_bo_get_plane_format_modifier(struct gbm_bo *bo, size_t plane);
 
 void
 gbm_bo_set_user_data(struct gbm_bo *bo, void *data,

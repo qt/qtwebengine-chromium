@@ -111,7 +111,7 @@ XFA_LPCBARCODETYPEENUMINFO XFA_GetBarcodeTypeByName(
       iStart = iMid + 1;
     }
   } while (iStart <= iEnd);
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace.
@@ -126,8 +126,8 @@ FX_BOOL CXFA_FFBarcode::LoadWidget() {
     pFWLBarcode->Initialize();
   }
   m_pNormalWidget = pFWLBarcode;
+  m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
   CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
@@ -141,8 +141,7 @@ FX_BOOL CXFA_FFBarcode::LoadWidget() {
 }
 void CXFA_FFBarcode::RenderWidget(CFX_Graphics* pGS,
                                   CFX_Matrix* pMatrix,
-                                  uint32_t dwStatus,
-                                  int32_t iRotate) {
+                                  uint32_t dwStatus) {
   if (!IsMatchVisibleStatus(dwStatus)) {
     return;
   }

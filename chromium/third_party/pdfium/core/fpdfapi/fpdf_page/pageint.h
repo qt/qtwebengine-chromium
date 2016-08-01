@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <set>
 #include <vector>
 
 #include "core/fpdfapi/fpdf_page/cpdf_contentmark.h"
@@ -19,6 +20,7 @@
 
 class CPDF_AllStates;
 class CPDF_ColorSpace;
+class CPDF_ExpIntFunc;
 class CPDF_Font;
 class CPDF_FontEncoding;
 class CPDF_Form;
@@ -27,6 +29,8 @@ class CPDF_Image;
 class CPDF_ImageObject;
 class CPDF_Page;
 class CPDF_Pattern;
+class CPDF_SampledFunc;
+class CPDF_StitchFunc;
 class CPDF_StreamAcc;
 class CPDF_TextObject;
 class CPDF_Type3Char;
@@ -48,7 +52,7 @@ class CPDF_StreamParser {
   uint32_t GetWordSize() const { return m_WordSize; }
   CPDF_Object* GetObject() {
     CPDF_Object* pObj = m_pLastObj;
-    m_pLastObj = NULL;
+    m_pLastObj = nullptr;
     return pObj;
   }
   uint32_t GetPos() const { return m_Pos; }
@@ -83,7 +87,7 @@ struct ContentParam {
   Type m_Type;
   union {
     struct {
-      FX_BOOL m_bInteger;
+      bool m_bInteger;
       union {
         int m_Integer;
         FX_FLOAT m_Float;
@@ -250,7 +254,7 @@ class CPDF_StreamContentParser {
   CPDF_StreamParser* m_pSyntax;
   std::unique_ptr<CPDF_AllStates> m_pCurStates;
   CPDF_ContentMark m_CurContentMark;
-  CFX_ArrayTemplate<CPDF_TextObject*> m_ClipTextList;
+  std::vector<std::unique_ptr<CPDF_TextObject>> m_ClipTextList;
   CPDF_TextObject* m_pLastTextObject;
   FX_FLOAT m_DefFontSize;
   FX_PATHPOINT* m_pPathPoints;
@@ -260,7 +264,7 @@ class CPDF_StreamContentParser {
   FX_FLOAT m_PathStartY;
   FX_FLOAT m_PathCurrentX;
   FX_FLOAT m_PathCurrentY;
-  int m_PathClipType;
+  uint8_t m_PathClipType;
   CFX_ByteString m_LastImageName;
   CPDF_Image* m_pLastImage;
   CFX_BinaryBuf m_LastImageDict;
@@ -353,6 +357,10 @@ class CPDF_DocPageData {
   using CPDF_ImageMap = std::map<uint32_t, CPDF_CountedImage*>;
   using CPDF_PatternMap = std::map<CPDF_Object*, CPDF_CountedPattern*>;
 
+  CPDF_ColorSpace* GetColorSpaceImpl(CPDF_Object* pCSObj,
+                                     const CPDF_Dictionary* pResources,
+                                     std::set<CPDF_Object*>* pVisited);
+
   CPDF_Document* const m_pPDFDoc;
   FX_BOOL m_bForceClear;
   std::map<CFX_ByteString, CPDF_Stream*> m_HashProfileMap;
@@ -367,13 +375,16 @@ class CPDF_DocPageData {
 class CPDF_Function {
  public:
   enum class Type {
-    kType0Sampled,
-    kType2ExpotentialInterpolation,
-    kType3Stitching,
-    kType4PostScript,
+    kTypeInvalid = -1,
+    kType0Sampled = 0,
+    kType2ExpotentialInterpolation = 2,
+    kType3Stitching = 3,
+    kType4PostScript = 4,
   };
 
-  static CPDF_Function* Load(CPDF_Object* pFuncObj);
+  static std::unique_ptr<CPDF_Function> Load(CPDF_Object* pFuncObj);
+  static Type IntegerToFunctionType(int iType);
+
   virtual ~CPDF_Function();
   FX_BOOL Call(FX_FLOAT* inputs,
                uint32_t ninputs,
@@ -383,10 +394,14 @@ class CPDF_Function {
   uint32_t CountOutputs() const { return m_nOutputs; }
   FX_FLOAT GetDomain(int i) const { return m_pDomains[i]; }
   FX_FLOAT GetRange(int i) const { return m_pRanges[i]; }
-  Type GetType() const { return m_Type; }
+
+  const CPDF_SampledFunc* ToSampledFunc() const;
+  const CPDF_ExpIntFunc* ToExpIntFunc() const;
+  const CPDF_StitchFunc* ToStitchFunc() const;
 
  protected:
-  CPDF_Function(Type type);
+  explicit CPDF_Function(Type type);
+
   FX_BOOL Init(CPDF_Object* pObj);
   virtual FX_BOOL v_Init(CPDF_Object* pObj) = 0;
   virtual FX_BOOL v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const = 0;
@@ -395,7 +410,7 @@ class CPDF_Function {
   uint32_t m_nOutputs;
   FX_FLOAT* m_pDomains;
   FX_FLOAT* m_pRanges;
-  Type m_Type;
+  const Type m_Type;
 };
 
 class CPDF_ExpIntFunc : public CPDF_Function {
@@ -433,11 +448,20 @@ class CPDF_SampledFunc : public CPDF_Function {
   FX_BOOL v_Init(CPDF_Object* pObj) override;
   FX_BOOL v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const override;
 
-  SampleEncodeInfo* m_pEncodeInfo;
-  SampleDecodeInfo* m_pDecodeInfo;
+  const std::vector<SampleEncodeInfo>& GetEncodeInfo() const {
+    return m_EncodeInfo;
+  }
+  uint32_t GetBitsPerSample() const { return m_nBitsPerSample; }
+  const CPDF_StreamAcc* GetSampleStream() const {
+    return m_pSampleStream.get();
+  }
+
+ private:
+  std::vector<SampleEncodeInfo> m_EncodeInfo;
+  std::vector<SampleDecodeInfo> m_DecodeInfo;
   uint32_t m_nBitsPerSample;
   uint32_t m_SampleMax;
-  CPDF_StreamAcc* m_pSampleStream;
+  std::unique_ptr<CPDF_StreamAcc> m_pSampleStream;
 };
 
 class CPDF_StitchFunc : public CPDF_Function {
@@ -449,7 +473,13 @@ class CPDF_StitchFunc : public CPDF_Function {
   FX_BOOL v_Init(CPDF_Object* pObj) override;
   FX_BOOL v_Call(FX_FLOAT* inputs, FX_FLOAT* results) const override;
 
-  std::vector<CPDF_Function*> m_pSubFunctions;
+  const std::vector<std::unique_ptr<CPDF_Function>>& GetSubFunctions() const {
+    return m_pSubFunctions;
+  }
+  FX_FLOAT GetBound(size_t i) const { return m_pBounds[i]; }
+
+ private:
+  std::vector<std::unique_ptr<CPDF_Function>> m_pSubFunctions;
   FX_FLOAT* m_pBounds;
   FX_FLOAT* m_pEncode;
 

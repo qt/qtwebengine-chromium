@@ -6,9 +6,12 @@
 
 #include "public/fpdf_ext.h"
 
+#include <memory>
+
 #include "core/fpdfapi/fpdf_parser/include/cpdf_array.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
+#include "core/fxcrt/include/fx_basic.h"
 #include "core/fxcrt/include/fx_xml.h"
 #include "fpdfsdk/include/fsdk_define.h"
 
@@ -18,15 +21,15 @@
 
 #define FPDFSDK_UNSUPPORT_CALL 100
 
-class CFSDK_UnsupportInfo_Adapter {
+class CFSDK_UnsupportInfo_Adapter : public CFX_Deletable {
  public:
-  CFSDK_UnsupportInfo_Adapter(UNSUPPORT_INFO* unsp_info) {
-    m_unsp_info = unsp_info;
-  }
+  explicit CFSDK_UnsupportInfo_Adapter(UNSUPPORT_INFO* unsp_info)
+      : m_unsp_info(unsp_info) {}
+
   void ReportError(int nErrorType);
 
  private:
-  UNSUPPORT_INFO* m_unsp_info;
+  UNSUPPORT_INFO* const m_unsp_info;
 };
 
 void CFSDK_UnsupportInfo_Adapter::ReportError(int nErrorType) {
@@ -35,18 +38,13 @@ void CFSDK_UnsupportInfo_Adapter::ReportError(int nErrorType) {
   }
 }
 
-void FreeUnsupportInfo(void* pData) {
-  CFSDK_UnsupportInfo_Adapter* pAdapter = (CFSDK_UnsupportInfo_Adapter*)pData;
-  delete pAdapter;
-}
-
 FX_BOOL FPDF_UnSupportError(int nError) {
   CFSDK_UnsupportInfo_Adapter* pAdapter =
-      (CFSDK_UnsupportInfo_Adapter*)CPDF_ModuleMgr::Get()->GetPrivateData(
-          (void*)FPDFSDK_UNSUPPORT_CALL);
-
+      static_cast<CFSDK_UnsupportInfo_Adapter*>(
+          CPDF_ModuleMgr::Get()->GetUnsupportInfoAdapter());
   if (!pAdapter)
     return FALSE;
+
   pAdapter->ReportError(nError);
   return TRUE;
 }
@@ -55,12 +53,9 @@ DLLEXPORT FPDF_BOOL STDCALL
 FSDK_SetUnSpObjProcessHandler(UNSUPPORT_INFO* unsp_info) {
   if (!unsp_info || unsp_info->version != 1)
     return FALSE;
-  CFSDK_UnsupportInfo_Adapter* pAdapter =
-      new CFSDK_UnsupportInfo_Adapter(unsp_info);
 
-  CPDF_ModuleMgr::Get()->SetPrivateData((void*)FPDFSDK_UNSUPPORT_CALL, pAdapter,
-                                        &FreeUnsupportInfo);
-
+  CPDF_ModuleMgr::Get()->SetUnsupportInfoAdapter(std::unique_ptr<CFX_Deletable>(
+      new CFSDK_UnsupportInfo_Adapter(unsp_info)));
   return TRUE;
 }
 
@@ -161,7 +156,7 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
       }
       if (pNameDict && pNameDict->KeyExist("JavaScript")) {
         CPDF_Dictionary* pJSDict = pNameDict->GetDictBy("JavaScript");
-        CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayBy("Names") : NULL;
+        CPDF_Array* pArray = pJSDict ? pJSDict->GetArrayBy("Names") : nullptr;
         if (pArray) {
           for (size_t i = 0; i < pArray->GetCount(); i++) {
             CFX_ByteString cbStr = pArray->GetStringAt(i);
@@ -183,15 +178,13 @@ void CheckUnSupportError(CPDF_Document* pDoc, uint32_t err_code) {
 
 #ifndef PDF_ENABLE_XFA
   // XFA Forms
-  CPDF_InterForm* pInterForm = new CPDF_InterForm(pDoc, FALSE);
-  if (pInterForm->HasXFAForm()) {
+  CPDF_InterForm interform(pDoc);
+  if (interform.HasXFAForm())
     FPDF_UnSupportError(FPDF_UNSP_DOC_XFAFORM);
-  }
-  delete pInterForm;
 #endif  // PDF_ENABLE_XFA
 }
 
-DLLEXPORT int FPDFDoc_GetPageMode(FPDF_DOCUMENT document) {
+DLLEXPORT int STDCALL FPDFDoc_GetPageMode(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return PAGEMODE_UNKNOWN;

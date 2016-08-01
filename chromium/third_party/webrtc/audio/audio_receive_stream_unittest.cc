@@ -15,6 +15,7 @@
 
 #include "webrtc/audio/audio_receive_stream.h"
 #include "webrtc/audio/conversion.h"
+#include "webrtc/modules/audio_coding/codecs/mock/mock_audio_decoder_factory.h"
 #include "webrtc/modules/bitrate_controller/include/mock/mock_bitrate_controller.h"
 #include "webrtc/modules/congestion_controller/include/mock/mock_congestion_controller.h"
 #include "webrtc/modules/pacing/packet_router.h"
@@ -29,7 +30,9 @@ namespace test {
 namespace {
 
 using testing::_;
+using testing::FloatEq;
 using testing::Return;
+using testing::ReturnRef;
 
 AudioDecodingCallStats MakeAudioDecodeStatsForTest() {
   AudioDecodingCallStats audio_decode_stats;
@@ -64,6 +67,7 @@ const AudioDecodingCallStats kAudioDecodeStats = MakeAudioDecodeStatsForTest();
 struct ConfigHelper {
   ConfigHelper()
       : simulated_clock_(123456),
+        decoder_factory_(new rtc::RefCountedObject<MockAudioDecoderFactory>),
         congestion_controller_(&simulated_clock_,
                                &bitrate_observer_,
                                &remote_bitrate_observer_) {
@@ -82,18 +86,19 @@ struct ConfigHelper {
           EXPECT_FALSE(channel_proxy_);
           channel_proxy_ = new testing::StrictMock<MockVoEChannelProxy>();
           EXPECT_CALL(*channel_proxy_, SetLocalSSRC(kLocalSsrc)).Times(1);
+          EXPECT_CALL(*channel_proxy_, SetNACKStatus(true, 15)).Times(1);
           EXPECT_CALL(*channel_proxy_,
               SetReceiveAbsoluteSenderTimeStatus(true, kAbsSendTimeId))
                   .Times(1);
           EXPECT_CALL(*channel_proxy_,
               SetReceiveAudioLevelIndicationStatus(true, kAudioLevelId))
                   .Times(1);
-          EXPECT_CALL(*channel_proxy_, EnableReceiveTransportSequenceNumber(
-                                           kTransportSequenceNumberId))
-              .Times(1);
           EXPECT_CALL(*channel_proxy_,
-                      RegisterReceiverCongestionControlObjects(&packet_router_))
-              .Times(1);
+              EnableReceiveTransportSequenceNumber(kTransportSequenceNumberId))
+                  .Times(1);
+          EXPECT_CALL(*channel_proxy_,
+              RegisterReceiverCongestionControlObjects(&packet_router_))
+                  .Times(1);
           EXPECT_CALL(congestion_controller_, packet_router())
               .WillOnce(Return(&packet_router_));
           EXPECT_CALL(*channel_proxy_, ResetCongestionControlObjects())
@@ -102,17 +107,21 @@ struct ConfigHelper {
               .Times(1);
           EXPECT_CALL(*channel_proxy_, DeRegisterExternalTransport())
               .Times(1);
+          EXPECT_CALL(*channel_proxy_, GetAudioDecoderFactory())
+              .WillOnce(ReturnRef(decoder_factory_));
           return channel_proxy_;
         }));
     stream_config_.voe_channel_id = kChannelId;
     stream_config_.rtp.local_ssrc = kLocalSsrc;
     stream_config_.rtp.remote_ssrc = kRemoteSsrc;
+    stream_config_.rtp.nack.rtp_history_ms = 300;
     stream_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
+        RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeId));
     stream_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAudioLevel, kAudioLevelId));
+        RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelId));
     stream_config_.rtp.extensions.push_back(RtpExtension(
-        RtpExtension::kTransportSequenceNumber, kTransportSequenceNumberId));
+        RtpExtension::kTransportSequenceNumberUri, kTransportSequenceNumberId));
+    stream_config_.decoder_factory = decoder_factory_;
   }
 
   MockCongestionController* congestion_controller() {
@@ -159,6 +168,7 @@ struct ConfigHelper {
   PacketRouter packet_router_;
   testing::NiceMock<MockCongestionObserver> bitrate_observer_;
   testing::NiceMock<MockRemoteBitrateObserver> remote_bitrate_observer_;
+  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_;
   MockCongestionController congestion_controller_;
   MockRemoteBitrateEstimator remote_bitrate_estimator_;
   testing::StrictMock<MockVoiceEngine> voice_engine_;
@@ -180,7 +190,7 @@ void BuildOneByteExtension(std::vector<uint8_t>::iterator it,
   const size_t kExtensionDataLength = kOneByteExtensionLength - 1;
   uint32_t shifted_value = extension_value
                            << (8 * (kExtensionDataLength - value_length));
-  *it = (id << 4) + (value_length - 1);
+  *it = (id << 4) + (static_cast<uint8_t>(value_length) - 1);
   ++it;
   ByteWriter<uint32_t, kExtensionDataLength>::WriteBigEndian(&(*it),
                                                              shifted_value);
@@ -224,12 +234,12 @@ TEST(AudioReceiveStreamTest, ConfigToString) {
   config.rtp.remote_ssrc = kRemoteSsrc;
   config.rtp.local_ssrc = kLocalSsrc;
   config.rtp.extensions.push_back(
-      RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
+      RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeId));
   config.voe_channel_id = kChannelId;
   EXPECT_EQ(
-      "{rtp: {remote_ssrc: 1234, local_ssrc: 5678, extensions: [{name: "
-      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time, id: 2}], "
-      "transport_cc: off}, "
+      "{rtp: {remote_ssrc: 1234, local_ssrc: 5678, transport_cc: off, "
+      "nack: {rtp_history_ms: 0}, extensions: [{uri: "
+      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time, id: 2}]}, "
       "rtcp_send_transport: nullptr, "
       "voe_channel_id: 2}",
       config.ToString());
@@ -294,7 +304,6 @@ TEST(AudioReceiveStreamTest, ReceiveRtcpPacket) {
   EXPECT_TRUE(recv_stream.DeliverRtcp(&rtcp_packet[0], rtcp_packet.size()));
 }
 
-
 TEST(AudioReceiveStreamTest, GetStats) {
   ConfigHelper helper;
   internal::AudioReceiveStream recv_stream(
@@ -335,6 +344,15 @@ TEST(AudioReceiveStreamTest, GetStats) {
   EXPECT_EQ(kAudioDecodeStats.decoded_plc_cng, stats.decoding_plc_cng);
   EXPECT_EQ(kCallStats.capture_start_ntp_time_ms_,
             stats.capture_start_ntp_time_ms);
+}
+
+TEST(AudioReceiveStreamTest, SetGain) {
+  ConfigHelper helper;
+  internal::AudioReceiveStream recv_stream(
+      helper.congestion_controller(), helper.config(), helper.audio_state());
+  EXPECT_CALL(*helper.channel_proxy(),
+      SetChannelOutputVolumeScaling(FloatEq(0.765f)));
+  recv_stream.SetGain(0.765f);
 }
 }  // namespace test
 }  // namespace webrtc

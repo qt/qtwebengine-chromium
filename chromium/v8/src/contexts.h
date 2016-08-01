@@ -86,8 +86,10 @@ enum BindingFlags {
   V(REFLECT_DELETE_PROPERTY_INDEX, JSFunction, reflect_delete_property) \
   V(SPREAD_ARGUMENTS_INDEX, JSFunction, spread_arguments)               \
   V(SPREAD_ITERABLE_INDEX, JSFunction, spread_iterable)                 \
-  V(MATH_FLOOR, JSFunction, math_floor)                                 \
-  V(MATH_SQRT, JSFunction, math_sqrt)
+  V(MATH_EXP_INDEX, JSFunction, math_exp)                               \
+  V(MATH_FLOOR_INDEX, JSFunction, math_floor)                           \
+  V(MATH_LOG_INDEX, JSFunction, math_log)                               \
+  V(MATH_SQRT_INDEX, JSFunction, math_sqrt)
 
 #define NATIVE_CONTEXT_IMPORTED_FIELDS(V)                                   \
   V(ARRAY_CONCAT_INDEX, JSFunction, array_concat)                           \
@@ -104,7 +106,6 @@ enum BindingFlags {
   V(EVAL_ERROR_FUNCTION_INDEX, JSFunction, eval_error_function)             \
   V(GET_STACK_TRACE_LINE_INDEX, JSFunction, get_stack_trace_line_fun)       \
   V(GLOBAL_EVAL_FUN_INDEX, JSFunction, global_eval_fun)                     \
-  V(JSON_SERIALIZE_ADAPTER_INDEX, JSFunction, json_serialize_adapter)       \
   V(MAKE_ERROR_FUNCTION_INDEX, JSFunction, make_error_function)             \
   V(MAP_DELETE_METHOD_INDEX, JSFunction, map_delete)                        \
   V(MAP_GET_METHOD_INDEX, JSFunction, map_get)                              \
@@ -216,6 +217,7 @@ enum BindingFlags {
   V(NORMALIZED_MAP_CACHE_INDEX, Object, normalized_map_cache)                  \
   V(NUMBER_FUNCTION_INDEX, JSFunction, number_function)                        \
   V(OBJECT_FUNCTION_INDEX, JSFunction, object_function)                        \
+  V(OBJECT_WITH_NULL_PROTOTYPE_MAP, Map, object_with_null_prototype_map)       \
   V(OBJECT_FUNCTION_PROTOTYPE_MAP_INDEX, Map, object_function_prototype_map)   \
   V(OPAQUE_REFERENCE_FUNCTION_INDEX, JSFunction, opaque_reference_function)    \
   V(PROXY_CALLABLE_MAP_INDEX, Map, proxy_callable_map)                         \
@@ -238,6 +240,10 @@ enum BindingFlags {
   V(SLOPPY_FUNCTION_WITH_READONLY_PROTOTYPE_MAP_INDEX, Map,                    \
     sloppy_function_with_readonly_prototype_map)                               \
   V(WASM_FUNCTION_MAP_INDEX, Map, wasm_function_map)                           \
+  V(WASM_MODULE_CONSTRUCTOR_INDEX, JSFunction, wasm_module_constructor)        \
+  V(WASM_INSTANCE_CONSTRUCTOR_INDEX, JSFunction, wasm_instance_constructor)    \
+  V(WASM_MODULE_SYM_INDEX, Symbol, wasm_module_sym)                            \
+  V(WASM_INSTANCE_SYM_INDEX, Symbol, wasm_instance_sym)                        \
   V(SLOPPY_ASYNC_FUNCTION_MAP_INDEX, Map, sloppy_async_function_map)           \
   V(SLOPPY_GENERATOR_FUNCTION_MAP_INDEX, Map, sloppy_generator_function_map)   \
   V(SLOW_ALIASED_ARGUMENTS_MAP_INDEX, Map, slow_aliased_arguments_map)         \
@@ -250,6 +256,8 @@ enum BindingFlags {
   V(STRING_FUNCTION_INDEX, JSFunction, string_function)                        \
   V(STRING_FUNCTION_PROTOTYPE_MAP_INDEX, Map, string_function_prototype_map)   \
   V(SYMBOL_FUNCTION_INDEX, JSFunction, symbol_function)                        \
+  V(TYPED_ARRAY_FUN_INDEX, JSFunction, typed_array_function)                   \
+  V(TYPED_ARRAY_PROTOTYPE_INDEX, JSObject, typed_array_prototype)              \
   V(UINT16_ARRAY_FUN_INDEX, JSFunction, uint16_array_fun)                      \
   V(UINT16X8_FUNCTION_INDEX, JSFunction, uint16x8_function)                    \
   V(UINT32_ARRAY_FUN_INDEX, JSFunction, uint32_array_fun)                      \

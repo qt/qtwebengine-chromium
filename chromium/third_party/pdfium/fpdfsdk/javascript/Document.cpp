@@ -147,8 +147,8 @@ void CJS_Document::InitInstance(IJS_Runtime* pIRuntime) {
 
 Document::Document(CJS_Object* pJSObject)
     : CJS_EmbedObj(pJSObject),
-      m_isolate(NULL),
-      m_pDocument(NULL),
+      m_isolate(nullptr),
+      m_pDocument(nullptr),
       m_cwBaseURL(L""),
       m_bDelay(FALSE) {}
 
@@ -379,8 +379,7 @@ FX_BOOL Document::mailForm(IJS_Context* cc,
   CFX_WideString cSubject = iLength > 4 ? params[4].ToCFXWideString() : L"";
   CFX_WideString cMsg = iLength > 5 ? params[5].ToCFXWideString() : L"";
 
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   CFX_ByteTextBuf textBuf;
   if (!pInterForm->ExportFormToFDFTextBuf(textBuf))
     return FALSE;
@@ -478,12 +477,9 @@ FX_BOOL Document::removeField(IJS_Context* cc,
   }
 
   CFX_WideString sFieldName = params[0].ToCFXWideString();
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
-
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   std::vector<CPDFSDK_Widget*> widgets;
   pInterForm->GetWidgets(sFieldName, &widgets);
-
   if (widgets.empty())
     return TRUE;
 
@@ -520,8 +516,7 @@ FX_BOOL Document::resetForm(IJS_Context* cc,
         m_pDocument->GetPermissions(FPDFPERM_FILL_FORM)))
     return FALSE;
 
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   CPDF_InterForm* pPDFForm = pInterForm->GetInterForm();
   CJS_Runtime* pRuntime = CJS_Runtime::FromContext(cc);
   CJS_Array aName(pRuntime);
@@ -611,8 +606,7 @@ FX_BOOL Document::submitForm(IJS_Context* cc,
         CJS_Value(pRuntime, pValue, GET_VALUE_TYPE(pValue)).ToV8Array());
   }
 
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   CPDF_InterForm* pPDFInterForm = pInterForm->GetInterForm();
   if (aFields.GetLength() == 0 && bEmpty) {
     if (pPDFInterForm->CheckRequiredFields(nullptr, true)) {
@@ -715,8 +709,8 @@ FX_BOOL Document::mailDoc(IJS_Context* cc,
 
   pRuntime->BeginBlock();
   CPDFDoc_Environment* pEnv = pRuntime->GetReaderApp();
-  pEnv->JS_docmailForm(NULL, 0, bUI, cTo.c_str(), cSubject.c_str(), cCc.c_str(),
-                       cBcc.c_str(), cMsg.c_str());
+  pEnv->JS_docmailForm(nullptr, 0, bUI, cTo.c_str(), cSubject.c_str(),
+                       cCc.c_str(), cBcc.c_str(), cMsg.c_str());
   pRuntime->EndBlock();
 
   return TRUE;
@@ -1028,9 +1022,7 @@ FX_BOOL Document::baseURL(IJS_Context* cc,
 FX_BOOL Document::calculate(IJS_Context* cc,
                             CJS_PropValue& vp,
                             CFX_WideString& sError) {
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
-
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   if (vp.IsGetting()) {
     if (pInterForm->IsCalculateEnabled())
       vp << true;
@@ -1311,8 +1303,7 @@ FX_BOOL Document::calculateNow(IJS_Context* cc,
         m_pDocument->GetPermissions(FPDFPERM_FILL_FORM)))
     return FALSE;
 
-  CPDFSDK_InterForm* pInterForm =
-      (CPDFSDK_InterForm*)m_pDocument->GetInterForm();
+  CPDFSDK_InterForm* pInterForm = m_pDocument->GetInterForm();
   pInterForm->OnCalculate();
   return TRUE;
 }

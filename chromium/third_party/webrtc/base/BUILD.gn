@@ -49,7 +49,7 @@ config("rtc_base_all_dependent_config") {
       #"Foundation.framework",  # Already in //build/config:default_libs.
       "Security.framework",
       "SystemConfiguration.framework",
-      "UIKit.framework",  # Already in //build/config:default_libs.
+      "UIKit.framework",
     ]
   }
   if (is_mac) {
@@ -61,7 +61,7 @@ config("rtc_base_all_dependent_config") {
       "SystemConfiguration.framework",
     ]
     if (current_cpu == "x86") {
-      libs = [ "Carbon.framework" ]  # Already in //build/config:default_libs.
+      libs += [ "Carbon.framework" ]
     }
   }
 }
@@ -118,6 +118,8 @@ static_library("rtc_base_approved") {
     "event_tracer.h",
     "exp_filter.cc",
     "exp_filter.h",
+    "location.cc",
+    "location.h",
     "md5.cc",
     "md5.h",
     "md5digest.cc",
@@ -147,13 +149,13 @@ static_library("rtc_base_approved") {
     "swap_queue.h",
     "systeminfo.cc",
     "systeminfo.h",
-    "task_queue.h",
-    "task_queue_posix.h",
     "template_util.h",
     "thread_annotations.h",
     "thread_checker.h",
     "thread_checker_impl.cc",
     "thread_checker_impl.h",
+    "timestampaligner.cc",
+    "timestampaligner.h",
     "timeutils.cc",
     "timeutils.h",
     "trace_event.h",
@@ -174,17 +176,31 @@ static_library("rtc_base_approved") {
       "logging_mac.mm",
     ]
   }
+}
+
+static_library("rtc_task_queue") {
+  public_deps = [
+    ":rtc_base_approved",
+  ]
+  configs += [ "..:common_config" ]
+
+  sources = [
+    "task_queue.h",
+    "task_queue_posix.h",
+  ]
 
   if (rtc_build_libevent) {
-    deps += [ "//base/third_party/libevent" ]
+    deps = [
+      "//base/third_party/libevent",
+    ]
   }
+
   if (rtc_enable_libevent) {
     sources += [
       "task_queue_libevent.cc",
       "task_queue_posix.cc",
     ]
   } else {
-    # If not libevent, fall back to the other task queues.
     if (is_mac || is_ios) {
       sources += [
         "task_queue_gcd.cc",
@@ -546,6 +562,13 @@ static_library("rtc_base") {
       "macutils.cc",
       "macutils.h",
     ]
+    libs += [
+      # For ProcessInformationCopyDictionary in unixfilesystem.cc.
+      "ApplicationServices.framework",
+
+      # For GetGestalt in macutils.cc.
+      "CoreServices.framework",
+    ]
   }
 
   if (is_win) {
@@ -617,4 +640,42 @@ source_set("gtest_prod") {
   sources = [
     "gtest_prod_util.h",
   ]
+}
+
+if (rtc_include_tests) {
+  config("rtc_base_tests_utils_exported_config") {
+    defines = [ "GTEST_RELATIVE_PATH" ]
+  }
+
+  source_set("rtc_base_tests_utils") {
+    testonly = true
+    sources = [
+      # Also use this as a convenient dumping ground for misc files that are
+      # included by multiple targets below.
+      "fakeclock.cc",
+      "fakeclock.h",
+      "fakenetwork.h",
+      "fakesslidentity.h",
+      "faketaskrunner.h",
+      "gunit.h",
+      "testbase64.h",
+      "testechoserver.h",
+      "testutils.h",
+      "timedelta.h",
+      "unittest_main.cc",
+    ]
+    configs += [ "..:common_config" ]
+    public_configs = [
+      "..:common_inherited_config",
+      ":rtc_base_tests_utils_exported_config",
+    ]
+    deps = [
+      ":rtc_base",
+      "../test:field_trial",
+      "../test:test_support",
+    ]
+    public_deps = [
+      "//testing/gtest",
+    ]
+  }
 }

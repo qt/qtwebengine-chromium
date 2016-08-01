@@ -7,23 +7,32 @@
 #ifndef XFA_FXFA_INCLUDE_XFA_RENDERCONTEXT_H_
 #define XFA_FXFA_INCLUDE_XFA_RENDERCONTEXT_H_
 
+#include <memory>
+
 #include "xfa/fxfa/include/fxfa.h"
+
+class CXFA_RenderOptions {
+ public:
+  CXFA_RenderOptions() : m_bPrint(FALSE), m_bHighlight(TRUE) {}
+
+  FX_BOOL m_bPrint;
+  FX_BOOL m_bHighlight;
+};
 
 class CXFA_RenderContext {
  public:
   CXFA_RenderContext();
   ~CXFA_RenderContext();
 
-  void Release() { delete this; }
   int32_t StartRender(CXFA_FFPageView* pPageView,
                       CFX_Graphics* pGS,
                       const CFX_Matrix& matrix,
                       const CXFA_RenderOptions& options);
-  int32_t DoRender(IFX_Pause* pPause = NULL);
+  int32_t DoRender(IFX_Pause* pPause = nullptr);
   void StopRender();
 
  protected:
-  IXFA_WidgetIterator* m_pWidgetIterator;
+  std::unique_ptr<IXFA_WidgetIterator> m_pWidgetIterator;
   CXFA_FFWidget* m_pWidget;
   CXFA_FFPageView* m_pPageView;
   CFX_Graphics* m_pGS;

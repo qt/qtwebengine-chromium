@@ -145,8 +145,6 @@ struct Register {
     return r;
   }
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -187,6 +185,8 @@ const Register kLithiumScratch = r1;  // lithium scratch.
 const Register kRootRegister = r10;   // Roots array pointer.
 const Register cp = r13;              // JavaScript context pointer.
 
+static const bool kSimpleFPAliasing = true;
+
 // Double word FP register.
 struct DoubleRegister {
   enum Code {
@@ -200,8 +200,6 @@ struct DoubleRegister {
   static const int kNumRegisters = Code::kAfterLast;
   static const int kMaxNumRegisters = kNumRegisters;
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(DoubleRegister reg) const { return reg_code == reg.reg_code; }
 
@@ -548,7 +546,6 @@ class Assembler : public AssemblerBase {
 
   // Helper for unconditional branch to Label with update to save register
   void b(Register r, Label* l) {
-    positions_recorder()->WriteRecordedPositions();
     int32_t halfwords = branch_offset(l) / 2;
     brasl(r, Operand(halfwords));
   }
@@ -609,7 +606,7 @@ class Assembler : public AssemblerBase {
 
   void breakpoint(bool do_print) {
     if (do_print) {
-      printf("DebugBreak is inserted to %p\n", pc_);
+      PrintF("DebugBreak is inserted to %p\n", static_cast<void*>(pc_));
     }
 #if V8_HOST_ARCH_64_BIT
     int64_t value = reinterpret_cast<uint64_t>(&v8::base::OS::DebugBreak);

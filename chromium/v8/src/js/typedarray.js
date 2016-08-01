@@ -47,6 +47,7 @@ var PackedArrayReverse;
 var SpeciesConstructor;
 var ToPositiveInteger;
 var iteratorSymbol = utils.ImportNow("iterator_symbol");
+var speciesSymbol = utils.ImportNow("species_symbol");
 var toStringTagSymbol = utils.ImportNow("to_string_tag_symbol");
 
 macro TYPED_ARRAYS(FUNCTION)
@@ -67,6 +68,8 @@ var GlobalNAME = global.NAME;
 endmacro
 
 TYPED_ARRAYS(DECLARE_GLOBALS)
+
+var GlobalTypedArray = %object_get_prototype_of(GlobalUint8Array);
 
 utils.Import(function(from) {
   ArrayValues = from.ArrayValues;
@@ -329,42 +332,6 @@ TYPED_ARRAYS(TYPED_ARRAY_SUBARRAY_CASE)
 }
 %SetForceInlineFlag(TypedArraySubArray);
 
-function TypedArrayGetBuffer() {
-  if (!IS_TYPEDARRAY(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        "get TypedArray.prototype.buffer", this);
-  }
-  return %TypedArrayGetBuffer(this);
-}
-%SetForceInlineFlag(TypedArrayGetBuffer);
-
-function TypedArrayGetByteLength() {
-  if (!IS_TYPEDARRAY(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        "get TypedArray.prototype.byteLength", this);
-  }
-  return %_ArrayBufferViewGetByteLength(this);
-}
-%SetForceInlineFlag(TypedArrayGetByteLength);
-
-function TypedArrayGetByteOffset() {
-  if (!IS_TYPEDARRAY(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        "get TypedArray.prototype.byteOffset", this);
-  }
-  return %_ArrayBufferViewGetByteOffset(this);
-}
-%SetForceInlineFlag(TypedArrayGetByteOffset);
-
-function TypedArrayGetLength() {
-  if (!IS_TYPEDARRAY(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        "get TypedArray.prototype.length", this);
-  }
-  return %_TypedArrayGetLength(this);
-}
-%SetForceInlineFlag(TypedArrayGetLength);
-
 
 
 function TypedArraySetFromArrayLike(target, source, sourceLength, offset) {
@@ -383,7 +350,7 @@ function TypedArraySetFromArrayLike(target, source, sourceLength, offset) {
 function TypedArraySetFromOverlappingTypedArray(target, source, offset) {
   var sourceElementSize = source.BYTES_PER_ELEMENT;
   var targetElementSize = target.BYTES_PER_ELEMENT;
-  var sourceLength = source.length;
+  var sourceLength = %_TypedArrayGetLength(source);
 
   // Copy left part.
   function CopyLeftPart() {
@@ -403,7 +370,7 @@ function TypedArraySetFromOverlappingTypedArray(target, source, offset) {
   }
   var leftIndex = CopyLeftPart();
 
-  // Copy rigth part;
+  // Copy right part;
   function CopyRightPart() {
     // First unmutated byte before the next write
     var targetPtr =
@@ -447,7 +414,8 @@ function TypedArraySet(obj, offset) {
       TypedArraySetFromOverlappingTypedArray(this, obj, intOffset);
       return;
     case 2: // TYPED_ARRAY_SET_TYPED_ARRAY_NONOVERLAPPING
-      TypedArraySetFromArrayLike(this, obj, obj.length, intOffset);
+      TypedArraySetFromArrayLike(this,
+          obj, %_TypedArrayGetLength(obj), intOffset);
       return;
     case 3: // TYPED_ARRAY_SET_NON_TYPED_ARRAY
       var l = obj.length;
@@ -462,7 +430,7 @@ function TypedArraySet(obj, offset) {
         return;
       }
       l = TO_LENGTH(l);
-      if (intOffset + l > this.length) {
+      if (intOffset + l > %_TypedArrayGetLength(this)) {
         throw MakeRangeError(kTypedArraySetSourceTooLarge);
       }
       TypedArraySetFromArrayLike(this, obj, l, intOffset);
@@ -808,34 +776,31 @@ function TypedArrayFrom(source, mapfn, thisArg) {
 }
 %FunctionSetLength(TypedArrayFrom, 1);
 
-function TypedArray() {
+// TODO(bmeurer): Migrate this to a proper builtin.
+function TypedArrayConstructor() {
   if (IS_UNDEFINED(new.target)) {
     throw MakeTypeError(kConstructorNonCallable, "TypedArray");
   }
-  if (new.target === TypedArray) {
+  if (new.target === GlobalTypedArray) {
     throw MakeTypeError(kConstructAbstractClass, "TypedArray");
   }
 }
 
+function TypedArraySpecies() {
+  return this;
+}
+
 // -------------------------------------------------------------------
 
-%FunctionSetPrototype(TypedArray, new GlobalObject());
-%AddNamedProperty(TypedArray.prototype,
-                  "constructor", TypedArray, DONT_ENUM);
-utils.InstallFunctions(TypedArray, DONT_ENUM, [
+%SetCode(GlobalTypedArray, TypedArrayConstructor);
+utils.InstallFunctions(GlobalTypedArray, DONT_ENUM, [
   "from", TypedArrayFrom,
   "of", TypedArrayOf
 ]);
-utils.InstallGetter(TypedArray.prototype, "buffer", TypedArrayGetBuffer);
-utils.InstallGetter(TypedArray.prototype, "byteOffset", TypedArrayGetByteOffset,
-                    DONT_ENUM | DONT_DELETE);
-utils.InstallGetter(TypedArray.prototype, "byteLength",
-                    TypedArrayGetByteLength, DONT_ENUM | DONT_DELETE);
-utils.InstallGetter(TypedArray.prototype, "length", TypedArrayGetLength,
-                    DONT_ENUM | DONT_DELETE);
-utils.InstallGetter(TypedArray.prototype, toStringTagSymbol,
+utils.InstallGetter(GlobalTypedArray, speciesSymbol, TypedArraySpecies);
+utils.InstallGetter(GlobalTypedArray.prototype, toStringTagSymbol,
                     TypedArrayGetToStringTag);
-utils.InstallFunctions(TypedArray.prototype, DONT_ENUM, [
+utils.InstallFunctions(GlobalTypedArray.prototype, DONT_ENUM, [
   "subarray", TypedArraySubArray,
   "set", TypedArraySet,
   "copyWithin", TypedArrayCopyWithin,
@@ -859,15 +824,15 @@ utils.InstallFunctions(TypedArray.prototype, DONT_ENUM, [
   "toLocaleString", TypedArrayToLocaleString
 ]);
 
-%AddNamedProperty(TypedArray.prototype, "toString", ArrayToString,
+%AddNamedProperty(GlobalTypedArray.prototype, "toString", ArrayToString,
                   DONT_ENUM);
 
 
 macro SETUP_TYPED_ARRAY(ARRAY_ID, NAME, ELEMENT_SIZE)
   %SetCode(GlobalNAME, NAMEConstructor);
   %FunctionSetPrototype(GlobalNAME, new GlobalObject());
-  %InternalSetPrototype(GlobalNAME, TypedArray);
-  %InternalSetPrototype(GlobalNAME.prototype, TypedArray.prototype);
+  %InternalSetPrototype(GlobalNAME, GlobalTypedArray);
+  %InternalSetPrototype(GlobalNAME.prototype, GlobalTypedArray.prototype);
 
   %AddNamedProperty(GlobalNAME, "BYTES_PER_ELEMENT", ELEMENT_SIZE,
                     READ_ONLY | DONT_ENUM | DONT_DELETE);
@@ -882,29 +847,6 @@ endmacro
 TYPED_ARRAYS(SETUP_TYPED_ARRAY)
 
 // --------------------------- DataView -----------------------------
-
-function DataViewGetBufferJS() {
-  if (!IS_DATAVIEW(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver, 'DataView.buffer', this);
-  }
-  return %DataViewGetBuffer(this);
-}
-
-function DataViewGetByteOffset() {
-  if (!IS_DATAVIEW(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        'DataView.byteOffset', this);
-  }
-  return %_ArrayBufferViewGetByteOffset(this);
-}
-
-function DataViewGetByteLength() {
-  if (!IS_DATAVIEW(this)) {
-    throw MakeTypeError(kIncompatibleMethodReceiver,
-                        'DataView.byteLength', this);
-  }
-  return %_ArrayBufferViewGetByteLength(this);
-}
 
 macro DATA_VIEW_TYPES(FUNCTION)
   FUNCTION(Int8)
@@ -943,21 +885,6 @@ function DataViewSetTYPENAMEJS(offset, value, little_endian) {
 endmacro
 
 DATA_VIEW_TYPES(DATA_VIEW_GETTER_SETTER)
-
-// Setup the DataView constructor.
-%FunctionSetPrototype(GlobalDataView, new GlobalObject);
-
-// Set up constructor property on the DataView prototype.
-%AddNamedProperty(GlobalDataView.prototype, "constructor", GlobalDataView,
-                  DONT_ENUM);
-%AddNamedProperty(GlobalDataView.prototype, toStringTagSymbol, "DataView",
-                  READ_ONLY|DONT_ENUM);
-
-utils.InstallGetter(GlobalDataView.prototype, "buffer", DataViewGetBufferJS);
-utils.InstallGetter(GlobalDataView.prototype, "byteOffset",
-                    DataViewGetByteOffset);
-utils.InstallGetter(GlobalDataView.prototype, "byteLength",
-                    DataViewGetByteLength);
 
 utils.InstallFunctions(GlobalDataView.prototype, DONT_ENUM, [
   "getInt8", DataViewGetInt8JS,

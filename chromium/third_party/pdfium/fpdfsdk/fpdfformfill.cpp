@@ -12,6 +12,7 @@
 #include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "core/fpdfapi/fpdf_render/include/cpdf_renderoptions.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/include/fsdk_mgr.h"
 #include "public/fpdfview.h"
@@ -21,7 +22,6 @@
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_app.h"
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_page.h"
-#include "xfa/fxfa/include/xfa_ffapp.h"
 #include "xfa/fxfa/include/xfa_ffdocview.h"
 #include "xfa/fxfa/include/xfa_ffpageview.h"
 #include "xfa/fxfa/include/xfa_ffwidget.h"
@@ -54,6 +54,94 @@ FPDF_STRINGHANDLE ToFPDFStringHandle(std::vector<CFX_ByteString>* strings) {
 }
 #endif  // PDF_ENABLE_XFA
 
+void FFLCommon(FPDF_FORMHANDLE hHandle,
+               FPDF_BITMAP bitmap,
+               FPDF_RECORDER recorder,
+               FPDF_PAGE page,
+               int start_x,
+               int start_y,
+               int size_x,
+               int size_y,
+               int rotate,
+               int flags) {
+  if (!hHandle)
+    return;
+
+  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
+  if (!pPage)
+    return;
+
+#ifndef PDF_ENABLE_XFA
+  CPDF_RenderOptions options;
+  if (flags & FPDF_LCD_TEXT)
+    options.m_Flags |= RENDER_CLEARTYPE;
+  else
+    options.m_Flags &= ~RENDER_CLEARTYPE;
+  // Grayscale output
+  if (flags & FPDF_GRAYSCALE) {
+    options.m_ColorMode = RENDER_COLOR_GRAY;
+    options.m_ForeColor = 0;
+    options.m_BackColor = 0xffffff;
+  }
+  options.m_AddFlags = flags >> 8;
+  options.m_pOCContext =
+      new CPDF_OCContext(pPage->m_pDocument, CPDF_OCContext::View);
+#else   // PDF_ENABLE_XFA
+  CPDFXFA_Document* pDocument = pPage->GetDocument();
+  if (!pDocument)
+    return;
+  CPDF_Document* pPDFDoc = pDocument->GetPDFDoc();
+  if (!pPDFDoc)
+    return;
+  CPDFDoc_Environment* pEnv = (CPDFDoc_Environment*)hHandle;
+  CPDFSDK_Document* pFXDoc = pEnv->GetSDKDocument();
+  if (!pFXDoc)
+    return;
+#endif  // PDF_ENABLE_XFA
+
+  CFX_Matrix matrix;
+  pPage->GetDisplayMatrix(matrix, start_x, start_y, size_x, size_y, rotate);
+
+  FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
+
+  std::unique_ptr<CFX_FxgeDevice> pDevice(new CFX_FxgeDevice);
+#ifdef _SKIA_SUPPORT_
+  pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
+#endif
+  pDevice->Attach(CFXBitmapFromFPDFBitmap(bitmap), false, nullptr, false);
+  pDevice->SaveState();
+  pDevice->SetClip_Rect(clip);
+
+#ifndef PDF_ENABLE_XFA
+  if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
+    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
+#else   // PDF_ENABLE_XFA
+  CPDF_RenderOptions options;
+  if (flags & FPDF_LCD_TEXT)
+    options.m_Flags |= RENDER_CLEARTYPE;
+  else
+    options.m_Flags &= ~RENDER_CLEARTYPE;
+
+  // Grayscale output
+  if (flags & FPDF_GRAYSCALE) {
+    options.m_ColorMode = RENDER_COLOR_GRAY;
+    options.m_ForeColor = 0;
+    options.m_BackColor = 0xffffff;
+  }
+  options.m_AddFlags = flags >> 8;
+  options.m_pOCContext = new CPDF_OCContext(pPDFDoc, CPDF_OCContext::View);
+
+  if (CPDFSDK_PageView* pPageView = pFXDoc->GetPageView(pPage))
+    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
+#endif  // PDF_ENABLE_XFA
+
+  pDevice->RestoreState(false);
+  delete options.m_pOCContext;
+#ifdef PDF_ENABLE_XFA
+  options.m_pOCContext = nullptr;
+#endif  // PDF_ENABLE_XFA
+}
+
 }  // namespace
 
 DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
@@ -64,7 +152,7 @@ DLLEXPORT int STDCALL FPDFPage_HasFormFieldAtPoint(FPDF_FORMHANDLE hHandle,
     return -1;
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (pPage) {
-    CPDF_InterForm interform(pPage->m_pDocument, FALSE);
+    CPDF_InterForm interform(pPage->m_pDocument);
     CPDF_FormControl* pFormCtrl =
         interform.GetControlAtPoint(pPage, static_cast<FX_FLOAT>(page_x),
                                     static_cast<FX_FLOAT>(page_y), nullptr);
@@ -134,7 +222,7 @@ DLLEXPORT int STDCALL FPDFPage_FormFieldZOrderAtPoint(FPDF_FORMHANDLE hHandle,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return -1;
-  CPDF_InterForm interform(pPage->m_pDocument, FALSE);
+  CPDF_InterForm interform(pPage->m_pDocument);
   int z_order = -1;
   (void)interform.GetControlAtPoint(pPage, (FX_FLOAT)page_x, (FX_FLOAT)page_y,
                                     &z_order);
@@ -177,7 +265,7 @@ FPDFDOC_ExitFormFillEnvironment(FPDF_FORMHANDLE hHandle) {
   pApp->RemoveFormFillEnv(pEnv);
 #else   // PDF_ENABLE_XFA
   if (CPDFSDK_Document* pSDKDoc = pEnv->GetSDKDocument()) {
-    pEnv->SetSDKDocument(NULL);
+    pEnv->SetSDKDocument(nullptr);
     delete pSDKDoc;
   }
 #endif  // PDF_ENABLE_XFA
@@ -292,93 +380,6 @@ DLLEXPORT FPDF_BOOL STDCALL FORM_ForceToKillFocus(FPDF_FORMHANDLE hHandle) {
   return pSDKDoc->KillFocusAnnot(0);
 }
 
-static void FFLCommon(FPDF_FORMHANDLE hHandle,
-                      FPDF_BITMAP bitmap,
-                      FPDF_RECORDER recorder,
-                      FPDF_PAGE page,
-                      int start_x,
-                      int start_y,
-                      int size_x,
-                      int size_y,
-                      int rotate,
-                      int flags) {
-  if (!hHandle)
-    return;
-
-  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
-  if (!pPage)
-    return;
-
-#ifndef PDF_ENABLE_XFA
-  CPDF_RenderOptions options;
-  if (flags & FPDF_LCD_TEXT)
-    options.m_Flags |= RENDER_CLEARTYPE;
-  else
-    options.m_Flags &= ~RENDER_CLEARTYPE;
-  // Grayscale output
-  if (flags & FPDF_GRAYSCALE) {
-    options.m_ColorMode = RENDER_COLOR_GRAY;
-    options.m_ForeColor = 0;
-    options.m_BackColor = 0xffffff;
-  }
-  options.m_AddFlags = flags >> 8;
-  options.m_pOCContext = new CPDF_OCContext(pPage->m_pDocument);
-#else   // PDF_ENABLE_XFA
-  CPDFXFA_Document* pDocument = pPage->GetDocument();
-  if (!pDocument)
-    return;
-  CPDF_Document* pPDFDoc = pDocument->GetPDFDoc();
-  if (!pPDFDoc)
-    return;
-  CPDFDoc_Environment* pEnv = (CPDFDoc_Environment*)hHandle;
-  CPDFSDK_Document* pFXDoc = pEnv->GetSDKDocument();
-  if (!pFXDoc)
-    return;
-#endif  // PDF_ENABLE_XFA
-
-  CFX_Matrix matrix;
-  pPage->GetDisplayMatrix(matrix, start_x, start_y, size_x, size_y, rotate);
-
-  FX_RECT clip(start_x, start_y, start_x + size_x, start_y + size_y);
-
-  std::unique_ptr<CFX_FxgeDevice> pDevice(new CFX_FxgeDevice);
-#ifdef _SKIA_SUPPORT_
-  pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
-#endif
-  pDevice->Attach((CFX_DIBitmap*)bitmap);
-  pDevice->SaveState();
-  pDevice->SetClip_Rect(clip);
-
-#ifndef PDF_ENABLE_XFA
-  if (CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, pPage))
-    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options);
-#else   // PDF_ENABLE_XFA
-  CPDF_RenderOptions options;
-  if (flags & FPDF_LCD_TEXT)
-    options.m_Flags |= RENDER_CLEARTYPE;
-  else
-    options.m_Flags &= ~RENDER_CLEARTYPE;
-
-  // Grayscale output
-  if (flags & FPDF_GRAYSCALE) {
-    options.m_ColorMode = RENDER_COLOR_GRAY;
-    options.m_ForeColor = 0;
-    options.m_BackColor = 0xffffff;
-  }
-  options.m_AddFlags = flags >> 8;
-  options.m_pOCContext = new CPDF_OCContext(pPDFDoc);
-
-  if (CPDFSDK_PageView* pPageView = pFXDoc->GetPageView(pPage))
-    pPageView->PageView_OnDraw(pDevice.get(), &matrix, &options, clip);
-#endif  // PDF_ENABLE_XFA
-
-  pDevice->RestoreState();
-  delete options.m_pOCContext;
-#ifdef PDF_ENABLE_XFA
-  options.m_pOCContext = NULL;
-#endif  // PDF_ENABLE_XFA
-}
-
 DLLEXPORT void STDCALL FPDF_FFLDraw(FPDF_FORMHANDLE hHandle,
                                     FPDF_BITMAP bitmap,
                                     FPDF_PAGE page,
@@ -462,7 +463,7 @@ DLLEXPORT void STDCALL FPDF_Widget_Copy(FPDF_DOCUMENT document,
 
   CFX_ByteString bsCpText = wsCpText.UTF16LE_Encode();
   uint32_t len = bsCpText.GetLength() / sizeof(unsigned short);
-  if (wsText == NULL) {
+  if (!wsText) {
     *size = len;
     return;
   }
@@ -481,8 +482,9 @@ DLLEXPORT void STDCALL FPDF_Widget_Cut(FPDF_DOCUMENT document,
                                        FPDF_WIDGET hWidget,
                                        FPDF_WIDESTRING wsText,
                                        FPDF_DWORD* size) {
-  if (NULL == hWidget || NULL == document)
+  if (!hWidget || !document)
     return;
+
   CPDFXFA_Document* pDocument = (CPDFXFA_Document*)document;
   if (pDocument->GetDocType() != XFA_DOCTYPE_Dynamic &&
       pDocument->GetDocType() != XFA_DOCTYPE_Static)

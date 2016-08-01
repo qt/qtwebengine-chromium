@@ -155,7 +155,7 @@ static std::unique_ptr<QueuedTask> NewClosure(const Closure& closure,
 // TaskQueue itself has been deleted or it may happen synchronously while the
 // TaskQueue instance is being deleted.  This may vary from one OS to the next
 // so assumptions about lifetimes of pending tasks should not be made.
-class TaskQueue {
+class LOCKABLE TaskQueue {
  public:
   explicit TaskQueue(const char* queue_name);
   // TODO(tommi): Implement move semantics?
@@ -167,7 +167,7 @@ class TaskQueue {
   static bool IsCurrent(const char* queue_name);
   bool IsCurrent() const;
 
-  // TODO(tommi): For better debuggability, implement FROM_HERE.
+  // TODO(tommi): For better debuggability, implement RTC_FROM_HERE.
 
   // Ownership of the task is passed to PostTask.
   void PostTask(std::unique_ptr<QueuedTask> task);

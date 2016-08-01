@@ -22,12 +22,16 @@ CPDF_ShadingObject* CPDF_ShadingObject::Clone() const {
   if (obj->m_pShading && obj->m_pShading->document()) {
     CPDF_DocPageData* pDocPageData = obj->m_pShading->document()->GetPageData();
     CPDF_Pattern* pattern = pDocPageData->GetPattern(
-        obj->m_pShading->m_pShadingObj, m_pShading->m_bShadingObj,
+        obj->m_pShading->GetShadingObject(), m_pShading->IsShadingObject(),
         obj->m_pShading->parent_matrix());
     obj->m_pShading = pattern ? pattern->AsShadingPattern() : nullptr;
   }
   obj->m_Matrix = m_Matrix;
   return obj;
+}
+
+CPDF_PageObject::Type CPDF_ShadingObject::GetType() const {
+  return SHADING;
 }
 
 void CPDF_ShadingObject::Transform(const CFX_Matrix& matrix) {
@@ -41,6 +45,18 @@ void CPDF_ShadingObject::Transform(const CFX_Matrix& matrix) {
   } else {
     matrix.TransformRect(m_Left, m_Right, m_Top, m_Bottom);
   }
+}
+
+bool CPDF_ShadingObject::IsShading() const {
+  return true;
+}
+
+CPDF_ShadingObject* CPDF_ShadingObject::AsShading() {
+  return this;
+}
+
+const CPDF_ShadingObject* CPDF_ShadingObject::AsShading() const {
+  return this;
 }
 
 void CPDF_ShadingObject::CalcBoundingBox() {

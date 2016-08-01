@@ -9,7 +9,7 @@
 #include "src/compiler/access-info.h"
 #include "src/field-index-inl.h"
 #include "src/field-type.h"
-#include "src/objects-inl.h"  // TODO(mstarzinger): Temporary cycle breaker!
+#include "src/objects-inl.h"
 #include "src/type-cache.h"
 
 namespace v8 {
@@ -75,10 +75,9 @@ PropertyAccessInfo PropertyAccessInfo::DataConstant(
 // static
 PropertyAccessInfo PropertyAccessInfo::DataField(
     Type* receiver_type, FieldIndex field_index, Type* field_type,
-    FieldCheck field_check, MaybeHandle<JSObject> holder,
-    MaybeHandle<Map> transition_map) {
-  return PropertyAccessInfo(holder, transition_map, field_index, field_check,
-                            field_type, receiver_type);
+    MaybeHandle<JSObject> holder, MaybeHandle<Map> transition_map) {
+  return PropertyAccessInfo(holder, transition_map, field_index, field_type,
+                            receiver_type);
 }
 
 
@@ -114,20 +113,16 @@ PropertyAccessInfo::PropertyAccessInfo(MaybeHandle<JSObject> holder,
       holder_(holder),
       field_type_(Type::Any()) {}
 
-
 PropertyAccessInfo::PropertyAccessInfo(MaybeHandle<JSObject> holder,
                                        MaybeHandle<Map> transition_map,
-                                       FieldIndex field_index,
-                                       FieldCheck field_check, Type* field_type,
+                                       FieldIndex field_index, Type* field_type,
                                        Type* receiver_type)
     : kind_(kDataField),
       receiver_type_(receiver_type),
       transition_map_(transition_map),
       holder_(holder),
       field_index_(field_index),
-      field_check_(field_check),
       field_type_(field_type) {}
-
 
 AccessInfoFactory::AccessInfoFactory(CompilationDependencies* dependencies,
                                      Handle<Context> native_context, Zone* zone)
@@ -299,8 +294,7 @@ bool AccessInfoFactory::ComputePropertyAccessInfo(
           DCHECK(field_type->Is(Type::TaggedPointer()));
         }
         *access_info = PropertyAccessInfo::DataField(
-            Type::Class(receiver_map, zone()), field_index, field_type,
-            FieldCheck::kNone, holder);
+            Type::Class(receiver_map, zone()), field_index, field_type, holder);
         return true;
       } else {
         // TODO(bmeurer): Add support for accessors.
@@ -327,7 +321,7 @@ bool AccessInfoFactory::ComputePropertyAccessInfo(
               .ToHandle(&constructor)) {
         map = handle(constructor->initial_map(), isolate());
         DCHECK(map->prototype()->IsJSObject());
-      } else if (map->prototype()->IsNull()) {
+      } else if (map->prototype()->IsNull(isolate())) {
         // Store to property not found on the receiver or any prototype, we need
         // to transition to a new data property.
         // Implemented according to ES6 section 9.1.9 [[Set]] (P, V, Receiver)
@@ -404,26 +398,6 @@ bool AccessInfoFactory::LookupSpecialFieldAccessor(
                                                  field_index, field_type);
     return true;
   }
-  // Check for special JSArrayBufferView field accessors.
-  if (Accessors::IsJSArrayBufferViewFieldAccessor(map, name, &offset)) {
-    FieldIndex field_index = FieldIndex::ForInObjectOffset(offset);
-    Type* field_type = Type::Tagged();
-    if (Name::Equals(factory()->byte_length_string(), name) ||
-        Name::Equals(factory()->byte_offset_string(), name)) {
-      // The JSArrayBufferView::byte_length and JSArrayBufferView::byte_offset
-      // properties are always numbers in the range [0, kMaxSafeInteger].
-      field_type = type_cache_.kPositiveSafeInteger;
-    } else if (map->IsJSTypedArrayMap()) {
-      DCHECK(Name::Equals(factory()->length_string(), name));
-      // The JSTypedArray::length property is always a number in the range
-      // [0, kMaxSafeInteger].
-      field_type = type_cache_.kPositiveSafeInteger;
-    }
-    *access_info = PropertyAccessInfo::DataField(
-        Type::Class(map, zone()), field_index, field_type,
-        FieldCheck::kJSArrayBufferViewBufferNotNeutered);
-    return true;
-  }
   return false;
 }
 
@@ -471,9 +445,9 @@ bool AccessInfoFactory::LookupTransition(Handle<Map> map, Handle<Name> name,
       DCHECK(field_type->Is(Type::TaggedPointer()));
     }
     dependencies()->AssumeMapNotDeprecated(transition_map);
-    *access_info = PropertyAccessInfo::DataField(
-        Type::Class(map, zone()), field_index, field_type, FieldCheck::kNone,
-        holder, transition_map);
+    *access_info =
+        PropertyAccessInfo::DataField(Type::Class(map, zone()), field_index,
+                                      field_type, holder, transition_map);
     return true;
   }
   return false;

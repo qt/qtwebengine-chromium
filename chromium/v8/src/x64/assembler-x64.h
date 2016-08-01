@@ -117,8 +117,6 @@ struct Register {
     Register r = {code};
     return r;
   }
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -186,6 +184,7 @@ const Register arg_reg_4 = {Register::kCode_rcx};
 #define FLOAT_REGISTERS DOUBLE_REGISTERS
 
 #define ALLOCATABLE_DOUBLE_REGISTERS(V) \
+  V(xmm0)                               \
   V(xmm1)                               \
   V(xmm2)                               \
   V(xmm3)                               \
@@ -199,8 +198,9 @@ const Register arg_reg_4 = {Register::kCode_rcx};
   V(xmm11)                              \
   V(xmm12)                              \
   V(xmm13)                              \
-  V(xmm14)                              \
-  V(xmm15)
+  V(xmm14)
+
+static const bool kSimpleFPAliasing = true;
 
 struct XMMRegister {
   enum Code {
@@ -218,8 +218,6 @@ struct XMMRegister {
     return result;
   }
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kMaxNumRegisters; }
   bool is(XMMRegister reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -421,11 +419,11 @@ class Operand BASE_EMBEDDED {
   friend class Assembler;
 };
 
-
 #define ASSEMBLER_INSTRUCTION_LIST(V) \
   V(add)                              \
   V(and)                              \
   V(cmp)                              \
+  V(cmpxchg)                          \
   V(dec)                              \
   V(idiv)                             \
   V(div)                              \
@@ -444,7 +442,6 @@ class Operand BASE_EMBEDDED {
   V(test)                             \
   V(xchg)                             \
   V(xor)
-
 
 // Shift instructions on operands/registers with kPointerSize, kInt32Size and
 // kInt64Size.
@@ -788,8 +785,14 @@ class Assembler : public AssemblerBase {
   void decb(Register dst);
   void decb(const Operand& dst);
 
+  // Lock prefix.
+  void lock();
+
   void xchgb(Register reg, const Operand& op);
   void xchgw(Register reg, const Operand& op);
+
+  void cmpxchgb(const Operand& dst, Register src);
+  void cmpxchgw(const Operand& dst, Register src);
 
   // Sign-extends rax into rdx:rax.
   void cqo();
@@ -1149,18 +1152,54 @@ class Assembler : public AssemblerBase {
   void movmskpd(Register dst, XMMRegister src);
 
   void punpckldq(XMMRegister dst, XMMRegister src);
+  void punpckldq(XMMRegister dst, const Operand& src);
   void punpckhdq(XMMRegister dst, XMMRegister src);
 
   // SSE 4.1 instruction
+  void insertps(XMMRegister dst, XMMRegister src, byte imm8);
   void extractps(Register dst, XMMRegister src, byte imm8);
-
   void pextrd(Register dst, XMMRegister src, int8_t imm8);
-
   void pinsrd(XMMRegister dst, Register src, int8_t imm8);
   void pinsrd(XMMRegister dst, const Operand& src, int8_t imm8);
 
   void roundss(XMMRegister dst, XMMRegister src, RoundingMode mode);
   void roundsd(XMMRegister dst, XMMRegister src, RoundingMode mode);
+
+  void cmpps(XMMRegister dst, XMMRegister src, int8_t cmp);
+  void cmpeqps(XMMRegister dst, XMMRegister src);
+  void cmpltps(XMMRegister dst, XMMRegister src);
+  void cmpleps(XMMRegister dst, XMMRegister src);
+  void cmpneqps(XMMRegister dst, XMMRegister src);
+  void cmpnltps(XMMRegister dst, XMMRegister src);
+  void cmpnleps(XMMRegister dst, XMMRegister src);
+
+  void minps(XMMRegister dst, XMMRegister src);
+  void minps(XMMRegister dst, const Operand& src);
+  void maxps(XMMRegister dst, XMMRegister src);
+  void maxps(XMMRegister dst, const Operand& src);
+  void rcpps(XMMRegister dst, XMMRegister src);
+  void rcpps(XMMRegister dst, const Operand& src);
+  void rsqrtps(XMMRegister dst, XMMRegister src);
+  void rsqrtps(XMMRegister dst, const Operand& src);
+  void sqrtps(XMMRegister dst, XMMRegister src);
+  void sqrtps(XMMRegister dst, const Operand& src);
+  void movups(XMMRegister dst, XMMRegister src);
+  void movups(XMMRegister dst, const Operand& src);
+  void movups(const Operand& dst, XMMRegister src);
+  void paddd(XMMRegister dst, XMMRegister src);
+  void paddd(XMMRegister dst, const Operand& src);
+  void psubd(XMMRegister dst, XMMRegister src);
+  void psubd(XMMRegister dst, const Operand& src);
+  void pmulld(XMMRegister dst, XMMRegister src);
+  void pmulld(XMMRegister dst, const Operand& src);
+  void pmuludq(XMMRegister dst, XMMRegister src);
+  void pmuludq(XMMRegister dst, const Operand& src);
+  void psrldq(XMMRegister dst, uint8_t shift);
+  void pshufd(XMMRegister dst, XMMRegister src, uint8_t shuffle);
+  void cvtps2dq(XMMRegister dst, XMMRegister src);
+  void cvtps2dq(XMMRegister dst, const Operand& src);
+  void cvtdq2ps(XMMRegister dst, XMMRegister src);
+  void cvtdq2ps(XMMRegister dst, const Operand& src);
 
   // AVX instruction
   void vfmadd132sd(XMMRegister dst, XMMRegister src1, XMMRegister src2) {
@@ -1938,6 +1977,7 @@ class Assembler : public AssemblerBase {
   void emit_sse_operand(Register reg, const Operand& adr);
   void emit_sse_operand(XMMRegister dst, Register src);
   void emit_sse_operand(Register dst, XMMRegister src);
+  void emit_sse_operand(XMMRegister dst);
 
   // Emit machine code for one of the operations ADD, ADC, SUB, SBC,
   // AND, OR, XOR, or CMP.  The encodings of these operations are all
@@ -2053,6 +2093,11 @@ class Assembler : public AssemblerBase {
   void emit_cmp(const Operand& dst, Immediate src, int size) {
     immediate_arithmetic_op(0x7, dst, src, size);
   }
+
+  // Compare {al,ax,eax,rax} with src.  If equal, set ZF and write dst into
+  // src. Otherwise clear ZF and write src into {al,ax,eax,rax}.  This
+  // operation is only atomic if prefixed by the lock instruction.
+  void emit_cmpxchg(const Operand& dst, Register src, int size);
 
   void emit_dec(Register dst, int size);
   void emit_dec(const Operand& dst, int size);

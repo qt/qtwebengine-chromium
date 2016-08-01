@@ -81,6 +81,7 @@ class Context final : public ValidationContext
     GLuint createSampler();
     GLuint createTransformFeedback();
     GLsync createFenceSync();
+    GLuint createPaths(GLsizei range);
 
     void deleteBuffer(GLuint buffer);
     void deleteShader(GLuint shader);
@@ -90,6 +91,20 @@ class Context final : public ValidationContext
     void deleteSampler(GLuint sampler);
     void deleteTransformFeedback(GLuint transformFeedback);
     void deleteFenceSync(GLsync fenceSync);
+    void deletePaths(GLuint first, GLsizei range);
+
+    // CHROMIUM_path_rendering
+    bool hasPathData(GLuint path) const;
+    bool hasPath(GLuint path) const;
+    void setPathCommands(GLuint path,
+                         GLsizei numCommands,
+                         const GLubyte *commands,
+                         GLsizei numCoords,
+                         GLenum coordType,
+                         const void *coords);
+    void setPathParameterf(GLuint path, GLenum pname, GLfloat value);
+    void getPathParameterfv(GLuint path, GLenum pname, GLfloat *value) const;
+    void setPathStencilFunc(GLenum func, GLint ref, GLuint mask);
 
     // Framebuffers are owned by the Context, so these methods do not pass through
     GLuint createFramebuffer();
@@ -185,8 +200,81 @@ class Context final : public ValidationContext
     bool getIndexedIntegerv(GLenum target, GLuint index, GLint *data);
     bool getIndexedInteger64v(GLenum target, GLuint index, GLint64 *data);
 
-    bool getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *numParams);
-    bool getIndexedQueryParameterInfo(GLenum target, GLenum *type, unsigned int *numParams);
+    void activeTexture(GLenum texture);
+    void blendColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
+    void blendEquationSeparate(GLenum modeRGB, GLenum modeAlpha);
+    void blendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha);
+    void clearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
+    void clearDepthf(GLclampf depth);
+    void clearStencil(GLint s);
+    void colorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
+    void cullFace(GLenum mode);
+    void depthFunc(GLenum func);
+    void depthMask(GLboolean flag);
+    void depthRangef(GLclampf zNear, GLclampf zFar);
+    void disable(GLenum cap);
+    void disableVertexAttribArray(GLuint index);
+    void enable(GLenum cap);
+    void enableVertexAttribArray(GLuint index);
+    void frontFace(GLenum mode);
+    void hint(GLenum target, GLenum mode);
+    void lineWidth(GLfloat width);
+    void pixelStorei(GLenum pname, GLint param);
+    void polygonOffset(GLfloat factor, GLfloat units);
+    void sampleCoverage(GLclampf value, GLboolean invert);
+    void scissor(GLint x, GLint y, GLsizei width, GLsizei height);
+    void stencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask);
+    void stencilMaskSeparate(GLenum face, GLuint mask);
+    void stencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum zpass);
+    void vertexAttrib1f(GLuint index, GLfloat x);
+    void vertexAttrib1fv(GLuint index, const GLfloat *values);
+    void vertexAttrib2f(GLuint index, GLfloat x, GLfloat y);
+    void vertexAttrib2fv(GLuint index, const GLfloat *values);
+    void vertexAttrib3f(GLuint index, GLfloat x, GLfloat y, GLfloat z);
+    void vertexAttrib3fv(GLuint index, const GLfloat *values);
+    void vertexAttrib4f(GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w);
+    void vertexAttrib4fv(GLuint index, const GLfloat *values);
+    void vertexAttribPointer(GLuint index,
+                             GLint size,
+                             GLenum type,
+                             GLboolean normalized,
+                             GLsizei stride,
+                             const GLvoid *ptr);
+    void viewport(GLint x, GLint y, GLsizei width, GLsizei height);
+
+    void vertexAttribIPointer(GLuint index,
+                              GLint size,
+                              GLenum type,
+                              GLsizei stride,
+                              const GLvoid *pointer);
+    void vertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint w);
+    void vertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
+    void vertexAttribI4iv(GLuint index, const GLint *v);
+    void vertexAttribI4uiv(GLuint index, const GLuint *v);
+
+    void debugMessageControl(GLenum source,
+                             GLenum type,
+                             GLenum severity,
+                             GLsizei count,
+                             const GLuint *ids,
+                             GLboolean enabled);
+    void debugMessageInsert(GLenum source,
+                            GLenum type,
+                            GLuint id,
+                            GLenum severity,
+                            GLsizei length,
+                            const GLchar *buf);
+    void debugMessageCallback(GLDEBUGPROCKHR callback, const void *userParam);
+    GLuint getDebugMessageLog(GLuint count,
+                              GLsizei bufSize,
+                              GLenum *sources,
+                              GLenum *types,
+                              GLuint *ids,
+                              GLenum *severities,
+                              GLsizei *lengths,
+                              GLchar *messageLog);
+    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const GLchar *message);
+    void popDebugGroup();
 
     void clear(GLbitfield mask);
     void clearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat *values);
@@ -370,6 +458,8 @@ class Context final : public ValidationContext
                                  GLsizei imageSize,
                                  const GLvoid *data);
 
+    void generateMipmap(GLenum target);
+
     Error flush();
     Error finish();
 
@@ -392,6 +482,16 @@ class Context final : public ValidationContext
     // CHROMIUM_framebuffer_mixed_samples
     void setCoverageModulation(GLenum components);
 
+    // CHROMIUM_path_rendering
+    void loadPathRenderingMatrix(GLenum matrixMode, const GLfloat *matrix);
+    void loadPathRenderingIdentityMatrix(GLenum matrixMode);
+    void stencilFillPath(GLuint path, GLenum fillMode, GLuint mask);
+    void stencilStrokePath(GLuint path, GLint reference, GLuint mask);
+    void coverFillPath(GLuint path, GLenum coverMode);
+    void coverStrokePath(GLuint path, GLenum coverMode);
+    void stencilThenCoverFillPath(GLuint path, GLenum fillMode, GLuint mask, GLenum coverMode);
+    void stencilThenCoverStrokePath(GLuint path, GLint reference, GLuint mask, GLenum coverMode);
+
     void handleError(const Error &error) override;
 
     GLenum getError();
@@ -408,7 +508,6 @@ class Context final : public ValidationContext
     const std::string &getExtensionString(size_t idx) const;
     size_t getExtensionStringCount() const;
 
-    State &getState() { return mState; }
     rx::ContextImpl *getImplementation() const { return mImplementation.get(); }
 
   private:
@@ -433,7 +532,7 @@ class Context final : public ValidationContext
     void initRendererString();
     void initExtensionStrings();
 
-    void initCaps(GLuint clientVersion);
+    void initCaps();
 
     std::unique_ptr<rx::ContextImpl> mImplementation;
 
@@ -446,7 +545,7 @@ class Context final : public ValidationContext
     // Shader compiler
     Compiler *mCompiler;
 
-    State mState;
+    State mGLState;
 
     int mClientVersion;
 

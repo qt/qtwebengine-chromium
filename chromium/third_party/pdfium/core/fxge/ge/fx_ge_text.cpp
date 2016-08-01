@@ -5,21 +5,18 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include <limits>
+#include <vector>
 
 #include "core/fxcodec/include/fx_codec.h"
 #include "core/fxge/ge/fx_text_int.h"
 #include "core/fxge/include/fx_freetype.h"
 #include "core/fxge/include/fx_ge.h"
+#include "core/fxge/include/ifx_renderdevicedriver.h"
 
 #ifdef _SKIA_SUPPORT_
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #endif
-
-#undef FX_GAMMA
-#undef FX_GAMMA_INVERSE
-#define FX_GAMMA(value) (value)
-#define FX_GAMMA_INVERSE(value) (value)
 
 namespace {
 
@@ -46,83 +43,33 @@ class ScopedFontTransform {
   FT_Face m_Face;
 };
 
-}  // namespace
-
-FX_RECT FXGE_GetGlyphsBBox(FXTEXT_GLYPHPOS* pGlyphAndPos,
-                           int nChars,
-                           int anti_alias,
-                           FX_FLOAT retinaScaleX,
-                           FX_FLOAT retinaScaleY) {
-  FX_RECT rect(0, 0, 0, 0);
-  FX_BOOL bStarted = FALSE;
-  for (int iChar = 0; iChar < nChars; iChar++) {
-    FXTEXT_GLYPHPOS& glyph = pGlyphAndPos[iChar];
-    const CFX_GlyphBitmap* pGlyph = glyph.m_pGlyph;
-    if (!pGlyph) {
-      continue;
-    }
-    int char_left = glyph.m_OriginX + pGlyph->m_Left;
-    int char_width = (int)(pGlyph->m_Bitmap.GetWidth() / retinaScaleX);
-    if (anti_alias == FXFT_RENDER_MODE_LCD) {
-      char_width /= 3;
-    }
-    int char_right = char_left + char_width;
-    int char_top = glyph.m_OriginY - pGlyph->m_Top;
-    int char_bottom =
-        char_top + (int)(pGlyph->m_Bitmap.GetHeight() / retinaScaleY);
-    if (!bStarted) {
-      rect.left = char_left;
-      rect.right = char_right;
-      rect.top = char_top;
-      rect.bottom = char_bottom;
-      bStarted = TRUE;
-    } else {
-      if (rect.left > char_left) {
-        rect.left = char_left;
-      }
-      if (rect.right < char_right) {
-        rect.right = char_right;
-      }
-      if (rect.top > char_top) {
-        rect.top = char_top;
-      }
-      if (rect.bottom < char_bottom) {
-        rect.bottom = char_bottom;
-      }
-    }
-  }
-  return rect;
-}
-static void _AdjustGlyphSpace(FXTEXT_GLYPHPOS* pGlyphAndPos, int nChars) {
-  ASSERT(nChars > 1);
-  FX_BOOL bVertical = FALSE;
-  if (pGlyphAndPos[nChars - 1].m_OriginX == pGlyphAndPos[0].m_OriginX) {
-    bVertical = TRUE;
-  } else if (pGlyphAndPos[nChars - 1].m_OriginY != pGlyphAndPos[0].m_OriginY) {
+void AdjustGlyphSpace(std::vector<FXTEXT_GLYPHPOS>* pGlyphAndPos) {
+  ASSERT(pGlyphAndPos->size() > 1);
+  std::vector<FXTEXT_GLYPHPOS>& glyphs = *pGlyphAndPos;
+  bool bVertical = glyphs.back().m_OriginX == glyphs.front().m_OriginX;
+  if (!bVertical && (glyphs.back().m_OriginY != glyphs.front().m_OriginY))
     return;
-  }
-  int i = nChars - 1;
-  int* next_origin =
-      bVertical ? &pGlyphAndPos[i].m_OriginY : &pGlyphAndPos[i].m_OriginX;
-  FX_FLOAT next_origin_f =
-      bVertical ? pGlyphAndPos[i].m_fOriginY : pGlyphAndPos[i].m_fOriginX;
-  for (i--; i > 0; i--) {
-    int* this_origin =
-        bVertical ? &pGlyphAndPos[i].m_OriginY : &pGlyphAndPos[i].m_OriginX;
-    FX_FLOAT this_origin_f =
-        bVertical ? pGlyphAndPos[i].m_fOriginY : pGlyphAndPos[i].m_fOriginX;
-    int space = (*next_origin) - (*this_origin);
-    FX_FLOAT space_f = next_origin_f - this_origin_f;
+
+  for (size_t i = glyphs.size() - 1; i > 1; --i) {
+    FXTEXT_GLYPHPOS& next = glyphs[i];
+    int next_origin = bVertical ? next.m_OriginY : next.m_OriginX;
+    FX_FLOAT next_origin_f = bVertical ? next.m_fOriginY : next.m_fOriginX;
+
+    FXTEXT_GLYPHPOS& current = glyphs[i - 1];
+    int& current_origin = bVertical ? current.m_OriginY : current.m_OriginX;
+    FX_FLOAT current_origin_f =
+        bVertical ? current.m_fOriginY : current.m_fOriginX;
+
+    int space = next_origin - current_origin;
+    FX_FLOAT space_f = next_origin_f - current_origin_f;
     FX_FLOAT error =
-        (FX_FLOAT)(FXSYS_fabs(space_f) - FXSYS_fabs((FX_FLOAT)(space)));
-    if (error > 0.5f) {
-      *this_origin += space > 0 ? -1 : 1;
-    }
-    next_origin = this_origin;
-    next_origin_f = this_origin_f;
+        FXSYS_fabs(space_f) - FXSYS_fabs(static_cast<FX_FLOAT>(space));
+    if (error > 0.5f)
+      current_origin += space > 0 ? -1 : 1;
   }
 }
-static const uint8_t g_TextGammaAdjust[256] = {
+
+const uint8_t g_TextGammaAdjust[256] = {
     0,   2,   3,   4,   6,   7,   8,   10,  11,  12,  13,  15,  16,  17,  18,
     19,  21,  22,  23,  24,  25,  26,  27,  29,  30,  31,  32,  33,  34,  35,
     36,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  51,  52,
@@ -142,42 +89,318 @@ static const uint8_t g_TextGammaAdjust[256] = {
     241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 250, 251, 252, 253, 254,
     255,
 };
-#define ADJUST_ALPHA(background, foreground, src_alpha, text_flags, a) \
-  src_alpha = g_TextGammaAdjust[(uint8_t)src_alpha];
-void _Color2Argb(FX_ARGB& argb,
-                 uint32_t color,
-                 int alpha_flag,
-                 void* pIccTransform) {
-  if (!pIccTransform && !FXGETFLAG_COLORTYPE(alpha_flag)) {
-    argb = color;
-    return;
-  }
-  if (!CFX_GEModule::Get()->GetCodecModule() ||
-      !CFX_GEModule::Get()->GetCodecModule()->GetIccModule()) {
-    pIccTransform = NULL;
-  }
-  uint8_t bgra[4];
-  if (pIccTransform) {
-    CCodec_IccModule* pIccModule =
-        CFX_GEModule::Get()->GetCodecModule()->GetIccModule();
-    color = FXGETFLAG_COLORTYPE(alpha_flag) ? FXCMYK_TODIB(color)
-                                            : FXARGB_TODIB(color);
-    pIccModule->TranslateScanline(pIccTransform, bgra, (const uint8_t*)&color,
-                                  1);
-    bgra[3] = FXGETFLAG_COLORTYPE(alpha_flag)
-                  ? (alpha_flag >> 24) ? FXGETFLAG_ALPHA_FILL(alpha_flag)
-                                       : FXGETFLAG_ALPHA_STROKE(alpha_flag)
-                  : FXARGB_A(color);
-    argb = FXARGB_MAKE(bgra[3], bgra[2], bgra[1], bgra[0]);
-    return;
-  }
-  AdobeCMYK_to_sRGB1(FXSYS_GetCValue(color), FXSYS_GetMValue(color),
-                     FXSYS_GetYValue(color), FXSYS_GetKValue(color), bgra[2],
-                     bgra[1], bgra[0]);
-  bgra[3] = (alpha_flag >> 24) ? FXGETFLAG_ALPHA_FILL(alpha_flag)
-                               : FXGETFLAG_ALPHA_STROKE(alpha_flag);
-  argb = FXARGB_MAKE(bgra[3], bgra[2], bgra[1], bgra[0]);
+
+int TextGammaAdjust(int value) {
+  ASSERT(value >= 0);
+  ASSERT(value <= 255);
+  return g_TextGammaAdjust[value];
 }
+
+int CalcAlpha(int src, int alpha) {
+  return src * alpha / 255;
+}
+
+void Merge(uint8_t src, int channel, int alpha, uint8_t* dest) {
+  *dest = FXDIB_ALPHA_MERGE(*dest, channel, CalcAlpha(src, alpha));
+}
+
+void MergeGammaAdjust(uint8_t src, int channel, int alpha, uint8_t* dest) {
+  *dest =
+      FXDIB_ALPHA_MERGE(*dest, channel, CalcAlpha(TextGammaAdjust(src), alpha));
+}
+
+void MergeGammaAdjustBgr(const uint8_t* src,
+                         int r,
+                         int g,
+                         int b,
+                         int a,
+                         uint8_t* dest) {
+  MergeGammaAdjust(src[0], b, a, &dest[0]);
+  MergeGammaAdjust(src[1], g, a, &dest[1]);
+  MergeGammaAdjust(src[2], r, a, &dest[2]);
+}
+
+void MergeGammaAdjustRgb(const uint8_t* src,
+                         int r,
+                         int g,
+                         int b,
+                         int a,
+                         uint8_t* dest) {
+  MergeGammaAdjust(src[2], b, a, &dest[0]);
+  MergeGammaAdjust(src[1], g, a, &dest[1]);
+  MergeGammaAdjust(src[0], r, a, &dest[2]);
+}
+
+int AverageRgb(const uint8_t* src) {
+  return (src[0] + src[1] + src[2]) / 3;
+}
+
+uint8_t CalculateDestAlpha(uint8_t back_alpha, int src_alpha) {
+  return back_alpha + src_alpha - back_alpha * src_alpha / 255;
+}
+
+void ApplyDestAlpha(uint8_t back_alpha,
+                    int src_alpha,
+                    int r,
+                    int g,
+                    int b,
+                    uint8_t* dest) {
+  uint8_t dest_alpha = CalculateDestAlpha(back_alpha, src_alpha);
+  int alpha_ratio = src_alpha * 255 / dest_alpha;
+  dest[0] = FXDIB_ALPHA_MERGE(dest[0], b, alpha_ratio);
+  dest[1] = FXDIB_ALPHA_MERGE(dest[1], g, alpha_ratio);
+  dest[2] = FXDIB_ALPHA_MERGE(dest[2], r, alpha_ratio);
+  dest[3] = dest_alpha;
+}
+
+void NormalizeRgbDst(int src_value, int r, int g, int b, int a, uint8_t* dest) {
+  int src_alpha = CalcAlpha(TextGammaAdjust(src_value), a);
+  dest[0] = FXDIB_ALPHA_MERGE(dest[0], b, src_alpha);
+  dest[1] = FXDIB_ALPHA_MERGE(dest[1], g, src_alpha);
+  dest[2] = FXDIB_ALPHA_MERGE(dest[2], r, src_alpha);
+}
+
+void NormalizeRgbSrc(int src_value, int r, int g, int b, int a, uint8_t* dest) {
+  int src_alpha = CalcAlpha(TextGammaAdjust(src_value), a);
+  if (src_alpha == 0)
+    return;
+
+  dest[0] = FXDIB_ALPHA_MERGE(dest[0], b, src_alpha);
+  dest[1] = FXDIB_ALPHA_MERGE(dest[1], g, src_alpha);
+  dest[2] = FXDIB_ALPHA_MERGE(dest[2], r, src_alpha);
+}
+
+void NormalizeArgbDest(int src_value,
+                       int r,
+                       int g,
+                       int b,
+                       int a,
+                       uint8_t* dest) {
+  int src_alpha = CalcAlpha(TextGammaAdjust(src_value), a);
+  uint8_t back_alpha = dest[3];
+  if (back_alpha == 0) {
+    FXARGB_SETDIB(dest, FXARGB_MAKE(src_alpha, r, g, b));
+  } else if (src_alpha != 0) {
+    ApplyDestAlpha(back_alpha, src_alpha, r, g, b, dest);
+  }
+}
+
+void NormalizeArgbSrc(int src_value,
+                      int r,
+                      int g,
+                      int b,
+                      int a,
+                      uint8_t* dest) {
+  int src_alpha = CalcAlpha(TextGammaAdjust(src_value), a);
+  if (src_alpha == 0)
+    return;
+
+  uint8_t back_alpha = dest[3];
+  if (back_alpha == 0) {
+    FXARGB_SETDIB(dest, FXARGB_MAKE(src_alpha, r, g, b));
+  } else {
+    ApplyDestAlpha(back_alpha, src_alpha, r, g, b, dest);
+  }
+}
+
+void NextPixel(uint8_t** src_scan, uint8_t** dst_scan, int bpp) {
+  *src_scan += 3;
+  *dst_scan += bpp;
+}
+
+void SetAlpha(uint8_t* alpha) {
+  alpha[3] = 255;
+}
+
+void SetAlphaDoNothing(uint8_t* alpha) {}
+
+void DrawNormalTextHelper(CFX_DIBitmap* bitmap,
+                          const CFX_DIBitmap* pGlyph,
+                          int nrows,
+                          int left,
+                          int top,
+                          int start_col,
+                          int end_col,
+                          bool bNormal,
+                          bool bBGRStripe,
+                          int x_subpixel,
+                          int a,
+                          int r,
+                          int g,
+                          int b) {
+  const bool has_alpha = bitmap->GetFormat() == FXDIB_Argb;
+  uint8_t* src_buf = pGlyph->GetBuffer();
+  int src_pitch = pGlyph->GetPitch();
+  uint8_t* dest_buf = bitmap->GetBuffer();
+  int dest_pitch = bitmap->GetPitch();
+  const int Bpp = has_alpha ? 4 : bitmap->GetBPP() / 8;
+  auto* pNormalizeSrcFunc = has_alpha ? &NormalizeArgbSrc : &NormalizeRgbDst;
+  auto* pNormalizeDstFunc = has_alpha ? &NormalizeArgbDest : &NormalizeRgbSrc;
+  auto* pSetAlpha = has_alpha ? &SetAlpha : &SetAlphaDoNothing;
+
+  for (int row = 0; row < nrows; row++) {
+    int dest_row = row + top;
+    if (dest_row < 0 || dest_row >= bitmap->GetHeight())
+      continue;
+
+    uint8_t* src_scan = src_buf + row * src_pitch + (start_col - left) * 3;
+    uint8_t* dest_scan = dest_buf + dest_row * dest_pitch + start_col * Bpp;
+    if (bBGRStripe) {
+      if (x_subpixel == 0) {
+        for (int col = start_col; col < end_col; col++) {
+          if (has_alpha) {
+            Merge(src_scan[2], r, a, &dest_scan[2]);
+            Merge(src_scan[1], g, a, &dest_scan[1]);
+            Merge(src_scan[0], b, a, &dest_scan[0]);
+          } else {
+            MergeGammaAdjustBgr(&src_scan[0], r, g, b, a, &dest_scan[0]);
+          }
+          pSetAlpha(dest_scan);
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      } else if (x_subpixel == 1) {
+        MergeGammaAdjust(src_scan[1], r, a, &dest_scan[2]);
+        MergeGammaAdjust(src_scan[0], g, a, &dest_scan[1]);
+        if (start_col > left)
+          MergeGammaAdjust(src_scan[-1], b, a, &dest_scan[0]);
+        pSetAlpha(dest_scan);
+        NextPixel(&src_scan, &dest_scan, Bpp);
+        for (int col = start_col + 1; col < end_col - 1; col++) {
+          MergeGammaAdjustBgr(&src_scan[-1], r, g, b, a, &dest_scan[0]);
+          pSetAlpha(dest_scan);
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      } else {
+        MergeGammaAdjust(src_scan[0], r, a, &dest_scan[2]);
+        if (start_col > left) {
+          MergeGammaAdjust(src_scan[-1], g, a, &dest_scan[1]);
+          MergeGammaAdjust(src_scan[-2], b, a, &dest_scan[0]);
+        }
+        pSetAlpha(dest_scan);
+        NextPixel(&src_scan, &dest_scan, Bpp);
+        for (int col = start_col + 1; col < end_col - 1; col++) {
+          MergeGammaAdjustBgr(&src_scan[-2], r, g, b, a, &dest_scan[0]);
+          pSetAlpha(dest_scan);
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      }
+    } else {
+      if (x_subpixel == 0) {
+        for (int col = start_col; col < end_col; col++) {
+          if (bNormal) {
+            int src_value = AverageRgb(&src_scan[0]);
+            pNormalizeDstFunc(src_value, r, g, b, a, dest_scan);
+          } else {
+            MergeGammaAdjustRgb(&src_scan[0], r, g, b, a, &dest_scan[0]);
+            pSetAlpha(dest_scan);
+          }
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      } else if (x_subpixel == 1) {
+        if (bNormal) {
+          int src_value = start_col > left ? AverageRgb(&src_scan[-1])
+                                           : (src_scan[0] + src_scan[1]) / 3;
+          pNormalizeSrcFunc(src_value, r, g, b, a, dest_scan);
+        } else {
+          if (start_col > left)
+            MergeGammaAdjust(src_scan[-1], r, a, &dest_scan[2]);
+          MergeGammaAdjust(src_scan[0], g, a, &dest_scan[1]);
+          MergeGammaAdjust(src_scan[1], b, a, &dest_scan[0]);
+          pSetAlpha(dest_scan);
+        }
+        NextPixel(&src_scan, &dest_scan, Bpp);
+        for (int col = start_col + 1; col < end_col; col++) {
+          if (bNormal) {
+            int src_value = AverageRgb(&src_scan[-1]);
+            pNormalizeDstFunc(src_value, r, g, b, a, dest_scan);
+          } else {
+            MergeGammaAdjustRgb(&src_scan[-1], r, g, b, a, &dest_scan[0]);
+            pSetAlpha(dest_scan);
+          }
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      } else {
+        if (bNormal) {
+          int src_value =
+              start_col > left ? AverageRgb(&src_scan[-2]) : src_scan[0] / 3;
+          pNormalizeSrcFunc(src_value, r, g, b, a, dest_scan);
+        } else {
+          if (start_col > left) {
+            MergeGammaAdjust(src_scan[-2], r, a, &dest_scan[2]);
+            MergeGammaAdjust(src_scan[-1], g, a, &dest_scan[1]);
+          }
+          MergeGammaAdjust(src_scan[0], b, a, &dest_scan[0]);
+          pSetAlpha(dest_scan);
+        }
+        NextPixel(&src_scan, &dest_scan, Bpp);
+        for (int col = start_col + 1; col < end_col; col++) {
+          if (bNormal) {
+            int src_value = AverageRgb(&src_scan[-2]);
+            pNormalizeDstFunc(src_value, r, g, b, a, dest_scan);
+          } else {
+            MergeGammaAdjustRgb(&src_scan[-2], r, g, b, a, &dest_scan[0]);
+            pSetAlpha(dest_scan);
+          }
+          NextPixel(&src_scan, &dest_scan, Bpp);
+        }
+      }
+    }
+  }
+}
+
+bool ShouldDrawDeviceText(const CFX_Font* pFont, uint32_t text_flags) {
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
+  if (text_flags & FXFONT_CIDFONT)
+    return false;
+
+  const CFX_ByteString bsPsName = pFont->GetPsName();
+  if (bsPsName.Find("+ZJHL") != -1)
+    return false;
+
+  if (bsPsName == "CNAAJI+cmex10")
+    return false;
+#endif
+  return true;
+}
+
+}  // namespace
+
+FX_RECT FXGE_GetGlyphsBBox(const std::vector<FXTEXT_GLYPHPOS>& glyphs,
+                           int anti_alias,
+                           FX_FLOAT retinaScaleX,
+                           FX_FLOAT retinaScaleY) {
+  FX_RECT rect(0, 0, 0, 0);
+  bool bStarted = false;
+  for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
+    const CFX_GlyphBitmap* pGlyph = glyph.m_pGlyph;
+    if (!pGlyph)
+      continue;
+
+    int char_left = glyph.m_OriginX + pGlyph->m_Left;
+    int char_width = (int)(pGlyph->m_Bitmap.GetWidth() / retinaScaleX);
+    if (anti_alias == FXFT_RENDER_MODE_LCD) {
+      char_width /= 3;
+    }
+    int char_right = char_left + char_width;
+    int char_top = glyph.m_OriginY - pGlyph->m_Top;
+    int char_bottom =
+        char_top + (int)(pGlyph->m_Bitmap.GetHeight() / retinaScaleY);
+    if (!bStarted) {
+      rect.left = char_left;
+      rect.right = char_right;
+      rect.top = char_top;
+      rect.bottom = char_bottom;
+      bStarted = true;
+    } else {
+      rect.left = std::min(rect.left, char_left);
+      rect.right = std::max(rect.right, char_right);
+      rect.top = std::min(rect.top, char_top);
+      rect.bottom = std::max(rect.bottom, char_bottom);
+    }
+  }
+  return rect;
+}
+
 FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
                                          const FXTEXT_CHARPOS* pCharPos,
                                          CFX_Font* pFont,
@@ -185,78 +408,49 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
                                          FX_FLOAT font_size,
                                          const CFX_Matrix* pText2Device,
                                          uint32_t fill_color,
-                                         uint32_t text_flags,
-                                         int alpha_flag,
-                                         void* pIccTransform) {
+                                         uint32_t text_flags) {
   int nativetext_flags = text_flags;
   if (m_DeviceClass != FXDC_DISPLAY) {
     if (!(text_flags & FXTEXT_PRINTGRAPHICTEXT)) {
-      bool should_call_draw_device_text = true;
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-      if ((text_flags & FXFONT_CIDFONT) ||
-          (pFont->GetPsName().Find(
-               CFX_WideString::FromLocal("+ZJHL").AsStringC()) != -1) ||
-          (pFont->GetPsName() == CFX_WideString::FromLocal("CNAAJI+cmex10"))) {
-        should_call_draw_device_text = false;
-      }
-#endif
-      if (should_call_draw_device_text &&
+      if (ShouldDrawDeviceText(pFont, text_flags) &&
           m_pDeviceDriver->DrawDeviceText(nChars, pCharPos, pFont, pCache,
-                                          pText2Device, font_size, fill_color,
-                                          alpha_flag, pIccTransform)) {
+                                          pText2Device, font_size,
+                                          fill_color)) {
         return TRUE;
       }
     }
-    int alpha = FXGETFLAG_COLORTYPE(alpha_flag)
-                    ? FXGETFLAG_ALPHA_FILL(alpha_flag)
-                    : FXARGB_A(fill_color);
-    if (alpha < 255) {
+    if (FXARGB_A(fill_color) < 255)
       return FALSE;
-    }
   } else if (!(text_flags & FXTEXT_NO_NATIVETEXT)) {
-    bool should_call_draw_device_text = true;
-#if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-    if ((text_flags & FXFONT_CIDFONT) ||
-        (pFont->GetPsName() == CFX_WideString::FromLocal("CNAAJI+cmex10"))) {
-      should_call_draw_device_text = false;
-    }
-#endif
-    if (should_call_draw_device_text &&
+    if (ShouldDrawDeviceText(pFont, text_flags) &&
         m_pDeviceDriver->DrawDeviceText(nChars, pCharPos, pFont, pCache,
-                                        pText2Device, font_size, fill_color,
-                                        alpha_flag, pIccTransform)) {
+                                        pText2Device, font_size, fill_color)) {
       return TRUE;
     }
   }
-  CFX_Matrix char2device, deviceCtm, text2Device;
+  CFX_Matrix char2device;
+  CFX_Matrix text2Device;
   if (pText2Device) {
     char2device = *pText2Device;
     text2Device = *pText2Device;
   }
   char2device.Scale(font_size, -font_size);
   if (FXSYS_fabs(char2device.a) + FXSYS_fabs(char2device.b) > 50 * 1.0f ||
-      ((m_DeviceClass == FXDC_PRINTER && !m_pDeviceDriver->IsPSPrintDriver()) &&
+      ((m_DeviceClass == FXDC_PRINTER) &&
        !(text_flags & FXTEXT_PRINTIMAGETEXT))) {
     if (pFont->GetFace() ||
         (pFont->GetSubstFont()->m_SubstFlags & FXFONT_SUBST_GLYPHPATH)) {
       int nPathFlags =
           (text_flags & FXTEXT_NOSMOOTH) == 0 ? 0 : FXFILL_NOPATHSMOOTH;
-      return DrawTextPath(nChars, pCharPos, pFont, pCache, font_size,
-                          pText2Device, NULL, NULL, fill_color, 0, NULL,
-                          nPathFlags, alpha_flag, pIccTransform);
+      return DrawTextPathWithFlags(nChars, pCharPos, pFont, pCache, font_size,
+                                   pText2Device, nullptr, nullptr, fill_color,
+                                   0, nullptr, nPathFlags);
     }
   }
   int anti_alias = FXFT_RENDER_MODE_MONO;
-  FX_BOOL bNormal = FALSE;
+  bool bNormal = false;
   if ((text_flags & FXTEXT_NOSMOOTH) == 0) {
     if (m_DeviceClass == FXDC_DISPLAY && m_bpp > 1) {
-      FX_BOOL bClearType;
-      if (!pFont->GetFace() &&
-          !(pFont->GetSubstFont()->m_SubstFlags & FXFONT_SUBST_CLEARTYPE)) {
-        bClearType = FALSE;
-      } else {
-        bClearType = text_flags & FXTEXT_CLEARTYPE;
-      }
       if (!CFX_GEModule::Get()->GetFontMgr()->FTLibrarySupportsHinting()) {
         // Some Freetype implementations (like the one packaged with Fedora) do
         // not support hinting due to patents 6219025, 6239783, 6307566,
@@ -266,35 +460,36 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
         anti_alias = FXFT_RENDER_MODE_NORMAL;
       } else if ((m_RenderCaps & (FXRC_ALPHA_OUTPUT | FXRC_CMYK_OUTPUT))) {
         anti_alias = FXFT_RENDER_MODE_LCD;
-        bNormal = TRUE;
+        bNormal = true;
       } else if (m_bpp < 16) {
         anti_alias = FXFT_RENDER_MODE_NORMAL;
       } else {
-        if (bClearType == FALSE) {
-          anti_alias = FXFT_RENDER_MODE_LCD;
-          bNormal = TRUE;
-        } else {
-          anti_alias = FXFT_RENDER_MODE_LCD;
+        anti_alias = FXFT_RENDER_MODE_LCD;
+
+        bool bClearType = false;
+        if (pFont->GetFace() ||
+            (pFont->GetSubstFont()->m_SubstFlags & FXFONT_SUBST_CLEARTYPE)) {
+          bClearType = !!(text_flags & FXTEXT_CLEARTYPE);
         }
+        bNormal = !bClearType;
       }
     }
   }
-  if (!pCache) {
+  if (!pCache)
     pCache = CFX_GEModule::Get()->GetFontCache();
-  }
+
   CFX_FaceCache* pFaceCache = pCache->GetCachedFace(pFont);
   FX_FONTCACHE_DEFINE(pCache, pFont);
-  FXTEXT_GLYPHPOS* pGlyphAndPos = FX_Alloc(FXTEXT_GLYPHPOS, nChars);
-  int iChar;
-  deviceCtm = char2device;
+  std::vector<FXTEXT_GLYPHPOS> glyphs(nChars);
   CFX_Matrix matrixCTM = GetCTM();
   FX_FLOAT scale_x = FXSYS_fabs(matrixCTM.a);
   FX_FLOAT scale_y = FXSYS_fabs(matrixCTM.d);
+  CFX_Matrix deviceCtm = char2device;
   deviceCtm.Concat(scale_x, 0, 0, scale_y, 0, 0);
   text2Device.Concat(scale_x, 0, 0, scale_y, 0, 0);
-  for (iChar = 0; iChar < nChars; iChar++) {
-    FXTEXT_GLYPHPOS& glyph = pGlyphAndPos[iChar];
-    const FXTEXT_CHARPOS& charpos = pCharPos[iChar];
+  for (size_t i = 0; i < glyphs.size(); ++i) {
+    FXTEXT_GLYPHPOS& glyph = glyphs[i];
+    const FXTEXT_CHARPOS& charpos = pCharPos[i];
     glyph.m_fOriginX = charpos.m_OriginX;
     glyph.m_fOriginY = charpos.m_OriginY;
     text2Device.Transform(glyph.m_fOriginX, glyph.m_fOriginY);
@@ -318,10 +513,10 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
           charpos.m_FontCharWidth, anti_alias, nativetext_flags);
     }
   }
-  if (anti_alias < FXFT_RENDER_MODE_LCD && nChars > 1) {
-    _AdjustGlyphSpace(pGlyphAndPos, nChars);
-  }
-  FX_RECT bmp_rect1 = FXGE_GetGlyphsBBox(pGlyphAndPos, nChars, anti_alias);
+  if (anti_alias < FXFT_RENDER_MODE_LCD && glyphs.size() > 1)
+    AdjustGlyphSpace(&glyphs);
+
+  FX_RECT bmp_rect1 = FXGE_GetGlyphsBBox(glyphs, anti_alias);
   if (scale_x > 1 && scale_y > 1) {
     bmp_rect1.left--;
     bmp_rect1.top--;
@@ -333,79 +528,63 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
                    FXSYS_round((FX_FLOAT)bmp_rect1.right / scale_x),
                    FXSYS_round((FX_FLOAT)bmp_rect1.bottom / scale_y));
   bmp_rect.Intersect(m_ClipBox);
-  if (bmp_rect.IsEmpty()) {
-    FX_Free(pGlyphAndPos);
+  if (bmp_rect.IsEmpty())
     return TRUE;
-  }
+
   int pixel_width = FXSYS_round(bmp_rect.Width() * scale_x);
   int pixel_height = FXSYS_round(bmp_rect.Height() * scale_y);
   int pixel_left = FXSYS_round(bmp_rect.left * scale_x);
   int pixel_top = FXSYS_round(bmp_rect.top * scale_y);
   if (anti_alias == FXFT_RENDER_MODE_MONO) {
     CFX_DIBitmap bitmap;
-    if (!bitmap.Create(pixel_width, pixel_height, FXDIB_1bppMask)) {
-      FX_Free(pGlyphAndPos);
+    if (!bitmap.Create(pixel_width, pixel_height, FXDIB_1bppMask))
       return FALSE;
-    }
+
     bitmap.Clear(0);
-    for (iChar = 0; iChar < nChars; iChar++) {
-      FXTEXT_GLYPHPOS& glyph = pGlyphAndPos[iChar];
-      if (!glyph.m_pGlyph) {
+    for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
+      if (!glyph.m_pGlyph)
         continue;
-      }
+
       const CFX_DIBitmap* pGlyph = &glyph.m_pGlyph->m_Bitmap;
       bitmap.TransferBitmap(
           glyph.m_OriginX + glyph.m_pGlyph->m_Left - pixel_left,
           glyph.m_OriginY - glyph.m_pGlyph->m_Top - pixel_top,
           pGlyph->GetWidth(), pGlyph->GetHeight(), pGlyph, 0, 0);
     }
-    FX_Free(pGlyphAndPos);
     return SetBitMask(&bitmap, bmp_rect.left, bmp_rect.top, fill_color);
   }
   CFX_DIBitmap bitmap;
   if (m_bpp == 8) {
-    if (!bitmap.Create(pixel_width, pixel_height, FXDIB_8bppMask)) {
-      FX_Free(pGlyphAndPos);
+    if (!bitmap.Create(pixel_width, pixel_height, FXDIB_8bppMask))
       return FALSE;
-    }
   } else {
-    if (!CreateCompatibleBitmap(&bitmap, pixel_width, pixel_height)) {
-      FX_Free(pGlyphAndPos);
+    if (!CreateCompatibleBitmap(&bitmap, pixel_width, pixel_height))
       return FALSE;
-    }
   }
+
   if (!bitmap.HasAlpha() && !bitmap.IsAlphaMask()) {
     bitmap.Clear(0xFFFFFFFF);
-    if (!GetDIBits(&bitmap, bmp_rect.left, bmp_rect.top)) {
-      FX_Free(pGlyphAndPos);
+    if (!GetDIBits(&bitmap, bmp_rect.left, bmp_rect.top))
       return FALSE;
-    }
   } else {
     bitmap.Clear(0);
     if (bitmap.m_pAlphaMask) {
       bitmap.m_pAlphaMask->Clear(0);
     }
   }
+
   int dest_width = pixel_width;
-  uint8_t* dest_buf = bitmap.GetBuffer();
-  int dest_pitch = bitmap.GetPitch();
-  int Bpp = bitmap.GetBPP() / 8;
   int a = 0;
   int r = 0;
   int g = 0;
   int b = 0;
-  if (anti_alias == FXFT_RENDER_MODE_LCD) {
-    _Color2Argb(fill_color, fill_color, alpha_flag | (1 << 24), pIccTransform);
+  if (anti_alias == FXFT_RENDER_MODE_LCD)
     ArgbDecode(fill_color, a, r, g, b);
-    r = FX_GAMMA(r);
-    g = FX_GAMMA(g);
-    b = FX_GAMMA(b);
-  }
-  for (iChar = 0; iChar < nChars; iChar++) {
-    FXTEXT_GLYPHPOS& glyph = pGlyphAndPos[iChar];
-    if (!glyph.m_pGlyph) {
+
+  for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
+    if (!glyph.m_pGlyph)
       continue;
-    }
+
     const CFX_DIBitmap* pGlyph = &glyph.m_pGlyph->m_Bitmap;
     int left = glyph.m_OriginX + glyph.m_pGlyph->m_Left - pixel_left;
     int top = glyph.m_OriginY - glyph.m_pGlyph->m_Top - pixel_top;
@@ -413,732 +592,47 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
     int nrows = pGlyph->GetHeight();
     if (anti_alias == FXFT_RENDER_MODE_NORMAL) {
       if (!bitmap.CompositeMask(left, top, ncols, nrows, pGlyph, fill_color, 0,
-                                0, FXDIB_BLEND_NORMAL, NULL, FALSE, alpha_flag,
-                                pIccTransform)) {
-        FX_Free(pGlyphAndPos);
+                                0, FXDIB_BLEND_NORMAL, nullptr, FALSE, 0,
+                                nullptr)) {
         return FALSE;
       }
       continue;
     }
+
     bool bBGRStripe = !!(text_flags & FXTEXT_BGR_STRIPE);
     ncols /= 3;
     int x_subpixel = (int)(glyph.m_fOriginX * 3) % 3;
-    uint8_t* src_buf = pGlyph->GetBuffer();
-    int src_pitch = pGlyph->GetPitch();
-    int start_col = left;
-    if (start_col < 0) {
-      start_col = 0;
-    }
-    int end_col = left + ncols;
-    if (end_col > dest_width) {
-      end_col = dest_width;
-    }
-    if (start_col >= end_col) {
+    int start_col = std::max(left, 0);
+    int end_col = std::min(left + ncols, dest_width);
+    if (start_col >= end_col)
       continue;
-    }
-    if (bitmap.GetFormat() == FXDIB_Argb) {
-      for (int row = 0; row < nrows; row++) {
-        int dest_row = row + top;
-        if (dest_row < 0 || dest_row >= bitmap.GetHeight()) {
-          continue;
-        }
-        uint8_t* src_scan = src_buf + row * src_pitch + (start_col - left) * 3;
-        uint8_t* dest_scan =
-            dest_buf + dest_row * dest_pitch + (start_col << 2);
-        if (bBGRStripe) {
-          if (x_subpixel == 0) {
-            for (int col = start_col; col < end_col; col++) {
-              int src_alpha = src_scan[2];
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[1];
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[0];
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          } else if (x_subpixel == 1) {
-            int src_alpha = src_scan[1];
-            ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[2] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-            src_alpha = src_scan[0];
-            ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[1] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-            if (start_col > left) {
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-            }
-            dest_scan[3] = 255;
-            dest_scan += 4;
-            src_scan += 3;
-            for (int col = start_col + 1; col < end_col - 1; col++) {
-              int src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          } else {
-            int src_alpha = src_scan[0];
-            ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[2] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-            if (start_col > left) {
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-            }
-            dest_scan[3] = 255;
-            dest_scan += 4;
-            src_scan += 3;
-            for (int col = start_col + 1; col < end_col - 1; col++) {
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          }
-        } else {
-          if (x_subpixel == 0) {
-            for (int col = start_col; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 = (src_scan[0] + src_scan[1] + src_scan[2]) / 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                uint8_t back_alpha = dest_scan[3];
-                if (back_alpha == 0) {
-                  FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_alpha1, r, g, b));
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                if (src_alpha1 == 0) {
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                uint8_t dest_alpha =
-                    back_alpha + src_alpha1 - back_alpha * src_alpha1 / 255;
-                dest_scan[3] = dest_alpha;
-                int alpha_ratio = src_alpha1 * 255 / dest_alpha;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, alpha_ratio));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, alpha_ratio));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, alpha_ratio));
-                dest_scan += 4;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          } else if (x_subpixel == 1) {
-            if (bNormal) {
-              int src_alpha1 =
-                  start_col > left
-                      ? ((src_scan[-1] + src_scan[0] + src_scan[1]) / 3)
-                      : ((src_scan[0] + src_scan[1]) / 3);
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-              src_alpha1 = src_alpha1 * a / 255;
-              if (src_alpha1 == 0) {
-                dest_scan += 4;
-                src_scan += 3;
-              } else {
-                uint8_t back_alpha = dest_scan[3];
-                if (back_alpha == 0) {
-                  FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_alpha1, r, g, b));
-                } else {
-                  uint8_t dest_alpha =
-                      back_alpha + src_alpha1 - back_alpha * src_alpha1 / 255;
-                  dest_scan[3] = dest_alpha;
-                  int alpha_ratio = src_alpha1 * 255 / dest_alpha;
-                  dest_scan[2] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[2]), r, alpha_ratio));
-                  dest_scan[1] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[1]), g, alpha_ratio));
-                  dest_scan[0] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[0]), b, alpha_ratio));
-                }
-                dest_scan += 4;
-                src_scan += 3;
-              }
-            } else {
-              if (start_col > left) {
-                int src_alpha = src_scan[-1];
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-            for (int col = start_col + 1; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 = (src_scan[-1] + src_scan[0] + src_scan[1]) / 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                uint8_t back_alpha = dest_scan[3];
-                if (back_alpha == 0) {
-                  FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_alpha1, r, g, b));
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                if (src_alpha1 == 0) {
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                uint8_t dest_alpha =
-                    back_alpha + src_alpha1 - back_alpha * src_alpha1 / 255;
-                dest_scan[3] = dest_alpha;
-                int alpha_ratio = src_alpha1 * 255 / dest_alpha;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, alpha_ratio));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, alpha_ratio));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, alpha_ratio));
-                dest_scan += 4;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          } else {
-            if (bNormal) {
-              int src_alpha1 =
-                  start_col > left
-                      ? ((src_scan[-2] + src_scan[-1] + src_scan[0]) / 3)
-                      : ((src_scan[0]) / 3);
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-              src_alpha1 = src_alpha1 * a / 255;
-              if (src_alpha1 == 0) {
-                dest_scan += 4;
-                src_scan += 3;
-              } else {
-                uint8_t back_alpha = dest_scan[3];
-                if (back_alpha == 0) {
-                  FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_alpha1, r, g, b));
-                } else {
-                  uint8_t dest_alpha =
-                      back_alpha + src_alpha1 - back_alpha * src_alpha1 / 255;
-                  dest_scan[3] = dest_alpha;
-                  int alpha_ratio = src_alpha1 * 255 / dest_alpha;
-                  dest_scan[2] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[2]), r, alpha_ratio));
-                  dest_scan[1] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[1]), g, alpha_ratio));
-                  dest_scan[0] = FX_GAMMA_INVERSE(FXDIB_ALPHA_MERGE(
-                      FX_GAMMA(dest_scan[0]), b, alpha_ratio));
-                }
-                dest_scan += 4;
-                src_scan += 3;
-              }
-            } else {
-              if (start_col > left) {
-                int src_alpha = src_scan[-2];
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-                src_alpha = src_scan[-1];
-                ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-            for (int col = start_col + 1; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 =
-                    (src_scan[-2] + src_scan[-1] + src_scan[0]) / 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                uint8_t back_alpha = dest_scan[3];
-                if (back_alpha == 0) {
-                  FXARGB_SETDIB(dest_scan, FXARGB_MAKE(src_alpha1, r, g, b));
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                if (src_alpha1 == 0) {
-                  dest_scan += 4;
-                  src_scan += 3;
-                  continue;
-                }
-                uint8_t dest_alpha =
-                    back_alpha + src_alpha1 - back_alpha * src_alpha1 / 255;
-                dest_scan[3] = dest_alpha;
-                int alpha_ratio = src_alpha1 * 255 / dest_alpha;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, alpha_ratio));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, alpha_ratio));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, alpha_ratio));
-                dest_scan += 4;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan[3] = 255;
-              dest_scan += 4;
-              src_scan += 3;
-            }
-          }
-        }
-      }
-    } else {
-      for (int row = 0; row < nrows; row++) {
-        int dest_row = row + top;
-        if (dest_row < 0 || dest_row >= bitmap.GetHeight()) {
-          continue;
-        }
-        uint8_t* src_scan = src_buf + row * src_pitch + (start_col - left) * 3;
-        uint8_t* dest_scan = dest_buf + dest_row * dest_pitch + start_col * Bpp;
-        if (bBGRStripe) {
-          if (x_subpixel == 0) {
-            for (int col = start_col; col < end_col; col++) {
-              int src_alpha = src_scan[2];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          } else if (x_subpixel == 1) {
-            int src_alpha = src_scan[1];
-            ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[2] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-            src_alpha = src_scan[0];
-            ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[1] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-            if (start_col > left) {
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-            }
-            dest_scan += Bpp;
-            src_scan += 3;
-            for (int col = start_col + 1; col < end_col - 1; col++) {
-              int src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          } else {
-            int src_alpha = src_scan[0];
-            ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-            src_alpha = src_alpha * a / 255;
-            dest_scan[2] = FX_GAMMA_INVERSE(
-                FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-            if (start_col > left) {
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-            }
-            dest_scan += Bpp;
-            src_scan += 3;
-            for (int col = start_col + 1; col < end_col - 1; col++) {
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          }
-        } else {
-          if (x_subpixel == 0) {
-            for (int col = start_col; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 = (src_scan[0] + src_scan[1] + src_scan[2]) / 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                if (src_alpha1 == 0) {
-                  dest_scan += Bpp;
-                  src_scan += 3;
-                  continue;
-                }
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha1));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha1));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha1));
-                dest_scan += Bpp;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[2];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          } else if (x_subpixel == 1) {
-            if (bNormal) {
-              int src_alpha1 =
-                  start_col > left
-                      ? (src_scan[0] + src_scan[1] + src_scan[-1]) / 3
-                      : (src_scan[0] + src_scan[1]) / 3;
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-              src_alpha1 = src_alpha1 * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha1));
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha1));
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha1));
-              dest_scan += Bpp;
-              src_scan += 3;
-            } else {
-              if (start_col > left) {
-                int src_alpha = src_scan[-1];
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-            for (int col = start_col + 1; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 = (src_scan[0] + src_scan[1] + src_scan[-1]) / 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                if (src_alpha1 == 0) {
-                  dest_scan += Bpp;
-                  src_scan += 3;
-                  continue;
-                }
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha1));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha1));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha1));
-                dest_scan += Bpp;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[1];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          } else {
-            if (bNormal) {
-              int src_alpha1 =
-                  start_col > left
-                      ? (src_scan[0] + src_scan[-2] + src_scan[-1]) / 3
-                      : src_scan[0] / 3;
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-              src_alpha1 = src_alpha1 * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha1));
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha1));
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha1));
-              dest_scan += Bpp;
-              src_scan += 3;
-            } else {
-              if (start_col > left) {
-                int src_alpha = src_scan[-2];
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-                src_alpha = src_scan[-1];
-                ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-                src_alpha = src_alpha * a / 255;
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              }
-              int src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-            for (int col = start_col + 1; col < end_col; col++) {
-              if (bNormal) {
-                int src_alpha1 = ((int)(src_scan[0]) + (int)(src_scan[-2]) +
-                                  (int)(src_scan[-1])) /
-                                 3;
-                ADJUST_ALPHA(dest_scan[2], r, src_alpha1, nativetext_flags, a);
-                src_alpha1 = src_alpha1 * a / 255;
-                if (src_alpha1 == 0) {
-                  dest_scan += Bpp;
-                  src_scan += 3;
-                  continue;
-                }
-                dest_scan[2] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha1));
-                dest_scan[1] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha1));
-                dest_scan[0] = FX_GAMMA_INVERSE(
-                    FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha1));
-                dest_scan += Bpp;
-                src_scan += 3;
-                continue;
-              }
-              int src_alpha = src_scan[-2];
-              ADJUST_ALPHA(dest_scan[2], r, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[2] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[2]), r, src_alpha));
-              src_alpha = src_scan[-1];
-              ADJUST_ALPHA(dest_scan[1], g, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[1] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[1]), g, src_alpha));
-              src_alpha = src_scan[0];
-              ADJUST_ALPHA(dest_scan[0], b, src_alpha, nativetext_flags, a);
-              src_alpha = src_alpha * a / 255;
-              dest_scan[0] = FX_GAMMA_INVERSE(
-                  FXDIB_ALPHA_MERGE(FX_GAMMA(dest_scan[0]), b, src_alpha));
-              dest_scan += Bpp;
-              src_scan += 3;
-            }
-          }
-        }
-      }
-    }
+
+    DrawNormalTextHelper(&bitmap, pGlyph, nrows, left, top, start_col, end_col,
+                         bNormal, bBGRStripe, x_subpixel, a, r, g, b);
   }
-  if (bitmap.IsAlphaMask()) {
-    SetBitMask(&bitmap, bmp_rect.left, bmp_rect.top, fill_color, alpha_flag,
-               pIccTransform);
-  } else {
+  if (bitmap.IsAlphaMask())
+    SetBitMask(&bitmap, bmp_rect.left, bmp_rect.top, fill_color);
+  else
     SetDIBits(&bitmap, bmp_rect.left, bmp_rect.top);
-  }
-  FX_Free(pGlyphAndPos);
   return TRUE;
 }
-FX_BOOL CFX_RenderDevice::DrawTextPath(int nChars,
-                                       const FXTEXT_CHARPOS* pCharPos,
-                                       CFX_Font* pFont,
-                                       CFX_FontCache* pCache,
-                                       FX_FLOAT font_size,
-                                       const CFX_Matrix* pText2User,
-                                       const CFX_Matrix* pUser2Device,
-                                       const CFX_GraphStateData* pGraphState,
-                                       uint32_t fill_color,
-                                       FX_ARGB stroke_color,
-                                       CFX_PathData* pClippingPath,
-                                       int nFlag,
-                                       int alpha_flag,
-                                       void* pIccTransform,
-                                       int blend_type) {
-  if (!pCache) {
+
+FX_BOOL CFX_RenderDevice::DrawTextPathWithFlags(
+    int nChars,
+    const FXTEXT_CHARPOS* pCharPos,
+    CFX_Font* pFont,
+    CFX_FontCache* pCache,
+    FX_FLOAT font_size,
+    const CFX_Matrix* pText2User,
+    const CFX_Matrix* pUser2Device,
+    const CFX_GraphStateData* pGraphState,
+    uint32_t fill_color,
+    FX_ARGB stroke_color,
+    CFX_PathData* pClippingPath,
+    int nFlag) {
+  if (!pCache)
     pCache = CFX_GEModule::Get()->GetFontCache();
-  }
+
   CFX_FaceCache* pFaceCache = pCache->GetCachedFace(pFont);
   FX_FONTCACHE_DEFINE(pCache, pFont);
   for (int iChar = 0; iChar < nChars; iChar++) {
@@ -1151,37 +645,25 @@ FX_BOOL CFX_RenderDevice::DrawTextPath(int nChars,
                   charpos.m_OriginY);
     const CFX_PathData* pPath = pFaceCache->LoadGlyphPath(
         pFont, charpos.m_GlyphIndex, charpos.m_FontCharWidth);
-    if (!pPath) {
+    if (!pPath)
       continue;
-    }
+
     matrix.Concat(*pText2User);
     CFX_PathData TransformedPath(*pPath);
     TransformedPath.Transform(&matrix);
-    FX_BOOL bHasAlpha = FXGETFLAG_COLORTYPE(alpha_flag)
-                            ? (FXGETFLAG_ALPHA_FILL(alpha_flag) ||
-                               FXGETFLAG_ALPHA_STROKE(alpha_flag))
-                            : (fill_color || stroke_color);
-    if (bHasAlpha) {
+    if (fill_color || stroke_color) {
       int fill_mode = nFlag;
-      if (FXGETFLAG_COLORTYPE(alpha_flag)) {
-        if (FXGETFLAG_ALPHA_FILL(alpha_flag)) {
-          fill_mode |= FXFILL_WINDING;
-        }
-      } else {
-        if (fill_color) {
-          fill_mode |= FXFILL_WINDING;
-        }
-      }
+      if (fill_color)
+        fill_mode |= FXFILL_WINDING;
       fill_mode |= FX_FILL_TEXT_MODE;
-      if (!DrawPath(&TransformedPath, pUser2Device, pGraphState, fill_color,
-                    stroke_color, fill_mode, alpha_flag, pIccTransform,
-                    blend_type)) {
+      if (!DrawPathWithBlend(&TransformedPath, pUser2Device, pGraphState,
+                             fill_color, stroke_color, fill_mode,
+                             FXDIB_BLEND_NORMAL)) {
         return FALSE;
       }
     }
-    if (pClippingPath) {
+    if (pClippingPath)
       pClippingPath->Append(&TransformedPath, pUser2Device);
-    }
   }
   return TRUE;
 }
@@ -1220,8 +702,10 @@ CFX_TypeFace* CFX_FontCache::GetDeviceCache(CFX_Font* pFont) {
 
 CFX_TypeFace* CFX_FaceCache::GetDeviceCache(CFX_Font* pFont) {
   if (!m_pTypeface) {
-    m_pTypeface = SkTypeface::CreateFromStream(
-        new SkMemoryStream(pFont->GetFontData(), pFont->GetSize()));
+    m_pTypeface =
+        SkTypeface::MakeFromStream(
+            new SkMemoryStream(pFont->GetFontData(), pFont->GetSize()))
+            .release();
   }
   return m_pTypeface;
 }
@@ -1328,7 +812,7 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(CFX_Font* pFont,
                                                       int anti_alias,
                                                       int& text_flags) {
   if (glyph_index == (uint32_t)-1) {
-    return NULL;
+    return nullptr;
   }
   _CFX_UniqueKeyGen keygen;
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_APPLE_
@@ -1414,15 +898,19 @@ const CFX_GlyphBitmap* CFX_FaceCache::LoadGlyphBitmap(CFX_Font* pFont,
                            bFontStyle, dest_width, anti_alias);
 #endif
 }
+
+CFX_SizeGlyphCache::CFX_SizeGlyphCache() {}
+
 CFX_SizeGlyphCache::~CFX_SizeGlyphCache() {
   for (const auto& pair : m_GlyphMap) {
     delete pair.second;
   }
   m_GlyphMap.clear();
 }
+
 #define CONTRAST_RAMP_STEP 1
 void CFX_Font::AdjustMMParams(int glyph_index, int dest_width, int weight) {
-  FXFT_MM_Var pMasters = NULL;
+  FXFT_MM_Var pMasters = nullptr;
   FXFT_Get_MM_Var(m_Face, &pMasters);
   if (!pMasters) {
     return;
@@ -1558,7 +1046,7 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
                                             int dest_width,
                                             int anti_alias) {
   if (!m_Face) {
-    return NULL;
+    return nullptr;
   }
   FXFT_Matrix ft_matrix;
   ft_matrix.xx = (signed long)(pMatrix->GetA() / 64 * 65536);
@@ -1568,10 +1056,10 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
   FX_BOOL bUseCJKSubFont = FALSE;
   const CFX_SubstFont* pSubstFont = pFont->GetSubstFont();
   if (pSubstFont) {
-    bUseCJKSubFont = pSubstFont->m_bSubstOfCJK && bFontStyle;
+    bUseCJKSubFont = pSubstFont->m_bSubstCJK && bFontStyle;
     int skew = 0;
     if (bUseCJKSubFont) {
-      skew = pSubstFont->m_bItlicCJK ? -15 : 0;
+      skew = pSubstFont->m_bItalicCJK ? -15 : 0;
     } else {
       skew = pSubstFont->m_ItalicAngle;
     }
@@ -1602,14 +1090,14 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
   if (error) {
     // if an error is returned, try to reload glyphs without hinting.
     if (load_flags & FT_LOAD_NO_HINTING || load_flags & FT_LOAD_NO_SCALE) {
-      return NULL;
+      return nullptr;
     }
 
     load_flags |= FT_LOAD_NO_HINTING;
     error = FXFT_Load_Glyph(m_Face, glyph_index, load_flags);
 
     if (error) {
-      return NULL;
+      return nullptr;
     }
   }
   int weight = 0;
@@ -1622,7 +1110,7 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
       weight > 400) {
     uint32_t index = (weight - 400) / 10;
     if (index >= WEIGHTPOW_ARRAY_SIZE)
-      return NULL;
+      return nullptr;
     int level = 0;
     if (pSubstFont->m_Charset == FXFONT_SHIFTJIS_CHARSET) {
       level =
@@ -1640,12 +1128,12 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
                             FT_LCD_FILTER_DEFAULT);
   error = FXFT_Render_Glyph(m_Face, anti_alias);
   if (error) {
-    return NULL;
+    return nullptr;
   }
   int bmwidth = FXFT_Get_Bitmap_Width(FXFT_Get_Glyph_Bitmap(m_Face));
   int bmheight = FXFT_Get_Bitmap_Rows(FXFT_Get_Glyph_Bitmap(m_Face));
   if (bmwidth > 2048 || bmheight > 2048) {
-    return NULL;
+    return nullptr;
   }
   int dib_width = bmwidth;
   CFX_GlyphBitmap* pGlyphBitmap = new CFX_GlyphBitmap;
@@ -1839,7 +1327,7 @@ static int _Outline_CubicTo(const FXFT_Vector* control1,
 };
 CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index, int dest_width) {
   if (!m_Face) {
-    return NULL;
+    return nullptr;
   }
   FXFT_Set_Pixel_Sizes(m_Face, 0, 64);
   FXFT_Matrix ft_matrix = {65536, 0, 0, 65536};
@@ -1869,7 +1357,7 @@ CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index, int dest_width) {
     load_flags |= FT_LOAD_NO_HINTING;
   }
   if (FXFT_Load_Glyph(m_Face, glyph_index, load_flags))
-    return NULL;
+    return nullptr;
   if (m_pSubstFont && !(m_pSubstFont->m_SubstFlags & FXFONT_SUBST_MM) &&
       m_pSubstFont->m_Weight > 400) {
     uint32_t index = (m_pSubstFont->m_Weight - 400) / 10;
@@ -1894,7 +1382,7 @@ CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index, int dest_width) {
   params.m_PointCount = 0;
   FXFT_Outline_Decompose(FXFT_Get_Glyph_Outline(m_Face), &funcs, &params);
   if (params.m_PointCount == 0) {
-    return NULL;
+    return nullptr;
   }
   CFX_PathData* pPath = new CFX_PathData;
   pPath->SetPointCount(params.m_PointCount);

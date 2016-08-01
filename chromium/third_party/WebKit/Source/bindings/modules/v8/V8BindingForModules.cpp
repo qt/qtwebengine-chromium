@@ -34,7 +34,6 @@
 #include "bindings/core/v8/V8DOMStringList.h"
 #include "bindings/core/v8/V8File.h"
 #include "bindings/core/v8/V8Uint8Array.h"
-#include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "bindings/modules/v8/ToV8ForModules.h"
 #include "bindings/modules/v8/V8DedicatedWorkerGlobalScopePartial.h"
 #include "bindings/modules/v8/V8IDBCursor.h"
@@ -48,7 +47,6 @@
 #include "bindings/modules/v8/V8SharedWorkerGlobalScopePartial.h"
 #include "bindings/modules/v8/V8WindowPartial.h"
 #include "bindings/modules/v8/V8WorkerNavigatorPartial.h"
-#include "bindings/modules/v8/V8WorkletGlobalScope.h"
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/dom/ExecutionContext.h"
@@ -58,7 +56,6 @@
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBTracing.h"
 #include "modules/indexeddb/IDBValue.h"
-#include "modules/worklet/WorkletGlobalScope.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "wtf/MathExtras.h"
@@ -326,7 +323,7 @@ static v8::Local<v8::Value> deserializeIDBValueData(v8::Isolate* isolate, const 
         return v8::Null(isolate);
 
     const SharedBuffer* valueData = value->data();
-    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValueFactory::instance().createFromWireBytes(valueData->data(), valueData->size());
+    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::create(valueData->data(), valueData->size());
     return serializedValue->deserialize(isolate, nullptr, value->blobInfo());
 }
 
@@ -527,18 +524,6 @@ void assertPrimaryKeyValidOrInjectable(ScriptState* scriptState, const IDBValue*
 }
 #endif
 
-ExecutionContext* toExecutionContextForModules(v8::Local<v8::Context> context)
-{
-    if (context.IsEmpty())
-        return nullptr;
-    v8::Local<v8::Object> global = context->Global();
-    v8::Local<v8::Object> workletWrapper = V8WorkletGlobalScope::findInstanceInPrototypeChain(global, context->GetIsolate());
-    if (!workletWrapper.IsEmpty())
-        return V8WorkletGlobalScope::toImpl(workletWrapper);
-    // FIXME: Is this line of code reachable?
-    return nullptr;
-}
-
 namespace {
 InstallOriginTrialsFunction s_originalInstallOriginTrialsFunction = nullptr;
 }
@@ -579,7 +564,17 @@ void installOriginTrialsForModules(ScriptState* scriptState)
             V8ServiceWorkerGlobalScope::installDurableStorage(scriptState, global);
             V8WorkerNavigatorPartial::installDurableStorage(scriptState, navigator);
         }
-        originTrialContext->setFeatureBindingsInstalled("DurableStorage");
+    }
+
+    if (!originTrialContext->featureBindingsInstalled("WebBluetooth") && (RuntimeEnabledFeatures::webBluetoothEnabled() || originTrialContext->isFeatureEnabled("WebBluetooth", nullptr))) {
+        v8::Local<v8::String> navigatorName = v8::String::NewFromOneByte(isolate, reinterpret_cast<const uint8_t*>("navigator"), v8::NewStringType::kNormal).ToLocalChecked();
+        if (executionContext->isDocument()) {
+            v8::Local<v8::Object> navigator = global->Get(context, navigatorName).ToLocalChecked()->ToObject();
+            // For global interfaces e.g. BluetoothUUID.
+            V8WindowPartial::installWebBluetooth(scriptState, global);
+            // For navigator interfaces e.g. navigator.bluetooth.
+            V8NavigatorPartial::installWebBluetooth(scriptState, navigator);
+        }
     }
 }
 

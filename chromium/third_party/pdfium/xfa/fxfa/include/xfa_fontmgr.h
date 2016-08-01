@@ -8,6 +8,7 @@
 #define XFA_FXFA_INCLUDE_XFA_FONTMGR_H_
 
 #include <map>
+#include <memory>
 
 #include "core/fxcrt/include/fx_ext.h"
 #include "core/fxcrt/include/fx_system.h"
@@ -26,43 +27,43 @@ struct XFA_FONTINFO {
 
 class CXFA_DefFontMgr {
  public:
-  CXFA_DefFontMgr() {}
+  CXFA_DefFontMgr();
   ~CXFA_DefFontMgr();
 
-  IFX_Font* GetFont(CXFA_FFDoc* hDoc,
-                    const CFX_WideStringC& wsFontFamily,
-                    uint32_t dwFontStyles,
-                    uint16_t wCodePage = 0xFFFF);
-  IFX_Font* GetDefaultFont(CXFA_FFDoc* hDoc,
-                           const CFX_WideStringC& wsFontFamily,
-                           uint32_t dwFontStyles,
-                           uint16_t wCodePage = 0xFFFF);
+  CFGAS_GEFont* GetFont(CXFA_FFDoc* hDoc,
+                        const CFX_WideStringC& wsFontFamily,
+                        uint32_t dwFontStyles,
+                        uint16_t wCodePage = 0xFFFF);
+  CFGAS_GEFont* GetDefaultFont(CXFA_FFDoc* hDoc,
+                               const CFX_WideStringC& wsFontFamily,
+                               uint32_t dwFontStyles,
+                               uint16_t wCodePage = 0xFFFF);
 
  protected:
-  CFX_ArrayTemplate<IFX_Font*> m_CacheFonts;
+  CFX_ArrayTemplate<CFGAS_GEFont*> m_CacheFonts;
 };
 
 class CXFA_PDFFontMgr {
  public:
-  CXFA_PDFFontMgr(CXFA_FFDoc* pDoc);
+  explicit CXFA_PDFFontMgr(CXFA_FFDoc* pDoc);
   ~CXFA_PDFFontMgr();
 
-  IFX_Font* GetFont(const CFX_WideStringC& wsFontFamily,
-                    uint32_t dwFontStyles,
-                    CPDF_Font** pPDFFont,
-                    FX_BOOL bStrictMatch = TRUE);
-  FX_BOOL GetCharWidth(IFX_Font* pFont,
+  CFGAS_GEFont* GetFont(const CFX_WideStringC& wsFontFamily,
+                        uint32_t dwFontStyles,
+                        CPDF_Font** pPDFFont,
+                        FX_BOOL bStrictMatch = TRUE);
+  FX_BOOL GetCharWidth(CFGAS_GEFont* pFont,
                        FX_WCHAR wUnicode,
                        int32_t& iWidth,
                        FX_BOOL bCharCode);
-  CFX_MapPtrToPtr m_FDE2PDFFont;
+  std::map<CFGAS_GEFont*, CPDF_Font*> m_FDE2PDFFont;
 
  protected:
-  IFX_Font* FindFont(CFX_ByteString strFamilyName,
-                     FX_BOOL bBold,
-                     FX_BOOL bItalic,
-                     CPDF_Font** pPDFFont,
-                     FX_BOOL bStrictMatch = TRUE);
+  CFGAS_GEFont* FindFont(CFX_ByteString strFamilyName,
+                         FX_BOOL bBold,
+                         FX_BOOL bItalic,
+                         CPDF_Font** pPDFFont,
+                         FX_BOOL bStrictMatch = TRUE);
   CFX_ByteString PsNameToFontName(const CFX_ByteString& strPsName,
                                   FX_BOOL bBold,
                                   FX_BOOL bItalic);
@@ -73,28 +74,26 @@ class CXFA_PDFFontMgr {
                                 FX_BOOL bStrictMatch = TRUE);
 
   CXFA_FFDoc* m_pDoc;
-  std::map<CFX_ByteString, IFX_Font*> m_FontMap;
+  std::map<CFX_ByteString, CFGAS_GEFont*> m_FontMap;
 };
 
 class CXFA_FontMgr {
  public:
   CXFA_FontMgr();
   ~CXFA_FontMgr();
-  IFX_Font* GetFont(CXFA_FFDoc* hDoc,
-                    const CFX_WideStringC& wsFontFamily,
-                    uint32_t dwFontStyles,
-                    uint16_t wCodePage = 0xFFFF);
+
+  CFGAS_GEFont* GetFont(CXFA_FFDoc* hDoc,
+                        const CFX_WideStringC& wsFontFamily,
+                        uint32_t dwFontStyles,
+                        uint16_t wCodePage = 0xFFFF);
   void LoadDocFonts(CXFA_FFDoc* hDoc);
   void ReleaseDocFonts(CXFA_FFDoc* hDoc);
-
-  void SetDefFontMgr(CXFA_DefFontMgr* pFontMgr);
+  void SetDefFontMgr(std::unique_ptr<CXFA_DefFontMgr> pFontMgr);
 
  protected:
-  void DelAllMgrMap();
-
-  CFX_MapPtrToPtr m_PDFFontMgrArray;
-  CXFA_DefFontMgr* m_pDefFontMgr;
-  std::map<CFX_ByteString, IFX_Font*> m_FontMap;
+  std::unique_ptr<CXFA_DefFontMgr> m_pDefFontMgr;
+  std::map<CXFA_FFDoc*, std::unique_ptr<CXFA_PDFFontMgr>> m_PDFFontMgrMap;
+  std::map<CFX_ByteString, CFGAS_GEFont*> m_FontMap;
 };
 
 #endif  //  XFA_FXFA_INCLUDE_XFA_FONTMGR_H_

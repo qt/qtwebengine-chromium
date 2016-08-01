@@ -10,6 +10,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <vector>
@@ -54,7 +55,8 @@ namespace internal {
 
 class Call : public webrtc::Call,
              public PacketReceiver,
-             public CongestionController::Observer {
+             public CongestionController::Observer,
+             public BitrateAllocator::LimitObserver {
  public:
   explicit Call(const Call::Config& config);
   virtual ~Call();
@@ -76,7 +78,7 @@ class Call : public webrtc::Call,
   void DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) override;
 
   webrtc::VideoReceiveStream* CreateVideoReceiveStream(
-      const webrtc::VideoReceiveStream::Config& config) override;
+      webrtc::VideoReceiveStream::Config configuration) override;
   void DestroyVideoReceiveStream(
       webrtc::VideoReceiveStream* receive_stream) override;
 
@@ -100,6 +102,10 @@ class Call : public webrtc::Call,
   // Implements BitrateObserver.
   void OnNetworkChanged(uint32_t bitrate_bps, uint8_t fraction_loss,
                         int64_t rtt_ms) override;
+
+  // Implements BitrateAllocator::LimitObserver.
+  void OnAllocationLimitsChanged(uint32_t min_send_bitrate_bps,
+                                 uint32_t max_padding_bitrate_bps) override;
 
  private:
   DeliveryStatus DeliverRtcp(MediaType media_type, const uint8_t* packet,
@@ -173,7 +179,9 @@ class Call : public webrtc::Call,
   rtc::CriticalSection bitrate_crit_;
   int64_t estimated_send_bitrate_sum_kbits_ GUARDED_BY(&bitrate_crit_);
   int64_t pacer_bitrate_sum_kbits_ GUARDED_BY(&bitrate_crit_);
+  uint32_t min_allocated_send_bitrate_bps_ GUARDED_BY(&bitrate_crit_);
   int64_t num_bitrate_updates_ GUARDED_BY(&bitrate_crit_);
+  uint32_t configured_max_padding_bitrate_bps_ GUARDED_BY(&bitrate_crit_);
 
   std::map<std::string, rtc::NetworkRoute> network_routes_;
 
@@ -197,7 +205,7 @@ Call::Call(const Call::Config& config)
       module_process_thread_(ProcessThread::Create("ModuleProcessThread")),
       pacer_thread_(ProcessThread::Create("PacerThread")),
       call_stats_(new CallStats(clock_)),
-      bitrate_allocator_(new BitrateAllocator()),
+      bitrate_allocator_(new BitrateAllocator(this)),
       config_(config),
       audio_network_state_(kNetworkUp),
       video_network_state_(kNetworkUp),
@@ -211,7 +219,10 @@ Call::Call(const Call::Config& config)
       first_packet_sent_ms_(-1),
       estimated_send_bitrate_sum_kbits_(0),
       pacer_bitrate_sum_kbits_(0),
+      min_allocated_send_bitrate_bps_(0),
       num_bitrate_updates_(0),
+      configured_max_padding_bitrate_bps_(0),
+
       remb_(clock_),
       congestion_controller_(new CongestionController(clock_, this, &remb_)),
       video_send_delay_stats_(new SendDelayStats(clock_)) {
@@ -413,7 +424,7 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
   VideoSendStream* send_stream = new VideoSendStream(
       num_cpu_cores_, module_process_thread_.get(), call_stats_.get(),
       congestion_controller_.get(), bitrate_allocator_.get(),
-      video_send_delay_stats_.get(), &remb_, config, encoder_config,
+      video_send_delay_stats_.get(), &remb_, event_log_, config, encoder_config,
       suspended_video_send_ssrcs_);
   {
     WriteLockScoped write_lock(*send_crit_);
@@ -466,12 +477,14 @@ void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
 }
 
 webrtc::VideoReceiveStream* Call::CreateVideoReceiveStream(
-    const webrtc::VideoReceiveStream::Config& config) {
+    webrtc::VideoReceiveStream::Config configuration) {
   TRACE_EVENT0("webrtc", "Call::CreateVideoReceiveStream");
   RTC_DCHECK(configuration_thread_checker_.CalledOnValidThread());
   VideoReceiveStream* receive_stream = new VideoReceiveStream(
-      num_cpu_cores_, congestion_controller_.get(), config, voice_engine(),
-      module_process_thread_.get(), call_stats_.get(), &remb_);
+      num_cpu_cores_, congestion_controller_.get(), std::move(configuration),
+      voice_engine(), module_process_thread_.get(), call_stats_.get(), &remb_);
+
+  const webrtc::VideoReceiveStream::Config& config = receive_stream->config();
   {
     WriteLockScoped write_lock(*receive_crit_);
     RTC_DCHECK(video_receive_ssrcs_.find(config.rtp.remote_ssrc) ==
@@ -539,6 +552,10 @@ Call::Stats Call::GetStats() const {
   stats.recv_bandwidth_bps = recv_bandwidth;
   stats.pacer_delay_ms = congestion_controller_->GetPacerQueuingDelayMs();
   stats.rtt_ms = call_stats_->rtcp_rtt_stats()->LastProcessedRtt();
+  {
+    rtc::CritScope cs(&bitrate_crit_);
+    stats.max_padding_bitrate_bps = configured_max_padding_bitrate_bps_;
+  }
   return stats;
 }
 
@@ -559,7 +576,12 @@ void Call::SetBitrateConfig(
     // Nothing new to set, early abort to avoid encoder reconfigurations.
     return;
   }
-  config_.bitrate_config = bitrate_config;
+  config_.bitrate_config.min_bitrate_bps = bitrate_config.min_bitrate_bps;
+  // Start bitrate of -1 means we should keep the old bitrate, which there is
+  // no point in remembering for the future.
+  if (bitrate_config.start_bitrate_bps > 0)
+    config_.bitrate_config.start_bitrate_bps = bitrate_config.start_bitrate_bps;
+  config_.bitrate_config.max_bitrate_bps = bitrate_config.max_bitrate_bps;
   congestion_controller_->SetBweBitrates(bitrate_config.min_bitrate_bps,
                                          bitrate_config.start_bitrate_bps,
                                          bitrate_config.max_bitrate_bps);
@@ -626,9 +648,13 @@ void Call::OnNetworkRouteChanged(const std::string& transport_name,
     kv->second = network_route;
     LOG(LS_INFO) << "Network route changed on transport " << transport_name
                  << ": new local network id " << network_route.local_network_id
-                 << " new remote network id "
-                 << network_route.remote_network_id;
-    // TODO(holmer): Update the BWE bitrates.
+                 << " new remote network id " << network_route.remote_network_id
+                 << " Reset bitrate to "
+                 << config_.bitrate_config.start_bitrate_bps << "bps";
+    congestion_controller_->ResetBweAndBitrates(
+        config_.bitrate_config.start_bitrate_bps,
+        config_.bitrate_config.min_bitrate_bps,
+        config_.bitrate_config.max_bitrate_bps);
   }
 }
 
@@ -674,34 +700,30 @@ void Call::OnSentPacket(const rtc::SentPacket& sent_packet) {
 
 void Call::OnNetworkChanged(uint32_t target_bitrate_bps, uint8_t fraction_loss,
                             int64_t rtt_ms) {
-  uint32_t allocated_bitrate_bps = bitrate_allocator_->OnNetworkChanged(
-      target_bitrate_bps, fraction_loss, rtt_ms);
+  bitrate_allocator_->OnNetworkChanged(target_bitrate_bps, fraction_loss,
+                                       rtt_ms);
 
-  int pad_up_to_bitrate_bps = 0;
-  {
-    ReadLockScoped read_lock(*send_crit_);
-    // No need to update as long as we're not sending.
-    if (video_send_streams_.empty())
-      return;
-
-    for (VideoSendStream* stream : video_send_streams_)
-      pad_up_to_bitrate_bps += stream->GetPaddingNeededBps();
-  }
-  // Allocated bitrate might be higher than bitrate estimate if enforcing min
-  // bitrate, or lower if estimate is higher than the sum of max bitrates, so
-  // set the pacer bitrate to the maximum of the two.
-  uint32_t pacer_bitrate_bps =
-      std::max(target_bitrate_bps, allocated_bitrate_bps);
   {
     rtc::CritScope lock(&bitrate_crit_);
     // We only update these stats if we have send streams, and assume that
     // OnNetworkChanged is called roughly with a fixed frequency.
     estimated_send_bitrate_sum_kbits_ += target_bitrate_bps / 1000;
+    // Pacer bitrate might be higher than bitrate estimate if enforcing min
+    // bitrate.
+    uint32_t pacer_bitrate_bps =
+        std::max(target_bitrate_bps, min_allocated_send_bitrate_bps_);
     pacer_bitrate_sum_kbits_ += pacer_bitrate_bps / 1000;
     ++num_bitrate_updates_;
   }
-  congestion_controller_->SetAllocatedSendBitrate(allocated_bitrate_bps,
-                                                  pad_up_to_bitrate_bps);
+}
+
+void Call::OnAllocationLimitsChanged(uint32_t min_send_bitrate_bps,
+                                     uint32_t max_padding_bitrate_bps) {
+  congestion_controller_->SetAllocatedSendBitrateLimits(
+      min_send_bitrate_bps, max_padding_bitrate_bps);
+  rtc::CritScope lock(&bitrate_crit_);
+  min_allocated_send_bitrate_bps_ = min_send_bitrate_bps;
+  configured_max_padding_bitrate_bps_ = max_padding_bitrate_bps;
 }
 
 void Call::ConfigureSync(const std::string& sync_group) {

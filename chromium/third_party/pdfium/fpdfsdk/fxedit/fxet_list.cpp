@@ -73,8 +73,16 @@ CFX_WideString CFX_ListItem::GetText() const {
   return m_pEdit->GetText();
 }
 
+CFX_ListContainer::CFX_ListContainer() {}
+
+CFX_ListContainer::~CFX_ListContainer() {}
+
+void CFX_ListContainer::SetPlateRect(const CFX_FloatRect& rect) {
+  m_rcPlate = rect;
+}
+
 CFX_List::CFX_List()
-    : m_fFontSize(0.0f), m_pFontMap(NULL), m_bMultiple(FALSE) {}
+    : m_fFontSize(0.0f), m_pFontMap(nullptr), m_bMultiple(FALSE) {}
 
 CFX_List::~CFX_List() {
   Empty();
@@ -125,7 +133,7 @@ IFX_Edit* CFX_List::GetItemEdit(int32_t nIndex) const {
     return pListItem->GetEdit();
   }
 
-  return NULL;
+  return nullptr;
 }
 
 int32_t CFX_List::GetCount() const {
@@ -378,7 +386,7 @@ void CPLST_Select::Done() {
 }
 
 CFX_ListCtrl::CFX_ListCtrl()
-    : m_pNotify(NULL),
+    : m_pNotify(nullptr),
       m_bNotifyFlag(FALSE),
       m_ptScrollPos(0.0f, 0.0f),
       m_nSelItem(-1),
@@ -559,6 +567,14 @@ void CFX_ListCtrl::SetPlateRect(const CFX_FloatRect& rect) {
 
 CFX_FloatRect CFX_ListCtrl::GetItemRect(int32_t nIndex) const {
   return InToOut(CFX_List::GetItemRect(nIndex));
+}
+
+int32_t CFX_ListCtrl::GetCaret() const {
+  return m_nCaretIndex;
+}
+
+int32_t CFX_ListCtrl::GetSelect() const {
+  return m_nSelItem;
 }
 
 void CFX_ListCtrl::AddString(const FX_WCHAR* str) {

@@ -16,6 +16,31 @@ static std::map<int32_t, CPWL_Timer*>& GetPWLTimeMap() {
   return *timeMap;
 }
 
+PWL_CREATEPARAM::PWL_CREATEPARAM()
+    : rcRectWnd(0, 0, 0, 0),
+      pSystemHandler(nullptr),
+      pFontMap(nullptr),
+      pProvider(nullptr),
+      pFocusHandler(nullptr),
+      dwFlags(0),
+      sBackgroundColor(),
+      hAttachedWnd(nullptr),
+      nBorderStyle(BorderStyle::SOLID),
+      dwBorderWidth(1),
+      sBorderColor(),
+      sTextColor(),
+      sTextStrokeColor(),
+      nTransparency(255),
+      fFontSize(PWL_DEFAULT_FONTSIZE),
+      sDash(3, 0, 0),
+      pAttachedData(nullptr),
+      pParentWnd(nullptr),
+      pMsgControl(nullptr),
+      eCursorType(FXCT_ARROW),
+      mtChild(1, 0, 0, 1, 0, 0) {}
+
+PWL_CREATEPARAM::PWL_CREATEPARAM(const PWL_CREATEPARAM& other) = default;
+
 CPWL_Timer::CPWL_Timer(CPWL_TimerHandler* pAttached,
                        CFX_SystemHandler* pSystemHandler)
     : m_nTimerID(0), m_pAttached(pAttached), m_pSystemHandler(pSystemHandler) {
@@ -55,7 +80,7 @@ void CPWL_Timer::TimerProc(int32_t idEvent) {
     pTimer->m_pAttached->TimerProc();
 }
 
-CPWL_TimerHandler::CPWL_TimerHandler() : m_pTimer(NULL) {}
+CPWL_TimerHandler::CPWL_TimerHandler() : m_pTimer(nullptr) {}
 
 CPWL_TimerHandler::~CPWL_TimerHandler() {
   delete m_pTimer;
@@ -90,8 +115,8 @@ class CPWL_MsgControl {
   void Default() {
     m_aMousePath.RemoveAll();
     m_aKeyboardPath.RemoveAll();
-    m_pMainMouseWnd = NULL;
-    m_pMainKeyboardWnd = NULL;
+    m_pMainMouseWnd = nullptr;
+    m_pMainKeyboardWnd = nullptr;
   }
 
   FX_BOOL IsWndCreated(const CPWL_Wnd* pWnd) const {
@@ -149,7 +174,7 @@ class CPWL_MsgControl {
       if (CPWL_Wnd* pWnd = m_aKeyboardPath.GetAt(0))
         pWnd->OnKillFocus();
 
-    m_pMainKeyboardWnd = NULL;
+    m_pMainKeyboardWnd = nullptr;
     m_aKeyboardPath.RemoveAll();
   }
 
@@ -168,7 +193,7 @@ class CPWL_MsgControl {
   }
 
   void ReleaseCapture() {
-    m_pMainMouseWnd = NULL;
+    m_pMainMouseWnd = nullptr;
     m_aMousePath.RemoveAll();
   }
 
@@ -181,7 +206,7 @@ class CPWL_MsgControl {
 };
 
 CPWL_Wnd::CPWL_Wnd()
-    : m_pVScrollBar(NULL),
+    : m_pVScrollBar(nullptr),
       m_rcWindow(),
       m_rcClip(),
       m_bCreated(FALSE),
@@ -255,7 +280,7 @@ void CPWL_Wnd::Destroy() {
       if (CPWL_Wnd* pChild = m_aChildren[i]) {
         pChild->Destroy();
         delete pChild;
-        pChild = NULL;
+        pChild = nullptr;
       }
     }
 
@@ -268,7 +293,7 @@ void CPWL_Wnd::Destroy() {
 
   FXSYS_memset(&m_sPrivateParam, 0, sizeof(PWL_CREATEPARAM));
   m_aChildren.RemoveAll();
-  m_pVScrollBar = NULL;
+  m_pVScrollBar = nullptr;
 }
 
 void CPWL_Wnd::Move(const CFX_FloatRect& rcNew,
@@ -624,7 +649,7 @@ CPWL_ScrollBar* CPWL_Wnd::GetVScrollBar() const {
   if (HasFlag(PWS_VSCROLL))
     return m_pVScrollBar;
 
-  return NULL;
+  return nullptr;
 }
 
 void CPWL_Wnd::CreateScrollBar(const PWL_CREATEPARAM& cp) {
@@ -930,6 +955,18 @@ CFX_FloatRect CPWL_Wnd::ParentToChild(const CFX_FloatRect& rect) const {
   return rc;
 }
 
+FX_FLOAT CPWL_Wnd::GetItemHeight(FX_FLOAT fLimitWidth) {
+  return 0;
+}
+
+FX_FLOAT CPWL_Wnd::GetItemLeftMargin() {
+  return 0;
+}
+
+FX_FLOAT CPWL_Wnd::GetItemRightMargin() {
+  return 0;
+}
+
 CFX_Matrix CPWL_Wnd::GetChildToRoot() const {
   CFX_Matrix mt(1, 0, 0, 1, 0, 0);
   if (HasFlag(PWS_CHILD)) {
@@ -958,7 +995,7 @@ const CPWL_Wnd* CPWL_Wnd::GetFocused() const {
     return pMsgCtrl->m_pMainKeyboardWnd;
   }
 
-  return NULL;
+  return nullptr;
 }
 
 void CPWL_Wnd::EnableWindow(FX_BOOL bEnable) {

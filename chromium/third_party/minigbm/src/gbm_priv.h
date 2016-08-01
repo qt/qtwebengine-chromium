@@ -37,6 +37,7 @@ struct gbm_bo
 	uint32_t offsets[GBM_MAX_PLANES];
 	uint32_t sizes[GBM_MAX_PLANES];
 	uint32_t strides[GBM_MAX_PLANES];
+	uint64_t format_modifiers[GBM_MAX_PLANES];
 	void *priv;
 	void *user_data;
 	void (*destroy_user_data)(struct gbm_bo *, void *);
@@ -53,7 +54,7 @@ struct gbm_driver
 		uint32_t format;
 		enum gbm_bo_flags usage;
 	}
-	format_list[16];
+	format_list[18];
 };
 
 #endif

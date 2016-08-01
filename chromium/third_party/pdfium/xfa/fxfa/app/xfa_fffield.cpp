@@ -8,7 +8,7 @@
 
 #include "xfa/fwl/basewidget/ifwl_edit.h"
 #include "xfa/fwl/core/cfwl_message.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/lightwidget/cfwl_edit.h"
 #include "xfa/fwl/lightwidget/cfwl_picturebox.h"
 #include "xfa/fxfa/app/xfa_fwltheme.h"
@@ -22,7 +22,7 @@
 #include "xfa/fxgraphics/cfx_path.h"
 
 CXFA_FFField::CXFA_FFField(CXFA_FFPageView* pPageView, CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFWidget(pPageView, pDataAcc), m_pNormalWidget(NULL) {
+    : CXFA_FFWidget(pPageView, pDataAcc), m_pNormalWidget(nullptr) {
   m_rtUI.Set(0, 0, 0, 0);
   m_rtCaption.Set(0, 0, 0, 0);
 }
@@ -36,10 +36,10 @@ FX_BOOL CXFA_FFField::GetBBox(CFX_RectF& rtBox,
   if (!bDrawFocus)
     return CXFA_FFWidget::GetBBox(rtBox, dwStatus);
 
-  XFA_ELEMENT type = (XFA_ELEMENT)m_pDataAcc->GetUIType();
-  if (type == XFA_ELEMENT_Button || type == XFA_ELEMENT_CheckButton ||
-      type == XFA_ELEMENT_ImageEdit || type == XFA_ELEMENT_Signature ||
-      type == XFA_ELEMENT_ChoiceList) {
+  XFA_Element type = m_pDataAcc->GetUIType();
+  if (type == XFA_Element::Button || type == XFA_Element::CheckButton ||
+      type == XFA_Element::ImageEdit || type == XFA_Element::Signature ||
+      type == XFA_Element::ChoiceList) {
     rtBox = m_rtUI;
     CFX_Matrix mt;
     GetRotateMatrix(mt);
@@ -51,8 +51,7 @@ FX_BOOL CXFA_FFField::GetBBox(CFX_RectF& rtBox,
 
 void CXFA_FFField::RenderWidget(CFX_Graphics* pGS,
                                 CFX_Matrix* pMatrix,
-                                uint32_t dwStatus,
-                                int32_t iRotate) {
+                                uint32_t dwStatus) {
   if (!IsMatchVisibleStatus(dwStatus)) {
     return;
   }
@@ -128,9 +127,9 @@ void CXFA_FFField::UnloadWidget() {
   m_pNormalWidget = nullptr;
 }
 void CXFA_FFField::SetEditScrollOffset() {
-  XFA_ELEMENT eType = m_pDataAcc->GetUIType();
-  if (eType == XFA_ELEMENT_TextEdit || eType == XFA_ELEMENT_NumericEdit ||
-      eType == XFA_ELEMENT_PasswordEdit) {
+  XFA_Element eType = m_pDataAcc->GetUIType();
+  if (eType == XFA_Element::TextEdit || eType == XFA_Element::NumericEdit ||
+      eType == XFA_Element::PasswordEdit) {
     FX_FLOAT fScrollOffset = 0;
     CXFA_FFField* pPrev = static_cast<CXFA_FFField*>(GetPrev());
     if (pPrev) {
@@ -167,12 +166,12 @@ void CXFA_FFField::CapPlacement() {
     mgWidget.GetRightInset(fRightInset);
     mgWidget.GetTopInset(fTopInset);
     mgWidget.GetBottomInset(fBottomInset);
-    if (pItem->GetPrev() == NULL && pItem->GetNext() == NULL) {
+    if (!pItem->GetPrev() && !pItem->GetNext()) {
       rtWidget.Deflate(fLeftInset, fTopInset, fRightInset, fBottomInset);
     } else {
-      if (pItem->GetPrev() == NULL) {
+      if (!pItem->GetPrev()) {
         rtWidget.Deflate(fLeftInset, fTopInset, fRightInset, 0);
-      } else if (pItem->GetNext() == NULL) {
+      } else if (!pItem->GetNext()) {
         rtWidget.Deflate(fLeftInset, 0, fRightInset, fBottomInset);
       } else {
         rtWidget.Deflate(fLeftInset, 0, fRightInset, 0);
@@ -191,7 +190,7 @@ void CXFA_FFField::CapPlacement() {
     } else {
       fCapReserve = caption.GetReserve();
       CXFA_LayoutItem* pItem = this;
-      if (pItem->GetPrev() == NULL && pItem->GetNext() == NULL) {
+      if (!pItem->GetPrev() && !pItem->GetNext()) {
         m_rtCaption.Set(rtWidget.left, rtWidget.top, rtWidget.width,
                         rtWidget.height);
       } else {
@@ -324,7 +323,7 @@ void CXFA_FFField::UpdateFWL() {
 uint32_t CXFA_FFField::UpdateUIProperty() {
   CXFA_Node* pUiNode = m_pDataAcc->GetUIChild();
   uint32_t dwStyle = 0;
-  if (pUiNode && pUiNode->GetClassID() == XFA_ELEMENT_DefaultUi) {
+  if (pUiNode && pUiNode->GetElementType() == XFA_Element::DefaultUi) {
     dwStyle = FWL_STYLEEXT_EDT_ReadOnly;
   }
   return dwStyle;
@@ -351,7 +350,7 @@ FX_BOOL CXFA_FFField::OnMouseEnter() {
   CFWL_MsgMouse ms;
   ms.m_dwCmd = FWL_MouseCommand::Enter;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   return TRUE;
 }
@@ -450,7 +449,6 @@ FX_BOOL CXFA_FFField::OnMouseWheel(uint32_t dwFlags,
                                    int16_t zDelta,
                                    FX_FLOAT fx,
                                    FX_FLOAT fy) {
-  return FALSE;
   if (!m_pNormalWidget) {
     return FALSE;
   }
@@ -531,7 +529,7 @@ FX_BOOL CXFA_FFField::OnSetFocus(CXFA_FFWidget* pOldWidget) {
   }
   CFWL_MsgSetFocus ms;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   m_dwStatus |= XFA_WidgetStatus_Focused;
   AddInvalidateRect();
@@ -543,7 +541,7 @@ FX_BOOL CXFA_FFField::OnKillFocus(CXFA_FFWidget* pNewWidget) {
   }
   CFWL_MsgKillFocus ms;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   m_dwStatus &= ~XFA_WidgetStatus_Focused;
   AddInvalidateRect();
@@ -559,7 +557,7 @@ FX_BOOL CXFA_FFField::OnKeyDown(uint32_t dwKeyCode, uint32_t dwFlags) {
   ms.m_dwFlags = dwFlags;
   ms.m_dwKeyCode = dwKeyCode;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   return TRUE;
 }
@@ -572,7 +570,7 @@ FX_BOOL CXFA_FFField::OnKeyUp(uint32_t dwKeyCode, uint32_t dwFlags) {
   ms.m_dwFlags = dwFlags;
   ms.m_dwKeyCode = dwKeyCode;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   return TRUE;
 }
@@ -594,7 +592,7 @@ FX_BOOL CXFA_FFField::OnChar(uint32_t dwChar, uint32_t dwFlags) {
   ms.m_dwFlags = dwFlags;
   ms.m_dwKeyCode = dwChar;
   ms.m_pDstTarget = m_pNormalWidget->m_pIface;
-  ms.m_pSrcTarget = NULL;
+  ms.m_pSrcTarget = nullptr;
   TranslateFWLMessage(&ms);
   return TRUE;
 }
@@ -691,9 +689,9 @@ int32_t CXFA_FFField::CalculateOverride() {
   if (!pNode) {
     return 1;
   }
-  CXFA_WidgetAcc* pWidgetAcc = NULL;
+  CXFA_WidgetAcc* pWidgetAcc = nullptr;
   while (pNode) {
-    pWidgetAcc = (CXFA_WidgetAcc*)pNode->GetWidgetData();
+    pWidgetAcc = static_cast<CXFA_WidgetAcc*>(pNode->GetWidgetData());
     if (!pWidgetAcc) {
       return 1;
     }
@@ -742,9 +740,9 @@ int32_t CXFA_FFField::CalculateWidgetAcc(CXFA_WidgetAcc* pAcc) {
             return 1;
           }
         }
-        if (pAcc->GetNode()->HasFlag(XFA_NODEFLAG_UserInteractive)) {
+        if (pAcc->GetNode()->IsUserInteractive())
           return 1;
-        }
+
         IXFA_AppProvider* pAppProvider = GetApp()->GetAppProvider();
         if (pAppProvider) {
           CFX_WideString wsMessage;
@@ -759,7 +757,7 @@ int32_t CXFA_FFField::CalculateWidgetAcc(CXFA_WidgetAcc* pAcc) {
           pAppProvider->LoadString(XFA_IDS_CalcOverride, wsTitle);
           if (pAppProvider->MsgBox(wsMessage, wsTitle, XFA_MBICON_Warning,
                                    XFA_MB_YesNo) == XFA_IDYes) {
-            pAcc->GetNode()->SetFlag(XFA_NODEFLAG_UserInteractive, false);
+            pAcc->GetNode()->SetFlag(XFA_NodeFlag_UserInteractive, false);
             return 1;
           }
         }
@@ -768,7 +766,7 @@ int32_t CXFA_FFField::CalculateWidgetAcc(CXFA_WidgetAcc* pAcc) {
       case XFA_ATTRIBUTEENUM_Ignore:
         return 0;
       case XFA_ATTRIBUTEENUM_Disabled:
-        pAcc->GetNode()->SetFlag(XFA_NODEFLAG_UserInteractive, false);
+        pAcc->GetNode()->SetFlag(XFA_NodeFlag_UserInteractive, false);
       default:
         return 1;
     }

@@ -397,6 +397,7 @@ bool RegExpImpl::CompileIrregexp(Handle<JSRegExp> re,
 
   Handle<FixedArray> data = Handle<FixedArray>(FixedArray::cast(re->data()));
   data->set(JSRegExp::code_index(is_one_byte), result.code);
+  SetIrregexpCaptureNameMap(*data, compile_data.capture_name_map);
   int register_max = IrregexpMaxRegisterCount(*data);
   if (result.num_registers > register_max) {
     SetIrregexpMaxRegisterCount(*data, result.num_registers);
@@ -416,6 +417,14 @@ void RegExpImpl::SetIrregexpMaxRegisterCount(FixedArray* re, int value) {
   re->set(JSRegExp::kIrregexpMaxRegisterCountIndex, Smi::FromInt(value));
 }
 
+void RegExpImpl::SetIrregexpCaptureNameMap(FixedArray* re,
+                                           Handle<FixedArray> value) {
+  if (value.is_null()) {
+    re->set(JSRegExp::kIrregexpCaptureNameMapIndex, Smi::FromInt(0));
+  } else {
+    re->set(JSRegExp::kIrregexpCaptureNameMapIndex, *value);
+  }
+}
 
 int RegExpImpl::IrregexpNumberOfCaptures(FixedArray* re) {
   return Smi::cast(re->get(JSRegExp::kIrregexpCaptureCountIndex))->value();
@@ -5881,6 +5890,7 @@ Vector<const int> CharacterRange::GetWordBounds() {
 void CharacterRange::AddCaseEquivalents(Isolate* isolate, Zone* zone,
                                         ZoneList<CharacterRange>* ranges,
                                         bool is_one_byte) {
+  CharacterRange::Canonicalize(ranges);
   int range_count = ranges->length();
   for (int i = 0; i < range_count; i++) {
     CharacterRange range = ranges->at(i);

@@ -7,9 +7,9 @@
 #ifndef XFA_FXFA_PARSER_XFA_SCRIPT_LAYOUTPSEUDOMODEL_H_
 #define XFA_FXFA_PARSER_XFA_SCRIPT_LAYOUTPSEUDOMODEL_H_
 
+#include "fxjse/include/cfxjse_arguments.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
 enum XFA_LAYOUTMODEL_HWXY {
   XFA_LAYOUTMODEL_H,
@@ -18,12 +18,12 @@ enum XFA_LAYOUTMODEL_HWXY {
   XFA_LAYOUTMODEL_Y
 };
 
-class CScript_LayoutPseudoModel : public CXFA_OrdinaryObject {
+class CScript_LayoutPseudoModel : public CXFA_Object {
  public:
   explicit CScript_LayoutPseudoModel(CXFA_Document* pDocument);
-  ~CScript_LayoutPseudoModel();
+  ~CScript_LayoutPseudoModel() override;
 
-  void Script_LayoutPseudoModel_Ready(FXJSE_HVALUE hValue,
+  void Script_LayoutPseudoModel_Ready(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute);
 

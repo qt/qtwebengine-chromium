@@ -53,7 +53,7 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
     }
   }
 
-  CPDF_Dictionary* pInfoDict = NULL;
+  CPDF_Dictionary* pInfoDict = nullptr;
   pInfoDict = pDoc->GetInfo();
   if (pInfoDict) {
     if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
@@ -84,7 +84,7 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
 
   CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(page_index);
   if (!pPageDict)
-    return NULL;
+    return nullptr;
   CPDF_Array* pMediaBoxArray = new CPDF_Array;
   pMediaBoxArray->Add(new CPDF_Number(0));
   pMediaBoxArray->Add(new CPDF_Number(0));
@@ -211,14 +211,15 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
     return FALSE;
   CPDF_PageObject* pPageObj = (CPDF_PageObject*)pageObject;
 
-  const CPDF_GeneralStateData* pGeneralState = pPageObj->m_GeneralState;
+  const CPDF_GeneralStateData* pGeneralState =
+      pPageObj->m_GeneralState.GetObject();
   int blend_type =
       pGeneralState ? pGeneralState->m_BlendType : FXDIB_BLEND_NORMAL;
   if (blend_type != FXDIB_BLEND_NORMAL)
     return TRUE;
 
   CPDF_Dictionary* pSMaskDict =
-      pGeneralState ? ToDictionary(pGeneralState->m_pSoftMask) : NULL;
+      pGeneralState ? ToDictionary(pGeneralState->m_pSoftMask) : nullptr;
   if (pSMaskDict)
     return TRUE;
 
@@ -291,8 +292,7 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
     CFX_Matrix matrix((FX_FLOAT)a, (FX_FLOAT)b, (FX_FLOAT)c, (FX_FLOAT)d,
                       (FX_FLOAT)e, (FX_FLOAT)f);
     rect.Transform(&matrix);
-    CPDF_Array* pRectArray = NULL;
-    pRectArray = pAnnot->GetAnnotDict()->GetArrayBy("Rect");
+    CPDF_Array* pRectArray = pAnnot->GetAnnotDict()->GetArrayBy("Rect");
     if (!pRectArray)
       pRectArray = new CPDF_Array;
     pRectArray->SetAt(0, new CPDF_Number(rect.left));

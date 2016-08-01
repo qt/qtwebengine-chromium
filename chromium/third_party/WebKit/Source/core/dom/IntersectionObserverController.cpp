@@ -6,10 +6,9 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/IdleRequestOptions.h"
+#include "platform/TraceEvent.h"
 
 namespace blink {
-
-typedef HeapVector<Member<IntersectionObserver>> IntersectionObserverVector;
 
 IntersectionObserverController* IntersectionObserverController::create(Document* document)
 {
@@ -64,15 +63,15 @@ void IntersectionObserverController::deliverIntersectionObservations()
         m_callbackFiredWhileSuspended = true;
         return;
     }
-    IntersectionObserverVector observers;
-    copyToVector(m_pendingIntersectionObservers, observers);
-    m_pendingIntersectionObservers.clear();
+    HeapHashSet<Member<IntersectionObserver>> observers;
+    m_pendingIntersectionObservers.swap(observers);
     for (auto& observer : observers)
         observer->deliver();
 }
 
 void IntersectionObserverController::computeTrackedIntersectionObservations()
 {
+    TRACE_EVENT0("blink", "IntersectionObserverController::computeTrackedIntersectionObservations");
     for (auto& observer : m_trackedIntersectionObservers) {
         observer->computeIntersectionObservations();
         if (observer->hasEntries())

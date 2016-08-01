@@ -408,6 +408,7 @@ class MarkCompactCollector {
 
     enum SweepingMode { SWEEP_ONLY, SWEEP_AND_VISIT_LIVE_OBJECTS };
     enum SkipListRebuildingMode { REBUILD_SKIP_LIST, IGNORE_SKIP_LIST };
+    enum FreeListRebuildingMode { REBUILD_FREE_LIST, IGNORE_FREE_LIST };
     enum FreeSpaceTreatmentMode { IGNORE_FREE_SPACE, ZAP_FREE_SPACE };
     enum SweepingParallelism { SWEEP_ON_MAIN_THREAD, SWEEP_IN_PARALLEL };
 
@@ -416,6 +417,7 @@ class MarkCompactCollector {
 
     template <SweepingMode sweeping_mode, SweepingParallelism parallelism,
               SkipListRebuildingMode skip_list_mode,
+              FreeListRebuildingMode free_list_mode,
               FreeSpaceTreatmentMode free_space_mode>
     static int RawSweep(PagedSpace* space, Page* p, ObjectVisitor* v);
 
@@ -434,11 +436,12 @@ class MarkCompactCollector {
 
     int ParallelSweepSpace(AllocationSpace identity, int required_freed_bytes,
                            int max_pages = 0);
-    int ParallelSweepPage(Page* page, PagedSpace* space);
+    int ParallelSweepPage(Page* page, AllocationSpace identity);
 
     void StartSweeping();
     void StartSweepingHelper(AllocationSpace space_to_start);
     void EnsureCompleted();
+    void EnsureNewSpaceCompleted();
     bool IsSweepingCompleted();
     void SweepOrWaitUntilSweepingCompleted(Page* page);
 
@@ -467,7 +470,7 @@ class MarkCompactCollector {
     SweepingList sweeping_list_[kAllocationSpaces];
     bool sweeping_in_progress_;
     bool late_pages_;
-    int num_sweeping_tasks_;
+    base::AtomicNumber<intptr_t> num_sweeping_tasks_;
   };
 
   enum IterationMode {
@@ -613,9 +616,7 @@ class MarkCompactCollector {
 
   Sweeper& sweeper() { return sweeper_; }
 
-  std::vector<std::pair<void*, void*>>& wrappers_to_trace() {
-    return wrappers_to_trace_;
-  }
+  void RegisterWrappersWithEmbedderHeapTracer();
 
   void SetEmbedderHeapTracer(EmbedderHeapTracer* tracer);
 
@@ -793,7 +794,6 @@ class MarkCompactCollector {
   void SweepSpaces();
 
   void EvacuateNewSpacePrologue();
-  void EvacuateNewSpaceEpilogue();
 
   void EvacuatePagesInParallel();
 

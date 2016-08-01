@@ -31,16 +31,11 @@ How to download SKPs
 
 The following will work only if you have a google.com account.
 
-All buildbot SKP files created by the RecreateSKPs bot are available in the Google Storage bucket gs://chromium-skia-gm, they can be copied over to your local directory like this:
+All buildbot SKP files created by the RecreateSKPs bot are available via the asset management scripts:
 
-* Download the gsutil tool https://developers.google.com/cloud/sdk/#Quick_Start.
-* Authenticate using your google.com credentials “gcloud auth login”
-* Get the current SKP version from https://skia.googlesource.com/skia/+/master/SKP_VERSION.
-* Run in your terminal:
-
-    $ SKP\_VERSION=...<br/>
-    $ SKP\_DEST=...<br/>
-    $ gsutil -m cp gs://chromium-skia-gm/playback\_${SKP\_VERSION}/skps/*.skp ${SKP\_DEST}
+    $ download_from_google_storage -s infra/bots/tools/luci-go/${PLATFORM}/cipd.sha1 --bucket chromium-luci
+    $ infra/bots/tools/luci-go/${PLATFORM}/cipd auth-login
+    $ infra/bots/assets/skp/download.py -t ${TARGET_DIR}
 
 
 <a name="buildbot_skps_partners"></a>
@@ -61,7 +56,9 @@ The following will work only if you have a google.com account.
 * Run in your terminal:
 
     $ SKP\_DEST=...<br/>
-    $ REPO\_TYPE=... (Either All, Mobile10k, 10k, Dummy1k)<br/>
-    $ CHROMIUM\_BUILD=... (Eg: 57259e0-05dcb4c)<br/>
-    $ SLAVE\_NUM=... (There are 100 available slaves)<br/>
-    $ gsutil -m cp gs://cluster-telemetry/skps/${REPO\_TYPE}/${CHROMIUM\_BUILD}/slave${SLAVE\_NUM}/*.skp ${SKP\_DEST}
+    $ REPO\_TYPE=... (Either All, 100k, Mobile10k, 10k, Dummy1k)<br/>
+    $ CHROMIUM\_BUILD=... (Eg: fad657e-276e633)<br/>
+    $ gsutil -m cp gs://cluster-telemetry/swarming/skps/${REPO\_TYPE}/${CHROMIUM\_BUILD}/{1..10}/*.skp ${SKP\_DEST}
+
+* Substitute the 1 and 10 above with the start and end ranks of the SKPs you want to copy locally.
+* If you are trying to find a particular SKP. Look for it in the CSV [here](https://pantheon.corp.google.com/m/cloudstorage/b/cluster-telemetry/o/csv/top-1m.csv) and then use that rank in the copy command.

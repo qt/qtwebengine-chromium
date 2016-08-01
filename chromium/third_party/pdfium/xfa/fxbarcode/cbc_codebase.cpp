@@ -23,7 +23,7 @@
 
 #include "xfa/fxbarcode/BC_Writer.h"
 
-CBC_CodeBase::CBC_CodeBase() {}
+CBC_CodeBase::CBC_CodeBase(CBC_Writer* pWriter) : m_pBCWriter(pWriter) {}
 
 CBC_CodeBase::~CBC_CodeBase() {}
 

@@ -168,12 +168,21 @@ void TranslatorGLSL::writeExtensionBehavior(TIntermNode *root)
             continue;
         }
 
-        // For GLSL output, we don't need to emit most extensions explicitly,
-        // but some we need to translate.
-        if (iter.first == "GL_EXT_shader_texture_lod")
+        if (getOutputType() == SH_GLSL_COMPATIBILITY_OUTPUT)
         {
-            sink << "#extension GL_ARB_shader_texture_lod : " << getBehaviorString(iter.second)
-                 << "\n";
+            // For GLSL output, we don't need to emit most extensions explicitly,
+            // but some we need to translate in GL compatibility profile.
+            if (iter.first == "GL_EXT_shader_texture_lod")
+            {
+                sink << "#extension GL_ARB_shader_texture_lod : " << getBehaviorString(iter.second)
+                     << "\n";
+            }
+
+            if (iter.first == "GL_EXT_draw_buffers")
+            {
+                sink << "#extension GL_ARB_draw_buffers : " << getBehaviorString(iter.second)
+                     << "\n";
+            }
         }
     }
 
@@ -181,6 +190,23 @@ void TranslatorGLSL::writeExtensionBehavior(TIntermNode *root)
     if (getShaderVersion() >= 300 && getOutputType() < SH_GLSL_330_CORE_OUTPUT)
     {
         sink << "#extension GL_ARB_explicit_attrib_location : require\n";
+    }
+
+    // Need to enable gpu_shader5 to have index constant sampler array indexing
+    if (getOutputType() != SH_ESSL_OUTPUT && getOutputType() < SH_GLSL_400_CORE_OUTPUT)
+    {
+        sink << "#extension GL_ARB_gpu_shader5 : ";
+
+        // Don't use "require" on WebGL 1 to avoid breaking WebGL on drivers that silently
+        // support index constant sampler array indexing, but don't have the extension.
+        if (getShaderVersion() >= 300)
+        {
+            sink << "require\n";
+        }
+        else
+        {
+            sink << "enable\n";
+        }
     }
 
     TExtensionGLSL extensionGLSL(getOutputType());

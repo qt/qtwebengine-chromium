@@ -138,14 +138,14 @@ void AutoDetectProxy::OnResolveResult(AsyncResolverInterface* resolver) {
                     << resolver_->address();
     proxy_.address = resolver_->address();
     if (!DoConnect()) {
-      Thread::Current()->Post(this, MSG_TIMEOUT);
+      Thread::Current()->Post(RTC_FROM_HERE, this, MSG_TIMEOUT);
     }
   } else {
     LOG(LS_INFO) << "Failed to resolve " << resolver_->address();
     resolver_->Destroy(false);
     resolver_ = NULL;
     proxy_.address = SocketAddress();
-    Thread::Current()->Post(this, MSG_UNRESOLVABLE);
+    Thread::Current()->Post(RTC_FROM_HERE, this, MSG_UNRESOLVABLE);
   }
 }
 
@@ -176,11 +176,11 @@ void AutoDetectProxy::Next() {
     resolver_->Start(proxy_.address);
   } else {
     if (!DoConnect()) {
-      Thread::Current()->Post(this, MSG_TIMEOUT);
+      Thread::Current()->Post(RTC_FROM_HERE, this, MSG_TIMEOUT);
       return;
     }
   }
-  Thread::Current()->PostDelayed(timeout, this, MSG_TIMEOUT);
+  Thread::Current()->PostDelayed(RTC_FROM_HERE, timeout, this, MSG_TIMEOUT);
 }
 
 bool AutoDetectProxy::DoConnect() {
@@ -247,7 +247,7 @@ void AutoDetectProxy::OnConnectEvent(AsyncSocket * socket) {
 
 void AutoDetectProxy::OnReadEvent(AsyncSocket * socket) {
   char data[257];
-  int len = socket_->Recv(data, 256);
+  int len = socket_->Recv(data, 256, nullptr);
   if (len > 0) {
     data[len] = 0;
     LOG(LS_VERBOSE) << "AutoDetectProxy read " << len << " bytes";

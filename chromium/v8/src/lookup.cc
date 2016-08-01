@@ -131,7 +131,7 @@ Handle<JSReceiver> LookupIterator::GetRootForNonJSReceiver(
     return result;
   }
   auto root = handle(receiver->GetRootMap(isolate)->prototype(), isolate);
-  if (root->IsNull()) {
+  if (root->IsNull(isolate)) {
     unsigned int magic = 0xbbbbbbbb;
     isolate->PushStackTraceAndDie(magic, *receiver, NULL, magic);
   }
@@ -299,7 +299,7 @@ void LookupIterator::PrepareTransitionToDataProperty(
       // Install a property cell.
       auto cell = JSGlobalObject::EnsurePropertyCell(
           Handle<JSGlobalObject>::cast(receiver), name());
-      DCHECK(cell->value()->IsTheHole());
+      DCHECK(cell->value()->IsTheHole(isolate_));
       transition_ = cell;
     } else {
       transition_ = map;
@@ -373,7 +373,7 @@ void LookupIterator::Delete() {
 void LookupIterator::TransitionToAccessorProperty(
     Handle<Object> getter, Handle<Object> setter,
     PropertyAttributes attributes) {
-  DCHECK(!getter->IsNull() || !setter->IsNull());
+  DCHECK(!getter->IsNull(isolate_) || !setter->IsNull(isolate_));
   // Can only be called when the receiver is a JSObject. JSProxy has to be
   // handled via a trap. Adding properties to primitive values is not
   // observable.
@@ -496,8 +496,7 @@ bool LookupIterator::HolderIsReceiverOrHiddenPrototype() const {
   if (!current->map()->has_hidden_prototype()) return false;
   // JSProxy do not occur as hidden prototypes.
   if (object->IsJSProxy()) return false;
-  PrototypeIterator iter(isolate(), current,
-                         PrototypeIterator::START_AT_PROTOTYPE,
+  PrototypeIterator iter(isolate(), current, kStartAtPrototype,
                          PrototypeIterator::END_AT_NON_HIDDEN);
   while (!iter.IsAtEnd()) {
     if (iter.GetCurrent<JSReceiver>() == object) return true;
@@ -693,7 +692,7 @@ LookupIterator::State LookupIterator::LookupInSpecialHolder(
         number_ = static_cast<uint32_t>(number);
         DCHECK(dict->ValueAt(number_)->IsPropertyCell());
         PropertyCell* cell = PropertyCell::cast(dict->ValueAt(number_));
-        if (cell->value()->IsTheHole()) return NOT_FOUND;
+        if (cell->value()->IsTheHole(isolate_)) return NOT_FOUND;
         property_details_ = cell->property_details();
         has_property_ = true;
         switch (property_details_.kind()) {
@@ -756,6 +755,22 @@ LookupIterator::State LookupIterator::LookupInRegularHolder(
 
   UNREACHABLE();
   return state_;
+}
+
+Handle<InterceptorInfo> LookupIterator::GetInterceptorForFailedAccessCheck()
+    const {
+  DCHECK_EQ(ACCESS_CHECK, state_);
+  DisallowHeapAllocation no_gc;
+  AccessCheckInfo* access_check_info =
+      AccessCheckInfo::Get(isolate_, Handle<JSObject>::cast(holder_));
+  if (access_check_info) {
+    Object* interceptor = IsElement() ? access_check_info->indexed_interceptor()
+                                      : access_check_info->named_interceptor();
+    if (interceptor) {
+      return handle(InterceptorInfo::cast(interceptor), isolate_);
+    }
+  }
+  return Handle<InterceptorInfo>();
 }
 
 }  // namespace internal

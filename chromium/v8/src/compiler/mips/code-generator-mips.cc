@@ -485,6 +485,29 @@ FPUCondition FlagsConditionToConditionCmpFPU(bool& predicate,
     __ sync();                                           \
   } while (0)
 
+#define ASSEMBLE_IEEE754_BINOP(name)                                          \
+  do {                                                                        \
+    FrameScope scope(masm(), StackFrame::MANUAL);                             \
+    __ PrepareCallCFunction(0, 2, kScratchReg);                               \
+    __ MovToFloatParameters(i.InputDoubleRegister(0),                         \
+                            i.InputDoubleRegister(1));                        \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     0, 2);                                                   \
+    /* Move the result in the double result register. */                      \
+    __ MovFromFloatResult(i.OutputDoubleRegister());                          \
+  } while (0)
+
+#define ASSEMBLE_IEEE754_UNOP(name)                                           \
+  do {                                                                        \
+    FrameScope scope(masm(), StackFrame::MANUAL);                             \
+    __ PrepareCallCFunction(0, 1, kScratchReg);                               \
+    __ MovToFloatParameter(i.InputDoubleRegister(0));                         \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     0, 1);                                                   \
+    /* Move the result in the double result register. */                      \
+    __ MovFromFloatResult(i.OutputDoubleRegister());                          \
+  } while (0)
+
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(sp, fp);
   __ Pop(ra, fp);
@@ -652,6 +675,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchTableSwitch:
       AssembleArchTableSwitch(instr);
       break;
+    case kArchDebugBreak:
+      __ stop("kArchDebugBreak");
+      break;
+    case kArchComment: {
+      Address comment_string = i.InputExternalReference(0).address();
+      __ RecordComment(reinterpret_cast<const char*>(comment_string));
+      break;
+    }
     case kArchNop:
     case kArchThrowTerminator:
       // don't emit code for nops.
@@ -710,6 +741,45 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
               Operand(offset.offset()));
       break;
     }
+    case kIeee754Float64Atan:
+      ASSEMBLE_IEEE754_UNOP(atan);
+      break;
+    case kIeee754Float64Atan2:
+      ASSEMBLE_IEEE754_BINOP(atan2);
+      break;
+    case kIeee754Float64Cos:
+      ASSEMBLE_IEEE754_UNOP(cos);
+      break;
+    case kIeee754Float64Cbrt:
+      ASSEMBLE_IEEE754_UNOP(cbrt);
+      break;
+    case kIeee754Float64Exp:
+      ASSEMBLE_IEEE754_UNOP(exp);
+      break;
+    case kIeee754Float64Expm1:
+      ASSEMBLE_IEEE754_UNOP(expm1);
+      break;
+    case kIeee754Float64Atanh:
+      ASSEMBLE_IEEE754_UNOP(atanh);
+      break;
+    case kIeee754Float64Log:
+      ASSEMBLE_IEEE754_UNOP(log);
+      break;
+    case kIeee754Float64Log1p:
+      ASSEMBLE_IEEE754_UNOP(log1p);
+      break;
+    case kIeee754Float64Log10:
+      ASSEMBLE_IEEE754_UNOP(log10);
+      break;
+    case kIeee754Float64Log2:
+      ASSEMBLE_IEEE754_UNOP(log2);
+      break;
+    case kIeee754Float64Sin:
+      ASSEMBLE_IEEE754_UNOP(sin);
+      break;
+    case kIeee754Float64Tan:
+      ASSEMBLE_IEEE754_UNOP(tan);
+      break;
     case kMipsAdd:
       __ Addu(i.OutputRegister(), i.InputRegister(0), i.InputOperand(1));
       break;
@@ -938,6 +1008,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ sub_s(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
                i.InputDoubleRegister(1));
       break;
+    case kMipsSubPreserveNanS:
+      __ SubNanPreservePayloadAndSign_s(i.OutputDoubleRegister(),
+                                        i.InputDoubleRegister(0),
+                                        i.InputDoubleRegister(1));
+      break;
     case kMipsMulS:
       // TODO(plind): add special case: right op is -1.0, see arm port.
       __ mul_s(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
@@ -1003,6 +1078,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMipsSubD:
       __ sub_d(i.OutputDoubleRegister(), i.InputDoubleRegister(0),
                i.InputDoubleRegister(1));
+      break;
+    case kMipsSubPreserveNanD:
+      __ SubNanPreservePayloadAndSign_d(i.OutputDoubleRegister(),
+                                        i.InputDoubleRegister(0),
+                                        i.InputDoubleRegister(1));
       break;
     case kMipsMulD:
       // TODO(plind): add special case: right op is -1.0, see arm port.
@@ -1233,6 +1313,20 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMipsFloat64InsertHighWord32:
       __ FmoveHigh(i.OutputDoubleRegister(), i.InputRegister(1));
       break;
+    case kMipsFloat64SilenceNaN: {
+      FPURegister value = i.InputDoubleRegister(0);
+      FPURegister result = i.OutputDoubleRegister();
+      Register scratch0 = i.TempRegister(0);
+      Label is_nan, not_nan;
+      __ BranchF(NULL, &is_nan, eq, value, value);
+      __ Branch(&not_nan);
+      __ bind(&is_nan);
+      __ LoadRoot(scratch0, Heap::kNanValueRootIndex);
+      __ ldc1(result, FieldMemOperand(scratch0, HeapNumber::kValueOffset));
+      __ bind(&not_nan);
+      break;
+    }
+
     // ... more basic instructions ...
 
     case kMipsLbu:
@@ -1292,7 +1386,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kMipsStoreToStackSlot: {
       if (instr->InputAt(0)->IsFPRegister()) {
-        __ sdc1(i.InputDoubleRegister(0), MemOperand(sp, i.InputInt32(1)));
+        LocationOperand* op = LocationOperand::cast(instr->InputAt(0));
+        if (op->representation() == MachineRepresentation::kFloat64) {
+          __ sdc1(i.InputDoubleRegister(0), MemOperand(sp, i.InputInt32(1)));
+        } else {
+          DCHECK_EQ(MachineRepresentation::kFloat32, op->representation());
+          __ swc1(i.InputSingleRegister(0), MemOperand(sp, i.InputInt32(1)));
+        }
       } else {
         __ sw(i.InputRegister(0), MemOperand(sp, i.InputInt32(1)));
       }
@@ -1804,6 +1904,7 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
       switch (src.type()) {
         case Constant::kInt32:
           if (src.rmode() == RelocInfo::WASM_MEMORY_REFERENCE ||
+              src.rmode() == RelocInfo::WASM_GLOBAL_REFERENCE ||
               src.rmode() == RelocInfo::WASM_MEMORY_SIZE_REFERENCE) {
             __ li(dst, Operand(src.ToInt32(), src.rmode()));
           } else {
@@ -1872,7 +1973,13 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     DCHECK(destination->IsFPRegister() || destination->IsFPStackSlot());
     MemOperand src = g.ToMemOperand(source);
     if (destination->IsFPRegister()) {
-      __ ldc1(g.ToDoubleRegister(destination), src);
+      LocationOperand* op = LocationOperand::cast(source);
+      if (op->representation() == MachineRepresentation::kFloat64) {
+        __ ldc1(g.ToDoubleRegister(destination), src);
+      } else {
+        DCHECK_EQ(MachineRepresentation::kFloat32, op->representation());
+        __ lwc1(g.ToDoubleRegister(destination), src);
+      }
     } else {
       FPURegister temp = kScratchDoubleReg;
       __ ldc1(temp, src);

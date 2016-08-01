@@ -388,8 +388,8 @@ class CPDF_FlateEncoder {
   CPDF_FlateEncoder(CPDF_Stream* pStream, FX_BOOL bFlateEncode);
   CPDF_FlateEncoder(const uint8_t* pBuffer,
                     uint32_t size,
-                    FX_BOOL bFlateEncode,
-                    FX_BOOL bXRefStream = FALSE);
+                    bool bFlateEncode,
+                    bool bXRefStream);
   ~CPDF_FlateEncoder();
 
   void CloneDict();
@@ -439,7 +439,8 @@ CPDF_FlateEncoder::CPDF_FlateEncoder(CPDF_Stream* pStream, FX_BOOL bFlateEncode)
 
   m_bNewData = TRUE;
   m_bCloned = TRUE;
-  ::FlateEncode(m_Acc.GetData(), m_Acc.GetSize(), m_pData, m_dwSize);
+  // TODO(thestig): Move to Init() and check return value.
+  ::FlateEncode(m_Acc.GetData(), m_Acc.GetSize(), &m_pData, &m_dwSize);
   m_pDict = ToDictionary(pStream->GetDict()->Clone());
   m_pDict->SetAtInteger("Length", m_dwSize);
   m_pDict->SetAtName("Filter", "FlateDecode");
@@ -448,8 +449,8 @@ CPDF_FlateEncoder::CPDF_FlateEncoder(CPDF_Stream* pStream, FX_BOOL bFlateEncode)
 
 CPDF_FlateEncoder::CPDF_FlateEncoder(const uint8_t* pBuffer,
                                      uint32_t size,
-                                     FX_BOOL bFlateEncode,
-                                     FX_BOOL bXRefStream)
+                                     bool bFlateEncode,
+                                     bool bXRefStream)
     : m_pData(nullptr),
       m_dwSize(0),
       m_pDict(nullptr),
@@ -461,10 +462,11 @@ CPDF_FlateEncoder::CPDF_FlateEncoder(const uint8_t* pBuffer,
     return;
   }
   m_bNewData = TRUE;
+  // TODO(thestig): Move to Init() and check return value.
   if (bXRefStream)
-    ::FlateEncode(pBuffer, size, 12, 1, 8, 7, m_pData, m_dwSize);
+    ::PngEncode(pBuffer, size, &m_pData, &m_dwSize);
   else
-    ::FlateEncode(pBuffer, size, m_pData, m_dwSize);
+    ::FlateEncode(pBuffer, size, &m_pData, &m_dwSize);
 }
 
 CPDF_FlateEncoder::~CPDF_FlateEncoder() {
@@ -514,6 +516,8 @@ CPDF_Encryptor::~CPDF_Encryptor() {
 }  // namespace
 
 CPDF_ObjectStream::CPDF_ObjectStream() : m_dwObjNum(0), m_index(0) {}
+
+CPDF_ObjectStream::~CPDF_ObjectStream() {}
 
 void CPDF_ObjectStream::Start() {
   m_Items.clear();
@@ -577,7 +581,7 @@ FX_FILESIZE CPDF_ObjectStream::End(CPDF_Creator* pCreator) {
 
   tempBuffer << m_Buffer;
   CPDF_FlateEncoder encoder(tempBuffer.GetBuffer(), tempBuffer.GetLength(),
-                            TRUE);
+                            true, false);
   CPDF_Encryptor encryptor(pCreator->m_pCryptoHandler, m_dwObjNum,
                            encoder.m_pData, encoder.m_dwSize);
   if ((len = pFile->AppendDWord(encryptor.m_dwSize)) < 0) {
@@ -601,8 +605,12 @@ FX_FILESIZE CPDF_ObjectStream::End(CPDF_Creator* pCreator) {
   offset += len;
   return ObjOffset;
 }
+
 CPDF_XRefStream::CPDF_XRefStream()
     : m_PrevOffset(0), m_dwTempObjNum(0), m_iSeg(0) {}
+
+CPDF_XRefStream::~CPDF_XRefStream() {}
+
 FX_BOOL CPDF_XRefStream::Start() {
   m_IndexArray.clear();
   m_Buffer.Clear();
@@ -779,32 +787,30 @@ FX_BOOL CPDF_XRefStream::GenerateXRefStream(CPDF_Creator* pCreator,
     FX_CHAR offset_buf[20];
     FXSYS_memset(offset_buf, 0, sizeof(offset_buf));
     FXSYS_i64toa(m_PrevOffset, offset_buf, 10);
-    int32_t len = (int32_t)FXSYS_strlen(offset_buf);
-    if (pFile->AppendBlock(offset_buf, len) < 0) {
+    int32_t offset_len = (int32_t)FXSYS_strlen(offset_buf);
+    if (pFile->AppendBlock(offset_buf, offset_len) < 0) {
       return FALSE;
     }
-    offset += len + 6;
+    offset += offset_len + 6;
   }
-  FX_BOOL bPredictor = TRUE;
   CPDF_FlateEncoder encoder(m_Buffer.GetBuffer(), m_Buffer.GetLength(), TRUE,
-                            bPredictor);
-  if (pFile->AppendString("/Filter /FlateDecode") < 0) {
+                            TRUE);
+  if (pFile->AppendString("/Filter /FlateDecode") < 0)
     return FALSE;
-  }
+
   offset += 20;
-  if (bPredictor) {
-    if ((len = pFile->AppendString("/DecodeParms<</Columns 7/Predictor 12>>")) <
-        0) {
-      return FALSE;
-    }
-    offset += len;
-  }
-  if (pFile->AppendString("/Length ") < 0) {
+  if ((len = pFile->AppendString("/DecodeParms<</Columns 7/Predictor 12>>")) <
+      0) {
     return FALSE;
   }
-  if ((len = pFile->AppendDWord(encoder.m_dwSize)) < 0) {
+
+  offset += len;
+  if (pFile->AppendString("/Length ") < 0)
     return FALSE;
-  }
+
+  if ((len = pFile->AppendDWord(encoder.m_dwSize)) < 0)
+    return FALSE;
+
   offset += len + 8;
   if (bEOF) {
     if ((len = PDF_CreatorWriteTrailer(pCreator->m_pDocument, pFile,
@@ -899,7 +905,7 @@ CPDF_Creator::~CPDF_Creator() {
   ResetStandardSecurity();
   if (m_bEncryptCloned && m_pEncryptDict) {
     m_pEncryptDict->Release();
-    m_pEncryptDict = NULL;
+    m_pEncryptDict = nullptr;
   }
   Clear();
 }
@@ -1353,28 +1359,26 @@ void CPDF_Creator::InitOldObjNumOffsets() {
     dwStart = j;
   }
 }
+
 void CPDF_Creator::InitNewObjNumOffsets() {
   FX_BOOL bIncremental = (m_dwFlags & FPDFCREATE_INCREMENTAL) != 0;
   FX_BOOL bNoOriginal = (m_dwFlags & FPDFCREATE_NO_ORIGINAL) != 0;
   for (const auto& pair : m_pDocument->m_IndirectObjs) {
     const uint32_t objnum = pair.first;
     const CPDF_Object* pObj = pair.second;
-    if (pObj->GetObjNum() == CPDF_Object::kInvalidObjNum)
+    if (bIncremental || pObj->GetObjNum() == CPDF_Object::kInvalidObjNum)
       continue;
-    if (bIncremental) {
-      if (!pObj->IsModified())
-        continue;
-    } else if (m_pParser && m_pParser->IsValidObjectNumber(objnum) &&
-               m_pParser->GetObjectType(objnum)) {
+    if (m_pParser && m_pParser->IsValidObjectNumber(objnum) &&
+        m_pParser->GetObjectType(objnum)) {
       continue;
     }
     AppendNewObjNum(objnum);
   }
 
   int32_t iCount = m_NewObjNumArray.GetSize();
-  if (iCount == 0) {
+  if (iCount == 0)
     return;
-  }
+
   int32_t i = 0;
   uint32_t dwStartObjNum = 0;
   FX_BOOL bCrossRefValid = m_pParser && m_pParser->GetLastXRefOffset() > 0;
@@ -1386,12 +1390,12 @@ void CPDF_Creator::InitNewObjNumOffsets() {
     }
     i++;
   }
-  if (i >= iCount) {
+  if (i >= iCount)
     return;
-  }
+
   uint32_t dwLastObjNum = dwStartObjNum;
   i++;
-  FX_BOOL bNewStart = FALSE;
+  bool bNewStart = false;
   for (; i < iCount; i++) {
     uint32_t dwCurObjNum = m_NewObjNumArray.ElementAt(i);
     bool bExist = m_pParser && m_pParser->IsValidObjectNumber(dwCurObjNum) &&
@@ -1401,14 +1405,15 @@ void CPDF_Creator::InitNewObjNumOffsets() {
         m_ObjectOffset.Add(dwStartObjNum, dwLastObjNum - dwStartObjNum + 1);
       dwStartObjNum = dwCurObjNum;
     }
-    if (bNewStart) {
+    if (bNewStart)
       dwStartObjNum = dwCurObjNum;
-    }
+
     bNewStart = bExist;
     dwLastObjNum = dwCurObjNum;
   }
   m_ObjectOffset.Add(dwStartObjNum, dwLastObjNum - dwStartObjNum + 1);
 }
+
 void CPDF_Creator::AppendNewObjNum(uint32_t objbum) {
   int32_t iStart = 0, iFind = 0;
   int32_t iEnd = m_NewObjNumArray.GetUpperBound();
@@ -1442,7 +1447,7 @@ int32_t CPDF_Creator::WriteDoc_Stage1(IFX_Pause* pPause) {
       m_dwFlags &= ~FPDFCREATE_INCREMENTAL;
     }
     CPDF_Dictionary* pDict = m_pDocument->GetRoot();
-    m_pMetadata = pDict ? pDict->GetDirectObjectBy("Metadata") : NULL;
+    m_pMetadata = pDict ? pDict->GetDirectObjectBy("Metadata") : nullptr;
     if (m_dwFlags & FPDFCREATE_OBJECTSTREAM) {
       m_pXRefStream.reset(new CPDF_XRefStream);
       m_pXRefStream->Start();
@@ -1557,7 +1562,7 @@ int32_t CPDF_Creator::WriteDoc_Stage2(IFX_Pause* pPause) {
     m_iStage = 27;
   }
   if (m_iStage == 27) {
-    if (NULL != m_pEncryptDict && 0 == m_pEncryptDict->GetObjNum()) {
+    if (m_pEncryptDict && !m_pEncryptDict->GetObjNum()) {
       m_dwLastObjNum += 1;
       FX_FILESIZE saveOffset = m_Offset;
       if (WriteIndirectObj(m_dwLastObjNum, m_pEncryptDict) < 0) {
@@ -1894,13 +1899,14 @@ int32_t CPDF_Creator::WriteDoc_Stage4(IFX_Pause* pPause) {
   m_File.Flush();
   return m_iStage = 100;
 }
+
 void CPDF_Creator::Clear() {
   m_pXRefStream.reset();
   m_File.Clear();
   m_NewObjNumArray.RemoveAll();
   if (m_pIDArray) {
     m_pIDArray->Release();
-    m_pIDArray = NULL;
+    m_pIDArray = nullptr;
   }
 }
 
@@ -1917,17 +1923,17 @@ bool CPDF_Creator::Create(uint32_t flags) {
   m_ObjectOffset.Clear();
   m_NewObjNumArray.RemoveAll();
   InitID();
-  if (flags & FPDFCREATE_PROGRESSIVE) {
+  if (flags & FPDFCREATE_PROGRESSIVE)
     return true;
-  }
-  return Continue(NULL) > -1;
+  return Continue(nullptr) > -1;
 }
+
 void CPDF_Creator::InitID(FX_BOOL bDefault) {
-  CPDF_Array* pOldIDArray = m_pParser ? m_pParser->GetIDArray() : NULL;
+  CPDF_Array* pOldIDArray = m_pParser ? m_pParser->GetIDArray() : nullptr;
   FX_BOOL bNewId = !m_pIDArray;
   if (!m_pIDArray) {
     m_pIDArray = new CPDF_Array;
-    CPDF_Object* pID1 = pOldIDArray ? pOldIDArray->GetObjectAt(0) : NULL;
+    CPDF_Object* pID1 = pOldIDArray ? pOldIDArray->GetObjectAt(0) : nullptr;
     if (pID1) {
       m_pIDArray->Add(pID1->Clone());
     } else {

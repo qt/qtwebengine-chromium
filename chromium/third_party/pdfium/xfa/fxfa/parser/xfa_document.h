@@ -57,16 +57,17 @@ class CScript_HostPseudoModel;
 class CScript_LogPseudoModel;
 class CScript_LayoutPseudoModel;
 class CScript_SignaturePseudoModel;
+
 class CXFA_Document {
  public:
   CXFA_Document(CXFA_DocumentParser* pParser);
   ~CXFA_Document();
+
   CXFA_Node* GetRoot() const { return m_pRootNode; }
   CXFA_DocumentParser* GetParser() const { return m_pParser; }
   CXFA_FFNotify* GetNotify() const;
   void SetRoot(CXFA_Node* pNewRoot);
-  CXFA_Object* GetXFAObject(const CFX_WideStringC& wsNodeName);
-  CXFA_Object* GetXFAObject(uint32_t wsNodeNameHash);
+  CXFA_Object* GetXFAObject(XFA_HashCode wsNodeNameHash);
   void AddPurgeNode(CXFA_Node* pNode);
   FX_BOOL RemovePurgeNode(CXFA_Node* pNode);
   void PurgeNodes();
@@ -76,8 +77,8 @@ class CXFA_Document {
   XFA_VERSION GetCurVersionMode() { return m_eCurVersionMode; }
   XFA_VERSION RecognizeXFAVersionNumber(CFX_WideString& wsTemplateNS);
   CXFA_LocaleMgr* GetLocalMgr();
-  CXFA_Node* CreateNode(uint32_t dwPacket, XFA_ELEMENT eElement);
-  CXFA_Node* CreateNode(const XFA_PACKETINFO* pPacket, XFA_ELEMENT eElement);
+  CXFA_Node* CreateNode(uint32_t dwPacket, XFA_Element eElement);
+  CXFA_Node* CreateNode(const XFA_PACKETINFO* pPacket, XFA_Element eElement);
   void DoProtoMerge();
   CXFA_Node* GetNodeByID(CXFA_Node* pRoot, const CFX_WideStringC& wsID);
   void DoDataMerge();
@@ -92,7 +93,7 @@ class CXFA_Document {
   CXFA_Node* GetNotBindNode(CXFA_ObjArray& arrayNodes);
   CXFA_LayoutProcessor* GetLayoutProcessor();
   CXFA_LayoutProcessor* GetDocLayout();
-  CXFA_ScriptContext* InitScriptContext(FXJSE_HRUNTIME hRuntime);
+  CXFA_ScriptContext* InitScriptContext(v8::Isolate* pIsolate);
   CXFA_ScriptContext* GetScriptContext();
   void ClearLayoutData();
 

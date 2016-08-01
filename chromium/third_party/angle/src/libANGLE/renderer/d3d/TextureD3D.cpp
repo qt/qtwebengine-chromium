@@ -78,7 +78,6 @@ bool IsRenderTargetUsage(GLenum usage)
 TextureD3D::TextureD3D(const gl::TextureState &state, RendererD3D *renderer)
     : TextureImpl(state),
       mRenderer(renderer),
-      mUsage(GL_NONE),
       mDirtyImages(true),
       mImmutable(false),
       mTexStorage(nullptr),
@@ -116,11 +115,13 @@ gl::Error TextureD3D::getNativeTexture(TextureStorage **outStorage)
 
 GLint TextureD3D::getLevelZeroWidth() const
 {
+    ASSERT(gl::CountLeadingZeros(static_cast<uint32_t>(getBaseLevelWidth())) > getBaseLevel());
     return getBaseLevelWidth() << mBaseLevel;
 }
 
 GLint TextureD3D::getLevelZeroHeight() const
 {
+    ASSERT(gl::CountLeadingZeros(static_cast<uint32_t>(getBaseLevelHeight())) > getBaseLevel());
     return getBaseLevelHeight() << mBaseLevel;
 }
 
@@ -209,7 +210,7 @@ gl::Error TextureD3D::setImageImpl(const gl::ImageIndex &index,
         else
         {
             gl::Box fullImageArea(0, 0, 0, image->getWidth(), image->getHeight(), image->getDepth());
-            error = image->loadData(fullImageArea, unpack, type, pixelData);
+            error = image->loadData(fullImageArea, unpack, type, pixelData, index.is3D());
         }
 
         if (error.isError())
@@ -244,7 +245,7 @@ gl::Error TextureD3D::subImage(const gl::ImageIndex &index, const gl::Box &area,
             return mTexStorage->setData(index, image, &area, type, unpack, pixelData);
         }
 
-        error = image->loadData(area, unpack, type, pixelData);
+        error = image->loadData(area, unpack, type, pixelData, index.is3D());
         if (error.isError())
         {
             return error;
@@ -267,6 +268,14 @@ gl::Error TextureD3D::setCompressedImageImpl(const gl::ImageIndex &index,
                                              const uint8_t *pixels,
                                              ptrdiff_t layerOffset)
 {
+    ImageD3D *image = getImage(index);
+    ASSERT(image);
+
+    if (image->getWidth() == 0 || image->getHeight() == 0 || image->getDepth() == 0)
+    {
+        return gl::NoError();
+    }
+
     // We no longer need the "GLenum format" parameter to TexImage to determine what data format "pixels" contains.
     // From our image internal format we know how many channels to expect, and "type" gives the format of pixel's components.
     const uint8_t *pixelData = NULL;
@@ -278,9 +287,6 @@ gl::Error TextureD3D::setCompressedImageImpl(const gl::ImageIndex &index,
 
     if (pixelData != NULL)
     {
-        ImageD3D *image = getImage(index);
-        ASSERT(image);
-
         gl::Box fullImageArea(0, 0, 0, image->getWidth(), image->getHeight(), image->getDepth());
         error = image->loadCompressedData(fullImageArea, pixelData);
         if (error.isError())
@@ -375,13 +381,6 @@ GLint TextureD3D::creationLevels(GLsizei width, GLsizei height, GLsizei depth) c
     }
 }
 
-int TextureD3D::mipLevels() const
-{
-    return gl::log2(
-               std::max(std::max(getLevelZeroWidth(), getLevelZeroHeight()), getLevelZeroDepth())) +
-           1;
-}
-
 TextureStorage *TextureD3D::getStorage()
 {
     ASSERT(mTexStorage);
@@ -406,14 +405,11 @@ gl::Error TextureD3D::setImageExternal(GLenum target,
     return gl::Error(GL_INVALID_OPERATION);
 }
 
-gl::Error TextureD3D::generateMipmaps()
+gl::Error TextureD3D::generateMipmap()
 {
-    GLint mipCount = mipLevels();
-
-    if (mipCount == 1)
-    {
-        return gl::Error(GL_NO_ERROR); // no-op
-    }
+    const GLuint baseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel = mState.getMipmapMaxLevel();
+    ASSERT(maxLevel > baseLevel);  // Should be checked before calling this.
 
     if (mTexStorage && mRenderer->getWorkarounds().zeroMaxLodWorkaround)
     {
@@ -433,7 +429,7 @@ gl::Error TextureD3D::generateMipmaps()
     }
 
     // Set up proper mipmap chain in our Image array.
-    initMipmapsImages();
+    initMipmapImages();
 
     if (mTexStorage && mTexStorage->supportsNativeMipmapFunction())
     {
@@ -444,7 +440,7 @@ gl::Error TextureD3D::generateMipmaps()
         }
 
         // Generate the mipmap chain using the ad-hoc DirectX function.
-        error = mRenderer->generateMipmapsUsingD3D(mTexStorage, mState);
+        error = mRenderer->generateMipmapUsingD3D(mTexStorage, mState);
         if (error.isError())
         {
             return error;
@@ -453,7 +449,7 @@ gl::Error TextureD3D::generateMipmaps()
     else
     {
         // Generate the mipmap chain, one level at a time.
-        gl::Error error = generateMipmapsUsingImages();
+        gl::Error error = generateMipmapUsingImages(maxLevel);
         if (error.isError())
         {
             return error;
@@ -463,12 +459,10 @@ gl::Error TextureD3D::generateMipmaps()
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error TextureD3D::generateMipmapsUsingImages()
+gl::Error TextureD3D::generateMipmapUsingImages(const GLuint maxLevel)
 {
-    GLint mipCount = mipLevels();
-
     // We know that all layers have the same dimension, for the texture to be complete
-    GLint layerCount = static_cast<GLint>(getLayerCount(getBaseLevel()));
+    GLint layerCount = static_cast<GLint>(getLayerCount(mBaseLevel));
 
     // When making mipmaps with the setData workaround enabled, the texture storage has
     // the image data already. For non-render-target storage, we have to pull it out into
@@ -480,7 +474,7 @@ gl::Error TextureD3D::generateMipmapsUsingImages()
             // Copy from the storage mip 0 to Image mip 0
             for (GLint layer = 0; layer < layerCount; ++layer)
             {
-                gl::ImageIndex srcIndex = getImageIndex(0, layer);
+                gl::ImageIndex srcIndex = getImageIndex(mBaseLevel, layer);
 
                 ImageD3D *image = getImage(srcIndex);
                 gl::Error error = image->copyFromTexStorage(srcIndex, mTexStorage);
@@ -509,7 +503,7 @@ gl::Error TextureD3D::generateMipmapsUsingImages()
 
     for (GLint layer = 0; layer < layerCount; ++layer)
     {
-        for (GLint mip = 1; mip < mipCount; ++mip)
+        for (GLuint mip = mBaseLevel + 1; mip <= maxLevel; ++mip)
         {
             ASSERT(getLayerCount(mip) == layerCount);
 
@@ -766,19 +760,12 @@ gl::Error TextureD3D_2D::setImage(GLenum target,
     {
         // Will try to create RT storage if it does not exist
         RenderTargetD3D *destRenderTarget = NULL;
-        gl::Error error = getRenderTarget(index, &destRenderTarget);
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(getRenderTarget(index, &destRenderTarget));
 
         gl::Box destArea(0, 0, 0, getWidth(level), getHeight(level), 1);
 
-        error = fastUnpackPixels(unpack, pixels, destArea, sizedInternalFormat, type, destRenderTarget);
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(fastUnpackPixels(unpack, pixels, destArea, sizedInternalFormat, type,
+                                   destRenderTarget));
 
         // Ensure we don't overwrite our newly initialized data
         mImageArray[level]->markClean();
@@ -788,11 +775,7 @@ gl::Error TextureD3D_2D::setImage(GLenum target,
 
     if (!fastUnpacked)
     {
-        gl::Error error = setImageImpl(index, type, unpack, pixels, 0);
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(setImageImpl(index, type, unpack, pixels, 0));
     }
 
     return gl::Error(GL_NO_ERROR);
@@ -813,12 +796,7 @@ gl::Error TextureD3D_2D::setSubImage(GLenum target,
     if (isFastUnpackable(unpack, getInternalFormat(level)) && isLevelComplete(level))
     {
         RenderTargetD3D *renderTarget = NULL;
-        gl::Error error = getRenderTarget(index, &renderTarget);
-        if (error.isError())
-        {
-            return error;
-        }
-
+        ANGLE_TRY(getRenderTarget(index, &renderTarget));
         ASSERT(!mImageArray[level]->isDirty());
 
         return fastUnpackPixels(unpack, pixels, area, getInternalFormat(level), type, renderTarget);
@@ -852,11 +830,7 @@ gl::Error TextureD3D_2D::setCompressedSubImage(GLenum target, size_t level, cons
     ASSERT(target == GL_TEXTURE_2D && area.depth == 1 && area.z == 0);
 
     gl::ImageIndex index = gl::ImageIndex::Make2D(static_cast<GLint>(level));
-    gl::Error error = TextureD3D::subImageCompressed(index, area, format, unpack, pixels, 0);
-    if (error.isError())
-    {
-        return error;
-    }
+    ANGLE_TRY(TextureD3D::subImageCompressed(index, area, format, unpack, pixels, 0));
 
     return commitRegion(index, area);
 }
@@ -881,31 +855,18 @@ gl::Error TextureD3D_2D::copyImage(GLenum target,
     // so we should use the non-rendering copy path.
     if (!canCreateRenderTargetForImage(index) || mRenderer->getWorkarounds().zeroMaxLodWorkaround)
     {
-        gl::Error error = mImageArray[level]->copyFromFramebuffer(destOffset, sourceArea, source);
-        if (error.isError())
-        {
-            return error;
-        }
-
+        ANGLE_TRY(mImageArray[level]->copyFromFramebuffer(destOffset, sourceArea, source));
         mDirtyImages = true;
     }
     else
     {
-        gl::Error error = ensureRenderTarget();
-        if (error.isError())
-        {
-            return error;
-        }
-
+        ANGLE_TRY(ensureRenderTarget());
         mImageArray[level]->markClean();
 
         if (sourceArea.width != 0 && sourceArea.height != 0 && isValidLevel(level))
         {
-            error = mRenderer->copyImage2D(source, sourceArea, internalFormat, destOffset, mTexStorage, level);
-            if (error.isError())
-            {
-                return error;
-            }
+            ANGLE_TRY(mRenderer->copyImage2D(source, sourceArea, internalFormat, destOffset,
+                                             mTexStorage, level));
         }
     }
 
@@ -930,37 +891,19 @@ gl::Error TextureD3D_2D::copySubImage(GLenum target,
     // so we should use the non-rendering copy path.
     if (!canCreateRenderTargetForImage(index) || mRenderer->getWorkarounds().zeroMaxLodWorkaround)
     {
-        gl::Error error = mImageArray[level]->copyFromFramebuffer(destOffset, sourceArea, source);
-        if (error.isError())
-        {
-            return error;
-        }
-
+        ANGLE_TRY(mImageArray[level]->copyFromFramebuffer(destOffset, sourceArea, source));
         mDirtyImages = true;
     }
     else
     {
-        gl::Error error = ensureRenderTarget();
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(ensureRenderTarget());
 
         if (isValidLevel(level))
         {
-            error = updateStorageLevel(level);
-            if (error.isError())
-            {
-                return error;
-            }
-
-            error = mRenderer->copyImage2D(source, sourceArea,
-                                           gl::GetInternalFormatInfo(getBaseLevelInternalFormat()).format,
-                                           destOffset, mTexStorage, level);
-            if (error.isError())
-            {
-                return error;
-            }
+            ANGLE_TRY(updateStorageLevel(level));
+            ANGLE_TRY(mRenderer->copyImage2D(
+                source, sourceArea, gl::GetInternalFormatInfo(getBaseLevelInternalFormat()).format,
+                destOffset, mTexStorage, level));
         }
     }
 
@@ -985,7 +928,7 @@ gl::Error TextureD3D_2D::setStorage(GLenum target, size_t levels, GLenum interna
     }
 
     // TODO(geofflang): Verify storage creation had no errors
-    bool renderTarget = IsRenderTargetUsage(mUsage);
+    bool renderTarget       = IsRenderTargetUsage(mState.getUsage());
     TextureStorage *storage = mRenderer->createTextureStorage2D(
         internalFormat, renderTarget, size.width, size.height, static_cast<int>(levels), false);
 
@@ -1066,11 +1009,13 @@ gl::Error TextureD3D_2D::setEGLImageTarget(GLenum target, egl::Image *image)
     return gl::Error(GL_NO_ERROR);
 }
 
-void TextureD3D_2D::initMipmapsImages()
+void TextureD3D_2D::initMipmapImages()
 {
-    // Purge array levels 1 through q and reset them to represent the generated mipmap levels.
-    int levelCount = mipLevels();
-    for (int level = 1; level < levelCount; level++)
+    const GLuint baseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel  = mState.getMipmapMaxLevel();
+    // Purge array levels baseLevel + 1 through q and reset them to represent the generated mipmap
+    // levels.
+    for (GLuint level = baseLevel + 1; level <= maxLevel; level++)
     {
         gl::Extents levelSize(std::max(getLevelZeroWidth() >> level, 1),
                               std::max(getLevelZeroHeight() >> level, 1), 1);
@@ -1166,7 +1111,7 @@ gl::Error TextureD3D_2D::initializeStorage(bool renderTarget)
         return gl::Error(GL_NO_ERROR);
     }
 
-    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mUsage));
+    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mState.getUsage()));
 
     TextureStorage *storage = NULL;
     gl::Error error = createCompleteStorage(createRenderTarget, &storage);
@@ -1598,7 +1543,7 @@ gl::Error TextureD3D_Cube::setStorage(GLenum target, size_t levels, GLenum inter
     }
 
     // TODO(geofflang): Verify storage creation had no errors
-    bool renderTarget = IsRenderTargetUsage(mUsage);
+    bool renderTarget = IsRenderTargetUsage(mState.getUsage());
 
     TextureStorage *storage = mRenderer->createTextureStorageCube(
         internalFormat, renderTarget, size.width, static_cast<int>(levels), false);
@@ -1659,17 +1604,19 @@ void TextureD3D_Cube::releaseTexImage()
     UNREACHABLE();
 }
 
-
-void TextureD3D_Cube::initMipmapsImages()
+void TextureD3D_Cube::initMipmapImages()
 {
-    // Purge array levels 1 through q and reset them to represent the generated mipmap levels.
-    int levelCount = mipLevels();
+    const GLuint baseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel  = mState.getMipmapMaxLevel();
+    // Purge array levels baseLevel + 1 through q and reset them to represent the generated mipmap
+    // levels.
     for (int faceIndex = 0; faceIndex < 6; faceIndex++)
     {
-        for (int level = 1; level < levelCount; level++)
+        for (GLuint level = baseLevel + 1; level <= maxLevel; level++)
         {
-            int faceLevelSize = (std::max(mImageArray[faceIndex][0]->getWidth() >> level, 1));
-            redefineImage(faceIndex, level, mImageArray[faceIndex][0]->getInternalFormat(),
+            int faceLevelSize =
+                (std::max(mImageArray[faceIndex][baseLevel]->getWidth() >> (level - baseLevel), 1));
+            redefineImage(faceIndex, level, mImageArray[faceIndex][baseLevel]->getInternalFormat(),
                           gl::Extents(faceLevelSize, faceLevelSize, 1));
         }
     }
@@ -1709,7 +1656,7 @@ gl::Error TextureD3D_Cube::initializeStorage(bool renderTarget)
         return gl::Error(GL_NO_ERROR);
     }
 
-    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mUsage));
+    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mState.getUsage()));
 
     TextureStorage *storage = NULL;
     gl::Error error = createCompleteStorage(createRenderTarget, &storage);
@@ -2224,7 +2171,7 @@ gl::Error TextureD3D_3D::setStorage(GLenum target, size_t levels, GLenum interna
     }
 
     // TODO(geofflang): Verify storage creation had no errors
-    bool renderTarget = IsRenderTargetUsage(mUsage);
+    bool renderTarget = IsRenderTargetUsage(mState.getUsage());
     TextureStorage *storage =
         mRenderer->createTextureStorage3D(internalFormat, renderTarget, size.width, size.height,
                                           size.depth, static_cast<int>(levels));
@@ -2258,12 +2205,13 @@ void TextureD3D_3D::releaseTexImage()
     UNREACHABLE();
 }
 
-
-void TextureD3D_3D::initMipmapsImages()
+void TextureD3D_3D::initMipmapImages()
 {
-    // Purge array levels 1 through q and reset them to represent the generated mipmap levels.
-    int levelCount = mipLevels();
-    for (int level = 1; level < levelCount; level++)
+    const GLuint baseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel  = mState.getMipmapMaxLevel();
+    // Purge array levels baseLevel + 1 through q and reset them to represent the generated mipmap
+    // levels.
+    for (GLuint level = baseLevel + 1; level <= maxLevel; level++)
     {
         gl::Extents levelSize(std::max(getLevelZeroWidth() >> level, 1),
                               std::max(getLevelZeroHeight() >> level, 1),
@@ -2315,7 +2263,7 @@ gl::Error TextureD3D_3D::initializeStorage(bool renderTarget)
         return gl::Error(GL_NO_ERROR);
     }
 
-    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mUsage));
+    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mState.getUsage()));
 
     TextureStorage *storage = NULL;
     gl::Error error = createCompleteStorage(createRenderTarget, &storage);
@@ -2524,6 +2472,7 @@ void TextureD3D_3D::markAllImagesDirty()
 
 GLint TextureD3D_3D::getLevelZeroDepth() const
 {
+    ASSERT(gl::CountLeadingZeros(static_cast<uint32_t>(getBaseLevelDepth())) > getBaseLevel());
     return getBaseLevelDepth() << getBaseLevel();
 }
 
@@ -2612,8 +2561,10 @@ gl::Error TextureD3D_2DArray::setImage(GLenum target,
     redefineImage(level, sizedInternalFormat, size);
 
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(sizedInternalFormat);
-    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(
-        type, size.width, size.height, unpack.alignment, unpack.rowLength, unpack.imageHeight);
+    GLsizei inputDepthPitch              = 0;
+    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, size.width, size.height, unpack.alignment,
+                                                  unpack.rowLength, unpack.imageHeight),
+                     inputDepthPitch);
 
     for (int i = 0; i < size.depth; i++)
     {
@@ -2640,8 +2591,10 @@ gl::Error TextureD3D_2DArray::setSubImage(GLenum target,
     ASSERT(target == GL_TEXTURE_2D_ARRAY);
     GLint level                          = static_cast<GLint>(imageLevel);
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(getInternalFormat(level));
-    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(
-        type, area.width, area.height, unpack.alignment, unpack.rowLength, unpack.imageHeight);
+    GLsizei inputDepthPitch              = 0;
+    ANGLE_TRY_RESULT(formatInfo.computeDepthPitch(type, area.width, area.height, unpack.alignment,
+                                                  unpack.rowLength, unpack.imageHeight),
+                     inputDepthPitch);
 
     for (int i = 0; i < area.depth; i++)
     {
@@ -2676,8 +2629,10 @@ gl::Error TextureD3D_2DArray::setCompressedImage(GLenum target,
     redefineImage(level, internalFormat, size);
 
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(internalFormat);
-    GLsizei inputDepthPitch =
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, size.width, size.height, 1, 0, 0);
+    GLsizei inputDepthPitch              = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, size.width, size.height, 1, 0, 0),
+        inputDepthPitch);
 
     for (int i = 0; i < size.depth; i++)
     {
@@ -2700,8 +2655,10 @@ gl::Error TextureD3D_2DArray::setCompressedSubImage(GLenum target, size_t level,
     ASSERT(target == GL_TEXTURE_2D_ARRAY);
 
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(format);
-    GLsizei inputDepthPitch =
-        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0);
+    GLsizei inputDepthPitch              = 0;
+    ANGLE_TRY_RESULT(
+        formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0, 0),
+        inputDepthPitch);
 
     for (int i = 0; i < area.depth; i++)
     {
@@ -2814,7 +2771,7 @@ gl::Error TextureD3D_2DArray::setStorage(GLenum target, size_t levels, GLenum in
     }
 
     // TODO(geofflang): Verify storage creation had no errors
-    bool renderTarget = IsRenderTargetUsage(mUsage);
+    bool renderTarget = IsRenderTargetUsage(mState.getUsage());
     TextureStorage *storage =
         mRenderer->createTextureStorage2DArray(internalFormat, renderTarget, size.width,
                                                size.height, size.depth, static_cast<int>(levels));
@@ -2848,18 +2805,20 @@ void TextureD3D_2DArray::releaseTexImage()
     UNREACHABLE();
 }
 
-
-void TextureD3D_2DArray::initMipmapsImages()
+void TextureD3D_2DArray::initMipmapImages()
 {
+    const GLuint baseLevel = mState.getEffectiveBaseLevel();
+    const GLuint maxLevel  = mState.getMipmapMaxLevel();
     int baseWidth     = getLevelZeroWidth();
     int baseHeight    = getLevelZeroHeight();
     int baseDepth     = getLayerCount(getBaseLevel());
     GLenum baseFormat = getBaseLevelInternalFormat();
 
-    // Purge array levels 1 through q and reset them to represent the generated mipmap levels.
-    int levelCount = mipLevels();
-    for (int level = 1; level < levelCount; level++)
+    // Purge array levels baseLevel + 1 through q and reset them to represent the generated mipmap
+    // levels.
+    for (GLuint level = baseLevel + 1u; level <= maxLevel; level++)
     {
+        ASSERT((baseWidth >> level) > 0 || (baseHeight >> level) > 0);
         gl::Extents levelLayerSize(std::max(baseWidth >> level, 1),
                                    std::max(baseHeight >> level, 1),
                                    baseDepth);
@@ -2899,7 +2858,7 @@ gl::Error TextureD3D_2DArray::initializeStorage(bool renderTarget)
         return gl::Error(GL_NO_ERROR);
     }
 
-    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mUsage));
+    bool createRenderTarget = (renderTarget || IsRenderTargetUsage(mState.getUsage()));
 
     TextureStorage *storage = NULL;
     gl::Error error = createCompleteStorage(createRenderTarget, &storage);
@@ -3178,49 +3137,22 @@ void TextureD3D_2DArray::markAllImagesDirty()
 TextureD3D_External::TextureD3D_External(const gl::TextureState &state, RendererD3D *renderer)
     : TextureD3D(state, renderer)
 {
-    mImage = renderer->createImage();
 }
 
 TextureD3D_External::~TextureD3D_External()
 {
-    SafeDelete(mImage);
     SafeDelete(mTexStorage);
 }
 
 ImageD3D *TextureD3D_External::getImage(const gl::ImageIndex &index) const
 {
-    // External images only have one mipmap level
-    ASSERT(index.type == GL_TEXTURE_EXTERNAL_OES);
-    ASSERT(index.mipIndex == 0);
-    return mImage;
+    UNREACHABLE();
+    return nullptr;
 }
 
 GLsizei TextureD3D_External::getLayerCount(int level) const
 {
     return 1;
-}
-
-GLsizei TextureD3D_External::getWidth(GLint level) const
-{
-    ASSERT(level == 0);
-    return mImage->getWidth();
-}
-
-GLsizei TextureD3D_External::getHeight(GLint level) const
-{
-    ASSERT(level == 0);
-    return mImage->getHeight();
-}
-
-GLenum TextureD3D_External::getInternalFormat(GLint level) const
-{
-    ASSERT(level == 0);
-    return mImage->getInternalFormat();
-}
-
-bool TextureD3D_External::isDepth(GLint level) const
-{
-    return false;
 }
 
 gl::Error TextureD3D_External::setImage(GLenum target,
@@ -3308,15 +3240,11 @@ gl::Error TextureD3D_External::setImageExternal(GLenum target,
 {
     ASSERT(target == GL_TEXTURE_EXTERNAL_OES);
 
-    // If the strean is null, the external image is unbound and we release the storage
-    if (stream == nullptr)
+    SafeDelete(mTexStorage);
+
+    // If the stream is null, the external image is unbound and we release the storage
+    if (stream != nullptr)
     {
-        SafeDelete(mTexStorage);
-        mTexStorage = nullptr;
-    }
-    else
-    {
-        SafeDelete(mTexStorage);
         mTexStorage = mRenderer->createTextureStorageExternal(stream, desc);
     }
 
@@ -3335,11 +3263,15 @@ void TextureD3D_External::releaseTexImage()
 
 gl::Error TextureD3D_External::setEGLImageTarget(GLenum target, egl::Image *image)
 {
-    UNREACHABLE();
-    return gl::Error(GL_INVALID_OPERATION);
+    EGLImageD3D *eglImaged3d = GetImplAs<EGLImageD3D>(image);
+
+    SafeDelete(mTexStorage);
+    mTexStorage = mRenderer->createTextureStorageEGLImage(eglImaged3d);
+
+    return gl::NoError();
 }
 
-void TextureD3D_External::initMipmapsImages()
+void TextureD3D_External::initMipmapImages()
 {
     UNREACHABLE();
 }
@@ -3350,19 +3282,9 @@ gl::Error TextureD3D_External::getRenderTarget(const gl::ImageIndex &index, Rend
     return gl::Error(GL_INVALID_OPERATION);
 }
 
-bool TextureD3D_External::isValidLevel(int level) const
-{
-    return (level == 0);
-}
-
-bool TextureD3D_External::isLevelComplete(int level) const
-{
-    return (level == 0) ? (mTexStorage != nullptr) : false;
-}
-
 bool TextureD3D_External::isImageComplete(const gl::ImageIndex &index) const
 {
-    return isLevelComplete(index.mipIndex);
+    return (index.mipIndex == 0) ? (mTexStorage != nullptr) : false;
 }
 
 gl::Error TextureD3D_External::initializeStorage(bool renderTarget)
@@ -3391,20 +3313,6 @@ gl::Error TextureD3D_External::updateStorage()
     // external image
     ASSERT(mTexStorage);
     return gl::Error(GL_NO_ERROR);
-}
-
-gl::Error TextureD3D_External::updateStorageLevel(int level)
-{
-    UNREACHABLE();
-    return gl::Error(GL_NO_ERROR);
-}
-
-void TextureD3D_External::redefineImage(size_t level,
-                                        GLenum internalformat,
-                                        const gl::Extents &size,
-                                        bool forceRelease)
-{
-    UNREACHABLE();
 }
 
 gl::ImageIndexIterator TextureD3D_External::imageIterator() const

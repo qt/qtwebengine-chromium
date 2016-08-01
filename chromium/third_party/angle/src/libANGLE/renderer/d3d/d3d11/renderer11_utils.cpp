@@ -327,16 +327,20 @@ GLint GetMaximumClientVersion(D3D_FEATURE_LEVEL featureLevel)
 {
     switch (featureLevel)
     {
-      case D3D_FEATURE_LEVEL_11_1:
-      case D3D_FEATURE_LEVEL_11_0:
-      case D3D_FEATURE_LEVEL_10_1:
-      case D3D_FEATURE_LEVEL_10_0: return 3;
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+        case D3D_FEATURE_LEVEL_10_1:
+            return 3;
 
-      case D3D_FEATURE_LEVEL_9_3:
-      case D3D_FEATURE_LEVEL_9_2:
-      case D3D_FEATURE_LEVEL_9_1:  return 2;
+        case D3D_FEATURE_LEVEL_10_0:
+        case D3D_FEATURE_LEVEL_9_3:
+        case D3D_FEATURE_LEVEL_9_2:
+        case D3D_FEATURE_LEVEL_9_1:
+            return 2;
 
-      default: UNREACHABLE();      return 0;
+        default:
+            UNREACHABLE();
+            return 0;
     }
 }
 
@@ -1231,13 +1235,12 @@ void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, cons
     extensions->fboRenderMipmap = false;
     extensions->debugMarker = true;
     extensions->eglImage                 = true;
+    extensions->eglImageExternal          = true;
+    extensions->eglImageExternalEssl3     = true;
     extensions->eglStreamConsumerExternal = true;
     extensions->unpackSubimage           = true;
     extensions->packSubimage             = true;
-    extensions->vertexArrayObject        = true;
-    extensions->noError                  = true;
     extensions->lossyETCDecode           = true;
-    extensions->bindUniformLocation      = true;
     extensions->syncQuery                 = GetEventQuerySupport(featureLevel);
 
     // D3D11 Feature Level 10_0+ uses SV_IsFrontFace in HLSL to emulate gl_FrontFacing.
@@ -1655,11 +1658,13 @@ void TextureHelper11::reset()
 }
 
 gl::ErrorOrResult<TextureHelper11> CreateStagingTexture(GLenum textureType,
-                                                        DXGI_FORMAT dxgiFormat,
                                                         d3d11::ANGLEFormat angleFormat,
                                                         const gl::Extents &size,
+                                                        StagingAccess readAndWriteAccess,
                                                         ID3D11Device *device)
 {
+    const auto &formatSet = d3d11::GetANGLEFormatSet(angleFormat);
+
     if (textureType == GL_TEXTURE_2D)
     {
         D3D11_TEXTURE2D_DESC stagingDesc;
@@ -1667,13 +1672,18 @@ gl::ErrorOrResult<TextureHelper11> CreateStagingTexture(GLenum textureType,
         stagingDesc.Height             = size.height;
         stagingDesc.MipLevels          = 1;
         stagingDesc.ArraySize          = 1;
-        stagingDesc.Format             = dxgiFormat;
+        stagingDesc.Format             = formatSet.texFormat;
         stagingDesc.SampleDesc.Count   = 1;
         stagingDesc.SampleDesc.Quality = 0;
         stagingDesc.Usage              = D3D11_USAGE_STAGING;
         stagingDesc.BindFlags          = 0;
         stagingDesc.CPUAccessFlags     = D3D11_CPU_ACCESS_READ;
         stagingDesc.MiscFlags          = 0;
+
+        if (readAndWriteAccess == StagingAccess::READ_WRITE)
+        {
+            stagingDesc.CPUAccessFlags |= D3D11_CPU_ACCESS_WRITE;
+        }
 
         ID3D11Texture2D *stagingTex = nullptr;
         HRESULT result = device->CreateTexture2D(&stagingDesc, nullptr, &stagingTex);
@@ -1692,7 +1702,7 @@ gl::ErrorOrResult<TextureHelper11> CreateStagingTexture(GLenum textureType,
     stagingDesc.Height         = size.height;
     stagingDesc.Depth          = 1;
     stagingDesc.MipLevels      = 1;
-    stagingDesc.Format         = dxgiFormat;
+    stagingDesc.Format         = formatSet.texFormat;
     stagingDesc.Usage          = D3D11_USAGE_STAGING;
     stagingDesc.BindFlags      = 0;
     stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
@@ -1719,42 +1729,6 @@ bool UsePresentPathFast(const Renderer11 *renderer,
 
     return (framebufferAttachment->type() == GL_FRAMEBUFFER_DEFAULT &&
             renderer->presentPathFastEnabled());
-}
-
-NotificationSet::NotificationSet()
-{
-}
-
-NotificationSet::~NotificationSet()
-{
-}
-
-void NotificationSet::add(const NotificationCallback *callback)
-{
-    ASSERT(mCallbacks.count(callback) == 0);
-    mCallbacks.insert(callback);
-}
-
-void NotificationSet::remove(const NotificationCallback *callback)
-{
-    ASSERT(mCallbacks.count(callback) == 1);
-    mCallbacks.erase(callback);
-}
-
-void NotificationSet::signal() const
-{
-    if (mCallbacks.empty())
-        return;
-
-    for (const auto *callback : mCallbacks)
-    {
-        (*callback)();
-    }
-}
-
-void NotificationSet::clear()
-{
-    mCallbacks.clear();
 }
 
 }  // namespace rx

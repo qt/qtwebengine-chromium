@@ -70,10 +70,6 @@ void MacroAssembler::Call(Register target) {
   Label start;
   bind(&start);
 
-  // Statement positions are expected to be recorded when the target
-  // address is loaded.
-  positions_recorder()->WriteRecordedPositions();
-
   // Branch to target via indirect branch
   basr(r14, target);
 
@@ -121,10 +117,6 @@ void MacroAssembler::Call(Address target, RelocInfo::Mode rmode,
   Label start;
   bind(&start);
 #endif
-
-  // Statement positions are expected to be recorded when the target
-  // address is loaded.
-  positions_recorder()->WriteRecordedPositions();
 
   mov(ip, Operand(reinterpret_cast<intptr_t>(target), rmode));
   basr(r14, ip);
@@ -645,8 +637,7 @@ MemOperand MacroAssembler::SafepointRegisterSlot(Register reg) {
 
 MemOperand MacroAssembler::SafepointRegistersAndDoublesSlot(Register reg) {
   // General purpose registers are pushed last on the stack.
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   int doubles_size = config->num_allocatable_double_registers() * kDoubleSize;
   int register_offset = SafepointRegisterStackIndex(reg.code()) * kPointerSize;
   return MemOperand(sp, doubles_size + register_offset);
@@ -987,9 +978,8 @@ void MacroAssembler::Prologue(bool code_pre_aging, Register base,
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   LoadP(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  LoadP(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  LoadP(vector,
-        FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  LoadP(vector, FieldMemOperand(vector, JSFunction::kLiteralsOffset));
+  LoadP(vector, FieldMemOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 void MacroAssembler::EnterFrame(StackFrame::Type type,
@@ -1310,12 +1300,13 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  mov(r6, Operand(step_in_enabled));
-  LoadlB(r6, MemOperand(r6));
-  CmpP(r6, Operand::Zero());
-  beq(&skip_flooding);
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  STATIC_ASSERT(StepFrame > StepIn);
+  mov(r6, Operand(last_step_action));
+  LoadB(r6, MemOperand(r6));
+  CmpP(r6, Operand(StepIn));
+  blt(&skip_flooding);
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -3705,8 +3696,7 @@ Register GetRegisterThatIsNotOneOf(Register reg1, Register reg2, Register reg3,
   if (reg5.is_valid()) regs |= reg5.bit();
   if (reg6.is_valid()) regs |= reg6.bit();
 
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   for (int i = 0; i < config->num_allocatable_general_registers(); ++i) {
     int code = config->GetAllocatableGeneralCode(i);
     Register candidate = Register::from_code(code);
@@ -4757,7 +4747,6 @@ void MacroAssembler::Branch(Condition c, const Operand& opnd) {
 // Branch On Count.  Decrement R1, and branch if R1 != 0.
 void MacroAssembler::BranchOnCount(Register r1, Label* l) {
   int32_t offset = branch_offset(l);
-  positions_recorder()->WriteRecordedPositions();
   if (is_int16(offset)) {
 #if V8_TARGET_ARCH_S390X
     brctg(r1, Operand(offset));

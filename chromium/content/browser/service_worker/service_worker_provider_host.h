@@ -32,7 +32,7 @@ class BlobStorageContext;
 
 namespace content {
 
-class ResourceRequestBody;
+class ResourceRequestBodyImpl;
 class ServiceWorkerContextCore;
 class ServiceWorkerDispatcherHost;
 class ServiceWorkerRequestHandler;
@@ -89,8 +89,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     return parent_frame_security_level_ == FrameSecurityLevel::SECURE;
   }
   void set_parent_frame_secure(bool is_parent_frame_secure) {
-    CHECK_EQ(static_cast<int>(parent_frame_security_level_),
-             static_cast<int>(FrameSecurityLevel::UNINITIALIZED));
+    CHECK_EQ(parent_frame_security_level_, FrameSecurityLevel::UNINITIALIZED);
     parent_frame_security_level_ = is_parent_frame_secure
                                        ? FrameSecurityLevel::SECURE
                                        : FrameSecurityLevel::INSECURE;
@@ -155,9 +154,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Clears the associated registration and stop listening to it.
   void DisassociateRegistration();
 
-  // Returns false if we have an active version or |version| is using  a
-  // different process.  That would be indicative of a bad IPC message.
-  bool SetHostedVersion(ServiceWorkerVersion* version);
+  void SetHostedVersion(ServiceWorkerVersion* version);
 
   // Returns a handler for a request, the handler may return NULL if
   // the request doesn't require special handling.
@@ -169,7 +166,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       RequestContextType request_context_type,
       RequestContextFrameType frame_type,
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
-      scoped_refptr<ResourceRequestBody> body);
+      scoped_refptr<ResourceRequestBodyImpl> body);
 
   // Used to get a ServiceWorkerObjectInfo to send to the renderer. Finds an
   // existing ServiceWorkerHandle, and increments its reference count, or else

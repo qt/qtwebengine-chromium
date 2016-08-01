@@ -106,36 +106,24 @@ Address RelocInfo::wasm_memory_reference() {
   return Memory::Address_at(pc_);
 }
 
+Address RelocInfo::wasm_global_reference() {
+  DCHECK(IsWasmGlobalReference(rmode_));
+  return Memory::Address_at(pc_);
+}
+
 uint32_t RelocInfo::wasm_memory_size_reference() {
   DCHECK(IsWasmMemorySizeReference(rmode_));
   return Memory::uint32_at(pc_);
 }
 
-void RelocInfo::update_wasm_memory_reference(
-    Address old_base, Address new_base, uint32_t old_size, uint32_t new_size,
-    ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsWasmMemoryReference(rmode_) || IsWasmMemorySizeReference(rmode_));
-  if (IsWasmMemoryReference(rmode_)) {
-    Address updated_reference;
-    DCHECK(old_base <= wasm_memory_reference() &&
-           wasm_memory_reference() < old_base + old_size);
-    updated_reference = new_base + (wasm_memory_reference() - old_base);
-    DCHECK(new_base <= updated_reference &&
-           updated_reference < new_base + new_size);
-    Memory::Address_at(pc_) = updated_reference;
-  } else if (IsWasmMemorySizeReference(rmode_)) {
-    uint32_t updated_size_reference;
-    DCHECK(wasm_memory_size_reference() <= old_size);
-    updated_size_reference =
-        new_size + (wasm_memory_size_reference() - old_size);
-    DCHECK(updated_size_reference <= new_size);
-    Memory::uint32_at(pc_) = updated_size_reference;
-  } else {
-    UNREACHABLE();
-  }
-  if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
-    Assembler::FlushICache(isolate_, pc_, sizeof(int32_t));
-  }
+void RelocInfo::unchecked_update_wasm_memory_reference(
+    Address address, ICacheFlushMode flush_mode) {
+  Memory::Address_at(pc_) = address;
+}
+
+void RelocInfo::unchecked_update_wasm_memory_size(uint32_t size,
+                                                  ICacheFlushMode flush_mode) {
+  Memory::uint32_at(pc_) = size;
 }
 
 // -----------------------------------------------------------------------------
@@ -259,6 +247,8 @@ void Assembler::GetCode(CodeDesc* desc) {
   desc->reloc_size = (buffer_ + buffer_size_) - reloc_info_writer.pos();
   desc->origin = this;
   desc->constant_pool_size = 0;
+  desc->unwinding_info_size = 0;
+  desc->unwinding_info = nullptr;
 }
 
 
@@ -599,6 +589,33 @@ void Assembler::xchg_w(Register reg, const Operand& op) {
   EMIT(0x66);
   EMIT(0x87);
   emit_operand(reg, op);
+}
+
+void Assembler::lock() {
+  EnsureSpace ensure_space(this);
+  EMIT(0xF0);
+}
+
+void Assembler::cmpxchg(const Operand& dst, Register src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x0F);
+  EMIT(0xB1);
+  emit_operand(src, dst);
+}
+
+void Assembler::cmpxchg_b(const Operand& dst, Register src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x0F);
+  EMIT(0xB0);
+  emit_operand(src, dst);
+}
+
+void Assembler::cmpxchg_w(const Operand& dst, Register src) {
+  EnsureSpace ensure_space(this);
+  EMIT(0x66);
+  EMIT(0x0F);
+  EMIT(0xB1);
+  emit_operand(src, dst);
 }
 
 void Assembler::adc(Register dst, int32_t imm32) {
@@ -1387,7 +1404,6 @@ void Assembler::bind(Label* L) {
 
 
 void Assembler::call(Label* L) {
-  positions_recorder()->WriteRecordedPositions();
   EnsureSpace ensure_space(this);
   if (L->is_bound()) {
     const int long_size = 5;
@@ -1405,7 +1421,6 @@ void Assembler::call(Label* L) {
 
 
 void Assembler::call(byte* entry, RelocInfo::Mode rmode) {
-  positions_recorder()->WriteRecordedPositions();
   EnsureSpace ensure_space(this);
   DCHECK(!RelocInfo::IsCodeTarget(rmode));
   EMIT(0xE8);
@@ -1424,7 +1439,6 @@ int Assembler::CallSize(const Operand& adr) {
 
 
 void Assembler::call(const Operand& adr) {
-  positions_recorder()->WriteRecordedPositions();
   EnsureSpace ensure_space(this);
   EMIT(0xFF);
   emit_operand(edx, adr);
@@ -1439,7 +1453,6 @@ int Assembler::CallSize(Handle<Code> code, RelocInfo::Mode rmode) {
 void Assembler::call(Handle<Code> code,
                      RelocInfo::Mode rmode,
                      TypeFeedbackId ast_id) {
-  positions_recorder()->WriteRecordedPositions();
   EnsureSpace ensure_space(this);
   DCHECK(RelocInfo::IsCodeTarget(rmode)
       || rmode == RelocInfo::CODE_AGE_SEQUENCE);

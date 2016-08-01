@@ -20,31 +20,40 @@
 namespace webrtc {
 
 DecoderDatabase::DecoderDatabase(
-    std::unique_ptr<AudioDecoderFactory> decoder_factory)
+    const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory)
     : active_decoder_type_(-1),
       active_cng_decoder_type_(-1),
-      decoder_factory_(std::move(decoder_factory)) {}
+      decoder_factory_(decoder_factory) {}
 
 DecoderDatabase::~DecoderDatabase() = default;
 
 DecoderDatabase::DecoderInfo::DecoderInfo(NetEqDecoder ct,
+                                          const std::string& nm)
+    : codec_type(ct),
+      name(nm),
+      audio_format_(acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)),
+      external_decoder_(nullptr),
+      cng_decoder_(CngDecoder::Create(ct)) {}
+
+DecoderDatabase::DecoderInfo::DecoderInfo(NetEqDecoder ct,
                                           const std::string& nm,
-                                          int fs,
                                           AudioDecoder* ext_dec)
     : codec_type(ct),
       name(nm),
-      fs_hz(fs),
-      external_decoder(ext_dec),
-      audio_format_(acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)) {}
+      audio_format_(acm2::RentACodec::NetEqDecoderToSdpAudioFormat(ct)),
+      external_decoder_(ext_dec) {
+  RTC_CHECK(ext_dec);
+}
 
 DecoderDatabase::DecoderInfo::DecoderInfo(DecoderInfo&&) = default;
 DecoderDatabase::DecoderInfo::~DecoderInfo() = default;
 
 AudioDecoder* DecoderDatabase::DecoderInfo::GetDecoder(
     AudioDecoderFactory* factory) {
-  if (external_decoder) {
+  if (external_decoder_) {
     RTC_DCHECK(!decoder_);
-    return external_decoder;
+    RTC_DCHECK(!cng_decoder_);
+    return external_decoder_;
   }
   RTC_DCHECK(audio_format_);
   if (!decoder_) {
@@ -52,6 +61,26 @@ AudioDecoder* DecoderDatabase::DecoderInfo::GetDecoder(
   }
   RTC_DCHECK(decoder_) << "Failed to create: " << *audio_format_;
   return decoder_.get();
+}
+
+rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>
+DecoderDatabase::DecoderInfo::CngDecoder::Create(NetEqDecoder ct) {
+  const auto cng = [](int sample_rate_hz) {
+    return rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>(
+        {sample_rate_hz});
+  };
+  switch (ct) {
+    case NetEqDecoder::kDecoderCNGnb:
+      return cng(8000);
+    case NetEqDecoder::kDecoderCNGwb:
+      return cng(16000);
+    case NetEqDecoder::kDecoderCNGswb32kHz:
+      return cng(32000);
+    case NetEqDecoder::kDecoderCNGswb48kHz:
+      return cng(48000);
+    default:
+      return rtc::Optional<DecoderDatabase::DecoderInfo::CngDecoder>();
+  }
 }
 
 bool DecoderDatabase::Empty() const { return decoders_.empty(); }
@@ -73,8 +102,7 @@ int DecoderDatabase::RegisterPayload(uint8_t rtp_payload_type,
   if (!CodecSupported(codec_type)) {
     return kCodecNotSupported;
   }
-  const int fs_hz = CodecSampleRateHz(codec_type);
-  DecoderInfo info(codec_type, name, fs_hz, nullptr);
+  DecoderInfo info(codec_type, name);
   auto ret =
       decoders_.insert(std::make_pair(rtp_payload_type, std::move(info)));
   if (ret.second == false) {
@@ -87,7 +115,6 @@ int DecoderDatabase::RegisterPayload(uint8_t rtp_payload_type,
 int DecoderDatabase::InsertExternal(uint8_t rtp_payload_type,
                                     NetEqDecoder codec_type,
                                     const std::string& codec_name,
-                                    int fs_hz,
                                     AudioDecoder* decoder) {
   if (rtp_payload_type > 0x7F) {
     return kInvalidRtpPayloadType;
@@ -95,14 +122,11 @@ int DecoderDatabase::InsertExternal(uint8_t rtp_payload_type,
   if (!CodecSupported(codec_type)) {
     return kCodecNotSupported;
   }
-  if (fs_hz != 8000 && fs_hz != 16000 && fs_hz != 32000 && fs_hz != 48000) {
-    return kInvalidSampleRate;
-  }
   if (!decoder) {
     return kInvalidPointer;
   }
   std::pair<DecoderMap::iterator, bool> ret;
-  DecoderInfo info(codec_type, codec_name, fs_hz, decoder);
+  DecoderInfo info(codec_type, codec_name, decoder);
   ret = decoders_.insert(std::make_pair(rtp_payload_type, std::move(info)));
   if (ret.second == false) {
     // Database already contains a decoder with type |rtp_payload_type|.
@@ -247,8 +271,6 @@ int DecoderDatabase::SetActiveCngDecoder(uint8_t rtp_payload_type) {
       assert(false);
       return kDecoderNotFound;
     }
-    // The CNG decoder should never be provided externally.
-    RTC_CHECK(!it->second.external_decoder);
     active_cng_decoder_.reset();
   }
   active_cng_decoder_type_ = rtp_payload_type;

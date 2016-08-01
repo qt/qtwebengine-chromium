@@ -20,9 +20,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/dwrite_font_proxy_messages.h"
-#include "content/common/dwrite_text_analysis_source_win.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/win/direct_write.h"
+#include "ui/gfx/win/text_analysis_source.h"
 
 namespace mswr = Microsoft::WRL;
 
@@ -101,7 +101,7 @@ void DWriteFontProxyMessageFilter::OverrideThreadForMessage(
     const IPC::Message& message,
     content::BrowserThread::ID* thread) {
   if (IPC_MESSAGE_CLASS(message) == DWriteFontProxyMsgStart)
-    *thread = BrowserThread::FILE;
+    *thread = BrowserThread::FILE_USER_BLOCKING;
 }
 
 void DWriteFontProxyMessageFilter::OnFindFamily(
@@ -258,7 +258,7 @@ void DWriteFontProxyMessageFilter::OnMapCharacters(
     return;
   }
   mswr::ComPtr<IDWriteTextAnalysisSource> analysis_source;
-  if (FAILED(mswr::MakeAndInitialize<TextAnalysisSource>(
+  if (FAILED(mswr::MakeAndInitialize<gfx::win::TextAnalysisSource>(
           &analysis_source, text, locale_name, number_substitution.Get(),
           static_cast<DWRITE_READING_DIRECTION>(reading_direction)))) {
     DCHECK(false);
@@ -325,7 +325,7 @@ void DWriteFontProxyMessageFilter::OnMapCharacters(
 }
 
 void DWriteFontProxyMessageFilter::InitializeDirectWrite() {
-  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE_USER_BLOCKING);
   if (direct_write_initialized_)
     return;
   direct_write_initialized_ = true;

@@ -6,7 +6,6 @@
 
 #include "xfa/fxfa/parser/xfa_document_layout_imp.h"
 
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/xfa_basic_imp.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
@@ -32,8 +31,8 @@ CXFA_LayoutProcessor* CXFA_Document::GetDocLayout() {
 }
 CXFA_LayoutProcessor::CXFA_LayoutProcessor(CXFA_Document* pDocument)
     : m_pDocument(pDocument),
-      m_pRootItemLayoutProcessor(NULL),
-      m_pLayoutPageMgr(NULL),
+      m_pRootItemLayoutProcessor(nullptr),
+      m_pLayoutPageMgr(nullptr),
       m_nProgressCounter(0),
       m_bNeeLayout(TRUE) {}
 CXFA_LayoutProcessor::~CXFA_LayoutProcessor() {
@@ -56,7 +55,7 @@ int32_t CXFA_LayoutProcessor::StartLayout(FX_BOOL bForceRestart) {
     return -1;
   }
   CXFA_Node* pFormRoot =
-      pFormPacketNode->GetFirstChildByClass(XFA_ELEMENT_Subform);
+      pFormPacketNode->GetFirstChildByClass(XFA_Element::Subform);
   if (!pFormRoot) {
     return -1;
   }
@@ -111,12 +110,12 @@ int32_t CXFA_LayoutProcessor::DoLayout(IFX_Pause* pPause) {
 FX_BOOL CXFA_LayoutProcessor::IncrementLayout() {
   if (m_bNeeLayout) {
     StartLayout(TRUE);
-    return DoLayout(NULL) == 100;
+    return DoLayout(nullptr) == 100;
   }
   for (int32_t i = 0, c = m_rgChangedContainers.GetSize(); i < c; i++) {
     CXFA_Node* pNode = m_rgChangedContainers[i];
     CXFA_Node* pParentNode =
-        pNode->GetNodeItem(XFA_NODEITEM_Parent, XFA_OBJECTTYPE_ContainerNode);
+        pNode->GetNodeItem(XFA_NODEITEM_Parent, XFA_ObjectType::ContainerNode);
     if (!pParentNode) {
       return FALSE;
     }
@@ -132,7 +131,7 @@ int32_t CXFA_LayoutProcessor::CountPages() const {
   return m_pLayoutPageMgr ? m_pLayoutPageMgr->GetPageCount() : 0;
 }
 CXFA_ContainerLayoutItem* CXFA_LayoutProcessor::GetPage(int32_t index) const {
-  return m_pLayoutPageMgr ? m_pLayoutPageMgr->GetPage(index) : NULL;
+  return m_pLayoutPageMgr ? m_pLayoutPageMgr->GetPage(index) : nullptr;
 }
 CXFA_LayoutItem* CXFA_LayoutProcessor::GetLayoutItem(CXFA_Node* pFormItem) {
   return static_cast<CXFA_LayoutItem*>(
@@ -144,7 +143,7 @@ void CXFA_LayoutProcessor::AddChangedContainer(CXFA_Node* pContainer) {
   }
 }
 CXFA_ContainerLayoutItem* CXFA_LayoutProcessor::GetRootLayoutItem() const {
-  return m_pLayoutPageMgr ? m_pLayoutPageMgr->GetRootLayoutItem() : NULL;
+  return m_pLayoutPageMgr ? m_pLayoutPageMgr->GetRootLayoutItem() : nullptr;
 }
 
 void CXFA_LayoutProcessor::ClearLayoutData() {
@@ -160,13 +159,13 @@ FX_BOOL CXFA_LayoutProcessor::IsNeedLayout() {
 }
 CXFA_LayoutItem::CXFA_LayoutItem(CXFA_Node* pNode, FX_BOOL bIsContentLayoutItem)
     : m_pFormNode(pNode),
-      m_pParent(NULL),
-      m_pNextSibling(NULL),
-      m_pFirstChild(NULL),
+      m_pParent(nullptr),
+      m_pNextSibling(nullptr),
+      m_pFirstChild(nullptr),
       m_bIsContentLayoutItem(bIsContentLayoutItem) {}
 CXFA_LayoutItem::~CXFA_LayoutItem() {}
 CXFA_ContainerLayoutItem::CXFA_ContainerLayoutItem(CXFA_Node* pNode)
-    : CXFA_LayoutItem(pNode, FALSE), m_pOldSubform(NULL) {}
+    : CXFA_LayoutItem(pNode, FALSE), m_pOldSubform(nullptr) {}
 CXFA_LayoutProcessor* CXFA_ContainerLayoutItem::GetLayout() const {
   return m_pFormNode->GetDocument()->GetLayoutProcessor();
 }
@@ -179,7 +178,7 @@ int32_t CXFA_ContainerLayoutItem::GetPageIndex() const {
 
 void CXFA_ContainerLayoutItem::GetPageSize(CFX_SizeF& size) const {
   size.clear();
-  CXFA_Node* pMedium = m_pFormNode->GetFirstChildByClass(XFA_ELEMENT_Medium);
+  CXFA_Node* pMedium = m_pFormNode->GetFirstChildByClass(XFA_Element::Medium);
   if (!pMedium)
     return;
 
@@ -196,11 +195,11 @@ CXFA_Node* CXFA_ContainerLayoutItem::GetMasterPage() const {
 }
 CXFA_ContentLayoutItem::CXFA_ContentLayoutItem(CXFA_Node* pNode)
     : CXFA_LayoutItem(pNode, TRUE),
-      m_pPrev(NULL),
-      m_pNext(NULL),
+      m_pPrev(nullptr),
+      m_pNext(nullptr),
       m_dwStatus(0) {}
 CXFA_ContentLayoutItem::~CXFA_ContentLayoutItem() {
   if (m_pFormNode->GetUserData(XFA_LAYOUTITEMKEY) == this) {
-    m_pFormNode->SetUserData(XFA_LAYOUTITEMKEY, NULL);
+    m_pFormNode->SetUserData(XFA_LAYOUTITEMKEY, nullptr);
   }
 }

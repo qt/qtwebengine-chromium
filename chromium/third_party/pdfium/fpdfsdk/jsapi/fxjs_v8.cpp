@@ -190,6 +190,17 @@ size_t FXJS_GlobalIsolateRefCount() {
   return g_isolate_ref_count;
 }
 
+V8TemplateMap::V8TemplateMap(v8::Isolate* isolate) : m_map(isolate) {}
+
+V8TemplateMap::~V8TemplateMap() {}
+
+void V8TemplateMap::set(void* key, v8::Local<v8::Object> handle) {
+  ASSERT(!m_map.Contains(key));
+  m_map.Set(key, handle);
+}
+
+FXJS_PerIsolateData::~FXJS_PerIsolateData() {}
+
 // static
 void FXJS_PerIsolateData::SetUp(v8::Isolate* pIsolate) {
   if (!pIsolate->GetData(g_embedderDataSlot))
@@ -201,6 +212,13 @@ FXJS_PerIsolateData* FXJS_PerIsolateData::Get(v8::Isolate* pIsolate) {
   return static_cast<FXJS_PerIsolateData*>(
       pIsolate->GetData(g_embedderDataSlot));
 }
+
+#ifndef PDF_ENABLE_XFA
+FXJS_PerIsolateData::FXJS_PerIsolateData() : m_pDynamicObjsMap(nullptr) {}
+#else   // PDF_ENABLE_XFA
+FXJS_PerIsolateData::FXJS_PerIsolateData()
+    : m_pFXJSERuntimeData(nullptr), m_pDynamicObjsMap(nullptr) {}
+#endif  // PDF_ENABLE_XFA
 
 int FXJS_DefineObj(v8::Isolate* pIsolate,
                    const wchar_t* sObjName,
@@ -225,13 +243,14 @@ void FXJS_DefineObjMethod(v8::Isolate* pIsolate,
   CFX_ByteString bsMethodName = CFX_WideString(sMethodName).UTF8Encode();
   CFXJS_ObjDefinition* pObjDef =
       CFXJS_ObjDefinition::ForID(pIsolate, nObjDefnID);
+  v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
+      pIsolate, pMethodCall, v8::Local<v8::Value>(), pObjDef->GetSignature());
+  fun->RemovePrototype();
   pObjDef->GetInstanceTemplate()->Set(
       v8::String::NewFromUtf8(pIsolate, bsMethodName.c_str(),
                               v8::NewStringType::kNormal)
           .ToLocalChecked(),
-      v8::FunctionTemplate::New(pIsolate, pMethodCall, v8::Local<v8::Value>(),
-                                pObjDef->GetSignature()),
-      v8::ReadOnly);
+      fun, v8::ReadOnly);
 }
 
 void FXJS_DefineObjProperty(v8::Isolate* pIsolate,
@@ -283,11 +302,14 @@ void FXJS_DefineGlobalMethod(v8::Isolate* pIsolate,
   v8::Isolate::Scope isolate_scope(pIsolate);
   v8::HandleScope handle_scope(pIsolate);
   CFX_ByteString bsMethodName = CFX_WideString(sMethodName).UTF8Encode();
-  GetGlobalObjectTemplate(pIsolate)
-      ->Set(v8::String::NewFromUtf8(pIsolate, bsMethodName.c_str(),
-                                    v8::NewStringType::kNormal)
-                .ToLocalChecked(),
-            v8::FunctionTemplate::New(pIsolate, pMethodCall), v8::ReadOnly);
+  v8::Local<v8::FunctionTemplate> fun =
+      v8::FunctionTemplate::New(pIsolate, pMethodCall);
+  fun->RemovePrototype();
+  GetGlobalObjectTemplate(pIsolate)->Set(
+      v8::String::NewFromUtf8(pIsolate, bsMethodName.c_str(),
+                              v8::NewStringType::kNormal)
+          .ToLocalChecked(),
+      fun, v8::ReadOnly);
 }
 
 void FXJS_DefineGlobalConst(v8::Isolate* pIsolate,
@@ -296,11 +318,14 @@ void FXJS_DefineGlobalConst(v8::Isolate* pIsolate,
   v8::Isolate::Scope isolate_scope(pIsolate);
   v8::HandleScope handle_scope(pIsolate);
   CFX_ByteString bsConst = CFX_WideString(sConstName).UTF8Encode();
-  GetGlobalObjectTemplate(pIsolate)
-      ->SetAccessorProperty(v8::String::NewFromUtf8(pIsolate, bsConst.c_str(),
-                                                    v8::NewStringType::kNormal)
-                                .ToLocalChecked(),
-                            v8::FunctionTemplate::New(pIsolate, pConstGetter));
+  v8::Local<v8::FunctionTemplate> fun =
+      v8::FunctionTemplate::New(pIsolate, pConstGetter);
+  fun->RemovePrototype();
+  GetGlobalObjectTemplate(pIsolate)->SetAccessorProperty(
+      v8::String::NewFromUtf8(pIsolate, bsConst.c_str(),
+                              v8::NewStringType::kNormal)
+          .ToLocalChecked(),
+      fun);
 }
 
 void FXJS_InitializeRuntime(
@@ -312,15 +337,16 @@ void FXJS_InitializeRuntime(
     ++g_isolate_ref_count;
 
   v8::Isolate::Scope isolate_scope(pIsolate);
-#ifdef PDF_ENABLE_XFA
-  v8::Locker locker(pIsolate);
-#endif  // PDF_ENABLE_XFA
   v8::HandleScope handle_scope(pIsolate);
+
+  // This has to happen before we call GetGlobalObjectTemplate because that
+  // method gets the PerIsolateData from pIsolate.
+  FXJS_PerIsolateData::SetUp(pIsolate);
+
   v8::Local<v8::Context> v8Context =
-      v8::Context::New(pIsolate, NULL, GetGlobalObjectTemplate(pIsolate));
+      v8::Context::New(pIsolate, nullptr, GetGlobalObjectTemplate(pIsolate));
   v8::Context::Scope context_scope(v8Context);
 
-  FXJS_PerIsolateData::SetUp(pIsolate);
   FXJS_PerIsolateData* pData = FXJS_PerIsolateData::Get(pIsolate);
   if (!pData)
     return;
@@ -363,9 +389,6 @@ void FXJS_ReleaseRuntime(v8::Isolate* pIsolate,
                          v8::Global<v8::Context>* pV8PersistentContext,
                          std::vector<v8::Global<v8::Object>*>* pStaticObjects) {
   v8::Isolate::Scope isolate_scope(pIsolate);
-#ifdef PDF_ENABLE_XFA
-  v8::Locker locker(pIsolate);
-#endif  // PDF_ENABLE_XFA
   v8::HandleScope handle_scope(pIsolate);
   v8::Local<v8::Context> context =
       v8::Local<v8::Context>::New(pIsolate, *pV8PersistentContext);
@@ -420,12 +443,11 @@ void FXJS_SetRuntimeForV8Context(v8::Local<v8::Context> v8Context,
 #endif  // PDF_ENABLE_XFA
 
 int FXJS_Execute(v8::Isolate* pIsolate,
-                 IJS_Context* pJSContext,
-                 const wchar_t* script,
+                 const CFX_WideString& script,
                  FXJSErr* pError) {
   v8::Isolate::Scope isolate_scope(pIsolate);
   v8::TryCatch try_catch(pIsolate);
-  CFX_ByteString bsScript = CFX_WideString(script).UTF8Encode();
+  CFX_ByteString bsScript = script.UTF8Encode();
   v8::Local<v8::Context> context = pIsolate->GetCurrentContext();
   v8::Local<v8::Script> compiled_script;
   if (!v8::Script::Compile(context,
@@ -520,7 +542,7 @@ void FXJS_Error(v8::Isolate* pIsolate, const CFX_WideString& message) {
 
 const wchar_t* FXJS_GetTypeof(v8::Local<v8::Value> pObj) {
   if (pObj.IsEmpty())
-    return NULL;
+    return nullptr;
   if (pObj->IsString())
     return kFXJSValueNameString;
   if (pObj->IsNumber())
@@ -535,7 +557,7 @@ const wchar_t* FXJS_GetTypeof(v8::Local<v8::Value> pObj) {
     return kFXJSValueNameNull;
   if (pObj->IsUndefined())
     return kFXJSValueNameUndefined;
-  return NULL;
+  return nullptr;
 }
 
 void FXJS_SetPrivate(v8::Isolate* pIsolate,
@@ -579,7 +601,7 @@ void FXJS_FreePrivate(v8::Local<v8::Object> pObj) {
   if (pObj.IsEmpty() || !pObj->InternalFieldCount())
     return;
   FXJS_FreePrivate(pObj->GetAlignedPointerFromInternalField(0));
-  pObj->SetAlignedPointerInInternalField(0, NULL);
+  pObj->SetAlignedPointerInInternalField(0, nullptr);
 }
 
 v8::Local<v8::String> FXJS_WSToJSString(v8::Isolate* pIsolate,

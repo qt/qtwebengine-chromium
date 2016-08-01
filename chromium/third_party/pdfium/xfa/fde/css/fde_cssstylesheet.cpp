@@ -55,10 +55,11 @@ IFDE_CSSStyleSheet* IFDE_CSSStyleSheet::LoadFromStream(
   CFDE_CSSStyleSheet* pStyleSheet = new CFDE_CSSStyleSheet(dwMediaList);
   if (!pStyleSheet->LoadFromStream(szUrl, pStream, wCodePage)) {
     pStyleSheet->Release();
-    pStyleSheet = NULL;
+    pStyleSheet = nullptr;
   }
   return pStyleSheet;
 }
+
 IFDE_CSSStyleSheet* IFDE_CSSStyleSheet::LoadFromBuffer(
     const CFX_WideString& szUrl,
     const FX_WCHAR* pBuffer,
@@ -68,32 +69,35 @@ IFDE_CSSStyleSheet* IFDE_CSSStyleSheet::LoadFromBuffer(
   CFDE_CSSStyleSheet* pStyleSheet = new CFDE_CSSStyleSheet(dwMediaList);
   if (!pStyleSheet->LoadFromBuffer(szUrl, pBuffer, iBufSize, wCodePage)) {
     pStyleSheet->Release();
-    pStyleSheet = NULL;
+    pStyleSheet = nullptr;
   }
   return pStyleSheet;
 }
+
 CFDE_CSSStyleSheet::CFDE_CSSStyleSheet(uint32_t dwMediaList)
     : m_wCodePage(FX_CODEPAGE_UTF8),
       m_wRefCount(1),
       m_dwMediaList(dwMediaList),
-      m_pAllocator(NULL) {
+      m_pAllocator(nullptr) {
   ASSERT(m_dwMediaList > 0);
 }
+
 CFDE_CSSStyleSheet::~CFDE_CSSStyleSheet() {
   Reset();
 }
+
 void CFDE_CSSStyleSheet::Reset() {
   for (int32_t i = m_RuleArray.GetSize() - 1; i >= 0; --i) {
     IFDE_CSSRule* pRule = m_RuleArray.GetAt(i);
     switch (pRule->GetType()) {
       case FDE_CSSRULETYPE_Style:
-        ((CFDE_CSSStyleRule*)pRule)->~CFDE_CSSStyleRule();
+        static_cast<CFDE_CSSStyleRule*>(pRule)->~CFDE_CSSStyleRule();
         break;
       case FDE_CSSRULETYPE_Media:
-        ((CFDE_CSSMediaRule*)pRule)->~CFDE_CSSMediaRule();
+        static_cast<CFDE_CSSMediaRule*>(pRule)->~CFDE_CSSMediaRule();
         break;
       case FDE_CSSRULETYPE_FontFace:
-        ((CFDE_CSSFontFaceRule*)pRule)->~CFDE_CSSFontFaceRule();
+        static_cast<CFDE_CSSFontFaceRule*>(pRule)->~CFDE_CSSFontFaceRule();
         break;
       default:
         ASSERT(FALSE);
@@ -102,13 +106,15 @@ void CFDE_CSSStyleSheet::Reset() {
   }
   m_RuleArray.RemoveAll();
   m_Selectors.RemoveAll();
-  m_StringCache.RemoveAll();
+  m_StringCache.clear();
   delete m_pAllocator;
   m_pAllocator = nullptr;
 }
-uint32_t CFDE_CSSStyleSheet::AddRef() {
+
+uint32_t CFDE_CSSStyleSheet::Retain() {
   return ++m_wRefCount;
 }
+
 uint32_t CFDE_CSSStyleSheet::Release() {
   uint32_t dwRefCount = --m_wRefCount;
   if (dwRefCount == 0) {
@@ -116,9 +122,24 @@ uint32_t CFDE_CSSStyleSheet::Release() {
   }
   return dwRefCount;
 }
+
+FX_BOOL CFDE_CSSStyleSheet::GetUrl(CFX_WideString& szUrl) {
+  szUrl = m_szUrl;
+  return szUrl.GetLength() > 0;
+}
+
+uint32_t CFDE_CSSStyleSheet::GetMediaList() const {
+  return m_dwMediaList;
+}
+
+uint16_t CFDE_CSSStyleSheet::GetCodePage() const {
+  return m_wCodePage;
+}
+
 int32_t CFDE_CSSStyleSheet::CountRules() const {
   return m_RuleArray.GetSize();
 }
+
 IFDE_CSSRule* CFDE_CSSStyleSheet::GetRule(int32_t index) {
   return m_RuleArray.GetAt(index);
 }
@@ -175,13 +196,14 @@ FX_BOOL CFDE_CSSStyleSheet::LoadFromSyntax(CFDE_CSSSyntaxParser* pSyntax) {
     }
   } while (eStatus >= FDE_CSSSYNTAXSTATUS_None);
   m_Selectors.RemoveAll();
-  m_StringCache.RemoveAll();
+  m_StringCache.clear();
   return eStatus != FDE_CSSSYNTAXSTATUS_Error;
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadMediaRule(
     CFDE_CSSSyntaxParser* pSyntax) {
   uint32_t dwMediaList = 0;
-  CFDE_CSSMediaRule* pMediaRule = NULL;
+  CFDE_CSSMediaRule* pMediaRule = nullptr;
   for (;;) {
     switch (pSyntax->DoSyntaxParse()) {
       case FDE_CSSSYNTAXSTATUS_MediaType: {
@@ -189,23 +211,22 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadMediaRule(
         const FX_WCHAR* psz = pSyntax->GetCurrentString(iLen);
         FDE_LPCCSSMEDIATYPETABLE pMediaType =
             FDE_GetCSSMediaTypeByName(CFX_WideStringC(psz, iLen));
-        if (pMediaType != NULL) {
+        if (pMediaType)
           dwMediaList |= pMediaType->wValue;
-        }
       } break;
       case FDE_CSSSYNTAXSTATUS_StyleRule:
-        if (pMediaRule == NULL) {
-          SkipRuleSet(pSyntax);
-        } else {
+        if (pMediaRule) {
           FDE_CSSSYNTAXSTATUS eStatus =
               LoadStyleRule(pSyntax, pMediaRule->GetArray());
           if (eStatus < FDE_CSSSYNTAXSTATUS_None) {
             return eStatus;
           }
+        } else {
+          SkipRuleSet(pSyntax);
         }
         break;
       case FDE_CSSSYNTAXSTATUS_DeclOpen:
-        if ((dwMediaList & m_dwMediaList) > 0 && pMediaRule == NULL) {
+        if ((dwMediaList & m_dwMediaList) > 0 && !pMediaRule) {
           pMediaRule =
               FXTARGET_NewWith(m_pAllocator) CFDE_CSSMediaRule(dwMediaList);
           m_RuleArray.Add(pMediaRule);
@@ -217,17 +238,18 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadMediaRule(
     }
   }
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadStyleRule(
     CFDE_CSSSyntaxParser* pSyntax,
     CFDE_CSSRuleArray& ruleArray) {
   m_Selectors.RemoveAt(0, m_Selectors.GetSize());
-  CFDE_CSSStyleRule* pStyleRule = NULL;
-  const FX_WCHAR* pszValue = NULL;
+  CFDE_CSSStyleRule* pStyleRule = nullptr;
+  const FX_WCHAR* pszValue = nullptr;
   int32_t iValueLen = 0;
   FDE_CSSPROPERTYARGS propertyArgs;
   propertyArgs.pStaticStore = m_pAllocator;
   propertyArgs.pStringCache = &m_StringCache;
-  propertyArgs.pProperty = NULL;
+  propertyArgs.pProperty = nullptr;
   CFX_WideString wsName;
   for (;;) {
     switch (pSyntax->DoSyntaxParse()) {
@@ -235,20 +257,18 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadStyleRule(
         pszValue = pSyntax->GetCurrentString(iValueLen);
         CFDE_CSSSelector* pSelector =
             CFDE_CSSSelector::FromString(m_pAllocator, pszValue, iValueLen);
-        if (pSelector != NULL) {
+        if (pSelector)
           m_Selectors.Add(pSelector);
-        }
       } break;
       case FDE_CSSSYNTAXSTATUS_PropertyName:
         pszValue = pSyntax->GetCurrentString(iValueLen);
         propertyArgs.pProperty =
             FDE_GetCSSPropertyByName(CFX_WideStringC(pszValue, iValueLen));
-        if (propertyArgs.pProperty == NULL) {
+        if (!propertyArgs.pProperty)
           wsName = CFX_WideStringC(pszValue, iValueLen);
-        }
         break;
       case FDE_CSSSYNTAXSTATUS_PropertyValue:
-        if (propertyArgs.pProperty != NULL) {
+        if (propertyArgs.pProperty) {
           pszValue = pSyntax->GetCurrentString(iValueLen);
           if (iValueLen > 0) {
             pStyleRule->GetDeclImp().AddProperty(&propertyArgs, pszValue,
@@ -264,7 +284,7 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadStyleRule(
         }
         break;
       case FDE_CSSSYNTAXSTATUS_DeclOpen:
-        if (pStyleRule == NULL && m_Selectors.GetSize() > 0) {
+        if (!pStyleRule && m_Selectors.GetSize() > 0) {
           pStyleRule = FXTARGET_NewWith(m_pAllocator) CFDE_CSSStyleRule;
           pStyleRule->SetSelector(m_pAllocator, m_Selectors);
           ruleArray.Add(pStyleRule);
@@ -274,8 +294,7 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadStyleRule(
         }
         break;
       case FDE_CSSSYNTAXSTATUS_DeclClose:
-        if (pStyleRule != NULL &&
-            pStyleRule->GetDeclImp().GetStartPosition() == NULL) {
+        if (pStyleRule && !pStyleRule->GetDeclImp().GetStartPosition()) {
           pStyleRule->~CFDE_CSSStyleRule();
           ruleArray.RemoveLast(1);
         }
@@ -284,16 +303,17 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadStyleRule(
     }
   }
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadFontFaceRule(
     CFDE_CSSSyntaxParser* pSyntax,
     CFDE_CSSRuleArray& ruleArray) {
-  CFDE_CSSFontFaceRule* pFontFaceRule = NULL;
-  const FX_WCHAR* pszValue = NULL;
+  CFDE_CSSFontFaceRule* pFontFaceRule = nullptr;
+  const FX_WCHAR* pszValue = nullptr;
   int32_t iValueLen = 0;
   FDE_CSSPROPERTYARGS propertyArgs;
   propertyArgs.pStaticStore = m_pAllocator;
   propertyArgs.pStringCache = &m_StringCache;
-  propertyArgs.pProperty = NULL;
+  propertyArgs.pProperty = nullptr;
   for (;;) {
     switch (pSyntax->DoSyntaxParse()) {
       case FDE_CSSSYNTAXSTATUS_PropertyName:
@@ -302,7 +322,7 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadFontFaceRule(
             FDE_GetCSSPropertyByName(CFX_WideStringC(pszValue, iValueLen));
         break;
       case FDE_CSSSYNTAXSTATUS_PropertyValue:
-        if (propertyArgs.pProperty != NULL) {
+        if (propertyArgs.pProperty) {
           pszValue = pSyntax->GetCurrentString(iValueLen);
           if (iValueLen > 0) {
             pFontFaceRule->GetDeclImp().AddProperty(&propertyArgs, pszValue,
@@ -311,7 +331,7 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadFontFaceRule(
         }
         break;
       case FDE_CSSSYNTAXSTATUS_DeclOpen:
-        if (pFontFaceRule == NULL) {
+        if (!pFontFaceRule) {
           pFontFaceRule = FXTARGET_NewWith(m_pAllocator) CFDE_CSSFontFaceRule;
           ruleArray.Add(pFontFaceRule);
         }
@@ -321,8 +341,8 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadFontFaceRule(
         FDE_CSSSWITCHDEFAULTS();
     }
   }
-  return FDE_CSSSYNTAXSTATUS_None;
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadImportRule(
     CFDE_CSSSyntaxParser* pSyntax) {
   for (;;) {
@@ -335,10 +355,12 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadImportRule(
     }
   }
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::LoadPageRule(
     CFDE_CSSSyntaxParser* pSyntax) {
   return SkipRuleSet(pSyntax);
 }
+
 FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::SkipRuleSet(
     CFDE_CSSSyntaxParser* pSyntax) {
   for (;;) {
@@ -353,11 +375,26 @@ FDE_CSSSYNTAXSTATUS CFDE_CSSStyleSheet::SkipRuleSet(
         FDE_CSSSWITCHDEFAULTS();
     }
   }
-  return FDE_CSSSYNTAXSTATUS_None;
 }
+
+CFDE_CSSStyleRule::CFDE_CSSStyleRule()
+    : m_ppSelector(nullptr), m_iSelectors(0) {}
+
+int32_t CFDE_CSSStyleRule::CountSelectorLists() const {
+  return m_iSelectors;
+}
+
+CFDE_CSSSelector* CFDE_CSSStyleRule::GetSelectorList(int32_t index) const {
+  return m_ppSelector[index];
+}
+
+CFDE_CSSDeclaration* CFDE_CSSStyleRule::GetDeclaration() {
+  return &m_Declaration;
+}
+
 void CFDE_CSSStyleRule::SetSelector(IFX_MemoryAllocator* pStaticStore,
                                     const CFDE_CSSSelectorArray& list) {
-  ASSERT(m_ppSelector == NULL);
+  ASSERT(!m_ppSelector);
   m_iSelectors = list.GetSize();
   m_ppSelector = static_cast<CFDE_CSSSelector**>(
       pStaticStore->Alloc(m_iSelectors * sizeof(CFDE_CSSSelector*)));
@@ -365,6 +402,10 @@ void CFDE_CSSStyleRule::SetSelector(IFX_MemoryAllocator* pStaticStore,
     m_ppSelector[i] = list.GetAt(i);
   }
 }
+
+CFDE_CSSMediaRule::CFDE_CSSMediaRule(uint32_t dwMediaList)
+    : m_dwMediaList(dwMediaList) {}
+
 CFDE_CSSMediaRule::~CFDE_CSSMediaRule() {
   for (int32_t i = m_RuleArray.GetSize() - 1; i >= 0; --i) {
     IFDE_CSSRule* pRule = m_RuleArray.GetAt(i);
@@ -378,9 +419,23 @@ CFDE_CSSMediaRule::~CFDE_CSSMediaRule() {
     }
   }
 }
-inline FX_BOOL FDE_IsCSSChar(FX_WCHAR wch) {
+
+uint32_t CFDE_CSSMediaRule::GetMediaList() const {
+  return m_dwMediaList;
+}
+
+int32_t CFDE_CSSMediaRule::CountRules() const {
+  return m_RuleArray.GetSize();
+}
+
+IFDE_CSSRule* CFDE_CSSMediaRule::GetRule(int32_t index) {
+  return m_RuleArray.GetAt(index);
+}
+
+FX_BOOL FDE_IsCSSChar(FX_WCHAR wch) {
   return (wch >= 'a' && wch <= 'z') || (wch >= 'A' && wch <= 'Z');
 }
+
 int32_t FDE_GetCSSPersudoLen(const FX_WCHAR* psz, const FX_WCHAR* pEnd) {
   ASSERT(*psz == ':');
   const FX_WCHAR* pStart = psz;
@@ -394,6 +449,7 @@ int32_t FDE_GetCSSPersudoLen(const FX_WCHAR* psz, const FX_WCHAR* pEnd) {
   }
   return psz - pStart;
 }
+
 int32_t FDE_GetCSSNameLen(const FX_WCHAR* psz, const FX_WCHAR* pEnd) {
   const FX_WCHAR* pStart = psz;
   while (psz < pEnd) {
@@ -407,11 +463,33 @@ int32_t FDE_GetCSSNameLen(const FX_WCHAR* psz, const FX_WCHAR* pEnd) {
   }
   return psz - pStart;
 }
+
+CFDE_CSSSelector::CFDE_CSSSelector(FDE_CSSSELECTORTYPE eType,
+                                   const FX_WCHAR* psz,
+                                   int32_t iLen,
+                                   bool bIgnoreCase)
+    : m_eType(eType),
+      m_dwHash(FX_HashCode_GetW(CFX_WideStringC(psz, iLen), bIgnoreCase)),
+      m_pNext(nullptr) {}
+
+FDE_CSSSELECTORTYPE CFDE_CSSSelector::GetType() const {
+  return m_eType;
+}
+
+uint32_t CFDE_CSSSelector::GetNameHash() const {
+  return m_dwHash;
+}
+
+CFDE_CSSSelector* CFDE_CSSSelector::GetNextSelector() const {
+  return m_pNext;
+}
+
 CFDE_CSSSelector* CFDE_CSSSelector::FromString(
     IFX_MemoryAllocator* pStaticStore,
     const FX_WCHAR* psz,
     int32_t iLen) {
-  ASSERT(pStaticStore != NULL && psz != NULL && iLen > 0);
+  ASSERT(pStaticStore && psz && iLen > 0);
+
   const FX_WCHAR* pStart = psz;
   const FX_WCHAR* pEnd = psz + iLen;
   for (; psz < pEnd; ++psz) {
@@ -419,38 +497,40 @@ CFDE_CSSSelector* CFDE_CSSSelector::FromString(
       case '>':
       case '[':
       case '+':
-        return NULL;
+        return nullptr;
     }
   }
-  CFDE_CSSSelector *pFirst = NULL, *pLast = NULL;
-  CFDE_CSSSelector *pPersudoFirst = NULL, *pPersudoLast = NULL;
+  CFDE_CSSSelector* pFirst = nullptr;
+  CFDE_CSSSelector* pLast = nullptr;
+  CFDE_CSSSelector* pPersudoFirst = nullptr;
+  CFDE_CSSSelector* pPersudoLast = nullptr;
   for (psz = pStart; psz < pEnd;) {
     FX_WCHAR wch = *psz;
     if (wch == '.' || wch == '#') {
       if (psz == pStart || psz[-1] == ' ') {
         CFDE_CSSSelector* p = FXTARGET_NewWith(pStaticStore)
             CFDE_CSSSelector(FDE_CSSSELECTORTYPE_Element, L"*", 1, true);
-        if (p == NULL) {
-          return NULL;
-        }
-        if (pFirst != NULL) {
+        if (!p)
+          return nullptr;
+
+        if (pFirst) {
           pFirst->SetType(FDE_CSSSELECTORTYPE_Descendant);
           p->SetNext(pFirst);
         }
         pFirst = pLast = p;
       }
-      ASSERT(pLast != NULL);
+      ASSERT(pLast);
       int32_t iNameLen = FDE_GetCSSNameLen(++psz, pEnd);
       if (iNameLen == 0) {
-        return NULL;
+        return nullptr;
       }
       FDE_CSSSELECTORTYPE eType =
           wch == '.' ? FDE_CSSSELECTORTYPE_Class : FDE_CSSSELECTORTYPE_ID;
       CFDE_CSSSelector* p = FXTARGET_NewWith(pStaticStore)
           CFDE_CSSSelector(eType, psz, iNameLen, false);
-      if (p == NULL) {
-        return NULL;
-      }
+      if (!p)
+        return nullptr;
+
       p->SetNext(pLast->GetNextSelector());
       pLast->SetNext(p);
       pLast = p;
@@ -458,48 +538,49 @@ CFDE_CSSSelector* CFDE_CSSSelector::FromString(
     } else if (FDE_IsCSSChar(wch) || wch == '*') {
       int32_t iNameLen = wch == '*' ? 1 : FDE_GetCSSNameLen(psz, pEnd);
       if (iNameLen == 0) {
-        return NULL;
+        return nullptr;
       }
       CFDE_CSSSelector* p = FXTARGET_NewWith(pStaticStore)
           CFDE_CSSSelector(FDE_CSSSELECTORTYPE_Element, psz, iNameLen, true);
-      if (p == NULL) {
-        return NULL;
-      }
-      if (pFirst == NULL) {
-        pFirst = pLast = p;
-      } else {
+      if (!p)
+        return nullptr;
+
+      if (pFirst) {
         pFirst->SetType(FDE_CSSSELECTORTYPE_Descendant);
         p->SetNext(pFirst);
-        pFirst = pLast = p;
       }
+      pFirst = p;
+      pLast = p;
       psz += iNameLen;
     } else if (wch == ':') {
       int32_t iNameLen = FDE_GetCSSPersudoLen(psz, pEnd);
       if (iNameLen == 0) {
-        return NULL;
+        return nullptr;
       }
       CFDE_CSSSelector* p = FXTARGET_NewWith(pStaticStore)
           CFDE_CSSSelector(FDE_CSSSELECTORTYPE_Persudo, psz, iNameLen, true);
-      if (p == NULL) {
-        return NULL;
-      }
-      if (pPersudoFirst == NULL) {
-        pPersudoFirst = pPersudoLast = p;
-      } else {
+      if (!p)
+        return nullptr;
+
+      if (pPersudoFirst)
         pPersudoLast->SetNext(p);
-        pPersudoLast = p;
-      }
+      else
+        pPersudoFirst = p;
+      pPersudoLast = p;
       psz += iNameLen;
     } else if (wch == ' ') {
       psz++;
     } else {
-      return NULL;
+      return nullptr;
     }
   }
-  if (pPersudoFirst == NULL) {
+  if (!pPersudoFirst)
     return pFirst;
-  } else {
-    pPersudoLast->SetNext(pFirst);
-    return pPersudoFirst;
-  }
+
+  pPersudoLast->SetNext(pFirst);
+  return pPersudoFirst;
+}
+
+CFDE_CSSDeclaration* CFDE_CSSFontFaceRule::GetDeclaration() {
+  return &m_Declaration;
 }

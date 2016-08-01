@@ -34,12 +34,10 @@
 
           ['build_with_chromium==1', {
             'webrtc_root%': '<(DEPTH)/third_party/webrtc',
-            'apk_tests_path%': '<(DEPTH)/third_party/webrtc/build/apk_tests_noop.gyp',
-            'modules_java_gyp_path%': '<(DEPTH)/third_party/webrtc/modules/modules_java_chromium.gyp',
+            'android_tests_path%': '<(DEPTH)/third_party/webrtc/build/android_tests_noop.gyp',
           }, {
             'webrtc_root%': '<(DEPTH)/webrtc',
-            'apk_tests_path%': '<(DEPTH)/webrtc/build/apk_tests.gyp',
-            'modules_java_gyp_path%': '<(DEPTH)/webrtc/modules/modules_java.gyp',
+            'android_tests_path%': '<(DEPTH)/webrtc/build/android_tests.gyp',
           }],
 
           # Controls whether we use libevent on posix platforms.
@@ -59,8 +57,7 @@
       'build_libevent%': '<(build_libevent)',
       'enable_libevent%': '<(enable_libevent)',
       'webrtc_root%': '<(webrtc_root)',
-      'apk_tests_path%': '<(apk_tests_path)',
-      'modules_java_gyp_path%': '<(modules_java_gyp_path)',
+      'android_tests_path%': '<(android_tests_path)',
       'webrtc_vp8_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp8',
       'webrtc_vp9_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp9',
       'include_ilbc%': '<(include_ilbc)',
@@ -72,9 +69,8 @@
     'build_libevent%': '<(build_libevent)',
     'enable_libevent%': '<(enable_libevent)',
     'webrtc_root%': '<(webrtc_root)',
-    'apk_tests_path%': '<(apk_tests_path)',
+    'android_tests_path%': '<(android_tests_path)',
     'test_runner_path': '<(DEPTH)/webrtc/build/android/test_runner.py',
-    'modules_java_gyp_path%': '<(modules_java_gyp_path)',
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'webrtc_vp9_dir%': '<(webrtc_vp9_dir)',
     'include_ilbc%': '<(include_ilbc)',
@@ -94,6 +90,10 @@
     # We can set this here to have WebRTC code treated as Chromium code. Our
     # third party code will still have the reduced warning settings.
     'chromium_code': 1,
+
+    # Targets are by default not NaCl untrusted code. Use this variable exclude
+    # code that uses libraries that aren't available in the NaCl sandbox.
+    'nacl_untrusted_build%': 0,
 
     # Set to 1 to enable code coverage on Linux using the gcov library.
     'coverage%': 0,
@@ -276,8 +276,22 @@
       ['build_with_chromium==1', {
         'defines': [
           # Changes settings for Chromium build.
-          'WEBRTC_CHROMIUM_BUILD',
+          # TODO(kjellander): Cleanup unused ones and move defines closer to the
+          # source when webrtc:4256 is completed.
+          'ENABLE_EXTERNAL_AUTH',
+          'FEATURE_ENABLE_SSL',
+          'HAVE_OPENSSL_SSL_H',
+          'HAVE_SCTP',
+          'HAVE_SRTP',
+          'HAVE_WEBRTC_VIDEO',
+          'HAVE_WEBRTC_VOICE',
           'LOGGING_INSIDE_WEBRTC',
+          'NO_MAIN_THREAD_WRAPPING',
+          'NO_SOUND_SYSTEM',
+          'SRTP_RELATIVE_PATH',
+          'SSL_USE_OPENSSL',
+          'USE_WEBRTC_DEV_BRANCH',
+          'WEBRTC_CHROMIUM_BUILD',
         ],
         'include_dirs': [
           # Include the top-level directory when building in Chrome, so we can
@@ -456,6 +470,26 @@
            }],
          ],
       }],
+      ['chromeos==1', {
+        'defines': [
+          'CHROMEOS',
+        ],
+      }],
+      ['os_bsd==1', {
+        'defines': [
+          'BSD',
+        ],
+      }],
+      ['OS=="openbsd"', {
+        'defines': [
+          'OPENBSD',
+        ],
+      }],
+      ['OS=="freebsd"', {
+        'defines': [
+          'FREEBSD',
+        ],
+      }],
       ['include_internal_audio_device==1', {
         'defines': [
           'WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE',
@@ -478,6 +512,14 @@
         ['build_with_chromium==1', {
           'defines': [
             # Changes settings for Chromium build.
+            # TODO(kjellander): Cleanup unused ones and move defines closer to
+            # the source when webrtc:4256 is completed.
+            'FEATURE_ENABLE_SSL',
+            'FEATURE_ENABLE_VOICEMAIL',
+            'EXPAT_RELATIVE_PATH',
+            'GTEST_RELATIVE_PATH',
+            'NO_MAIN_THREAD_WRAPPING',
+            'NO_SOUND_SYSTEM',
             'WEBRTC_CHROMIUM_BUILD',
           ],
           'include_dirs': [
@@ -505,6 +547,7 @@
         ['OS=="win"', {
           'defines': [
             'WEBRTC_WIN',
+            '_CRT_SECURE_NO_WARNINGS',  # Suppress warnings about _vsnprinf
           ],
         }],
         ['OS=="linux"', {
@@ -523,6 +566,26 @@
           # of a more specific macro.
           'defines': [
             'WEBRTC_POSIX',
+          ],
+        }],
+        ['chromeos==1', {
+          'defines': [
+            'CHROMEOS',
+          ],
+        }],
+        ['os_bsd==1', {
+          'defines': [
+            'BSD',
+          ],
+        }],
+        ['OS=="openbsd"', {
+          'defines': [
+            'OPENBSD',
+          ],
+        }],
+        ['OS=="freebsd"', {
+          'defines': [
+            'FREEBSD',
           ],
         }],
       ],

@@ -687,6 +687,10 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Pseudo-instructions.
 
+  // Change endianness
+  void ByteSwapSigned(Register reg, int operand_size);
+  void ByteSwapUnsigned(Register reg, int operand_size);
+
   void mov(Register rd, Register rt) { or_(rd, rt, zero_reg); }
 
   void Ulh(Register rd, const MemOperand& rs);
@@ -870,6 +874,12 @@ class MacroAssembler: public Assembler {
   void Round_w_d(FPURegister fd, FPURegister fs);
   void Floor_w_d(FPURegister fd, FPURegister fs);
   void Ceil_w_d(FPURegister fd, FPURegister fs);
+
+  // Preserve value of a NaN operand
+  void SubNanPreservePayloadAndSign_s(FPURegister fd, FPURegister fs,
+                                      FPURegister ft);
+  void SubNanPreservePayloadAndSign_d(FPURegister fd, FPURegister fs,
+                                      FPURegister ft);
 
   // FP32 mode: Move the general purpose register into
   // the high part of the double-register pair.
@@ -1230,6 +1240,9 @@ class MacroAssembler: public Assembler {
   void DispatchWeakMap(Register obj, Register scratch1, Register scratch2,
                        Handle<WeakCell> cell, Handle<Code> success,
                        SmiCheckType smi_check_type);
+
+  // If the value is a NaN, canonicalize the value else, do nothing.
+  void FPUCanonicalizeNaN(const DoubleRegister dst, const DoubleRegister src);
 
   // Get value of the weak cell.
   void GetWeakValue(Register value, Handle<WeakCell> cell);

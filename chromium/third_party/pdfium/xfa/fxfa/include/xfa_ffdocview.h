@@ -7,6 +7,10 @@
 #ifndef XFA_FXFA_INCLUDE_XFA_FFDOCVIEW_H_
 #define XFA_FXFA_INCLUDE_XFA_FFDOCVIEW_H_
 
+#include <map>
+#include <memory>
+
+#include "xfa/fxfa/include/cxfa_eventparam.h"
 #include "xfa/fxfa/include/xfa_ffdoc.h"
 
 class CXFA_FFWidgetHandler;
@@ -49,7 +53,6 @@ class CXFA_FFDocView {
   int32_t ProcessWidgetEvent(CXFA_EventParam* pParam,
                              CXFA_WidgetAcc* pWidgetAcc = nullptr);
   CXFA_FFWidgetHandler* GetWidgetHandler();
-  IXFA_WidgetIterator* CreateWidgetIterator();
   CXFA_WidgetAccIterator* CreateWidgetAccIterator(
       XFA_WIDGETORDER eOrder = XFA_WIDGETORDER_PreOrder);
   CXFA_FFWidget* GetFocusWidget();
@@ -115,7 +118,7 @@ class CXFA_FFDocView {
   CXFA_WidgetAcc* m_pFocusAcc;
   CXFA_FFWidget* m_pFocusWidget;
   CXFA_FFWidget* m_pOldFocusWidget;
-  CFX_MapPtrToPtr m_mapPageInvalidate;
+  std::map<CXFA_FFPageView*, std::unique_ptr<CFX_RectF>> m_mapPageInvalidate;
   CFX_ArrayTemplate<CXFA_WidgetAcc*> m_ValidateAccs;
   CFX_ArrayTemplate<CXFA_WidgetAcc*> m_CalculateAccs;
   CFX_ArrayTemplate<CXFA_Node*> m_BindItems;
@@ -126,31 +129,11 @@ class CXFA_FFDocView {
   friend class CXFA_FFNotify;
 };
 
-class CXFA_FFDocWidgetIterator : public IXFA_WidgetIterator {
- public:
-  CXFA_FFDocWidgetIterator(CXFA_FFDocView* pDocView, CXFA_Node* pTravelRoot);
-  ~CXFA_FFDocWidgetIterator() override;
-
-  // IXFA_WidgetIterator:
-  void Reset() override;
-  CXFA_FFWidget* MoveToFirst() override;
-  CXFA_FFWidget* MoveToLast() override;
-  CXFA_FFWidget* MoveToNext() override;
-  CXFA_FFWidget* MoveToPrevious() override;
-  CXFA_FFWidget* GetCurrentWidget() override;
-  FX_BOOL SetCurrentWidget(CXFA_FFWidget* hWidget) override;
-
- protected:
-  CXFA_ContainerIterator m_ContentIterator;
-  CXFA_FFDocView* m_pDocView;
-  CXFA_FFWidget* m_pCurWidget;
-};
 class CXFA_WidgetAccIterator {
  public:
   CXFA_WidgetAccIterator(CXFA_FFDocView* pDocView, CXFA_Node* pTravelRoot);
   ~CXFA_WidgetAccIterator();
 
-  void Release() { delete this; }
   void Reset();
   CXFA_WidgetAcc* MoveToFirst();
   CXFA_WidgetAcc* MoveToLast();

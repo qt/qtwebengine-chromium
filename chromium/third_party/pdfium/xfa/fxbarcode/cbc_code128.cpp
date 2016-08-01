@@ -21,25 +21,17 @@
 
 #include "xfa/fxbarcode/cbc_code128.h"
 
-#include "xfa/fxbarcode/BC_BinaryBitmap.h"
-#include "xfa/fxbarcode/BC_BufferedImageLuminanceSource.h"
-#include "xfa/fxbarcode/common/BC_GlobalHistogramBinarizer.h"
-#include "xfa/fxbarcode/oned/BC_OnedCode128Reader.h"
 #include "xfa/fxbarcode/oned/BC_OnedCode128Writer.h"
 
-CBC_Code128::CBC_Code128(BC_TYPE type) {
-  m_pBCReader = (CBC_Reader*)new (CBC_OnedCode128Reader);
-  m_pBCWriter = (CBC_Writer*)new CBC_OnedCode128Writer(type);
-}
+CBC_Code128::CBC_Code128(BC_TYPE type)
+    : CBC_OneCode(new CBC_OnedCode128Writer(type)) {}
 
-CBC_Code128::~CBC_Code128() {
-  delete (m_pBCReader);
-  delete (m_pBCWriter);
-}
+CBC_Code128::~CBC_Code128() {}
 
 FX_BOOL CBC_Code128::SetTextLocation(BC_TEXT_LOC location) {
   if (m_pBCWriter)
-    return ((CBC_OnedCode128Writer*)m_pBCWriter)->SetTextLocation(location);
+    return static_cast<CBC_OnedCode128Writer*>(m_pBCWriter.get())
+        ->SetTextLocation(location);
   return FALSE;
 }
 
@@ -55,17 +47,19 @@ FX_BOOL CBC_Code128::Encode(const CFX_WideStringC& contents,
   int32_t outHeight = 0;
   CFX_WideString content(contents);
   if (contents.GetLength() % 2 &&
-      ((CBC_OnedCode128Writer*)m_pBCWriter)->GetType() == BC_CODE128_C) {
+      static_cast<CBC_OnedCode128Writer*>(m_pBCWriter.get())->GetType() ==
+          BC_CODE128_C) {
     content += '0';
   }
-  CFX_WideString encodeContents = ((CBC_OnedCode128Writer*)m_pBCWriter)
-                                      ->FilterContents(content.AsStringC());
+  CFX_WideString encodeContents =
+      static_cast<CBC_OnedCode128Writer*>(m_pBCWriter.get())
+          ->FilterContents(content.AsStringC());
   m_renderContents = encodeContents;
   CFX_ByteString byteString = encodeContents.UTF8Encode();
-  uint8_t* data = static_cast<CBC_OnedCode128Writer*>(m_pBCWriter)
+  uint8_t* data = static_cast<CBC_OnedCode128Writer*>(m_pBCWriter.get())
                       ->Encode(byteString, format, outWidth, outHeight, e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
-  ((CBC_OneDimWriter*)m_pBCWriter)
+  static_cast<CBC_OneDimWriter*>(m_pBCWriter.get())
       ->RenderResult(encodeContents.AsStringC(), data, outWidth, isDevice, e);
   FX_Free(data);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
@@ -75,32 +69,20 @@ FX_BOOL CBC_Code128::Encode(const CFX_WideStringC& contents,
 FX_BOOL CBC_Code128::RenderDevice(CFX_RenderDevice* device,
                                   const CFX_Matrix* matrix,
                                   int32_t& e) {
-  ((CBC_OneDimWriter*)m_pBCWriter)
+  static_cast<CBC_OneDimWriter*>(m_pBCWriter.get())
       ->RenderDeviceResult(device, matrix, m_renderContents.AsStringC(), e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   return TRUE;
 }
 
 FX_BOOL CBC_Code128::RenderBitmap(CFX_DIBitmap*& pOutBitmap, int32_t& e) {
-  ((CBC_OneDimWriter*)m_pBCWriter)
+  static_cast<CBC_OneDimWriter*>(m_pBCWriter.get())
       ->RenderBitmapResult(pOutBitmap, m_renderContents.AsStringC(), e);
   BC_EXCEPTION_CHECK_ReturnValue(e, FALSE);
   return TRUE;
 }
 
-CFX_WideString CBC_Code128::Decode(uint8_t* buf,
-                                   int32_t width,
-                                   int32_t height,
-                                   int32_t& e) {
-  CFX_WideString str;
-  return str;
+BC_TYPE CBC_Code128::GetType() {
+  return BC_CODE128;
 }
 
-CFX_WideString CBC_Code128::Decode(CFX_DIBitmap* pBitmap, int32_t& e) {
-  CBC_BufferedImageLuminanceSource source(pBitmap);
-  CBC_GlobalHistogramBinarizer binarizer(&source);
-  CBC_BinaryBitmap bitmap(&binarizer);
-  CFX_ByteString str = m_pBCReader->Decode(&bitmap, 0, e);
-  BC_EXCEPTION_CHECK_ReturnValue(e, CFX_WideString());
-  return CFX_WideString::FromUTF8(str.AsStringC());
-}

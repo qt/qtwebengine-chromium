@@ -256,11 +256,6 @@ BrowserContext* NavigationControllerImpl::GetBrowserContext() const {
   return browser_context_;
 }
 
-void NavigationControllerImpl::SetBrowserContext(
-    BrowserContext* browser_context) {
-  browser_context_ = browser_context;
-}
-
 void NavigationControllerImpl::Restore(
     int selected_navigation,
     RestoreType type,
@@ -669,7 +664,10 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
   switch (params.load_type) {
     case LOAD_TYPE_DEFAULT:
       break;
-    case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
+    case LOAD_TYPE_HTTP_POST:
+      // TODO(lukasza): This assertion is false - it is also possible to POST to
+      // an chrome-extension://... URI.  This might be more common when
+      // allowing renderer-initiated POST after fixing https://crbug.com/344348.
       if (!params.url.SchemeIs(url::kHttpScheme) &&
           !params.url.SchemeIs(url::kHttpsScheme)) {
         NOTREACHED() << "Http post load must use http(s) scheme.";
@@ -768,10 +766,9 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
   switch (params.load_type) {
     case LOAD_TYPE_DEFAULT:
       break;
-    case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
+    case LOAD_TYPE_HTTP_POST:
       entry->SetHasPostData(true);
-      entry->SetBrowserInitiatedPostData(
-          params.browser_initiated_post_data.get());
+      entry->SetPostData(params.post_data);
       break;
     case LOAD_TYPE_DATA:
       entry->SetBaseURLForDataURL(params.base_url_for_data_url);
@@ -1682,7 +1679,8 @@ int NavigationControllerImpl::GetPendingEntryIndex() const {
 void NavigationControllerImpl::InsertOrReplaceEntry(
     std::unique_ptr<NavigationEntryImpl> entry,
     bool replace) {
-  DCHECK(entry->GetTransitionType() != ui::PAGE_TRANSITION_AUTO_SUBFRAME);
+  DCHECK(!ui::PageTransitionCoreTypeIs(entry->GetTransitionType(),
+                                       ui::PAGE_TRANSITION_AUTO_SUBFRAME));
 
   // If the pending_entry_index_ is -1, the navigation was to a new page, and we
   // need to keep continuity with the pending entry, so copy the pending entry's

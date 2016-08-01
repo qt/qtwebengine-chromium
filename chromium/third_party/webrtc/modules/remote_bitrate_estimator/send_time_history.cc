@@ -26,7 +26,9 @@ void SendTimeHistory::Clear() {
   history_.clear();
 }
 
-void SendTimeHistory::AddAndRemoveOld(uint16_t sequence_number, size_t length) {
+void SendTimeHistory::AddAndRemoveOld(uint16_t sequence_number,
+                                      size_t length,
+                                      int probe_cluster_id) {
   EraseOld();
 
   if (history_.empty())
@@ -34,7 +36,7 @@ void SendTimeHistory::AddAndRemoveOld(uint16_t sequence_number, size_t length) {
 
   history_.insert(std::pair<uint16_t, PacketInfo>(
       sequence_number, PacketInfo(clock_->TimeInMilliseconds(), 0, -1,
-                                  sequence_number, length)));
+                                  sequence_number, length, probe_cluster_id)));
 }
 
 bool SendTimeHistory::OnSentPacket(uint16_t sequence_number,

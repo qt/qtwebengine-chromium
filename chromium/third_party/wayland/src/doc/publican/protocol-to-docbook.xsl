@@ -102,12 +102,6 @@
     <term><xsl:value-of select="@name"/></term>
     <listitem>
         <simpara>
-          <xsl:if test="@enum">
-            <link linkend="protocol-spec-{../../@name}-enum-{@enum}">
-              <xsl:value-of select="@enum"/>
-            </link>
-	    <xsl:text> </xsl:text>
-          </xsl:if>
           <xsl:value-of select="@type"/>
           <xsl:if test="@summary" >
             - <xsl:value-of select="@summary"/>
@@ -152,6 +146,37 @@
   </varlistentry>
 </xsl:template>
 
+<!-- enum and bitfield arguemnts -->
+<xsl:template match="arg[@enum]">
+  <varlistentry>
+    <term><xsl:value-of select="@name"/></term>
+    <listitem>
+        <simpara>
+          <xsl:choose>
+            <xsl:when test="contains(@enum, '.')">
+              <link linkend="protocol-spec-{substring-before(@enum, '.')}-enum-{substring-after(@enum, '.')}">
+                <xsl:value-of select="substring-before(@enum, '.')"/>
+                <xsl:text>::</xsl:text>
+                <xsl:value-of select="substring-after(@enum, '.')"/>
+              </link>
+            </xsl:when>
+            <xsl:otherwise>
+              <link linkend="protocol-spec-{../../@name}-enum-{@enum}">
+                <xsl:value-of select="../../@name"/>
+                <xsl:text>::</xsl:text>
+                <xsl:value-of select="@enum"/>
+              </link>
+            </xsl:otherwise>
+          </xsl:choose>
+          (<xsl:value-of select="@type"/>)
+          <xsl:if test="@summary" >
+            - <xsl:value-of select="@summary"/>
+          </xsl:if>
+        </simpara>
+    </listitem>
+  </varlistentry>
+</xsl:template>
+
 <!-- Request/event list -->
 <xsl:template match="request|event">
   <section id="protocol-spec-{../@name}-{name()}-{@name}">
@@ -174,7 +199,7 @@
 
 <!-- Enumeration -->
 <xsl:template match="enum">
-  <section id="protocol-spec-{../@name}-{name()}-{@name}">
+  <section id="protocol-spec-{../@name}-enum-{@name}">
     <title>
       <xsl:value-of select="../@name"/>::<xsl:value-of select="@name" />
       <xsl:if test="@bitfield">

@@ -7,8 +7,8 @@
 #include "xfa/fxfa/app/xfa_ffcheckbutton.h"
 
 #include "xfa/fwl/core/cfwl_message.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/lightwidget/cfwl_checkbox.h"
 #include "xfa/fxfa/app/xfa_ffexclgroup.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
@@ -20,7 +20,7 @@
 
 CXFA_FFCheckButton::CXFA_FFCheckButton(CXFA_FFPageView* pPageView,
                                        CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(NULL) {
+    : CXFA_FFField(pPageView, pDataAcc), m_pOldDelegate(nullptr) {
   m_rtCheckBox.Set(0, 0, 0, 0);
 }
 CXFA_FFCheckButton::~CXFA_FFCheckButton() {}
@@ -28,20 +28,17 @@ FX_BOOL CXFA_FFCheckButton::LoadWidget() {
   CFWL_CheckBox* pCheckBox = CFWL_CheckBox::Create();
   pCheckBox->Initialize();
   m_pNormalWidget = pCheckBox;
+  m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
   CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = m_pNormalWidget->SetDelegate(this);
   if (m_pDataAcc->IsRadioButton()) {
     pCheckBox->ModifyStylesEx(FWL_STYLEEXT_CKB_RadioButton, 0xFFFFFFFF);
   }
-  m_pNormalWidget = (CFWL_Widget*)pCheckBox;
-  m_pNormalWidget->SetPrivateData(m_pNormalWidget->GetWidget(), this, NULL);
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
-  XFA_CHECKSTATE eState = m_pDataAcc->GetCheckState();
-  SetFWLCheckState(eState);
+  SetFWLCheckState(m_pDataAcc->GetCheckState());
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
 }
@@ -214,8 +211,7 @@ void CXFA_FFCheckButton::AddUIMargin(int32_t iCapPlacement) {
 }
 void CXFA_FFCheckButton::RenderWidget(CFX_Graphics* pGS,
                                       CFX_Matrix* pMatrix,
-                                      uint32_t dwStatus,
-                                      int32_t iRotate) {
+                                      uint32_t dwStatus) {
   if (!IsMatchVisibleStatus(dwStatus)) {
     return;
   }
@@ -242,12 +238,9 @@ void CXFA_FFCheckButton::RenderWidget(CFX_Graphics* pGS,
 FX_BOOL CXFA_FFCheckButton::OnLButtonUp(uint32_t dwFlags,
                                         FX_FLOAT fx,
                                         FX_FLOAT fy) {
-  if (!m_pNormalWidget) {
+  if (!m_pNormalWidget || !IsButtonDown())
     return FALSE;
-  }
-  if (!IsButtonDown()) {
-    return FALSE;
-  }
+
   SetButtonDown(FALSE);
   CFWL_MsgMouse ms;
   ms.m_dwCmd = FWL_MouseCommand::LeftButtonUp;
@@ -259,21 +252,22 @@ FX_BOOL CXFA_FFCheckButton::OnLButtonUp(uint32_t dwFlags,
   TranslateFWLMessage(&ms);
   return TRUE;
 }
+
 XFA_CHECKSTATE CXFA_FFCheckButton::FWLState2XFAState() {
-  XFA_CHECKSTATE eCheckState = XFA_CHECKSTATE_Off;
   uint32_t dwState = m_pNormalWidget->GetStates();
-  if (dwState & FWL_STATE_CKB_Checked) {
-    eCheckState = XFA_CHECKSTATE_On;
-  } else if (dwState & FWL_STATE_CKB_Neutral) {
-    eCheckState = XFA_CHECKSTATE_Neutral;
-  }
-  return eCheckState;
+  if (dwState & FWL_STATE_CKB_Checked)
+    return XFA_CHECKSTATE_On;
+  if (dwState & FWL_STATE_CKB_Neutral)
+    return XFA_CHECKSTATE_Neutral;
+  return XFA_CHECKSTATE_Off;
 }
+
 FX_BOOL CXFA_FFCheckButton::CommitData() {
   XFA_CHECKSTATE eCheckState = FWLState2XFAState();
-  m_pDataAcc->SetCheckState(eCheckState, TRUE);
+  m_pDataAcc->SetCheckState(eCheckState, true);
   return TRUE;
 }
+
 FX_BOOL CXFA_FFCheckButton::IsDataChanged() {
   XFA_CHECKSTATE eCheckState = FWLState2XFAState();
   return m_pDataAcc->GetCheckState() != eCheckState;

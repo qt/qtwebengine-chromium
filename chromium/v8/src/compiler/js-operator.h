@@ -344,7 +344,6 @@ std::ostream& operator<<(std::ostream&, CreateClosureParameters const&);
 
 const CreateClosureParameters& CreateClosureParametersOf(const Operator* op);
 
-
 // Defines shared information for the literal that should be created. This is
 // used as parameter by JSCreateLiteralArray, JSCreateLiteralObject and
 // JSCreateLiteralRegExp operators.
@@ -375,6 +374,9 @@ std::ostream& operator<<(std::ostream&, CreateLiteralParameters const&);
 
 const CreateLiteralParameters& CreateLiteralParametersOf(const Operator* op);
 
+const BinaryOperationHints& BinaryOperationHintsOf(const Operator* op);
+
+const CompareOperationHints& CompareOperationHintsOf(const Operator* op);
 
 // Interface for building JavaScript-level operators, e.g. directly from the
 // AST. Most operators have no parameters, thus can be globally shared for all
@@ -383,14 +385,14 @@ class JSOperatorBuilder final : public ZoneObject {
  public:
   explicit JSOperatorBuilder(Zone* zone);
 
-  const Operator* Equal();
-  const Operator* NotEqual();
-  const Operator* StrictEqual();
-  const Operator* StrictNotEqual();
-  const Operator* LessThan();
-  const Operator* GreaterThan();
-  const Operator* LessThanOrEqual();
-  const Operator* GreaterThanOrEqual();
+  const Operator* Equal(CompareOperationHints hints);
+  const Operator* NotEqual(CompareOperationHints hints);
+  const Operator* StrictEqual(CompareOperationHints hints);
+  const Operator* StrictNotEqual(CompareOperationHints hints);
+  const Operator* LessThan(CompareOperationHints hints);
+  const Operator* GreaterThan(CompareOperationHints hints);
+  const Operator* LessThanOrEqual(CompareOperationHints hints);
+  const Operator* GreaterThanOrEqual(CompareOperationHints hints);
   const Operator* BitwiseOr(BinaryOperationHints hints);
   const Operator* BitwiseXor(BinaryOperationHints hints);
   const Operator* BitwiseAnd(BinaryOperationHints hints);
@@ -469,6 +471,13 @@ class JSOperatorBuilder final : public ZoneObject {
 
   const Operator* LoadMessage();
   const Operator* StoreMessage();
+
+  // Used to implement Ignition's SuspendGenerator bytecode.
+  const Operator* GeneratorStore(int register_count);
+
+  // Used to implement Ignition's ResumeGenerator bytecode.
+  const Operator* GeneratorRestoreContinuation();
+  const Operator* GeneratorRestoreRegister(int index);
 
   const Operator* StackCheck();
 

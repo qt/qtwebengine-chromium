@@ -11,6 +11,7 @@
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("build/webrtc.gni")
+import("//testing/test.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 # Contains the defines and includes in common.gypi that are duplicated both as
@@ -21,7 +22,17 @@ config("common_inherited_config") {
     defines += [ "WEBRTC_MOZILLA_BUILD" ]
   }
   if (build_with_chromium) {
-    defines = [ "WEBRTC_CHROMIUM_BUILD" ]
+    defines = [
+      # TODO(kjellander): Cleanup unused ones and move defines closer to
+      # the source when webrtc:4256 is completed.
+      "FEATURE_ENABLE_SSL",
+      "FEATURE_ENABLE_VOICEMAIL",
+      "EXPAT_RELATIVE_PATH",
+      "GTEST_RELATIVE_PATH",
+      "NO_MAIN_THREAD_WRAPPING",
+      "NO_SOUND_SYSTEM",
+      "WEBRTC_CHROMIUM_BUILD",
+    ]
     include_dirs = [
       # The overrides must be included first as that is the mechanism for
       # selecting the override headers in Chromium.
@@ -51,7 +62,10 @@ config("common_inherited_config") {
     defines += [ "WEBRTC_MAC" ]
   }
   if (is_win) {
-    defines += [ "WEBRTC_WIN" ]
+    defines += [
+      "WEBRTC_WIN",
+      "_CRT_SECURE_NO_WARNINGS",  # Suppress warnings about _vsnprinf
+    ]
   }
   if (is_android) {
     defines += [
@@ -59,6 +73,20 @@ config("common_inherited_config") {
       "WEBRTC_ANDROID",
     ]
   }
+  if (is_chromeos) {
+    defines += [ "CHROMEOS" ]
+  }
+
+  # TODO(GYP): Support these in GN.
+  # if (is_bsd) {
+  #   defines += [ "BSD" ]
+  # }
+  # if (is_openbsd) {
+  #   defines += [ "OPENBSD" ]
+  # }
+  # if (is_freebsd) {
+  #   defines += [ "FREEBSD" ]
+  # }
 }
 
 if (rtc_have_dbus_glib) {
@@ -70,8 +98,14 @@ if (rtc_have_dbus_glib) {
 config("common_config") {
   cflags = []
   cflags_cc = []
+  defines = []
+
   if (rtc_restrict_logging) {
-    defines = [ "WEBRTC_RESTRICT_LOGGING" ]
+    defines += [ "WEBRTC_RESTRICT_LOGGING" ]
+  }
+
+  if (rtc_include_internal_audio_device) {
+    defines += [ "WEBRTC_INCLUDE_INTERNAL_AUDIO_DEVICE" ]
   }
 
   if (rtc_have_dbus_glib) {
@@ -84,8 +118,27 @@ config("common_config") {
     all_dependent_configs = [ "dbus-glib" ]
   }
 
+  if (rtc_relative_path) {
+    defines += [ "EXPAT_RELATIVE_PATH" ]
+  }
+
   if (build_with_chromium) {
-    defines += [ "LOGGING_INSIDE_WEBRTC" ]
+    defines += [
+      # NOTICE: Since common_inherited_config is used in public_configs for our
+      # targets, there's no point including the defines in that config here.
+      # TODO(kjellander): Cleanup unused ones and move defines closer to the
+      # source when webrtc:4256 is completed.
+      "ENABLE_EXTERNAL_AUTH",
+      "HAVE_OPENSSL_SSL_H",
+      "HAVE_SCTP",
+      "HAVE_SRTP",
+      "HAVE_WEBRTC_VIDEO",
+      "HAVE_WEBRTC_VOICE",
+      "LOGGING_INSIDE_WEBRTC",
+      "SRTP_RELATIVE_PATH",
+      "SSL_USE_OPENSSL",
+      "USE_WEBRTC_DEV_BRANCH",
+    ]
   } else {
     if (is_posix) {
       # -Wextra is currently disabled in Chromium"s common.gypi. Enable
@@ -169,6 +222,18 @@ config("common_config") {
       "-fno-builtin-sinf",
     ]
   }
+
+  if (use_libfuzzer || use_drfuzz) {
+    # Used in Chromium's overrides to disable logging
+    defines += [ "WEBRTC_UNSAFE_FUZZER_MODE" ]
+  }
+}
+
+config("common_objc") {
+  cflags = [ "-Wobjc-missing-property-synthesis" ]
+
+  precompiled_header = "sdk/objc/WebRTC-Prefix.pch"
+  precompiled_source = "sdk/objc/WebRTC-Prefix.pch"
 }
 
 source_set("webrtc") {
@@ -189,17 +254,7 @@ source_set("webrtc") {
     "call",
     "common_audio",
     "common_video",
-    "modules/audio_coding",
-    "modules/audio_conference_mixer",
-    "modules/audio_device",
-    "modules/audio_processing",
-    "modules/bitrate_controller",
-    "modules/desktop_capture",
-    "modules/media_file",
-    "modules/rtp_rtcp",
-    "modules/utility",
-    "modules/video_coding",
-    "modules/video_processing",
+    "modules",
     "system_wrappers",
     "tools",
     "video",
@@ -208,6 +263,15 @@ source_set("webrtc") {
 
   if (build_with_chromium) {
     deps += [ "modules/video_capture" ]
+  } else {
+    # TODO(kjellander): Enable for Chromium as well when bugs.webrtc.org/4256 is
+    # fixed. Right now it's not possible due to circular dependencies.
+    deps += [
+      "api",
+      "media",
+      "p2p",
+      "pc",
+    ]
   }
 
   if (rtc_enable_protobuf) {
@@ -315,5 +379,287 @@ if (use_libfuzzer || use_drfuzz) {
     deps = [
       "test/fuzzers:webrtc_fuzzer_main",
     ]
+  }
+}
+
+if (rtc_include_tests) {
+  config("rtc_unittests_config") {
+    # GN orders flags on a target before flags from configs. The default config
+    # adds -Wall, and this flag have to be after -Wall -- so they need to
+    # come from a config and can"t be on the target directly.
+    if (is_clang) {
+      cflags = [
+        "-Wno-missing-braces",
+        "-Wno-sign-compare",
+        "-Wno-unused-const-variable",
+      ]
+    }
+  }
+
+  test("rtc_unittests") {
+    testonly = true
+    sources = [
+      "base/array_view_unittest.cc",
+      "base/atomicops_unittest.cc",
+      "base/autodetectproxy_unittest.cc",
+      "base/bandwidthsmoother_unittest.cc",
+      "base/base64_unittest.cc",
+      "base/basictypes_unittest.cc",
+      "base/bind_unittest.cc",
+      "base/bitbuffer_unittest.cc",
+      "base/buffer_unittest.cc",
+      "base/bufferqueue_unittest.cc",
+      "base/bytebuffer_unittest.cc",
+      "base/byteorder_unittest.cc",
+      "base/callback_unittest.cc",
+      "base/copyonwritebuffer_unittest.cc",
+      "base/crc32_unittest.cc",
+      "base/criticalsection_unittest.cc",
+      "base/event_tracer_unittest.cc",
+      "base/event_unittest.cc",
+      "base/exp_filter_unittest.cc",
+      "base/filerotatingstream_unittest.cc",
+      "base/fileutils_unittest.cc",
+      "base/helpers_unittest.cc",
+      "base/httpbase_unittest.cc",
+      "base/httpcommon_unittest.cc",
+      "base/httpserver_unittest.cc",
+      "base/ipaddress_unittest.cc",
+      "base/logging_unittest.cc",
+      "base/md5digest_unittest.cc",
+      "base/messagedigest_unittest.cc",
+      "base/messagequeue_unittest.cc",
+      "base/mod_ops_unittest.cc",
+      "base/multipart_unittest.cc",
+      "base/nat_unittest.cc",
+      "base/network_unittest.cc",
+      "base/onetimeevent_unittest.cc",
+      "base/optional_unittest.cc",
+      "base/optionsfile_unittest.cc",
+      "base/pathutils_unittest.cc",
+      "base/platform_thread_unittest.cc",
+      "base/profiler_unittest.cc",
+      "base/proxy_unittest.cc",
+      "base/proxydetect_unittest.cc",
+      "base/random_unittest.cc",
+      "base/rate_statistics_unittest.cc",
+      "base/ratelimiter_unittest.cc",
+      "base/ratetracker_unittest.cc",
+      "base/referencecountedsingletonfactory_unittest.cc",
+      "base/rollingaccumulator_unittest.cc",
+      "base/rtccertificate_unittest.cc",
+      "base/rtccertificategenerator_unittest.cc",
+      "base/scopedptrcollection_unittest.cc",
+      "base/sha1digest_unittest.cc",
+      "base/sharedexclusivelock_unittest.cc",
+      "base/signalthread_unittest.cc",
+      "base/sigslot_unittest.cc",
+      "base/sigslottester.h",
+      "base/sigslottester.h.pump",
+      "base/stream_unittest.cc",
+      "base/stringencode_unittest.cc",
+      "base/stringutils_unittest.cc",
+      "base/swap_queue_unittest.cc",
+
+      # TODO(ronghuawu): Reenable this test.
+      # "systeminfo_unittest.cc",
+      "base/task_queue_unittest.cc",
+      "base/task_unittest.cc",
+      "base/testclient_unittest.cc",
+      "base/thread_checker_unittest.cc",
+      "base/thread_unittest.cc",
+      "base/timestampaligner_unittest.cc",
+      "base/timeutils_unittest.cc",
+      "base/urlencode_unittest.cc",
+      "base/versionparsing_unittest.cc",
+
+      # TODO(ronghuawu): Reenable this test.
+      # "windowpicker_unittest.cc",
+      "p2p/base/dtlstransportchannel_unittest.cc",
+      "p2p/base/fakeportallocator.h",
+      "p2p/base/faketransportcontroller.h",
+      "p2p/base/p2ptransportchannel_unittest.cc",
+      "p2p/base/port_unittest.cc",
+      "p2p/base/portallocator_unittest.cc",
+      "p2p/base/pseudotcp_unittest.cc",
+      "p2p/base/relayport_unittest.cc",
+      "p2p/base/relayserver_unittest.cc",
+      "p2p/base/stun_unittest.cc",
+      "p2p/base/stunport_unittest.cc",
+      "p2p/base/stunrequest_unittest.cc",
+      "p2p/base/stunserver_unittest.cc",
+      "p2p/base/tcpport_unittest.cc",
+      "p2p/base/testrelayserver.h",
+      "p2p/base/teststunserver.h",
+      "p2p/base/testturnserver.h",
+      "p2p/base/transport_unittest.cc",
+      "p2p/base/transportcontroller_unittest.cc",
+      "p2p/base/transportdescriptionfactory_unittest.cc",
+      "p2p/base/turnport_unittest.cc",
+      "p2p/client/basicportallocator_unittest.cc",
+      "p2p/stunprober/stunprober_unittest.cc",
+    ]
+
+    if (is_linux) {
+      sources += [
+        "base/latebindingsymboltable_unittest.cc",
+
+        # TODO(ronghuawu): Reenable this test.
+        # "linux_unittest.cc",
+        "base/linuxfdwalk_unittest.cc",
+      ]
+    }
+
+    if (is_win) {
+      sources += [
+        "base/win32_unittest.cc",
+        "base/win32regkey_unittest.cc",
+        "base/win32window_unittest.cc",
+        "base/win32windowpicker_unittest.cc",
+        "base/winfirewall_unittest.cc",
+      ]
+    }
+
+    if (is_mac) {
+      sources += [ "base/macutils_unittest.cc" ]
+    }
+
+    if (is_posix) {
+      sources += [
+        "base/ssladapter_unittest.cc",
+        "base/sslidentity_unittest.cc",
+        "base/sslstreamadapter_unittest.cc",
+      ]
+    }
+    if (is_ios || (is_mac && target_cpu != "x86")) {
+      defines = [ "CARBON_DEPRECATED=YES" ]
+    }
+
+    if (rtc_use_quic) {
+      sources += [
+        "p2p/quic/quicconnectionhelper_unittest.cc",
+        "p2p/quic/quicsession_unittest.cc",
+        "p2p/quic/quictransport_unittest.cc",
+        "p2p/quic/quictransportchannel_unittest.cc",
+        "p2p/quic/reliablequicstream_unittest.cc",
+      ]
+    }
+
+    configs += [
+      ":common_config",
+      ":rtc_unittests_config",
+    ]
+    public_configs = [ ":common_inherited_config" ]
+
+    if (is_clang) {
+      # Suppress warnings from the Chromium Clang plugin.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      configs -= [ "//build/config/clang:find_bad_constructs" ]
+    }
+
+    deps = [
+      "base:rtc_base",
+      "base:rtc_base_tests_utils",
+      "base:rtc_task_queue",
+      "p2p:libstunprober",
+      "p2p:rtc_p2p",
+      "//testing/gmock",
+      "//testing/gtest",
+    ]
+
+    if (is_android) {
+      deps += [ "//testing/android/native_test:native_test_support" ]
+    }
+
+    if (is_ios || (is_mac && mac_deployment_target == "10.7")) {
+      deps += [
+        "sdk:rtc_sdk_peerconnection_objc",
+        "system_wrappers:system_wrappers_default",
+      ]
+      sources += [
+        "sdk/objc/Framework/UnitTests/RTCConfigurationTest.mm",
+        "sdk/objc/Framework/UnitTests/RTCDataChannelConfigurationTest.mm",
+        "sdk/objc/Framework/UnitTests/RTCIceCandidateTest.mm",
+        "sdk/objc/Framework/UnitTests/RTCIceServerTest.mm",
+        "sdk/objc/Framework/UnitTests/RTCMediaConstraintsTest.mm",
+        "sdk/objc/Framework/UnitTests/RTCSessionDescriptionTest.mm",
+      ]
+
+      # TODO(tkchin): Cleanup this warning.
+      cflags = [ "-Wno-objc-property-no-attribute" ]
+
+      # |-ObjC| flag needed to make sure category method implementations
+      # are included:
+      # https://developer.apple.com/library/mac/qa/qa1490/_index.html
+      ldflags = [ "-ObjC" ]
+    }
+  }
+
+  # TODO(pbos): Rename test suite, this is no longer "just" for video targets.
+  test("video_engine_tests") {
+    testonly = true
+    deps = [
+      "audio:audio_tests",
+      "call:call_tests",
+      "modules/video_capture",
+      "test:test_common",
+      "test:test_main",
+      "video:video_tests",
+    ]
+    if (is_clang) {
+      # Suppress warnings from the Chromium Clang plugin.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      configs -= [ "//build/config/clang:find_bad_constructs" ]
+    }
+  }
+
+  test("webrtc_nonparallel_tests") {
+    testonly = true
+    configs += [
+      ":common_config",
+      ":rtc_unittests_config",
+    ]
+    public_configs = [ ":common_inherited_config" ]
+    sources = [
+      "base/nullsocketserver_unittest.cc",
+      "base/physicalsocketserver_unittest.cc",
+      "base/socket_unittest.cc",
+      "base/socket_unittest.h",
+      "base/socketaddress_unittest.cc",
+      "base/virtualsocket_unittest.cc",
+    ]
+    deps = [
+      "base:rtc_base",
+      "base:rtc_base_tests_utils",
+      "//testing/gtest",
+    ]
+    if (is_win) {
+      sources += [ "base/win32socketserver_unittest.cc" ]
+
+      # TODO(ronghuawu): Fix TestUdpReadyToSendIPv6 on windows bot then reenable
+      # these tests.
+      # TODO(pbos): Move test disabling to ifdefs within the test files instead
+      # of here.
+      sources -= [
+        "base/physicalsocketserver_unittest.cc",
+        "base/socket_unittest.cc",
+        "base/win32socketserver_unittest.cc",
+      ]
+    }
+    if (is_android) {
+      deps += [ "//testing/android/native_test:native_test_support" ]
+    }
+
+    if (is_mac) {
+      sources += [ "base/macsocketserver_unittest.cc" ]
+    }
+    if (is_ios || (is_mac && target_cpu != "x86")) {
+      defines = [ "CARBON_DEPRECATED=YES" ]
+    }
+    if (is_clang) {
+      # Suppress warnings from the Chromium Clang plugin.
+      # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+      configs -= [ "//build/config/clang:find_bad_constructs" ]
+    }
   }
 }

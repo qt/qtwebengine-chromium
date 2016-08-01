@@ -10,6 +10,7 @@
 #include <float.h>
 
 #include <list>
+#include <map>
 
 #include "core/fxcrt/include/fx_basic.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
@@ -46,12 +47,12 @@ enum XFA_ItemLayoutProcessorStages {
 class CXFA_LayoutContext {
  public:
   CXFA_LayoutContext()
-      : m_prgSpecifiedColumnWidths(NULL),
+      : m_prgSpecifiedColumnWidths(nullptr),
         m_fCurColumnWidth(0),
         m_bCurColumnWidthAvaiable(FALSE),
-        m_pOverflowProcessor(NULL),
-        m_pOverflowNode(NULL) {}
-  ~CXFA_LayoutContext() { m_pOverflowProcessor = NULL; }
+        m_pOverflowProcessor(nullptr),
+        m_pOverflowNode(nullptr) {}
+  ~CXFA_LayoutContext() { m_pOverflowProcessor = nullptr; }
   CFX_ArrayTemplate<FX_FLOAT>* m_prgSpecifiedColumnWidths;
   FX_FLOAT m_fCurColumnWidth;
   FX_BOOL m_bCurColumnWidthAvaiable;
@@ -62,12 +63,13 @@ class CXFA_LayoutContext {
 class CXFA_ItemLayoutProcessor {
  public:
   CXFA_ItemLayoutProcessor(CXFA_Node* pNode, CXFA_LayoutPageMgr* pPageMgr);
+  ~CXFA_ItemLayoutProcessor();
 
   XFA_ItemLayoutProcessorResult DoLayout(
       FX_BOOL bUseBreakControl,
       FX_FLOAT fHeightLimit,
       FX_FLOAT fRealHeight = XFA_LAYOUT_FLOAT_MAX,
-      CXFA_LayoutContext* pContext = NULL);
+      CXFA_LayoutContext* pContext = nullptr);
 
   void GetCurrentComponentPos(FX_FLOAT& fAbsoluteX, FX_FLOAT& fAbsoluteY);
 
@@ -76,8 +78,8 @@ class CXFA_ItemLayoutProcessor {
   void SetCurrentComponentPos(FX_FLOAT fAbsoluteX, FX_FLOAT fAbsoluteY);
 
   void SetCurrentComponentSize(FX_FLOAT fWidth, FX_FLOAT fHeight);
-  inline CXFA_Node* GetFormNode() { return m_pFormNode; }
-  inline FX_BOOL HasLayoutItem() { return m_pLayoutItem != NULL; }
+  CXFA_Node* GetFormNode() { return m_pFormNode; }
+  FX_BOOL HasLayoutItem() { return !!m_pLayoutItem; }
   CXFA_ContentLayoutItem* ExtractLayoutItem();
 
   static FX_BOOL IncrementRelayoutNode(CXFA_LayoutProcessor* pLayoutProcessor,
@@ -137,14 +139,14 @@ class CXFA_ItemLayoutProcessor {
   CXFA_ContentLayoutItem* CreateContentLayoutItem(CXFA_Node* pFormNode);
 
  protected:
-  void DoLayoutPositionedContainer(CXFA_LayoutContext* pContext = NULL);
+  void DoLayoutPositionedContainer(CXFA_LayoutContext* pContext = nullptr);
   void DoLayoutTableContainer(CXFA_Node* pLayoutNode);
   XFA_ItemLayoutProcessorResult DoLayoutFlowedContainer(
       FX_BOOL bUseBreakControl,
       XFA_ATTRIBUTEENUM eFlowStrategy,
       FX_FLOAT fHeightLimit,
       FX_FLOAT fRealHeight,
-      CXFA_LayoutContext* pContext = NULL,
+      CXFA_LayoutContext* pContext = nullptr,
       FX_BOOL bRootForceTb = FALSE);
   void DoLayoutField();
   void XFA_ItemLayoutProcessor_GotoNextContainerNode(
@@ -182,7 +184,7 @@ class CXFA_ItemLayoutProcessor {
   FX_BOOL m_bBreakPending;
   CFX_ArrayTemplate<FX_FLOAT> m_rgSpecifiedColumnWidths;
   CFX_ArrayTemplate<CXFA_ContentLayoutItem*> m_arrayKeepItems;
-  CFX_MapPtrToPtr m_PendingNodesCount;
+  std::map<CXFA_Node*, int32_t> m_PendingNodesCount;
   FX_FLOAT m_fLastRowWidth;
   FX_FLOAT m_fLastRowY;
   FX_FLOAT m_fWidthLimite;

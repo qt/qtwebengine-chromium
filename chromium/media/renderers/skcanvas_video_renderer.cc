@@ -12,7 +12,6 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
-#include "skia/ext/refptr.h"
 #include "skia/ext/texture_handle.h"
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -83,13 +82,12 @@ class SyncTokenClientImpl : public VideoFrame::SyncTokenClient {
   DISALLOW_IMPLICIT_CONSTRUCTORS(SyncTokenClientImpl);
 };
 
-skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
+sk_sp<SkImage> NewSkImageFromVideoFrameYUVTextures(
     const VideoFrame* video_frame,
     const Context3D& context_3d) {
-  // Support only TEXTURE_YUV_420.
   DCHECK(video_frame->HasTextures());
-  DCHECK_EQ(media::PIXEL_FORMAT_I420, video_frame->format());
-  DCHECK_EQ(3u, media::VideoFrame::NumPlanes(video_frame->format()));
+  DCHECK(video_frame->format() == PIXEL_FORMAT_I420 ||
+         video_frame->format() == PIXEL_FORMAT_NV12);
 
   gpu::gles2::GLES2Interface* gl = context_3d.gl;
   DCHECK(gl);
@@ -143,21 +141,27 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameYUVTextures(
   else if (CheckColorSpace(video_frame, media::COLOR_SPACE_HD_REC709))
     color_space = kRec709_SkYUVColorSpace;
 
-  SkImage* img = SkImage::NewFromYUVTexturesCopy(context_3d.gr_context,
-                                                 color_space, handles, yuvSizes,
-                                                 kTopLeft_GrSurfaceOrigin);
+  sk_sp<SkImage> img;
+  if (video_frame->format() == PIXEL_FORMAT_NV12) {
+    img = SkImage::MakeFromNV12TexturesCopy(context_3d.gr_context, color_space,
+                                            handles, yuvSizes,
+                                            kTopLeft_GrSurfaceOrigin);
+  } else {
+    img = SkImage::MakeFromYUVTexturesCopy(context_3d.gr_context, color_space,
+                                           handles, yuvSizes,
+                                           kTopLeft_GrSurfaceOrigin);
+  }
   for (size_t i = 0; i < media::VideoFrame::NumPlanes(video_frame->format());
        ++i) {
     gl->DeleteTextures(1, &source_textures[i].fID);
   }
-  return skia::AdoptRef(img);
+  return img;
 }
 
 // Creates a SkImage from a |video_frame| backed by native resources.
 // The SkImage will take ownership of the underlying resource.
-skia::RefPtr<SkImage> NewSkImageFromVideoFrameNative(
-    VideoFrame* video_frame,
-    const Context3D& context_3d) {
+sk_sp<SkImage> NewSkImageFromVideoFrameNative(VideoFrame* video_frame,
+                                              const Context3D& context_3d) {
   DCHECK(PIXEL_FORMAT_ARGB == video_frame->format() ||
          PIXEL_FORMAT_XRGB == video_frame->format() ||
          PIXEL_FORMAT_NV12 == video_frame->format() ||
@@ -197,8 +201,7 @@ skia::RefPtr<SkImage> NewSkImageFromVideoFrameNative(
   source_texture_info.fTarget = GL_TEXTURE_2D;
   desc.fTextureHandle =
       skia::GrGLTextureInfoToGrBackendObject(source_texture_info);
-  return skia::AdoptRef(
-      SkImage::NewFromAdoptedTexture(context_3d.gr_context, desc));
+  return SkImage::MakeFromAdoptedTexture(context_3d.gr_context, desc);
 }
 
 }  // anonymous namespace
@@ -366,7 +369,7 @@ void SkCanvasVideoRenderer::Paint(const scoped_refptr<VideoFrame>& video_frame,
     if (video_frame->HasTextures()) {
       DCHECK(context_3d.gr_context);
       DCHECK(gl);
-      if (media::VideoFrame::NumPlanes(video_frame->format()) == 3) {
+      if (media::VideoFrame::NumPlanes(video_frame->format()) > 1) {
         last_image_ =
             NewSkImageFromVideoFrameYUVTextures(video_frame.get(), context_3d);
       } else {
@@ -374,8 +377,8 @@ void SkCanvasVideoRenderer::Paint(const scoped_refptr<VideoFrame>& video_frame,
             NewSkImageFromVideoFrameNative(video_frame.get(), context_3d);
       }
     } else {
-      auto video_generator = new VideoImageGenerator(video_frame);
-      last_image_ = skia::AdoptRef(SkImage::NewFromGenerator(video_generator));
+      auto* video_generator = new VideoImageGenerator(video_frame);
+      last_image_ = SkImage::MakeFromGenerator(video_generator);
     }
     if (!last_image_)  // Couldn't create the SkImage.
       return;

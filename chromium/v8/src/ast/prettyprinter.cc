@@ -14,6 +14,7 @@ namespace v8 {
 namespace internal {
 
 CallPrinter::CallPrinter(Isolate* isolate, bool is_builtin) {
+  isolate_ = isolate;
   output_ = NULL;
   size_ = 0;
   pos_ = 0;
@@ -440,13 +441,13 @@ void CallPrinter::PrintLiteral(Object* value, bool quote) {
     if (quote) Print("\"");
     Print("%s", String::cast(object)->ToCString().get());
     if (quote) Print("\"");
-  } else if (object->IsNull()) {
+  } else if (object->IsNull(isolate_)) {
     Print("null");
-  } else if (object->IsTrue()) {
+  } else if (object->IsTrue(isolate_)) {
     Print("true");
-  } else if (object->IsFalse()) {
+  } else if (object->IsFalse(isolate_)) {
     Print("false");
-  } else if (object->IsUndefined()) {
+  } else if (object->IsUndefined(isolate_)) {
     Print("undefined");
   } else if (object->IsNumber()) {
     Print("%g", object->Number());
@@ -479,6 +480,7 @@ static int FormatSlotNode(Vector<char>* buf, Expression* node,
 
 
 PrettyPrinter::PrettyPrinter(Isolate* isolate) {
+  isolate_ = isolate;
   output_ = NULL;
   size_ = 0;
   pos_ = 0;
@@ -1067,13 +1069,13 @@ void PrettyPrinter::PrintLiteral(Handle<Object> value, bool quote) {
       Print("%c", string->Get(i));
     }
     if (quote) Print("\"");
-  } else if (object->IsNull()) {
+  } else if (object->IsNull(isolate_)) {
     Print("null");
-  } else if (object->IsTrue()) {
+  } else if (object->IsTrue(isolate_)) {
     Print("true");
-  } else if (object->IsFalse()) {
+  } else if (object->IsFalse(isolate_)) {
     Print("false");
-  } else if (object->IsUndefined()) {
+  } else if (object->IsUndefined(isolate_)) {
     Print("undefined");
   } else if (object->IsNumber()) {
     Print("%g", object->Number());
@@ -1092,7 +1094,7 @@ void PrettyPrinter::PrintLiteral(Handle<Object> value, bool quote) {
   } else if (object->IsFixedArray()) {
     Print("FixedArray");
   } else {
-    Print("<unknown literal %p>", object);
+    Print("<unknown literal %p>", static_cast<void*>(object));
   }
 }
 

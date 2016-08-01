@@ -22,13 +22,16 @@
         }],
       ],
     }],
-    ['OS=="android"', {
+    # Excluded from the Chromium build since they cannot be built due to
+    # incompability with Chromium's logging implementation.
+    ['OS=="android" and build_with_chromium==0', {
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_jni',
           'type': 'static_library',
           'dependencies': [
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
             'libjingle_peerconnection',
           ],
           'sources': [
@@ -39,6 +42,7 @@
             'java/jni/androidmediadecoder_jni.h',
             'java/jni/androidmediaencoder_jni.cc',
             'java/jni/androidmediaencoder_jni.h',
+            'java/jni/androidmetrics_jni.cc',
             'java/jni/androidnetworkmonitor_jni.cc',
             'java/jni/androidnetworkmonitor_jni.h',
             'java/jni/androidvideocapturer_jni.cc',
@@ -65,9 +69,6 @@
           'cflags!': [
             '-Wextra',
           ],
-          'cflags_cc!': [
-            '-Woverloaded-virtual',
-          ],
           'msvs_disabled_warnings': [
             4245,  # conversion from 'int' to 'size_t', signed/unsigned mismatch.
             4267,  # conversion from 'size_t' to 'int', possible loss of data.
@@ -90,35 +91,6 @@
             'use_native_jni_exports': 1,
           },
         },
-        {
-          # |libjingle_peerconnection_java| builds a jar file with name
-          # libjingle_peerconnection_java.jar using Chrome's build system.
-          # It includes all Java files needed to setup a PeeerConnection call
-          # from Android.
-          'target_name': 'libjingle_peerconnection_java',
-          'type': 'none',
-          'dependencies': [
-            'libjingle_peerconnection_so',
-          ],
-          'variables': {
-            # Designate as Chromium code and point to our lint settings to
-            # enable linting of the WebRTC code (this is the only way to make
-            # lint_action invoke the Android linter).
-            'android_manifest_path': '<(webrtc_root)/build/android/AndroidManifest.xml',
-            'suppressions_file': '<(webrtc_root)/build/android/suppressions.xml',
-            'chromium_code': 1,
-            'java_in_dir': 'java',
-            'webrtc_base_dir': '<(webrtc_root)/base',
-            'webrtc_modules_dir': '<(webrtc_root)/modules',
-            'additional_src_dirs' : [
-              'java/android',
-              '<(webrtc_base_dir)/java/src',
-              '<(webrtc_modules_dir)/audio_device/android/java/src',
-
-            ],
-          },
-          'includes': ['../../build/java.gypi'],
-        }, # libjingle_peerconnection_java
       ]
     }],
   ],  # conditions
@@ -136,7 +108,6 @@
         'datachannel.cc',
         'datachannel.h',
         'datachannelinterface.h',
-        'dtlsidentitystore.cc',
         'dtlsidentitystore.h',
         'dtmfsender.cc',
         'dtmfsender.h',
@@ -157,7 +128,6 @@
         'mediastreaminterface.h',
         'mediastreamobserver.cc',
         'mediastreamobserver.h',
-        'mediastreamprovider.h',
         'mediastreamproxy.h',
         'mediastreamtrack.h',
         'mediastreamtrackproxy.h',
@@ -200,14 +170,6 @@
         'webrtcsessiondescriptionfactory.cc',
         'webrtcsessiondescriptionfactory.h',
       ],
-      # TODO(kjellander): Make the code compile without disabling these flags.
-      # See https://bugs.chromium.org/p/webrtc/issues/detail?id=3307
-      'cflags': [
-        '-Wno-sign-compare',
-      ],
-      'cflags_cc!': [
-        '-Woverloaded-virtual',
-      ],
       'conditions': [
         ['clang==1', {
           'cflags!': [
@@ -220,23 +182,6 @@
           'cflags': [
             '-Wno-maybe-uninitialized',  # Only exists for GCC.
           ],
-        }],
-        ['OS=="win"', {
-          # Disable warning for signed/unsigned mismatch.
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'AdditionalOptions!': ['/we4389'],
-            },
-          },
-        }],
-        ['OS=="win" and clang==1', {
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'AdditionalOptions': [
-                '-Wno-sign-compare',
-              ],
-            },
-          },
         }],
         ['use_quic==1', {
           'dependencies': [

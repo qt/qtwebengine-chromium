@@ -16,6 +16,8 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_data.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_io_data.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_request_options.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_util.h"
 #include "components/data_reduction_proxy/core/common/lofi_decider.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
@@ -26,6 +28,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -165,14 +168,26 @@ void DataReductionProxyNetworkDelegate::OnBeforeURLRequestInternal(
   }
 }
 
-void DataReductionProxyNetworkDelegate::OnBeforeSendProxyHeadersInternal(
+void DataReductionProxyNetworkDelegate::OnBeforeSendHeadersInternal(
     net::URLRequest* request,
     const net::ProxyInfo& proxy_info,
+    const net::ProxyRetryInfoMap& proxy_retry_info,
     net::HttpRequestHeaders* headers) {
   DCHECK(data_reduction_proxy_config_);
-  if (!proxy_info.proxy_server().is_valid())
+  DCHECK(request);
+  if (params::IsIncludedInHoldbackFieldTrial()) {
+    if (!WasEligibleWithoutHoldback(*request, proxy_info, proxy_retry_info))
+      return;
+    // For the holdback field trial, still log UMA as if the proxy was used.
+    DataReductionProxyData* data =
+        DataReductionProxyData::GetDataAndCreateIfNecessary(request);
+    if (data)
+      data->set_used_data_reduction_proxy(true);
     return;
-  if (proxy_info.proxy_server().is_direct())
+  }
+
+  // The following checks rule out direct, invalid, and othe connection types.
+  if (!proxy_info.is_http() && !proxy_info.is_https() && !proxy_info.is_quic())
     return;
   if (proxy_info.proxy_server().host_port_pair().IsEmpty())
     return;
@@ -185,23 +200,26 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendProxyHeadersInternal(
   // if needed.
   DataReductionProxyData* data =
       DataReductionProxyData::GetDataAndCreateIfNecessary(request);
-  if (data)
+  if (data) {
     data->set_used_data_reduction_proxy(true);
+    data->set_session_key(
+        data_reduction_proxy_request_options_->GetSecureSession());
+    data->set_original_request_url(request->original_url());
+  }
 
   if (data_reduction_proxy_io_data_ &&
-      data_reduction_proxy_io_data_->lofi_decider() && request) {
+      data_reduction_proxy_io_data_->lofi_decider()) {
     LoFiDecider* lofi_decider = data_reduction_proxy_io_data_->lofi_decider();
-    bool is_using_lofi_mode =
+    const bool is_using_lofi_mode =
         lofi_decider->MaybeAddLoFiDirectiveToHeaders(*request, headers);
 
     if ((request->load_flags() & net::LOAD_MAIN_FRAME)) {
       data_reduction_proxy_io_data_->SetLoFiModeActiveOnMainFrame(
           is_using_lofi_mode);
     }
-    // Retrieves DataReductionProxyData from a request.
-    DataReductionProxyData* data = DataReductionProxyData::GetData(*request);
+
     if (data)
-      data->set_lofi_requested(is_using_lofi_mode);
+      data->set_lofi_requested(lofi_decider->ShouldRecordLoFiUMA(*request));
   }
 
   if (data_reduction_proxy_request_options_) {
@@ -345,6 +363,25 @@ void DataReductionProxyNetworkDelegate::RecordLoFiTransformationType(
     LoFiTransformationType type) {
   UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.LoFi.TransformationType", type,
                             LO_FI_TRANSFORMATION_TYPES_INDEX_BOUNDARY);
+}
+
+bool DataReductionProxyNetworkDelegate::WasEligibleWithoutHoldback(
+    const net::URLRequest& request,
+    const net::ProxyInfo& proxy_info,
+    const net::ProxyRetryInfoMap& proxy_retry_info) const {
+  DCHECK(proxy_info.is_empty() || proxy_info.is_direct() ||
+         !data_reduction_proxy_config_->IsDataReductionProxy(
+             proxy_info.proxy_server().host_port_pair(), nullptr));
+  if (!util::EligibleForDataReductionProxy(proxy_info, request.url(),
+                                           request.method())) {
+    return false;
+  }
+  net::ProxyConfig proxy_config =
+      data_reduction_proxy_config_->ProxyConfigIgnoringHoldback();
+  net::ProxyInfo data_reduction_proxy_info;
+  return util::ApplyProxyConfigToProxyInfo(proxy_config, proxy_retry_info,
+                                           request.url(),
+                                           &data_reduction_proxy_info);
 }
 
 }  // namespace data_reduction_proxy

@@ -9,12 +9,12 @@
 #include <memory>
 
 #include "core/fxcrt/include/fx_ext.h"
+#include "fxjse/include/cfxjse_arguments.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/xml/fde_xml_imp.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/crt/fgas_system.h"
 #include "xfa/fxfa/app/xfa_ffnotify.h"
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/cxfa_occur.h"
 #include "xfa/fxfa/parser/xfa_basic_imp.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
@@ -26,46 +26,66 @@
 #include "xfa/fxfa/parser/xfa_script.h"
 #include "xfa/fxfa/parser/xfa_script_imp.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
-CXFA_Object::CXFA_Object(CXFA_Document* pDocument, uint32_t uFlags)
-    : m_pDocument(pDocument), m_uFlags(uFlags) {}
-void CXFA_Object::GetClassName(CFX_WideStringC& wsName) const {
-  wsName = XFA_GetElementByID(GetClassID())->pName;
+namespace {
+
+void XFA_DeleteWideString(void* pData) {
+  delete static_cast<CFX_WideString*>(pData);
 }
+
+void XFA_CopyWideString(void*& pData) {
+  if (pData) {
+    CFX_WideString* pNewData = new CFX_WideString(*(CFX_WideString*)pData);
+    pData = pNewData;
+  }
+}
+
+XFA_MAPDATABLOCKCALLBACKINFO deleteWideStringCallBack = {XFA_DeleteWideString,
+                                                         XFA_CopyWideString};
+
+void XFA_DataNodeDeleteBindItem(void* pData) {
+  delete static_cast<CXFA_NodeArray*>(pData);
+}
+
+XFA_MAPDATABLOCKCALLBACKINFO deleteBindItemCallBack = {
+    XFA_DataNodeDeleteBindItem, nullptr};
+
+}  // namespace
+
+CXFA_Object::CXFA_Object(CXFA_Document* pDocument,
+                         XFA_ObjectType objectType,
+                         XFA_Element elementType)
+    : m_pDocument(pDocument),
+      m_objectType(objectType),
+      m_elementType(elementType) {}
+
+CXFA_Object::~CXFA_Object() {}
+
+CFX_WideStringC CXFA_Object::GetClassName() const {
+  return XFA_GetElementByID(GetElementType())->pName;
+}
+
 uint32_t CXFA_Object::GetClassHashCode() const {
-  return XFA_GetElementByID(GetClassID())->uHash;
+  return XFA_GetElementByID(GetElementType())->uHash;
 }
-XFA_ELEMENT CXFA_Object::GetClassID() const {
-  if (IsNode()) {
-    return AsNode()->GetClassID();
-  }
-  if (IsOrdinaryObject()) {
-    return AsOrdinaryObject()->GetClassID();
-  }
-  if (IsNodeList()) {
-    return AsNodeList()->GetClassID();
-  }
-  if (IsOrdinaryList()) {
-    return XFA_ELEMENT_List;
-  }
-  ASSERT(FALSE);
-  return (XFA_ELEMENT)0;
+
+XFA_Element CXFA_Object::GetElementType() const {
+  return m_elementType;
 }
-void CXFA_Object::Script_ObjectClass_ClassName(FXJSE_HVALUE hValue,
+
+void CXFA_Object::Script_ObjectClass_ClassName(CFXJSE_Value* pValue,
                                                FX_BOOL bSetting,
                                                XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
-    CFX_WideStringC className;
-    GetClassName(className);
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    CFX_WideStringC className = GetClassName();
+    pValue->SetString(
         FX_UTF8Encode(className.c_str(), className.GetLength()).AsStringC());
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
-void CXFA_Object::ThrowScriptErrorMessage(int32_t iStringID, ...) {
+
+void CXFA_Object::ThrowException(int32_t iStringID, ...) {
   IXFA_AppProvider* pAppProvider = m_pDocument->GetNotify()->GetAppProvider();
   ASSERT(pAppProvider);
   CFX_WideString wsFormat;
@@ -76,64 +96,55 @@ void CXFA_Object::ThrowScriptErrorMessage(int32_t iStringID, ...) {
   wsMessage.FormatV(wsFormat.c_str(), arg_ptr);
   va_end(arg_ptr);
   FXJSE_ThrowMessage(
-      "", FX_UTF8Encode(wsMessage.c_str(), wsMessage.GetLength()).AsStringC());
+      FX_UTF8Encode(wsMessage.c_str(), wsMessage.GetLength()).AsStringC());
 }
 
-static void XFA_DeleteWideString(void* pData) {
-  delete static_cast<CFX_WideString*>(pData);
-}
+XFA_MAPMODULEDATA::XFA_MAPMODULEDATA() {}
 
-static void XFA_CopyWideString(void*& pData) {
-  if (pData) {
-    CFX_WideString* pNewData = new CFX_WideString(*(CFX_WideString*)pData);
-    pData = pNewData;
-  }
-}
-static XFA_MAPDATABLOCKCALLBACKINFO deleteWideStringCallBack = {
-    XFA_DeleteWideString, XFA_CopyWideString};
-static XFA_OBJECTTYPE XFA_GetElementObjectType(XFA_ELEMENT eElement) {
-  return (XFA_OBJECTTYPE)XFA_GetElementByID(eElement)->eObjectType;
-}
+XFA_MAPMODULEDATA::~XFA_MAPMODULEDATA() {}
+
 CXFA_Node::CXFA_Node(CXFA_Document* pDoc,
                      uint16_t ePacket,
-                     XFA_ELEMENT eElement)
-    : CXFA_Object(pDoc, XFA_GetElementObjectType(eElement)),
+                     XFA_ObjectType oType,
+                     XFA_Element eType)
+    : CXFA_Object(pDoc, oType, eType),
       m_pNext(nullptr),
       m_pChild(nullptr),
       m_pLastChild(nullptr),
       m_pParent(nullptr),
       m_pXMLNode(nullptr),
-      m_eNodeClass(eElement),
       m_ePacket(ePacket),
+      m_uNodeFlags(XFA_NodeFlag_None),
       m_dwNameHash(0),
       m_pAuxNode(nullptr),
       m_pMapModuleData(nullptr) {
   ASSERT(m_pDocument);
 }
+
 CXFA_Node::~CXFA_Node() {
-  ASSERT(m_pParent == NULL);
+  ASSERT(!m_pParent);
   RemoveMapModuleKey();
-  CXFA_Node *pNext, *pNode = m_pChild;
+  CXFA_Node* pNode = m_pChild;
   while (pNode) {
-    pNext = pNode->m_pNext;
-    pNode->m_pParent = NULL;
+    CXFA_Node* pNext = pNode->m_pNext;
+    pNode->m_pParent = nullptr;
     delete pNode;
     pNode = pNext;
   }
-  if (m_pXMLNode && HasFlag(XFA_NODEFLAG_OwnXMLNode)) {
+  if (m_pXMLNode && IsOwnXMLNode())
     m_pXMLNode->Release();
-  }
 }
+
 CXFA_Node* CXFA_Node::Clone(FX_BOOL bRecursive) {
   CXFA_Document* pFactory = m_pDocument->GetParser()->GetFactory();
-  CXFA_Node* pClone = pFactory->CreateNode(m_ePacket, m_eNodeClass);
-  if (!pClone) {
-    return NULL;
-  }
+  CXFA_Node* pClone = pFactory->CreateNode(m_ePacket, m_elementType);
+  if (!pClone)
+    return nullptr;
+
   MergeAllData(pClone);
   pClone->UpdateNameHash();
   if (IsNeedSavingXMLNode()) {
-    CFDE_XMLNode* pCloneXML = NULL;
+    CFDE_XMLNode* pCloneXML = nullptr;
     if (IsAttributeInXML()) {
       CFX_WideString wsName;
       GetAttribute(XFA_ATTRIBUTE_Name, wsName, FALSE);
@@ -143,13 +154,13 @@ CXFA_Node* CXFA_Node::Clone(FX_BOOL bRecursive) {
         pCloneXMLElement->SetTextData(CFX_WideString(wsValue));
       }
       pCloneXML = pCloneXMLElement;
-      pCloneXMLElement = NULL;
+      pCloneXMLElement = nullptr;
       pClone->SetEnum(XFA_ATTRIBUTE_Contains, XFA_ATTRIBUTEENUM_Unknown);
     } else {
       pCloneXML = m_pXMLNode->Clone(FALSE);
     }
     pClone->SetXMLMappingNode(pCloneXML);
-    pClone->SetFlag(XFA_NODEFLAG_OwnXMLNode, false);
+    pClone->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
   }
   if (bRecursive) {
     for (CXFA_Node* pChild = GetNodeItem(XFA_NODEITEM_FirstChild); pChild;
@@ -157,10 +168,11 @@ CXFA_Node* CXFA_Node::Clone(FX_BOOL bRecursive) {
       pClone->InsertChild(pChild->Clone(bRecursive));
     }
   }
-  pClone->SetFlag(XFA_NODEFLAG_Initialized, true);
-  pClone->SetObject(XFA_ATTRIBUTE_BindingNode, NULL);
+  pClone->SetFlag(XFA_NodeFlag_Initialized, true);
+  pClone->SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
   return pClone;
 }
+
 CXFA_Node* CXFA_Node::GetNodeItem(XFA_NODEITEM eItem) const {
   switch (eItem) {
     case XFA_NODEITEM_NextSibling:
@@ -172,55 +184,46 @@ CXFA_Node* CXFA_Node::GetNodeItem(XFA_NODEITEM eItem) const {
     case XFA_NODEITEM_PrevSibling:
       if (m_pParent) {
         CXFA_Node* pSibling = m_pParent->m_pChild;
-        CXFA_Node* pPrev = NULL;
+        CXFA_Node* pPrev = nullptr;
         while (pSibling && pSibling != this) {
           pPrev = pSibling;
           pSibling = pSibling->m_pNext;
         }
         return pPrev;
       }
-      return NULL;
+      return nullptr;
     default:
       break;
   }
-  return NULL;
+  return nullptr;
 }
+
 CXFA_Node* CXFA_Node::GetNodeItem(XFA_NODEITEM eItem,
-                                  XFA_OBJECTTYPE eType) const {
-  CXFA_Node* pNode = NULL;
+                                  XFA_ObjectType eType) const {
+  CXFA_Node* pNode = nullptr;
   switch (eItem) {
     case XFA_NODEITEM_NextSibling:
       pNode = m_pNext;
-      if (eType != XFA_OBJECTTYPEMASK) {
-        while (pNode && pNode->GetObjectType() != eType) {
-          pNode = pNode->m_pNext;
-        }
-      }
+      while (pNode && pNode->GetObjectType() != eType)
+        pNode = pNode->m_pNext;
       break;
     case XFA_NODEITEM_FirstChild:
       pNode = m_pChild;
-      if (eType != XFA_OBJECTTYPEMASK) {
-        while (pNode && pNode->GetObjectType() != eType) {
-          pNode = pNode->m_pNext;
-        }
-      }
+      while (pNode && pNode->GetObjectType() != eType)
+        pNode = pNode->m_pNext;
       break;
     case XFA_NODEITEM_Parent:
       pNode = m_pParent;
-      if (eType != XFA_OBJECTTYPEMASK) {
-        while (pNode && pNode->GetObjectType() != eType) {
-          pNode = pNode->m_pParent;
-        }
-      }
+      while (pNode && pNode->GetObjectType() != eType)
+        pNode = pNode->m_pParent;
       break;
     case XFA_NODEITEM_PrevSibling:
       if (m_pParent) {
         CXFA_Node* pSibling = m_pParent->m_pChild;
         while (pSibling && pSibling != this) {
-          if (eType == XFA_OBJECTTYPEMASK ||
-              eType == pSibling->GetObjectType()) {
+          if (eType == pSibling->GetObjectType())
             pNode = pSibling;
-          }
+
           pSibling = pSibling->m_pNext;
         }
       }
@@ -230,20 +233,21 @@ CXFA_Node* CXFA_Node::GetNodeItem(XFA_NODEITEM eItem,
   }
   return pNode;
 }
+
 int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
                                uint32_t dwTypeFilter,
-                               XFA_ELEMENT eElementFilter,
+                               XFA_Element eTypeFilter,
                                int32_t iLevel) {
   if (--iLevel < 0) {
     return nodes.GetSize();
   }
-  if (eElementFilter != XFA_ELEMENT_UNKNOWN) {
+  if (eTypeFilter != XFA_Element::Unknown) {
     CXFA_Node* pChild = m_pChild;
     while (pChild) {
-      if (pChild->GetClassID() == eElementFilter) {
+      if (pChild->GetElementType() == eTypeFilter) {
         nodes.Add(pChild);
         if (iLevel > 0) {
-          GetNodeList(nodes, dwTypeFilter, eElementFilter, iLevel);
+          GetNodeList(nodes, dwTypeFilter, eTypeFilter, iLevel);
         }
       }
       pChild = pChild->m_pNext;
@@ -254,19 +258,19 @@ int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
     while (pChild) {
       nodes.Add(pChild);
       if (iLevel > 0) {
-        GetNodeList(nodes, dwTypeFilter, eElementFilter, iLevel);
+        GetNodeList(nodes, dwTypeFilter, eTypeFilter, iLevel);
       }
       pChild = pChild->m_pNext;
     }
   } else if (dwTypeFilter != 0) {
-    FX_BOOL bFilterChildren = (dwTypeFilter & XFA_NODEFILTER_Children) != 0;
-    FX_BOOL bFilterProperties = (dwTypeFilter & XFA_NODEFILTER_Properties) != 0;
-    FX_BOOL bFilterOneOfProperties =
-        (dwTypeFilter & XFA_NODEFILTER_OneOfProperty) != 0;
+    bool bFilterChildren = !!(dwTypeFilter & XFA_NODEFILTER_Children);
+    bool bFilterProperties = !!(dwTypeFilter & XFA_NODEFILTER_Properties);
+    bool bFilterOneOfProperties =
+        !!(dwTypeFilter & XFA_NODEFILTER_OneOfProperty);
     CXFA_Node* pChild = m_pChild;
     while (pChild) {
       const XFA_PROPERTY* pProperty = XFA_GetPropertyOfElement(
-          GetClassID(), pChild->GetClassID(), XFA_XDPPACKET_UNKNOWN);
+          GetElementType(), pChild->GetElementType(), XFA_XDPPACKET_UNKNOWN);
       if (pProperty) {
         if (bFilterProperties) {
           nodes.Add(pChild);
@@ -274,35 +278,31 @@ int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
                    (pProperty->uFlags & XFA_PROPERTYFLAG_OneOf)) {
           nodes.Add(pChild);
         } else if (bFilterChildren &&
-                   (pChild->GetClassID() == XFA_ELEMENT_Variables ||
-                    pChild->GetClassID() == XFA_ELEMENT_PageSet)) {
+                   (pChild->GetElementType() == XFA_Element::Variables ||
+                    pChild->GetElementType() == XFA_Element::PageSet)) {
           nodes.Add(pChild);
         }
-      } else {
-        if (bFilterChildren) {
-          nodes.Add(pChild);
-        }
+      } else if (bFilterChildren) {
+        nodes.Add(pChild);
       }
       pChild = pChild->m_pNext;
     }
     if (bFilterOneOfProperties && nodes.GetSize() < 1) {
       int32_t iProperties = 0;
       const XFA_PROPERTY* pProperty =
-          XFA_GetElementProperties(GetClassID(), iProperties);
-      if (pProperty == NULL || iProperties < 1) {
+          XFA_GetElementProperties(GetElementType(), iProperties);
+      if (!pProperty || iProperties < 1)
         return 0;
-      }
       for (int32_t i = 0; i < iProperties; i++) {
         if (pProperty[i].uFlags & XFA_PROPERTYFLAG_DefaultOneOf) {
           CXFA_Document* pFactory = m_pDocument->GetParser()->GetFactory();
           const XFA_PACKETINFO* pPacket = XFA_GetPacketByID(GetPacketID());
           CXFA_Node* pNewNode =
-              pFactory->CreateNode(pPacket, (XFA_ELEMENT)pProperty[i].eName);
-          if (!pNewNode) {
+              pFactory->CreateNode(pPacket, pProperty[i].eName);
+          if (!pNewNode)
             break;
-          }
-          InsertChild(pNewNode, NULL);
-          pNewNode->SetFlag(XFA_NODEFLAG_Initialized, true);
+          InsertChild(pNewNode, nullptr);
+          pNewNode->SetFlag(XFA_NodeFlag_Initialized, true);
           nodes.Add(pNewNode);
           break;
         }
@@ -311,20 +311,22 @@ int32_t CXFA_Node::GetNodeList(CXFA_NodeArray& nodes,
   }
   return nodes.GetSize();
 }
-CXFA_Node* CXFA_Node::CreateSamePacketNode(XFA_ELEMENT eElement,
+
+CXFA_Node* CXFA_Node::CreateSamePacketNode(XFA_Element eType,
                                            uint32_t dwFlags) {
   CXFA_Document* pFactory = m_pDocument->GetParser()->GetFactory();
-  CXFA_Node* pNode = pFactory->CreateNode(m_ePacket, eElement);
+  CXFA_Node* pNode = pFactory->CreateNode(m_ePacket, eType);
   pNode->SetFlag(dwFlags, true);
   return pNode;
 }
+
 CXFA_Node* CXFA_Node::CloneTemplateToForm(FX_BOOL bRecursive) {
   ASSERT(m_ePacket == XFA_XDPPACKET_Template);
   CXFA_Document* pFactory = m_pDocument->GetParser()->GetFactory();
-  CXFA_Node* pClone = pFactory->CreateNode(XFA_XDPPACKET_Form, m_eNodeClass);
-  if (!pClone) {
-    return NULL;
-  }
+  CXFA_Node* pClone = pFactory->CreateNode(XFA_XDPPACKET_Form, m_elementType);
+  if (!pClone)
+    return nullptr;
+
   pClone->SetTemplateNode(this);
   pClone->UpdateNameHash();
   pClone->SetXMLMappingNode(GetXMLMappingNode());
@@ -334,7 +336,7 @@ CXFA_Node* CXFA_Node::CloneTemplateToForm(FX_BOOL bRecursive) {
       pClone->InsertChild(pChild->CloneTemplateToForm(bRecursive));
     }
   }
-  pClone->SetFlag(XFA_NODEFLAG_Initialized, true);
+  pClone->SetFlag(XFA_NodeFlag_Initialized, true);
   return pClone;
 }
 
@@ -345,35 +347,30 @@ CXFA_Node* CXFA_Node::GetTemplateNode() const {
 void CXFA_Node::SetTemplateNode(CXFA_Node* pTemplateNode) {
   m_pAuxNode = pTemplateNode;
 }
+
 CXFA_Node* CXFA_Node::GetBindData() {
   ASSERT(GetPacketID() == XFA_XDPPACKET_Form);
   return static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
 }
+
 int32_t CXFA_Node::GetBindItems(CXFA_NodeArray& formItems) {
-  if (m_uFlags & XFA_NODEFLAG_BindFormItems) {
-    CXFA_NodeArray* pItems = NULL;
+  if (BindsFormItems()) {
+    CXFA_NodeArray* pItems = nullptr;
     TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
     formItems.Copy(*pItems);
     return formItems.GetSize();
   }
   CXFA_Node* pFormNode =
       static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
-  if (pFormNode) {
+  if (pFormNode)
     formItems.Add(pFormNode);
-  }
   return formItems.GetSize();
 }
 
-static void XFA_DataNodeDeleteBindItem(void* pData) {
-  delete static_cast<CXFA_NodeArray*>(pData);
-}
-
-static XFA_MAPDATABLOCKCALLBACKINFO deleteBindItemCallBack = {
-    XFA_DataNodeDeleteBindItem, NULL};
 int32_t CXFA_Node::AddBindItem(CXFA_Node* pFormNode) {
   ASSERT(pFormNode);
-  if (m_uFlags & XFA_NODEFLAG_BindFormItems) {
-    CXFA_NodeArray* pItems = NULL;
+  if (BindsFormItems()) {
+    CXFA_NodeArray* pItems = nullptr;
     TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
     ASSERT(pItems);
     if (pItems->Find(pFormNode) < 0) {
@@ -393,25 +390,25 @@ int32_t CXFA_Node::AddBindItem(CXFA_Node* pFormNode) {
   SetObject(XFA_ATTRIBUTE_BindingNode, pItems, &deleteBindItemCallBack);
   pItems->Add(pOldFormItem);
   pItems->Add(pFormNode);
-  m_uFlags |= XFA_NODEFLAG_BindFormItems;
+  m_uNodeFlags |= XFA_NodeFlag_BindFormItems;
   return 2;
 }
+
 int32_t CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
-  if (m_uFlags & XFA_NODEFLAG_BindFormItems) {
-    CXFA_NodeArray* pItems = NULL;
+  if (BindsFormItems()) {
+    CXFA_NodeArray* pItems = nullptr;
     TryObject(XFA_ATTRIBUTE_BindingNode, (void*&)pItems);
     ASSERT(pItems);
     int32_t iIndex = pItems->Find(pFormNode);
     int32_t iCount = pItems->GetSize();
     if (iIndex >= 0) {
-      if (iIndex != iCount - 1) {
+      if (iIndex != iCount - 1)
         pItems->SetAt(iIndex, pItems->GetAt(iCount - 1));
-      }
       pItems->RemoveAt(iCount - 1);
       if (iCount == 2) {
         CXFA_Node* pLastFormNode = pItems->GetAt(0);
         SetObject(XFA_ATTRIBUTE_BindingNode, pLastFormNode);
-        m_uFlags &= ~XFA_NODEFLAG_BindFormItems;
+        m_uNodeFlags &= ~XFA_NodeFlag_BindFormItems;
       }
       iCount--;
     }
@@ -420,89 +417,88 @@ int32_t CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
   CXFA_Node* pOldFormItem =
       static_cast<CXFA_Node*>(GetObject(XFA_ATTRIBUTE_BindingNode));
   if (pOldFormItem == pFormNode) {
-    SetObject(XFA_ATTRIBUTE_BindingNode, NULL);
-    pOldFormItem = NULL;
+    SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
+    pOldFormItem = nullptr;
   }
-  return pOldFormItem == NULL ? 0 : 1;
+  return pOldFormItem ? 1 : 0;
 }
+
 FX_BOOL CXFA_Node::HasBindItem() {
-  return (GetPacketID() == XFA_XDPPACKET_Datasets) &&
-         GetObject(XFA_ATTRIBUTE_BindingNode) != NULL;
+  return GetPacketID() == XFA_XDPPACKET_Datasets &&
+         GetObject(XFA_ATTRIBUTE_BindingNode);
 }
+
 CXFA_WidgetData* CXFA_Node::GetWidgetData() {
   return (CXFA_WidgetData*)GetObject(XFA_ATTRIBUTE_WidgetData);
 }
+
 CXFA_WidgetData* CXFA_Node::GetContainerWidgetData() {
-  if (GetPacketID() != XFA_XDPPACKET_Form) {
-    return NULL;
-  }
-  XFA_ELEMENT classID = GetClassID();
-  if (classID == XFA_ELEMENT_ExclGroup) {
-    return NULL;
-  }
+  if (GetPacketID() != XFA_XDPPACKET_Form)
+    return nullptr;
+  XFA_Element eType = GetElementType();
+  if (eType == XFA_Element::ExclGroup)
+    return nullptr;
   CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-  if (pParentNode && pParentNode->GetClassID() == XFA_ELEMENT_ExclGroup) {
-    return NULL;
-  }
-  if (classID == XFA_ELEMENT_Field) {
+  if (pParentNode && pParentNode->GetElementType() == XFA_Element::ExclGroup)
+    return nullptr;
+
+  if (eType == XFA_Element::Field) {
     CXFA_WidgetData* pFieldWidgetData = GetWidgetData();
     if (pFieldWidgetData &&
         pFieldWidgetData->GetChoiceListOpen() ==
             XFA_ATTRIBUTEENUM_MultiSelect) {
-      return NULL;
+      return nullptr;
     } else {
       CFX_WideString wsPicture;
       if (pFieldWidgetData) {
         pFieldWidgetData->GetPictureContent(wsPicture,
                                             XFA_VALUEPICTURE_DataBind);
       }
-      if (!wsPicture.IsEmpty()) {
+      if (!wsPicture.IsEmpty())
         return pFieldWidgetData;
-      }
       CXFA_Node* pDataNode = GetBindData();
-      if (!pDataNode) {
-        return NULL;
-      }
-      pFieldWidgetData = NULL;
+      if (!pDataNode)
+        return nullptr;
+      pFieldWidgetData = nullptr;
       CXFA_NodeArray formNodes;
       pDataNode->GetBindItems(formNodes);
       for (int32_t i = 0; i < formNodes.GetSize(); i++) {
         CXFA_Node* pFormNode = formNodes.GetAt(i);
-        if (!pFormNode || pFormNode->HasFlag(XFA_NODEFLAG_HasRemoved)) {
+        if (!pFormNode || pFormNode->HasRemovedChildren())
           continue;
-        }
         pFieldWidgetData = pFormNode->GetWidgetData();
         if (pFieldWidgetData) {
           pFieldWidgetData->GetPictureContent(wsPicture,
                                               XFA_VALUEPICTURE_DataBind);
         }
-        if (!wsPicture.IsEmpty()) {
+        if (!wsPicture.IsEmpty())
           break;
-        }
-        pFieldWidgetData = NULL;
+        pFieldWidgetData = nullptr;
       }
       return pFieldWidgetData;
     }
   }
   CXFA_Node* pGrandNode =
-      pParentNode ? pParentNode->GetNodeItem(XFA_NODEITEM_Parent) : NULL;
+      pParentNode ? pParentNode->GetNodeItem(XFA_NODEITEM_Parent) : nullptr;
   CXFA_Node* pValueNode =
-      (pParentNode && pParentNode->GetClassID() == XFA_ELEMENT_Value)
+      (pParentNode && pParentNode->GetElementType() == XFA_Element::Value)
           ? pParentNode
-          : NULL;
+          : nullptr;
   if (!pValueNode) {
-    pValueNode = (pGrandNode && pGrandNode->GetClassID() == XFA_ELEMENT_Value)
-                     ? pGrandNode
-                     : NULL;
+    pValueNode =
+        (pGrandNode && pGrandNode->GetElementType() == XFA_Element::Value)
+            ? pGrandNode
+            : nullptr;
   }
   CXFA_Node* pParentOfValueNode =
-      pValueNode ? pValueNode->GetNodeItem(XFA_NODEITEM_Parent) : NULL;
+      pValueNode ? pValueNode->GetNodeItem(XFA_NODEITEM_Parent) : nullptr;
   return pParentOfValueNode ? pParentOfValueNode->GetContainerWidgetData()
-                            : NULL;
+                            : nullptr;
 }
+
 FX_BOOL CXFA_Node::GetLocaleName(CFX_WideString& wsLocaleName) {
   CXFA_Node* pForm = GetDocument()->GetXFAObject(XFA_HASHCODE_Form)->AsNode();
-  CXFA_Node* pTopSubform = pForm->GetFirstChildByClass(XFA_ELEMENT_Subform);
+  CXFA_Node* pTopSubform = pForm->GetFirstChildByClass(XFA_Element::Subform);
   ASSERT(pTopSubform);
   CXFA_Node* pLocaleNode = this;
   FX_BOOL bLocale = FALSE;
@@ -512,33 +508,26 @@ FX_BOOL CXFA_Node::GetLocaleName(CFX_WideString& wsLocaleName) {
       pLocaleNode = pLocaleNode->GetNodeItem(XFA_NODEITEM_Parent);
     }
   } while (pLocaleNode && pLocaleNode != pTopSubform && !bLocale);
-  if (bLocale) {
-    return bLocale;
-  }
+  if (bLocale)
+    return TRUE;
   CXFA_Node* pConfig = ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Config));
   wsLocaleName = GetDocument()->GetLocalMgr()->GetConfigLocaleName(pConfig);
-  if (!wsLocaleName.IsEmpty()) {
-    bLocale = TRUE;
-  }
-  if (bLocale) {
-    return bLocale;
-  }
-  if (pTopSubform) {
-    bLocale = pTopSubform->TryCData(XFA_ATTRIBUTE_Locale, wsLocaleName, FALSE);
-  }
-  if (bLocale) {
-    return bLocale;
+  if (!wsLocaleName.IsEmpty())
+    return TRUE;
+  if (pTopSubform &&
+      pTopSubform->TryCData(XFA_ATTRIBUTE_Locale, wsLocaleName, FALSE)) {
+    return TRUE;
   }
   IFX_Locale* pLocale = GetDocument()->GetLocalMgr()->GetDefLocale();
   if (pLocale) {
     wsLocaleName = pLocale->GetName();
-    bLocale = TRUE;
+    return TRUE;
   }
-  return bLocale;
+  return FALSE;
 }
+
 XFA_ATTRIBUTEENUM CXFA_Node::GetIntact() {
-  XFA_ELEMENT eElement = GetClassID();
-  CXFA_Node* pKeep = GetFirstChildByClass(XFA_ELEMENT_Keep);
+  CXFA_Node* pKeep = GetFirstChildByClass(XFA_Element::Keep);
   XFA_ATTRIBUTEENUM eLayoutType = GetEnum(XFA_ATTRIBUTE_Layout);
   if (pKeep) {
     XFA_ATTRIBUTEENUM eIntact;
@@ -546,35 +535,31 @@ XFA_ATTRIBUTEENUM CXFA_Node::GetIntact() {
       if (eIntact == XFA_ATTRIBUTEENUM_None &&
           eLayoutType == XFA_ATTRIBUTEENUM_Row &&
           m_pDocument->GetCurVersionMode() < XFA_VERSION_208) {
-        CXFA_Node* pPreviewRow =
-            GetNodeItem(XFA_NODEITEM_PrevSibling, XFA_OBJECTTYPE_ContainerNode);
+        CXFA_Node* pPreviewRow = GetNodeItem(XFA_NODEITEM_PrevSibling,
+                                             XFA_ObjectType::ContainerNode);
         if (pPreviewRow &&
             pPreviewRow->GetEnum(XFA_ATTRIBUTE_Layout) ==
                 XFA_ATTRIBUTEENUM_Row) {
           XFA_ATTRIBUTEENUM eValue;
-          if (pKeep->TryEnum(XFA_ATTRIBUTE_Previous, eValue, FALSE)) {
-            if (eValue == XFA_ATTRIBUTEENUM_ContentArea ||
-                eValue == XFA_ATTRIBUTEENUM_PageArea) {
-              return XFA_ATTRIBUTEENUM_ContentArea;
-            }
+          if (pKeep->TryEnum(XFA_ATTRIBUTE_Previous, eValue, FALSE) &&
+              (eValue == XFA_ATTRIBUTEENUM_ContentArea ||
+               eValue == XFA_ATTRIBUTEENUM_PageArea)) {
+            return XFA_ATTRIBUTEENUM_ContentArea;
           }
-          CXFA_Node* pKeep =
-              pPreviewRow->GetFirstChildByClass(XFA_ELEMENT_Keep);
-          if (pKeep) {
-            if (pKeep->TryEnum(XFA_ATTRIBUTE_Next, eValue, FALSE)) {
-              if (eValue == XFA_ATTRIBUTEENUM_ContentArea ||
-                  eValue == XFA_ATTRIBUTEENUM_PageArea) {
-                return XFA_ATTRIBUTEENUM_ContentArea;
-              }
-            }
+          CXFA_Node* pNode =
+              pPreviewRow->GetFirstChildByClass(XFA_Element::Keep);
+          if (pNode && pNode->TryEnum(XFA_ATTRIBUTE_Next, eValue, FALSE) &&
+              (eValue == XFA_ATTRIBUTEENUM_ContentArea ||
+               eValue == XFA_ATTRIBUTEENUM_PageArea)) {
+            return XFA_ATTRIBUTEENUM_ContentArea;
           }
         }
       }
       return eIntact;
     }
   }
-  switch (eElement) {
-    case XFA_ELEMENT_Subform:
+  switch (GetElementType()) {
+    case XFA_Element::Subform:
       switch (eLayoutType) {
         case XFA_ATTRIBUTEENUM_Position:
         case XFA_ATTRIBUTEENUM_Row:
@@ -588,11 +573,11 @@ XFA_ATTRIBUTEENUM CXFA_Node::GetIntact() {
           break;
       }
       break;
-    case XFA_ELEMENT_Field: {
+    case XFA_Element::Field: {
       CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-      if (!pParentNode || pParentNode->GetClassID() == XFA_ELEMENT_PageArea) {
+      if (!pParentNode ||
+          pParentNode->GetElementType() == XFA_Element::PageArea)
         return XFA_ATTRIBUTEENUM_ContentArea;
-      }
       if (pParentNode->GetIntact() == XFA_ATTRIBUTEENUM_None) {
         XFA_ATTRIBUTEENUM eParLayout =
             pParentNode->GetEnum(XFA_ATTRIBUTE_Layout);
@@ -604,47 +589,46 @@ XFA_ATTRIBUTEENUM CXFA_Node::GetIntact() {
         XFA_VERSION version = m_pDocument->GetCurVersionMode();
         if (eParLayout == XFA_ATTRIBUTEENUM_Tb && version < XFA_VERSION_208) {
           CXFA_Measurement measureH;
-          if (TryMeasure(XFA_ATTRIBUTE_H, measureH, FALSE)) {
+          if (TryMeasure(XFA_ATTRIBUTE_H, measureH, FALSE))
             return XFA_ATTRIBUTEENUM_ContentArea;
-          }
         }
         return XFA_ATTRIBUTEENUM_None;
       }
       return XFA_ATTRIBUTEENUM_ContentArea;
     }
-    case XFA_ELEMENT_Draw:
+    case XFA_Element::Draw:
       return XFA_ATTRIBUTEENUM_ContentArea;
     default:
       break;
   }
   return XFA_ATTRIBUTEENUM_None;
 }
+
 CXFA_Node* CXFA_Node::GetDataDescriptionNode() {
-  if (m_ePacket == XFA_XDPPACKET_Datasets) {
+  if (m_ePacket == XFA_XDPPACKET_Datasets)
     return m_pAuxNode;
-  }
-  return NULL;
+  return nullptr;
 }
+
 void CXFA_Node::SetDataDescriptionNode(CXFA_Node* pDataDescriptionNode) {
   ASSERT(m_ePacket == XFA_XDPPACKET_Datasets);
   m_pAuxNode = pDataDescriptionNode;
 }
+
 void CXFA_Node::Script_TreeClass_ResolveNode(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"resolveNode");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"resolveNode");
     return;
   }
   CFX_WideString wsExpression =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
   CXFA_ScriptContext* pScriptContext = m_pDocument->GetScriptContext();
-  if (!pScriptContext) {
+  if (!pScriptContext)
     return;
-  }
   CXFA_Node* refNode = this;
-  if (refNode->GetClassID() == XFA_ELEMENT_Xfa) {
+  if (refNode->GetElementType() == XFA_Element::Xfa)
     refNode = ToNode(pScriptContext->GetThisObject());
-  }
   uint32_t dwFlag = XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Attributes |
                     XFA_RESOLVENODE_Properties | XFA_RESOLVENODE_Parent |
                     XFA_RESOLVENODE_Siblings;
@@ -652,61 +636,58 @@ void CXFA_Node::Script_TreeClass_ResolveNode(CFXJSE_Arguments* pArguments) {
   int32_t iRet = pScriptContext->ResolveObjects(
       refNode, wsExpression.AsStringC(), resoveNodeRS, dwFlag);
   if (iRet < 1) {
-    return FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
+    return;
   }
-  FXJSE_HVALUE hValue = NULL;
   if (resoveNodeRS.dwFlags == XFA_RESOVENODE_RSTYPE_Nodes) {
     CXFA_Object* pNode = resoveNodeRS.nodes[0];
-    hValue = pScriptContext->GetJSValueFromMap(pNode);
-    FXJSE_Value_Set(pArguments->GetReturnValue(), hValue);
+    pArguments->GetReturnValue()->Assign(
+        pScriptContext->GetJSValueFromMap(pNode));
   } else {
     const XFA_SCRIPTATTRIBUTEINFO* lpAttributeInfo =
         resoveNodeRS.pScriptAttribute;
     if (lpAttributeInfo && lpAttributeInfo->eValueType == XFA_SCRIPT_Object) {
-      hValue = FXJSE_Value_Create(pScriptContext->GetRuntime());
+      std::unique_ptr<CFXJSE_Value> pValue(
+          new CFXJSE_Value(pScriptContext->GetRuntime()));
       (resoveNodeRS.nodes[0]->*(lpAttributeInfo->lpfnCallback))(
-          hValue, FALSE, (XFA_ATTRIBUTE)lpAttributeInfo->eAttribute);
-      FXJSE_Value_Set(pArguments->GetReturnValue(), hValue);
-      FXJSE_Value_Release(hValue);
+          pValue.get(), FALSE, (XFA_ATTRIBUTE)lpAttributeInfo->eAttribute);
+      pArguments->GetReturnValue()->Assign(pValue.get());
     } else {
-      FXJSE_Value_SetNull(pArguments->GetReturnValue());
+      pArguments->GetReturnValue()->SetNull();
     }
   }
 }
+
 void CXFA_Node::Script_TreeClass_ResolveNodes(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"resolveNodes");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"resolveNodes");
     return;
   }
   CFX_WideString wsExpression =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (!hValue) {
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (!pValue)
     return;
-  }
   uint32_t dwFlag = XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Attributes |
                     XFA_RESOLVENODE_Properties | XFA_RESOLVENODE_Parent |
                     XFA_RESOLVENODE_Siblings;
   CXFA_Node* refNode = this;
-  if (refNode->GetClassID() == XFA_ELEMENT_Xfa) {
+  if (refNode->GetElementType() == XFA_Element::Xfa)
     refNode = ToNode(m_pDocument->GetScriptContext()->GetThisObject());
-  }
-  Script_Som_ResolveNodeList(hValue, wsExpression, dwFlag, refNode);
+  Script_Som_ResolveNodeList(pValue, wsExpression, dwFlag, refNode);
 }
-void CXFA_Node::Script_Som_ResolveNodeList(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_Som_ResolveNodeList(CFXJSE_Value* pValue,
                                            CFX_WideString wsExpression,
                                            uint32_t dwFlag,
                                            CXFA_Node* refNode) {
   CXFA_ScriptContext* pScriptContext = m_pDocument->GetScriptContext();
-  if (!pScriptContext) {
+  if (!pScriptContext)
     return;
-  }
   XFA_RESOLVENODE_RS resoveNodeRS;
-  if (refNode == NULL) {
+  if (!refNode)
     refNode = this;
-  }
   pScriptContext->ResolveObjects(refNode, wsExpression.AsStringC(),
                                  resoveNodeRS, dwFlag);
   CXFA_ArrayNodeList* pNodeList = new CXFA_ArrayNodeList(m_pDocument);
@@ -716,267 +697,260 @@ void CXFA_Node::Script_Som_ResolveNodeList(FXJSE_HVALUE hValue,
         pNodeList->Append(resoveNodeRS.nodes[i]->AsNode());
     }
   } else {
-    CXFA_HVALUEArray hValueArray(pScriptContext->GetRuntime());
-    if (resoveNodeRS.GetAttributeResult(hValueArray) > 0) {
+    CXFA_ValueArray valueArray(pScriptContext->GetRuntime());
+    if (resoveNodeRS.GetAttributeResult(valueArray) > 0) {
       CXFA_ObjArray objectArray;
-      hValueArray.GetAttributeObject(objectArray);
+      valueArray.GetAttributeObject(objectArray);
       for (int32_t i = 0; i < objectArray.GetSize(); i++) {
         if (objectArray[i]->IsNode())
           pNodeList->Append(objectArray[i]->AsNode());
       }
     }
   }
-  FXJSE_Value_SetObject(hValue, (CXFA_Object*)pNodeList,
-                        pScriptContext->GetJseNormalClass());
+  pValue->SetObject(pNodeList, pScriptContext->GetJseNormalClass());
 }
-void CXFA_Node::Script_TreeClass_All(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_All(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     uint32_t dwFlag = XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_ALL;
     CFX_WideString wsName;
     GetAttribute(XFA_ATTRIBUTE_Name, wsName);
     CFX_WideString wsExpression = wsName + FX_WSTRC(L"[*]");
-    Script_Som_ResolveNodeList(hValue, wsExpression, dwFlag);
+    Script_Som_ResolveNodeList(pValue, wsExpression, dwFlag);
   }
 }
-void CXFA_Node::Script_TreeClass_Nodes(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_Nodes(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
   CXFA_ScriptContext* pScriptContext = m_pDocument->GetScriptContext();
-  if (!pScriptContext) {
+  if (!pScriptContext)
     return;
-  }
   if (bSetting) {
     IXFA_AppProvider* pAppProvider = m_pDocument->GetNotify()->GetAppProvider();
     ASSERT(pAppProvider);
     CFX_WideString wsMessage;
     pAppProvider->LoadString(XFA_IDS_Unable_TO_SET, wsMessage);
     FXJSE_ThrowMessage(
-        "",
         FX_UTF8Encode(wsMessage.c_str(), wsMessage.GetLength()).AsStringC());
   } else {
     CXFA_AttachNodeList* pNodeList = new CXFA_AttachNodeList(m_pDocument, this);
-    FXJSE_Value_SetObject(hValue, (CXFA_Object*)pNodeList,
-                          pScriptContext->GetJseNormalClass());
+    pValue->SetObject(pNodeList, pScriptContext->GetJseNormalClass());
   }
 }
-void CXFA_Node::Script_TreeClass_ClassAll(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_ClassAll(CFXJSE_Value* pValue,
                                           FX_BOOL bSetting,
                                           XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     uint32_t dwFlag = XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_ALL;
-    CFX_WideStringC wsName;
-    GetClassName(wsName);
-    CFX_WideString wsExpression = FX_WSTRC(L"#") + wsName + FX_WSTRC(L"[*]");
-    Script_Som_ResolveNodeList(hValue, wsExpression, dwFlag);
+    CFX_WideString wsExpression =
+        FX_WSTRC(L"#") + GetClassName() + FX_WSTRC(L"[*]");
+    Script_Som_ResolveNodeList(pValue, wsExpression, dwFlag);
   }
 }
-void CXFA_Node::Script_TreeClass_Parent(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_Parent(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     CXFA_Node* pParent = GetNodeItem(XFA_NODEITEM_Parent);
     if (pParent) {
-      FXJSE_Value_Set(
-          hValue, m_pDocument->GetScriptContext()->GetJSValueFromMap(pParent));
+      pValue->Assign(
+          m_pDocument->GetScriptContext()->GetJSValueFromMap(pParent));
     } else {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     }
   }
 }
-void CXFA_Node::Script_TreeClass_Index(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_Index(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
-  if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
-  } else {
-    FXJSE_Value_SetInteger(hValue, GetNodeSameNameIndex());
-  }
+  if (bSetting)
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
+  else
+    pValue->SetInteger(GetNodeSameNameIndex());
 }
-void CXFA_Node::Script_TreeClass_ClassIndex(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_ClassIndex(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
-  if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
-  } else {
-    FXJSE_Value_SetInteger(hValue, GetNodeSameClassIndex());
-  }
+  if (bSetting)
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
+  else
+    pValue->SetInteger(GetNodeSameClassIndex());
 }
-void CXFA_Node::Script_TreeClass_SomExpression(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_TreeClass_SomExpression(CFXJSE_Value* pValue,
                                                FX_BOOL bSetting,
                                                XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     CFX_WideString wsSOMExpression;
     GetSOMExpression(wsSOMExpression);
-    FXJSE_Value_SetUTF8String(hValue,
-                              FX_UTF8Encode(wsSOMExpression).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsSOMExpression).AsStringC());
   }
 }
+
 void CXFA_Node::Script_NodeClass_ApplyXSL(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"applyXSL");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"applyXSL");
     return;
   }
   CFX_WideString wsExpression =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
-  // TODO(tsepez): actually do something here?
+  // TODO(weili): check whether we need to implement this, pdfium:501.
+  // For now, just put the variables here to avoid unused variable warning.
+  (void)wsExpression;
 }
+
 void CXFA_Node::Script_NodeClass_AssignNode(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1 || iLength > 3) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"assignNode");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"assignNode");
     return;
   }
   CFX_WideString wsExpression;
   CFX_WideString wsValue;
   int32_t iAction = 0;
-  if (iLength >= 1) {
-    CFX_ByteString bsExpression = pArguments->GetUTF8String(0);
-    wsExpression = CFX_WideString::FromUTF8(bsExpression.AsStringC());
-  }
+  wsExpression =
+      CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
   if (iLength >= 2) {
-    CFX_ByteString bsValue = pArguments->GetUTF8String(1);
-    wsValue = CFX_WideString::FromUTF8(bsValue.AsStringC());
+    wsValue =
+        CFX_WideString::FromUTF8(pArguments->GetUTF8String(1).AsStringC());
   }
-  if (iLength >= 3) {
+  if (iLength >= 3)
     iAction = pArguments->GetInt32(2);
-  }
+  // TODO(weili): check whether we need to implement this, pdfium:501.
+  // For now, just put the variables here to avoid unused variable warning.
+  (void)wsExpression;
+  (void)wsValue;
+  (void)iAction;
 }
+
 void CXFA_Node::Script_NodeClass_Clone(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"clone");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"clone");
     return;
   }
-  FX_BOOL bClone = TRUE;
-  bClone = pArguments->GetInt32(0) == 0 ? FALSE : TRUE;
+  bool bClone = !!pArguments->GetInt32(0);
   CXFA_Node* pCloneNode = Clone(bClone);
-  FXJSE_Value_Set(
-      pArguments->GetReturnValue(),
+  pArguments->GetReturnValue()->Assign(
       m_pDocument->GetScriptContext()->GetJSValueFromMap(pCloneNode));
 }
+
 void CXFA_Node::Script_NodeClass_GetAttribute(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"getAttribute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getAttribute");
     return;
   }
   CFX_WideString wsExpression =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
   CFX_WideString wsValue;
   GetAttribute(wsExpression.AsStringC(), wsValue);
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsValue).AsStringC());
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetString(FX_UTF8Encode(wsValue).AsStringC());
 }
+
 void CXFA_Node::Script_NodeClass_GetElement(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1 || iLength > 2) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getElement");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getElement");
     return;
   }
   CFX_WideString wsExpression;
   int32_t iValue = 0;
-  if (iLength >= 1) {
-    CFX_ByteString bsExpression = pArguments->GetUTF8String(0);
-    wsExpression = CFX_WideString::FromUTF8(bsExpression.AsStringC());
-  }
-  if (iLength >= 2) {
+  wsExpression =
+      CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
+  if (iLength >= 2)
     iValue = pArguments->GetInt32(1);
-  }
-  const XFA_ELEMENTINFO* pElementInfo =
-      XFA_GetElementByName(wsExpression.AsStringC());
-  CXFA_Node* pNode = GetProperty(iValue, pElementInfo->eName);
-  FXJSE_Value_Set(pArguments->GetReturnValue(),
-                  m_pDocument->GetScriptContext()->GetJSValueFromMap(pNode));
+  CXFA_Node* pNode =
+      GetProperty(iValue, XFA_GetElementTypeForName(wsExpression.AsStringC()));
+  pArguments->GetReturnValue()->Assign(
+      m_pDocument->GetScriptContext()->GetJSValueFromMap(pNode));
 }
+
 void CXFA_Node::Script_NodeClass_IsPropertySpecified(
     CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1 || iLength > 3) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"isPropertySpecified");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isPropertySpecified");
     return;
   }
   CFX_WideString wsExpression;
-  FX_BOOL bParent = TRUE;
+  bool bParent = true;
   int32_t iIndex = 0;
-  if (iLength >= 1) {
-    CFX_ByteString bsExpression = pArguments->GetUTF8String(0);
-    wsExpression = CFX_WideString::FromUTF8(bsExpression.AsStringC());
-  }
-  if (iLength >= 2) {
-    bParent = pArguments->GetInt32(1) == 0 ? FALSE : TRUE;
-  }
-  if (iLength >= 3) {
+  wsExpression =
+      CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
+  if (iLength >= 2)
+    bParent = !!pArguments->GetInt32(1);
+  if (iLength >= 3)
     iIndex = pArguments->GetInt32(2);
-  }
   FX_BOOL bHas = FALSE;
   const XFA_ATTRIBUTEINFO* pAttributeInfo =
       XFA_GetAttributeByName(wsExpression.AsStringC());
   CFX_WideString wsValue;
-  if (pAttributeInfo) {
+  if (pAttributeInfo)
     bHas = HasAttribute(pAttributeInfo->eName);
-  }
   if (!bHas) {
-    const XFA_ELEMENTINFO* pElementInfo =
-        XFA_GetElementByName(wsExpression.AsStringC());
-    bHas = (GetProperty(iIndex, pElementInfo->eName) != NULL);
+    XFA_Element eType = XFA_GetElementTypeForName(wsExpression.AsStringC());
+    bHas = !!GetProperty(iIndex, eType);
+    if (!bHas && bParent && m_pParent) {
+      // Also check on the parent.
+      bHas = m_pParent->HasAttribute(pAttributeInfo->eName);
+      if (!bHas)
+        bHas = !!m_pParent->GetProperty(iIndex, eType);
+    }
   }
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetBoolean(hValue, bHas);
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetBoolean(bHas);
 }
+
 void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1 || iLength > 3) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"loadXML");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"loadXML");
     return;
   }
   CFX_WideString wsExpression;
-  FX_BOOL bIgnoreRoot = TRUE;
-  FX_BOOL bOverwrite = 0;
-  if (iLength >= 1) {
-    CFX_ByteString bsExpression = pArguments->GetUTF8String(0);
-    wsExpression = CFX_WideString::FromUTF8(bsExpression.AsStringC());
-    if (wsExpression.IsEmpty()) {
-      return;
-    }
-  }
-  if (iLength >= 2) {
-    bIgnoreRoot = pArguments->GetInt32(1) == 0 ? FALSE : TRUE;
-  }
-  if (iLength >= 3) {
-    bOverwrite = pArguments->GetInt32(2) == 0 ? FALSE : TRUE;
-  }
-  IXFA_Parser* pParser = IXFA_Parser::Create(m_pDocument);
-  if (!pParser) {
+  bool bIgnoreRoot = true;
+  bool bOverwrite = 0;
+  wsExpression =
+      CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
+  if (wsExpression.IsEmpty())
     return;
-  }
-  CFDE_XMLNode* pXMLNode = NULL;
-  int32_t iParserStatus = pParser->ParseXMLData(wsExpression, pXMLNode, NULL);
-  if (iParserStatus != XFA_PARSESTATUS_Done || !pXMLNode) {
-    pParser->Release();
-    pParser = NULL;
+  if (iLength >= 2)
+    bIgnoreRoot = !!pArguments->GetInt32(1);
+  if (iLength >= 3)
+    bOverwrite = !!pArguments->GetInt32(2);
+  std::unique_ptr<IXFA_Parser, ReleaseDeleter<IXFA_Parser>> pParser(
+      IXFA_Parser::Create(m_pDocument));
+  if (!pParser)
     return;
-  }
+  CFDE_XMLNode* pXMLNode = nullptr;
+  int32_t iParserStatus =
+      pParser->ParseXMLData(wsExpression, pXMLNode, nullptr);
+  if (iParserStatus != XFA_PARSESTATUS_Done || !pXMLNode)
+    return;
   if (bIgnoreRoot &&
       (pXMLNode->GetType() != FDE_XMLNODE_Element ||
        XFA_RecognizeRichText(static_cast<CFDE_XMLElement*>(pXMLNode)))) {
-    bIgnoreRoot = FALSE;
+    bIgnoreRoot = false;
   }
   CXFA_Node* pFakeRoot = Clone(FALSE);
   CFX_WideStringC wsContentType = GetCData(XFA_ATTRIBUTE_ContentType);
@@ -987,13 +961,11 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
   CFDE_XMLNode* pFakeXMLRoot = pFakeRoot->GetXMLMappingNode();
   if (!pFakeXMLRoot) {
     CFDE_XMLNode* pThisXMLRoot = GetXMLMappingNode();
-    pFakeXMLRoot = pThisXMLRoot ? pThisXMLRoot->Clone(FALSE) : NULL;
+    pFakeXMLRoot = pThisXMLRoot ? pThisXMLRoot->Clone(FALSE) : nullptr;
   }
-  if (!pFakeXMLRoot) {
-    CFX_WideStringC wsClassName;
-    GetClassName(wsClassName);
-    pFakeXMLRoot = new CFDE_XMLElement(CFX_WideString(wsClassName));
-  }
+  if (!pFakeXMLRoot)
+    pFakeXMLRoot = new CFDE_XMLElement(CFX_WideString(GetClassName()));
+
   if (bIgnoreRoot) {
     CFDE_XMLNode* pXMLChild = pXMLNode->GetNodeItem(CFDE_XMLNode::FirstChild);
     while (pXMLChild) {
@@ -1021,7 +993,7 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
         CXFA_Node* pItem = pNewChild->GetNodeItem(XFA_NODEITEM_NextSibling);
         pFakeRoot->RemoveChild(pNewChild);
         InsertChild(index++, pNewChild);
-        pNewChild->SetFlag(XFA_NODEFLAG_Initialized, true);
+        pNewChild->SetFlag(XFA_NodeFlag_Initialized, true);
         pNewChild = pItem;
       }
       while (pChild) {
@@ -1031,15 +1003,14 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
         pChild = pItem;
       }
       if (GetPacketID() == XFA_XDPPACKET_Form &&
-          GetClassID() == XFA_ELEMENT_ExData) {
+          GetElementType() == XFA_Element::ExData) {
         CFDE_XMLNode* pTempXMLNode = GetXMLMappingNode();
         SetXMLMappingNode(pFakeXMLRoot);
-        SetFlag(XFA_NODEFLAG_OwnXMLNode, false);
-        if (pTempXMLNode &&
-            pTempXMLNode->GetNodeItem(CFDE_XMLNode::Parent) == NULL) {
+        SetFlag(XFA_NodeFlag_OwnXMLNode, false);
+        if (pTempXMLNode && !pTempXMLNode->GetNodeItem(CFDE_XMLNode::Parent)) {
           pFakeXMLRoot = pTempXMLNode;
         } else {
-          pFakeXMLRoot = NULL;
+          pFakeXMLRoot = nullptr;
         }
       }
       MoveBufferMapData(pFakeRoot, this, XFA_CalcData, TRUE);
@@ -1049,191 +1020,178 @@ void CXFA_Node::Script_NodeClass_LoadXML(CFXJSE_Arguments* pArguments) {
         CXFA_Node* pItem = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
         pFakeRoot->RemoveChild(pChild);
         InsertChild(pChild);
-        pChild->SetFlag(XFA_NODEFLAG_Initialized, true);
+        pChild->SetFlag(XFA_NodeFlag_Initialized, true);
         pChild = pItem;
       }
     }
     if (pFakeXMLRoot) {
       pFakeRoot->SetXMLMappingNode(pFakeXMLRoot);
-      pFakeRoot->SetFlag(XFA_NODEFLAG_OwnXMLNode, false);
+      pFakeRoot->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
     }
-    pFakeRoot->SetFlag(XFA_NODEFLAG_HasRemoved, false);
+    pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren, false);
   } else {
     if (pFakeXMLRoot) {
       pFakeXMLRoot->Release();
-      pFakeXMLRoot = NULL;
+      pFakeXMLRoot = nullptr;
     }
   }
-  pParser->Release();
-  pParser = NULL;
 }
+
 void CXFA_Node::Script_NodeClass_SaveFilteredXML(CFXJSE_Arguments* pArguments) {
+  // TODO(weili): Check whether we need to implement this, pdfium:501.
 }
 
 void CXFA_Node::Script_NodeClass_SaveXML(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 0 || iLength > 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"saveXML");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"saveXML");
     return;
   }
-  FX_BOOL bPrettyMode = FALSE;
+  bool bPrettyMode = false;
   if (iLength == 1) {
-    CFX_ByteString bsPretty = pArguments->GetUTF8String(0);
-    if (bsPretty != "pretty") {
-      ThrowScriptErrorMessage(XFA_IDS_ARGUMENT_MISMATCH);
+    if (pArguments->GetUTF8String(0) != "pretty") {
+      ThrowException(XFA_IDS_ARGUMENT_MISMATCH);
       return;
     }
-    bPrettyMode = TRUE;
+    bPrettyMode = true;
   }
   CFX_ByteStringC bsXMLHeader = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-  if (GetPacketID() == XFA_XDPPACKET_Form) {
-    IFX_MemoryStream* pMemoryStream = FX_CreateMemoryStream(TRUE);
-    IFX_Stream* pStream = IFX_Stream::CreateStream(
-        (IFX_FileWrite*)pMemoryStream,
-        FX_STREAMACCESS_Text | FX_STREAMACCESS_Write | FX_STREAMACCESS_Append);
+  if (GetPacketID() == XFA_XDPPACKET_Form ||
+      GetPacketID() == XFA_XDPPACKET_Datasets) {
+    CFDE_XMLNode* pElement = nullptr;
+    if (GetPacketID() == XFA_XDPPACKET_Datasets) {
+      pElement = GetXMLMappingNode();
+      if (!pElement || pElement->GetType() != FDE_XMLNODE_Element) {
+        pArguments->GetReturnValue()->SetString(bsXMLHeader);
+        return;
+      }
+      XFA_DataExporter_DealWithDataGroupNode(this);
+    }
+    std::unique_ptr<IFX_MemoryStream, ReleaseDeleter<IFX_MemoryStream>>
+        pMemoryStream(FX_CreateMemoryStream(TRUE));
+    std::unique_ptr<IFX_Stream, ReleaseDeleter<IFX_Stream>> pStream(
+        IFX_Stream::CreateStream(
+            static_cast<IFX_FileWrite*>(pMemoryStream.get()),
+            FX_STREAMACCESS_Text | FX_STREAMACCESS_Write |
+                FX_STREAMACCESS_Append));
     if (!pStream) {
-      FXJSE_Value_SetUTF8String(pArguments->GetReturnValue(), bsXMLHeader);
-      pMemoryStream->Release();
-      pMemoryStream = NULL;
+      pArguments->GetReturnValue()->SetString(bsXMLHeader);
       return;
     }
     pStream->SetCodePage(FX_CODEPAGE_UTF8);
     pStream->WriteData(bsXMLHeader.raw_str(), bsXMLHeader.GetLength());
-    XFA_DataExporter_RegenerateFormFile(this, pStream, NULL, TRUE);
-    FXJSE_Value_SetUTF8String(
-        pArguments->GetReturnValue(),
+    if (GetPacketID() == XFA_XDPPACKET_Form)
+      XFA_DataExporter_RegenerateFormFile(this, pStream.get(), nullptr, TRUE);
+    else
+      pElement->SaveXMLNode(pStream.get());
+    // TODO(weili): Check whether we need to save pretty print XML, pdfium:501.
+    // For now, just put it here to avoid unused variable warning.
+    (void)bPrettyMode;
+    pArguments->GetReturnValue()->SetString(
         CFX_ByteStringC(pMemoryStream->GetBuffer(), pMemoryStream->GetSize()));
-    pStream->Release();
-    pStream = NULL;
-    if (pMemoryStream) {
-      pMemoryStream->Release();
-      pMemoryStream = NULL;
-    }
     return;
   }
-  if (GetPacketID() == XFA_XDPPACKET_Datasets) {
-    CFDE_XMLNode* pElement = GetXMLMappingNode();
-    if (!pElement || pElement->GetType() != FDE_XMLNODE_Element) {
-      FXJSE_Value_SetUTF8String(pArguments->GetReturnValue(), bsXMLHeader);
-      return;
-    }
-    XFA_DataExporter_DealWithDataGroupNode(this);
-    IFX_MemoryStream* pMemoryStream = FX_CreateMemoryStream(TRUE);
-    IFX_Stream* pStream = IFX_Stream::CreateStream(
-        (IFX_FileWrite*)pMemoryStream,
-        FX_STREAMACCESS_Text | FX_STREAMACCESS_Write | FX_STREAMACCESS_Append);
-    if (pStream) {
-      pStream->SetCodePage(FX_CODEPAGE_UTF8);
-      pStream->WriteData(bsXMLHeader.raw_str(), bsXMLHeader.GetLength());
-      pElement->SaveXMLNode(pStream);
-      FXJSE_Value_SetUTF8String(pArguments->GetReturnValue(),
-                                CFX_ByteStringC(pMemoryStream->GetBuffer(),
-                                                pMemoryStream->GetSize()));
-      pStream->Release();
-      pStream = NULL;
-    }
-    if (pMemoryStream) {
-      pMemoryStream->Release();
-      pMemoryStream = NULL;
-    }
-    return;
-  }
-  FXJSE_Value_SetUTF8String(pArguments->GetReturnValue(), "");
+  pArguments->GetReturnValue()->SetString("");
 }
 
 void CXFA_Node::Script_NodeClass_SetAttribute(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 2) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"setAttribute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"setAttribute");
     return;
   }
   CFX_WideString wsAttributeValue =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(0).AsStringC());
   CFX_WideString wsAttribute =
       CFX_WideString::FromUTF8(pArguments->GetUTF8String(1).AsStringC());
-  SetAttribute(wsAttribute.AsStringC(), wsAttributeValue.AsStringC(), TRUE);
+  SetAttribute(wsAttribute.AsStringC(), wsAttributeValue.AsStringC(), true);
 }
+
 void CXFA_Node::Script_NodeClass_SetElement(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1 && iLength != 2) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"setElement");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"setElement");
     return;
   }
-  CXFA_Node* pNode = NULL;
+  CXFA_Node* pNode = nullptr;
   CFX_WideString wsName;
-  if (iLength >= 1) {
-    pNode = static_cast<CXFA_Node*>(pArguments->GetObject(0));
-  }
-  if (iLength >= 2) {
-    CFX_ByteString bsName = pArguments->GetUTF8String(1);
-    wsName = CFX_WideString::FromUTF8(bsName.AsStringC());
-  }
+  pNode = static_cast<CXFA_Node*>(pArguments->GetObject(0));
+  if (iLength == 2)
+    wsName = CFX_WideString::FromUTF8(pArguments->GetUTF8String(1).AsStringC());
+  // TODO(weili): check whether we need to implement this, pdfium:501.
+  // For now, just put the variables here to avoid unused variable warning.
+  (void)pNode;
+  (void)wsName;
 }
-void CXFA_Node::Script_NodeClass_Ns(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_NodeClass_Ns(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     CFX_WideString wsNameSpace;
     TryNamespace(wsNameSpace);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsNameSpace).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsNameSpace).AsStringC());
   }
 }
-void CXFA_Node::Script_NodeClass_Model(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_NodeClass_Model(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
-    FXJSE_Value_Set(hValue, m_pDocument->GetScriptContext()->GetJSValueFromMap(
-                                GetModelNode()));
+    pValue->Assign(
+        m_pDocument->GetScriptContext()->GetJSValueFromMap(GetModelNode()));
   }
 }
-void CXFA_Node::Script_NodeClass_IsContainer(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_NodeClass_IsContainer(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute) {
-  if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
-  } else {
-    FXJSE_Value_SetBoolean(hValue, IsContainerNode());
-  }
+  if (bSetting)
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
+  else
+    pValue->SetBoolean(IsContainerNode());
 }
-void CXFA_Node::Script_NodeClass_IsNull(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_NodeClass_IsNull(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
-    if (GetClassID() == XFA_ELEMENT_Subform) {
-      FXJSE_Value_SetBoolean(hValue, FALSE);
+    if (GetElementType() == XFA_Element::Subform) {
+      pValue->SetBoolean(FALSE);
       return;
     }
     CFX_WideString strValue;
-    FXJSE_Value_SetBoolean(hValue, !TryContent(strValue) || strValue.IsEmpty());
+    pValue->SetBoolean(!TryContent(strValue) || strValue.IsEmpty());
   }
 }
-void CXFA_Node::Script_NodeClass_OneOfChild(FXJSE_HVALUE hValue,
+
+void CXFA_Node::Script_NodeClass_OneOfChild(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     CXFA_NodeArray properts;
     int32_t iSize = GetNodeList(properts, XFA_NODEFILTER_OneOfProperty);
     if (iSize > 0) {
-      FXJSE_Value_Set(
-          hValue,
+      pValue->Assign(
           m_pDocument->GetScriptContext()->GetJSValueFromMap(properts[0]));
     }
   }
 }
+
 void CXFA_Node::Script_ContainerClass_GetDelta(CFXJSE_Arguments* pArguments) {}
+
 void CXFA_Node::Script_ContainerClass_GetDeltas(CFXJSE_Arguments* pArguments) {
   CXFA_ArrayNodeList* pFormNodes = new CXFA_ArrayNodeList(m_pDocument);
-  FXJSE_Value_SetObject(pArguments->GetReturnValue(), (CXFA_Object*)pFormNodes,
-                        m_pDocument->GetScriptContext()->GetJseNormalClass());
+  pArguments->GetReturnValue()->SetObject(
+      pFormNodes, m_pDocument->GetScriptContext()->GetJseNormalClass());
 }
 void CXFA_Node::Script_ModelClass_ClearErrorList(CFXJSE_Arguments* pArguments) {
 }
@@ -1243,8 +1201,7 @@ void CXFA_Node::Script_ModelClass_CreateNode(CFXJSE_Arguments* pArguments) {
 void CXFA_Node::Script_ModelClass_IsCompatibleNS(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"isCompatibleNS");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isCompatibleNS");
     return;
   }
   CFX_WideString wsNameSpace;
@@ -1254,51 +1211,50 @@ void CXFA_Node::Script_ModelClass_IsCompatibleNS(CFXJSE_Arguments* pArguments) {
   }
   CFX_WideString wsNodeNameSpace;
   TryNamespace(wsNodeNameSpace);
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetBoolean(hValue, wsNodeNameSpace == wsNameSpace);
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetBoolean(wsNodeNameSpace == wsNameSpace);
 }
-void CXFA_Node::Script_ModelClass_Context(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_ModelClass_Context(CFXJSE_Value* pValue,
                                           FX_BOOL bSetting,
                                           XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_ModelClass_AliasNode(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_ModelClass_AliasNode(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Attribute_Integer(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_Integer(CFXJSE_Value* pValue,
                                          FX_BOOL bSetting,
                                          XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    SetInteger(eAttribute, FXJSE_Value_ToInteger(hValue), true);
+    SetInteger(eAttribute, pValue->ToInteger(), true);
   } else {
-    FXJSE_Value_SetInteger(hValue, GetInteger(eAttribute));
+    pValue->SetInteger(GetInteger(eAttribute));
   }
 }
-void CXFA_Node::Script_Attribute_IntegerRead(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_IntegerRead(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
-    FXJSE_Value_SetInteger(hValue, GetInteger(eAttribute));
+    pValue->SetInteger(GetInteger(eAttribute));
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
-void CXFA_Node::Script_Attribute_BOOL(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_BOOL(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    SetBoolean(eAttribute, FXJSE_Value_ToBoolean(hValue), true);
+    SetBoolean(eAttribute, pValue->ToBoolean(), true);
   } else {
-    FXJSE_Value_SetUTF8String(hValue, GetBoolean(eAttribute) ? "1" : "0");
+    pValue->SetString(GetBoolean(eAttribute) ? "1" : "0");
   }
 }
-void CXFA_Node::Script_Attribute_BOOLRead(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_BOOLRead(CFXJSE_Value* pValue,
                                           FX_BOOL bSetting,
                                           XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
-    FXJSE_Value_SetUTF8String(hValue, GetBoolean(eAttribute) ? "1" : "0");
+    pValue->SetString(GetBoolean(eAttribute) ? "1" : "0");
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
 
@@ -1320,47 +1276,46 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
   }
 
   bool bNeedFindContainer = false;
-  XFA_ELEMENT eType = GetClassID();
-  switch (eType) {
-    case XFA_ELEMENT_Caption:
+  switch (GetElementType()) {
+    case XFA_Element::Caption:
       bNeedFindContainer = true;
       pNotify->OnValueChanged(this, eAttribute, this,
                               GetNodeItem(XFA_NODEITEM_Parent));
       break;
-    case XFA_ELEMENT_Font:
-    case XFA_ELEMENT_Para: {
+    case XFA_Element::Font:
+    case XFA_Element::Para: {
       bNeedFindContainer = true;
       CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-      if (pParentNode->GetClassID() == XFA_ELEMENT_Caption) {
+      if (pParentNode->GetElementType() == XFA_Element::Caption) {
         pNotify->OnValueChanged(this, eAttribute, pParentNode,
                                 pParentNode->GetNodeItem(XFA_NODEITEM_Parent));
       } else {
         pNotify->OnValueChanged(this, eAttribute, this, pParentNode);
       }
     } break;
-    case XFA_ELEMENT_Margin: {
+    case XFA_Element::Margin: {
       bNeedFindContainer = true;
       CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-      XFA_ELEMENT eParentType = pParentNode->GetClassID();
+      XFA_Element eParentType = pParentNode->GetElementType();
       if (pParentNode->IsContainerNode()) {
         pNotify->OnValueChanged(this, eAttribute, this, pParentNode);
-      } else if (eParentType == XFA_ELEMENT_Caption) {
+      } else if (eParentType == XFA_Element::Caption) {
         pNotify->OnValueChanged(this, eAttribute, pParentNode,
                                 pParentNode->GetNodeItem(XFA_NODEITEM_Parent));
       } else {
         CXFA_Node* pNode = pParentNode->GetNodeItem(XFA_NODEITEM_Parent);
-        if (pNode && pNode->GetClassID() == XFA_ELEMENT_Ui) {
+        if (pNode && pNode->GetElementType() == XFA_Element::Ui) {
           pNotify->OnValueChanged(this, eAttribute, pNode,
                                   pNode->GetNodeItem(XFA_NODEITEM_Parent));
         }
       }
     } break;
-    case XFA_ELEMENT_Comb: {
+    case XFA_Element::Comb: {
       CXFA_Node* pEditNode = GetNodeItem(XFA_NODEITEM_Parent);
-      XFA_ELEMENT eUIType = pEditNode->GetClassID();
-      if (pEditNode && (eUIType == XFA_ELEMENT_DateTimeEdit ||
-                        eUIType == XFA_ELEMENT_NumericEdit ||
-                        eUIType == XFA_ELEMENT_TextEdit)) {
+      XFA_Element eUIType = pEditNode->GetElementType();
+      if (pEditNode && (eUIType == XFA_Element::DateTimeEdit ||
+                        eUIType == XFA_Element::NumericEdit ||
+                        eUIType == XFA_Element::TextEdit)) {
         CXFA_Node* pUINode = pEditNode->GetNodeItem(XFA_NODEITEM_Parent);
         if (pUINode) {
           pNotify->OnValueChanged(this, eAttribute, pUINode,
@@ -1368,20 +1323,20 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
         }
       }
     } break;
-    case XFA_ELEMENT_Button:
-    case XFA_ELEMENT_Barcode:
-    case XFA_ELEMENT_ChoiceList:
-    case XFA_ELEMENT_DateTimeEdit:
-    case XFA_ELEMENT_NumericEdit:
-    case XFA_ELEMENT_PasswordEdit:
-    case XFA_ELEMENT_TextEdit: {
+    case XFA_Element::Button:
+    case XFA_Element::Barcode:
+    case XFA_Element::ChoiceList:
+    case XFA_Element::DateTimeEdit:
+    case XFA_Element::NumericEdit:
+    case XFA_Element::PasswordEdit:
+    case XFA_Element::TextEdit: {
       CXFA_Node* pUINode = GetNodeItem(XFA_NODEITEM_Parent);
       if (pUINode) {
         pNotify->OnValueChanged(this, eAttribute, pUINode,
                                 pUINode->GetNodeItem(XFA_NODEITEM_Parent));
       }
     } break;
-    case XFA_ELEMENT_CheckButton: {
+    case XFA_Element::CheckButton: {
       bNeedFindContainer = true;
       CXFA_Node* pUINode = GetNodeItem(XFA_NODEITEM_Parent);
       if (pUINode) {
@@ -1389,26 +1344,26 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
                                 pUINode->GetNodeItem(XFA_NODEITEM_Parent));
       }
     } break;
-    case XFA_ELEMENT_Keep:
-    case XFA_ELEMENT_Bookend:
-    case XFA_ELEMENT_Break:
-    case XFA_ELEMENT_BreakAfter:
-    case XFA_ELEMENT_BreakBefore:
-    case XFA_ELEMENT_Overflow:
+    case XFA_Element::Keep:
+    case XFA_Element::Bookend:
+    case XFA_Element::Break:
+    case XFA_Element::BreakAfter:
+    case XFA_Element::BreakBefore:
+    case XFA_Element::Overflow:
       bNeedFindContainer = true;
       break;
-    case XFA_ELEMENT_Area:
-    case XFA_ELEMENT_Draw:
-    case XFA_ELEMENT_ExclGroup:
-    case XFA_ELEMENT_Field:
-    case XFA_ELEMENT_Subform:
-    case XFA_ELEMENT_SubformSet:
+    case XFA_Element::Area:
+    case XFA_Element::Draw:
+    case XFA_Element::ExclGroup:
+    case XFA_Element::Field:
+    case XFA_Element::Subform:
+    case XFA_Element::SubformSet:
       pLayoutPro->AddChangedContainer(this);
       pNotify->OnValueChanged(this, eAttribute, this, this);
       break;
-    case XFA_ELEMENT_Sharptext:
-    case XFA_ELEMENT_Sharpxml:
-    case XFA_ELEMENT_SharpxHTML: {
+    case XFA_Element::Sharptext:
+    case XFA_Element::Sharpxml:
+    case XFA_Element::SharpxHTML: {
       CXFA_Node* pTextNode = GetNodeItem(XFA_NODEITEM_Parent);
       if (!pTextNode) {
         return;
@@ -1417,8 +1372,8 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
       if (!pValueNode) {
         return;
       }
-      XFA_ELEMENT eType = pValueNode->GetClassID();
-      if (eType == XFA_ELEMENT_Value) {
+      XFA_Element eType = pValueNode->GetElementType();
+      if (eType == XFA_Element::Value) {
         bNeedFindContainer = true;
         CXFA_Node* pNode = pValueNode->GetNodeItem(XFA_NODEITEM_Parent);
         if (pNode && pNode->IsContainerNode()) {
@@ -1431,7 +1386,7 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
                                   pNode->GetNodeItem(XFA_NODEITEM_Parent));
         }
       } else {
-        if (eType == XFA_ELEMENT_Items) {
+        if (eType == XFA_Element::Items) {
           CXFA_Node* pNode = pValueNode->GetNodeItem(XFA_NODEITEM_Parent);
           if (pNode && pNode->IsContainerNode()) {
             pNotify->OnValueChanged(this, eAttribute, pValueNode, pNode);
@@ -1456,29 +1411,30 @@ void CXFA_Node::Script_Attribute_SendAttributeChangeMessage(
   }
 }
 
-void CXFA_Node::Script_Attribute_String(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_String(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    CFX_ByteString szValue;
-    FXJSE_Value_ToUTF8String(hValue, szValue);
-    CFX_WideString wsValue = CFX_WideString::FromUTF8(szValue.AsStringC());
+    CFX_WideString wsValue = pValue->ToWideString();
     SetAttribute(eAttribute, wsValue.AsStringC(), true);
-    if (eAttribute == XFA_ATTRIBUTE_Use && GetClassID() == XFA_ELEMENT_Desc) {
-      CFX_WideString wsUseVal = wsValue, wsID, wsSOM;
+    if (eAttribute == XFA_ATTRIBUTE_Use &&
+        GetElementType() == XFA_Element::Desc) {
       CXFA_Node* pTemplateNode =
           ToNode(m_pDocument->GetXFAObject(XFA_HASHCODE_Template));
       CXFA_Node* pProtoRoot =
-          pTemplateNode->GetFirstChildByClass(XFA_ELEMENT_Subform)
-              ->GetFirstChildByClass(XFA_ELEMENT_Proto);
-      if (!wsUseVal.IsEmpty()) {
-        if (wsUseVal[0] == '#') {
-          wsID = CFX_WideString(wsUseVal.c_str() + 1, wsUseVal.GetLength() - 1);
+          pTemplateNode->GetFirstChildByClass(XFA_Element::Subform)
+              ->GetFirstChildByClass(XFA_Element::Proto);
+
+      CFX_WideString wsID;
+      CFX_WideString wsSOM;
+      if (!wsValue.IsEmpty()) {
+        if (wsValue[0] == '#') {
+          wsID = CFX_WideString(wsValue.c_str() + 1, wsValue.GetLength() - 1);
         } else {
-          wsSOM = wsUseVal;
+          wsSOM = wsValue;
         }
       }
-      CXFA_Node* pProtoNode = NULL;
+      CXFA_Node* pProtoNode = nullptr;
       if (!wsSOM.IsEmpty()) {
         uint32_t dwFlag = XFA_RESOLVENODE_Children |
                           XFA_RESOLVENODE_Attributes |
@@ -1517,49 +1473,47 @@ void CXFA_Node::Script_Attribute_String(FXJSE_HVALUE hValue,
   } else {
     CFX_WideString wsValue;
     GetAttribute(eAttribute, wsValue);
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    pValue->SetString(
         FX_UTF8Encode(wsValue.c_str(), wsValue.GetLength()).AsStringC());
   }
 }
-void CXFA_Node::Script_Attribute_StringRead(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Attribute_StringRead(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
     CFX_WideString wsValue;
     GetAttribute(eAttribute, wsValue);
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    pValue->SetString(
         FX_UTF8Encode(wsValue.c_str(), wsValue.GetLength()).AsStringC());
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
 void CXFA_Node::Script_WsdlConnection_Execute(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if ((argc == 0) || (argc == 1)) {
-    FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+    pArguments->GetReturnValue()->SetBoolean(FALSE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execute");
   }
 }
 void CXFA_Node::Script_Delta_Restore(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"restore");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"restore");
   }
 }
-void CXFA_Node::Script_Delta_CurrentValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Delta_CurrentValue(CFXJSE_Value* pValue,
                                           FX_BOOL bSetting,
                                           XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Delta_SavedValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Delta_SavedValue(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Delta_Target(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Delta_Target(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Som_Message(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_Message(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_SOM_MESSAGETYPE iMessageType) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -1573,20 +1527,15 @@ void CXFA_Node::Script_Som_Message(FXJSE_HVALUE hValue,
     bNew = TRUE;
   }
   if (bSetting) {
-    CFX_ByteString bsMessage;
-    FXJSE_Value_ToUTF8String(hValue, bsMessage);
     switch (iMessageType) {
       case XFA_SOM_ValidationMessage:
-        validate.SetScriptMessageText(
-            CFX_WideString::FromUTF8(bsMessage.AsStringC()));
+        validate.SetScriptMessageText(pValue->ToWideString());
         break;
       case XFA_SOM_FormatMessage:
-        validate.SetFormatMessageText(
-            CFX_WideString::FromUTF8(bsMessage.AsStringC()));
+        validate.SetFormatMessageText(pValue->ToWideString());
         break;
       case XFA_SOM_MandatoryMessage:
-        validate.SetNullMessageText(
-            CFX_WideString::FromUTF8(bsMessage.AsStringC()));
+        validate.SetNullMessageText(pValue->ToWideString());
         break;
       default:
         break;
@@ -1613,57 +1562,58 @@ void CXFA_Node::Script_Som_Message(FXJSE_HVALUE hValue,
       default:
         break;
     }
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsMessage).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsMessage).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_ValidationMessage(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_ValidationMessage(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute) {
-  Script_Som_Message(hValue, bSetting, XFA_SOM_ValidationMessage);
+  Script_Som_Message(pValue, bSetting, XFA_SOM_ValidationMessage);
 }
-void CXFA_Node::Script_Field_Length(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_Length(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
     CXFA_WidgetData* pWidgetData = GetWidgetData();
     if (!pWidgetData) {
-      FXJSE_Value_SetInteger(hValue, 0);
+      pValue->SetInteger(0);
       return;
     }
-    FXJSE_Value_SetInteger(hValue, pWidgetData->CountChoiceListItems(TRUE));
+    pValue->SetInteger(pWidgetData->CountChoiceListItems(TRUE));
   }
 }
-void CXFA_Node::Script_Som_DefaultValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_DefaultValue(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {
-  XFA_ELEMENT classID = GetClassID();
-  if (classID == XFA_ELEMENT_Field) {
-    Script_Field_DefaultValue(hValue, bSetting, eAttribute);
+  XFA_Element eType = GetElementType();
+  if (eType == XFA_Element::Field) {
+    Script_Field_DefaultValue(pValue, bSetting, eAttribute);
     return;
-  } else if (classID == XFA_ELEMENT_Draw) {
-    Script_Draw_DefaultValue(hValue, bSetting, eAttribute);
+  }
+  if (eType == XFA_Element::Draw) {
+    Script_Draw_DefaultValue(pValue, bSetting, eAttribute);
     return;
-  } else if (classID == XFA_ELEMENT_Boolean) {
-    Script_Boolean_Value(hValue, bSetting, eAttribute);
+  }
+  if (eType == XFA_Element::Boolean) {
+    Script_Boolean_Value(pValue, bSetting, eAttribute);
     return;
   }
   if (bSetting) {
-    CFX_ByteString newValue;
-    if (!(FXJSE_Value_IsNull(hValue) || FXJSE_Value_IsUndefined(hValue))) {
-      FXJSE_Value_ToUTF8String(hValue, newValue);
-    }
-    CFX_WideString wsNewValue = CFX_WideString::FromUTF8(newValue.AsStringC());
+    CFX_WideString wsNewValue;
+    if (!(pValue && (pValue->IsNull() || pValue->IsUndefined())))
+      wsNewValue = pValue->ToWideString();
+
     CFX_WideString wsFormatValue(wsNewValue);
-    CXFA_WidgetData* pContainerWidgetData = NULL;
+    CXFA_WidgetData* pContainerWidgetData = nullptr;
     if (GetPacketID() == XFA_XDPPACKET_Datasets) {
       CXFA_NodeArray formNodes;
       GetBindItems(formNodes);
       CFX_WideString wsPicture;
       for (int32_t i = 0; i < formNodes.GetSize(); i++) {
         CXFA_Node* pFormNode = formNodes.GetAt(i);
-        if (!pFormNode || pFormNode->HasFlag(XFA_NODEFLAG_HasRemoved)) {
+        if (!pFormNode || pFormNode->HasRemovedChildren()) {
           continue;
         }
         pContainerWidgetData = pFormNode->GetContainerWidgetData();
@@ -1674,7 +1624,7 @@ void CXFA_Node::Script_Som_DefaultValue(FXJSE_HVALUE hValue,
         if (!wsPicture.IsEmpty()) {
           break;
         }
-        pContainerWidgetData = NULL;
+        pContainerWidgetData = nullptr;
       }
     } else if (GetPacketID() == XFA_XDPPACKET_Form) {
       pContainerWidgetData = GetContainerWidgetData();
@@ -1685,45 +1635,43 @@ void CXFA_Node::Script_Som_DefaultValue(FXJSE_HVALUE hValue,
     SetScriptContent(wsNewValue, wsFormatValue, true, TRUE);
   } else {
     CFX_WideString content = GetScriptContent(TRUE);
-    if (content.IsEmpty() && classID != XFA_ELEMENT_Text &&
-        classID != XFA_ELEMENT_SubmitUrl) {
-      FXJSE_Value_SetNull(hValue);
-    } else if (classID == XFA_ELEMENT_Integer) {
-      FXJSE_Value_SetInteger(hValue, FXSYS_wtoi(content.c_str()));
-    } else if (classID == XFA_ELEMENT_Float || classID == XFA_ELEMENT_Decimal) {
+    if (content.IsEmpty() && eType != XFA_Element::Text &&
+        eType != XFA_Element::SubmitUrl) {
+      pValue->SetNull();
+    } else if (eType == XFA_Element::Integer) {
+      pValue->SetInteger(FXSYS_wtoi(content.c_str()));
+    } else if (eType == XFA_Element::Float || eType == XFA_Element::Decimal) {
       CFX_Decimal decimal(content.AsStringC());
-      FXJSE_Value_SetFloat(hValue, (FX_FLOAT)(double)decimal);
+      pValue->SetFloat((FX_FLOAT)(double)decimal);
     } else {
-      FXJSE_Value_SetUTF8String(
-          hValue,
+      pValue->SetString(
           FX_UTF8Encode(content.c_str(), content.GetLength()).AsStringC());
     }
   }
 }
-void CXFA_Node::Script_Som_DefaultValue_Read(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_DefaultValue_Read(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
     return;
   }
   CFX_WideString content = GetScriptContent(TRUE);
   if (content.IsEmpty()) {
-    FXJSE_Value_SetNull(hValue);
+    pValue->SetNull();
   } else {
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    pValue->SetString(
         FX_UTF8Encode(content.c_str(), content.GetLength()).AsStringC());
   }
 }
-void CXFA_Node::Script_Boolean_Value(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Boolean_Value(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
     CFX_ByteString newValue;
-    if (!(FXJSE_Value_IsNull(hValue) || FXJSE_Value_IsUndefined(hValue))) {
-      FXJSE_Value_ToUTF8String(hValue, newValue);
-    }
+    if (!(pValue && (pValue->IsNull() || pValue->IsUndefined())))
+      newValue = pValue->ToString();
+
     int32_t iValue = FXSYS_atoi(newValue.c_str());
     CFX_WideString wsNewValue(iValue == 0 ? L"0" : L"1");
     CFX_WideString wsFormatValue(wsNewValue);
@@ -1734,7 +1682,7 @@ void CXFA_Node::Script_Boolean_Value(FXJSE_HVALUE hValue,
     SetScriptContent(wsNewValue, wsFormatValue, true, TRUE);
   } else {
     CFX_WideString wsValue = GetScriptContent(TRUE);
-    FXJSE_Value_SetBoolean(hValue, wsValue == FX_WSTRC(L"1"));
+    pValue->SetBoolean(wsValue == FX_WSTRC(L"1"));
   }
 }
 struct XFA_ExecEventParaInfo {
@@ -1790,13 +1738,14 @@ const XFA_ExecEventParaInfo* GetEventParaInfoByName(
   } while (iStart <= iEnd);
   return nullptr;
 }
-void XFA_STRING_TO_RGB(CFX_WideString& strRGB,
+void XFA_STRING_TO_RGB(const CFX_WideString& strRGB,
                        int32_t& r,
                        int32_t& g,
                        int32_t& b) {
   r = 0;
   g = 0;
   b = 0;
+
   FX_WCHAR zero = '0';
   int32_t iIndex = 0;
   int32_t iLen = strRGB.GetLength();
@@ -1824,7 +1773,7 @@ void XFA_STRING_TO_RGB(CFX_WideString& strRGB,
     }
   }
 }
-void CXFA_Node::Script_Som_BorderColor(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_BorderColor(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -1833,13 +1782,11 @@ void CXFA_Node::Script_Som_BorderColor(FXJSE_HVALUE hValue,
   }
   CXFA_Border border = pWidgetData->GetBorder(TRUE);
   int32_t iSize = border.CountEdges();
-  CFX_WideString strColor;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    strColor = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    int32_t r = 0, g = 0, b = 0;
-    XFA_STRING_TO_RGB(strColor, r, g, b);
+    int32_t r = 0;
+    int32_t g = 0;
+    int32_t b = 0;
+    XFA_STRING_TO_RGB(pValue->ToWideString(), r, g, b);
     FX_ARGB rgb = ArgbEncode(100, r, g, b);
     for (int32_t i = 0; i < iSize; ++i) {
       CXFA_Edge edge = border.GetEdge(i);
@@ -1850,11 +1797,12 @@ void CXFA_Node::Script_Som_BorderColor(FXJSE_HVALUE hValue,
     FX_ARGB color = edge.GetColor();
     int32_t a, r, g, b;
     ArgbDecode(color, a, r, g, b);
+    CFX_WideString strColor;
     strColor.Format(L"%d,%d,%d", r, g, b);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(strColor).AsStringC());
+    pValue->SetString(FX_UTF8Encode(strColor).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_BorderWidth(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_BorderWidth(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -1865,9 +1813,7 @@ void CXFA_Node::Script_Som_BorderWidth(FXJSE_HVALUE hValue,
   int32_t iSize = border.CountEdges();
   CFX_WideString wsThickness;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsThickness = CFX_WideString::FromUTF8(bsValue.AsStringC());
+    wsThickness = pValue->ToWideString();
     for (int32_t i = 0; i < iSize; ++i) {
       CXFA_Edge edge = border.GetEdge(i);
       CXFA_Measurement thickness(wsThickness.AsStringC());
@@ -1877,10 +1823,10 @@ void CXFA_Node::Script_Som_BorderWidth(FXJSE_HVALUE hValue,
     CXFA_Edge edge = border.GetEdge(0);
     CXFA_Measurement thickness = edge.GetMSThickness();
     thickness.ToString(wsThickness);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsThickness).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsThickness).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_FillColor(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_FillColor(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -1893,69 +1839,65 @@ void CXFA_Node::Script_Som_FillColor(FXJSE_HVALUE hValue,
   if (!pNode) {
     return;
   }
-  CFX_WideString wsColor;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsColor = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    int32_t r, g, b;
-    XFA_STRING_TO_RGB(wsColor, r, g, b);
+    int32_t r;
+    int32_t g;
+    int32_t b;
+    XFA_STRING_TO_RGB(pValue->ToWideString(), r, g, b);
     FX_ARGB color = ArgbEncode(0xff, r, g, b);
     borderfill.SetColor(color);
   } else {
     FX_ARGB color = borderfill.GetColor();
-    int32_t a, r, g, b;
+    int32_t a;
+    int32_t r;
+    int32_t g;
+    int32_t b;
     ArgbDecode(color, a, r, g, b);
+    CFX_WideString wsColor;
     wsColor.Format(L"%d,%d,%d", r, g, b);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsColor).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsColor).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_DataNode(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_DataNode(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
     CXFA_Node* pDataNode = GetBindData();
     if (pDataNode) {
-      FXJSE_Value_Set(
-          hValue,
+      pValue->Assign(
           m_pDocument->GetScriptContext()->GetJSValueFromMap(pDataNode));
     } else {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
-void CXFA_Node::Script_Draw_DefaultValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Draw_DefaultValue(CFXJSE_Value* pValue,
                                          FX_BOOL bSetting,
                                          XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    if (FXJSE_Value_IsUTF8String(hValue)) {
+    if (pValue && pValue->IsString()) {
       CXFA_WidgetData* pWidgetData = GetWidgetData();
       ASSERT(pWidgetData);
-      XFA_ELEMENT uiType = pWidgetData->GetUIType();
-      if (uiType == XFA_ELEMENT_Text) {
-        CFX_ByteString newValue;
-        FXJSE_Value_ToUTF8String(hValue, newValue);
-        CFX_WideString wsNewValue =
-            CFX_WideString::FromUTF8(newValue.AsStringC());
+      XFA_Element uiType = pWidgetData->GetUIType();
+      if (uiType == XFA_Element::Text) {
+        CFX_WideString wsNewValue = pValue->ToWideString();
         CFX_WideString wsFormatValue(wsNewValue);
         SetScriptContent(wsNewValue, wsFormatValue, true, TRUE);
-      } else if (uiType != XFA_ELEMENT_Image) {
       }
     }
   } else {
     CFX_WideString content = GetScriptContent(TRUE);
     if (content.IsEmpty()) {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     } else {
-      FXJSE_Value_SetUTF8String(
-          hValue,
+      pValue->SetString(
           FX_UTF8Encode(content.c_str(), content.GetLength()).AsStringC());
     }
   }
 }
-void CXFA_Node::Script_Field_DefaultValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_DefaultValue(CFXJSE_Value* pValue,
                                           FX_BOOL bSetting,
                                           XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -1963,20 +1905,19 @@ void CXFA_Node::Script_Field_DefaultValue(FXJSE_HVALUE hValue,
     return;
   }
   if (bSetting) {
-    if (FXJSE_Value_IsNull(hValue)) {
+    if (pValue && pValue->IsNull()) {
       pWidgetData->m_bPreNull = pWidgetData->m_bIsNull;
       pWidgetData->m_bIsNull = TRUE;
     } else {
       pWidgetData->m_bPreNull = pWidgetData->m_bIsNull;
       pWidgetData->m_bIsNull = FALSE;
     }
-    CFX_ByteString newValue;
-    if (!(FXJSE_Value_IsNull(hValue) || FXJSE_Value_IsUndefined(hValue))) {
-      FXJSE_Value_ToUTF8String(hValue, newValue);
-    }
-    CFX_WideString wsNewText = CFX_WideString::FromUTF8(newValue.AsStringC());
+    CFX_WideString wsNewText;
+    if (!(pValue && (pValue->IsNull() || pValue->IsUndefined())))
+      wsNewText = pValue->ToWideString();
+
     CXFA_Node* pUIChild = pWidgetData->GetUIChild();
-    if (pUIChild->GetClassID() == XFA_ELEMENT_NumericEdit) {
+    if (pUIChild->GetElementType() == XFA_Element::NumericEdit) {
       int32_t iLeadDigits = 0;
       int32_t iFracDigits = 0;
       pWidgetData->GetLeadDigits(iLeadDigits);
@@ -1993,57 +1934,50 @@ void CXFA_Node::Script_Field_DefaultValue(FXJSE_HVALUE hValue,
   } else {
     CFX_WideString content = GetScriptContent(TRUE);
     if (content.IsEmpty()) {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     } else {
       CXFA_Node* pUIChild = pWidgetData->GetUIChild();
-      XFA_ELEMENT eUI = pUIChild->GetClassID();
       CXFA_Value defVal = pWidgetData->GetFormValue();
       CXFA_Node* pNode = defVal.GetNode()->GetNodeItem(XFA_NODEITEM_FirstChild);
-      if (pNode && pNode->GetClassID() == XFA_ELEMENT_Decimal) {
-        if (eUI == XFA_ELEMENT_NumericEdit &&
+      if (pNode && pNode->GetElementType() == XFA_Element::Decimal) {
+        if (pUIChild->GetElementType() == XFA_Element::NumericEdit &&
             (pNode->GetInteger(XFA_ATTRIBUTE_FracDigits) == -1)) {
-          FXJSE_Value_SetUTF8String(
-              hValue,
+          pValue->SetString(
               FX_UTF8Encode(content.c_str(), content.GetLength()).AsStringC());
         } else {
           CFX_Decimal decimal(content.AsStringC());
-          FXJSE_Value_SetFloat(hValue, (FX_FLOAT)(double)decimal);
+          pValue->SetFloat((FX_FLOAT)(double)decimal);
         }
-      } else if (pNode && pNode->GetClassID() == XFA_ELEMENT_Integer) {
-        FXJSE_Value_SetInteger(hValue, FXSYS_wtoi(content.c_str()));
-      } else if (pNode && pNode->GetClassID() == XFA_ELEMENT_Boolean) {
-        FXJSE_Value_SetBoolean(hValue,
-                               FXSYS_wtoi(content.c_str()) == 0 ? FALSE : TRUE);
-      } else if (pNode && pNode->GetClassID() == XFA_ELEMENT_Float) {
+      } else if (pNode && pNode->GetElementType() == XFA_Element::Integer) {
+        pValue->SetInteger(FXSYS_wtoi(content.c_str()));
+      } else if (pNode && pNode->GetElementType() == XFA_Element::Boolean) {
+        pValue->SetBoolean(FXSYS_wtoi(content.c_str()) == 0 ? FALSE : TRUE);
+      } else if (pNode && pNode->GetElementType() == XFA_Element::Float) {
         CFX_Decimal decimal(content.AsStringC());
-        FXJSE_Value_SetFloat(hValue, (FX_FLOAT)(double)decimal);
+        pValue->SetFloat((FX_FLOAT)(double)decimal);
       } else {
-        FXJSE_Value_SetUTF8String(
-            hValue,
+        pValue->SetString(
             FX_UTF8Encode(content.c_str(), content.GetLength()).AsStringC());
       }
     }
   }
 }
-void CXFA_Node::Script_Field_EditValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_EditValue(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
   if (!pWidgetData) {
     return;
   }
-  CFX_WideString wsValue;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsValue = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    pWidgetData->SetValue(wsValue, XFA_VALUEPICTURE_Edit);
+    pWidgetData->SetValue(pValue->ToWideString(), XFA_VALUEPICTURE_Edit);
   } else {
+    CFX_WideString wsValue;
     pWidgetData->GetValue(wsValue, XFA_VALUEPICTURE_Edit);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsValue).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsValue).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_FontColor(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_FontColor(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2055,47 +1989,46 @@ void CXFA_Node::Script_Som_FontColor(FXJSE_HVALUE hValue,
   if (!pNode) {
     return;
   }
-  CFX_WideString wsColor;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsColor = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    int32_t r, g, b;
-    XFA_STRING_TO_RGB(wsColor, r, g, b);
+    int32_t r;
+    int32_t g;
+    int32_t b;
+    XFA_STRING_TO_RGB(pValue->ToWideString(), r, g, b);
     FX_ARGB color = ArgbEncode(0xff, r, g, b);
     font.SetColor(color);
   } else {
     FX_ARGB color = font.GetColor();
-    int32_t a, r, g, b;
+    int32_t a;
+    int32_t r;
+    int32_t g;
+    int32_t b;
     ArgbDecode(color, a, r, g, b);
+    CFX_WideString wsColor;
     wsColor.Format(L"%d,%d,%d", r, g, b);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsColor).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsColor).AsStringC());
   }
 }
-void CXFA_Node::Script_Field_FormatMessage(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_FormatMessage(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
-  Script_Som_Message(hValue, bSetting, XFA_SOM_FormatMessage);
+  Script_Som_Message(pValue, bSetting, XFA_SOM_FormatMessage);
 }
-void CXFA_Node::Script_Field_FormattedValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_FormattedValue(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
   if (!pWidgetData) {
     return;
   }
-  CFX_WideString wsValue;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsValue = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    pWidgetData->SetValue(wsValue, XFA_VALUEPICTURE_Display);
+    pWidgetData->SetValue(pValue->ToWideString(), XFA_VALUEPICTURE_Display);
   } else {
+    CFX_WideString wsValue;
     pWidgetData->GetValue(wsValue, XFA_VALUEPICTURE_Display);
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsValue).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsValue).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_Mandatory(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_Mandatory(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2103,37 +2036,33 @@ void CXFA_Node::Script_Som_Mandatory(FXJSE_HVALUE hValue,
     return;
   }
   CXFA_Validate validate = pWidgetData->GetValidate(TRUE);
-  CFX_WideString wsValue;
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    wsValue = CFX_WideString::FromUTF8(bsValue.AsStringC());
-    validate.SetNullTest(wsValue);
+    validate.SetNullTest(pValue->ToWideString());
   } else {
     int32_t iValue = validate.GetNullTest();
     const XFA_ATTRIBUTEENUMINFO* pInfo =
         XFA_GetAttributeEnumByID((XFA_ATTRIBUTEENUM)iValue);
-    if (pInfo) {
+    CFX_WideString wsValue;
+    if (pInfo)
       wsValue = pInfo->pName;
-    }
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsValue).AsStringC());
+    pValue->SetString(FX_UTF8Encode(wsValue).AsStringC());
   }
 }
-void CXFA_Node::Script_Som_MandatoryMessage(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_MandatoryMessage(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
-  Script_Som_Message(hValue, bSetting, XFA_SOM_MandatoryMessage);
+  Script_Som_Message(pValue, bSetting, XFA_SOM_MandatoryMessage);
 }
-void CXFA_Node::Script_Field_ParentSubform(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_ParentSubform(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   } else {
-    FXJSE_Value_SetNull(hValue);
+    pValue->SetNull();
   }
 }
-void CXFA_Node::Script_Field_SelectedIndex(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Field_SelectedIndex(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2141,14 +2070,14 @@ void CXFA_Node::Script_Field_SelectedIndex(FXJSE_HVALUE hValue,
     return;
   }
   if (bSetting) {
-    int32_t iIndex = FXJSE_Value_ToInteger(hValue);
+    int32_t iIndex = pValue->ToInteger();
     if (iIndex == -1) {
       pWidgetData->ClearAllSelections();
       return;
     }
-    pWidgetData->SetItemState(iIndex, TRUE, TRUE, TRUE);
+    pWidgetData->SetItemState(iIndex, TRUE, true, TRUE, TRUE);
   } else {
-    FXJSE_Value_SetInteger(hValue, pWidgetData->GetSelectedItem());
+    pValue->SetInteger(pWidgetData->GetSelectedItem());
   }
 }
 void CXFA_Node::Script_Field_ClearItems(CFXJSE_Arguments* pArguments) {
@@ -2164,13 +2093,13 @@ void CXFA_Node::Script_Field_ExecEvent(CFXJSE_Arguments* pArguments) {
     CFX_ByteString eventString = pArguments->GetUTF8String(0);
     int32_t iRet = execSingleEventByName(
         CFX_WideString::FromUTF8(eventString.AsStringC()).AsStringC(),
-        XFA_ELEMENT_Field);
+        XFA_Element::Field);
     if (eventString == "validate") {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(),
-                             ((iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE));
+      pArguments->GetReturnValue()->SetBoolean(
+          (iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
   }
 }
 void CXFA_Node::Script_Field_ExecInitialize(CFXJSE_Arguments* pArguments) {
@@ -2182,14 +2111,13 @@ void CXFA_Node::Script_Field_ExecInitialize(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Initialize, FALSE, FALSE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execInitialize");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execInitialize");
   }
 }
 void CXFA_Node::Script_Field_DeleteItem(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"deleteItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"deleteItem");
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2198,41 +2126,39 @@ void CXFA_Node::Script_Field_DeleteItem(CFXJSE_Arguments* pArguments) {
   }
   int32_t iIndex = pArguments->GetInt32(0);
   FX_BOOL bValue = pWidgetData->DeleteItem(iIndex, TRUE, TRUE);
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetBoolean(hValue, bValue);
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetBoolean(bValue);
 }
 void CXFA_Node::Script_Field_GetSaveItem(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getSaveItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getSaveItem");
     return;
   }
   int32_t iIndex = pArguments->GetInt32(0);
   if (iIndex < 0) {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
   if (!pWidgetData) {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
     return;
   }
   CFX_WideString wsValue;
   FX_BOOL bHasItem = pWidgetData->GetChoiceListItem(wsValue, iIndex, TRUE);
   if (bHasItem) {
-    FXJSE_Value_SetUTF8String(
-        pArguments->GetReturnValue(),
+    pArguments->GetReturnValue()->SetString(
         FX_UTF8Encode(wsValue.c_str(), wsValue.GetLength()).AsStringC());
   } else {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
   }
 }
 void CXFA_Node::Script_Field_BoundItem(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"boundItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"boundItem");
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2243,16 +2169,14 @@ void CXFA_Node::Script_Field_BoundItem(CFXJSE_Arguments* pArguments) {
   CFX_WideString wsValue = CFX_WideString::FromUTF8(bsValue.AsStringC());
   CFX_WideString wsBoundValue;
   pWidgetData->GetItemValue(wsValue.AsStringC(), wsBoundValue);
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsBoundValue).AsStringC());
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetString(FX_UTF8Encode(wsBoundValue).AsStringC());
 }
 void CXFA_Node::Script_Field_GetItemState(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"getItemState");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getItemState");
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2261,10 +2185,9 @@ void CXFA_Node::Script_Field_GetItemState(CFXJSE_Arguments* pArguments) {
   }
   int32_t iIndex = pArguments->GetInt32(0);
   FX_BOOL bValue = pWidgetData->GetItemState(iIndex);
-  FXJSE_HVALUE hValue = pArguments->GetReturnValue();
-  if (hValue) {
-    FXJSE_Value_SetBoolean(hValue, bValue);
-  }
+  CFXJSE_Value* pValue = pArguments->GetReturnValue();
+  if (pValue)
+    pValue->SetBoolean(bValue);
 }
 void CXFA_Node::Script_Field_ExecCalculate(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
@@ -2275,62 +2198,57 @@ void CXFA_Node::Script_Field_ExecCalculate(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Calculate, FALSE, FALSE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execCalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execCalculate");
   }
 }
 void CXFA_Node::Script_Field_SetItems(CFXJSE_Arguments* pArguments) {}
 void CXFA_Node::Script_Field_GetDisplayItem(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"getDisplayItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getDisplayItem");
     return;
   }
   int32_t iIndex = pArguments->GetInt32(0);
   if (iIndex < 0) {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
   if (!pWidgetData) {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
     return;
   }
   CFX_WideString wsValue;
   FX_BOOL bHasItem = pWidgetData->GetChoiceListItem(wsValue, iIndex, FALSE);
   if (bHasItem) {
-    FXJSE_Value_SetUTF8String(
-        pArguments->GetReturnValue(),
+    pArguments->GetReturnValue()->SetString(
         FX_UTF8Encode(wsValue.c_str(), wsValue.GetLength()).AsStringC());
   } else {
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
   }
 }
 void CXFA_Node::Script_Field_SetItemState(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength != 2) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"setItemState");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"setItemState");
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
-  if (!pWidgetData) {
+  if (!pWidgetData)
     return;
-  }
+
   int32_t iIndex = pArguments->GetInt32(0);
   if (pArguments->GetInt32(1) != 0) {
-    pWidgetData->SetItemState(iIndex, TRUE, TRUE, TRUE);
+    pWidgetData->SetItemState(iIndex, TRUE, true, TRUE, TRUE);
   } else {
-    if (pWidgetData->GetItemState(iIndex)) {
-      pWidgetData->SetItemState(iIndex, FALSE, TRUE, TRUE);
-    }
+    if (pWidgetData->GetItemState(iIndex))
+      pWidgetData->SetItemState(iIndex, FALSE, true, TRUE, TRUE);
   }
 }
 void CXFA_Node::Script_Field_AddItem(CFXJSE_Arguments* pArguments) {
   int32_t iLength = pArguments->GetLength();
   if (iLength < 1 || iLength > 2) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addItem");
     return;
   }
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2354,27 +2272,26 @@ void CXFA_Node::Script_Field_ExecValidate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (!pNotify) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
       int32_t iRet =
           pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Validate, FALSE, FALSE);
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(),
-                             ((iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE));
+      pArguments->GetReturnValue()->SetBoolean(
+          (iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execValidate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execValidate");
   }
 }
-void CXFA_Node::Script_ExclGroup_ErrorText(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_ExclGroup_ErrorText(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
-void CXFA_Node::Script_ExclGroup_DefaultAndRawValue(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_ExclGroup_DefaultAndRawValue(CFXJSE_Value* pValue,
                                                     FX_BOOL bSetting,
                                                     XFA_ATTRIBUTE eAttribute) {
   CXFA_WidgetData* pWidgetData = GetWidgetData();
@@ -2382,21 +2299,19 @@ void CXFA_Node::Script_ExclGroup_DefaultAndRawValue(FXJSE_HVALUE hValue,
     return;
   }
   if (bSetting) {
-    CFX_ByteString bsValue;
-    FXJSE_Value_ToUTF8String(hValue, bsValue);
-    pWidgetData->SetSelectedMemberByValue(
-        CFX_WideString::FromUTF8(bsValue.AsStringC()).AsStringC(), TRUE, TRUE);
+    pWidgetData->SetSelectedMemberByValue(pValue->ToWideString().AsStringC(),
+                                          true, TRUE, TRUE);
   } else {
     CFX_WideString wsValue = GetScriptContent(TRUE);
     XFA_VERSION curVersion = GetDocument()->GetCurVersionMode();
     if (wsValue.IsEmpty() && curVersion >= XFA_VERSION_300) {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     } else {
-      FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(wsValue).AsStringC());
+      pValue->SetString(FX_UTF8Encode(wsValue).AsStringC());
     }
   }
 }
-void CXFA_Node::Script_ExclGroup_Transient(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_ExclGroup_Transient(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {}
 void CXFA_Node::Script_ExclGroup_ExecEvent(CFXJSE_Arguments* pArguments) {
@@ -2405,40 +2320,42 @@ void CXFA_Node::Script_ExclGroup_ExecEvent(CFXJSE_Arguments* pArguments) {
     CFX_ByteString eventString = pArguments->GetUTF8String(0);
     execSingleEventByName(
         CFX_WideString::FromUTF8(eventString.AsStringC()).AsStringC(),
-        XFA_ELEMENT_ExclGroup);
+        XFA_Element::ExclGroup);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
   }
 }
+
 void CXFA_Node::Script_ExclGroup_SelectedMember(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
-  if ((argc == 0) || (argc == 1)) {
-    CXFA_WidgetData* pWidgetData = GetWidgetData();
-    if (!pWidgetData) {
-      FXJSE_Value_SetNull(pArguments->GetReturnValue());
-    } else {
-      CXFA_Node* pReturnNode = NULL;
-      if (argc == 0) {
-        pReturnNode = pWidgetData->GetSelectedMember();
-      } else {
-        CFX_ByteString szName;
-        szName = pArguments->GetUTF8String(0);
-        pReturnNode = pWidgetData->SetSelectedMember(
-            CFX_WideString::FromUTF8(szName.AsStringC()).AsStringC());
-      }
-      if (pReturnNode) {
-        FXJSE_Value_Set(
-            pArguments->GetReturnValue(),
-            m_pDocument->GetScriptContext()->GetJSValueFromMap(pReturnNode));
-      } else {
-        FXJSE_Value_SetNull(pArguments->GetReturnValue());
-      }
-    }
-  } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"selectedMember");
+  if (argc < 0 || argc > 1) {
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"selectedMember");
+    return;
   }
+
+  CXFA_WidgetData* pWidgetData = GetWidgetData();
+  if (!pWidgetData) {
+    pArguments->GetReturnValue()->SetNull();
+    return;
+  }
+
+  CXFA_Node* pReturnNode = nullptr;
+  if (argc == 0) {
+    pReturnNode = pWidgetData->GetSelectedMember();
+  } else {
+    CFX_ByteString szName;
+    szName = pArguments->GetUTF8String(0);
+    pReturnNode = pWidgetData->SetSelectedMember(
+        CFX_WideString::FromUTF8(szName.AsStringC()).AsStringC(), true);
+  }
+  if (!pReturnNode) {
+    pArguments->GetReturnValue()->SetNull();
+    return;
+  }
+  pArguments->GetReturnValue()->Assign(
+      m_pDocument->GetScriptContext()->GetJSValueFromMap(pReturnNode));
 }
+
 void CXFA_Node::Script_ExclGroup_ExecInitialize(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
@@ -2448,8 +2365,7 @@ void CXFA_Node::Script_ExclGroup_ExecInitialize(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Initialize);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execInitialize");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execInitialize");
   }
 }
 void CXFA_Node::Script_ExclGroup_ExecCalculate(CFXJSE_Arguments* pArguments) {
@@ -2461,8 +2377,7 @@ void CXFA_Node::Script_ExclGroup_ExecCalculate(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Calculate);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execCalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execCalculate");
   }
 }
 void CXFA_Node::Script_ExclGroup_ExecValidate(CFXJSE_Arguments* pArguments) {
@@ -2470,15 +2385,14 @@ void CXFA_Node::Script_ExclGroup_ExecValidate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (!pNotify) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
       int32_t iRet = pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Validate);
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(),
-                             ((iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE));
+      pArguments->GetReturnValue()->SetBoolean(
+          (iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execValidate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execValidate");
   }
 }
 static CXFA_Node* XFA_ScriptInstanceManager_GetItem(CXFA_Node* pInstMgrNode,
@@ -2488,12 +2402,12 @@ static CXFA_Node* XFA_ScriptInstanceManager_GetItem(CXFA_Node* pInstMgrNode,
   uint32_t dwNameHash = 0;
   for (CXFA_Node* pNode = pInstMgrNode->GetNodeItem(XFA_NODEITEM_NextSibling);
        pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    XFA_ELEMENT eCurType = pNode->GetClassID();
-    if (eCurType == XFA_ELEMENT_InstanceManager) {
+    XFA_Element eCurType = pNode->GetElementType();
+    if (eCurType == XFA_Element::InstanceManager) {
       break;
     }
-    if ((eCurType != XFA_ELEMENT_Subform) &&
-        (eCurType != XFA_ELEMENT_SubformSet)) {
+    if ((eCurType != XFA_Element::Subform) &&
+        (eCurType != XFA_Element::SubformSet)) {
       continue;
     }
     if (iCount == 0) {
@@ -2501,7 +2415,7 @@ static CXFA_Node* XFA_ScriptInstanceManager_GetItem(CXFA_Node* pInstMgrNode,
       CFX_WideStringC wsInstName = pInstMgrNode->GetCData(XFA_ATTRIBUTE_Name);
       if (wsInstName.GetLength() < 1 || wsInstName.GetAt(0) != '_' ||
           wsInstName.Mid(1) != wsName) {
-        return NULL;
+        return nullptr;
       }
       dwNameHash = pNode->GetNameHash();
     }
@@ -2513,18 +2427,18 @@ static CXFA_Node* XFA_ScriptInstanceManager_GetItem(CXFA_Node* pInstMgrNode,
       return pNode;
     }
   }
-  return NULL;
+  return nullptr;
 }
-void CXFA_Node::Script_Som_InstanceIndex(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Som_InstanceIndex(CFXJSE_Value* pValue,
                                          FX_BOOL bSetting,
                                          XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    int32_t iTo = FXJSE_Value_ToInteger(hValue);
+    int32_t iTo = pValue->ToInteger();
     int32_t iFrom = Subform_and_SubformSet_InstanceIndex();
-    CXFA_Node* pManagerNode = NULL;
+    CXFA_Node* pManagerNode = nullptr;
     for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_PrevSibling); pNode;
          pNode = pNode->GetNodeItem(XFA_NODEITEM_PrevSibling)) {
-      if (pNode->GetClassID() == XFA_ELEMENT_InstanceManager) {
+      if (pNode->GetElementType() == XFA_Element::InstanceManager) {
         pManagerNode = pNode;
         break;
       }
@@ -2537,28 +2451,30 @@ void CXFA_Node::Script_Som_InstanceIndex(FXJSE_HVALUE hValue,
       }
       CXFA_Node* pToInstance =
           XFA_ScriptInstanceManager_GetItem(pManagerNode, iTo);
-      if (pToInstance && pToInstance->GetClassID() == XFA_ELEMENT_Subform) {
+      if (pToInstance &&
+          pToInstance->GetElementType() == XFA_Element::Subform) {
         pNotify->RunSubformIndexChange(pToInstance);
       }
       CXFA_Node* pFromInstance =
           XFA_ScriptInstanceManager_GetItem(pManagerNode, iFrom);
-      if (pFromInstance && pFromInstance->GetClassID() == XFA_ELEMENT_Subform) {
+      if (pFromInstance &&
+          pFromInstance->GetElementType() == XFA_Element::Subform) {
         pNotify->RunSubformIndexChange(pFromInstance);
       }
     }
   } else {
-    FXJSE_Value_SetInteger(hValue, Subform_and_SubformSet_InstanceIndex());
+    pValue->SetInteger(Subform_and_SubformSet_InstanceIndex());
   }
 }
-void CXFA_Node::Script_Subform_InstanceManager(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Subform_InstanceManager(CFXJSE_Value* pValue,
                                                FX_BOOL bSetting,
                                                XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
     CFX_WideStringC wsName = GetCData(XFA_ATTRIBUTE_Name);
-    CXFA_Node* pInstanceMgr = NULL;
+    CXFA_Node* pInstanceMgr = nullptr;
     for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_PrevSibling); pNode;
          pNode = pNode->GetNodeItem(XFA_NODEITEM_PrevSibling)) {
-      if (pNode->GetClassID() == XFA_ELEMENT_InstanceManager) {
+      if (pNode->GetElementType() == XFA_Element::InstanceManager) {
         CFX_WideStringC wsInstMgrName = pNode->GetCData(XFA_ATTRIBUTE_Name);
         if (wsInstMgrName.GetLength() >= 1 && wsInstMgrName.GetAt(0) == '_' &&
             wsInstMgrName.Mid(1) == wsName) {
@@ -2568,30 +2484,26 @@ void CXFA_Node::Script_Subform_InstanceManager(FXJSE_HVALUE hValue,
       }
     }
     if (pInstanceMgr) {
-      FXJSE_Value_Set(
-          hValue,
+      pValue->Assign(
           m_pDocument->GetScriptContext()->GetJSValueFromMap(pInstanceMgr));
     } else {
-      FXJSE_Value_SetNull(hValue);
+      pValue->SetNull();
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
-void CXFA_Node::Script_Subform_Locale(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Subform_Locale(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    CFX_ByteString bsLocaleName;
-    FXJSE_Value_ToUTF8String(hValue, bsLocaleName);
-    SetCData(XFA_ATTRIBUTE_Locale,
-             CFX_WideString::FromUTF8(bsLocaleName.AsStringC()), true, TRUE);
+    SetCData(XFA_ATTRIBUTE_Locale, pValue->ToWideString(), true, TRUE);
   } else {
     CFX_WideString wsLocaleName;
     GetLocaleName(wsLocaleName);
-    FXJSE_Value_SetUTF8String(
-        hValue, FX_UTF8Encode(wsLocaleName.c_str(), wsLocaleName.GetLength())
-                    .AsStringC());
+    pValue->SetString(
+        FX_UTF8Encode(wsLocaleName.c_str(), wsLocaleName.GetLength())
+            .AsStringC());
   }
 }
 void CXFA_Node::Script_Subform_ExecEvent(CFXJSE_Arguments* pArguments) {
@@ -2600,9 +2512,9 @@ void CXFA_Node::Script_Subform_ExecEvent(CFXJSE_Arguments* pArguments) {
     CFX_ByteString eventString = pArguments->GetUTF8String(0);
     execSingleEventByName(
         CFX_WideString::FromUTF8(eventString.AsStringC()).AsStringC(),
-        XFA_ELEMENT_Subform);
+        XFA_Element::Subform);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execEvent");
   }
 }
 void CXFA_Node::Script_Subform_ExecInitialize(CFXJSE_Arguments* pArguments) {
@@ -2614,8 +2526,7 @@ void CXFA_Node::Script_Subform_ExecInitialize(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Initialize);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execInitialize");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execInitialize");
   }
 }
 void CXFA_Node::Script_Subform_ExecCalculate(CFXJSE_Arguments* pArguments) {
@@ -2627,8 +2538,7 @@ void CXFA_Node::Script_Subform_ExecCalculate(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Calculate);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execCalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execCalculate");
   }
 }
 void CXFA_Node::Script_Subform_ExecValidate(CFXJSE_Arguments* pArguments) {
@@ -2636,31 +2546,29 @@ void CXFA_Node::Script_Subform_ExecValidate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (!pNotify) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
       int32_t iRet = pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Validate);
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(),
-                             ((iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE));
+      pArguments->GetReturnValue()->SetBoolean(
+          (iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execValidate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execValidate");
   }
 }
 void CXFA_Node::Script_Subform_GetInvalidObjects(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"getInvalidObjects");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getInvalidObjects");
   }
 }
 int32_t CXFA_Node::Subform_and_SubformSet_InstanceIndex() {
   int32_t index = 0;
   for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_PrevSibling); pNode;
        pNode = pNode->GetNodeItem(XFA_NODEITEM_PrevSibling)) {
-    if ((pNode->GetClassID() == XFA_ELEMENT_Subform) ||
-        (pNode->GetClassID() == XFA_ELEMENT_SubformSet)) {
+    if ((pNode->GetElementType() == XFA_Element::Subform) ||
+        (pNode->GetElementType() == XFA_Element::SubformSet)) {
       index++;
     } else {
       break;
@@ -2671,9 +2579,9 @@ int32_t CXFA_Node::Subform_and_SubformSet_InstanceIndex() {
 void CXFA_Node::Script_Template_FormNodes(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 1) {
-    FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+    pArguments->GetReturnValue()->SetBoolean(TRUE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"formNodes");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"formNodes");
   }
 }
 void CXFA_Node::Script_Template_Remerge(CFXJSE_Arguments* pArguments) {
@@ -2681,7 +2589,7 @@ void CXFA_Node::Script_Template_Remerge(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     m_pDocument->DoDataRemerge(TRUE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remerge");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remerge");
   }
 }
 void CXFA_Node::Script_Template_ExecInitialize(CFXJSE_Arguments* pArguments) {
@@ -2689,13 +2597,12 @@ void CXFA_Node::Script_Template_ExecInitialize(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_WidgetData* pWidgetData = GetWidgetData();
     if (!pWidgetData) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+      pArguments->GetReturnValue()->SetBoolean(TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execInitialize");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execInitialize");
   }
 }
 void CXFA_Node::Script_Template_CreateNode(CFXJSE_Arguments* pArguments) {
@@ -2714,41 +2621,38 @@ void CXFA_Node::Script_Template_CreateNode(CFXJSE_Arguments* pArguments) {
         strNameSpace = CFX_WideString::FromUTF8(bsNameSpace.AsStringC());
       }
     }
-    const XFA_ELEMENTINFO* pElement =
-        XFA_GetElementByName(strTagName.AsStringC());
-    CXFA_Node* pNewNode = CreateSamePacketNode(pElement->eName);
+    XFA_Element eType = XFA_GetElementTypeForName(strTagName.AsStringC());
+    CXFA_Node* pNewNode = CreateSamePacketNode(eType);
     if (!pNewNode) {
-      FXJSE_Value_SetNull(pArguments->GetReturnValue());
+      pArguments->GetReturnValue()->SetNull();
     } else {
       if (!strName.IsEmpty()) {
-        if (XFA_GetAttributeOfElement(pElement->eName, XFA_ATTRIBUTE_Name,
+        if (XFA_GetAttributeOfElement(eType, XFA_ATTRIBUTE_Name,
                                       XFA_XDPPACKET_UNKNOWN)) {
           pNewNode->SetAttribute(XFA_ATTRIBUTE_Name, strName.AsStringC(), true);
           if (pNewNode->GetPacketID() == XFA_XDPPACKET_Datasets) {
             pNewNode->CreateXMLMappingNode();
           }
-          FXJSE_Value_Set(
-              pArguments->GetReturnValue(),
+          pArguments->GetReturnValue()->Assign(
               m_pDocument->GetScriptContext()->GetJSValueFromMap(pNewNode));
         } else {
-          ThrowScriptErrorMessage(XFA_IDS_NOT_HAVE_PROPERTY, strTagName.c_str(),
-                                  L"name");
+          ThrowException(XFA_IDS_NOT_HAVE_PROPERTY, strTagName.c_str(),
+                         L"name");
         }
       } else {
-        FXJSE_Value_Set(
-            pArguments->GetReturnValue(),
+        pArguments->GetReturnValue()->Assign(
             m_pDocument->GetScriptContext()->GetJSValueFromMap(pNewNode));
       }
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"createNode");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"createNode");
   }
 }
 void CXFA_Node::Script_Template_Recalculate(CFXJSE_Arguments* pArguments) {
   if (pArguments->GetLength() == 1) {
-    FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+    pArguments->GetReturnValue()->SetBoolean(TRUE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"recalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"recalculate");
   }
 }
 void CXFA_Node::Script_Template_ExecCalculate(CFXJSE_Arguments* pArguments) {
@@ -2756,13 +2660,12 @@ void CXFA_Node::Script_Template_ExecCalculate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_WidgetData* pWidgetData = GetWidgetData();
     if (!pWidgetData) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+      pArguments->GetReturnValue()->SetBoolean(TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execCalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execCalculate");
   }
 }
 void CXFA_Node::Script_Template_ExecValidate(CFXJSE_Arguments* pArguments) {
@@ -2770,13 +2673,12 @@ void CXFA_Node::Script_Template_ExecValidate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_WidgetData* pWidgetData = GetWidgetData();
     if (!pWidgetData) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+      pArguments->GetReturnValue()->SetBoolean(TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execValidate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execValidate");
   }
 }
 void CXFA_Node::Script_Manifest_Evaluate(CFXJSE_Arguments* pArguments) {
@@ -2784,33 +2686,33 @@ void CXFA_Node::Script_Manifest_Evaluate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_WidgetData* pWidgetData = GetWidgetData();
     if (!pWidgetData) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), TRUE);
+      pArguments->GetReturnValue()->SetBoolean(TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"evaluate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"evaluate");
   }
 }
-void CXFA_Node::Script_InstanceManager_Max(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_InstanceManager_Max(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
     return;
   }
   CXFA_Occur nodeOccur(GetOccurNode());
-  FXJSE_Value_SetInteger(hValue, nodeOccur.GetMax());
+  pValue->SetInteger(nodeOccur.GetMax());
 }
-void CXFA_Node::Script_InstanceManager_Min(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_InstanceManager_Min(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
     return;
   }
   CXFA_Occur nodeOccur(GetOccurNode());
-  FXJSE_Value_SetInteger(hValue, nodeOccur.GetMin());
+  pValue->SetInteger(nodeOccur.GetMin());
 }
 static int32_t XFA_ScriptInstanceManager_GetCount(CXFA_Node* pInstMgrNode) {
   ASSERT(pInstMgrNode);
@@ -2818,12 +2720,12 @@ static int32_t XFA_ScriptInstanceManager_GetCount(CXFA_Node* pInstMgrNode) {
   uint32_t dwNameHash = 0;
   for (CXFA_Node* pNode = pInstMgrNode->GetNodeItem(XFA_NODEITEM_NextSibling);
        pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    XFA_ELEMENT eCurType = pNode->GetClassID();
-    if (eCurType == XFA_ELEMENT_InstanceManager) {
+    XFA_Element eCurType = pNode->GetElementType();
+    if (eCurType == XFA_Element::InstanceManager) {
       break;
     }
-    if ((eCurType != XFA_ELEMENT_Subform) &&
-        (eCurType != XFA_ELEMENT_SubformSet)) {
+    if ((eCurType != XFA_Element::Subform) &&
+        (eCurType != XFA_Element::SubformSet)) {
       continue;
     }
     if (iCount == 0) {
@@ -3054,7 +2956,7 @@ static void XFA_ScriptInstanceManager_RemoveItem(
         pDataParent->RemoveChild(pDataNode);
       }
     }
-    pFormNode->SetObject(XFA_ATTRIBUTE_BindingNode, NULL);
+    pFormNode->SetObject(XFA_ATTRIBUTE_BindingNode, nullptr);
   }
 }
 static CXFA_Node* XFA_ScriptInstanceManager_CreateInstance(
@@ -3063,10 +2965,9 @@ static CXFA_Node* XFA_ScriptInstanceManager_CreateInstance(
   CXFA_Document* pDocument = pInstMgrNode->GetDocument();
   CXFA_Node* pTemplateNode = pInstMgrNode->GetTemplateNode();
   CXFA_Node* pFormParent = pInstMgrNode->GetNodeItem(XFA_NODEITEM_Parent);
-  CXFA_Node* pDataScope = NULL;
+  CXFA_Node* pDataScope = nullptr;
   for (CXFA_Node* pRootBoundNode = pFormParent;
-       pRootBoundNode &&
-       pRootBoundNode->GetObjectType() == XFA_OBJECTTYPE_ContainerNode;
+       pRootBoundNode && pRootBoundNode->IsContainerNode();
        pRootBoundNode = pRootBoundNode->GetNodeItem(XFA_NODEITEM_Parent)) {
     pDataScope = pRootBoundNode->GetBindData();
     if (pDataScope) {
@@ -3085,21 +2986,21 @@ static CXFA_Node* XFA_ScriptInstanceManager_CreateInstance(
   }
   return pInstance;
 }
-void CXFA_Node::Script_InstanceManager_Count(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_InstanceManager_Count(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    int32_t iDesired = FXJSE_Value_ToInteger(hValue);
+    int32_t iDesired = pValue->ToInteger();
     InstanceManager_SetInstances(iDesired);
   } else {
-    FXJSE_Value_SetInteger(hValue, XFA_ScriptInstanceManager_GetCount(this));
+    pValue->SetInteger(XFA_ScriptInstanceManager_GetCount(this));
   }
 }
 void CXFA_Node::Script_InstanceManager_MoveInstance(
     CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc != 2) {
-    FXJSE_Value_SetUndefined(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetUndefined();
     return;
   }
   int32_t iFrom = pArguments->GetInt32(0);
@@ -3110,11 +3011,12 @@ void CXFA_Node::Script_InstanceManager_MoveInstance(
     return;
   }
   CXFA_Node* pToInstance = XFA_ScriptInstanceManager_GetItem(this, iTo);
-  if (pToInstance && pToInstance->GetClassID() == XFA_ELEMENT_Subform) {
+  if (pToInstance && pToInstance->GetElementType() == XFA_Element::Subform) {
     pNotify->RunSubformIndexChange(pToInstance);
   }
   CXFA_Node* pFromInstance = XFA_ScriptInstanceManager_GetItem(this, iFrom);
-  if (pFromInstance && pFromInstance->GetClassID() == XFA_ELEMENT_Subform) {
+  if (pFromInstance &&
+      pFromInstance->GetElementType() == XFA_Element::Subform) {
     pNotify->RunSubformIndexChange(pFromInstance);
   }
 }
@@ -3122,19 +3024,19 @@ void CXFA_Node::Script_InstanceManager_RemoveInstance(
     CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc != 1) {
-    FXJSE_Value_SetUndefined(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetUndefined();
     return;
   }
   int32_t iIndex = pArguments->GetInt32(0);
   int32_t iCount = XFA_ScriptInstanceManager_GetCount(this);
   if (iIndex < 0 || iIndex >= iCount) {
-    ThrowScriptErrorMessage(XFA_IDS_INDEX_OUT_OF_BOUNDS);
+    ThrowException(XFA_IDS_INDEX_OUT_OF_BOUNDS);
     return;
   }
   CXFA_Occur nodeOccur(GetOccurNode());
   int32_t iMin = nodeOccur.GetMin();
   if (iCount - 1 < iMin) {
-    ThrowScriptErrorMessage(XFA_IDS_VIOLATE_BOUNDARY, L"min");
+    ThrowException(XFA_IDS_VIOLATE_BOUNDARY, L"min");
     return;
   }
   CXFA_Node* pRemoveInstance = XFA_ScriptInstanceManager_GetItem(this, iIndex);
@@ -3144,7 +3046,7 @@ void CXFA_Node::Script_InstanceManager_RemoveInstance(
     for (int32_t i = iIndex; i < iCount - 1; i++) {
       CXFA_Node* pSubformInstance = XFA_ScriptInstanceManager_GetItem(this, i);
       if (pSubformInstance &&
-          pSubformInstance->GetClassID() == XFA_ELEMENT_Subform) {
+          pSubformInstance->GetElementType() == XFA_Element::Subform) {
         pNotify->RunSubformIndexChange(pSubformInstance);
       }
     }
@@ -3160,7 +3062,7 @@ void CXFA_Node::Script_InstanceManager_SetInstances(
     CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc != 1) {
-    FXJSE_Value_SetUndefined(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetUndefined();
     return;
   }
   int32_t iDesired = pArguments->GetInt32(0);
@@ -3170,7 +3072,7 @@ void CXFA_Node::Script_InstanceManager_AddInstance(
     CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if ((argc != 0) && (argc != 1)) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addInstance");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addInstance");
     return;
   }
   FX_BOOL fFlags = TRUE;
@@ -3181,15 +3083,14 @@ void CXFA_Node::Script_InstanceManager_AddInstance(
   CXFA_Occur nodeOccur(GetOccurNode());
   int32_t iMax = nodeOccur.GetMax();
   if (iMax >= 0 && iCount >= iMax) {
-    ThrowScriptErrorMessage(XFA_IDS_VIOLATE_BOUNDARY, L"max");
+    ThrowException(XFA_IDS_VIOLATE_BOUNDARY, L"max");
     return;
   }
   CXFA_Node* pNewInstance =
       XFA_ScriptInstanceManager_CreateInstance(this, fFlags);
   XFA_ScriptInstanceManager_InsertItem(this, pNewInstance, iCount, iCount,
                                        FALSE);
-  FXJSE_Value_Set(
-      pArguments->GetReturnValue(),
+  pArguments->GetReturnValue()->Assign(
       m_pDocument->GetScriptContext()->GetJSValueFromMap(pNewInstance));
   CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
   if (!pNotify) {
@@ -3207,8 +3108,7 @@ void CXFA_Node::Script_InstanceManager_InsertInstance(
     CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if ((argc != 1) && (argc != 2)) {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"insertInstance");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"insertInstance");
     return;
   }
   int32_t iIndex = pArguments->GetInt32(0);
@@ -3219,20 +3119,19 @@ void CXFA_Node::Script_InstanceManager_InsertInstance(
   CXFA_Occur nodeOccur(GetOccurNode());
   int32_t iCount = XFA_ScriptInstanceManager_GetCount(this);
   if (iIndex < 0 || iIndex > iCount) {
-    ThrowScriptErrorMessage(XFA_IDS_INDEX_OUT_OF_BOUNDS);
+    ThrowException(XFA_IDS_INDEX_OUT_OF_BOUNDS);
     return;
   }
   int32_t iMax = nodeOccur.GetMax();
   if (iMax >= 0 && iCount >= iMax) {
-    ThrowScriptErrorMessage(XFA_IDS_VIOLATE_BOUNDARY, L"max");
+    ThrowException(XFA_IDS_VIOLATE_BOUNDARY, L"max");
     return;
   }
   CXFA_Node* pNewInstance =
       XFA_ScriptInstanceManager_CreateInstance(this, bBind);
   XFA_ScriptInstanceManager_InsertItem(this, pNewInstance, iIndex, iCount,
                                        TRUE);
-  FXJSE_Value_Set(
-      pArguments->GetReturnValue(),
+  pArguments->GetReturnValue()->Assign(
       m_pDocument->GetScriptContext()->GetJSValueFromMap(pNewInstance));
   CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
   if (!pNotify) {
@@ -3251,11 +3150,11 @@ int32_t CXFA_Node::InstanceManager_SetInstances(int32_t iDesired) {
   int32_t iMax = nodeOccur.GetMax();
   int32_t iMin = nodeOccur.GetMin();
   if (iDesired < iMin) {
-    ThrowScriptErrorMessage(XFA_IDS_VIOLATE_BOUNDARY, L"min");
+    ThrowException(XFA_IDS_VIOLATE_BOUNDARY, L"min");
     return 1;
   }
   if ((iMax >= 0) && (iDesired > iMax)) {
-    ThrowScriptErrorMessage(XFA_IDS_VIOLATE_BOUNDARY, L"max");
+    ThrowException(XFA_IDS_VIOLATE_BOUNDARY, L"max");
     return 2;
   }
   int32_t iCount = XFA_ScriptInstanceManager_GetCount(this);
@@ -3275,11 +3174,11 @@ int32_t CXFA_Node::InstanceManager_SetInstances(int32_t iDesired) {
     while (iCount > iDesired) {
       CXFA_Node* pRemoveInstance =
           pPrevSibling->GetNodeItem(XFA_NODEITEM_NextSibling);
-      if (pRemoveInstance->GetClassID() != XFA_ELEMENT_Subform &&
-          pRemoveInstance->GetClassID() != XFA_ELEMENT_SubformSet) {
+      if (pRemoveInstance->GetElementType() != XFA_Element::Subform &&
+          pRemoveInstance->GetElementType() != XFA_Element::SubformSet) {
         continue;
       }
-      if (pRemoveInstance->GetClassID() == XFA_ELEMENT_InstanceManager) {
+      if (pRemoveInstance->GetElementType() == XFA_Element::InstanceManager) {
         ASSERT(FALSE);
         break;
       }
@@ -3312,7 +3211,7 @@ int32_t CXFA_Node::InstanceManager_SetInstances(int32_t iDesired) {
 int32_t CXFA_Node::InstanceManager_MoveInstance(int32_t iTo, int32_t iFrom) {
   int32_t iCount = XFA_ScriptInstanceManager_GetCount(this);
   if (iFrom > iCount || iTo > iCount - 1) {
-    ThrowScriptErrorMessage(XFA_IDS_INDEX_OUT_OF_BOUNDS);
+    ThrowException(XFA_IDS_INDEX_OUT_OF_BOUNDS);
     return 1;
   }
   if (iFrom < 0 || iTo < 0 || iFrom == iTo) {
@@ -3329,34 +3228,34 @@ int32_t CXFA_Node::InstanceManager_MoveInstance(int32_t iTo, int32_t iFrom) {
   }
   return 0;
 }
-void CXFA_Node::Script_Occur_Max(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Occur_Max(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute) {
   CXFA_Occur occur(this);
   if (bSetting) {
-    int32_t iMax = FXJSE_Value_ToInteger(hValue);
+    int32_t iMax = pValue->ToInteger();
     occur.SetMax(iMax);
   } else {
-    FXJSE_Value_SetInteger(hValue, occur.GetMax());
+    pValue->SetInteger(occur.GetMax());
   }
 }
-void CXFA_Node::Script_Occur_Min(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Occur_Min(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute) {
   CXFA_Occur occur(this);
   if (bSetting) {
-    int32_t iMin = FXJSE_Value_ToInteger(hValue);
+    int32_t iMin = pValue->ToInteger();
     occur.SetMin(iMin);
   } else {
-    FXJSE_Value_SetInteger(hValue, occur.GetMin());
+    pValue->SetInteger(occur.GetMin());
   }
 }
 void CXFA_Node::Script_Desc_Metadata(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if ((argc == 0) || (argc == 1)) {
-    FXJSE_Value_SetUTF8String(pArguments->GetReturnValue(), "");
+    pArguments->GetReturnValue()->SetString("");
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"metadata");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"metadata");
   }
 }
 void CXFA_Node::Script_Form_FormNodes(CFXJSE_Arguments* pArguments) {
@@ -3367,14 +3266,13 @@ void CXFA_Node::Script_Form_FormNodes(CFXJSE_Arguments* pArguments) {
       CXFA_NodeArray formItems;
       CXFA_ArrayNodeList* pFormNodes = new CXFA_ArrayNodeList(m_pDocument);
       pFormNodes->SetArrayNodeList(formItems);
-      FXJSE_Value_SetObject(
-          pArguments->GetReturnValue(), (CXFA_Object*)pFormNodes,
-          m_pDocument->GetScriptContext()->GetJseNormalClass());
+      pArguments->GetReturnValue()->SetObject(
+          pFormNodes, m_pDocument->GetScriptContext()->GetJseNormalClass());
     } else {
-      ThrowScriptErrorMessage(XFA_IDS_ARGUMENT_MISMATCH);
+      ThrowException(XFA_IDS_ARGUMENT_MISMATCH);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"formNodes");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"formNodes");
   }
 }
 void CXFA_Node::Script_Form_Remerge(CFXJSE_Arguments* pArguments) {
@@ -3382,7 +3280,7 @@ void CXFA_Node::Script_Form_Remerge(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     m_pDocument->DoDataRemerge(TRUE);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remerge");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remerge");
   }
 }
 void CXFA_Node::Script_Form_ExecInitialize(CFXJSE_Arguments* pArguments) {
@@ -3394,8 +3292,7 @@ void CXFA_Node::Script_Form_ExecInitialize(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Initialize);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execInitialize");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execInitialize");
   }
 }
 void CXFA_Node::Script_Form_Recalculate(CFXJSE_Arguments* pArguments) {
@@ -3419,7 +3316,7 @@ void CXFA_Node::Script_Form_Recalculate(CFXJSE_Arguments* pArguments) {
     } else {
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"recalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"recalculate");
   }
 }
 void CXFA_Node::Script_Form_ExecCalculate(CFXJSE_Arguments* pArguments) {
@@ -3431,8 +3328,7 @@ void CXFA_Node::Script_Form_ExecCalculate(CFXJSE_Arguments* pArguments) {
     }
     pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Calculate);
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execCalculate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execCalculate");
   }
 }
 void CXFA_Node::Script_Form_ExecValidate(CFXJSE_Arguments* pArguments) {
@@ -3440,30 +3336,25 @@ void CXFA_Node::Script_Form_ExecValidate(CFXJSE_Arguments* pArguments) {
   if (argc == 0) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (!pNotify) {
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(), FALSE);
+      pArguments->GetReturnValue()->SetBoolean(FALSE);
     } else {
       int32_t iRet = pNotify->ExecEventByDeepFirst(this, XFA_EVENT_Validate);
-      FXJSE_Value_SetBoolean(pArguments->GetReturnValue(),
-                             ((iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE));
+      pArguments->GetReturnValue()->SetBoolean(
+          (iRet == XFA_EVENTERROR_Error) ? FALSE : TRUE);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"execValidate");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"execValidate");
   }
 }
-void CXFA_Node::Script_Form_Checksum(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Form_Checksum(CFXJSE_Value* pValue,
                                      FX_BOOL bSetting,
                                      XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    CFX_ByteString bsChecksum;
-    FXJSE_Value_ToUTF8String(hValue, bsChecksum);
-    SetAttribute(XFA_ATTRIBUTE_Checksum,
-                 CFX_WideString::FromUTF8(bsChecksum.AsStringC()).AsStringC());
+    SetAttribute(XFA_ATTRIBUTE_Checksum, pValue->ToWideString().AsStringC());
   } else {
     CFX_WideString wsChecksum;
     GetAttribute(XFA_ATTRIBUTE_Checksum, wsChecksum, FALSE);
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    pValue->SetString(
         FX_UTF8Encode(wsChecksum.c_str(), wsChecksum.GetLength()).AsStringC());
   }
 }
@@ -3478,13 +3369,11 @@ void CXFA_Node::Script_Packet_GetAttribute(CFXJSE_Arguments* pArguments) {
           CFX_WideString::FromUTF8(bsAttributeName.AsStringC()).c_str(),
           wsAttributeValue);
     }
-    FXJSE_Value_SetUTF8String(
-        pArguments->GetReturnValue(),
+    pArguments->GetReturnValue()->SetString(
         FX_UTF8Encode(wsAttributeValue.c_str(), wsAttributeValue.GetLength())
             .AsStringC());
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"getAttribute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"getAttribute");
   }
 }
 void CXFA_Node::Script_Packet_SetAttribute(CFXJSE_Arguments* pArguments) {
@@ -3498,10 +3387,9 @@ void CXFA_Node::Script_Packet_SetAttribute(CFXJSE_Arguments* pArguments) {
           ->SetString(CFX_WideString::FromUTF8(bsName.AsStringC()),
                       CFX_WideString::FromUTF8(bsValue.AsStringC()));
     }
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"setAttribute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"setAttribute");
   }
 }
 void CXFA_Node::Script_Packet_RemoveAttribute(CFXJSE_Arguments* pArguments) {
@@ -3516,23 +3404,19 @@ void CXFA_Node::Script_Packet_RemoveAttribute(CFXJSE_Arguments* pArguments) {
         pXMLElement->RemoveAttribute(wsName.c_str());
       }
     }
-    FXJSE_Value_SetNull(pArguments->GetReturnValue());
+    pArguments->GetReturnValue()->SetNull();
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"removeAttribute");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"removeAttribute");
   }
 }
-void CXFA_Node::Script_Packet_Content(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Packet_Content(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    CFX_ByteString bsNewContent;
-    FXJSE_Value_ToUTF8String(hValue, bsNewContent);
     CFDE_XMLNode* pXMLNode = GetXMLMappingNode();
     if (pXMLNode && pXMLNode->GetType() == FDE_XMLNODE_Element) {
       CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
-      pXMLElement->SetTextData(
-          CFX_WideString::FromUTF8(bsNewContent.AsStringC()));
+      pXMLElement->SetTextData(pValue->ToWideString());
     }
   } else {
     CFX_WideString wsTextData;
@@ -3541,8 +3425,7 @@ void CXFA_Node::Script_Packet_Content(FXJSE_HVALUE hValue,
       CFDE_XMLElement* pXMLElement = static_cast<CFDE_XMLElement*>(pXMLNode);
       pXMLElement->GetTextData(wsTextData);
     }
-    FXJSE_Value_SetUTF8String(
-        hValue,
+    pValue->SetString(
         FX_UTF8Encode(wsTextData.c_str(), wsTextData.GetLength()).AsStringC());
   }
 }
@@ -3550,154 +3433,152 @@ void CXFA_Node::Script_Source_Next(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"next");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"next");
   }
 }
 void CXFA_Node::Script_Source_CancelBatch(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"cancelBatch");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"cancelBatch");
   }
 }
 void CXFA_Node::Script_Source_First(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"first");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"first");
   }
 }
 void CXFA_Node::Script_Source_UpdateBatch(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"updateBatch");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"updateBatch");
   }
 }
 void CXFA_Node::Script_Source_Previous(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"previous");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"previous");
   }
 }
 void CXFA_Node::Script_Source_IsBOF(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isBOF");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isBOF");
   }
 }
 void CXFA_Node::Script_Source_IsEOF(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isEOF");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"isEOF");
   }
 }
 void CXFA_Node::Script_Source_Cancel(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"cancel");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"cancel");
   }
 }
 void CXFA_Node::Script_Source_Update(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"update");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"update");
   }
 }
 void CXFA_Node::Script_Source_Open(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"open");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"open");
   }
 }
 void CXFA_Node::Script_Source_Delete(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"delete");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"delete");
   }
 }
 void CXFA_Node::Script_Source_AddNew(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addNew");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"addNew");
   }
 }
 void CXFA_Node::Script_Source_Requery(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"requery");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"requery");
   }
 }
 void CXFA_Node::Script_Source_Resync(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"resync");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"resync");
   }
 }
 void CXFA_Node::Script_Source_Close(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"close");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"close");
   }
 }
 void CXFA_Node::Script_Source_Last(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"last");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"last");
   }
 }
 void CXFA_Node::Script_Source_HasDataChanged(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
   if (argc == 0) {
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD,
-                            L"hasDataChanged");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"hasDataChanged");
   }
 }
-void CXFA_Node::Script_Source_Db(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Source_Db(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Xfa_This(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Xfa_This(CFXJSE_Value* pValue,
                                 FX_BOOL bSetting,
                                 XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
     CXFA_Object* pThis = m_pDocument->GetScriptContext()->GetThisObject();
     ASSERT(pThis);
-    FXJSE_Value_Set(hValue,
-                    m_pDocument->GetScriptContext()->GetJSValueFromMap(pThis));
+    pValue->Assign(m_pDocument->GetScriptContext()->GetJSValueFromMap(pThis));
   }
 }
-void CXFA_Node::Script_Handler_Version(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Handler_Version(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_SubmitFormat_Mode(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_SubmitFormat_Mode(CFXJSE_Value* pValue,
                                          FX_BOOL bSetting,
                                          XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Extras_Type(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Extras_Type(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute) {}
-void CXFA_Node::Script_Script_Stateless(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Script_Stateless(CFXJSE_Value* pValue,
                                         FX_BOOL bSetting,
                                         XFA_ATTRIBUTE eAttribute) {
   if (bSetting) {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
     return;
   }
-  FXJSE_Value_SetUTF8String(hValue, FX_UTF8Encode(FX_WSTRC(L"0")).AsStringC());
+  pValue->SetString(FX_UTF8Encode(FX_WSTRC(L"0")).AsStringC());
 }
-void CXFA_Node::Script_Encrypt_Format(FXJSE_HVALUE hValue,
+void CXFA_Node::Script_Encrypt_Format(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute) {}
 enum XFA_KEYTYPE {
@@ -3708,25 +3589,25 @@ void* XFA_GetMapKey_Custom(const CFX_WideStringC& wsKey) {
   uint32_t dwKey = FX_HashCode_GetW(wsKey, false);
   return (void*)(uintptr_t)((dwKey << 1) | XFA_KEYTYPE_Custom);
 }
-void* XFA_GetMapKey_Element(XFA_ELEMENT eElement, XFA_ATTRIBUTE eAttribute) {
-  return (void*)(uintptr_t)((eElement << 16) | (eAttribute << 8) |
-                            XFA_KEYTYPE_Element);
+void* XFA_GetMapKey_Element(XFA_Element eType, XFA_ATTRIBUTE eAttribute) {
+  return (void*)(uintptr_t)((static_cast<int32_t>(eType) << 16) |
+                            (eAttribute << 8) | XFA_KEYTYPE_Element);
 }
 FX_BOOL CXFA_Node::HasAttribute(XFA_ATTRIBUTE eAttr, FX_BOOL bCanInherit) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   return HasMapModuleKey(pKey, bCanInherit);
 }
 FX_BOOL CXFA_Node::SetAttribute(XFA_ATTRIBUTE eAttr,
                                 const CFX_WideStringC& wsValue,
                                 bool bNotify) {
   const XFA_ATTRIBUTEINFO* pAttr = XFA_GetAttributeByID(eAttr);
-  if (pAttr == NULL) {
+  if (!pAttr)
     return FALSE;
-  }
+
   XFA_ATTRIBUTETYPE eType = pAttr->eType;
   if (eType == XFA_ATTRIBUTETYPE_NOTSURE) {
     const XFA_NOTSUREATTRIBUTE* pNotsure =
-        XFA_GetNotsureAttribute(GetClassID(), pAttr->eName);
+        XFA_GetNotsureAttribute(GetElementType(), pAttr->eName);
     eType = pNotsure ? pNotsure->eType : XFA_ATTRIBUTETYPE_Cdata;
   }
   switch (eType) {
@@ -3757,13 +3638,13 @@ FX_BOOL CXFA_Node::GetAttribute(XFA_ATTRIBUTE eAttr,
                                 CFX_WideString& wsValue,
                                 FX_BOOL bUseDefault) {
   const XFA_ATTRIBUTEINFO* pAttr = XFA_GetAttributeByID(eAttr);
-  if (pAttr == NULL) {
+  if (!pAttr) {
     return FALSE;
   }
   XFA_ATTRIBUTETYPE eType = pAttr->eType;
   if (eType == XFA_ATTRIBUTETYPE_NOTSURE) {
     const XFA_NOTSUREATTRIBUTE* pNotsure =
-        XFA_GetNotsureAttribute(GetClassID(), pAttr->eName);
+        XFA_GetNotsureAttribute(GetElementType(), pAttr->eName);
     eType = pNotsure ? pNotsure->eType : XFA_ATTRIBUTETYPE_Cdata;
   }
   switch (eType) {
@@ -3845,30 +3726,27 @@ FX_BOOL CXFA_Node::RemoveAttribute(const CFX_WideStringC& wsAttr) {
 FX_BOOL CXFA_Node::TryBoolean(XFA_ATTRIBUTE eAttr,
                               FX_BOOL& bValue,
                               FX_BOOL bUseDefault) {
-  void* pValue = NULL;
-  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Boolean, bUseDefault, pValue)) {
+  void* pValue = nullptr;
+  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Boolean, bUseDefault, pValue))
     return FALSE;
-  }
   bValue = (FX_BOOL)(uintptr_t)pValue;
   return TRUE;
 }
 FX_BOOL CXFA_Node::TryInteger(XFA_ATTRIBUTE eAttr,
                               int32_t& iValue,
                               FX_BOOL bUseDefault) {
-  void* pValue = NULL;
-  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Integer, bUseDefault, pValue)) {
+  void* pValue = nullptr;
+  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Integer, bUseDefault, pValue))
     return FALSE;
-  }
   iValue = (int32_t)(uintptr_t)pValue;
   return TRUE;
 }
 FX_BOOL CXFA_Node::TryEnum(XFA_ATTRIBUTE eAttr,
                            XFA_ATTRIBUTEENUM& eValue,
                            FX_BOOL bUseDefault) {
-  void* pValue = NULL;
-  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Enum, bUseDefault, pValue)) {
+  void* pValue = nullptr;
+  if (!GetValue(eAttr, XFA_ATTRIBUTETYPE_Enum, bUseDefault, pValue))
     return FALSE;
-  }
   eValue = (XFA_ATTRIBUTEENUM)(uintptr_t)pValue;
   return TRUE;
 }
@@ -3876,7 +3754,7 @@ FX_BOOL CXFA_Node::TryEnum(XFA_ATTRIBUTE eAttr,
 FX_BOOL CXFA_Node::SetMeasure(XFA_ATTRIBUTE eAttr,
                               CXFA_Measurement mValue,
                               bool bNotify) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   OnChanging(eAttr, bNotify);
   SetMapModuleBuffer(pKey, &mValue, sizeof(CXFA_Measurement));
   OnChanged(eAttr, bNotify, FALSE);
@@ -3886,7 +3764,7 @@ FX_BOOL CXFA_Node::SetMeasure(XFA_ATTRIBUTE eAttr,
 FX_BOOL CXFA_Node::TryMeasure(XFA_ATTRIBUTE eAttr,
                               CXFA_Measurement& mValue,
                               FX_BOOL bUseDefault) const {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   void* pValue;
   int32_t iBytes;
   if (GetMapModuleBuffer(pKey, pValue, iBytes) && iBytes == sizeof(mValue)) {
@@ -3894,7 +3772,7 @@ FX_BOOL CXFA_Node::TryMeasure(XFA_ATTRIBUTE eAttr,
     return TRUE;
   }
   if (bUseDefault &&
-      XFA_GetAttributeDefaultValue(pValue, GetClassID(), eAttr,
+      XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Measure, m_ePacket)) {
     FXSYS_memcpy(&mValue, pValue, sizeof(mValue));
     return TRUE;
@@ -3911,7 +3789,7 @@ FX_BOOL CXFA_Node::SetCData(XFA_ATTRIBUTE eAttr,
                             const CFX_WideString& wsValue,
                             bool bNotify,
                             FX_BOOL bScriptModify) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   OnChanging(eAttr, bNotify);
   if (eAttr == XFA_ATTRIBUTE_Value) {
     CFX_WideString* pClone = new CFX_WideString(wsValue);
@@ -3928,8 +3806,9 @@ FX_BOOL CXFA_Node::SetCData(XFA_ATTRIBUTE eAttr,
     return TRUE;
   }
 
-  if (eAttr == XFA_ATTRIBUTE_Name && (m_eNodeClass == XFA_ELEMENT_DataValue ||
-                                      m_eNodeClass == XFA_ELEMENT_DataGroup)) {
+  if (eAttr == XFA_ATTRIBUTE_Name &&
+      (m_elementType == XFA_Element::DataValue ||
+       m_elementType == XFA_Element::DataGroup)) {
     return TRUE;
   }
 
@@ -3986,7 +3865,7 @@ FX_BOOL CXFA_Node::SetAttributeValue(const CFX_WideString& wsValue,
                                      const CFX_WideString& wsXMLValue,
                                      bool bNotify,
                                      FX_BOOL bScriptModify) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), XFA_ATTRIBUTE_Value);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), XFA_ATTRIBUTE_Value);
   OnChanging(XFA_ATTRIBUTE_Value, bNotify);
   CFX_WideString* pClone = new CFX_WideString(wsValue);
   SetUserData(pKey, pClone, &deleteWideStringCallBack);
@@ -4032,7 +3911,7 @@ FX_BOOL CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
                             CFX_WideString& wsValue,
                             FX_BOOL bUseDefault,
                             FX_BOOL bProto) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   if (eAttr == XFA_ATTRIBUTE_Value) {
     CFX_WideString* pStr = (CFX_WideString*)GetUserData(pKey, bProto);
     if (pStr) {
@@ -4049,8 +3928,8 @@ FX_BOOL CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
   if (!bUseDefault) {
     return FALSE;
   }
-  void* pValue = NULL;
-  if (XFA_GetAttributeDefaultValue(pValue, GetClassID(), eAttr,
+  void* pValue = nullptr;
+  if (XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Cdata, m_ePacket)) {
     wsValue = (const FX_WCHAR*)pValue;
     return TRUE;
@@ -4061,7 +3940,7 @@ FX_BOOL CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
                             CFX_WideStringC& wsValue,
                             FX_BOOL bUseDefault,
                             FX_BOOL bProto) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   if (eAttr == XFA_ATTRIBUTE_Value) {
     CFX_WideString* pStr = (CFX_WideString*)GetUserData(pKey, bProto);
     if (pStr) {
@@ -4076,8 +3955,8 @@ FX_BOOL CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
   if (!bUseDefault) {
     return FALSE;
   }
-  void* pValue = NULL;
-  if (XFA_GetAttributeDefaultValue(pValue, GetClassID(), eAttr,
+  void* pValue = nullptr;
+  if (XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr,
                                    XFA_ATTRIBUTETYPE_Cdata, m_ePacket)) {
     wsValue = (CFX_WideStringC)(const FX_WCHAR*)pValue;
     return TRUE;
@@ -4087,19 +3966,19 @@ FX_BOOL CXFA_Node::TryCData(XFA_ATTRIBUTE eAttr,
 FX_BOOL CXFA_Node::SetObject(XFA_ATTRIBUTE eAttr,
                              void* pData,
                              XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   return SetUserData(pKey, pData, pCallbackInfo);
 }
 FX_BOOL CXFA_Node::TryObject(XFA_ATTRIBUTE eAttr, void*& pData) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   pData = GetUserData(pKey);
-  return pData != NULL;
+  return !!pData;
 }
 FX_BOOL CXFA_Node::SetValue(XFA_ATTRIBUTE eAttr,
                             XFA_ATTRIBUTETYPE eType,
                             void* pValue,
                             bool bNotify) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   OnChanging(eAttr, bNotify);
   SetMapModuleValue(pKey, pValue);
   OnChanged(eAttr, bNotify, FALSE);
@@ -4134,19 +4013,19 @@ FX_BOOL CXFA_Node::GetValue(XFA_ATTRIBUTE eAttr,
                             XFA_ATTRIBUTETYPE eType,
                             FX_BOOL bUseDefault,
                             void*& pValue) {
-  void* pKey = XFA_GetMapKey_Element(GetClassID(), eAttr);
+  void* pKey = XFA_GetMapKey_Element(GetElementType(), eAttr);
   if (GetMapModuleValue(pKey, pValue)) {
     return TRUE;
   }
   if (!bUseDefault) {
     return FALSE;
   }
-  return XFA_GetAttributeDefaultValue(pValue, GetClassID(), eAttr, eType,
+  return XFA_GetAttributeDefaultValue(pValue, GetElementType(), eAttr, eType,
                                       m_ePacket);
 }
 static void XFA_DefaultFreeData(void* pData) {}
 static XFA_MAPDATABLOCKCALLBACKINFO gs_XFADefaultFreeData = {
-    XFA_DefaultFreeData, NULL};
+    XFA_DefaultFreeData, nullptr};
 FX_BOOL CXFA_Node::SetUserData(void* pKey,
                                void* pData,
                                XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo) {
@@ -4166,12 +4045,12 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
                                     bool bNotify,
                                     FX_BOOL bScriptModify,
                                     FX_BOOL bSyncData) {
-  CXFA_Node* pNode = NULL;
-  CXFA_Node* pBindNode = NULL;
+  CXFA_Node* pNode = nullptr;
+  CXFA_Node* pBindNode = nullptr;
   switch (GetObjectType()) {
-    case XFA_OBJECTTYPE_ContainerNode: {
+    case XFA_ObjectType::ContainerNode: {
       if (XFA_FieldIsMultiListBox(this)) {
-        CXFA_Node* pValue = GetProperty(0, XFA_ELEMENT_Value);
+        CXFA_Node* pValue = GetProperty(0, XFA_Element::Value);
         CXFA_Node* pChildValue = pValue->GetNodeItem(XFA_NODEITEM_FirstChild);
         ASSERT(pChildValue);
         pChildValue->SetCData(XFA_ATTRIBUTE_ContentType, L"text/xml");
@@ -4207,18 +4086,18 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
           } else {
             CXFA_NodeArray valueNodes;
             int32_t iDatas = pBind->GetNodeList(
-                valueNodes, XFA_NODEFILTER_Children, XFA_ELEMENT_DataValue);
+                valueNodes, XFA_NODEFILTER_Children, XFA_Element::DataValue);
             if (iDatas < iSize) {
               int32_t iAddNodes = iSize - iDatas;
-              CXFA_Node* pValueNodes = NULL;
+              CXFA_Node* pValueNodes = nullptr;
               while (iAddNodes-- > 0) {
                 pValueNodes =
-                    pBind->CreateSamePacketNode(XFA_ELEMENT_DataValue);
+                    pBind->CreateSamePacketNode(XFA_Element::DataValue);
                 pValueNodes->SetCData(XFA_ATTRIBUTE_Name, L"value");
                 pValueNodes->CreateXMLMappingNode();
                 pBind->InsertChild(pValueNodes);
               }
-              pValueNodes = NULL;
+              pValueNodes = nullptr;
             } else if (iDatas > iSize) {
               int32_t iDelNodes = iDatas - iSize;
               while (iDelNodes-- > 0) {
@@ -4238,19 +4117,17 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
           CXFA_NodeArray nodeArray;
           pBind->GetBindItems(nodeArray);
           for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-            CXFA_Node* pNode = nodeArray[i];
-            if (pNode == this) {
-              continue;
+            if (nodeArray[i] != this) {
+              nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify,
+                                             bScriptModify, FALSE);
             }
-            pNode->SetScriptContent(wsContent, wsContent, bNotify,
-                                    bScriptModify, FALSE);
           }
         }
         break;
-      } else if (GetClassID() == XFA_ELEMENT_ExclGroup) {
+      } else if (GetElementType() == XFA_Element::ExclGroup) {
         pNode = this;
       } else {
-        CXFA_Node* pValue = GetProperty(0, XFA_ELEMENT_Value);
+        CXFA_Node* pValue = GetProperty(0, XFA_Element::Value);
         CXFA_Node* pChildValue = pValue->GetNodeItem(XFA_NODEITEM_FirstChild);
         ASSERT(pChildValue);
         pChildValue->SetScriptContent(wsContent, wsContent, bNotify,
@@ -4263,19 +4140,18 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
         CXFA_NodeArray nodeArray;
         pBindNode->GetBindItems(nodeArray);
         for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-          CXFA_Node* pNode = nodeArray[i];
-          if (pNode == this) {
-            continue;
+          if (nodeArray[i] != this) {
+            nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify, true,
+                                           FALSE);
           }
-          pNode->SetScriptContent(wsContent, wsContent, bNotify, true, FALSE);
         }
       }
-      pBindNode = NULL;
+      pBindNode = nullptr;
       break;
     }
-    case XFA_OBJECTTYPE_ContentNode: {
+    case XFA_ObjectType::ContentNode: {
       CFX_WideString wsContentType;
-      if (GetClassID() == XFA_ELEMENT_ExData) {
+      if (GetElementType() == XFA_Element::ExData) {
         GetAttribute(XFA_ATTRIBUTE_ContentType, wsContentType, FALSE);
         if (wsContentType == FX_WSTRC(L"text/html")) {
           wsContentType = FX_WSTRC(L"");
@@ -4285,25 +4161,25 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
       CXFA_Node* pContentRawDataNode = GetNodeItem(XFA_NODEITEM_FirstChild);
       if (!pContentRawDataNode) {
         pContentRawDataNode = CreateSamePacketNode(
-            (wsContentType == FX_WSTRC(L"text/xml")) ? XFA_ELEMENT_Sharpxml
-                                                     : XFA_ELEMENT_Sharptext);
+            (wsContentType == FX_WSTRC(L"text/xml")) ? XFA_Element::Sharpxml
+                                                     : XFA_Element::Sharptext);
         InsertChild(pContentRawDataNode);
       }
       return pContentRawDataNode->SetScriptContent(
           wsContent, wsXMLValue, bNotify, bScriptModify, bSyncData);
     } break;
-    case XFA_OBJECTTYPE_NodeC:
-    case XFA_OBJECTTYPE_TextNode:
+    case XFA_ObjectType::NodeC:
+    case XFA_ObjectType::TextNode:
       pNode = this;
       break;
-    case XFA_OBJECTTYPE_NodeV:
+    case XFA_ObjectType::NodeV:
       pNode = this;
       if (bSyncData && GetPacketID() == XFA_XDPPACKET_Form) {
         CXFA_Node* pParent = GetNodeItem(XFA_NODEITEM_Parent);
         if (pParent) {
           pParent = pParent->GetNodeItem(XFA_NODEITEM_Parent);
         }
-        if (pParent && pParent->GetClassID() == XFA_ELEMENT_Value) {
+        if (pParent && pParent->GetElementType() == XFA_Element::Value) {
           pParent = pParent->GetNodeItem(XFA_NODEITEM_Parent);
           if (pParent && pParent->IsContainerNode()) {
             pBindNode = pParent->GetBindData();
@@ -4316,7 +4192,7 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
       }
       break;
     default:
-      if (GetClassID() == XFA_ELEMENT_DataValue) {
+      if (GetElementType() == XFA_Element::DataValue) {
         pNode = this;
         pBindNode = this;
       }
@@ -4328,9 +4204,8 @@ FX_BOOL CXFA_Node::SetScriptContent(const CFX_WideString& wsContent,
       CXFA_NodeArray nodeArray;
       pBindNode->GetBindItems(nodeArray);
       for (int32_t i = 0; i < nodeArray.GetSize(); i++) {
-        CXFA_Node* pNode = nodeArray[i];
-        pNode->SetScriptContent(wsContent, wsContent, bNotify, bScriptModify,
-                                FALSE);
+        nodeArray[i]->SetScriptContent(wsContent, wsContent, bNotify,
+                                       bScriptModify, FALSE);
       }
     }
     return TRUE;
@@ -4355,13 +4230,13 @@ CFX_WideString CXFA_Node::GetContent() {
 FX_BOOL CXFA_Node::TryContent(CFX_WideString& wsContent,
                               FX_BOOL bScriptModify,
                               FX_BOOL bProto) {
-  CXFA_Node* pNode = NULL;
+  CXFA_Node* pNode = nullptr;
   switch (GetObjectType()) {
-    case XFA_OBJECTTYPE_ContainerNode:
-      if (GetClassID() == XFA_ELEMENT_ExclGroup) {
+    case XFA_ObjectType::ContainerNode:
+      if (GetElementType() == XFA_Element::ExclGroup) {
         pNode = this;
       } else {
-        CXFA_Node* pValue = GetChild(0, XFA_ELEMENT_Value);
+        CXFA_Node* pValue = GetChild(0, XFA_Element::Value);
         if (!pValue) {
           return FALSE;
         }
@@ -4375,17 +4250,17 @@ FX_BOOL CXFA_Node::TryContent(CFX_WideString& wsContent,
                    : FALSE;
       }
       break;
-    case XFA_OBJECTTYPE_ContentNode: {
+    case XFA_ObjectType::ContentNode: {
       CXFA_Node* pContentRawDataNode = GetNodeItem(XFA_NODEITEM_FirstChild);
       if (!pContentRawDataNode) {
-        XFA_ELEMENT element = XFA_ELEMENT_Sharptext;
-        if (GetClassID() == XFA_ELEMENT_ExData) {
+        XFA_Element element = XFA_Element::Sharptext;
+        if (GetElementType() == XFA_Element::ExData) {
           CFX_WideString wsContentType;
           GetAttribute(XFA_ATTRIBUTE_ContentType, wsContentType, FALSE);
           if (wsContentType == FX_WSTRC(L"text/html")) {
-            element = XFA_ELEMENT_SharpxHTML;
+            element = XFA_Element::SharpxHTML;
           } else if (wsContentType == FX_WSTRC(L"text/xml")) {
-            element = XFA_ELEMENT_Sharpxml;
+            element = XFA_Element::Sharpxml;
           }
         }
         pContentRawDataNode = CreateSamePacketNode(element);
@@ -4393,12 +4268,12 @@ FX_BOOL CXFA_Node::TryContent(CFX_WideString& wsContent,
       }
       return pContentRawDataNode->TryContent(wsContent, bScriptModify, bProto);
     }
-    case XFA_OBJECTTYPE_NodeC:
-    case XFA_OBJECTTYPE_NodeV:
-    case XFA_OBJECTTYPE_TextNode:
+    case XFA_ObjectType::NodeC:
+    case XFA_ObjectType::NodeV:
+    case XFA_ObjectType::TextNode:
       pNode = this;
     default:
-      if (GetClassID() == XFA_ELEMENT_DataValue) {
+      if (GetElementType() == XFA_Element::DataValue) {
         pNode = this;
       }
       break;
@@ -4440,8 +4315,7 @@ CXFA_Node* CXFA_Node::GetModelNode() {
 }
 FX_BOOL CXFA_Node::TryNamespace(CFX_WideString& wsNamespace) {
   wsNamespace.clear();
-  if (GetObjectType() == XFA_OBJECTTYPE_ModelNode ||
-      GetClassID() == XFA_ELEMENT_Packet) {
+  if (IsModelNode() || GetElementType() == XFA_Element::Packet) {
     CFDE_XMLNode* pXMLNode = GetXMLMappingNode();
     if (!pXMLNode || pXMLNode->GetType() != FDE_XMLNODE_Element) {
       return FALSE;
@@ -4456,7 +4330,7 @@ FX_BOOL CXFA_Node::TryNamespace(CFX_WideString& wsNamespace) {
     if (pXMLNode->GetType() != FDE_XMLNODE_Element) {
       return TRUE;
     }
-    if (GetClassID() == XFA_ELEMENT_DataValue &&
+    if (GetElementType() == XFA_Element::DataValue &&
         GetEnum(XFA_ATTRIBUTE_Contains) == XFA_ATTRIBUTEENUM_MetaData) {
       return XFA_FDEExtension_ResolveNamespaceQualifier(
           static_cast<CFDE_XMLElement*>(pXMLNode),
@@ -4470,59 +4344,57 @@ FX_BOOL CXFA_Node::TryNamespace(CFX_WideString& wsNamespace) {
   }
 }
 CXFA_Node* CXFA_Node::GetProperty(int32_t index,
-                                  XFA_ELEMENT eProperty,
+                                  XFA_Element eProperty,
                                   FX_BOOL bCreateProperty) {
-  XFA_ELEMENT eElement = GetClassID();
+  XFA_Element eType = GetElementType();
   uint32_t dwPacket = GetPacketID();
   const XFA_PROPERTY* pProperty =
-      XFA_GetPropertyOfElement(eElement, eProperty, dwPacket);
-  if (pProperty == NULL || index >= pProperty->uOccur) {
-    return NULL;
-  }
+      XFA_GetPropertyOfElement(eType, eProperty, dwPacket);
+  if (!pProperty || index >= pProperty->uOccur)
+    return nullptr;
+
   CXFA_Node* pNode = m_pChild;
   int32_t iCount = 0;
   for (; pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    if (pNode->GetClassID() == eProperty) {
+    if (pNode->GetElementType() == eProperty) {
       iCount++;
       if (iCount > index) {
         return pNode;
       }
     }
   }
-  if (!bCreateProperty) {
-    return NULL;
-  }
+  if (!bCreateProperty)
+    return nullptr;
+
   if (pProperty->uFlags & XFA_PROPERTYFLAG_OneOf) {
     pNode = m_pChild;
     for (; pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
       const XFA_PROPERTY* pExistProperty =
-          XFA_GetPropertyOfElement(eElement, pNode->GetClassID(), dwPacket);
-      if (pExistProperty && (pExistProperty->uFlags & XFA_PROPERTYFLAG_OneOf)) {
-        return NULL;
-      }
+          XFA_GetPropertyOfElement(eType, pNode->GetElementType(), dwPacket);
+      if (pExistProperty && (pExistProperty->uFlags & XFA_PROPERTYFLAG_OneOf))
+        return nullptr;
     }
   }
   CXFA_Document* pFactory = m_pDocument->GetParser()->GetFactory();
   const XFA_PACKETINFO* pPacket = XFA_GetPacketByID(dwPacket);
-  CXFA_Node* pNewNode;
+  CXFA_Node* pNewNode = nullptr;
   for (; iCount <= index; iCount++) {
     pNewNode = pFactory->CreateNode(pPacket, eProperty);
-    if (!pNewNode) {
-      return NULL;
-    }
+    if (!pNewNode)
+      return nullptr;
     InsertChild(pNewNode, nullptr);
-    pNewNode->SetFlag(XFA_NODEFLAG_Initialized, true);
+    pNewNode->SetFlag(XFA_NodeFlag_Initialized, true);
   }
   return pNewNode;
 }
-int32_t CXFA_Node::CountChildren(XFA_ELEMENT eElement, FX_BOOL bOnlyChild) {
+int32_t CXFA_Node::CountChildren(XFA_Element eType, FX_BOOL bOnlyChild) {
   CXFA_Node* pNode = m_pChild;
   int32_t iCount = 0;
   for (; pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    if (pNode->GetClassID() == eElement || eElement == XFA_ELEMENT_UNKNOWN) {
+    if (pNode->GetElementType() == eType || eType == XFA_Element::Unknown) {
       if (bOnlyChild) {
         const XFA_PROPERTY* pProperty = XFA_GetPropertyOfElement(
-            GetClassID(), pNode->GetClassID(), XFA_XDPPACKET_UNKNOWN);
+            GetElementType(), pNode->GetElementType(), XFA_XDPPACKET_UNKNOWN);
         if (pProperty) {
           continue;
         }
@@ -4533,16 +4405,16 @@ int32_t CXFA_Node::CountChildren(XFA_ELEMENT eElement, FX_BOOL bOnlyChild) {
   return iCount;
 }
 CXFA_Node* CXFA_Node::GetChild(int32_t index,
-                               XFA_ELEMENT eElement,
+                               XFA_Element eType,
                                FX_BOOL bOnlyChild) {
   ASSERT(index > -1);
   CXFA_Node* pNode = m_pChild;
   int32_t iCount = 0;
   for (; pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    if (pNode->GetClassID() == eElement || eElement == XFA_ELEMENT_UNKNOWN) {
+    if (pNode->GetElementType() == eType || eType == XFA_Element::Unknown) {
       if (bOnlyChild) {
         const XFA_PROPERTY* pProperty = XFA_GetPropertyOfElement(
-            GetClassID(), pNode->GetClassID(), XFA_XDPPACKET_UNKNOWN);
+            GetElementType(), pNode->GetElementType(), XFA_XDPPACKET_UNKNOWN);
         if (pProperty) {
           continue;
         }
@@ -4553,7 +4425,7 @@ CXFA_Node* CXFA_Node::GetChild(int32_t index,
       }
     }
   }
-  return NULL;
+  return nullptr;
 }
 int32_t CXFA_Node::InsertChild(int32_t index, CXFA_Node* pNode) {
   ASSERT(!pNode->m_pNext);
@@ -4562,7 +4434,7 @@ int32_t CXFA_Node::InsertChild(int32_t index, CXFA_Node* pNode) {
   ASSERT(ret);
   (void)ret;  // Avoid unused variable warning.
 
-  if (m_pChild == NULL || index == 0) {
+  if (!m_pChild || index == 0) {
     if (index > 0) {
       return -1;
     }
@@ -4584,20 +4456,20 @@ int32_t CXFA_Node::InsertChild(int32_t index, CXFA_Node* pNode) {
     pPrev->m_pNext = pNode;
     index = iCount;
   }
-  if (pNode->m_pNext == NULL) {
+  if (!pNode->m_pNext) {
     m_pLastChild = pNode;
   }
   ASSERT(m_pLastChild);
-  ASSERT(m_pLastChild->m_pNext == NULL);
-  pNode->ClearFlag(XFA_NODEFLAG_HasRemoved);
+  ASSERT(!m_pLastChild->m_pNext);
+  pNode->ClearFlag(XFA_NodeFlag_HasRemovedChildren);
   CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
   if (pNotify)
     pNotify->OnChildAdded(this);
 
   if (IsNeedSavingXMLNode() && pNode->m_pXMLNode) {
-    ASSERT(pNode->m_pXMLNode->GetNodeItem(CFDE_XMLNode::Parent) == NULL);
+    ASSERT(!pNode->m_pXMLNode->GetNodeItem(CFDE_XMLNode::Parent));
     m_pXMLNode->InsertChildNode(pNode->m_pXMLNode, index);
-    pNode->ClearFlag(XFA_NODEFLAG_OwnXMLNode);
+    pNode->ClearFlag(XFA_NodeFlag_OwnXMLNode);
   }
   return index;
 }
@@ -4614,7 +4486,7 @@ FX_BOOL CXFA_Node::InsertChild(CXFA_Node* pNode, CXFA_Node* pBeforeNode) {
 
   int32_t nIndex = -1;
   pNode->m_pParent = this;
-  if (m_pChild == NULL || pBeforeNode == m_pChild) {
+  if (!m_pChild || pBeforeNode == m_pChild) {
     pNode->m_pNext = m_pChild;
     m_pChild = pNode;
     nIndex = 0;
@@ -4631,26 +4503,26 @@ FX_BOOL CXFA_Node::InsertChild(CXFA_Node* pNode, CXFA_Node* pBeforeNode) {
     pNode->m_pNext = pPrev->m_pNext;
     pPrev->m_pNext = pNode;
   }
-  if (pNode->m_pNext == NULL) {
+  if (!pNode->m_pNext) {
     m_pLastChild = pNode;
   }
   ASSERT(m_pLastChild);
-  ASSERT(m_pLastChild->m_pNext == NULL);
-  pNode->ClearFlag(XFA_NODEFLAG_HasRemoved);
+  ASSERT(!m_pLastChild->m_pNext);
+  pNode->ClearFlag(XFA_NodeFlag_HasRemovedChildren);
   CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
   if (pNotify)
     pNotify->OnChildAdded(this);
 
   if (IsNeedSavingXMLNode() && pNode->m_pXMLNode) {
-    ASSERT(pNode->m_pXMLNode->GetNodeItem(CFDE_XMLNode::Parent) == NULL);
+    ASSERT(!pNode->m_pXMLNode->GetNodeItem(CFDE_XMLNode::Parent));
     m_pXMLNode->InsertChildNode(pNode->m_pXMLNode, nIndex);
-    pNode->ClearFlag(XFA_NODEFLAG_OwnXMLNode);
+    pNode->ClearFlag(XFA_NodeFlag_OwnXMLNode);
   }
   return TRUE;
 }
 CXFA_Node* CXFA_Node::Deprecated_GetPrevSibling() {
   if (!m_pParent) {
-    return NULL;
+    return nullptr;
   }
   for (CXFA_Node* pSibling = m_pParent->m_pChild; pSibling;
        pSibling = pSibling->m_pNext) {
@@ -4658,10 +4530,10 @@ CXFA_Node* CXFA_Node::Deprecated_GetPrevSibling() {
       return pSibling;
     }
   }
-  return NULL;
+  return nullptr;
 }
 FX_BOOL CXFA_Node::RemoveChild(CXFA_Node* pNode, bool bNotify) {
-  if (pNode == NULL || pNode->m_pParent != this) {
+  if (!pNode || pNode->m_pParent != this) {
     ASSERT(FALSE);
     return FALSE;
   }
@@ -4670,20 +4542,20 @@ FX_BOOL CXFA_Node::RemoveChild(CXFA_Node* pNode, bool bNotify) {
     if (m_pLastChild == pNode) {
       m_pLastChild = pNode->m_pNext;
     }
-    pNode->m_pNext = NULL;
-    pNode->m_pParent = NULL;
+    pNode->m_pNext = nullptr;
+    pNode->m_pParent = nullptr;
   } else {
     CXFA_Node* pPrev = pNode->Deprecated_GetPrevSibling();
     pPrev->m_pNext = pNode->m_pNext;
     if (m_pLastChild == pNode) {
       m_pLastChild = pNode->m_pNext ? pNode->m_pNext : pPrev;
     }
-    pNode->m_pNext = NULL;
-    pNode->m_pParent = NULL;
+    pNode->m_pNext = nullptr;
+    pNode->m_pParent = nullptr;
   }
-  ASSERT(m_pLastChild == NULL || m_pLastChild->m_pNext == NULL);
+  ASSERT(!m_pLastChild || !m_pLastChild->m_pNext);
   OnRemoved(bNotify);
-  pNode->SetFlag(XFA_NODEFLAG_HasRemoved, true);
+  pNode->SetFlag(XFA_NodeFlag_HasRemovedChildren, true);
   m_pDocument->AddPurgeNode(pNode);
   if (IsNeedSavingXMLNode() && pNode->m_pXMLNode) {
     if (pNode->IsAttributeInXML()) {
@@ -4708,7 +4580,7 @@ FX_BOOL CXFA_Node::RemoveChild(CXFA_Node* pNode, bool bNotify) {
     } else {
       m_pXMLNode->RemoveChildNode(pNode->m_pXMLNode);
     }
-    pNode->SetFlag(XFA_NODEFLAG_OwnXMLNode, false);
+    pNode->SetFlag(XFA_NodeFlag_OwnXMLNode, false);
   }
   return TRUE;
 }
@@ -4722,16 +4594,16 @@ CXFA_Node* CXFA_Node::GetFirstChildByName(uint32_t dwNameHash) const {
       return pNode;
     }
   }
-  return NULL;
+  return nullptr;
 }
-CXFA_Node* CXFA_Node::GetFirstChildByClass(XFA_ELEMENT eElement) const {
+CXFA_Node* CXFA_Node::GetFirstChildByClass(XFA_Element eType) const {
   for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_FirstChild); pNode;
        pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    if (pNode->GetClassID() == eElement) {
+    if (pNode->GetElementType() == eType) {
       return pNode;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_Node* CXFA_Node::GetNextSameNameSibling(uint32_t dwNameHash) const {
   for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_NextSibling); pNode;
@@ -4740,20 +4612,20 @@ CXFA_Node* CXFA_Node::GetNextSameNameSibling(uint32_t dwNameHash) const {
       return pNode;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_Node* CXFA_Node::GetNextSameNameSibling(
     const CFX_WideStringC& wsNodeName) const {
   return GetNextSameNameSibling(FX_HashCode_GetW(wsNodeName, false));
 }
-CXFA_Node* CXFA_Node::GetNextSameClassSibling(XFA_ELEMENT eElement) const {
+CXFA_Node* CXFA_Node::GetNextSameClassSibling(XFA_Element eType) const {
   for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_NextSibling); pNode;
        pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
-    if (pNode->GetClassID() == eElement) {
+    if (pNode->GetElementType() == eType) {
       return pNode;
     }
   }
-  return NULL;
+  return nullptr;
 }
 int32_t CXFA_Node::GetNodeSameNameIndex() const {
   CXFA_ScriptContext* pScriptContext = m_pDocument->GetScriptContext();
@@ -4777,20 +4649,20 @@ void CXFA_Node::GetSOMExpression(CFX_WideString& wsSOMExpression) {
   pScriptContext->GetSomExpression(this, wsSOMExpression);
 }
 CXFA_Node* CXFA_Node::GetInstanceMgrOfSubform() {
-  CXFA_Node* pInstanceMgr = NULL;
+  CXFA_Node* pInstanceMgr = nullptr;
   if (m_ePacket == XFA_XDPPACKET_Form) {
     CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-    if (!pParentNode || pParentNode->GetClassID() == XFA_ELEMENT_Area) {
+    if (!pParentNode || pParentNode->GetElementType() == XFA_Element::Area) {
       return pInstanceMgr;
     }
     for (CXFA_Node* pNode = GetNodeItem(XFA_NODEITEM_PrevSibling); pNode;
          pNode = pNode->GetNodeItem(XFA_NODEITEM_PrevSibling)) {
-      XFA_ELEMENT eType = pNode->GetClassID();
-      if ((eType == XFA_ELEMENT_Subform || eType == XFA_ELEMENT_SubformSet) &&
+      XFA_Element eType = pNode->GetElementType();
+      if ((eType == XFA_Element::Subform || eType == XFA_Element::SubformSet) &&
           pNode->m_dwNameHash != m_dwNameHash) {
         break;
       }
-      if (eType == XFA_ELEMENT_InstanceManager) {
+      if (eType == XFA_Element::InstanceManager) {
         CFX_WideStringC wsName = GetCData(XFA_ATTRIBUTE_Name);
         CFX_WideStringC wsInstName = pNode->GetCData(XFA_ATTRIBUTE_Name);
         if (wsInstName.GetLength() > 0 && wsInstName.GetAt(0) == '_' &&
@@ -4804,34 +4676,28 @@ CXFA_Node* CXFA_Node::GetInstanceMgrOfSubform() {
   return pInstanceMgr;
 }
 CXFA_Node* CXFA_Node::GetOccurNode() {
-  return GetFirstChildByClass(XFA_ELEMENT_Occur);
+  return GetFirstChildByClass(XFA_Element::Occur);
 }
-FX_BOOL CXFA_Node::HasFlag(uint32_t dwFlag) const {
-  if (m_uFlags & dwFlag) {
-    return TRUE;
-  }
-  switch (dwFlag) {
-    case XFA_NODEFLAG_HasRemoved:
-      return m_pParent && m_pParent->HasFlag(dwFlag);
-    default:
-      break;
-  }
-  return FALSE;
+bool CXFA_Node::HasFlag(XFA_NodeFlag dwFlag) const {
+  if (m_uNodeFlags & dwFlag)
+    return true;
+  if (dwFlag == XFA_NodeFlag_HasRemovedChildren)
+    return m_pParent && m_pParent->HasFlag(dwFlag);
+  return false;
 }
 
 void CXFA_Node::SetFlag(uint32_t dwFlag, bool bNotify) {
-  if (dwFlag == XFA_NODEFLAG_Initialized && bNotify &&
-      !HasFlag(XFA_NODEFLAG_Initialized)) {
+  if (dwFlag == XFA_NodeFlag_Initialized && bNotify && !IsInitialized()) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (pNotify) {
       pNotify->OnNodeReady(this);
     }
   }
-  m_uFlags |= dwFlag;
+  m_uNodeFlags |= dwFlag;
 }
 
 void CXFA_Node::ClearFlag(uint32_t dwFlag) {
-  m_uFlags &= ~dwFlag;
+  m_uNodeFlags &= ~dwFlag;
 }
 
 FX_BOOL CXFA_Node::IsAttributeInXML() {
@@ -4848,7 +4714,7 @@ void CXFA_Node::OnRemoved(bool bNotify) {
 }
 
 void CXFA_Node::OnChanging(XFA_ATTRIBUTE eAttr, bool bNotify) {
-  if (bNotify && HasFlag(XFA_NODEFLAG_Initialized)) {
+  if (bNotify && IsInitialized()) {
     CXFA_FFNotify* pNotify = m_pDocument->GetParser()->GetNotify();
     if (pNotify) {
       pNotify->OnValueChanging(this, eAttr);
@@ -4859,13 +4725,13 @@ void CXFA_Node::OnChanging(XFA_ATTRIBUTE eAttr, bool bNotify) {
 void CXFA_Node::OnChanged(XFA_ATTRIBUTE eAttr,
                           bool bNotify,
                           FX_BOOL bScriptModify) {
-  if (bNotify && HasFlag(XFA_NODEFLAG_Initialized)) {
+  if (bNotify && IsInitialized()) {
     Script_Attribute_SendAttributeChangeMessage(eAttr, bScriptModify);
   }
 }
 
 int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
-                                         XFA_ELEMENT eElementType) {
+                                         XFA_Element eType) {
   int32_t iRet = XFA_EVENTERROR_NotExist;
   const XFA_ExecEventParaInfo* eventParaInfo =
       GetEventParaInfoByName(wsEventName);
@@ -4881,15 +4747,15 @@ int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
       iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                            FALSE, FALSE);
     } else if (validFlags == 3) {
-      if (eElementType == XFA_ELEMENT_Subform) {
+      if (eType == XFA_Element::Subform) {
         iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                              FALSE, FALSE);
       }
     } else if (validFlags == 4) {
-      if (eElementType == XFA_ELEMENT_ExclGroup ||
-          eElementType == XFA_ELEMENT_Field) {
+      if (eType == XFA_Element::ExclGroup || eType == XFA_Element::Field) {
         CXFA_Node* pParentNode = GetNodeItem(XFA_NODEITEM_Parent);
-        if (pParentNode && pParentNode->GetClassID() == XFA_ELEMENT_ExclGroup) {
+        if (pParentNode &&
+            pParentNode->GetElementType() == XFA_Element::ExclGroup) {
           iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                                FALSE, FALSE);
         }
@@ -4897,7 +4763,7 @@ int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
                                              FALSE, FALSE);
       }
     } else if (validFlags == 5) {
-      if (eElementType == XFA_ELEMENT_Field) {
+      if (eType == XFA_Element::Field) {
         iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                              FALSE, FALSE);
       }
@@ -4905,7 +4771,7 @@ int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
       CXFA_WidgetData* pWidgetData = GetWidgetData();
       if (pWidgetData) {
         CXFA_Node* pUINode = pWidgetData->GetUIChild();
-        if (pUINode->m_eNodeClass == XFA_ELEMENT_Signature) {
+        if (pUINode->m_elementType == XFA_Element::Signature) {
           iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                                FALSE, FALSE);
         }
@@ -4914,7 +4780,7 @@ int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
       CXFA_WidgetData* pWidgetData = GetWidgetData();
       if (pWidgetData) {
         CXFA_Node* pUINode = pWidgetData->GetUIChild();
-        if ((pUINode->m_eNodeClass == XFA_ELEMENT_ChoiceList) &&
+        if ((pUINode->m_elementType == XFA_Element::ChoiceList) &&
             (!pWidgetData->IsListBox())) {
           iRet = pNotify->ExecEventByDeepFirst(this, eventParaInfo->m_eventType,
                                                FALSE, FALSE);
@@ -4926,7 +4792,7 @@ int32_t CXFA_Node::execSingleEventByName(const CFX_WideStringC& wsEventName,
 }
 void CXFA_Node::UpdateNameHash() {
   const XFA_NOTSUREATTRIBUTE* pNotsure =
-      XFA_GetNotsureAttribute(GetClassID(), XFA_ATTRIBUTE_Name);
+      XFA_GetNotsureAttribute(GetElementType(), XFA_ATTRIBUTE_Name);
   CFX_WideStringC wsName;
   if (!pNotsure || pNotsure->eType == XFA_ATTRIBUTETYPE_Cdata) {
     wsName = GetCData(XFA_ATTRIBUTE_Name);
@@ -4940,13 +4806,13 @@ CFDE_XMLNode* CXFA_Node::CreateXMLMappingNode() {
   if (!m_pXMLNode) {
     CFX_WideString wsTag(GetCData(XFA_ATTRIBUTE_Name));
     m_pXMLNode = new CFDE_XMLElement(wsTag);
-    SetFlag(XFA_NODEFLAG_OwnXMLNode, false);
+    SetFlag(XFA_NodeFlag_OwnXMLNode, false);
   }
   return m_pXMLNode;
 }
 FX_BOOL CXFA_Node::IsNeedSavingXMLNode() {
   return m_pXMLNode && (GetPacketID() == XFA_XDPPACKET_Datasets ||
-                        GetClassID() == XFA_ELEMENT_Xfa);
+                        GetElementType() == XFA_Element::Xfa);
 }
 
 XFA_MAPMODULEDATA* CXFA_Node::CreateMapModuleData() {
@@ -4973,7 +4839,7 @@ FX_BOOL CXFA_Node::GetMapModuleValue(void* pKey, void*& pValue) {
     }
     pNode = pNode->GetPacketID() != XFA_XDPPACKET_Datasets
                 ? pNode->GetTemplateNode()
-                : NULL;
+                : nullptr;
   }
   return FALSE;
 }
@@ -4997,7 +4863,7 @@ void CXFA_Node::SetMapModuleBuffer(
     XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo) {
   XFA_MAPMODULEDATA* pModule = CreateMapModuleData();
   XFA_MAPDATABLOCK*& pBuffer = pModule->m_BufferMap[pKey];
-  if (pBuffer == NULL) {
+  if (!pBuffer) {
     pBuffer =
         (XFA_MAPDATABLOCK*)FX_Alloc(uint8_t, sizeof(XFA_MAPDATABLOCK) + iBytes);
   } else if (pBuffer->iBytes != iBytes) {
@@ -5009,9 +4875,9 @@ void CXFA_Node::SetMapModuleBuffer(
   } else if (pBuffer->pCallbackInfo && pBuffer->pCallbackInfo->pFree) {
     pBuffer->pCallbackInfo->pFree(*(void**)pBuffer->GetData());
   }
-  if (pBuffer == NULL) {
+  if (!pBuffer)
     return;
-  }
+
   pBuffer->pCallbackInfo = pCallbackInfo;
   pBuffer->iBytes = iBytes;
   FXSYS_memcpy(pBuffer->GetData(), pValue, iBytes);
@@ -5020,7 +4886,7 @@ FX_BOOL CXFA_Node::GetMapModuleBuffer(void* pKey,
                                       void*& pValue,
                                       int32_t& iBytes,
                                       FX_BOOL bProtoAlso) const {
-  XFA_MAPDATABLOCK* pBuffer = NULL;
+  XFA_MAPDATABLOCK* pBuffer = nullptr;
   const CXFA_Node* pNode = this;
   while (pNode) {
     XFA_MAPMODULEDATA* pModule = pNode->GetMapModuleData();
@@ -5029,9 +4895,9 @@ FX_BOOL CXFA_Node::GetMapModuleBuffer(void* pKey,
     }
     pNode = (bProtoAlso && pNode->GetPacketID() != XFA_XDPPACKET_Datasets)
                 ? pNode->GetTemplateNode()
-                : NULL;
+                : nullptr;
   }
-  if (pBuffer == NULL) {
+  if (!pBuffer) {
     return FALSE;
   }
   pValue = pBuffer->GetData();
@@ -5050,7 +4916,7 @@ FX_BOOL CXFA_Node::HasMapModuleKey(void* pKey, FX_BOOL bProtoAlso) {
     }
     pNode = (bProtoAlso && pNode->GetPacketID() != XFA_XDPPACKET_Datasets)
                 ? pNode->GetTemplateNode()
-                : NULL;
+                : nullptr;
   }
   return FALSE;
 }
@@ -5060,7 +4926,7 @@ void CXFA_Node::RemoveMapModuleKey(void* pKey) {
     return;
 
   if (pKey) {
-    XFA_MAPDATABLOCK* pBuffer = NULL;
+    XFA_MAPDATABLOCK* pBuffer = nullptr;
     pModule->m_BufferMap.Lookup(pKey, pBuffer);
     if (pBuffer) {
       if (pBuffer->pCallbackInfo && pBuffer->pCallbackInfo->pFree) {
@@ -5120,7 +4986,7 @@ void CXFA_Node::MergeAllData(void* pDstModule, FX_BOOL bUseSrcAttr) {
       }
       continue;
     }
-    if (pBuffer == NULL) {
+    if (!pBuffer) {
       pBuffer = (XFA_MAPDATABLOCK*)FX_Alloc(
           uint8_t, sizeof(XFA_MAPDATABLOCK) + pSrcBuffer->iBytes);
     } else if (pBuffer->iBytes != pSrcBuffer->iBytes) {
@@ -5132,7 +4998,7 @@ void CXFA_Node::MergeAllData(void* pDstModule, FX_BOOL bUseSrcAttr) {
     } else if (pBuffer->pCallbackInfo && pBuffer->pCallbackInfo->pFree) {
       pBuffer->pCallbackInfo->pFree(*(void**)pBuffer->GetData());
     }
-    if (pBuffer == NULL) {
+    if (!pBuffer) {
       continue;
     }
     pBuffer->pCallbackInfo = pSrcBuffer->pCallbackInfo;
@@ -5151,11 +5017,11 @@ void CXFA_Node::MoveBufferMapData(CXFA_Node* pDstModule, void* pKey) {
   if (!pKey) {
     bNeedMove = FALSE;
   }
-  if (pDstModule->GetClassID() != GetClassID()) {
+  if (pDstModule->GetElementType() != GetElementType()) {
     bNeedMove = FALSE;
   }
-  XFA_MAPMODULEDATA* pSrcModuleData = NULL;
-  XFA_MAPMODULEDATA* pDstModuleData = NULL;
+  XFA_MAPMODULEDATA* pSrcModuleData = nullptr;
+  XFA_MAPMODULEDATA* pDstModuleData = nullptr;
   if (bNeedMove) {
     pSrcModuleData = GetMapModuleData();
     if (!pSrcModuleData) {
@@ -5172,7 +5038,7 @@ void CXFA_Node::MoveBufferMapData(CXFA_Node* pDstModule, void* pKey) {
                                         (XFA_MAPDATABLOCK*)pBufferBlockData);
     }
   }
-  if (pDstModule->GetObjectType() == XFA_OBJECTTYPE_NodeV) {
+  if (pDstModule->IsNodeV()) {
     CFX_WideString wsValue = pDstModule->GetScriptContent(FALSE);
     CFX_WideString wsFormatValue(wsValue);
     CXFA_WidgetData* pWidgetData = pDstModule->GetContainerWidgetData();
@@ -5200,10 +5066,35 @@ void CXFA_Node::MoveBufferMapData(CXFA_Node* pSrcModule,
   }
   pSrcModule->MoveBufferMapData(pDstModule, pKey);
 }
-CXFA_NodeList::CXFA_NodeList(CXFA_Document* pDocument)
-    : CXFA_Object(pDocument, XFA_OBJECTTYPE_NodeList) {
-  m_pDocument->GetScriptContext()->CacheList(this);
+
+CXFA_ThisProxy::CXFA_ThisProxy(CXFA_Node* pThisNode, CXFA_Node* pScriptNode)
+    : CXFA_Object(pThisNode->GetDocument(),
+                  XFA_ObjectType::VariablesThis,
+                  XFA_Element::Unknown),
+      m_pThisNode(nullptr),
+      m_pScriptNode(nullptr) {
+  m_pThisNode = pThisNode;
+  m_pScriptNode = pScriptNode;
 }
+
+CXFA_ThisProxy::~CXFA_ThisProxy() {}
+
+CXFA_Node* CXFA_ThisProxy::GetThisNode() const {
+  return m_pThisNode;
+}
+
+CXFA_Node* CXFA_ThisProxy::GetScriptNode() const {
+  return m_pScriptNode;
+}
+
+CXFA_NodeList::CXFA_NodeList(CXFA_Document* pDocument)
+    : CXFA_Object(pDocument, XFA_ObjectType::NodeList, XFA_Element::NodeList) {
+  m_pDocument->GetScriptContext()->AddToCacheList(
+      std::unique_ptr<CXFA_NodeList>(this));
+}
+
+CXFA_NodeList::~CXFA_NodeList() {}
+
 CXFA_Node* CXFA_NodeList::NamedItem(const CFX_WideStringC& wsName) {
   uint32_t dwHashCode = FX_HashCode_GetW(wsName, false);
   int32_t iCount = GetLength();
@@ -5212,7 +5103,7 @@ CXFA_Node* CXFA_NodeList::NamedItem(const CFX_WideStringC& wsName) {
     if (dwHashCode == ret->GetNameHash())
       return ret;
   }
-  return NULL;
+  return nullptr;
 }
 void CXFA_NodeList::Script_ListClass_Append(CFXJSE_Arguments* pArguments) {
   int32_t argc = pArguments->GetLength();
@@ -5221,10 +5112,10 @@ void CXFA_NodeList::Script_ListClass_Append(CFXJSE_Arguments* pArguments) {
     if (pNode) {
       Append(pNode);
     } else {
-      ThrowScriptErrorMessage(XFA_IDS_ARGUMENT_MISMATCH);
+      ThrowException(XFA_IDS_ARGUMENT_MISMATCH);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"append");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"append");
   }
 }
 void CXFA_NodeList::Script_ListClass_Insert(CFXJSE_Arguments* pArguments) {
@@ -5235,10 +5126,10 @@ void CXFA_NodeList::Script_ListClass_Insert(CFXJSE_Arguments* pArguments) {
     if (pNewNode) {
       Insert(pNewNode, pBeforeNode);
     } else {
-      ThrowScriptErrorMessage(XFA_IDS_ARGUMENT_MISMATCH);
+      ThrowException(XFA_IDS_ARGUMENT_MISMATCH);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"insert");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"insert");
   }
 }
 void CXFA_NodeList::Script_ListClass_Remove(CFXJSE_Arguments* pArguments) {
@@ -5248,10 +5139,10 @@ void CXFA_NodeList::Script_ListClass_Remove(CFXJSE_Arguments* pArguments) {
     if (pNode) {
       Remove(pNode);
     } else {
-      ThrowScriptErrorMessage(XFA_IDS_ARGUMENT_MISMATCH);
+      ThrowException(XFA_IDS_ARGUMENT_MISMATCH);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remove");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"remove");
   }
 }
 void CXFA_NodeList::Script_ListClass_Item(CFXJSE_Arguments* pArguments) {
@@ -5259,14 +5150,13 @@ void CXFA_NodeList::Script_ListClass_Item(CFXJSE_Arguments* pArguments) {
   if (argc == 1) {
     int32_t iIndex = pArguments->GetInt32(0);
     if ((iIndex >= 0) && (iIndex + 1 <= GetLength())) {
-      FXJSE_Value_Set(
-          pArguments->GetReturnValue(),
+      pArguments->GetReturnValue()->Assign(
           m_pDocument->GetScriptContext()->GetJSValueFromMap(Item(iIndex)));
     } else {
-      ThrowScriptErrorMessage(XFA_IDS_INDEX_OUT_OF_BOUNDS);
+      ThrowException(XFA_IDS_INDEX_OUT_OF_BOUNDS);
     }
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"item");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"item");
   }
 }
 void CXFA_NodeList::Script_TreelistClass_NamedItem(
@@ -5279,23 +5169,26 @@ void CXFA_NodeList::Script_TreelistClass_NamedItem(
     if (!pNode) {
       return;
     }
-    FXJSE_Value_Set(pArguments->GetReturnValue(),
-                    m_pDocument->GetScriptContext()->GetJSValueFromMap(pNode));
+    pArguments->GetReturnValue()->Assign(
+        m_pDocument->GetScriptContext()->GetJSValueFromMap(pNode));
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"namedItem");
+    ThrowException(XFA_IDS_INCORRECT_NUMBER_OF_METHOD, L"namedItem");
   }
 }
-void CXFA_NodeList::Script_ListClass_Length(FXJSE_HVALUE hValue,
+void CXFA_NodeList::Script_ListClass_Length(CFXJSE_Value* pValue,
                                             FX_BOOL bSetting,
                                             XFA_ATTRIBUTE eAttribute) {
   if (!bSetting) {
-    FXJSE_Value_SetInteger(hValue, GetLength());
+    pValue->SetInteger(GetLength());
   } else {
-    ThrowScriptErrorMessage(XFA_IDS_INVAlID_PROP_SET);
+    ThrowException(XFA_IDS_INVAlID_PROP_SET);
   }
 }
 CXFA_ArrayNodeList::CXFA_ArrayNodeList(CXFA_Document* pDocument)
     : CXFA_NodeList(pDocument) {}
+
+CXFA_ArrayNodeList::~CXFA_ArrayNodeList() {}
+
 void CXFA_ArrayNodeList::SetArrayNodeList(const CXFA_NodeArray& srcArray) {
   if (srcArray.GetSize() > 0) {
     m_array.Copy(srcArray);
@@ -5310,7 +5203,7 @@ FX_BOOL CXFA_ArrayNodeList::Append(CXFA_Node* pNode) {
 }
 FX_BOOL CXFA_ArrayNodeList::Insert(CXFA_Node* pNewNode,
                                    CXFA_Node* pBeforeNode) {
-  if (pBeforeNode == NULL) {
+  if (!pBeforeNode) {
     m_array.Add(pNewNode);
   } else {
     int32_t iSize = m_array.GetSize();
@@ -5338,7 +5231,7 @@ CXFA_Node* CXFA_ArrayNodeList::Item(int32_t iIndex) {
   if (iIndex >= 0 && iIndex < iSize) {
     return m_array[iIndex];
   }
-  return NULL;
+  return nullptr;
 }
 CXFA_AttachNodeList::CXFA_AttachNodeList(CXFA_Document* pDocument,
                                          CXFA_Node* pAttachNode)
@@ -5347,7 +5240,8 @@ CXFA_AttachNodeList::CXFA_AttachNodeList(CXFA_Document* pDocument,
 }
 int32_t CXFA_AttachNodeList::GetLength() {
   return m_pAttachNode->CountChildren(
-      XFA_ELEMENT_UNKNOWN, m_pAttachNode->GetClassID() == XFA_ELEMENT_Subform);
+      XFA_Element::Unknown,
+      m_pAttachNode->GetElementType() == XFA_Element::Subform);
 }
 FX_BOOL CXFA_AttachNodeList::Append(CXFA_Node* pNode) {
   CXFA_Node* pParent = pNode->GetNodeItem(XFA_NODEITEM_Parent);
@@ -5369,6 +5263,6 @@ FX_BOOL CXFA_AttachNodeList::Remove(CXFA_Node* pNode) {
 }
 CXFA_Node* CXFA_AttachNodeList::Item(int32_t iIndex) {
   return m_pAttachNode->GetChild(
-      iIndex, XFA_ELEMENT_UNKNOWN,
-      m_pAttachNode->GetClassID() == XFA_ELEMENT_Subform);
+      iIndex, XFA_Element::Unknown,
+      m_pAttachNode->GetElementType() == XFA_Element::Subform);
 }

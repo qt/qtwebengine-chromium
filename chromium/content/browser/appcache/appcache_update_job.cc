@@ -7,6 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -1256,8 +1258,8 @@ void AppCacheUpdateJob::FetchUrls() {
     } else {
       URLFetcher* fetcher = new URLFetcher(
           url_to_fetch.url, URLFetcher::URL_FETCH, this);
-      if (url_to_fetch.existing_response_info.get()) {
-        DCHECK(group_->newest_complete_cache());
+      if (url_to_fetch.existing_response_info.get() &&
+          group_->newest_complete_cache()) {
         AppCacheEntry* existing_entry =
             group_->newest_complete_cache()->GetEntry(url_to_fetch.url);
         DCHECK(existing_entry);
@@ -1709,7 +1711,7 @@ void AppCacheUpdateJob::DeleteSoon() {
     group_ = NULL;
   }
 
-  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
 }
 
 }  // namespace content

@@ -29,16 +29,18 @@
 namespace webrtc {
 
 RTPExtensionType StringToRtpExtensionType(const std::string& extension) {
-  if (extension == RtpExtension::kTOffset)
+  if (extension == RtpExtension::kTimestampOffsetUri)
     return kRtpExtensionTransmissionTimeOffset;
-  if (extension == RtpExtension::kAudioLevel)
+  if (extension == RtpExtension::kAudioLevelUri)
     return kRtpExtensionAudioLevel;
-  if (extension == RtpExtension::kAbsSendTime)
+  if (extension == RtpExtension::kAbsSendTimeUri)
     return kRtpExtensionAbsoluteSendTime;
-  if (extension == RtpExtension::kVideoRotation)
+  if (extension == RtpExtension::kVideoRotationUri)
     return kRtpExtensionVideoRotation;
-  if (extension == RtpExtension::kTransportSequenceNumber)
+  if (extension == RtpExtension::kTransportSequenceNumberUri)
     return kRtpExtensionTransportSequenceNumber;
+  if (extension == RtpExtension::kPlayoutDelayUri)
+    return kRtpExtensionPlayoutDelay;
   RTC_NOTREACHED() << "Looking up unsupported RTP extension.";
   return kRtpExtensionNone;
 }
@@ -428,17 +430,19 @@ int32_t ModuleRtpRtcpImpl::SendOutgoingData(
 bool ModuleRtpRtcpImpl::TimeToSendPacket(uint32_t ssrc,
                                          uint16_t sequence_number,
                                          int64_t capture_time_ms,
-                                         bool retransmission) {
+                                         bool retransmission,
+                                         int probe_cluster_id) {
   if (SendingMedia() && ssrc == rtp_sender_.SSRC()) {
-    return rtp_sender_.TimeToSendPacket(
-        sequence_number, capture_time_ms, retransmission);
+    return rtp_sender_.TimeToSendPacket(sequence_number, capture_time_ms,
+                                        retransmission, probe_cluster_id);
   }
   // No RTP sender is interested in sending this packet.
   return true;
 }
 
-size_t ModuleRtpRtcpImpl::TimeToSendPadding(size_t bytes) {
-  return rtp_sender_.TimeToSendPadding(bytes);
+size_t ModuleRtpRtcpImpl::TimeToSendPadding(size_t bytes,
+                                            int probe_cluster_id) {
+  return rtp_sender_.TimeToSendPadding(bytes, probe_cluster_id);
 }
 
 uint16_t ModuleRtpRtcpImpl::MaxPayloadLength() const {
@@ -920,6 +924,11 @@ void ModuleRtpRtcpImpl::OnReceivedNACK(
     rtcp_receiver_.RTT(rtcp_receiver_.RemoteSSRC(), NULL, &rtt, NULL, NULL);
   }
   rtp_sender_.OnReceivedNACK(nack_sequence_numbers, rtt);
+}
+
+void ModuleRtpRtcpImpl::OnReceivedRtcpReportBlocks(
+    const ReportBlockList& report_blocks) {
+  rtp_sender_.OnReceivedRtcpReportBlocks(report_blocks);
 }
 
 bool ModuleRtpRtcpImpl::LastReceivedNTP(

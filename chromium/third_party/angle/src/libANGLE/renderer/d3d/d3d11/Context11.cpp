@@ -9,6 +9,7 @@
 
 #include "libANGLE/renderer/d3d/d3d11/Context11.h"
 
+#include "common/string_utils.h"
 #include "libANGLE/renderer/d3d/CompilerD3D.h"
 #include "libANGLE/renderer/d3d/ShaderD3D.h"
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
@@ -69,7 +70,7 @@ FramebufferImpl *Context11::createFramebuffer(const gl::FramebufferState &data)
 
 TextureImpl *Context11::createTexture(const gl::TextureState &state)
 {
-    switch (state.target)
+    switch (state.getTarget())
     {
         case GL_TEXTURE_2D:
             return new TextureD3D_2D(state, mRenderer);
@@ -128,6 +129,11 @@ TransformFeedbackImpl *Context11::createTransformFeedback()
 SamplerImpl *Context11::createSampler()
 {
     return new SamplerD3D();
+}
+
+std::vector<PathImpl *> Context11::createPaths(GLsizei)
+{
+    return std::vector<PathImpl *>();
 }
 
 gl::Error Context11::flush()
@@ -215,17 +221,25 @@ std::string Context11::getRendererDescription() const
 
 void Context11::insertEventMarker(GLsizei length, const char *marker)
 {
-    mRenderer->insertEventMarker(length, marker);
+    auto optionalString = angle::WidenString(static_cast<size_t>(length), marker);
+    if (optionalString.valid())
+    {
+        mRenderer->getAnnotator()->setMarker(optionalString.value().data());
+    }
 }
 
 void Context11::pushGroupMarker(GLsizei length, const char *marker)
 {
-    mRenderer->pushGroupMarker(length, marker);
+    auto optionalString = angle::WidenString(static_cast<size_t>(length), marker);
+    if (optionalString.valid())
+    {
+        mRenderer->getAnnotator()->beginEvent(optionalString.value().data());
+    }
 }
 
 void Context11::popGroupMarker()
 {
-    mRenderer->popGroupMarker();
+    mRenderer->getAnnotator()->endEvent();
 }
 
 void Context11::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)

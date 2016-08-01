@@ -107,7 +107,7 @@ class Renderer11 : public RendererD3D
     egl::Error initialize() override;
     virtual bool resetDevice();
 
-    egl::ConfigSet generateConfigs() const override;
+    egl::ConfigSet generateConfigs() override;
     void generateDisplayExtensions(egl::DisplayExtensions *outExtensions) const override;
 
     ContextImpl *createContext(const gl::ContextState &state) override;
@@ -126,7 +126,6 @@ class Renderer11 : public RendererD3D
                                   GLenum depthBufferFormat,
                                   EGLint orientation) override;
 
-    virtual gl::Error generateSwizzle(gl::Texture *texture);
     virtual gl::Error setSamplerState(gl::SamplerType type, int index, gl::Texture *texture, const gl::SamplerState &sampler);
     virtual gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture);
 
@@ -137,7 +136,7 @@ class Renderer11 : public RendererD3D
     gl::Error updateState(const gl::ContextState &data, GLenum drawMode);
 
     bool applyPrimitiveType(GLenum mode, GLsizei count, bool usesPointSize);
-    gl::Error applyRenderTarget(const gl::Framebuffer *frameBuffer);
+    gl::Error applyRenderTarget(gl::Framebuffer *frameBuffer);
     gl::Error applyUniforms(const ProgramD3D &programD3D,
                             GLenum drawMode,
                             const std::vector<D3DUniform *> &uniformArray) override;
@@ -162,8 +161,8 @@ class Renderer11 : public RendererD3D
     std::string getRendererDescription() const;
     DeviceIdentifier getAdapterIdentifier() const override;
 
-    unsigned int getReservedVertexUniformVectors() const override;
-    unsigned int getReservedFragmentUniformVectors() const override;
+    unsigned int getReservedVertexUniformVectors() const;
+    unsigned int getReservedFragmentUniformVectors() const;
     unsigned int getReservedVertexUniformBuffers() const override;
     unsigned int getReservedFragmentUniformBuffers() const override;
 
@@ -229,8 +228,8 @@ class Renderer11 : public RendererD3D
     // Image operations
     ImageD3D *createImage() override;
     gl::Error generateMipmap(ImageD3D *dest, ImageD3D *source) override;
-    gl::Error generateMipmapsUsingD3D(TextureStorage *storage,
-                                      const gl::TextureState &textureState) override;
+    gl::Error generateMipmapUsingD3D(TextureStorage *storage,
+                                     const gl::TextureState &textureState) override;
     TextureStorage *createTextureStorage2D(SwapChainD3D *swapChain) override;
     TextureStorage *createTextureStorageEGLImage(EGLImageD3D *eglImage) override;
     TextureStorage *createTextureStorageExternal(
@@ -279,6 +278,7 @@ class Renderer11 : public RendererD3D
 
     Blit11 *getBlitter() { return mBlit; }
     Clear11 *getClearer() { return mClear; }
+    gl::DebugAnnotator *getAnnotator();
 
     // Buffer-to-texture and Texture-to-buffer copies
     virtual bool supportsFastCopyBufferToTexture(GLenum internalFormat) const;
@@ -339,24 +339,24 @@ class Renderer11 : public RendererD3D
     // Necessary hack for default framebuffers in D3D.
     FramebufferImpl *createDefaultFramebuffer(const gl::FramebufferState &state) override;
 
+    gl::Error getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer **bufferOut);
+
   protected:
-    void createAnnotator() override;
     gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
-    gl::Error applyShadersImpl(const gl::ContextState &data, GLenum drawMode) override;
 
   private:
     gl::Error drawArraysImpl(const gl::ContextState &data,
                              GLenum mode,
                              GLint startVertex,
                              GLsizei count,
-                             GLsizei instances) override;
+                             GLsizei instances);
     gl::Error drawElementsImpl(const gl::ContextState &data,
                                const TranslatedIndexData &indexInfo,
                                GLenum mode,
                                GLsizei count,
                                GLenum type,
                                const GLvoid *indices,
-                               GLsizei instances) override;
+                               GLsizei instances);
 
     void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
                       gl::Extensions *outExtensions,
@@ -377,7 +377,14 @@ class Renderer11 : public RendererD3D
                               int minIndex,
                               int instances);
 
-    ID3D11Texture2D *resolveMultisampledTexture(ID3D11Texture2D *source, unsigned int subresource);
+    gl::Error applyShaders(const gl::ContextState &data, GLenum drawMode);
+    gl::Error generateSwizzle(gl::Texture *texture);
+    gl::Error generateSwizzles(const gl::ContextState &data, gl::SamplerType type);
+    gl::Error generateSwizzles(const gl::ContextState &data);
+
+    gl::ErrorOrResult<TextureHelper11> resolveMultisampledTexture(RenderTarget11 *renderTarget,
+                                                                  bool depth,
+                                                                  bool stencil);
 
     void populateRenderer11DeviceCaps();
 
@@ -418,6 +425,12 @@ class Renderer11 : public RendererD3D
                                       SamplerMetadataD3D11 *samplerMetadata,
                                       size_t samplerMetadataReferencedBytes,
                                       ID3D11Buffer *driverConstantBuffer);
+
+    gl::Error copyImageInternal(const gl::Framebuffer *framebuffer,
+                                const gl::Rectangle &sourceRect,
+                                GLenum destFormat,
+                                const gl::Offset &destOffset,
+                                RenderTargetD3D *destRenderTarget);
 
     HMODULE mD3d11Module;
     HMODULE mDxgiModule;
@@ -527,6 +540,11 @@ class Renderer11 : public RendererD3D
     ID3D11Debug *mDebug;
 
     std::vector<GLuint> mScratchIndexDataBuffer;
+
+    MemoryBuffer mScratchMemoryBuffer;
+    unsigned int mScratchMemoryBufferResetCounter;
+
+    gl::DebugAnnotator *mAnnotator;
 
     mutable Optional<bool> mSupportsShareHandles;
 };

@@ -7,6 +7,10 @@
 #ifndef CORE_FPDFAPI_FPDF_PAGE_CPDF_MESHSTREAM_H_
 #define CORE_FPDFAPI_FPDF_PAGE_CPDF_MESHSTREAM_H_
 
+#include <memory>
+#include <vector>
+
+#include "core/fpdfapi/fpdf_page/cpdf_shadingpattern.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_stream_acc.h"
 #include "core/fxcrt/include/fx_basic.h"
 #include "core/fxcrt/include/fx_system.h"
@@ -26,13 +30,14 @@ class CPDF_Stream;
 
 class CPDF_MeshStream {
  public:
-  FX_BOOL Load(CPDF_Stream* pShadingStream,
-               CPDF_Function** pFuncs,
-               int nFuncs,
-               CPDF_ColorSpace* pCS);
+  CPDF_MeshStream(ShadingType type,
+                  const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
+                  CPDF_Stream* pShadingStream,
+                  CPDF_ColorSpace* pCS);
+
+  bool Load();
 
   uint32_t GetFlag();
-
   void GetCoords(FX_FLOAT& x, FX_FLOAT& y);
   void GetColor(FX_FLOAT& r, FX_FLOAT& g, FX_FLOAT& b);
 
@@ -41,21 +46,29 @@ class CPDF_MeshStream {
                        int count,
                        CFX_Matrix* pObject2Bitmap);
 
-  CPDF_Function** m_pFuncs;
-  CPDF_ColorSpace* m_pCS;
-  uint32_t m_nFuncs;
+  CFX_BitStream* BitStream() { return &m_BitStream; }
+  uint32_t ComponentBits() const { return m_nComponentBits; }
+  uint32_t Components() const { return m_nComponents; }
+
+ private:
+  static const uint32_t kMaxComponents = 8;
+
+  const ShadingType m_type;
+  const std::vector<std::unique_ptr<CPDF_Function>>& m_funcs;
+  CPDF_Stream* const m_pShadingStream;
+  CPDF_ColorSpace* const m_pCS;
   uint32_t m_nCoordBits;
-  uint32_t m_nCompBits;
+  uint32_t m_nComponentBits;
   uint32_t m_nFlagBits;
-  uint32_t m_nComps;
+  uint32_t m_nComponents;
   uint32_t m_CoordMax;
-  uint32_t m_CompMax;
+  uint32_t m_ComponentMax;
   FX_FLOAT m_xmin;
   FX_FLOAT m_xmax;
   FX_FLOAT m_ymin;
   FX_FLOAT m_ymax;
-  FX_FLOAT m_ColorMin[8];
-  FX_FLOAT m_ColorMax[8];
+  FX_FLOAT m_ColorMin[kMaxComponents];
+  FX_FLOAT m_ColorMax[kMaxComponents];
   CPDF_StreamAcc m_Stream;
   CFX_BitStream m_BitStream;
 };

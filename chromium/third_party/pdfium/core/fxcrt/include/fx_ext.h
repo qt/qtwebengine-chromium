@@ -24,10 +24,10 @@ FX_FLOAT FXSYS_tan(FX_FLOAT a);
 FX_FLOAT FXSYS_logb(FX_FLOAT b, FX_FLOAT x);
 FX_FLOAT FXSYS_strtof(const FX_CHAR* pcsStr,
                       int32_t iLength = -1,
-                      int32_t* pUsedLen = NULL);
+                      int32_t* pUsedLen = nullptr);
 FX_FLOAT FXSYS_wcstof(const FX_WCHAR* pwsStr,
                       int32_t iLength = -1,
-                      int32_t* pUsedLen = NULL);
+                      int32_t* pUsedLen = nullptr);
 FX_WCHAR* FXSYS_wcsncpy(FX_WCHAR* dstStr, const FX_WCHAR* srcStr, size_t count);
 int32_t FXSYS_wcsnicmp(const FX_WCHAR* s1, const FX_WCHAR* s2, size_t count);
 int32_t FXSYS_strnicmp(const FX_CHAR* s1, const FX_CHAR* s2, size_t count);
@@ -53,6 +53,9 @@ inline bool FXSYS_iswdigit(wchar_t wch) {
 inline bool FXSYS_iswalnum(wchar_t wch) {
   return FXSYS_iswalpha(wch) || FXSYS_iswdigit(wch);
 }
+inline bool FXSYS_iswspace(FX_WCHAR c) {
+  return (c == 0x20) || (c == 0x0d) || (c == 0x0a) || (c == 0x09);
+}
 
 inline int FXSYS_toHexDigit(const FX_CHAR c) {
   if (!std::isxdigit(c))
@@ -76,6 +79,9 @@ inline int FXSYS_toDecimalDigit(const FX_CHAR c) {
 inline int FXSYS_toDecimalDigit(const FX_WCHAR c) {
   return std::iswdigit(c) ? c - L'0' : 0;
 }
+
+FX_FLOAT FXSYS_FractionalScale(size_t scale_factor, int value);
+int FXSYS_FractionalScaleCount();
 
 uint32_t FX_HashCode_GetA(const CFX_ByteStringC& str, bool bIgnoreCase);
 uint32_t FX_HashCode_GetW(const CFX_WideStringC& Str, bool bIgnoreCase);

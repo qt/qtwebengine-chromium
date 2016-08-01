@@ -31,7 +31,7 @@ FX_BOOL CPDF_RenderStatus::ProcessImage(const CPDF_ImageObject* pImageObj,
                                         const CFX_Matrix* pObj2Device) {
   CPDF_ImageRenderer render;
   if (render.Start(this, pImageObj, pObj2Device, m_bStdCS, m_curBlend)) {
-    render.Continue(NULL);
+    render.Continue(nullptr);
   }
   return render.m_Result;
 }
@@ -48,7 +48,15 @@ void CPDF_RenderStatus::CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
   if (blend_mode == FXDIB_BLEND_NORMAL) {
     if (!pDIBitmap->IsAlphaMask()) {
       if (bitmap_alpha < 255) {
+#ifdef _SKIA_SUPPORT_
+        void* dummy;
+        CFX_Matrix m(pDIBitmap->GetWidth(), 0, 0, -pDIBitmap->GetHeight(), left,
+                     top + pDIBitmap->GetHeight());
+        m_pDevice->StartDIBits(pDIBitmap, bitmap_alpha, 0, &m, 0, dummy);
+        return;
+#else
         pDIBitmap->MultiplyAlpha(bitmap_alpha);
+#endif
       }
       if (m_pDevice->SetDIBits(pDIBitmap, left, top)) {
         return;
@@ -76,12 +84,12 @@ void CPDF_RenderStatus::CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
       if (pDIBitmap->IsAlphaMask()) {
         return;
       }
-      m_pDevice->SetDIBits(pDIBitmap, left, top, blend_mode);
+      m_pDevice->SetDIBitsWithBlend(pDIBitmap, left, top, blend_mode);
     } else {
       FX_RECT rect(left, top, left + pDIBitmap->GetWidth(),
                    top + pDIBitmap->GetHeight());
       rect.Intersect(m_pDevice->GetClipBox());
-      CFX_DIBitmap* pClone = NULL;
+      CFX_DIBitmap* pClone = nullptr;
       FX_BOOL bClone = FALSE;
       if (m_pDevice->GetBackDrop() && m_pDevice->GetBitmap()) {
         bClone = TRUE;
@@ -106,7 +114,8 @@ void CPDF_RenderStatus::CompositeDIBitmap(CFX_DIBitmap* pDIBitmap,
         if (pDIBitmap->IsAlphaMask()) {
           return;
         }
-        m_pDevice->SetDIBits(pDIBitmap, rect.left, rect.top, blend_mode);
+        m_pDevice->SetDIBitsWithBlend(pDIBitmap, rect.left, rect.top,
+                                      blend_mode);
       }
       if (bClone) {
         delete pClone;
@@ -170,6 +179,11 @@ FXDIB_Format CPDF_DIBTransferFunc::GetDestFormat() {
   return (m_pSrc->HasAlpha()) ? FXDIB_Argb : FXDIB_Rgb;
 #endif
 }
+
+FX_ARGB* CPDF_DIBTransferFunc::GetDestPalette() {
+  return nullptr;
+}
+
 CPDF_DIBTransferFunc::CPDF_DIBTransferFunc(
     const CPDF_TransferFunc* pTransferFunc) {
   m_RampR = pTransferFunc->m_Samples;
@@ -306,19 +320,19 @@ void CPDF_DIBTransferFunc::TranslateDownSamples(uint8_t* dest_buf,
   }
 }
 CPDF_ImageRenderer::CPDF_ImageRenderer() {
-  m_pRenderStatus = NULL;
-  m_pImageObject = NULL;
+  m_pRenderStatus = nullptr;
+  m_pImageObject = nullptr;
   m_Result = TRUE;
   m_Status = 0;
-  m_pTransformer = NULL;
-  m_DeviceHandle = NULL;
-  m_LoadHandle = NULL;
-  m_pClone = NULL;
+  m_pTransformer = nullptr;
+  m_DeviceHandle = nullptr;
+  m_LoadHandle = nullptr;
+  m_pClone = nullptr;
   m_bStdCS = FALSE;
   m_bPatternColor = FALSE;
   m_BlendType = FXDIB_BLEND_NORMAL;
-  m_pPattern = NULL;
-  m_pObj2Device = NULL;
+  m_pPattern = nullptr;
+  m_pObj2Device = nullptr;
 }
 CPDF_ImageRenderer::~CPDF_ImageRenderer() {
   delete m_pTransformer;
@@ -356,7 +370,8 @@ FX_BOOL CPDF_ImageRenderer::StartRenderDIBSource() {
     return FALSE;
   }
   m_BitmapAlpha = 255;
-  const CPDF_GeneralStateData* pGeneralState = m_pImageObject->m_GeneralState;
+  const CPDF_GeneralStateData* pGeneralState =
+      m_pImageObject->m_GeneralState.GetObject();
   if (pGeneralState) {
     m_BitmapAlpha = FXSYS_round(pGeneralState->m_FillAlpha * 255);
   }
@@ -383,7 +398,7 @@ FX_BOOL CPDF_ImageRenderer::StartRenderDIBSource() {
   }
   m_FillArgb = 0;
   m_bPatternColor = FALSE;
-  m_pPattern = NULL;
+  m_pPattern = nullptr;
   if (m_pDIBSource->IsAlphaMask()) {
     CPDF_Color* pColor = m_pImageObject->m_ColorState.GetFillColor();
     if (pColor && pColor->IsPattern()) {
@@ -441,15 +456,15 @@ FX_BOOL CPDF_ImageRenderer::StartRenderDIBSource() {
       pGeneralState->m_OPMode == 0 &&
       pGeneralState->m_BlendType == FXDIB_BLEND_NORMAL &&
       pGeneralState->m_StrokeAlpha == 1 && pGeneralState->m_FillAlpha == 1) {
-    CPDF_Document* pDocument = NULL;
-    CPDF_Page* pPage = NULL;
+    CPDF_Document* pDocument = nullptr;
+    CPDF_Page* pPage = nullptr;
     if (m_pRenderStatus->m_pContext->GetPageCache()) {
       pPage = m_pRenderStatus->m_pContext->GetPageCache()->GetPage();
       pDocument = pPage->m_pDocument;
     } else {
       pDocument = m_pImageObject->m_pImage->GetDocument();
     }
-    CPDF_Dictionary* pPageResources = pPage ? pPage->m_pPageResources : NULL;
+    CPDF_Dictionary* pPageResources = pPage ? pPage->m_pPageResources : nullptr;
     CPDF_Object* pCSObj =
         m_pImageObject->m_pImage->GetStream()->GetDict()->GetDirectObjectBy(
             "ColorSpace");
@@ -522,15 +537,16 @@ FX_BOOL CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
   int width = rect.Width();
   int height = rect.Height();
   CFX_FxgeDevice bitmap_device1;
-  if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Rgb32)) {
+  if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Rgb32, nullptr))
     return TRUE;
-  }
+
   bitmap_device1.GetBitmap()->Clear(0xffffff);
   {
     CPDF_RenderStatus bitmap_render;
-    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1, NULL,
-                             NULL, NULL, NULL, &m_pRenderStatus->m_Options, 0,
-                             m_pRenderStatus->m_bDropObjects, NULL, TRUE);
+    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1,
+                             nullptr, nullptr, nullptr, nullptr,
+                             &m_pRenderStatus->m_Options, 0,
+                             m_pRenderStatus->m_bDropObjects, nullptr, TRUE);
     CFX_Matrix patternDevice = *pObj2Device;
     patternDevice.Translate((FX_FLOAT)-rect.left, (FX_FLOAT)-rect.top);
     if (CPDF_TilingPattern* pTilingPattern = m_pPattern->AsTilingPattern()) {
@@ -544,18 +560,19 @@ FX_BOOL CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
   }
   {
     CFX_FxgeDevice bitmap_device2;
-    if (!bitmap_device2.Create(rect.Width(), rect.Height(), FXDIB_8bppRgb)) {
+    if (!bitmap_device2.Create(rect.Width(), rect.Height(), FXDIB_8bppRgb,
+                               nullptr)) {
       return TRUE;
     }
     bitmap_device2.GetBitmap()->Clear(0);
     CPDF_RenderStatus bitmap_render;
-    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device2, NULL,
-                             NULL, NULL, NULL, NULL, 0,
-                             m_pRenderStatus->m_bDropObjects, NULL, TRUE);
+    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device2,
+                             nullptr, nullptr, nullptr, nullptr, nullptr, 0,
+                             m_pRenderStatus->m_bDropObjects, nullptr, TRUE);
     CPDF_ImageRenderer image_render;
     if (image_render.Start(&bitmap_render, m_pDIBSource, 0xffffffff, 255,
                            &new_matrix, m_Flags, TRUE)) {
-      image_render.Continue(NULL);
+      image_render.Continue(nullptr);
     }
     if (m_Loader.m_MatteColor != 0xffffffff) {
       int matte_r = FXARGB_R(m_Loader.m_MatteColor);
@@ -600,8 +617,8 @@ FX_BOOL CPDF_ImageRenderer::DrawPatternImage(const CFX_Matrix* pObj2Device) {
     bitmap_device1.GetBitmap()->MultiplyAlpha(bitmap_device2.GetBitmap());
     bitmap_device1.GetBitmap()->MultiplyAlpha(255);
   }
-  m_pRenderStatus->m_pDevice->SetDIBits(bitmap_device1.GetBitmap(), rect.left,
-                                        rect.top, m_BlendType);
+  m_pRenderStatus->m_pDevice->SetDIBitsWithBlend(
+      bitmap_device1.GetBitmap(), rect.left, rect.top, m_BlendType);
   return FALSE;
 }
 FX_BOOL CPDF_ImageRenderer::DrawMaskedImage() {
@@ -620,35 +637,35 @@ FX_BOOL CPDF_ImageRenderer::DrawMaskedImage() {
   int width = rect.Width();
   int height = rect.Height();
   CFX_FxgeDevice bitmap_device1;
-  if (!bitmap_device1.Create(width, height, FXDIB_Rgb32)) {
+  if (!bitmap_device1.Create(width, height, FXDIB_Rgb32, nullptr))
     return TRUE;
-  }
+
   bitmap_device1.GetBitmap()->Clear(0xffffff);
   {
     CPDF_RenderStatus bitmap_render;
-    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1, NULL,
-                             NULL, NULL, NULL, NULL, 0,
-                             m_pRenderStatus->m_bDropObjects, NULL, TRUE);
+    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device1,
+                             nullptr, nullptr, nullptr, nullptr, nullptr, 0,
+                             m_pRenderStatus->m_bDropObjects, nullptr, TRUE);
     CPDF_ImageRenderer image_render;
     if (image_render.Start(&bitmap_render, m_pDIBSource, 0, 255, &new_matrix,
                            m_Flags, TRUE)) {
-      image_render.Continue(NULL);
+      image_render.Continue(nullptr);
     }
   }
   {
     CFX_FxgeDevice bitmap_device2;
-    if (!bitmap_device2.Create(width, height, FXDIB_8bppRgb)) {
+    if (!bitmap_device2.Create(width, height, FXDIB_8bppRgb, nullptr))
       return TRUE;
-    }
+
     bitmap_device2.GetBitmap()->Clear(0);
     CPDF_RenderStatus bitmap_render;
-    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device2, NULL,
-                             NULL, NULL, NULL, NULL, 0,
-                             m_pRenderStatus->m_bDropObjects, NULL, TRUE);
+    bitmap_render.Initialize(m_pRenderStatus->m_pContext, &bitmap_device2,
+                             nullptr, nullptr, nullptr, nullptr, nullptr, 0,
+                             m_pRenderStatus->m_bDropObjects, nullptr, TRUE);
     CPDF_ImageRenderer image_render;
     if (image_render.Start(&bitmap_render, m_Loader.m_pMask, 0xffffffff, 255,
                            &new_matrix, m_Flags, TRUE)) {
-      image_render.Continue(NULL);
+      image_render.Continue(nullptr);
     }
     if (m_Loader.m_MatteColor != 0xffffffff) {
       int matte_r = FXARGB_R(m_Loader.m_MatteColor);
@@ -691,12 +708,15 @@ FX_BOOL CPDF_ImageRenderer::DrawMaskedImage() {
     }
     bitmap_device2.GetBitmap()->ConvertFormat(FXDIB_8bppMask);
     bitmap_device1.GetBitmap()->MultiplyAlpha(bitmap_device2.GetBitmap());
+#ifdef _SKIA_SUPPORT_
+    bitmap_device1.PreMultiply();  // convert unpremultiplied to premultiplied
+#endif
     if (m_BitmapAlpha < 255) {
       bitmap_device1.GetBitmap()->MultiplyAlpha(m_BitmapAlpha);
     }
   }
-  m_pRenderStatus->m_pDevice->SetDIBits(bitmap_device1.GetBitmap(), rect.left,
-                                        rect.top, m_BlendType);
+  m_pRenderStatus->m_pDevice->SetDIBitsWithBlend(
+      bitmap_device1.GetBitmap(), rect.left, rect.top, m_BlendType);
   return FALSE;
 }
 
@@ -709,9 +729,9 @@ FX_BOOL CPDF_ImageRenderer::StartDIBSource() {
       m_Flags |= RENDER_FORCE_DOWNSAMPLE;
     }
   }
-  if (m_pRenderStatus->m_pDevice->StartDIBits(
+  if (m_pRenderStatus->m_pDevice->StartDIBitsWithBlend(
           m_pDIBSource, m_BitmapAlpha, m_FillArgb, &m_ImageMatrix, m_Flags,
-          m_DeviceHandle, 0, nullptr, m_BlendType)) {
+          m_DeviceHandle, m_BlendType)) {
     if (m_DeviceHandle) {
       m_Status = 3;
       return TRUE;
@@ -746,16 +766,16 @@ FX_BOOL CPDF_ImageRenderer::StartDIBSource() {
   int dest_left = dest_width > 0 ? image_rect.left : image_rect.right;
   int dest_top = dest_height > 0 ? image_rect.top : image_rect.bottom;
   if (m_pDIBSource->IsOpaqueImage() && m_BitmapAlpha == 255) {
-    if (m_pRenderStatus->m_pDevice->StretchDIBits(
+    if (m_pRenderStatus->m_pDevice->StretchDIBitsWithFlagsAndBlend(
             m_pDIBSource, dest_left, dest_top, dest_width, dest_height, m_Flags,
-            nullptr, m_BlendType)) {
+            m_BlendType)) {
       return FALSE;
     }
   }
   if (m_pDIBSource->IsAlphaMask()) {
     if (m_BitmapAlpha != 255)
       m_FillArgb = FXARGB_MUL_ALPHA(m_FillArgb, m_BitmapAlpha);
-    if (m_pRenderStatus->m_pDevice->StretchBitMask(
+    if (m_pRenderStatus->m_pDevice->StretchBitMaskWithFlags(
             m_pDIBSource, dest_left, dest_top, dest_width, dest_height,
             m_FillArgb, m_Flags)) {
       return FALSE;
@@ -790,7 +810,7 @@ FX_BOOL CPDF_ImageRenderer::StartBitmapAlpha() {
     path.Transform(&m_ImageMatrix);
     uint32_t fill_color =
         ArgbEncode(0xff, m_BitmapAlpha, m_BitmapAlpha, m_BitmapAlpha);
-    m_pRenderStatus->m_pDevice->DrawPath(&path, NULL, NULL, fill_color, 0,
+    m_pRenderStatus->m_pDevice->DrawPath(&path, nullptr, nullptr, fill_color, 0,
                                          FXFILL_WINDING);
   } else {
     const CFX_DIBSource* pAlphaMask = m_pDIBSource->IsAlphaMask()
@@ -845,7 +865,7 @@ FX_BOOL CPDF_ImageRenderer::Continue(IFX_Pause* pPause) {
     } else {
       if (m_BitmapAlpha != 255)
         pBitmap->MultiplyAlpha(m_BitmapAlpha);
-      m_Result = m_pRenderStatus->m_pDevice->SetDIBits(
+      m_Result = m_pRenderStatus->m_pDevice->SetDIBitsWithBlend(
           pBitmap.get(), m_pTransformer->result().left,
           m_pTransformer->result().top, m_BlendType);
     }
@@ -872,20 +892,21 @@ CCodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
     int nComps,
     int bpc,
     const CPDF_Dictionary* pParams);
+
 CFX_DIBitmap* CPDF_RenderStatus::LoadSMask(CPDF_Dictionary* pSMaskDict,
                                            FX_RECT* pClipRect,
                                            const CFX_Matrix* pMatrix) {
-  if (!pSMaskDict) {
-    return NULL;
-  }
+  if (!pSMaskDict)
+    return nullptr;
+
   CPDF_Stream* pGroup = pSMaskDict->GetStreamBy("G");
-  if (!pGroup) {
-    return NULL;
-  }
+  if (!pGroup)
+    return nullptr;
+
   std::unique_ptr<CPDF_Function> pFunc;
   CPDF_Object* pFuncObj = pSMaskDict->GetDirectObjectBy("TR");
   if (pFuncObj && (pFuncObj->IsDictionary() || pFuncObj->IsStream()))
-    pFunc.reset(CPDF_Function::Load(pFuncObj));
+    pFunc = CPDF_Function::Load(pFuncObj);
 
   CFX_Matrix matrix = *pMatrix;
   matrix.TranslateI(-pClipRect->left, -pClipRect->top);
@@ -898,20 +919,18 @@ CFX_DIBitmap* CPDF_RenderStatus::LoadSMask(CPDF_Dictionary* pSMaskDict,
   FX_BOOL bLuminosity = pSMaskDict->GetStringBy("S") != "Alpha";
   int width = pClipRect->right - pClipRect->left;
   int height = pClipRect->bottom - pClipRect->top;
+  FXDIB_Format format;
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-  if (!bitmap_device.Create(width, height,
-                            bLuminosity ? FXDIB_Rgb32 : FXDIB_8bppMask)) {
-    return NULL;
-  }
+  format = bLuminosity ? FXDIB_Rgb32 : FXDIB_8bppMask;
 #else
-  if (!bitmap_device.Create(width, height,
-                            bLuminosity ? FXDIB_Rgb : FXDIB_8bppMask)) {
-    return NULL;
-  }
+  format = bLuminosity ? FXDIB_Rgb : FXDIB_8bppMask;
 #endif
+  if (!bitmap_device.Create(width, height, format, nullptr))
+    return nullptr;
+
   CFX_DIBitmap& bitmap = *bitmap_device.GetBitmap();
-  CPDF_Object* pCSObj = NULL;
-  CPDF_ColorSpace* pCS = NULL;
+  CPDF_Object* pCSObj = nullptr;
+  CPDF_ColorSpace* pCS = nullptr;
   if (bLuminosity) {
     CPDF_Array* pBC = pSMaskDict->GetArrayBy("BC");
     FX_ARGB back_color = 0xff000000;
@@ -920,7 +939,7 @@ CFX_DIBitmap* CPDF_RenderStatus::LoadSMask(CPDF_Dictionary* pSMaskDict,
       if (pDict && pDict->GetDictBy("Group"))
         pCSObj = pDict->GetDictBy("Group")->GetDirectObjectBy("CS");
       else
-        pCSObj = NULL;
+        pCSObj = nullptr;
       pCS = m_pContext->GetDocument()->LoadColorSpace(pCSObj);
       if (pCS) {
         FX_FLOAT R, G, B;
@@ -933,7 +952,7 @@ CFX_DIBitmap* CPDF_RenderStatus::LoadSMask(CPDF_Dictionary* pSMaskDict,
         FX_SAFE_UINT32 num_floats = comps;
         num_floats *= sizeof(FX_FLOAT);
         if (!num_floats.IsValid()) {
-          return NULL;
+          return nullptr;
         }
         FXSYS_memset(pFloats, 0, num_floats.ValueOrDie());
         size_t count = pBC->GetCount() > 8 ? 8 : pBC->GetCount();
@@ -950,16 +969,16 @@ CFX_DIBitmap* CPDF_RenderStatus::LoadSMask(CPDF_Dictionary* pSMaskDict,
   } else {
     bitmap.Clear(0);
   }
-  CPDF_Dictionary* pFormResource = NULL;
+  CPDF_Dictionary* pFormResource = nullptr;
   if (form.m_pFormDict) {
     pFormResource = form.m_pFormDict->GetDictBy("Resources");
   }
   CPDF_RenderOptions options;
   options.m_ColorMode = bLuminosity ? RENDER_COLOR_NORMAL : RENDER_COLOR_ALPHA;
   CPDF_RenderStatus status;
-  status.Initialize(m_pContext, &bitmap_device, NULL, NULL, NULL, NULL,
-                    &options, 0, m_bDropObjects, pFormResource, TRUE, NULL, 0,
-                    pCS ? pCS->GetFamily() : 0, bLuminosity);
+  status.Initialize(m_pContext, &bitmap_device, nullptr, nullptr, nullptr,
+                    nullptr, &options, 0, m_bDropObjects, pFormResource, TRUE,
+                    nullptr, 0, pCS ? pCS->GetFamily() : 0, bLuminosity);
   status.RenderObjectList(&form, &matrix);
   std::unique_ptr<CFX_DIBitmap> pMask(new CFX_DIBitmap);
   if (!pMask->Create(width, height, FXDIB_8bppMask))

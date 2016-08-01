@@ -30,9 +30,10 @@ class MockAudioDecoder final : public AudioDecoder {
   // http://crbug.com/428099.
   static const int kPacketDuration = 960;  // 48 kHz * 20 ms
 
-  explicit MockAudioDecoder(size_t num_channels)
-      : num_channels_(num_channels), fec_enabled_(false) {
-  }
+  MockAudioDecoder(int sample_rate_hz, size_t num_channels)
+      : sample_rate_hz_(sample_rate_hz),
+        num_channels_(num_channels),
+        fec_enabled_(false) {}
   ~MockAudioDecoder() /* override */ { Die(); }
   MOCK_METHOD0(Die, void());
 
@@ -52,6 +53,8 @@ class MockAudioDecoder final : public AudioDecoder {
       const uint8_t* encoded, size_t encoded_len) const /* override */ {
     return fec_enabled_;
   }
+
+  int SampleRateHz() const /* override */ { return sample_rate_hz_; }
 
   size_t Channels() const /* override */ { return num_channels_; }
 
@@ -81,6 +84,7 @@ class MockAudioDecoder final : public AudioDecoder {
   }
 
  private:
+  const int sample_rate_hz_;
   const size_t num_channels_;
   bool fec_enabled_;
 };
@@ -113,16 +117,17 @@ struct NetEqNetworkStatsCheck {
   NetEqNetworkStatistics stats_ref;
 };
 
-  NetEqNetworkStatsTest(NetEqDecoder codec,
-                        MockAudioDecoder* decoder)
-      : NetEqExternalDecoderTest(codec, decoder),
-        external_decoder_(decoder),
-        samples_per_ms_(CodecSampleRateHz(codec) / 1000),
-        frame_size_samples_(kFrameSizeMs * samples_per_ms_),
-        rtp_generator_(new test::RtpGenerator(samples_per_ms_)),
-        last_lost_time_(0),
-        packet_loss_interval_(0xffffffff) {
-    Init();
+NetEqNetworkStatsTest(NetEqDecoder codec,
+                      int sample_rate_hz,
+                      MockAudioDecoder* decoder)
+    : NetEqExternalDecoderTest(codec, sample_rate_hz, decoder),
+      external_decoder_(decoder),
+      samples_per_ms_(sample_rate_hz / 1000),
+      frame_size_samples_(kFrameSizeMs * samples_per_ms_),
+      rtp_generator_(new test::RtpGenerator(samples_per_ms_)),
+      last_lost_time_(0),
+      packet_loss_interval_(0xffffffff) {
+  Init();
   }
 
   bool Lost(uint32_t send_time) {
@@ -277,22 +282,22 @@ struct NetEqNetworkStatsCheck {
 };
 
 TEST(NetEqNetworkStatsTest, DecodeFec) {
-  MockAudioDecoder decoder(1);
-  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, &decoder);
+  MockAudioDecoder decoder(48000, 1);
+  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, 48000, &decoder);
   test.DecodeFecTest();
   EXPECT_CALL(decoder, Die()).Times(1);
 }
 
 TEST(NetEqNetworkStatsTest, StereoDecodeFec) {
-  MockAudioDecoder decoder(2);
-  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, &decoder);
+  MockAudioDecoder decoder(48000, 2);
+  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, 48000, &decoder);
   test.DecodeFecTest();
   EXPECT_CALL(decoder, Die()).Times(1);
 }
 
 TEST(NetEqNetworkStatsTest, NoiseExpansionTest) {
-  MockAudioDecoder decoder(1);
-  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, &decoder);
+  MockAudioDecoder decoder(48000, 1);
+  NetEqNetworkStatsTest test(NetEqDecoder::kDecoderOpus, 48000, &decoder);
   test.NoiseExpansionTest();
   EXPECT_CALL(decoder, Die()).Times(1);
 }

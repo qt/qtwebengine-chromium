@@ -722,6 +722,10 @@ class MacroAssembler: public Assembler {
   // ---------------------------------------------------------------------------
   // Pseudo-instructions.
 
+  // Change endianness
+  void ByteSwapSigned(Register reg, int operand_size);
+  void ByteSwapUnsigned(Register reg, int operand_size);
+
   void mov(Register rd, Register rt) { or_(rd, rt, zero_reg); }
 
   void Ulh(Register rd, const MemOperand& rs);
@@ -928,6 +932,12 @@ class MacroAssembler: public Assembler {
   void Round_w_d(FPURegister fd, FPURegister fs);
   void Floor_w_d(FPURegister fd, FPURegister fs);
   void Ceil_w_d(FPURegister fd, FPURegister fs);
+
+  // Preserve value of a NaN operand
+  void SubNanPreservePayloadAndSign_s(FPURegister fd, FPURegister fs,
+                                      FPURegister ft);
+  void SubNanPreservePayloadAndSign_d(FPURegister fd, FPURegister fs,
+                                      FPURegister ft);
 
   void Madd_d(FPURegister fd,
               FPURegister fr,

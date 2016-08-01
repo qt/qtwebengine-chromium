@@ -20,14 +20,15 @@
  * limitations under the License.
  */
 
-#include "xfa/fxbarcode/BC_Reader.h"
 #include "xfa/fxbarcode/BC_TwoDimWriter.h"
 #include "xfa/fxbarcode/common/BC_CommonByteMatrix.h"
-#include "xfa/fxbarcode/qrcode/BC_QRCodeReader.h"
-#include "xfa/fxbarcode/qrcode/BC_QRCodeWriter.h"
+#include "xfa/fxbarcode/common/reedsolomon/BC_ReedSolomonGF256.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoder.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoderEncoder.h"
 #include "xfa/fxbarcode/qrcode/BC_QRCoderErrorCorrectionLevel.h"
+#include "xfa/fxbarcode/qrcode/BC_QRCoderMode.h"
+#include "xfa/fxbarcode/qrcode/BC_QRCoderVersion.h"
+#include "xfa/fxbarcode/qrcode/BC_QRCodeWriter.h"
 
 CBC_QRCodeWriter::CBC_QRCodeWriter() {
   m_bFixedSize = TRUE;
@@ -36,7 +37,13 @@ CBC_QRCodeWriter::CBC_QRCodeWriter() {
 }
 CBC_QRCodeWriter::~CBC_QRCodeWriter() {}
 void CBC_QRCodeWriter::ReleaseAll() {
-  CBC_QRCodeReader::ReleaseAll();
+  delete CBC_ReedSolomonGF256::QRCodeFild;
+  CBC_ReedSolomonGF256::QRCodeFild = nullptr;
+  delete CBC_ReedSolomonGF256::DataMatrixField;
+  CBC_ReedSolomonGF256::DataMatrixField = nullptr;
+  CBC_QRCoderMode::Destroy();
+  CBC_QRCoderErrorCorrectionLevel::Destroy();
+  CBC_QRCoderVersion::Destroy();
 }
 FX_BOOL CBC_QRCodeWriter::SetVersion(int32_t version) {
   if (version < 0 || version > 40) {
@@ -57,7 +64,7 @@ uint8_t* CBC_QRCodeWriter::Encode(const CFX_WideString& contents,
                                   int32_t& outWidth,
                                   int32_t& outHeight,
                                   int32_t& e) {
-  CBC_QRCoderErrorCorrectionLevel* ec = NULL;
+  CBC_QRCoderErrorCorrectionLevel* ec = nullptr;
   switch (ecLevel) {
     case 0:
       ec = CBC_QRCoderErrorCorrectionLevel::L;
@@ -73,7 +80,7 @@ uint8_t* CBC_QRCodeWriter::Encode(const CFX_WideString& contents,
       break;
     default: {
       e = BCExceptionUnSupportEclevel;
-      BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+      BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
     }
   }
   CBC_QRCoder qr;
@@ -83,7 +90,7 @@ uint8_t* CBC_QRCodeWriter::Encode(const CFX_WideString& contents,
   } else {
     CBC_QRCoderEncoder::Encode(contents, ec, &qr, e);
   }
-  BC_EXCEPTION_CHECK_ReturnValue(e, NULL);
+  BC_EXCEPTION_CHECK_ReturnValue(e, nullptr);
   outWidth = qr.GetMatrixWidth();
   outHeight = qr.GetMatrixWidth();
   uint8_t* result = FX_Alloc2D(uint8_t, outWidth, outHeight);
@@ -96,12 +103,12 @@ uint8_t* CBC_QRCodeWriter::Encode(const CFX_ByteString& contents,
                                   int32_t& outHeight,
                                   int32_t hints,
                                   int32_t& e) {
-  return NULL;
+  return nullptr;
 }
 uint8_t* CBC_QRCodeWriter::Encode(const CFX_ByteString& contents,
                                   BCFORMAT format,
                                   int32_t& outWidth,
                                   int32_t& outHeight,
                                   int32_t& e) {
-  return NULL;
+  return nullptr;
 }

@@ -5,7 +5,6 @@
 #include "google_apis/drive/drive_api_requests.h"
 
 #include <stddef.h>
-#include <utility>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -125,8 +124,7 @@ std::string CreateMultipartUploadMetadataJson(
   // Fill parent link.
   if (!parent_resource_id.empty()) {
     std::unique_ptr<base::ListValue> parents(new base::ListValue);
-    parents->Append(
-        google_apis::util::CreateParentValue(parent_resource_id).release());
+    parents->Append(google_apis::util::CreateParentValue(parent_resource_id));
     root.Set("parents", parents.release());
   }
 
@@ -418,9 +416,9 @@ bool FilesInsertRequest::GetContentData(std::string* upload_content_type,
   if (!parents_.empty()) {
     base::ListValue* parents_value = new base::ListValue;
     for (size_t i = 0; i < parents_.size(); ++i) {
-      base::DictionaryValue* parent = new base::DictionaryValue;
+      std::unique_ptr<base::DictionaryValue> parent(new base::DictionaryValue);
       parent->SetString("id", parents_[i]);
-      parents_value->Append(parent);
+      parents_value->Append(std::move(parent));
     }
     root.Set("parents", parents_value);
   }
@@ -496,9 +494,9 @@ bool FilesPatchRequest::GetContentData(std::string* upload_content_type,
   if (!parents_.empty()) {
     base::ListValue* parents_value = new base::ListValue;
     for (size_t i = 0; i < parents_.size(); ++i) {
-      base::DictionaryValue* parent = new base::DictionaryValue;
+      std::unique_ptr<base::DictionaryValue> parent(new base::DictionaryValue);
       parent->SetString("id", parents_[i]);
-      parents_value->Append(parent);
+      parents_value->Append(std::move(parent));
     }
     root.Set("parents", parents_value);
   }
@@ -550,9 +548,9 @@ bool FilesCopyRequest::GetContentData(std::string* upload_content_type,
   if (!parents_.empty()) {
     base::ListValue* parents_value = new base::ListValue;
     for (size_t i = 0; i < parents_.size(); ++i) {
-      base::DictionaryValue* parent = new base::DictionaryValue;
+      std::unique_ptr<base::DictionaryValue> parent(new base::DictionaryValue);
       parent->SetString("id", parents_[i]);
-      parents_value->Append(parent);
+      parents_value->Append(std::move(parent));
     }
     root.Set("parents", parents_value);
   }
@@ -833,7 +831,7 @@ bool InitiateUploadNewFileRequest::GetContentData(
 
   // Fill parent link.
   std::unique_ptr<base::ListValue> parents(new base::ListValue);
-  parents->Append(util::CreateParentValue(parent_resource_id_).release());
+  parents->Append(util::CreateParentValue(parent_resource_id_));
   root.Set("parents", parents.release());
 
   if (!modified_date_.is_null())
@@ -893,7 +891,7 @@ bool InitiateUploadExistingFileRequest::GetContentData(
   base::DictionaryValue root;
   if (!parent_resource_id_.empty()) {
     std::unique_ptr<base::ListValue> parents(new base::ListValue);
-    parents->Append(util::CreateParentValue(parent_resource_id_).release());
+    parents->Append(util::CreateParentValue(parent_resource_id_));
     root.Set("parents", parents.release());
   }
 

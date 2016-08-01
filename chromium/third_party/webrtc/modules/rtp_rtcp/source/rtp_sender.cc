@@ -22,6 +22,7 @@
 #include "webrtc/call/rtc_event_log.h"
 #include "webrtc/modules/rtp_rtcp/include/rtp_cvo.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/modules/rtp_rtcp/source/playout_delay_oracle.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_audio.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "webrtc/modules/rtp_rtcp/source/time_util.h"
@@ -137,12 +138,13 @@ RTPSender::RTPSender(
       transmission_time_offset_(0),
       absolute_send_time_(0),
       rotation_(kVideoRotation_0),
-      cvo_mode_(kCVONone),
+      video_rotation_active_(false),
       transport_sequence_number_(0),
       // NACK.
       nack_byte_count_times_(),
       nack_byte_count_(),
       nack_bitrate_(clock, bitrates_.retransmit_bitrate_observer()),
+      playout_delay_active_(false),
       packet_history_(clock),
       // Statistics
       rtp_stats_callback_(NULL),
@@ -271,11 +273,24 @@ int32_t RTPSender::SetTransportSequenceNumber(uint16_t sequence_number) {
 int32_t RTPSender::RegisterRtpHeaderExtension(RTPExtensionType type,
                                               uint8_t id) {
   rtc::CritScope lock(&send_critsect_);
-  if (type == kRtpExtensionVideoRotation) {
-    cvo_mode_ = kCVOInactive;
-    return rtp_header_extension_map_.RegisterInactive(type, id);
+  switch (type) {
+    case kRtpExtensionVideoRotation:
+      video_rotation_active_ = false;
+      return rtp_header_extension_map_.RegisterInactive(type, id);
+    case kRtpExtensionPlayoutDelay:
+      playout_delay_active_ = false;
+      return rtp_header_extension_map_.RegisterInactive(type, id);
+    case kRtpExtensionTransmissionTimeOffset:
+    case kRtpExtensionAbsoluteSendTime:
+    case kRtpExtensionAudioLevel:
+    case kRtpExtensionTransportSequenceNumber:
+      return rtp_header_extension_map_.Register(type, id);
+    case kRtpExtensionNone:
+    case kRtpExtensionNumberOfExtensions:
+      LOG(LS_ERROR) << "Invalid RTP extension type for registration";
+      return -1;
   }
-  return rtp_header_extension_map_.Register(type, id);
+  return -1;
 }
 
 bool RTPSender::IsRtpHeaderExtensionRegistered(RTPExtensionType type) {
@@ -288,7 +303,7 @@ int32_t RTPSender::DeregisterRtpHeaderExtension(RTPExtensionType type) {
   return rtp_header_extension_map_.Deregister(type);
 }
 
-size_t RTPSender::RtpHeaderExtensionTotalLength() const {
+size_t RTPSender::RtpHeaderExtensionLength() const {
   rtc::CritScope lock(&send_critsect_);
   return rtp_header_extension_map_.GetTotalLengthInBytes();
 }
@@ -386,9 +401,9 @@ size_t RTPSender::MaxDataPayloadLength() const {
     rtx = rtx_;
   }
   if (audio_configured_) {
-    return max_payload_length_ - RTPHeaderLength();
+    return max_payload_length_ - RtpHeaderLength();
   } else {
-    return max_payload_length_ - RTPHeaderLength()  // RTP overhead.
+    return max_payload_length_ - RtpHeaderLength()  // RTP overhead.
            - video_->FECPacketOverhead()            // FEC/ULP/RED overhead.
            - ((rtx) ? 2 : 0);                       // RTX overhead.
   }
@@ -472,14 +487,14 @@ int32_t RTPSender::CheckPayloadType(int8_t payload_type,
   return 0;
 }
 
-RTPSenderInterface::CVOMode RTPSender::ActivateCVORtpHeaderExtension() {
-  if (cvo_mode_ == kCVOInactive) {
+bool RTPSender::ActivateCVORtpHeaderExtension() {
+  if (!video_rotation_active_) {
     rtc::CritScope lock(&send_critsect_);
     if (rtp_header_extension_map_.SetActive(kRtpExtensionVideoRotation, true)) {
-      cvo_mode_ = kCVOActivated;
+      video_rotation_active_ = true;
     }
   }
-  return cvo_mode_;
+  return video_rotation_active_;
 }
 
 int32_t RTPSender::SendOutgoingData(FrameType frame_type,
@@ -491,10 +506,12 @@ int32_t RTPSender::SendOutgoingData(FrameType frame_type,
                                     const RTPFragmentationHeader* fragmentation,
                                     const RTPVideoHeader* rtp_hdr) {
   uint32_t ssrc;
+  uint16_t sequence_number;
   {
     // Drop this packet if we're not sending media packets.
     rtc::CritScope lock(&send_critsect_);
     ssrc = ssrc_;
+    sequence_number = sequence_number_;
     if (!sending_media_) {
       return 0;
     }
@@ -523,10 +540,25 @@ int32_t RTPSender::SendOutgoingData(FrameType frame_type,
     if (frame_type == kEmptyFrame)
       return 0;
 
-    ret_val =
-        video_->SendVideo(video_type, frame_type, payload_type,
-                          capture_timestamp, capture_time_ms, payload_data,
-                          payload_size, fragmentation, rtp_hdr);
+    if (rtp_hdr) {
+      playout_delay_oracle_.UpdateRequest(ssrc, rtp_hdr->playout_delay,
+                                          sequence_number);
+    }
+
+    // Update the active/inactive status of playout delay extension based
+    // on what the oracle indicates.
+    {
+      rtc::CritScope lock(&send_critsect_);
+      if (playout_delay_active_ != playout_delay_oracle_.send_playout_delay()) {
+        playout_delay_active_ = playout_delay_oracle_.send_playout_delay();
+        rtp_header_extension_map_.SetActive(kRtpExtensionPlayoutDelay,
+                                            playout_delay_active_);
+      }
+    }
+
+    ret_val = video_->SendVideo(
+        video_type, frame_type, payload_type, capture_timestamp,
+        capture_time_ms, payload_data, payload_size, fragmentation, rtp_hdr);
   }
 
   rtc::CritScope cs(&statistics_crit_);
@@ -543,7 +575,8 @@ int32_t RTPSender::SendOutgoingData(FrameType frame_type,
   return ret_val;
 }
 
-size_t RTPSender::TrySendRedundantPayloads(size_t bytes_to_send) {
+size_t RTPSender::TrySendRedundantPayloads(size_t bytes_to_send,
+                                           int probe_cluster_id) {
   {
     rtc::CritScope lock(&send_critsect_);
     if (!sending_media_)
@@ -561,7 +594,8 @@ size_t RTPSender::TrySendRedundantPayloads(size_t bytes_to_send) {
                                               &capture_time_ms)) {
       break;
     }
-    if (!PrepareAndSendPacket(buffer, length, capture_time_ms, true, false))
+    if (!PrepareAndSendPacket(buffer, length, capture_time_ms, true, false,
+                              probe_cluster_id))
       break;
     RtpUtility::RtpHeaderParser rtp_parser(buffer, length);
     RTPHeader rtp_header;
@@ -590,6 +624,15 @@ size_t RTPSender::SendPadData(size_t bytes,
                               bool timestamp_provided,
                               uint32_t timestamp,
                               int64_t capture_time_ms) {
+  return SendPadData(bytes, timestamp_provided, timestamp, capture_time_ms,
+                     PacketInfo::kNotAProbe);
+}
+
+size_t RTPSender::SendPadData(size_t bytes,
+                              bool timestamp_provided,
+                              uint32_t timestamp,
+                              int64_t capture_time_ms,
+                              int probe_cluster_id) {
   // Always send full padding packets. This is accounted for by the
   // RtpPacketSender,
   // which will make sure we don't send too much padding even if a single packet
@@ -676,7 +719,8 @@ size_t RTPSender::SendPadData(size_t bytes,
       if (UpdateTransportSequenceNumber(options.packet_id, padding_packet,
                                         length, rtp_header)) {
         if (transport_feedback_observer_)
-          transport_feedback_observer_->AddPacket(options.packet_id, length);
+          transport_feedback_observer_->AddPacket(options.packet_id, length,
+                                                  probe_cluster_id);
       }
     }
 
@@ -732,7 +776,8 @@ int32_t RTPSender::ReSendPacket(uint16_t packet_id, int64_t min_resend_time) {
     rtx = rtx_;
   }
   if (!PrepareAndSendPacket(data_buffer, length, capture_time_ms,
-                            (rtx & kRtxRetransmitted) > 0, true)) {
+                            (rtx & kRtxRetransmitted) > 0, true,
+                            PacketInfo::kNotAProbe)) {
     return -1;
   }
   return static_cast<int32_t>(length);
@@ -820,6 +865,11 @@ void RTPSender::OnReceivedNACK(const std::list<uint16_t>& nack_sequence_numbers,
   }
 }
 
+void RTPSender::OnReceivedRtcpReportBlocks(
+    const ReportBlockList& report_blocks) {
+  playout_delay_oracle_.OnReceivedRtcpReportBlocks(report_blocks);
+}
+
 bool RTPSender::ProcessNACKBitRate(uint32_t now) {
   uint32_t num = 0;
   size_t byte_count = 0;
@@ -868,7 +918,8 @@ void RTPSender::UpdateNACKBitRate(uint32_t bytes, int64_t now) {
 // Called from pacer when we can send the packet.
 bool RTPSender::TimeToSendPacket(uint16_t sequence_number,
                                  int64_t capture_time_ms,
-                                 bool retransmission) {
+                                 bool retransmission,
+                                 int probe_cluster_id) {
   size_t length = IP_PACKET_SIZE;
   uint8_t data_buffer[IP_PACKET_SIZE];
   int64_t stored_time_ms;
@@ -888,18 +939,17 @@ bool RTPSender::TimeToSendPacket(uint16_t sequence_number,
     rtc::CritScope lock(&send_critsect_);
     rtx = rtx_;
   }
-  return PrepareAndSendPacket(data_buffer,
-                              length,
-                              capture_time_ms,
+  return PrepareAndSendPacket(data_buffer, length, capture_time_ms,
                               retransmission && (rtx & kRtxRetransmitted) > 0,
-                              retransmission);
+                              retransmission, probe_cluster_id);
 }
 
 bool RTPSender::PrepareAndSendPacket(uint8_t* buffer,
                                      size_t length,
                                      int64_t capture_time_ms,
                                      bool send_over_rtx,
-                                     bool is_retransmit) {
+                                     bool is_retransmit,
+                                     int probe_cluster_id) {
   uint8_t* buffer_to_send_ptr = buffer;
 
   RtpUtility::RtpHeaderParser rtp_parser(buffer, length);
@@ -931,7 +981,8 @@ bool RTPSender::PrepareAndSendPacket(uint8_t* buffer,
     if (UpdateTransportSequenceNumber(options.packet_id, buffer_to_send_ptr,
                                       length, rtp_header)) {
       if (transport_feedback_observer_)
-        transport_feedback_observer_->AddPacket(options.packet_id, length);
+        transport_feedback_observer_->AddPacket(options.packet_id, length,
+                                                probe_cluster_id);
     }
   }
 
@@ -998,12 +1049,13 @@ bool RTPSender::IsFecPacket(const uint8_t* buffer,
       buffer[header.headerLength] == pt_fec;
 }
 
-size_t RTPSender::TimeToSendPadding(size_t bytes) {
+size_t RTPSender::TimeToSendPadding(size_t bytes, int probe_cluster_id) {
   if (audio_configured_ || bytes == 0)
     return 0;
-  size_t bytes_sent = TrySendRedundantPayloads(bytes);
+  size_t bytes_sent = TrySendRedundantPayloads(bytes, probe_cluster_id);
   if (bytes_sent < bytes)
-    bytes_sent += SendPadData(bytes - bytes_sent, false, 0, 0);
+    bytes_sent +=
+        SendPadData(bytes - bytes_sent, false, 0, 0, probe_cluster_id);
   return bytes_sent;
 }
 
@@ -1060,7 +1112,8 @@ int32_t RTPSender::SendToNetwork(uint8_t* buffer,
     if (UpdateTransportSequenceNumber(options.packet_id, buffer, length,
                                       rtp_header)) {
       if (transport_feedback_observer_)
-        transport_feedback_observer_->AddPacket(options.packet_id, length);
+        transport_feedback_observer_->AddPacket(options.packet_id, length,
+                                                PacketInfo::kNotAProbe);
     }
   }
   UpdateDelayStatistics(capture_time_ms, now_ms);
@@ -1136,11 +1189,11 @@ void RTPSender::ProcessBitrate() {
   video_->ProcessBitrate();
 }
 
-size_t RTPSender::RTPHeaderLength() const {
+size_t RTPSender::RtpHeaderLength() const {
   rtc::CritScope lock(&send_critsect_);
   size_t rtp_header_length = kRtpHeaderLength;
   rtp_header_length += sizeof(uint32_t) * csrcs_.size();
-  rtp_header_length += RtpHeaderExtensionTotalLength();
+  rtp_header_length += RtpHeaderExtensionLength();
   return rtp_header_length;
 }
 
@@ -1266,6 +1319,11 @@ uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer,
       case kRtpExtensionTransportSequenceNumber:
         block_length = BuildTransportSequenceNumberExtension(
             extension_data, transport_sequence_number_);
+        break;
+      case kRtpExtensionPlayoutDelay:
+        block_length = BuildPlayoutDelayExtension(
+            extension_data, playout_delay_oracle_.min_playout_delay_ms(),
+            playout_delay_oracle_.max_playout_delay_ms());
         break;
       default:
         assert(false);
@@ -1440,6 +1498,37 @@ uint8_t RTPSender::BuildTransportSequenceNumberExtension(
   pos += 2;
   assert(pos == kTransportSequenceNumberLength);
   return kTransportSequenceNumberLength;
+}
+
+uint8_t RTPSender::BuildPlayoutDelayExtension(
+    uint8_t* data_buffer,
+    uint16_t min_playout_delay_ms,
+    uint16_t max_playout_delay_ms) const {
+  RTC_DCHECK_LE(min_playout_delay_ms, kPlayoutDelayMaxMs);
+  RTC_DCHECK_LE(max_playout_delay_ms, kPlayoutDelayMaxMs);
+  RTC_DCHECK_LE(min_playout_delay_ms, max_playout_delay_ms);
+  //   0                   1                   2                   3
+  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //  |  ID   | len=2 |   MIN delay           |   MAX delay           |
+  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  uint8_t id;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionPlayoutDelay, &id) != 0) {
+    // Not registered.
+    return 0;
+  }
+  size_t pos = 0;
+  const uint8_t len = 2;
+  // Convert MS to value to be sent on extension header.
+  uint16_t min_playout = min_playout_delay_ms / kPlayoutDelayGranularityMs;
+  uint16_t max_playout = max_playout_delay_ms / kPlayoutDelayGranularityMs;
+
+  data_buffer[pos++] = (id << 4) + len;
+  data_buffer[pos++] = min_playout >> 4;
+  data_buffer[pos++] = ((min_playout & 0xf) << 4) | (max_playout >> 8);
+  data_buffer[pos++] = max_playout & 0xff;
+  assert(pos == kPlayoutDelayLength);
+  return kPlayoutDelayLength;
 }
 
 bool RTPSender::FindHeaderExtensionPosition(RTPExtensionType type,

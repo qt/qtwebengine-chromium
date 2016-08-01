@@ -45,6 +45,11 @@ void ChannelProxy::SetRTCP_CNAME(const std::string& c_name) {
   RTC_DCHECK_EQ(0, error);
 }
 
+void ChannelProxy::SetNACKStatus(bool enable, int max_packets) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel()->SetNACKStatus(enable, max_packets);
+}
+
 void ChannelProxy::SetSendAbsoluteSenderTimeStatus(bool enable, int id) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   int error = channel()->SetSendAbsoluteSenderTimeStatus(enable, id);
@@ -158,6 +163,12 @@ void ChannelProxy::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
   channel()->SetSink(std::move(sink));
 }
 
+void ChannelProxy::SetInputMute(bool muted) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  int error = channel()->SetInputMute(muted);
+  RTC_DCHECK_EQ(0, error);
+}
+
 void ChannelProxy::RegisterExternalTransport(Transport* transport) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   int error = channel()->RegisterExternalTransport(transport);
@@ -179,6 +190,18 @@ bool ChannelProxy::ReceivedRTPPacket(const uint8_t* packet,
 bool ChannelProxy::ReceivedRTCPPacket(const uint8_t* packet, size_t length) {
   // May be called on either worker thread or network thread.
   return channel()->ReceivedRTCPPacket(packet, length) == 0;
+}
+
+const rtc::scoped_refptr<AudioDecoderFactory>&
+    ChannelProxy::GetAudioDecoderFactory() const {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  return channel()->GetAudioDecoderFactory();
+}
+
+void ChannelProxy::SetChannelOutputVolumeScaling(float scaling) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  int error = channel()->SetChannelOutputVolumeScaling(scaling);
+  RTC_DCHECK_EQ(0, error);
 }
 
 Channel* ChannelProxy::channel() const {

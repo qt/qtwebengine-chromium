@@ -82,6 +82,8 @@ CJS_Value::CJS_Value(CJS_Runtime* pRuntime, CJS_Array& array)
 
 CJS_Value::~CJS_Value() {}
 
+CJS_Value::CJS_Value(const CJS_Value& other) = default;
+
 void CJS_Value::Attach(v8::Local<v8::Value> pValue, Type t) {
   m_pValue = pValue;
   m_eType = t;
@@ -410,6 +412,8 @@ CJS_Array::CJS_Array(CJS_Runtime* pRuntime) : m_pJSRuntime(pRuntime) {}
 
 CJS_Array::~CJS_Array() {}
 
+CJS_Array::CJS_Array(const CJS_Array& other) = default;
+
 void CJS_Array::Attach(v8::Local<v8::Array> pArray) {
   m_pArray = pArray;
 }
@@ -718,7 +722,7 @@ int _MonthFromTime(double t) {
 int _DateFromTime(double t) {
   int day = _DayWithinYear(t);
   int year = _YearFromTime(t);
-  bool leap = _isLeapYear(year);
+  int leap = _isLeapYear(year);
   int month = _MonthFromTime(t);
   switch (month) {
     case 0:
@@ -753,7 +757,7 @@ int _DateFromTime(double t) {
 double JS_GetDateTime() {
   if (!FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
     return 0;
-  time_t t = time(NULL);
+  time_t t = time(nullptr);
   struct tm* pTm = localtime(&t);
 
   int year = pTm->tm_year + 1900;

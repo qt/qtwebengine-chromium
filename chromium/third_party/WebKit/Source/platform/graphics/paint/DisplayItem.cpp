@@ -9,7 +9,7 @@ namespace blink {
 struct SameSizeAsDisplayItem {
     virtual ~SameSizeAsDisplayItem() { } // Allocate vtable pointer.
     void* pointer;
-    int ints[2]; // Make sure other fields are packed into two ints.
+    int i;
 #ifndef NDEBUG
     WTF::String m_debugString;
 #endif
@@ -72,6 +72,7 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(BoxDecorationBackground);
         DEBUG_STRING_CASE(Caret);
         DEBUG_STRING_CASE(ColumnRules);
+        DEBUG_STRING_CASE(DebugDrawing);
         DEBUG_STRING_CASE(DebugRedFill);
         DEBUG_STRING_CASE(DocumentBackground);
         DEBUG_STRING_CASE(DragImage);
@@ -108,6 +109,10 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(TableCellBackgroundFromColumn);
         DEBUG_STRING_CASE(TableCellBackgroundFromSection);
         DEBUG_STRING_CASE(TableCellBackgroundFromRow);
+        DEBUG_STRING_CASE(TableSectionBoxShadowInset);
+        DEBUG_STRING_CASE(TableSectionBoxShadowNormal);
+        DEBUG_STRING_CASE(TableRowBoxShadowInset);
+        DEBUG_STRING_CASE(TableRowBoxShadowNormal);
         DEBUG_STRING_CASE(VideoBitmap);
         DEBUG_STRING_CASE(WebPlugin);
         DEBUG_STRING_CASE(WebFont);
@@ -251,8 +256,6 @@ void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder)
     stringBuilder.append('"');
     if (m_skippedCache)
         stringBuilder.append(", skippedCache: true");
-    if (m_scope)
-        stringBuilder.append(String::format(", scope: %d", m_scope));
 }
 
 #endif

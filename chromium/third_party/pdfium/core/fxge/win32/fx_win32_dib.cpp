@@ -51,6 +51,7 @@ CFX_ByteString CFX_WindowsDIB::GetBitmapInfo(const CFX_DIBitmap* pBitmap) {
   result.ReleaseBuffer(len);
   return result;
 }
+
 CFX_DIBitmap* _FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
                                          LPVOID pData,
                                          FX_BOOL bAlpha) {
@@ -69,7 +70,7 @@ CFX_DIBitmap* _FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
   FX_BOOL ret = pBitmap->Create(width, height, format);
   if (!ret) {
     delete pBitmap;
-    return NULL;
+    return nullptr;
   }
   FXSYS_memcpy(pBitmap->GetBuffer(), pData, pitch * height);
   if (bBottomUp) {
@@ -84,7 +85,7 @@ CFX_DIBitmap* _FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
       bottom--;
     }
     FX_Free(temp_buf);
-    temp_buf = NULL;
+    temp_buf = nullptr;
   }
   if (pbmi->bmiHeader.biBitCount == 1) {
     for (int i = 0; i < 2; i++) {
@@ -97,23 +98,25 @@ CFX_DIBitmap* _FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
   }
   return pBitmap;
 }
+
 CFX_DIBitmap* CFX_WindowsDIB::LoadFromBuf(BITMAPINFO* pbmi, LPVOID pData) {
   return _FX_WindowsDIB_LoadFromBuf(pbmi, pData, FALSE);
 }
+
 HBITMAP CFX_WindowsDIB::GetDDBitmap(const CFX_DIBitmap* pBitmap, HDC hDC) {
   CFX_ByteString info = GetBitmapInfo(pBitmap);
-  HBITMAP hBitmap = NULL;
-  hBitmap = CreateDIBitmap(hDC, (BITMAPINFOHEADER*)info.c_str(), CBM_INIT,
-                           pBitmap->GetBuffer(), (BITMAPINFO*)info.c_str(),
-                           DIB_RGB_COLORS);
-  return hBitmap;
+  return CreateDIBitmap(hDC, (BITMAPINFOHEADER*)info.c_str(), CBM_INIT,
+                        pBitmap->GetBuffer(), (BITMAPINFO*)info.c_str(),
+                        DIB_RGB_COLORS);
 }
+
 void GetBitmapSize(HBITMAP hBitmap, int& w, int& h) {
   BITMAP bmp;
   GetObject(hBitmap, sizeof bmp, &bmp);
   w = bmp.bmWidth;
   h = bmp.bmHeight;
 }
+
 CFX_DIBitmap* CFX_WindowsDIB::LoadFromFile(const FX_WCHAR* filename) {
   CWin32Platform* pPlatform =
       (CWin32Platform*)CFX_GEModule::Get()->GetPlatformData();
@@ -123,30 +126,35 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadFromFile(const FX_WCHAR* filename) {
     args.path_name = filename;
     return pPlatform->m_GdiplusExt.LoadDIBitmap(args);
   }
-  HBITMAP hBitmap = (HBITMAP)LoadImageW(NULL, (wchar_t*)filename, IMAGE_BITMAP,
-                                        0, 0, LR_LOADFROMFILE);
+  HBITMAP hBitmap = (HBITMAP)LoadImageW(nullptr, (wchar_t*)filename,
+                                        IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
   if (!hBitmap) {
-    return NULL;
+    return nullptr;
   }
-  HDC hDC = CreateCompatibleDC(NULL);
+  HDC hDC = CreateCompatibleDC(nullptr);
   int width, height;
   GetBitmapSize(hBitmap, width, height);
   CFX_DIBitmap* pDIBitmap = new CFX_DIBitmap;
   if (!pDIBitmap->Create(width, height, FXDIB_Rgb)) {
     delete pDIBitmap;
     DeleteDC(hDC);
-    return NULL;
+    return nullptr;
   }
   CFX_ByteString info = GetBitmapInfo(pDIBitmap);
   int ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
                       (BITMAPINFO*)info.c_str(), DIB_RGB_COLORS);
   if (!ret) {
     delete pDIBitmap;
-    pDIBitmap = NULL;
+    pDIBitmap = nullptr;
   }
   DeleteDC(hDC);
   return pDIBitmap;
 }
+
+CFX_DIBitmap* CFX_WindowsDIB::LoadFromFile(const FX_CHAR* filename) {
+  return LoadFromFile(CFX_WideString::FromLocal(filename).c_str());
+}
+
 CFX_DIBitmap* CFX_WindowsDIB::LoadDIBitmap(WINDIB_Open_Args_ args) {
   CWin32Platform* pPlatform =
       (CWin32Platform*)CFX_GEModule::Get()->GetPlatformData();
@@ -154,44 +162,45 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadDIBitmap(WINDIB_Open_Args_ args) {
     return pPlatform->m_GdiplusExt.LoadDIBitmap(args);
   }
   if (args.flags == WINDIB_OPEN_MEMORY) {
-    return NULL;
+    return nullptr;
   }
-  HBITMAP hBitmap = (HBITMAP)LoadImageW(NULL, (wchar_t*)args.path_name,
+  HBITMAP hBitmap = (HBITMAP)LoadImageW(nullptr, (wchar_t*)args.path_name,
                                         IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
   if (!hBitmap) {
-    return NULL;
+    return nullptr;
   }
-  HDC hDC = CreateCompatibleDC(NULL);
+  HDC hDC = CreateCompatibleDC(nullptr);
   int width, height;
   GetBitmapSize(hBitmap, width, height);
   CFX_DIBitmap* pDIBitmap = new CFX_DIBitmap;
   if (!pDIBitmap->Create(width, height, FXDIB_Rgb)) {
     delete pDIBitmap;
     DeleteDC(hDC);
-    return NULL;
+    return nullptr;
   }
   CFX_ByteString info = GetBitmapInfo(pDIBitmap);
   int ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
                       (BITMAPINFO*)info.c_str(), DIB_RGB_COLORS);
   if (!ret) {
     delete pDIBitmap;
-    pDIBitmap = NULL;
+    pDIBitmap = nullptr;
   }
   DeleteDC(hDC);
   return pDIBitmap;
 }
+
 CFX_DIBitmap* CFX_WindowsDIB::LoadFromDDB(HDC hDC,
                                           HBITMAP hBitmap,
                                           uint32_t* pPalette,
                                           uint32_t palsize) {
   FX_BOOL bCreatedDC = !hDC;
   if (bCreatedDC) {
-    hDC = CreateCompatibleDC(NULL);
+    hDC = CreateCompatibleDC(nullptr);
   }
   BITMAPINFOHEADER bmih;
   FXSYS_memset(&bmih, 0, sizeof bmih);
   bmih.biSize = sizeof bmih;
-  GetDIBits(hDC, hBitmap, 0, 0, NULL, (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
+  GetDIBits(hDC, hBitmap, 0, 0, nullptr, (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
   int width = bmih.biWidth;
   int height = abs(bmih.biHeight);
   bmih.biHeight = -height;
@@ -218,12 +227,12 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadFromDDB(HDC hDC,
       if (bCreatedDC) {
         DeleteDC(hDC);
       }
-      return NULL;
+      return nullptr;
     }
     ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
                     (BITMAPINFO*)pbmih, DIB_RGB_COLORS);
     FX_Free(pbmih);
-    pbmih = NULL;
+    pbmih = nullptr;
     pDIBitmap->CopyPalette(pPalette, palsize);
   } else {
     if (bmih.biBitCount <= 24) {
@@ -237,7 +246,7 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadFromDDB(HDC hDC,
       if (bCreatedDC) {
         DeleteDC(hDC);
       }
-      return NULL;
+      return nullptr;
     }
     ret = GetDIBits(hDC, hBitmap, 0, height, pDIBitmap->GetBuffer(),
                     (BITMAPINFO*)&bmih, DIB_RGB_COLORS);
@@ -254,13 +263,14 @@ CFX_DIBitmap* CFX_WindowsDIB::LoadFromDDB(HDC hDC,
   }
   if (ret == 0) {
     delete pDIBitmap;
-    pDIBitmap = NULL;
+    pDIBitmap = nullptr;
   }
   if (bCreatedDC) {
     DeleteDC(hDC);
   }
   return pDIBitmap;
 }
+
 CFX_WindowsDIB::CFX_WindowsDIB(HDC hDC, int width, int height) {
   Create(width, height, FXDIB_Rgb, (uint8_t*)1);
   BITMAPINFOHEADER bmih;
@@ -271,18 +281,21 @@ CFX_WindowsDIB::CFX_WindowsDIB(HDC hDC, int width, int height) {
   bmih.biPlanes = 1;
   bmih.biWidth = width;
   m_hBitmap = CreateDIBSection(hDC, (BITMAPINFO*)&bmih, DIB_RGB_COLORS,
-                               (LPVOID*)&m_pBuffer, NULL, 0);
+                               (LPVOID*)&m_pBuffer, nullptr, 0);
   m_hMemDC = CreateCompatibleDC(hDC);
   m_hOldBitmap = (HBITMAP)SelectObject(m_hMemDC, m_hBitmap);
 }
+
 CFX_WindowsDIB::~CFX_WindowsDIB() {
   SelectObject(m_hMemDC, m_hOldBitmap);
   DeleteDC(m_hMemDC);
   DeleteObject(m_hBitmap);
 }
+
 void CFX_WindowsDIB::LoadFromDevice(HDC hDC, int left, int top) {
   ::BitBlt(m_hMemDC, 0, 0, m_Width, m_Height, hDC, left, top, SRCCOPY);
 }
+
 void CFX_WindowsDIB::SetToDevice(HDC hDC, int left, int top) {
   ::BitBlt(hDC, left, top, m_Width, m_Height, m_hMemDC, 0, 0, SRCCOPY);
 }

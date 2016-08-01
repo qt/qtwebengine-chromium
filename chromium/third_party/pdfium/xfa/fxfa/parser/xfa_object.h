@@ -9,85 +9,92 @@
 
 #include <unordered_set>
 
+#include "fxjse/include/cfxjse_arguments.h"
 #include "xfa/fde/xml/fde_xml.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
 class CXFA_Document;
 class CXFA_Node;
 class CXFA_NodeList;
-class CXFA_OrdinaryObject;
 
-enum XFA_OBJECTTYPE {
-  XFA_OBJECTTYPE_OrdinaryObject = 0x0,
-  XFA_OBJECTTYPE_OrdinaryList = 0x1,
-  XFA_OBJECTTYPE_NodeList = 0x2,
-  XFA_OBJECTTYPE_Node = 0x4,
-  XFA_OBJECTTYPE_NodeC = 0x5,
-  XFA_OBJECTTYPE_NodeV = 0x6,
-  XFA_OBJECTTYPE_ModelNode = 0x8,
-  XFA_OBJECTTYPE_TextNode = 0x9,
-  XFA_OBJECTTYPE_ContainerNode = 0xA,
-  XFA_OBJECTTYPE_ContentNode = 0xB,
-  XFA_OBJECTTYPE_VariablesThis = 0xC,
-  XFA_OBJECTTYPEMASK = 0xF,
-  XFA_NODEFLAG_Initialized = 0x00020,
-  XFA_NODEFLAG_HasRemoved = 0x00200,
-  XFA_NODEFLAG_NeedsInitApp = 0x00400,
-  XFA_NODEFLAG_BindFormItems = 0x00800,
-  XFA_NODEFLAG_UserInteractive = 0x01000,
-  XFA_NODEFLAG_SkipDataBinding = 0x02000,
-  XFA_NODEFLAG_OwnXMLNode = 0x04000,
-  XFA_NODEFLAG_UnusedNode = 0x08000,
-  XFA_NODEFLAG_LayoutGeneratedNode = 0x10000,
+enum class XFA_ObjectType {
+  Object,
+  List,
+  NodeList,
+  Node,
+  NodeC,
+  NodeV,
+  ModelNode,
+  TextNode,
+  ContainerNode,
+  ContentNode,
+  VariablesThis
 };
-class CXFA_Object {
+
+enum XFA_NodeFlag {
+  XFA_NodeFlag_None = 0,
+  XFA_NodeFlag_Initialized = 1 << 0,
+  XFA_NodeFlag_HasRemovedChildren = 1 << 1,
+  XFA_NodeFlag_NeedsInitApp = 1 << 2,
+  XFA_NodeFlag_BindFormItems = 1 << 3,
+  XFA_NodeFlag_UserInteractive = 1 << 4,
+  XFA_NodeFlag_SkipDataBinding = 1 << 5,
+  XFA_NodeFlag_OwnXMLNode = 1 << 6,
+  XFA_NodeFlag_UnusedNode = 1 << 7,
+  XFA_NodeFlag_LayoutGeneratedNode = 1 << 8
+};
+
+class CXFA_Object : public CFXJSE_HostObject {
  public:
-  CXFA_Object(CXFA_Document* pDocument, uint32_t uFlags);
+  CXFA_Object(CXFA_Document* pDocument,
+              XFA_ObjectType objectType,
+              XFA_Element eType);
+  ~CXFA_Object() override;
+
   CXFA_Document* GetDocument() const { return m_pDocument; }
-  uint32_t GetFlag() const { return m_uFlags; }
-  XFA_OBJECTTYPE GetObjectType() const {
-    return (XFA_OBJECTTYPE)(m_uFlags & XFA_OBJECTTYPEMASK);
-  }
+  XFA_ObjectType GetObjectType() const { return m_objectType; }
 
   bool IsNode() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) >= XFA_OBJECTTYPE_Node;
+    return m_objectType == XFA_ObjectType::Node ||
+           m_objectType == XFA_ObjectType::NodeC ||
+           m_objectType == XFA_ObjectType::NodeV ||
+           m_objectType == XFA_ObjectType::ModelNode ||
+           m_objectType == XFA_ObjectType::TextNode ||
+           m_objectType == XFA_ObjectType::ContainerNode ||
+           m_objectType == XFA_ObjectType::ContentNode ||
+           m_objectType == XFA_ObjectType::VariablesThis;
   }
-  bool IsOrdinaryObject() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_OrdinaryObject;
-  }
-  bool IsNodeList() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_NodeList;
-  }
-  bool IsOrdinaryList() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_OrdinaryList;
-  }
+  bool IsNodeList() const { return m_objectType == XFA_ObjectType::NodeList; }
   bool IsContentNode() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_ContentNode;
+    return m_objectType == XFA_ObjectType::ContentNode;
   }
   bool IsContainerNode() const {
-    return (m_uFlags & XFA_OBJECTTYPEMASK) == XFA_OBJECTTYPE_ContainerNode;
+    return m_objectType == XFA_ObjectType::ContainerNode;
+  }
+  bool IsModelNode() const { return m_objectType == XFA_ObjectType::ModelNode; }
+  bool IsNodeV() const { return m_objectType == XFA_ObjectType::NodeV; }
+  bool IsVariablesThis() const {
+    return m_objectType == XFA_ObjectType::VariablesThis;
   }
 
   CXFA_Node* AsNode();
-  CXFA_OrdinaryObject* AsOrdinaryObject();
   CXFA_NodeList* AsNodeList();
 
   const CXFA_Node* AsNode() const;
-  const CXFA_OrdinaryObject* AsOrdinaryObject() const;
   const CXFA_NodeList* AsNodeList() const;
 
-  XFA_ELEMENT GetClassID() const;
-  void GetClassName(CFX_WideStringC& wsName) const;
+  XFA_Element GetElementType() const;
+  CFX_WideStringC GetClassName() const;
   uint32_t GetClassHashCode() const;
-  void Script_ObjectClass_ClassName(FXJSE_HVALUE hValue,
+  void Script_ObjectClass_ClassName(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void ThrowScriptErrorMessage(int32_t iStringID, ...);
+  void ThrowException(int32_t iStringID, ...);
 
  protected:
   CXFA_Document* const m_pDocument;
-  uint32_t m_uFlags;
+  const XFA_ObjectType m_objectType;
+  const XFA_Element m_elementType;
 };
 using CXFA_ObjArray = CFX_ArrayTemplate<CXFA_Object*>;
 
@@ -124,6 +131,9 @@ struct XFA_MAPDATABLOCK {
 };
 
 struct XFA_MAPMODULEDATA {
+  XFA_MAPMODULEDATA();
+  ~XFA_MAPMODULEDATA();
+
   CFX_MapPtrToPtr m_ValueMap;
   CFX_MapPtrTemplate<void*, XFA_MAPDATABLOCK*> m_BufferMap;
 };
@@ -131,13 +141,28 @@ struct XFA_MAPMODULEDATA {
 #define XFA_CalcRefCount (void*)(uintptr_t) FXBSTR_ID('X', 'F', 'A', 'R')
 #define XFA_CalcData (void*)(uintptr_t) FXBSTR_ID('X', 'F', 'A', 'C')
 #define XFA_LAYOUTITEMKEY (void*)(uintptr_t) FXBSTR_ID('L', 'Y', 'I', 'M')
+
 class CXFA_Node : public CXFA_Object {
  public:
-  XFA_ELEMENT GetClassID() const { return (XFA_ELEMENT)m_eNodeClass; }
   uint32_t GetPacketID() const { return m_ePacket; }
-  FX_BOOL HasFlag(uint32_t dwFlag) const;
+
   void SetFlag(uint32_t dwFlag, bool bNotify);
   void ClearFlag(uint32_t dwFlag);
+
+  bool IsInitialized() const { return HasFlag(XFA_NodeFlag_Initialized); }
+  bool IsOwnXMLNode() const { return HasFlag(XFA_NodeFlag_OwnXMLNode); }
+  bool IsUserInteractive() const {
+    return HasFlag(XFA_NodeFlag_UserInteractive);
+  }
+  bool IsUnusedNode() const { return HasFlag(XFA_NodeFlag_UnusedNode); }
+  bool IsLayoutGeneratedNode() const {
+    return HasFlag(XFA_NodeFlag_LayoutGeneratedNode);
+  }
+  bool BindsFormItems() const { return HasFlag(XFA_NodeFlag_BindFormItems); }
+  bool HasRemovedChildren() const {
+    return HasFlag(XFA_NodeFlag_HasRemovedChildren);
+  }
+  bool NeedsInitApp() const { return HasFlag(XFA_NodeFlag_NeedsInitApp); }
 
   FX_BOOL IsAttributeInXML();
   bool IsFormContainer() const {
@@ -245,40 +270,40 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Measurement GetMeasure(XFA_ATTRIBUTE eAttr) const;
   FX_BOOL SetObject(XFA_ATTRIBUTE eAttr,
                     void* pData,
-                    XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = NULL);
+                    XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = nullptr);
   FX_BOOL TryObject(XFA_ATTRIBUTE eAttr, void*& pData);
   void* GetObject(XFA_ATTRIBUTE eAttr) {
     void* pData;
-    return TryObject(eAttr, pData) ? pData : NULL;
+    return TryObject(eAttr, pData) ? pData : nullptr;
   }
   FX_BOOL SetUserData(void* pKey,
                       void* pData,
-                      XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = NULL);
+                      XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = nullptr);
   FX_BOOL TryUserData(void* pKey, void*& pData, FX_BOOL bProtoAlso = FALSE);
   void* GetUserData(void* pKey, FX_BOOL bProtoAlso = FALSE) {
     void* pData;
-    return TryUserData(pKey, pData, bProtoAlso) ? pData : NULL;
+    return TryUserData(pKey, pData, bProtoAlso) ? pData : nullptr;
   }
   CXFA_Node* GetProperty(int32_t index,
-                         XFA_ELEMENT eProperty,
+                         XFA_Element eType,
                          FX_BOOL bCreateProperty = TRUE);
-  int32_t CountChildren(XFA_ELEMENT eElement, FX_BOOL bOnlyChild = FALSE);
+  int32_t CountChildren(XFA_Element eType, FX_BOOL bOnlyChild = FALSE);
   CXFA_Node* GetChild(int32_t index,
-                      XFA_ELEMENT eElement,
+                      XFA_Element eType,
                       FX_BOOL bOnlyChild = FALSE);
   int32_t InsertChild(int32_t index, CXFA_Node* pNode);
-  FX_BOOL InsertChild(CXFA_Node* pNode, CXFA_Node* pBeforeNode = NULL);
+  FX_BOOL InsertChild(CXFA_Node* pNode, CXFA_Node* pBeforeNode = nullptr);
   FX_BOOL RemoveChild(CXFA_Node* pNode, bool bNotify = true);
   CXFA_Node* Clone(FX_BOOL bRecursive);
   CXFA_Node* GetNodeItem(XFA_NODEITEM eItem) const;
-  CXFA_Node* GetNodeItem(XFA_NODEITEM eItem, XFA_OBJECTTYPE eType) const;
+  CXFA_Node* GetNodeItem(XFA_NODEITEM eItem, XFA_ObjectType eType) const;
   int32_t GetNodeList(CXFA_NodeArray& nodes,
                       uint32_t dwTypeFilter = XFA_NODEFILTER_Children |
                                               XFA_NODEFILTER_Properties,
-                      XFA_ELEMENT eElementFilter = XFA_ELEMENT_UNKNOWN,
+                      XFA_Element eTypeFilter = XFA_Element::Unknown,
                       int32_t iLevel = 1);
-  CXFA_Node* CreateSamePacketNode(XFA_ELEMENT eElement,
-                                  uint32_t dwFlags = XFA_NODEFLAG_Initialized);
+  CXFA_Node* CreateSamePacketNode(XFA_Element eType,
+                                  uint32_t dwFlags = XFA_NodeFlag_Initialized);
   CXFA_Node* CloneTemplateToForm(FX_BOOL bRecursive);
   CXFA_Node* GetTemplateNode() const;
   void SetTemplateNode(CXFA_Node* pTemplateNode);
@@ -295,10 +320,10 @@ class CXFA_Node : public CXFA_Object {
   XFA_ATTRIBUTEENUM GetIntact();
   CXFA_Node* GetFirstChildByName(const CFX_WideStringC& wsNodeName) const;
   CXFA_Node* GetFirstChildByName(uint32_t dwNodeNameHash) const;
-  CXFA_Node* GetFirstChildByClass(XFA_ELEMENT eNodeClass) const;
+  CXFA_Node* GetFirstChildByClass(XFA_Element eType) const;
   CXFA_Node* GetNextSameNameSibling(uint32_t dwNodeNameHash) const;
   CXFA_Node* GetNextSameNameSibling(const CFX_WideStringC& wsNodeName) const;
-  CXFA_Node* GetNextSameClassSibling(XFA_ELEMENT eNodeClass) const;
+  CXFA_Node* GetNextSameClassSibling(XFA_Element eType) const;
   int32_t GetNodeSameNameIndex() const;
   int32_t GetNodeSameClassIndex() const;
   void GetSOMExpression(CFX_WideString& wsSOMExpression);
@@ -307,29 +332,29 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* GetOccurNode();
   void Script_TreeClass_ResolveNode(CFXJSE_Arguments* pArguments);
   void Script_TreeClass_ResolveNodes(CFXJSE_Arguments* pArguments);
-  void Script_Som_ResolveNodeList(FXJSE_HVALUE hValue,
+  void Script_Som_ResolveNodeList(CFXJSE_Value* pValue,
                                   CFX_WideString wsExpression,
                                   uint32_t dwFlag,
-                                  CXFA_Node* refNode = NULL);
-  void Script_TreeClass_All(FXJSE_HVALUE hValue,
+                                  CXFA_Node* refNode = nullptr);
+  void Script_TreeClass_All(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_Nodes(FXJSE_HVALUE hValue,
+  void Script_TreeClass_Nodes(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_ClassAll(FXJSE_HVALUE hValue,
+  void Script_TreeClass_ClassAll(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_Parent(FXJSE_HVALUE hValue,
+  void Script_TreeClass_Parent(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_Index(FXJSE_HVALUE hValue,
+  void Script_TreeClass_Index(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_ClassIndex(FXJSE_HVALUE hValue,
+  void Script_TreeClass_ClassIndex(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
-  void Script_TreeClass_SomExpression(FXJSE_HVALUE hValue,
+  void Script_TreeClass_SomExpression(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute);
   void Script_NodeClass_ApplyXSL(CFXJSE_Arguments* pArguments);
@@ -343,19 +368,19 @@ class CXFA_Node : public CXFA_Object {
   void Script_NodeClass_SaveXML(CFXJSE_Arguments* pArguments);
   void Script_NodeClass_SetAttribute(CFXJSE_Arguments* pArguments);
   void Script_NodeClass_SetElement(CFXJSE_Arguments* pArguments);
-  void Script_NodeClass_Ns(FXJSE_HVALUE hValue,
+  void Script_NodeClass_Ns(CFXJSE_Value* pValue,
                            FX_BOOL bSetting,
                            XFA_ATTRIBUTE eAttribute);
-  void Script_NodeClass_Model(FXJSE_HVALUE hValue,
+  void Script_NodeClass_Model(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_NodeClass_IsContainer(FXJSE_HVALUE hValue,
+  void Script_NodeClass_IsContainer(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void Script_NodeClass_IsNull(FXJSE_HVALUE hValue,
+  void Script_NodeClass_IsNull(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
-  void Script_NodeClass_OneOfChild(FXJSE_HVALUE hValue,
+  void Script_NodeClass_OneOfChild(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
   void Script_ContainerClass_GetDelta(CFXJSE_Arguments* pArguments);
@@ -363,104 +388,104 @@ class CXFA_Node : public CXFA_Object {
   void Script_ModelClass_ClearErrorList(CFXJSE_Arguments* pArguments);
   void Script_ModelClass_CreateNode(CFXJSE_Arguments* pArguments);
   void Script_ModelClass_IsCompatibleNS(CFXJSE_Arguments* pArguments);
-  void Script_ModelClass_Context(FXJSE_HVALUE hValue,
+  void Script_ModelClass_Context(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute);
-  void Script_ModelClass_AliasNode(FXJSE_HVALUE hValue,
+  void Script_ModelClass_AliasNode(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
   void Script_WsdlConnection_Execute(CFXJSE_Arguments* pArguments);
   void Script_Delta_Restore(CFXJSE_Arguments* pArguments);
-  void Script_Delta_CurrentValue(FXJSE_HVALUE hValue,
+  void Script_Delta_CurrentValue(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute);
-  void Script_Delta_SavedValue(FXJSE_HVALUE hValue,
+  void Script_Delta_SavedValue(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
-  void Script_Delta_Target(FXJSE_HVALUE hValue,
+  void Script_Delta_Target(CFXJSE_Value* pValue,
                            FX_BOOL bSetting,
                            XFA_ATTRIBUTE eAttribute);
   void Script_Attribute_SendAttributeChangeMessage(XFA_ATTRIBUTE eAttribute,
                                                    FX_BOOL bScriptModify);
-  void Script_Attribute_Integer(FXJSE_HVALUE hValue,
+  void Script_Attribute_Integer(CFXJSE_Value* pValue,
                                 FX_BOOL bSetting,
                                 XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_IntegerRead(FXJSE_HVALUE hValue,
+  void Script_Attribute_IntegerRead(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_BOOL(FXJSE_HVALUE hValue,
+  void Script_Attribute_BOOL(CFXJSE_Value* pValue,
                              FX_BOOL bSetting,
                              XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_BOOLRead(FXJSE_HVALUE hValue,
+  void Script_Attribute_BOOLRead(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_String(FXJSE_HVALUE hValue,
+  void Script_Attribute_String(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
-  void Script_Attribute_StringRead(FXJSE_HVALUE hValue,
+  void Script_Attribute_StringRead(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
-  void Script_Som_ValidationMessage(FXJSE_HVALUE hValue,
+  void Script_Som_ValidationMessage(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void Script_Field_Length(FXJSE_HVALUE hValue,
+  void Script_Field_Length(CFXJSE_Value* pValue,
                            FX_BOOL bSetting,
                            XFA_ATTRIBUTE eAttribute);
-  void Script_Som_DefaultValue(FXJSE_HVALUE hValue,
+  void Script_Som_DefaultValue(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
-  void Script_Som_DefaultValue_Read(FXJSE_HVALUE hValue,
+  void Script_Som_DefaultValue_Read(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void Script_Boolean_Value(FXJSE_HVALUE hValue,
+  void Script_Boolean_Value(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
-  void Script_Som_Message(FXJSE_HVALUE hValue,
+  void Script_Som_Message(CFXJSE_Value* pValue,
                           FX_BOOL bSetting,
                           XFA_SOM_MESSAGETYPE iMessageType);
-  void Script_Som_BorderColor(FXJSE_HVALUE hValue,
+  void Script_Som_BorderColor(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_Som_BorderWidth(FXJSE_HVALUE hValue,
+  void Script_Som_BorderWidth(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_Som_FillColor(FXJSE_HVALUE hValue,
+  void Script_Som_FillColor(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
-  void Script_Som_DataNode(FXJSE_HVALUE hValue,
+  void Script_Som_DataNode(CFXJSE_Value* pValue,
                            FX_BOOL bSetting,
                            XFA_ATTRIBUTE eAttribute);
-  void Script_Som_FontColor(FXJSE_HVALUE hValue,
+  void Script_Som_FontColor(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
-  void Script_Som_Mandatory(FXJSE_HVALUE hValue,
+  void Script_Som_Mandatory(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
-  void Script_Som_MandatoryMessage(FXJSE_HVALUE hValue,
+  void Script_Som_MandatoryMessage(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
-  void Script_Som_InstanceIndex(FXJSE_HVALUE hValue,
+  void Script_Som_InstanceIndex(CFXJSE_Value* pValue,
                                 FX_BOOL bSetting,
                                 XFA_ATTRIBUTE eAttribute);
-  void Script_Draw_DefaultValue(FXJSE_HVALUE hValue,
+  void Script_Draw_DefaultValue(CFXJSE_Value* pValue,
                                 FX_BOOL bSetting,
                                 XFA_ATTRIBUTE eAttribute);
-  void Script_Field_DefaultValue(FXJSE_HVALUE hValue,
+  void Script_Field_DefaultValue(CFXJSE_Value* pValue,
                                  FX_BOOL bSetting,
                                  XFA_ATTRIBUTE eAttribute);
-  void Script_Field_EditValue(FXJSE_HVALUE hValue,
+  void Script_Field_EditValue(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_Field_FormatMessage(FXJSE_HVALUE hValue,
+  void Script_Field_FormatMessage(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
-  void Script_Field_FormattedValue(FXJSE_HVALUE hValue,
+  void Script_Field_FormattedValue(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
-  void Script_Field_ParentSubform(FXJSE_HVALUE hValue,
+  void Script_Field_ParentSubform(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
-  void Script_Field_SelectedIndex(FXJSE_HVALUE hValue,
+  void Script_Field_SelectedIndex(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
   void Script_Field_ClearItems(CFXJSE_Arguments* pArguments);
@@ -476,13 +501,13 @@ class CXFA_Node : public CXFA_Object {
   void Script_Field_SetItemState(CFXJSE_Arguments* pArguments);
   void Script_Field_AddItem(CFXJSE_Arguments* pArguments);
   void Script_Field_ExecValidate(CFXJSE_Arguments* pArguments);
-  void Script_ExclGroup_DefaultAndRawValue(FXJSE_HVALUE hValue,
+  void Script_ExclGroup_DefaultAndRawValue(CFXJSE_Value* pValue,
                                            FX_BOOL bSetting,
                                            XFA_ATTRIBUTE eAttribute);
-  void Script_ExclGroup_ErrorText(FXJSE_HVALUE hValue,
+  void Script_ExclGroup_ErrorText(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
-  void Script_ExclGroup_Transient(FXJSE_HVALUE hValue,
+  void Script_ExclGroup_Transient(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
   void Script_ExclGroup_ExecEvent(CFXJSE_Arguments* pArguments);
@@ -490,10 +515,10 @@ class CXFA_Node : public CXFA_Object {
   void Script_ExclGroup_ExecInitialize(CFXJSE_Arguments* pArguments);
   void Script_ExclGroup_ExecCalculate(CFXJSE_Arguments* pArguments);
   void Script_ExclGroup_ExecValidate(CFXJSE_Arguments* pArguments);
-  void Script_Subform_InstanceManager(FXJSE_HVALUE hValue,
+  void Script_Subform_InstanceManager(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute);
-  void Script_Subform_Locale(FXJSE_HVALUE hValue,
+  void Script_Subform_Locale(CFXJSE_Value* pValue,
                              FX_BOOL bSetting,
                              XFA_ATTRIBUTE eAttribute);
   void Script_Subform_ExecEvent(CFXJSE_Arguments* pArguments);
@@ -511,13 +536,13 @@ class CXFA_Node : public CXFA_Object {
   void Script_Template_ExecCalculate(CFXJSE_Arguments* pArguments);
   void Script_Template_ExecValidate(CFXJSE_Arguments* pArguments);
   void Script_Manifest_Evaluate(CFXJSE_Arguments* pArguments);
-  void Script_InstanceManager_Count(FXJSE_HVALUE hValue,
+  void Script_InstanceManager_Count(CFXJSE_Value* pValue,
                                     FX_BOOL bSetting,
                                     XFA_ATTRIBUTE eAttribute);
-  void Script_InstanceManager_Max(FXJSE_HVALUE hValue,
+  void Script_InstanceManager_Max(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
-  void Script_InstanceManager_Min(FXJSE_HVALUE hValue,
+  void Script_InstanceManager_Min(CFXJSE_Value* pValue,
                                   FX_BOOL bSetting,
                                   XFA_ATTRIBUTE eAttribute);
   void Script_InstanceManager_MoveInstance(CFXJSE_Arguments* pArguments);
@@ -527,10 +552,10 @@ class CXFA_Node : public CXFA_Object {
   void Script_InstanceManager_InsertInstance(CFXJSE_Arguments* pArguments);
   int32_t InstanceManager_SetInstances(int32_t iCount);
   int32_t InstanceManager_MoveInstance(int32_t iTo, int32_t iFrom);
-  void Script_Occur_Max(FXJSE_HVALUE hValue,
+  void Script_Occur_Max(CFXJSE_Value* pValue,
                         FX_BOOL bSetting,
                         XFA_ATTRIBUTE eAttribute);
-  void Script_Occur_Min(FXJSE_HVALUE hValue,
+  void Script_Occur_Min(CFXJSE_Value* pValue,
                         FX_BOOL bSetting,
                         XFA_ATTRIBUTE eAttribute);
   void Script_Desc_Metadata(CFXJSE_Arguments* pArguments);
@@ -540,13 +565,13 @@ class CXFA_Node : public CXFA_Object {
   void Script_Form_Recalculate(CFXJSE_Arguments* pArguments);
   void Script_Form_ExecCalculate(CFXJSE_Arguments* pArguments);
   void Script_Form_ExecValidate(CFXJSE_Arguments* pArguments);
-  void Script_Form_Checksum(FXJSE_HVALUE hValue,
+  void Script_Form_Checksum(CFXJSE_Value* pValue,
                             FX_BOOL bSetting,
                             XFA_ATTRIBUTE eAttribute);
   void Script_Packet_GetAttribute(CFXJSE_Arguments* pArguments);
   void Script_Packet_SetAttribute(CFXJSE_Arguments* pArguments);
   void Script_Packet_RemoveAttribute(CFXJSE_Arguments* pArguments);
-  void Script_Packet_Content(FXJSE_HVALUE hValue,
+  void Script_Packet_Content(CFXJSE_Value* pValue,
                              FX_BOOL bSetting,
                              XFA_ATTRIBUTE eAttribute);
   void Script_Source_Next(CFXJSE_Arguments* pArguments);
@@ -566,32 +591,38 @@ class CXFA_Node : public CXFA_Object {
   void Script_Source_Close(CFXJSE_Arguments* pArguments);
   void Script_Source_Last(CFXJSE_Arguments* pArguments);
   void Script_Source_HasDataChanged(CFXJSE_Arguments* pArguments);
-  void Script_Source_Db(FXJSE_HVALUE hValue,
+  void Script_Source_Db(CFXJSE_Value* pValue,
                         FX_BOOL bSetting,
                         XFA_ATTRIBUTE eAttribute);
-  void Script_Xfa_This(FXJSE_HVALUE hValue,
+  void Script_Xfa_This(CFXJSE_Value* pValue,
                        FX_BOOL bSetting,
                        XFA_ATTRIBUTE eAttribute);
-  void Script_Handler_Version(FXJSE_HVALUE hValue,
+  void Script_Handler_Version(CFXJSE_Value* pValue,
                               FX_BOOL bSetting,
                               XFA_ATTRIBUTE eAttribute);
-  void Script_SubmitFormat_Mode(FXJSE_HVALUE hValue,
+  void Script_SubmitFormat_Mode(CFXJSE_Value* pValue,
                                 FX_BOOL bSetting,
                                 XFA_ATTRIBUTE eAttribute);
-  void Script_Extras_Type(FXJSE_HVALUE hValue,
+  void Script_Extras_Type(CFXJSE_Value* pValue,
                           FX_BOOL bSetting,
                           XFA_ATTRIBUTE eAttribute);
-  void Script_Encrypt_Format(FXJSE_HVALUE hValue,
+  void Script_Encrypt_Format(CFXJSE_Value* pValue,
                              FX_BOOL bSetting,
                              XFA_ATTRIBUTE eAttribute);
-  void Script_Script_Stateless(FXJSE_HVALUE hValue,
+  void Script_Script_Stateless(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
 
  protected:
-  CXFA_Node(CXFA_Document* pDoc, uint16_t ePacket, XFA_ELEMENT eElement);
-  ~CXFA_Node();
   friend class CXFA_Document;
+
+  CXFA_Node(CXFA_Document* pDoc,
+            uint16_t ePacket,
+            XFA_ObjectType oType,
+            XFA_Element eType);
+  ~CXFA_Node() override;
+
+  bool HasFlag(XFA_NodeFlag dwFlag) const;
   CXFA_Node* Deprecated_GetPrevSibling();
   FX_BOOL SetValue(XFA_ATTRIBUTE eAttr,
                    XFA_ATTRIBUTETYPE eType,
@@ -605,7 +636,7 @@ class CXFA_Node : public CXFA_Object {
   void OnChanging(XFA_ATTRIBUTE eAttr, bool bNotify);
   void OnChanged(XFA_ATTRIBUTE eAttr, bool bNotify, FX_BOOL bScriptModify);
   int32_t execSingleEventByName(const CFX_WideStringC& wsEventName,
-                                XFA_ELEMENT eElementType);
+                                XFA_Element eType);
   FX_BOOL SetScriptContent(const CFX_WideString& wsContent,
                            const CFX_WideString& wsXMLValue,
                            bool bNotify = true,
@@ -618,16 +649,17 @@ class CXFA_Node : public CXFA_Object {
   FX_BOOL GetMapModuleValue(void* pKey, void*& pValue);
   void SetMapModuleString(void* pKey, const CFX_WideStringC& wsValue);
   FX_BOOL GetMapModuleString(void* pKey, CFX_WideStringC& wsValue);
-  void SetMapModuleBuffer(void* pKey,
-                          void* pValue,
-                          int32_t iBytes,
-                          XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = NULL);
+  void SetMapModuleBuffer(
+      void* pKey,
+      void* pValue,
+      int32_t iBytes,
+      XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo = nullptr);
   FX_BOOL GetMapModuleBuffer(void* pKey,
                              void*& pValue,
                              int32_t& iBytes,
                              FX_BOOL bProtoAlso = TRUE) const;
   FX_BOOL HasMapModuleKey(void* pKey, FX_BOOL bProtoAlso = FALSE);
-  void RemoveMapModuleKey(void* pKey = NULL);
+  void RemoveMapModuleKey(void* pKey = nullptr);
   void MergeAllData(void* pDstModule, FX_BOOL bUseSrcAttr = TRUE);
   void MoveBufferMapData(CXFA_Node* pDstModule, void* pKey);
   void MoveBufferMapData(CXFA_Node* pSrcModule,
@@ -640,48 +672,31 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* m_pLastChild;
   CXFA_Node* m_pParent;
   CFDE_XMLNode* m_pXMLNode;
-  XFA_ELEMENT m_eNodeClass;
   uint16_t m_ePacket;
+  uint16_t m_uNodeFlags;
   uint32_t m_dwNameHash;
   CXFA_Node* m_pAuxNode;
   XFA_MAPMODULEDATA* m_pMapModuleData;
 };
-class CXFA_OrdinaryObject : public CXFA_Object {
- public:
-  CXFA_OrdinaryObject(CXFA_Document* pDocument, XFA_ELEMENT eElement)
-      : CXFA_Object(pDocument, XFA_OBJECTTYPE_OrdinaryObject),
-        m_uScriptHash(0) {
-    m_eNodeClass = eElement;
-  }
-  XFA_ELEMENT GetClassID() const { return (XFA_ELEMENT)m_eNodeClass; }
-  uint32_t GetScriptObjHash() { return m_uScriptHash; }
 
- protected:
-  XFA_ELEMENT m_eNodeClass;
-  uint32_t m_uScriptHash;
-};
 class CXFA_ThisProxy : public CXFA_Object {
  public:
-  CXFA_ThisProxy(CXFA_Node* pThisNode, CXFA_Node* pScriptNode)
-      : CXFA_Object(pThisNode->GetDocument(), XFA_OBJECTTYPE_VariablesThis),
-        m_pThisNode(NULL),
-        m_pScriptNode(NULL) {
-    m_pThisNode = pThisNode;
-    m_pScriptNode = pScriptNode;
-  }
-  virtual ~CXFA_ThisProxy() {}
-  CXFA_Node* GetThisNode() { return m_pThisNode; }
-  CXFA_Node* GetScriptNode() { return m_pScriptNode; }
+  CXFA_ThisProxy(CXFA_Node* pThisNode, CXFA_Node* pScriptNode);
+  ~CXFA_ThisProxy() override;
+
+  CXFA_Node* GetThisNode() const;
+  CXFA_Node* GetScriptNode() const;
 
  private:
   CXFA_Node* m_pThisNode;
   CXFA_Node* m_pScriptNode;
 };
+
 class CXFA_NodeList : public CXFA_Object {
  public:
   explicit CXFA_NodeList(CXFA_Document* pDocument);
-  virtual ~CXFA_NodeList() {}
-  XFA_ELEMENT GetClassID() const { return XFA_ELEMENT_NodeList; }
+  ~CXFA_NodeList() override;
+
   CXFA_Node* NamedItem(const CFX_WideStringC& wsName);
   virtual int32_t GetLength() = 0;
   virtual FX_BOOL Append(CXFA_Node* pNode) = 0;
@@ -695,32 +710,39 @@ class CXFA_NodeList : public CXFA_Object {
   void Script_ListClass_Item(CFXJSE_Arguments* pArguments);
 
   void Script_TreelistClass_NamedItem(CFXJSE_Arguments* pArguments);
-  void Script_ListClass_Length(FXJSE_HVALUE hValue,
+  void Script_ListClass_Length(CFXJSE_Value* pValue,
                                FX_BOOL bSetting,
                                XFA_ATTRIBUTE eAttribute);
 };
+
 class CXFA_ArrayNodeList : public CXFA_NodeList {
  public:
   explicit CXFA_ArrayNodeList(CXFA_Document* pDocument);
+  ~CXFA_ArrayNodeList() override;
+
+  // From CXFA_NodeList.
+  int32_t GetLength() override;
+  FX_BOOL Append(CXFA_Node* pNode) override;
+  FX_BOOL Insert(CXFA_Node* pNewNode, CXFA_Node* pBeforeNode) override;
+  FX_BOOL Remove(CXFA_Node* pNode) override;
+  CXFA_Node* Item(int32_t iIndex) override;
+
   void SetArrayNodeList(const CXFA_NodeArray& srcArray);
-  virtual int32_t GetLength();
-  virtual FX_BOOL Append(CXFA_Node* pNode);
-  virtual FX_BOOL Insert(CXFA_Node* pNewNode, CXFA_Node* pBeforeNode);
-  virtual FX_BOOL Remove(CXFA_Node* pNode);
-  virtual CXFA_Node* Item(int32_t iIndex);
 
  protected:
   CXFA_NodeArray m_array;
 };
+
 class CXFA_AttachNodeList : public CXFA_NodeList {
  public:
   CXFA_AttachNodeList(CXFA_Document* pDocument, CXFA_Node* pAttachNode);
 
-  virtual int32_t GetLength();
-  virtual FX_BOOL Append(CXFA_Node* pNode);
-  virtual FX_BOOL Insert(CXFA_Node* pNewNode, CXFA_Node* pBeforeNode);
-  virtual FX_BOOL Remove(CXFA_Node* pNode);
-  virtual CXFA_Node* Item(int32_t iIndex);
+  // From CXFA_NodeList.
+  int32_t GetLength() override;
+  FX_BOOL Append(CXFA_Node* pNode) override;
+  FX_BOOL Insert(CXFA_Node* pNewNode, CXFA_Node* pBeforeNode) override;
+  FX_BOOL Remove(CXFA_Node* pNode) override;
+  CXFA_Node* Item(int32_t iIndex) override;
 
  protected:
   CXFA_Node* m_pAttachNode;
@@ -728,19 +750,19 @@ class CXFA_AttachNodeList : public CXFA_NodeList {
 class CXFA_TraverseStrategy_XFAContainerNode {
  public:
   static CXFA_Node* GetFirstChild(CXFA_Node* pTemplateNode,
-                                  void* pUserData = NULL) {
+                                  void* pUserData = nullptr) {
     return pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild,
-                                      XFA_OBJECTTYPE_ContainerNode);
+                                      XFA_ObjectType::ContainerNode);
   }
   static CXFA_Node* GetNextSibling(CXFA_Node* pTemplateNode,
-                                   void* pUserData = NULL) {
+                                   void* pUserData = nullptr) {
     return pTemplateNode->GetNodeItem(XFA_NODEITEM_NextSibling,
-                                      XFA_OBJECTTYPE_ContainerNode);
+                                      XFA_ObjectType::ContainerNode);
   }
   static CXFA_Node* GetParent(CXFA_Node* pTemplateNode,
-                              void* pUserData = NULL) {
+                              void* pUserData = nullptr) {
     return pTemplateNode->GetNodeItem(XFA_NODEITEM_Parent,
-                                      XFA_OBJECTTYPE_ContainerNode);
+                                      XFA_ObjectType::ContainerNode);
   }
 };
 typedef CXFA_NodeIteratorTemplate<CXFA_Node,
@@ -764,9 +786,7 @@ typedef CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_XFANode>
 inline CXFA_Node* CXFA_Object::AsNode() {
   return IsNode() ? static_cast<CXFA_Node*>(this) : nullptr;
 }
-inline CXFA_OrdinaryObject* CXFA_Object::AsOrdinaryObject() {
-  return IsOrdinaryObject() ? static_cast<CXFA_OrdinaryObject*>(this) : nullptr;
-}
+
 inline CXFA_NodeList* CXFA_Object::AsNodeList() {
   return IsNodeList() ? static_cast<CXFA_NodeList*>(this) : nullptr;
 }
@@ -774,10 +794,7 @@ inline CXFA_NodeList* CXFA_Object::AsNodeList() {
 inline const CXFA_Node* CXFA_Object::AsNode() const {
   return IsNode() ? static_cast<const CXFA_Node*>(this) : nullptr;
 }
-inline const CXFA_OrdinaryObject* CXFA_Object::AsOrdinaryObject() const {
-  return IsOrdinaryObject() ? static_cast<const CXFA_OrdinaryObject*>(this)
-                            : nullptr;
-}
+
 inline const CXFA_NodeList* CXFA_Object::AsNodeList() const {
   return IsNodeList() ? static_cast<const CXFA_NodeList*>(this) : nullptr;
 }

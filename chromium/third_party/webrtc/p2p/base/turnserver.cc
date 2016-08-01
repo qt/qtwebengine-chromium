@@ -509,10 +509,11 @@ void TurnServer::OnAllocationDestroyed(TurnServerAllocation* allocation) {
   // Removing the internal socket if the connection is not udp.
   rtc::AsyncPacketSocket* socket = allocation->conn()->socket();
   InternalSocketMap::iterator iter = server_sockets_.find(socket);
-  ASSERT(iter != server_sockets_.end());
   // Skip if the socket serving this allocation is UDP, as this will be shared
   // by all allocations.
-  if (iter->second != cricket::PROTO_UDP) {
+  // Note: We may not find a socket if it's a TCP socket that was closed, and
+  // the allocation is only now timing out.
+  if (iter != server_sockets_.end() && iter->second != cricket::PROTO_UDP) {
     DestroyInternalSocket(socket);
   }
 
@@ -631,7 +632,8 @@ void TurnServerAllocation::HandleAllocateRequest(const TurnMessage* msg) {
 
   // Figure out the lifetime and start the allocation timer.
   int lifetime_secs = ComputeLifetime(msg);
-  thread_->PostDelayed(lifetime_secs * 1000, this, MSG_ALLOCATION_TIMEOUT);
+  thread_->PostDelayed(RTC_FROM_HERE, lifetime_secs * 1000, this,
+                       MSG_ALLOCATION_TIMEOUT);
 
   LOG_J(LS_INFO, this) << "Created allocation, lifetime=" << lifetime_secs;
 
@@ -659,7 +661,8 @@ void TurnServerAllocation::HandleRefreshRequest(const TurnMessage* msg) {
 
   // Reset the expiration timer.
   thread_->Clear(this, MSG_ALLOCATION_TIMEOUT);
-  thread_->PostDelayed(lifetime_secs * 1000, this, MSG_ALLOCATION_TIMEOUT);
+  thread_->PostDelayed(RTC_FROM_HERE, lifetime_secs * 1000, this,
+                       MSG_ALLOCATION_TIMEOUT);
 
   LOG_J(LS_INFO, this) << "Refreshed allocation, lifetime=" << lifetime_secs;
 
@@ -799,7 +802,8 @@ void TurnServerAllocation::OnExternalPacket(
     buf.WriteUInt16(static_cast<uint16_t>(size));
     buf.WriteBytes(data, size);
     server_->Send(&conn_, buf);
-  } else if (HasPermission(addr.ipaddr())) {
+  } else if (!server_->enable_permission_checks_ ||
+             HasPermission(addr.ipaddr())) {
     // No channel, but a permission exists. Send as a data indication.
     TurnMessage msg;
     msg.SetType(TURN_DATA_INDICATION);
@@ -924,7 +928,8 @@ TurnServerAllocation::Permission::~Permission() {
 
 void TurnServerAllocation::Permission::Refresh() {
   thread_->Clear(this, MSG_ALLOCATION_TIMEOUT);
-  thread_->PostDelayed(kPermissionTimeout, this, MSG_ALLOCATION_TIMEOUT);
+  thread_->PostDelayed(RTC_FROM_HERE, kPermissionTimeout, this,
+                       MSG_ALLOCATION_TIMEOUT);
 }
 
 void TurnServerAllocation::Permission::OnMessage(rtc::Message* msg) {
@@ -945,7 +950,8 @@ TurnServerAllocation::Channel::~Channel() {
 
 void TurnServerAllocation::Channel::Refresh() {
   thread_->Clear(this, MSG_ALLOCATION_TIMEOUT);
-  thread_->PostDelayed(kChannelTimeout, this, MSG_ALLOCATION_TIMEOUT);
+  thread_->PostDelayed(RTC_FROM_HERE, kChannelTimeout, this,
+                       MSG_ALLOCATION_TIMEOUT);
 }
 
 void TurnServerAllocation::Channel::OnMessage(rtc::Message* msg) {

@@ -98,15 +98,13 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
                              int intent,
                              uint32_t dwSrcFormat = Icc_FORMAT_DEFAULT,
                              uint32_t dwDstFormat = Icc_FORMAT_DEFAULT) {
-  cmsHPROFILE srcProfile = NULL;
-  cmsHPROFILE dstProfile = NULL;
-  cmsHTRANSFORM hTransform = NULL;
-  CLcmsCmm* pCmm = NULL;
   nSrcComponents = 0;
-  srcProfile = cmsOpenProfileFromMem((void*)pSrcProfileData, dwSrcProfileSize);
-  if (!srcProfile) {
-    return NULL;
-  }
+  cmsHPROFILE srcProfile =
+      cmsOpenProfileFromMem((void*)pSrcProfileData, dwSrcProfileSize);
+  if (!srcProfile)
+    return nullptr;
+
+  cmsHPROFILE dstProfile;
   if (!pDstProfileData && dwDstProfileSize == 0 && nDstComponents == 3) {
     dstProfile = cmsCreate_sRGBProfile();
   } else {
@@ -115,7 +113,7 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
   }
   if (!dstProfile) {
     cmsCloseProfile(srcProfile);
-    return NULL;
+    return nullptr;
   }
   int srcFormat;
   FX_BOOL bLab = FALSE;
@@ -136,8 +134,10 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
   if (!CheckComponents(dstCS, nDstComponents, TRUE)) {
     cmsCloseProfile(srcProfile);
     cmsCloseProfile(dstProfile);
-    return NULL;
+    return nullptr;
   }
+
+  cmsHTRANSFORM hTransform = nullptr;
   switch (dstCS) {
     case cmsSigGrayData:
       hTransform = cmsCreateTransform(srcProfile, srcFormat, dstProfile,
@@ -158,9 +158,9 @@ void* IccLib_CreateTransform(const unsigned char* pSrcProfileData,
   if (!hTransform) {
     cmsCloseProfile(srcProfile);
     cmsCloseProfile(dstProfile);
-    return NULL;
+    return nullptr;
   }
-  pCmm = new CLcmsCmm;
+  CLcmsCmm* pCmm = new CLcmsCmm;
   pCmm->m_nSrcComponents = nSrcComponents;
   pCmm->m_nDstComponents = nDstComponents;
   pCmm->m_hTransform = hTransform;
@@ -174,8 +174,8 @@ void* IccLib_CreateTransform_sRGB(const unsigned char* pProfileData,
                                   uint32_t& nComponents,
                                   int32_t intent,
                                   uint32_t dwSrcFormat) {
-  return IccLib_CreateTransform(pProfileData, dwProfileSize, nComponents, NULL,
-                                0, 3, intent, dwSrcFormat);
+  return IccLib_CreateTransform(pProfileData, dwProfileSize, nComponents,
+                                nullptr, 0, 3, intent, dwSrcFormat);
 }
 void IccLib_DestroyTransform(void* pTransform) {
   if (!pTransform) {
@@ -241,11 +241,11 @@ void IccLib_TranslateImage(void* pTransform,
 void* CreateProfile_Gray(double gamma) {
   cmsCIExyY* D50 = (cmsCIExyY*)cmsD50_xyY();
   if (!cmsWhitePointFromTemp(D50, 6504)) {
-    return NULL;
+    return nullptr;
   }
-  cmsToneCurve* curve = cmsBuildGamma(NULL, gamma);
+  cmsToneCurve* curve = cmsBuildGamma(nullptr, gamma);
   if (!curve) {
-    return NULL;
+    return nullptr;
   }
   void* profile = cmsCreateGrayProfile(D50, curve);
   cmsFreeToneCurve(curve);
@@ -365,7 +365,7 @@ class CFX_IccProfileCache {
   void Purge();
 };
 CFX_IccProfileCache::CFX_IccProfileCache() {
-  m_pProfile = NULL;
+  m_pProfile = nullptr;
   m_dwRate = 1;
 }
 CFX_IccProfileCache::~CFX_IccProfileCache() {
@@ -376,7 +376,7 @@ CFX_IccProfileCache::~CFX_IccProfileCache() {
 void CFX_IccProfileCache::Purge() {}
 class CFX_IccTransformCache {
  public:
-  CFX_IccTransformCache(CLcmsCmm* pCmm = NULL);
+  CFX_IccTransformCache(CLcmsCmm* pCmm = nullptr);
   ~CFX_IccTransformCache();
   void* m_pIccTransform;
   uint32_t m_dwRate;
@@ -386,7 +386,7 @@ class CFX_IccTransformCache {
   void Purge();
 };
 CFX_IccTransformCache::CFX_IccTransformCache(CLcmsCmm* pCmm) {
-  m_pIccTransform = NULL;
+  m_pIccTransform = nullptr;
   m_dwRate = 1;
   m_pCmm = pCmm;
 }
@@ -409,14 +409,14 @@ CFX_ByteStringKey& CFX_ByteStringKey::operator<<(uint32_t i) {
 void* CCodec_IccModule::CreateProfile(CCodec_IccModule::IccParam* pIccParam,
                                       Icc_CLASS ic,
                                       CFX_BinaryBuf* pTransformKey) {
-  CFX_IccProfileCache* pCache = NULL;
+  CFX_IccProfileCache* pCache = nullptr;
   CFX_ByteStringKey key;
   CFX_ByteString text;
   key << pIccParam->ColorSpace << (pIccParam->dwProfileType | ic << 8);
   uint8_t ID[16];
   switch (pIccParam->dwProfileType) {
     case Icc_PARAMTYPE_NONE:
-      return NULL;
+      return nullptr;
     case Icc_PARAMTYPE_BUFFER:
       MD5ComputeID(pIccParam->pProfileData, pIccParam->dwProfileSize, ID);
       break;
@@ -476,30 +476,30 @@ void* CCodec_IccModule::CreateTransform(
     uint32_t dwFlag,
     uint32_t dwPrfIntent,
     uint32_t dwPrfFlag) {
-  CLcmsCmm* pCmm = NULL;
+  CLcmsCmm* pCmm = nullptr;
   ASSERT(pInputParam && pOutputParam);
   CFX_ByteStringKey key;
   void* pInputProfile = CreateProfile(pInputParam, Icc_CLASS_INPUT, &key);
   if (!pInputProfile) {
-    return NULL;
+    return nullptr;
   }
   void* pOutputProfile = CreateProfile(pOutputParam, Icc_CLASS_OUTPUT, &key);
   if (!pOutputProfile) {
-    return NULL;
+    return nullptr;
   }
   uint32_t dwInputProfileType =
       TransferProfileType(pInputProfile, pInputParam->dwFormat);
   uint32_t dwOutputProfileType =
       TransferProfileType(pOutputProfile, pOutputParam->dwFormat);
   if (dwInputProfileType == 0 || dwOutputProfileType == 0) {
-    return NULL;
+    return nullptr;
   }
-  void* pProofProfile = NULL;
+  void* pProofProfile = nullptr;
   if (pProofParam) {
     pProofProfile = CreateProfile(pProofParam, Icc_CLASS_PROOF, &key);
   }
   key << dwInputProfileType << dwOutputProfileType << dwIntent << dwFlag
-      << (pProofProfile != NULL) << dwPrfIntent << dwPrfFlag;
+      << !!pProofProfile << dwPrfIntent << dwPrfFlag;
   CFX_ByteString TransformKey(key.GetBuffer(), key.GetSize());
   CFX_IccTransformCache* pTransformCache;
   auto it = m_MapTranform.find(TransformKey);
@@ -526,6 +526,9 @@ void* CCodec_IccModule::CreateTransform(
   }
   return pTransformCache->m_pCmm;
 }
+
+CCodec_IccModule::CCodec_IccModule() : m_nComponents(0) {}
+
 CCodec_IccModule::~CCodec_IccModule() {
   for (const auto& pair : m_MapProfile) {
     delete pair.second;
@@ -1974,13 +1977,31 @@ void AdobeCMYK_to_sRGB(FX_FLOAT c,
                        FX_FLOAT& R,
                        FX_FLOAT& G,
                        FX_FLOAT& B) {
-  uint8_t c1 = FXSYS_round(c * 255);
-  uint8_t m1 = FXSYS_round(m * 255);
-  uint8_t y1 = FXSYS_round(y * 255);
-  uint8_t k1 = FXSYS_round(k * 255);
+  // Convert to uint8_t with round-to-nearest. Avoid using FXSYS_round because
+  // it is incredibly expensive with VC++ (tested on VC++ 2015) because round()
+  // is very expensive.
+  // Adding 0.5f and truncating can round the wrong direction in some edge
+  // cases but these do not matter in this context. For instance, the float that
+  // is one ULP (unit in the last place) before 0.5 should round to zero but
+  // this will round it to one. These edge cases are never hit in this function
+  // due to the very limited precision of the input integers.
+  // This method also doesn't handle negative or extremely large numbers, but
+  // those are not needed here.
+  uint8_t c1 = int(c * 255.f + 0.5f);
+  uint8_t m1 = int(m * 255.f + 0.5f);
+  uint8_t y1 = int(y * 255.f + 0.5f);
+  uint8_t k1 = int(k * 255.f + 0.5f);
+
+  ASSERT(c1 == FXSYS_round(c * 255));
+  ASSERT(m1 == FXSYS_round(m * 255));
+  ASSERT(y1 == FXSYS_round(y * 255));
+  ASSERT(k1 == FXSYS_round(k * 255));
+
   uint8_t r, g, b;
   AdobeCMYK_to_sRGB1(c1, m1, y1, k1, r, g, b);
-  R = 1.0f * r / 255;
-  G = 1.0f * g / 255;
-  B = 1.0f * b / 255;
+  // Multiply by a constant rather than dividing because division is much
+  // more expensive.
+  R = r * (1.0f / 255);
+  G = g * (1.0f / 255);
+  B = b * (1.0f / 255);
 }

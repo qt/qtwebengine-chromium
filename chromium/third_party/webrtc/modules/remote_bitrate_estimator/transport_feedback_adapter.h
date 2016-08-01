@@ -38,7 +38,9 @@ class TransportFeedbackAdapter : public TransportFeedbackObserver,
   }
 
   // Implements TransportFeedbackObserver.
-  void AddPacket(uint16_t sequence_number, size_t length) override;
+  void AddPacket(uint16_t sequence_number,
+                 size_t length,
+                 int probe_cluster_id) override;
   void OnSentPacket(uint16_t sequence_number, int64_t send_time_ms);
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override;
 

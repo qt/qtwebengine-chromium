@@ -31,6 +31,7 @@
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
 #include "webrtc/modules/video_coding/include/video_coding_defines.h"
 #include "webrtc/system_wrappers/include/metrics.h"
+#include "webrtc/system_wrappers/include/metrics_default.h"
 #include "webrtc/system_wrappers/include/sleep.h"
 #include "webrtc/test/call_test.h"
 #include "webrtc/test/direct_transport.h"
@@ -39,7 +40,6 @@
 #include "webrtc/test/fake_encoder.h"
 #include "webrtc/test/frame_generator.h"
 #include "webrtc/test/frame_generator_capturer.h"
-#include "webrtc/test/histogram.h"
 #include "webrtc/test/null_transport.h"
 #include "webrtc/test/rtcp_packet_parser.h"
 #include "webrtc/test/rtp_rtcp_observer.h"
@@ -584,8 +584,7 @@ TEST_F(EndToEndTest, CanReceiveFec) {
   RunBaseTest(&test);
 }
 
-// Flacky on all platforms. See webrtc:4328.
-TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
+TEST_F(EndToEndTest, ReceivedFecPacketsNotNacked) {
   class FecNackObserver : public test::EndToEndTest {
    public:
     FecNackObserver()
@@ -593,7 +592,9 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
           state_(kFirstPacket),
           fec_sequence_number_(0),
           has_last_sequence_number_(false),
-          last_sequence_number_(0) {}
+          last_sequence_number_(0),
+          encoder_(VideoEncoder::Create(VideoEncoder::EncoderType::kVp8)),
+          decoder_(VP8Decoder::Create()) {}
 
    private:
     Action OnSendRtp(const uint8_t* packet, size_t length) override {
@@ -636,6 +637,20 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
           if (!fec_packet)
             return DROP_PACKET;
           fec_sequence_number_ = header.sequenceNumber;
+          state_ = kDropOneMediaPacket;
+          break;
+        case kDropOneMediaPacket:
+          if (fec_packet)
+            return DROP_PACKET;
+          state_ = kPassOneMediaPacket;
+          return DROP_PACKET;
+          break;
+        case kPassOneMediaPacket:
+          if (fec_packet)
+            return DROP_PACKET;
+          // Pass one media packet after dropped packet after last FEC,
+          // otherwise receiver might never see a seq_no after
+          // |fec_sequence_number_|
           state_ = kVerifyFecPacketNotInNackList;
           break;
         case kVerifyFecPacketNotInNackList:
@@ -653,10 +668,11 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
         test::RtcpPacketParser rtcp_parser;
         rtcp_parser.Parse(packet, length);
         std::vector<uint16_t> nacks = rtcp_parser.nack_item()->last_nack_list();
+        EXPECT_TRUE(std::find(nacks.begin(), nacks.end(),
+                              fec_sequence_number_) == nacks.end())
+            << "Got nack for FEC packet";
         if (!nacks.empty() &&
             IsNewerSequenceNumber(nacks.back(), fec_sequence_number_)) {
-          EXPECT_TRUE(std::find(
-              nacks.begin(), nacks.end(), fec_sequence_number_) == nacks.end());
           observation_complete_.Set();
         }
       }
@@ -690,9 +706,24 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
       send_config->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
       send_config->rtp.fec.red_payload_type = kRedPayloadType;
       send_config->rtp.fec.ulpfec_payload_type = kUlpfecPayloadType;
+      // Set codec to VP8, otherwise NACK/FEC hybrid will be disabled.
+      send_config->encoder_settings.encoder = encoder_.get();
+      send_config->encoder_settings.payload_name = "VP8";
+      send_config->encoder_settings.payload_type = kFakeVideoSendPayloadType;
+      encoder_config->streams[0].min_bitrate_bps = 50000;
+      encoder_config->streams[0].max_bitrate_bps =
+          encoder_config->streams[0].target_bitrate_bps = 2000000;
+
       (*receive_configs)[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
       (*receive_configs)[0].rtp.fec.red_payload_type = kRedPayloadType;
       (*receive_configs)[0].rtp.fec.ulpfec_payload_type = kUlpfecPayloadType;
+
+      (*receive_configs)[0].decoders.resize(1);
+      (*receive_configs)[0].decoders[0].payload_type =
+          send_config->encoder_settings.payload_type;
+      (*receive_configs)[0].decoders[0].payload_name =
+          send_config->encoder_settings.payload_name;
+      (*receive_configs)[0].decoders[0].decoder = decoder_.get();
     }
 
     void PerformTest() override {
@@ -704,6 +735,8 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
       kFirstPacket,
       kDropEveryOtherPacketUntilFec,
       kDropAllMediaPacketsUntilFec,
+      kDropOneMediaPacket,
+      kPassOneMediaPacket,
       kVerifyFecPacketNotInNackList,
     } state_;
 
@@ -711,6 +744,8 @@ TEST_F(EndToEndTest, DISABLED_ReceivedFecPacketsNotNacked) {
     uint16_t fec_sequence_number_ GUARDED_BY(&crit_);
     bool has_last_sequence_number_;
     uint16_t last_sequence_number_;
+    std::unique_ptr<webrtc::VideoEncoder> encoder_;
+    std::unique_ptr<webrtc::VideoDecoder> decoder_;
   } test;
 
   RunBaseTest(&test);
@@ -1179,7 +1214,7 @@ class MultiStreamTest {
       UpdateReceiveConfig(i, &receive_config);
 
       receive_streams[i] =
-          receiver_call->CreateVideoReceiveStream(receive_config);
+          receiver_call->CreateVideoReceiveStream(std::move(receive_config));
       receive_streams[i]->Start();
 
       frame_generators[i] = test::FrameGeneratorCapturer::Create(
@@ -1432,8 +1467,8 @@ TEST_F(EndToEndTest, AssignsTransportSequenceNumbers) {
         VideoEncoderConfig* encoder_config,
         test::FrameGeneratorCapturer** frame_generator) override {
       send_config->rtp.extensions.clear();
-      send_config->rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+      send_config->rtp.extensions.push_back(RtpExtension(
+          RtpExtension::kTransportSequenceNumberUri, kExtensionId));
 
       // Force some padding to be sent.
       const int kPaddingBitrateBps = 50000;
@@ -1459,8 +1494,8 @@ TEST_F(EndToEndTest, AssignsTransportSequenceNumbers) {
         VideoReceiveStream::Config* receive_config) override {
       receive_config->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
       receive_config->rtp.extensions.clear();
-      receive_config->rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+      receive_config->rtp.extensions.push_back(RtpExtension(
+          RtpExtension::kTransportSequenceNumberUri, kExtensionId));
     }
 
     test::DirectTransport* CreateSendTransport(Call* sender_call) override {
@@ -1539,7 +1574,7 @@ class TransportFeedbackTester : public test::EndToEndTest {
       VideoEncoderConfig* encoder_config) override {
     send_config->rtp.extensions.clear();
     send_config->rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+        RtpExtension(RtpExtension::kTransportSequenceNumberUri, kExtensionId));
     (*receive_configs)[0].rtp.extensions = send_config->rtp.extensions;
     (*receive_configs)[0].rtp.transport_cc = feedback_enabled_;
   }
@@ -1549,7 +1584,7 @@ class TransportFeedbackTester : public test::EndToEndTest {
       std::vector<AudioReceiveStream::Config>* receive_configs) override {
     send_config->rtp.extensions.clear();
     send_config->rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+        RtpExtension(RtpExtension::kTransportSequenceNumberUri, kExtensionId));
     (*receive_configs)[0].rtp.extensions.clear();
     (*receive_configs)[0].rtp.extensions = send_config->rtp.extensions;
     (*receive_configs)[0].rtp.transport_cc = feedback_enabled_;
@@ -1787,7 +1822,7 @@ TEST_F(EndToEndTest, RembWithSendSideBwe) {
       ASSERT_EQ(1u, send_config->rtp.ssrcs.size());
       send_config->rtp.extensions.clear();
       send_config->rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumber,
+          RtpExtension(RtpExtension::kTransportSequenceNumberUri,
                        test::kTransportSequenceNumberExtensionId));
       sender_ssrc_ = send_config->rtp.ssrcs[0];
 
@@ -1979,23 +2014,21 @@ TEST_F(EndToEndTest, VerifyNackStats) {
     int64_t start_runtime_ms_;
   } test;
 
-  test::ClearHistograms();
+  metrics::Reset();
   RunBaseTest(&test);
 
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.UniqueNackRequestsSentInPercent"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.UniqueNackRequestsReceivedInPercent"));
-  EXPECT_GT(test::LastHistogramSample(
-      "WebRTC.Video.NackPacketsSentPerMinute"), 0);
-  EXPECT_GT(test::LastHistogramSample(
-      "WebRTC.Video.NackPacketsReceivedPerMinute"), 0);
+  EXPECT_EQ(
+      1, metrics::NumSamples("WebRTC.Video.UniqueNackRequestsSentInPercent"));
+  EXPECT_EQ(1, metrics::NumSamples(
+                   "WebRTC.Video.UniqueNackRequestsReceivedInPercent"));
+  EXPECT_GT(metrics::MinSample("WebRTC.Video.NackPacketsSentPerMinute"), 0);
 }
 
 void EndToEndTest::VerifyHistogramStats(bool use_rtx,
                                         bool use_red,
                                         bool screenshare) {
-  class StatsObserver : public test::EndToEndTest {
+  class StatsObserver : public test::EndToEndTest,
+                        public rtc::VideoSinkInterface<VideoFrame> {
    public:
     StatsObserver(bool use_rtx, bool use_red, bool screenshare)
         : EndToEndTest(kLongTimeoutMs),
@@ -2011,6 +2044,8 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
           start_runtime_ms_(-1) {}
 
    private:
+    void OnFrame(const VideoFrame& video_frame) override {}
+
     Action OnSendRtp(const uint8_t* packet, size_t length) override {
       if (MinMetricRunTimePassed())
         observation_complete_.Set();
@@ -2035,6 +2070,7 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
       // NACK
       send_config->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
       (*receive_configs)[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
+      (*receive_configs)[0].renderer = this;
       // FEC
       if (use_red_) {
         send_config->rtp.fec.ulpfec_payload_type = kUlpfecPayloadType;
@@ -2077,7 +2113,7 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
     int64_t start_runtime_ms_;
   } test(use_rtx, use_red, screenshare);
 
-  test::ClearHistograms();
+  metrics::Reset();
   RunBaseTest(&test);
 
   // Delete the call for Call stats to be reported.
@@ -2088,110 +2124,99 @@ void EndToEndTest::VerifyHistogramStats(bool use_rtx,
       screenshare ? "WebRTC.Video.Screenshare." : "WebRTC.Video.";
 
   // Verify that stats have been updated once.
-  EXPECT_EQ(
-      1, test::NumHistogramSamples("WebRTC.Call.VideoBitrateReceivedInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.VideoBitrateReceivedInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.RtcpBitrateReceivedInBps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.BitrateReceivedInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.EstimatedSendBitrateInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Call.PacerBitrateInKbps"));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.NackPacketsSentPerMinute"));
   EXPECT_EQ(1,
-            test::NumHistogramSamples("WebRTC.Call.RtcpBitrateReceivedInBps"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Call.BitrateReceivedInKbps"));
-  EXPECT_EQ(
-      1, test::NumHistogramSamples("WebRTC.Call.EstimatedSendBitrateInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Call.PacerBitrateInKbps"));
-
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.NackPacketsSentPerMinute"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix +
-                                         "NackPacketsReceivedPerMinute"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.FirPacketsSentPerMinute"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix +
-                                         "FirPacketsReceivedPerMinute"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.PliPacketsSentPerMinute"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix +
-                                         "PliPacketsReceivedPerMinute"));
-
-  EXPECT_EQ(
-      1, test::NumHistogramSamples(video_prefix + "KeyFramesSentInPermille"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.KeyFramesReceivedInPermille"));
-
-  EXPECT_EQ(
-      1, test::NumHistogramSamples(video_prefix + "SentPacketsLostInPercent"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.ReceivedPacketsLostInPercent"));
-
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "InputWidthInPixels"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "InputHeightInPixels"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "SentWidthInPixels"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "SentHeightInPixels"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.ReceivedWidthInPixels"));
+            metrics::NumSamples(video_prefix + "NackPacketsReceivedPerMinute"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.FirPacketsSentPerMinute"));
   EXPECT_EQ(1,
-            test::NumHistogramSamples("WebRTC.Video.ReceivedHeightInPixels"));
-
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].width),
-            test::LastHistogramSample(video_prefix + "InputWidthInPixels"));
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].height),
-            test::LastHistogramSample(video_prefix + "InputHeightInPixels"));
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].width),
-            test::LastHistogramSample(video_prefix + "SentWidthInPixels"));
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].height),
-            test::LastHistogramSample(video_prefix + "SentHeightInPixels"));
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].width),
-            test::LastHistogramSample("WebRTC.Video.ReceivedWidthInPixels"));
-  EXPECT_EQ(static_cast<int>(video_encoder_config_.streams[0].height),
-            test::LastHistogramSample("WebRTC.Video.ReceivedHeightInPixels"));
-
+            metrics::NumSamples(video_prefix + "FirPacketsReceivedPerMinute"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.PliPacketsSentPerMinute"));
   EXPECT_EQ(1,
-            test::NumHistogramSamples(video_prefix + "InputFramesPerSecond"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "SentFramesPerSecond"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.DecodedFramesPerSecond"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.RenderFramesPerSecond"));
+            metrics::NumSamples(video_prefix + "PliPacketsReceivedPerMinute"));
 
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.JitterBufferDelayInMs"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.TargetDelayInMs"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.CurrentDelayInMs"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.OnewayDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "KeyFramesSentInPermille"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.KeyFramesReceivedInPermille"));
+
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SentPacketsLostInPercent"));
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.ReceivedPacketsLostInPercent"));
+
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "InputWidthInPixels"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "InputHeightInPixels"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SentWidthInPixels"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SentHeightInPixels"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.ReceivedWidthInPixels"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.ReceivedHeightInPixels"));
+
+  EXPECT_EQ(1, metrics::NumEvents(
+                   video_prefix + "InputWidthInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].width)));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   video_prefix + "InputHeightInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].height)));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   video_prefix + "SentWidthInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].width)));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   video_prefix + "SentHeightInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].height)));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.ReceivedWidthInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].width)));
+  EXPECT_EQ(1, metrics::NumEvents(
+                   "WebRTC.Video.ReceivedHeightInPixels",
+                   static_cast<int>(video_encoder_config_.streams[0].height)));
+
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "InputFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SentFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.DecodedFramesPerSecond"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.RenderFramesPerSecond"));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.JitterBufferDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.TargetDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.CurrentDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.OnewayDelayInMs"));
+
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.RenderSqrtPixelsPerSecond"));
+
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "EncodeTimeInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.DecodeTimeInMs"));
+
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "BitrateSentInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.BitrateReceivedInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "MediaBitrateSentInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.MediaBitrateReceivedInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "PaddingBitrateSentInKbps"));
+  EXPECT_EQ(1,
+            metrics::NumSamples("WebRTC.Video.PaddingBitrateReceivedInKbps"));
   EXPECT_EQ(
-      1, test::NumHistogramSamples("WebRTC.Video.RenderSqrtPixelsPerSecond"));
+      1, metrics::NumSamples(video_prefix + "RetransmittedBitrateSentInKbps"));
+  EXPECT_EQ(1, metrics::NumSamples(
+                   "WebRTC.Video.RetransmittedBitrateReceivedInKbps"));
 
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "EncodeTimeInMs"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.DecodeTimeInMs"));
-
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "BitrateSentInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.BitrateReceivedInKbps"));
-  EXPECT_EQ(1,
-            test::NumHistogramSamples(video_prefix + "MediaBitrateSentInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.MediaBitrateReceivedInKbps"));
-  EXPECT_EQ(
-      1, test::NumHistogramSamples(video_prefix + "PaddingBitrateSentInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.PaddingBitrateReceivedInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix +
-                                         "RetransmittedBitrateSentInKbps"));
-  EXPECT_EQ(1, test::NumHistogramSamples(
-      "WebRTC.Video.RetransmittedBitrateReceivedInKbps"));
-
-  EXPECT_EQ(1, test::NumHistogramSamples(video_prefix + "SendSideDelayInMs"));
-  EXPECT_EQ(1,
-            test::NumHistogramSamples(video_prefix + "SendSideDelayMaxInMs"));
-  EXPECT_EQ(1, test::NumHistogramSamples("WebRTC.Video.SendDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples("WebRTC.Video.SendDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SendSideDelayInMs"));
+  EXPECT_EQ(1, metrics::NumSamples(video_prefix + "SendSideDelayMaxInMs"));
 
   int num_rtx_samples = use_rtx ? 1 : 0;
-  EXPECT_EQ(num_rtx_samples, test::NumHistogramSamples(
-      "WebRTC.Video.RtxBitrateSentInKbps"));
-  EXPECT_EQ(num_rtx_samples, test::NumHistogramSamples(
-      "WebRTC.Video.RtxBitrateReceivedInKbps"));
+  EXPECT_EQ(num_rtx_samples,
+            metrics::NumSamples("WebRTC.Video.RtxBitrateSentInKbps"));
+  EXPECT_EQ(num_rtx_samples,
+            metrics::NumSamples("WebRTC.Video.RtxBitrateReceivedInKbps"));
 
   int num_red_samples = use_red ? 1 : 0;
-  EXPECT_EQ(num_red_samples, test::NumHistogramSamples(
-      "WebRTC.Video.FecBitrateSentInKbps"));
-  EXPECT_EQ(num_red_samples, test::NumHistogramSamples(
-      "WebRTC.Video.FecBitrateReceivedInKbps"));
-  EXPECT_EQ(num_red_samples, test::NumHistogramSamples(
-      "WebRTC.Video.ReceivedFecPacketsInPercent"));
+  EXPECT_EQ(num_red_samples,
+            metrics::NumSamples("WebRTC.Video.FecBitrateSentInKbps"));
+  EXPECT_EQ(num_red_samples,
+            metrics::NumSamples("WebRTC.Video.FecBitrateReceivedInKbps"));
+  EXPECT_EQ(num_red_samples,
+            metrics::NumSamples("WebRTC.Video.ReceivedFecPacketsInPercent"));
 }
 
 TEST_F(EndToEndTest, VerifyHistogramStatsWithRtx) {
@@ -2426,6 +2451,7 @@ TEST_F(EndToEndTest, ReportsSetEncoderRates) {
         std::vector<VideoReceiveStream::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
       send_config->encoder_settings.encoder = this;
+      RTC_DCHECK_EQ(1u, encoder_config->streams.size());
     }
 
     int32_t SetRates(uint32_t new_target_bitrate, uint32_t framerate) override {
@@ -2469,6 +2495,15 @@ TEST_F(EndToEndTest, ReportsSetEncoderRates) {
 TEST_F(EndToEndTest, GetStats) {
   static const int kStartBitrateBps = 3000000;
   static const int kExpectedRenderDelayMs = 20;
+
+  class ReceiveStreamRenderer : public rtc::VideoSinkInterface<VideoFrame> {
+   public:
+    ReceiveStreamRenderer() {}
+
+   private:
+    void OnFrame(const VideoFrame& video_frame) override {}
+  };
+
   class StatsObserver : public test::EndToEndTest,
                         public rtc::VideoSinkInterface<VideoFrame> {
    public:
@@ -2669,6 +2704,7 @@ TEST_F(EndToEndTest, GetStats) {
         expected_receive_ssrcs_.push_back(
             (*receive_configs)[i].rtp.remote_ssrc);
         (*receive_configs)[i].render_delay_ms = kExpectedRenderDelayMs;
+        (*receive_configs)[i].renderer = &receive_stream_renderer_;
       }
       // Use a delayed encoder to make sure we see CpuOveruseMetrics stats that
       // are non-zero.
@@ -2738,6 +2774,7 @@ TEST_F(EndToEndTest, GetStats) {
     std::string expected_cname_;
 
     rtc::Event check_stats_event_;
+    ReceiveStreamRenderer receive_stream_renderer_;
   } test;
 
   RunBaseTest(&test);
@@ -2931,6 +2968,7 @@ void EndToEndTest::TestRtpStatePreservation(bool use_rtx) {
       static const int32_t kMaxTimestampGap = kDefaultTimeoutMs * 90;
       auto timestamp_it = last_observed_timestamp_.find(ssrc);
       if (timestamp_it == last_observed_timestamp_.end()) {
+        EXPECT_FALSE(only_padding);
         last_observed_timestamp_[ssrc] = timestamp;
       } else {
         // Verify timestamps are reasonably close.
@@ -3059,7 +3097,9 @@ TEST_F(EndToEndTest, RestartingSendStreamPreservesRtpState) {
   TestRtpStatePreservation(false);
 }
 
-TEST_F(EndToEndTest, RestartingSendStreamPreservesRtpStatesWithRtx) {
+// This test is flaky. See:
+// https://bugs.chromium.org/p/webrtc/issues/detail?id=4332
+TEST_F(EndToEndTest, DISABLED_RestartingSendStreamPreservesRtpStatesWithRtx) {
   TestRtpStatePreservation(true);
 }
 
@@ -3466,8 +3506,8 @@ TEST_F(EndToEndTest, TransportSeqNumOnAudioAndVideo) {
         std::vector<VideoReceiveStream::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
       send_config->rtp.extensions.clear();
-      send_config->rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+      send_config->rtp.extensions.push_back(RtpExtension(
+          RtpExtension::kTransportSequenceNumberUri, kExtensionId));
       (*receive_configs)[0].rtp.extensions = send_config->rtp.extensions;
     }
 
@@ -3475,8 +3515,8 @@ TEST_F(EndToEndTest, TransportSeqNumOnAudioAndVideo) {
         AudioSendStream::Config* send_config,
         std::vector<AudioReceiveStream::Config>* receive_configs) override {
       send_config->rtp.extensions.clear();
-      send_config->rtp.extensions.push_back(
-          RtpExtension(RtpExtension::kTransportSequenceNumber, kExtensionId));
+      send_config->rtp.extensions.push_back(RtpExtension(
+          RtpExtension::kTransportSequenceNumberUri, kExtensionId));
       (*receive_configs)[0].rtp.extensions.clear();
       (*receive_configs)[0].rtp.extensions = send_config->rtp.extensions;
     }

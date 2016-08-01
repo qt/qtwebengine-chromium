@@ -122,8 +122,6 @@ struct Register {
     Register r = {code};
     return r;
   }
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -147,6 +145,8 @@ GENERAL_REGISTERS(DECLARE_REGISTER)
 #undef DECLARE_REGISTER
 const Register no_reg = {Register::kCode_no_reg};
 
+static const bool kSimpleFPAliasing = true;
+
 struct X87Register {
   enum Code {
 #define REGISTER_CODE(R) kCode_##R,
@@ -164,7 +164,6 @@ struct X87Register {
     return result;
   }
 
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kMaxNumRegisters; }
 
   int code() const {
@@ -173,8 +172,6 @@ struct X87Register {
   }
 
   bool is(X87Register reg) const { return reg_code == reg.reg_code; }
-
-  const char* ToString();
 
   int reg_code;
 };
@@ -653,6 +650,14 @@ class Assembler : public AssemblerBase {
   void xchg(Register dst, const Operand& src);
   void xchg_b(Register reg, const Operand& op);
   void xchg_w(Register reg, const Operand& op);
+
+  // Lock prefix
+  void lock();
+
+  // CompareExchange
+  void cmpxchg(const Operand& dst, Register src);
+  void cmpxchg_b(const Operand& dst, Register src);
+  void cmpxchg_w(const Operand& dst, Register src);
 
   // Arithmetics
   void adc(Register dst, int32_t imm32);

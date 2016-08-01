@@ -17,7 +17,6 @@ namespace v8 {
 namespace internal {
 namespace interpreter {
 
-
 // Scoped class tracking context objects created by the visitor. Represents
 // mutations of the context chain within the function body, allowing pushing and
 // popping of the current {context_register} during visitation.
@@ -88,7 +87,6 @@ class BytecodeGenerator::ContextScope BASE_EMBEDDED {
   bool should_pop_context_;
 };
 
-
 // Scoped class for tracking control statements entered by the
 // visitor. The pattern derives AstGraphBuilder::ControlScope.
 class BytecodeGenerator::ControlScope BASE_EMBEDDED {
@@ -123,7 +121,6 @@ class BytecodeGenerator::ControlScope BASE_EMBEDDED {
 
   DISALLOW_COPY_AND_ASSIGN(ControlScope);
 };
-
 
 // Helper class for a try-finally control scope. It can record intercepted
 // control-flow commands that cause entry into a finally-block, and re-apply
@@ -203,7 +200,6 @@ class BytecodeGenerator::ControlScope::DeferredCommands final {
   Register result_register_;
 };
 
-
 // Scoped class for dealing with control flow reaching the function level.
 class BytecodeGenerator::ControlScopeForTopLevel final
     : public BytecodeGenerator::ControlScope {
@@ -227,7 +223,6 @@ class BytecodeGenerator::ControlScopeForTopLevel final
     return false;
   }
 };
-
 
 // Scoped class for enabling break inside blocks and switch blocks.
 class BytecodeGenerator::ControlScopeForBreakable final
@@ -259,7 +254,6 @@ class BytecodeGenerator::ControlScopeForBreakable final
   Statement* statement_;
   BreakableControlFlowBuilder* control_builder_;
 };
-
 
 // Scoped class for enabling 'break' and 'continue' in iteration
 // constructs, e.g. do...while, while..., for...
@@ -295,7 +289,6 @@ class BytecodeGenerator::ControlScopeForIteration final
   LoopBuilder* loop_builder_;
 };
 
-
 // Scoped class for enabling 'throw' in try-catch constructs.
 class BytecodeGenerator::ControlScopeForTryCatch final
     : public BytecodeGenerator::ControlScope {
@@ -323,7 +316,6 @@ class BytecodeGenerator::ControlScopeForTryCatch final
     return false;
   }
 };
-
 
 // Scoped class for enabling control flow through try-finally constructs.
 class BytecodeGenerator::ControlScopeForTryFinally final
@@ -360,7 +352,6 @@ class BytecodeGenerator::ControlScopeForTryFinally final
   DeferredCommands* commands_;
 };
 
-
 void BytecodeGenerator::ControlScope::PerformCommand(Command command,
                                                      Statement* statement) {
   ControlScope* current = this;
@@ -382,7 +373,6 @@ void BytecodeGenerator::ControlScope::PerformCommand(Command command,
   } while (current != nullptr);
   UNREACHABLE();
 }
-
 
 class BytecodeGenerator::RegisterAllocationScope {
  public:
@@ -441,7 +431,6 @@ class BytecodeGenerator::RegisterAllocationScope {
   DISALLOW_COPY_AND_ASSIGN(RegisterAllocationScope);
 };
 
-
 // Scoped base class for determining where the result of an expression
 // is stored.
 class BytecodeGenerator::ExpressionResultScope {
@@ -489,7 +478,6 @@ class BytecodeGenerator::ExpressionResultScope {
   DISALLOW_COPY_AND_ASSIGN(ExpressionResultScope);
 };
 
-
 // Scoped class used when the result of the current expression is not
 // expected to produce a result.
 class BytecodeGenerator::EffectResultScope final
@@ -503,7 +491,6 @@ class BytecodeGenerator::EffectResultScope final
   virtual void SetResultInAccumulator() {}
   virtual void SetResultInRegister(Register reg) {}
 };
-
 
 // Scoped class used when the result of the current expression to be
 // evaluated should go into the interpreter's accumulator register.
@@ -520,7 +507,6 @@ class BytecodeGenerator::AccumulatorResultScope final
     set_result_identified();
   }
 };
-
 
 // Scoped class used when the result of the current expression to be
 // evaluated should go into an interpreter register.
@@ -585,7 +571,7 @@ Handle<BytecodeArray> BytecodeGenerator::MakeBytecode() {
 
   RegisterAllocationScope register_scope(this);
 
-  if (IsGeneratorFunction(info()->literal()->kind())) {
+  if (IsResumableFunction(info()->literal()->kind())) {
     generator_state_ = register_allocator()->NewRegister();
     VisitGeneratorPrologue();
   }
@@ -612,7 +598,6 @@ Handle<BytecodeArray> BytecodeGenerator::MakeBytecode() {
   builder()->EnsureReturn();
   return builder()->ToBytecodeArray();
 }
-
 
 void BytecodeGenerator::MakeBytecodeBody() {
   // Build the arguments object if it is used.
@@ -656,13 +641,7 @@ void BytecodeGenerator::BuildIndexedJump(Register index, size_t start_index,
         .JumpIfTrue(&(targets[i]));
   }
 
-  RegisterAllocationScope register_scope(this);
-  Register reason = register_allocator()->NewRegister();
-  BailoutReason bailout_reason = BailoutReason::kInvalidJumpTableIndex;
-  builder()
-      ->LoadLiteral(Smi::FromInt(static_cast<int>(bailout_reason)))
-      .StoreAccumulatorInRegister(reason)
-      .CallRuntime(Runtime::kAbort, reason, 1);
+  BuildAbort(BailoutReason::kInvalidJumpTableIndex);
 }
 
 void BytecodeGenerator::VisitIterationHeader(IterationStatement* stmt,
@@ -719,8 +698,8 @@ void BytecodeGenerator::VisitGeneratorPrologue() {
 
   builder()->Bind(&regular_call);
   // This is a regular call. Fall through to the ordinary function prologue,
-  // after which we will run into the generator object creation and the initial
-  // yield (both inserted by the parser).
+  // after which we will run into the generator object creation and other extra
+  // code inserted by the parser.
 }
 
 void BytecodeGenerator::VisitBlock(Block* stmt) {
@@ -734,7 +713,6 @@ void BytecodeGenerator::VisitBlock(Block* stmt) {
   }
 }
 
-
 void BytecodeGenerator::VisitBlockDeclarationsAndStatements(Block* stmt) {
   BlockBuilder block_builder(builder());
   ControlScopeForBreakable execution_control(this, stmt, &block_builder);
@@ -744,7 +722,6 @@ void BytecodeGenerator::VisitBlockDeclarationsAndStatements(Block* stmt) {
   VisitStatements(stmt->statements());
   if (stmt->labels() != nullptr) block_builder.EndBlock();
 }
-
 
 void BytecodeGenerator::VisitVariableDeclaration(VariableDeclaration* decl) {
   Variable* variable = decl->proxy()->var();
@@ -780,33 +757,19 @@ void BytecodeGenerator::VisitVariableDeclaration(VariableDeclaration* decl) {
       }
       break;
     case VariableLocation::LOOKUP: {
-      DCHECK(IsDeclaredVariableMode(mode));
+      DCHECK_EQ(VAR, mode);
+      DCHECK(!hole_init);
 
-      register_allocator()->PrepareForConsecutiveAllocations(3);
-      Register name = register_allocator()->NextConsecutiveRegister();
-      Register init_value = register_allocator()->NextConsecutiveRegister();
-      Register attributes = register_allocator()->NextConsecutiveRegister();
+      Register name = register_allocator()->NewRegister();
 
-      builder()->LoadLiteral(variable->name()).StoreAccumulatorInRegister(name);
-      if (hole_init) {
-        builder()->LoadTheHole().StoreAccumulatorInRegister(init_value);
-      } else {
-        // For variables, we must not use an initial value (such as 'undefined')
-        // because we may have a (legal) redeclaration and we must not destroy
-        // the current value.
-        builder()
-            ->LoadLiteral(Smi::FromInt(0))
-            .StoreAccumulatorInRegister(init_value);
-      }
       builder()
-          ->LoadLiteral(Smi::FromInt(variable->DeclarationPropertyAttributes()))
-          .StoreAccumulatorInRegister(attributes)
-          .CallRuntime(Runtime::kDeclareLookupSlot, name, 3);
+          ->LoadLiteral(variable->name())
+          .StoreAccumulatorInRegister(name)
+          .CallRuntime(Runtime::kDeclareEvalVar, name, 1);
       break;
     }
   }
 }
-
 
 void BytecodeGenerator::VisitFunctionDeclaration(FunctionDeclaration* decl) {
   Variable* variable = decl->proxy()->var();
@@ -838,32 +801,25 @@ void BytecodeGenerator::VisitFunctionDeclaration(FunctionDeclaration* decl) {
       break;
     }
     case VariableLocation::LOOKUP: {
-      register_allocator()->PrepareForConsecutiveAllocations(3);
+      register_allocator()->PrepareForConsecutiveAllocations(2);
       Register name = register_allocator()->NextConsecutiveRegister();
       Register literal = register_allocator()->NextConsecutiveRegister();
-      Register attributes = register_allocator()->NextConsecutiveRegister();
       builder()->LoadLiteral(variable->name()).StoreAccumulatorInRegister(name);
 
       VisitForAccumulatorValue(decl->fun());
-      builder()
-          ->StoreAccumulatorInRegister(literal)
-          .LoadLiteral(Smi::FromInt(variable->DeclarationPropertyAttributes()))
-          .StoreAccumulatorInRegister(attributes)
-          .CallRuntime(Runtime::kDeclareLookupSlot, name, 3);
+      builder()->StoreAccumulatorInRegister(literal).CallRuntime(
+          Runtime::kDeclareEvalFunction, name, 2);
     }
   }
 }
-
 
 void BytecodeGenerator::VisitImportDeclaration(ImportDeclaration* decl) {
   UNIMPLEMENTED();
 }
 
-
 void BytecodeGenerator::VisitExportDeclaration(ExportDeclaration* decl) {
   UNIMPLEMENTED();
 }
-
 
 void BytecodeGenerator::VisitDeclarations(
     ZoneList<Declaration*>* declarations) {
@@ -893,7 +849,6 @@ void BytecodeGenerator::VisitDeclarations(
   globals()->clear();
 }
 
-
 void BytecodeGenerator::VisitStatements(ZoneList<Statement*>* statements) {
   for (int i = 0; i < statements->length(); i++) {
     // Allocate an outer register allocations scope for the statement.
@@ -904,16 +859,13 @@ void BytecodeGenerator::VisitStatements(ZoneList<Statement*>* statements) {
   }
 }
 
-
 void BytecodeGenerator::VisitExpressionStatement(ExpressionStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   VisitForEffect(stmt->expression());
 }
 
-
 void BytecodeGenerator::VisitEmptyStatement(EmptyStatement* stmt) {
 }
-
 
 void BytecodeGenerator::VisitIfStatement(IfStatement* stmt) {
   builder()->SetStatementPosition(stmt);
@@ -944,31 +896,26 @@ void BytecodeGenerator::VisitIfStatement(IfStatement* stmt) {
   }
 }
 
-
 void BytecodeGenerator::VisitSloppyBlockFunctionStatement(
     SloppyBlockFunctionStatement* stmt) {
   Visit(stmt->statement());
 }
-
 
 void BytecodeGenerator::VisitContinueStatement(ContinueStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   execution_control()->Continue(stmt->target());
 }
 
-
 void BytecodeGenerator::VisitBreakStatement(BreakStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   execution_control()->Break(stmt->target());
 }
-
 
 void BytecodeGenerator::VisitReturnStatement(ReturnStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   VisitForAccumulatorValue(stmt->expression());
   execution_control()->ReturnAccumulator();
 }
-
 
 void BytecodeGenerator::VisitWithStatement(WithStatement* stmt) {
   builder()->SetStatementPosition(stmt);
@@ -977,7 +924,6 @@ void BytecodeGenerator::VisitWithStatement(WithStatement* stmt) {
   VisitNewLocalWithContext();
   VisitInScope(stmt->statement(), stmt->scope());
 }
-
 
 void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
   // We need this scope because we visit for register values. We have to
@@ -1029,7 +975,6 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
   switch_builder.SetBreakTarget(done_label);
 }
 
-
 void BytecodeGenerator::VisitCaseClause(CaseClause* clause) {
   // Handled entirely in VisitSwitchStatement.
   UNREACHABLE();
@@ -1078,7 +1023,6 @@ void BytecodeGenerator::VisitWhileStatement(WhileStatement* stmt) {
   loop_builder.EndLoop();
 }
 
-
 void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
   if (stmt->init() != nullptr) {
     Visit(stmt->init());
@@ -1104,7 +1048,6 @@ void BytecodeGenerator::VisitForStatement(ForStatement* stmt) {
   loop_builder.JumpToHeader();
   loop_builder.EndLoop();
 }
-
 
 void BytecodeGenerator::VisitForInAssignment(Expression* expr,
                                              FeedbackVectorSlot slot) {
@@ -1179,7 +1122,6 @@ void BytecodeGenerator::VisitForInAssignment(Expression* expr,
   }
 }
 
-
 void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   if (stmt->subject()->IsNullLiteral() ||
       stmt->subject()->IsUndefinedLiteral()) {
@@ -1231,7 +1173,6 @@ void BytecodeGenerator::VisitForInStatement(ForInStatement* stmt) {
   builder()->Bind(&subject_undefined_label);
 }
 
-
 void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   LoopBuilder loop_builder(builder());
   ControlScopeForIteration control_scope(this, stmt, &loop_builder);
@@ -1250,7 +1191,6 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   loop_builder.JumpToHeader();
   loop_builder.EndLoop();
 }
-
 
 void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   TryCatchBuilder try_control_builder(builder());
@@ -1287,7 +1227,6 @@ void BytecodeGenerator::VisitTryCatchStatement(TryCatchStatement* stmt) {
   VisitInScope(stmt->catch_block(), stmt->scope());
   try_control_builder.EndCatch();
 }
-
 
 void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   TryFinallyBuilder try_control_builder(builder(), IsInsideTryCatch());
@@ -1353,12 +1292,10 @@ void BytecodeGenerator::VisitTryFinallyStatement(TryFinallyStatement* stmt) {
   commands.ApplyDeferredCommands();
 }
 
-
 void BytecodeGenerator::VisitDebuggerStatement(DebuggerStatement* stmt) {
   builder()->SetStatementPosition(stmt);
   builder()->Debugger();
 }
-
 
 void BytecodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
   // Find or build a shared function info.
@@ -1371,7 +1308,6 @@ void BytecodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
                            expr->pretenure() ? TENURED : NOT_TENURED);
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitClassLiteral(ClassLiteral* expr) {
   if (expr->scope()->ContextLocalCount() > 0) {
@@ -1530,12 +1466,10 @@ void BytecodeGenerator::VisitNativeFunctionLiteral(
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitDoExpression(DoExpression* expr) {
   VisitBlock(expr->block());
   VisitVariableProxy(expr->result());
 }
-
 
 void BytecodeGenerator::VisitConditional(Conditional* expr) {
   // TODO(rmcilroy): Spot easy cases where there code would not need to
@@ -1557,21 +1491,20 @@ void BytecodeGenerator::VisitConditional(Conditional* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitLiteral(Literal* expr) {
   if (!execution_result()->IsEffect()) {
     Handle<Object> value = expr->value();
     if (value->IsSmi()) {
       builder()->LoadLiteral(Smi::cast(*value));
-    } else if (value->IsUndefined()) {
+    } else if (value->IsUndefined(isolate())) {
       builder()->LoadUndefined();
-    } else if (value->IsTrue()) {
+    } else if (value->IsTrue(isolate())) {
       builder()->LoadTrue();
-    } else if (value->IsFalse()) {
+    } else if (value->IsFalse(isolate())) {
       builder()->LoadFalse();
-    } else if (value->IsNull()) {
+    } else if (value->IsNull(isolate())) {
       builder()->LoadNull();
-    } else if (value->IsTheHole()) {
+    } else if (value->IsTheHole(isolate())) {
       builder()->LoadTheHole();
     } else {
       builder()->LoadLiteral(value);
@@ -1580,14 +1513,12 @@ void BytecodeGenerator::VisitLiteral(Literal* expr) {
   }
 }
 
-
 void BytecodeGenerator::VisitRegExpLiteral(RegExpLiteral* expr) {
   // Materialize a regular expression literal.
   builder()->CreateRegExpLiteral(expr->pattern(), expr->literal_index(),
                                  expr->flags());
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   // Copy the literal boilerplate.
@@ -1792,7 +1723,6 @@ void BytecodeGenerator::VisitObjectLiteral(ObjectLiteral* expr) {
   execution_result()->SetResultInRegister(literal);
 }
 
-
 void BytecodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   // Deep-copy the literal boilerplate.
   builder()->CreateArrayLiteral(expr->constant_elements(),
@@ -1832,7 +1762,6 @@ void BytecodeGenerator::VisitArrayLiteral(ArrayLiteral* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitVariableProxy(VariableProxy* proxy) {
   builder()->SetExpressionPosition(proxy);
   VisitVariableLoad(proxy->var(), proxy->VariableFeedbackSlot());
@@ -1868,8 +1797,7 @@ void BytecodeGenerator::VisitVariableLoad(Variable* variable,
     }
     case VariableLocation::GLOBAL:
     case VariableLocation::UNALLOCATED: {
-      builder()->LoadGlobal(variable->name(), feedback_index(slot),
-                            typeof_mode);
+      builder()->LoadGlobal(feedback_index(slot), typeof_mode);
       execution_result()->SetResultInAccumulator();
       break;
     }
@@ -1956,6 +1884,15 @@ void BytecodeGenerator::BuildKeyedSuperPropertyStore(Register receiver,
                                         ? Runtime::kStoreKeyedToSuper_Strict
                                         : Runtime::kStoreKeyedToSuper_Sloppy;
   builder()->CallRuntime(function_id, receiver, 4);
+}
+
+void BytecodeGenerator::BuildAbort(BailoutReason bailout_reason) {
+  RegisterAllocationScope register_scope(this);
+  Register reason = register_allocator()->NewRegister();
+  builder()
+      ->LoadLiteral(Smi::FromInt(static_cast<int>(bailout_reason)))
+      .StoreAccumulatorInRegister(reason)
+      .CallRuntime(Runtime::kAbort, reason, 1);
 }
 
 void BytecodeGenerator::BuildThrowReferenceError(Handle<String> name) {
@@ -2124,7 +2061,6 @@ void BytecodeGenerator::VisitVariableAssignment(Variable* variable,
     }
   }
 }
-
 
 void BytecodeGenerator::VisitAssignment(Assignment* expr) {
   DCHECK(expr->target()->IsValidReferenceExpressionOrThis());
@@ -2297,12 +2233,12 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
 
     Register input = register_allocator()->NewRegister();
     builder()
-        ->CallRuntime(Runtime::kGeneratorGetInput, generator, 1)
+        ->CallRuntime(Runtime::kInlineGeneratorGetInputOrDebugPos, generator, 1)
         .StoreAccumulatorInRegister(input);
 
     Register resume_mode = register_allocator()->NewRegister();
     builder()
-        ->CallRuntime(Runtime::kGeneratorGetResumeMode, generator, 1)
+        ->CallRuntime(Runtime::kInlineGeneratorGetResumeMode, generator, 1)
         .StoreAccumulatorInRegister(resume_mode);
 
     // Now dispatch on resume mode.
@@ -2329,14 +2265,13 @@ void BytecodeGenerator::VisitYield(Yield* expr) {
           ->MoveRegister(input, value)
           .LoadTrue()
           .StoreAccumulatorInRegister(done)
-          .CallRuntime(Runtime::kCreateIterResultObject, value, 2);
+          .CallRuntime(Runtime::kInlineCreateIterResultObject, value, 2);
       execution_control()->ReturnAccumulator();
     }
 
     builder()->Bind(&resume_with_throw);
-    builder()
-        ->LoadAccumulatorWithRegister(input)
-        .Throw();
+    builder()->SetExpressionPosition(expr);
+    builder()->LoadAccumulatorWithRegister(input).Throw();
 
     builder()->Bind(&resume_with_next);
     builder()->LoadAccumulatorWithRegister(input);
@@ -2354,7 +2289,6 @@ void BytecodeGenerator::VisitThrow(Throw* expr) {
   // avoid DCHECK fails assert accumulator has been set.
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitPropertyLoad(Register obj, Property* expr) {
   LhsKind property_kind = Property::GetAssignType(expr);
@@ -2649,7 +2583,6 @@ void BytecodeGenerator::VisitCallNew(CallNew* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
   ZoneList<Expression*>* args = expr->arguments();
   if (expr->is_jsruntime()) {
@@ -2670,13 +2603,11 @@ void BytecodeGenerator::VisitCallRuntime(CallRuntime* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitVoid(UnaryOperation* expr) {
   VisitForEffect(expr->expression());
   builder()->LoadUndefined();
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitTypeOf(UnaryOperation* expr) {
   if (expr->expression()->IsVariableProxy()) {
@@ -2692,13 +2623,11 @@ void BytecodeGenerator::VisitTypeOf(UnaryOperation* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitNot(UnaryOperation* expr) {
   VisitForAccumulatorValue(expr->expression());
   builder()->LogicalNot();
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
   switch (expr->op()) {
@@ -2724,7 +2653,6 @@ void BytecodeGenerator::VisitUnaryOperation(UnaryOperation* expr) {
       UNREACHABLE();
   }
 }
-
 
 void BytecodeGenerator::VisitDelete(UnaryOperation* expr) {
   if (expr->expression()->IsProperty()) {
@@ -2786,7 +2714,6 @@ void BytecodeGenerator::VisitDelete(UnaryOperation* expr) {
   }
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
   DCHECK(expr->expression()->IsValidReferenceExpressionOrThis());
@@ -2909,7 +2836,6 @@ void BytecodeGenerator::VisitCountOperation(CountOperation* expr) {
   }
 }
 
-
 void BytecodeGenerator::VisitBinaryOperation(BinaryOperation* binop) {
   switch (binop->op()) {
     case Token::COMMA:
@@ -2927,7 +2853,6 @@ void BytecodeGenerator::VisitBinaryOperation(BinaryOperation* binop) {
   }
 }
 
-
 void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
   Register lhs = VisitForRegisterValue(expr->left());
   VisitForAccumulatorValue(expr->right());
@@ -2936,7 +2861,6 @@ void BytecodeGenerator::VisitCompareOperation(CompareOperation* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
   Register lhs = VisitForRegisterValue(expr->left());
   VisitForAccumulatorValue(expr->right());
@@ -2944,25 +2868,20 @@ void BytecodeGenerator::VisitArithmeticExpression(BinaryOperation* expr) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitSpread(Spread* expr) { UNREACHABLE(); }
-
 
 void BytecodeGenerator::VisitEmptyParentheses(EmptyParentheses* expr) {
   UNREACHABLE();
 }
 
-
 void BytecodeGenerator::VisitThisFunction(ThisFunction* expr) {
   execution_result()->SetResultInRegister(Register::function_closure());
 }
-
 
 void BytecodeGenerator::VisitSuperCallReference(SuperCallReference* expr) {
   // Handled by VisitCall().
   UNREACHABLE();
 }
-
 
 void BytecodeGenerator::VisitSuperPropertyReference(
     SuperPropertyReference* expr) {
@@ -2970,12 +2889,10 @@ void BytecodeGenerator::VisitSuperPropertyReference(
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitCommaExpression(BinaryOperation* binop) {
   VisitForEffect(binop->left());
   Visit(binop->right());
 }
-
 
 void BytecodeGenerator::VisitLogicalOrExpression(BinaryOperation* binop) {
   Expression* left = binop->left();
@@ -2995,7 +2912,6 @@ void BytecodeGenerator::VisitLogicalOrExpression(BinaryOperation* binop) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitLogicalAndExpression(BinaryOperation* binop) {
   Expression* left = binop->left();
   Expression* right = binop->right();
@@ -3014,11 +2930,9 @@ void BytecodeGenerator::VisitLogicalAndExpression(BinaryOperation* binop) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitRewritableExpression(RewritableExpression* expr) {
   Visit(expr->expression());
 }
-
 
 void BytecodeGenerator::VisitNewLocalFunctionContext() {
   AccumulatorResultScope accumulator_execution_result(this);
@@ -3042,7 +2956,6 @@ void BytecodeGenerator::VisitNewLocalFunctionContext() {
   }
   execution_result()->SetResultInAccumulator();
 }
-
 
 void BytecodeGenerator::VisitBuildLocalActivationContext() {
   Scope* scope = this->scope();
@@ -3071,7 +2984,6 @@ void BytecodeGenerator::VisitBuildLocalActivationContext() {
         .StoreContextSlot(execution_context()->reg(), variable->index());
   }
 }
-
 
 void BytecodeGenerator::VisitNewLocalBlockContext(Scope* scope) {
   AccumulatorResultScope accumulator_execution_result(this);
@@ -3126,7 +3038,6 @@ void BytecodeGenerator::VisitNewLocalCatchContext(Variable* variable) {
   execution_result()->SetResultInAccumulator();
 }
 
-
 void BytecodeGenerator::VisitObjectLiteralAccessor(
     Register home_object, ObjectLiteralProperty* property, Register value_out) {
   // TODO(rmcilroy): Replace value_out with VisitForRegister();
@@ -3151,7 +3062,6 @@ void BytecodeGenerator::VisitSetHomeObject(Register value, Register home_object,
         .StoreNamedProperty(value, name, feedback_index(slot), language_mode());
   }
 }
-
 
 void BytecodeGenerator::VisitArgumentsObject(Variable* variable) {
   if (variable == nullptr) return;
@@ -3187,7 +3097,6 @@ void BytecodeGenerator::VisitThisFunctionVariable(Variable* variable) {
   VisitVariableAssignment(variable, Token::INIT, FeedbackVectorSlot::Invalid());
 }
 
-
 void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   if (variable == nullptr) return;
 
@@ -3195,7 +3104,6 @@ void BytecodeGenerator::VisitNewTargetVariable(Variable* variable) {
   builder()->LoadAccumulatorWithRegister(Register::new_target());
   VisitVariableAssignment(variable, Token::INIT, FeedbackVectorSlot::Invalid());
 }
-
 
 void BytecodeGenerator::VisitFunctionClosureForContext() {
   AccumulatorResultScope accumulator_execution_result(this);
@@ -3223,7 +3131,6 @@ void BytecodeGenerator::VisitFunctionClosureForContext() {
   execution_result()->SetResultInAccumulator();
 }
 
-
 // Visits the expression |expr| and places the result in the accumulator.
 void BytecodeGenerator::VisitForAccumulatorValue(Expression* expr) {
   AccumulatorResultScope accumulator_scope(this);
@@ -3243,7 +3150,6 @@ void BytecodeGenerator::VisitForEffect(Expression* expr) {
   EffectResultScope effect_scope(this);
   Visit(expr);
 }
-
 
 // Visits the expression |expr| and returns the register containing
 // the expression result.
@@ -3268,14 +3174,12 @@ void BytecodeGenerator::VisitInScope(Statement* stmt, Scope* scope) {
   Visit(stmt);
 }
 
-
 LanguageMode BytecodeGenerator::language_mode() const {
   return execution_context()->scope()->language_mode();
 }
 
-
 int BytecodeGenerator::feedback_index(FeedbackVectorSlot slot) const {
-  return info()->shared_info()->feedback_vector()->GetIndex(slot);
+  return TypeFeedbackVector::GetIndex(slot);
 }
 
 }  // namespace interpreter

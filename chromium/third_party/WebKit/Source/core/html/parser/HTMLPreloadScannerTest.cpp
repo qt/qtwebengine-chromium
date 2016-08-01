@@ -13,6 +13,7 @@
 #include "core/html/parser/HTMLResourcePreloader.h"
 #include "core/testing/DummyPageHolder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include <memory>
 
 namespace blink {
 
@@ -80,13 +81,13 @@ public:
     }
 
 protected:
-    void preload(PassOwnPtr<PreloadRequest> preloadRequest, const NetworkHintsInterface&) override
+    void preload(std::unique_ptr<PreloadRequest> preloadRequest, const NetworkHintsInterface&) override
     {
         m_preloadRequest = std::move(preloadRequest);
     }
 
 private:
-    OwnPtr<PreloadRequest> m_preloadRequest;
+    std::unique_ptr<PreloadRequest> m_preloadRequest;
 };
 
 class HTMLPreloadScannerTest : public testing::Test {
@@ -171,8 +172,8 @@ protected:
     }
 
 private:
-    OwnPtr<DummyPageHolder> m_dummyPageHolder;
-    OwnPtr<HTMLPreloadScanner> m_scanner;
+    std::unique_ptr<DummyPageHolder> m_dummyPageHolder;
+    std::unique_ptr<HTMLPreloadScanner> m_scanner;
 };
 
 TEST_F(HTMLPreloadScannerTest, testImages)
@@ -338,9 +339,17 @@ TEST_F(HTMLPreloadScannerTest, testPicture)
     TestCase testCases[] = {
         {"http://example.test", "<picture><source srcset='srcset_bla.gif'><img src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 0},
         {"http://example.test", "<picture><source sizes='50vw' srcset='srcset_bla.gif'><img src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 250},
-        {"http://example.test", "<picture><source sizes='50vw' srcset='srcset_bla.gif'><img sizes='50w' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 250},
-        {"http://example.test", "<picture><source srcset='srcset_bla.gif' sizes='50vw'><img sizes='50w' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 250},
-        {"http://example.test", "<picture><source srcset='srcset_bla.gif'><img sizes='50w' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 0},
+        {"http://example.test", "<picture><source sizes='50vw' srcset='srcset_bla.gif'><img sizes='50vw' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source srcset='srcset_bla.gif' sizes='50vw'><img sizes='50vw' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source srcset='srcset_bla.gif'><img sizes='50vw' src='bla.gif'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 0},
+        {"http://example.test", "<picture><source media='(max-width: 900px)' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 0},
+        {"http://example.test", "<picture><source media='(max-width: 400px)' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source type='image/webp' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "srcset_bla.gif", "http://example.test/", Resource::Image, 0},
+        {"http://example.test", "<picture><source type='image/jp2' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source media='(max-width: 900px)' type='image/jp2' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source type='image/webp' media='(max-width: 400px)' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source type='image/jp2' media='(max-width: 900px)' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
+        {"http://example.test", "<picture><source media='(max-width: 400px)' type='image/webp' srcset='srcset_bla.gif'><img sizes='50vw' srcset='bla.gif 500w'></picture>", "bla.gif", "http://example.test/", Resource::Image, 250},
     };
 
     for (const auto& testCase : testCases)
@@ -399,6 +408,35 @@ TEST_F(HTMLPreloadScannerTest, testLinkRelPreload)
         {"http://example.test", "<link rel=preload href=bla as=track>", "bla", "http://example.test/", Resource::TextTrack, 0},
         {"http://example.test", "<link rel=preload href=bla as=image media=\"(max-width: 800px)\">", "bla", "http://example.test/", Resource::Image, 0},
         {"http://example.test", "<link rel=preload href=bla as=image media=\"(max-width: 400px)\">", nullptr, "http://example.test/", Resource::Image, 0},
+    };
+
+    for (const auto& testCase : testCases)
+        test(testCase);
+}
+
+// The preload scanner should follow the same policy that the ScriptLoader does
+// with regard to the type and language attribute.
+TEST_F(HTMLPreloadScannerTest, testScriptTypeAndLanguage)
+{
+    TestCase testCases[] = {
+        // Allow empty src and language attributes.
+        {"http://example.test", "<script src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<script type='' language='' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        // Allow standard language and type attributes.
+        {"http://example.test", "<script type='text/javascript' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<script type='text/javascript' language='javascript' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        // Allow legacy languages in the "language" attribute with an empty
+        // type.
+        {"http://example.test", "<script language='javascript1.1' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        // Allow legacy languages in the "type" attribute.
+        {"http://example.test", "<script type='javascript' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<script type='javascript1.7' src='test.js'></script>", "test.js", "http://example.test/", Resource::Script, 0},
+        // Do not allow invalid types in the "type" attribute.
+        {"http://example.test", "<script type='invalid' src='test.js'></script>", nullptr, "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<script type='asdf' src='test.js'></script>", nullptr, "http://example.test/", Resource::Script, 0},
+        // Do not allow invalid languages.
+        {"http://example.test", "<script language='french' src='test.js'></script>", nullptr, "http://example.test/", Resource::Script, 0},
+        {"http://example.test", "<script language='python' src='test.js'></script>", nullptr, "http://example.test/", Resource::Script, 0},
     };
 
     for (const auto& testCase : testCases)

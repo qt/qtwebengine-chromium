@@ -315,6 +315,17 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "textureLod", gsamplerCube, float3, float1);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "textureLod", gsampler2DArray, float3, float1);
 
+    if (resources.OES_EGL_image_external_essl3)
+    {
+        const TType *samplerExternalOES = TCache::getType(EbtSamplerExternalOES);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "texture", samplerExternalOES, float2);
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "textureProj", samplerExternalOES,
+                                  float3);
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "textureProj", samplerExternalOES,
+                                  float4);
+    }
+
     if (type == GL_FRAGMENT_SHADER)
     {
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texture", gsampler2D, float2, float1);
@@ -324,6 +335,18 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "textureProj", gsampler2D, float3, float1);
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "textureProj", gsampler2D, float4, float1);
         symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "textureProj", gsampler3D, float4, float1);
+
+        if (resources.OES_EGL_image_external_essl3)
+        {
+            const TType *samplerExternalOES = TCache::getType(EbtSamplerExternalOES);
+
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "texture", samplerExternalOES, float2,
+                                      float1);
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "textureProj", samplerExternalOES,
+                                      float3, float1);
+            symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "textureProj", samplerExternalOES,
+                                      float4, float1);
+        }
     }
 
     const TType *sampler2DShadow = TCache::getType(EbtSampler2DShadow);
@@ -350,6 +373,13 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "textureSize", sampler2DShadow, int1);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "textureSize", samplerCubeShadow, int1);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "textureSize", sampler2DArrayShadow, int1);
+
+    if (resources.OES_EGL_image_external_essl3)
+    {
+        const TType *samplerExternalOES = TCache::getType(EbtSamplerExternalOES);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "textureSize", samplerExternalOES, int1);
+    }
 
     if (type == GL_FRAGMENT_SHADER)
     {
@@ -403,6 +433,14 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetch", gsampler3D, int3, int1);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetch", gsampler2DArray, int3, int1);
 
+    if (resources.OES_EGL_image_external_essl3)
+    {
+        const TType *samplerExternalOES = TCache::getType(EbtSamplerExternalOES);
+
+        symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "texelFetch", samplerExternalOES, int2,
+                                  int1);
+    }
+
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetchOffset", gsampler2D, int2, int1, int2);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetchOffset", gsampler3D, int3, int1, int3);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, gvec4, "texelFetchOffset", gsampler2DArray, int3, int1, int2);
@@ -436,17 +474,22 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     //
     TFieldList *fields = NewPoolTFieldList();
     TSourceLoc zeroSourceLoc = {0, 0, 0, 0};
-    TField *near = new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1), NewPoolTString("near"), zeroSourceLoc);
-    TField *far = new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1), NewPoolTString("far"), zeroSourceLoc);
-    TField *diff = new TField(new TType(EbtFloat, EbpHigh, EvqGlobal, 1), NewPoolTString("diff"), zeroSourceLoc);
+    auto highpFloat1         = new TType(EbtFloat, EbpHigh, EvqGlobal, 1);
+    TField *near             = new TField(highpFloat1, NewPoolTString("near"), zeroSourceLoc);
+    TField *far              = new TField(highpFloat1, NewPoolTString("far"), zeroSourceLoc);
+    TField *diff             = new TField(highpFloat1, NewPoolTString("diff"), zeroSourceLoc);
     fields->push_back(near);
     fields->push_back(far);
     fields->push_back(diff);
     TStructure *depthRangeStruct = new TStructure(NewPoolTString("gl_DepthRangeParameters"), fields);
-    TVariable *depthRangeParameters = new TVariable(&depthRangeStruct->name(), depthRangeStruct, true);
+    TVariable *depthRangeParameters =
+        new TVariable(&depthRangeStruct->name(), TType(depthRangeStruct), true);
     symbolTable.insert(COMMON_BUILTINS, depthRangeParameters);
     TVariable *depthRange = new TVariable(NewPoolTString("gl_DepthRange"), TType(depthRangeStruct));
     depthRange->setQualifier(EvqUniform);
+    // Ensure we evaluate the mangled name for depth range, so we allocate to the current scope.
+    depthRangeParameters->getType().getMangledName();
+    depthRange->getType().getMangledName();
     symbolTable.insert(COMMON_BUILTINS, depthRange);
 
     //
@@ -594,6 +637,8 @@ void InitExtensionBehavior(const ShBuiltInResources& resources,
         extBehavior["GL_OES_standard_derivatives"] = EBhUndefined;
     if (resources.OES_EGL_image_external)
         extBehavior["GL_OES_EGL_image_external"] = EBhUndefined;
+    if (resources.OES_EGL_image_external_essl3)
+        extBehavior["GL_OES_EGL_image_external_essl3"] = EBhUndefined;
     if (resources.NV_EGL_stream_consumer_external)
         extBehavior["GL_NV_EGL_stream_consumer_external"] = EBhUndefined;
     if (resources.ARB_texture_rectangle)

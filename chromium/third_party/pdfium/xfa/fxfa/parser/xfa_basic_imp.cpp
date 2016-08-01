@@ -7,10 +7,8 @@
 #include "xfa/fxfa/parser/xfa_basic_imp.h"
 
 #include "core/fxcrt/include/fx_ext.h"
-#include "xfa/fgas/crt/fgas_algorithm.h"
 #include "xfa/fgas/crt/fgas_codepage.h"
 #include "xfa/fgas/crt/fgas_system.h"
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/xfa_basic_data.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
@@ -38,7 +36,7 @@ const XFA_PACKETINFO* XFA_GetPacketByName(const CFX_WideStringC& wsName) {
       iStart = iMid + 1;
     }
   } while (iStart <= iEnd);
-  return NULL;
+  return nullptr;
 }
 
 const XFA_PACKETINFO* XFA_GetPacketByID(uint32_t dwPacket) {
@@ -54,7 +52,7 @@ const XFA_PACKETINFO* XFA_GetPacketByID(uint32_t dwPacket) {
       iStart = iMid + 1;
     }
   } while (iStart <= iEnd);
-  return NULL;
+  return nullptr;
 }
 
 const XFA_PACKETINFO* XFA_GetPacketByIndex(XFA_PACKET ePacket) {
@@ -80,7 +78,7 @@ const XFA_ATTRIBUTEENUMINFO* XFA_GetAttributeEnumByName(
       iStart = iMid + 1;
     }
   } while (iStart <= iEnd);
-  return NULL;
+  return nullptr;
 }
 const XFA_ATTRIBUTEENUMINFO* XFA_GetAttributeEnumByID(XFA_ATTRIBUTEENUM eName) {
   return g_XFAEnumData + eName;
@@ -107,15 +105,16 @@ const XFA_ATTRIBUTEINFO* XFA_GetAttributeByName(const CFX_WideStringC& wsName) {
   return nullptr;
 }
 const XFA_ATTRIBUTEINFO* XFA_GetAttributeByID(XFA_ATTRIBUTE eName) {
-  return (eName < g_iXFAAttributeCount) ? (g_XFAAttributeData + eName) : NULL;
+  return (eName < g_iXFAAttributeCount) ? (g_XFAAttributeData + eName)
+                                        : nullptr;
 }
 FX_BOOL XFA_GetAttributeDefaultValue(void*& pValue,
-                                     XFA_ELEMENT eElement,
+                                     XFA_Element eElement,
                                      XFA_ATTRIBUTE eAttribute,
                                      XFA_ATTRIBUTETYPE eType,
                                      uint32_t dwPacket) {
   const XFA_ATTRIBUTEINFO* pInfo = XFA_GetAttributeByID(eAttribute);
-  if (pInfo == NULL) {
+  if (!pInfo) {
     return FALSE;
   }
   if (dwPacket && (dwPacket & pInfo->dwPackets) == 0) {
@@ -134,7 +133,7 @@ FX_BOOL XFA_GetAttributeDefaultValue(void*& pValue,
   }
   return FALSE;
 }
-XFA_ATTRIBUTEENUM XFA_GetAttributeDefaultValue_Enum(XFA_ELEMENT eElement,
+XFA_ATTRIBUTEENUM XFA_GetAttributeDefaultValue_Enum(XFA_Element eElement,
                                                     XFA_ATTRIBUTE eAttribute,
                                                     uint32_t dwPacket) {
   void* pValue;
@@ -144,7 +143,7 @@ XFA_ATTRIBUTEENUM XFA_GetAttributeDefaultValue_Enum(XFA_ELEMENT eElement,
   }
   return XFA_ATTRIBUTEENUM_Unknown;
 }
-CFX_WideStringC XFA_GetAttributeDefaultValue_Cdata(XFA_ELEMENT eElement,
+CFX_WideStringC XFA_GetAttributeDefaultValue_Cdata(XFA_Element eElement,
                                                    XFA_ATTRIBUTE eAttribute,
                                                    uint32_t dwPacket) {
   void* pValue;
@@ -152,9 +151,9 @@ CFX_WideStringC XFA_GetAttributeDefaultValue_Cdata(XFA_ELEMENT eElement,
                                    XFA_ATTRIBUTETYPE_Cdata, dwPacket)) {
     return (const FX_WCHAR*)pValue;
   }
-  return NULL;
+  return nullptr;
 }
-FX_BOOL XFA_GetAttributeDefaultValue_Boolean(XFA_ELEMENT eElement,
+FX_BOOL XFA_GetAttributeDefaultValue_Boolean(XFA_Element eElement,
                                              XFA_ATTRIBUTE eAttribute,
                                              uint32_t dwPacket) {
   void* pValue;
@@ -165,7 +164,7 @@ FX_BOOL XFA_GetAttributeDefaultValue_Boolean(XFA_ELEMENT eElement,
   return FALSE;
 }
 
-CXFA_Measurement XFA_GetAttributeDefaultValue_Measure(XFA_ELEMENT eElement,
+CXFA_Measurement XFA_GetAttributeDefaultValue_Measure(XFA_Element eElement,
                                                       XFA_ATTRIBUTE eAttribute,
                                                       uint32_t dwPacket) {
   void* pValue;
@@ -176,9 +175,9 @@ CXFA_Measurement XFA_GetAttributeDefaultValue_Measure(XFA_ELEMENT eElement,
   return CXFA_Measurement();
 }
 
-const XFA_ELEMENTINFO* XFA_GetElementByName(const CFX_WideStringC& wsName) {
+XFA_Element XFA_GetElementTypeForName(const CFX_WideStringC& wsName) {
   if (wsName.IsEmpty())
-    return nullptr;
+    return XFA_Element::Unknown;
 
   uint32_t uHash = FX_HashCode_GetW(wsName, false);
   int32_t iStart = 0;
@@ -186,76 +185,71 @@ const XFA_ELEMENTINFO* XFA_GetElementByName(const CFX_WideStringC& wsName) {
   do {
     int32_t iMid = (iStart + iEnd) / 2;
     const XFA_ELEMENTINFO* pInfo = g_XFAElementData + iMid;
-    if (uHash == pInfo->uHash) {
-      return pInfo;
-    } else if (uHash < pInfo->uHash) {
+    if (uHash == pInfo->uHash)
+      return pInfo->eName;
+    if (uHash < pInfo->uHash)
       iEnd = iMid - 1;
-    } else {
+    else
       iStart = iMid + 1;
-    }
   } while (iStart <= iEnd);
-  return NULL;
+  return XFA_Element::Unknown;
 }
-const XFA_ELEMENTINFO* XFA_GetElementByID(XFA_ELEMENT eName) {
-  return (eName < g_iXFAElementCount) ? (g_XFAElementData + eName) : NULL;
+const XFA_ELEMENTINFO* XFA_GetElementByID(XFA_Element eName) {
+  return eName == XFA_Element::Unknown
+             ? nullptr
+             : g_XFAElementData + static_cast<int32_t>(eName);
 }
-const uint16_t* XFA_GetElementChildren(XFA_ELEMENT eElement, int32_t& iCount) {
-  if (eElement >= g_iXFAElementCount) {
-    return NULL;
-  }
-  const XFA_ELEMENTHIERARCHY* pElement = g_XFAElementChildrenIndex + eElement;
-  iCount = pElement->wCount;
-  return g_XFAElementChildrenData + pElement->wStart;
-}
-const uint8_t* XFA_GetElementAttributes(XFA_ELEMENT eElement, int32_t& iCount) {
-  if (eElement >= g_iXFAElementCount) {
-    return NULL;
-  }
-  const XFA_ELEMENTHIERARCHY* pElement = g_XFAElementAttributeIndex + eElement;
+
+const uint8_t* XFA_GetElementAttributes(XFA_Element eElement, int32_t& iCount) {
+  if (eElement == XFA_Element::Unknown)
+    return nullptr;
+
+  const XFA_ELEMENTHIERARCHY* pElement =
+      g_XFAElementAttributeIndex + static_cast<int32_t>(eElement);
   iCount = pElement->wCount;
   return g_XFAElementAttributeData + pElement->wStart;
 }
-const XFA_ATTRIBUTEINFO* XFA_GetAttributeOfElement(XFA_ELEMENT eElement,
+
+const XFA_ATTRIBUTEINFO* XFA_GetAttributeOfElement(XFA_Element eElement,
                                                    XFA_ATTRIBUTE eAttribute,
                                                    uint32_t dwPacket) {
   int32_t iCount = 0;
   const uint8_t* pAttr = XFA_GetElementAttributes(eElement, iCount);
-  if (pAttr == NULL || iCount < 1) {
-    return NULL;
-  }
-  CFX_DSPATemplate<uint8_t> search;
-  int32_t index = search.Lookup(eAttribute, pAttr, iCount);
-  if (index < 0) {
-    return NULL;
-  }
+  if (!pAttr || iCount < 1)
+    return nullptr;
+
+  if (!std::binary_search(pAttr, pAttr + iCount, eAttribute))
+    return nullptr;
+
   const XFA_ATTRIBUTEINFO* pInfo = XFA_GetAttributeByID(eAttribute);
   ASSERT(pInfo);
   if (dwPacket == XFA_XDPPACKET_UNKNOWN)
     return pInfo;
-  return (dwPacket & pInfo->dwPackets) ? pInfo : NULL;
+  return (dwPacket & pInfo->dwPackets) ? pInfo : nullptr;
 }
 
-const XFA_PROPERTY* XFA_GetElementProperties(XFA_ELEMENT eElement,
+const XFA_PROPERTY* XFA_GetElementProperties(XFA_Element eElement,
                                              int32_t& iCount) {
-  if (eElement >= g_iXFAElementCount) {
-    return NULL;
-  }
-  const XFA_ELEMENTHIERARCHY* pElement = g_XFAElementPropertyIndex + eElement;
+  if (eElement == XFA_Element::Unknown)
+    return nullptr;
+
+  const XFA_ELEMENTHIERARCHY* pElement =
+      g_XFAElementPropertyIndex + static_cast<int32_t>(eElement);
   iCount = pElement->wCount;
   return g_XFAElementPropertyData + pElement->wStart;
 }
-const XFA_PROPERTY* XFA_GetPropertyOfElement(XFA_ELEMENT eElement,
-                                             XFA_ELEMENT eProperty,
+const XFA_PROPERTY* XFA_GetPropertyOfElement(XFA_Element eElement,
+                                             XFA_Element eProperty,
                                              uint32_t dwPacket) {
   int32_t iCount = 0;
   const XFA_PROPERTY* pProperty = XFA_GetElementProperties(eElement, iCount);
-  if (pProperty == NULL || iCount < 1) {
-    return NULL;
+  if (!pProperty || iCount < 1) {
+    return nullptr;
   }
   int32_t iStart = 0, iEnd = iCount - 1, iMid;
   do {
     iMid = (iStart + iEnd) / 2;
-    XFA_ELEMENT eName = (XFA_ELEMENT)pProperty[iMid].eName;
+    XFA_Element eName = pProperty[iMid].eName;
     if (eProperty == eName) {
       break;
     } else if (eProperty < eName) {
@@ -265,15 +259,15 @@ const XFA_PROPERTY* XFA_GetPropertyOfElement(XFA_ELEMENT eElement,
     }
   } while (iStart <= iEnd);
   if (iStart > iEnd) {
-    return NULL;
+    return nullptr;
   }
   const XFA_ELEMENTINFO* pInfo = XFA_GetElementByID(eProperty);
   ASSERT(pInfo);
   if (dwPacket == XFA_XDPPACKET_UNKNOWN)
     return pProperty + iMid;
-  return (dwPacket & pInfo->dwPackets) ? (pProperty + iMid) : NULL;
+  return (dwPacket & pInfo->dwPackets) ? (pProperty + iMid) : nullptr;
 }
-const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
+const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_Element eElement,
                                                     XFA_ATTRIBUTE eAttribute,
                                                     XFA_ATTRIBUTETYPE eType) {
   int32_t iStart = 0, iEnd = g_iXFANotsureCount - 1;
@@ -285,7 +279,7 @@ const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
         if (eType == XFA_ATTRIBUTETYPE_NOTSURE || eType == pAttr->eType) {
           return pAttr;
         }
-        return NULL;
+        return nullptr;
       } else {
         int32_t iBefore = iMid - 1;
         if (iBefore >= 0) {
@@ -295,7 +289,7 @@ const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
               if (eType == XFA_ATTRIBUTETYPE_NOTSURE || eType == pAttr->eType) {
                 return pAttr;
               }
-              return NULL;
+              return nullptr;
             }
             iBefore--;
             if (iBefore < 0) {
@@ -312,7 +306,7 @@ const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
               if (eType == XFA_ATTRIBUTETYPE_NOTSURE || eType == pAttr->eType) {
                 return pAttr;
               }
-              return NULL;
+              return nullptr;
             }
             iAfter++;
             if (iAfter > g_iXFANotsureCount - 1) {
@@ -321,7 +315,7 @@ const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
             pAttr = g_XFANotsureAttributes + iAfter;
           }
         }
-        return NULL;
+        return nullptr;
       }
     } else if (eElement < pAttr->eElement) {
       iEnd = iMid - 1;
@@ -329,15 +323,15 @@ const XFA_NOTSUREATTRIBUTE* XFA_GetNotsureAttribute(XFA_ELEMENT eElement,
       iStart = iMid + 1;
     }
   } while (iStart <= iEnd);
-  return NULL;
+  return nullptr;
 }
 
-const XFA_METHODINFO* XFA_GetMethodByName(XFA_ELEMENT eElement,
+const XFA_METHODINFO* XFA_GetMethodByName(XFA_Element eElement,
                                           const CFX_WideStringC& wsMethodName) {
   if (wsMethodName.IsEmpty())
     return nullptr;
 
-  int32_t iElementIndex = eElement;
+  int32_t iElementIndex = static_cast<int32_t>(eElement);
   while (iElementIndex != -1) {
     const XFA_SCRIPTHIERARCHY* scriptIndex = g_XFAScriptIndex + iElementIndex;
     int32_t icount = scriptIndex->wMethodCount;
@@ -361,15 +355,15 @@ const XFA_METHODINFO* XFA_GetMethodByName(XFA_ELEMENT eElement,
     } while (iStart <= iEnd);
     iElementIndex = scriptIndex->wParentIndex;
   }
-  return NULL;
+  return nullptr;
 }
 const XFA_SCRIPTATTRIBUTEINFO* XFA_GetScriptAttributeByName(
-    XFA_ELEMENT eElement,
+    XFA_Element eElement,
     const CFX_WideStringC& wsAttributeName) {
   if (wsAttributeName.IsEmpty())
     return nullptr;
 
-  int32_t iElementIndex = eElement;
+  int32_t iElementIndex = static_cast<int32_t>(eElement);
   while (iElementIndex != -1) {
     const XFA_SCRIPTHIERARCHY* scriptIndex = g_XFAScriptIndex + iElementIndex;
     int32_t icount = scriptIndex->wAttributeCount;
@@ -392,7 +386,7 @@ const XFA_SCRIPTATTRIBUTEINFO* XFA_GetScriptAttributeByName(
     } while (iStart <= iEnd);
     iElementIndex = scriptIndex->wParentIndex;
   }
-  return NULL;
+  return nullptr;
 }
 void CXFA_Measurement::Set(const CFX_WideStringC& wsMeasure) {
   if (wsMeasure.IsEmpty()) {
@@ -488,7 +482,6 @@ FX_BOOL CXFA_Measurement::ToUnit(XFA_UNIT eUnit, FX_FLOAT& fValue) const {
       fValue = 0;
       return FALSE;
   }
-  return FALSE;
 }
 XFA_UNIT CXFA_Measurement::GetUnit(const CFX_WideStringC& wsUnit) {
   if (wsUnit == FX_WSTRC(L"mm")) {
@@ -557,21 +550,52 @@ int32_t CXFA_WideTextRead::GetPosition() {
 FX_BOOL CXFA_WideTextRead::IsEOF() const {
   return m_iPosition >= m_wsBuffer.GetLength();
 }
+int32_t CXFA_WideTextRead::ReadData(uint8_t* pBuffer, int32_t iBufferSize) {
+  return 0;
+}
 int32_t CXFA_WideTextRead::ReadString(FX_WCHAR* pStr,
                                       int32_t iMaxLength,
                                       FX_BOOL& bEOS,
                                       int32_t const* pByteSize) {
-  if (iMaxLength > m_wsBuffer.GetLength() - m_iPosition) {
-    iMaxLength = m_wsBuffer.GetLength() - m_iPosition;
-  }
+  iMaxLength = std::min(iMaxLength, m_wsBuffer.GetLength() - m_iPosition);
+  if (iMaxLength == 0)
+    return 0;
+
   FXSYS_wcsncpy(pStr, m_wsBuffer.c_str() + m_iPosition, iMaxLength);
   m_iPosition += iMaxLength;
   bEOS = IsEOF();
   return iMaxLength;
+}
+int32_t CXFA_WideTextRead::WriteData(const uint8_t* pBuffer,
+                                     int32_t iBufferSize) {
+  return 0;
+}
+int32_t CXFA_WideTextRead::WriteString(const FX_WCHAR* pStr, int32_t iLength) {
+  return 0;
+}
+FX_BOOL CXFA_WideTextRead::SetLength(int32_t iLength) {
+  return FALSE;
+}
+int32_t CXFA_WideTextRead::GetBOM(uint8_t bom[4]) const {
+  return 0;
 }
 uint16_t CXFA_WideTextRead::GetCodePage() const {
   return (sizeof(FX_WCHAR) == 2) ? FX_CODEPAGE_UTF16LE : FX_CODEPAGE_UTF32LE;
 }
 uint16_t CXFA_WideTextRead::SetCodePage(uint16_t wCodePage) {
   return GetCodePage();
+}
+
+IFX_Stream* CXFA_WideTextRead::CreateSharedStream(uint32_t dwAccess,
+                                                  int32_t iOffset,
+                                                  int32_t iLength) {
+  return nullptr;
+}
+
+void CXFA_WideTextRead::Lock() {}
+
+void CXFA_WideTextRead::Unlock() {}
+
+CFX_WideString CXFA_WideTextRead::GetSrcText() const {
+  return m_wsBuffer;
 }

@@ -220,7 +220,6 @@ void AstNumberingVisitor::VisitYield(Yield* node) {
   node->set_yield_id(yield_count_);
   yield_count_++;
   IncrementNodeCount();
-  DisableOptimization(kYield);
   ReserveFeedbackSlots(node);
   node->set_base_id(ReserveIdRange(Yield::num_ids()));
   Visit(node->generator_object());
@@ -306,7 +305,7 @@ void AstNumberingVisitor::VisitWhileStatement(WhileStatement* node) {
 
 void AstNumberingVisitor::VisitTryCatchStatement(TryCatchStatement* node) {
   IncrementNodeCount();
-  DisableOptimization(kTryCatchStatement);
+  DisableCrankshaft(kTryCatchStatement);
   Visit(node->try_block());
   Visit(node->catch_block());
 }
@@ -314,7 +313,7 @@ void AstNumberingVisitor::VisitTryCatchStatement(TryCatchStatement* node) {
 
 void AstNumberingVisitor::VisitTryFinallyStatement(TryFinallyStatement* node) {
   IncrementNodeCount();
-  DisableOptimization(kTryFinallyStatement);
+  DisableCrankshaft(kTryFinallyStatement);
   Visit(node->try_block());
   Visit(node->finally_block());
 }
@@ -577,6 +576,13 @@ bool AstNumberingVisitor::Renumber(FunctionLiteral* node) {
   int rest_index;
   if (scope->rest_parameter(&rest_index)) {
     DisableCrankshaft(kRestParameter);
+  }
+
+  if (IsGeneratorFunction(node->kind()) || IsAsyncFunction(node->kind())) {
+    // TODO(neis): We may want to allow Turbofan optimization here if
+    // --turbo-from-bytecode is set and we know that Ignition is used.
+    // Unfortunately we can't express that here.
+    DisableOptimization(kGenerator);
   }
 
   VisitDeclarations(scope->declarations());

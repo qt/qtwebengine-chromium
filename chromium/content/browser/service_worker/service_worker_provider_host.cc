@@ -10,6 +10,7 @@
 #include "base/stl_util.h"
 #include "base/time/time.h"
 #include "content/browser/message_port_message_filter.h"
+#include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_request_handler.h"
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
@@ -17,7 +18,7 @@
 #include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/common/resource_request_body.h"
+#include "content/common/resource_request_body_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/common/service_worker/service_worker_utils.h"
@@ -211,22 +212,12 @@ void ServiceWorkerProviderHost::SetControllerVersionAttribute(
       notify_controllerchange));
 }
 
-bool ServiceWorkerProviderHost::SetHostedVersion(
+void ServiceWorkerProviderHost::SetHostedVersion(
     ServiceWorkerVersion* version) {
-  // TODO(falken): Unclear why we check active_version. Should this just check
-  // that IsProviderForClient() is false?
-  if (active_version())
-    return false;  // Unexpected bad message.
-
-  DCHECK_EQ(ServiceWorkerVersion::STARTING, version->running_status());
-  if (version->embedded_worker()->process_id() != render_process_id_) {
-    // If we aren't trying to start this version in our process
-    // something is amiss.
-    return false;
-  }
-
+  DCHECK(!IsProviderForClient());
+  DCHECK_EQ(EmbeddedWorkerStatus::STARTING, version->running_status());
+  DCHECK_EQ(render_process_id_, version->embedded_worker()->process_id());
   running_hosted_version_ = version;
-  return true;
 }
 
 bool ServiceWorkerProviderHost::IsProviderForClient() const {
@@ -353,7 +344,7 @@ ServiceWorkerProviderHost::CreateRequestHandler(
     RequestContextType request_context_type,
     RequestContextFrameType frame_type,
     base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
-    scoped_refptr<ResourceRequestBody> body) {
+    scoped_refptr<ResourceRequestBodyImpl> body) {
   if (IsHostToRunningServiceWorker()) {
     return std::unique_ptr<ServiceWorkerRequestHandler>(
         new ServiceWorkerContextRequestHandler(
@@ -643,7 +634,7 @@ bool ServiceWorkerProviderHost::IsReadyToSendMessages() const {
 }
 
 bool ServiceWorkerProviderHost::IsContextAlive() {
-  return context_ != NULL;
+  return context_ != nullptr;
 }
 
 void ServiceWorkerProviderHost::Send(IPC::Message* message) const {

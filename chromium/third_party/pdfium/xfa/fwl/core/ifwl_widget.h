@@ -18,12 +18,15 @@
 // FWL contains three parallel inheritance hierarchies, which reference each
 // other via pointers as follows:
 //
-//                   m_pIface                m_pImpl
+//                              m_pAssociate
+//                  <----------------------------------
 //      CFWL_Widget ----------> IFWL_Widget ----------> CFWL_WidgetImp
-//           |                       |                       |
+//           |       m_pIface        |       m_pImpl         |
 //           A                       A                       A
 //           |                       |                       |
 //      CFWL_...                IFWL_...                CFWL_...Imp
+//
+// TODO(tsepez): Collapse these into a single hierarchy.
 //
 
 enum class FWL_Type {
@@ -56,7 +59,7 @@ class IFWL_WidgetDelegate;
 
 class IFWL_Widget {
  public:
-  IFWL_Widget() : m_pImpl(nullptr) {}
+  IFWL_Widget();
   virtual ~IFWL_Widget();
 
   FWL_Error GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize = FALSE);
@@ -75,10 +78,12 @@ class IFWL_Widget {
                            uint32_t dwStylesExRemoved);
   uint32_t GetStates();
   void SetStates(uint32_t dwStates, FX_BOOL bSet = TRUE);
-  FWL_Error SetPrivateData(void* module_id,
-                           void* pData,
-                           PD_CALLBACK_FREEDATA callback);
-  void* GetPrivateData(void* module_id);
+  uint32_t GetEventKey() const;
+  void SetEventKey(uint32_t key);
+  void* GetLayoutItem() const;
+  void SetLayoutItem(void* pItem);
+  void* GetAssociateWidget() const;
+  void SetAssociateWidget(void* pAssociate);
   FWL_Error Update();
   FWL_Error LockUpdate();
   FWL_Error UnlockUpdate();
@@ -88,7 +93,7 @@ class IFWL_Widget {
   FWL_Error GetMatrix(CFX_Matrix& matrix, FX_BOOL bGlobal = FALSE);
   FWL_Error SetMatrix(const CFX_Matrix& matrix);
   FWL_Error DrawWidget(CFX_Graphics* pGraphics,
-                       const CFX_Matrix* pMatrix = NULL);
+                       const CFX_Matrix* pMatrix = nullptr);
   IFWL_ThemeProvider* GetThemeProvider();
   FWL_Error SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
   FWL_Error SetDataProvider(IFWL_DataProvider* pDataProvider);

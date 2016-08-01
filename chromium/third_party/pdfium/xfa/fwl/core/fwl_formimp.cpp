@@ -12,10 +12,10 @@
 #include "xfa/fwl/core/cfwl_themebackground.h"
 #include "xfa/fwl/core/cfwl_themepart.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_appimp.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 #include "xfa/fwl/theme/cfwl_widgettp.h"
@@ -64,6 +64,10 @@ FWL_Error IFWL_Form::SetBorderRegion(CFX_Path* pPath) {
   return static_cast<CFWL_FormImp*>(GetImpl())->SetBorderRegion(pPath);
 }
 
+RestoreResizeInfo::RestoreResizeInfo() {}
+
+RestoreResizeInfo::~RestoreResizeInfo() {}
+
 CFWL_FormImp::CFWL_FormImp(const CFWL_WidgetImpProperties& properties,
                            IFWL_Widget* pOuter)
     : CFWL_WidgetImp(properties, pOuter),
@@ -79,7 +83,7 @@ CFWL_FormImp::CFWL_FormImp(const CFWL_WidgetImpProperties& properties,
       m_iSysBox(0),
       m_eResizeType(FORM_RESIZETYPE_None),
       m_bLButtonDown(FALSE),
-      m_bMaximized(FALSE),
+      m_bMaximized(false),
       m_bSetMaximize(FALSE),
       m_bCustomizeLayout(FALSE),
       m_eFormSize(FWL_FORMSIZE_Manual),
@@ -151,7 +155,7 @@ FWL_Error CFWL_FormImp::GetClientRect(CFX_RectF& rect) {
   }
 #ifdef FWL_UseMacSystemBorder
   rect = m_rtRelative;
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return FWL_Error::Indefinite;
 
@@ -393,8 +397,8 @@ IFWL_Widget* CFWL_FormImp::DoModal() {
   pDriver->PopNoteLoop();
 #endif
   delete m_pNoteLoop;
-  m_pNoteLoop = NULL;
-  return NULL;
+  m_pNoteLoop = nullptr;
+  return nullptr;
 }
 IFWL_Widget* CFWL_FormImp::DoModal(uint32_t& dwCommandID) {
   return DoModal();
@@ -447,15 +451,15 @@ void CFWL_FormImp::ShowChildWidget(IFWL_Widget* pParent) {
   IFWL_App* pApp = FWL_GetApp();
   if (!pApp)
     return;
-  CFWL_WidgetMgr* pWidgetMgr =
-      static_cast<CFWL_WidgetMgr*>(pApp->GetWidgetMgr());
+
+  CFWL_WidgetMgr* pWidgetMgr = pApp->GetWidgetMgr();
   if (!pWidgetMgr)
     return;
-  IFWL_Widget* pChild =
-      pWidgetMgr->GetWidget(pParent, FWL_WGTRELATION_FirstChild);
+
+  IFWL_Widget* pChild = pWidgetMgr->GetFirstChildWidget(pParent);
   while (pChild) {
     ShowChildWidget(pChild);
-    pChild = pWidgetMgr->GetWidget(pChild, FWL_WGTRELATION_NextSibling);
+    pChild = pWidgetMgr->GetNextSiblingWidget(pChild);
   }
 }
 
@@ -495,7 +499,7 @@ CFWL_SysBtn* CFWL_FormImp::GetSysBtnAtPoint(FX_FLOAT fx, FX_FLOAT fy) {
   if (m_pCaptionBox && m_pCaptionBox->m_rtBtn.Contains(fx, fy)) {
     return m_pCaptionBox;
   }
-  return NULL;
+  return nullptr;
 }
 CFWL_SysBtn* CFWL_FormImp::GetSysBtnByState(uint32_t dwState) {
   if (m_pCloseBox && (m_pCloseBox->m_dwState & dwState)) {
@@ -510,7 +514,7 @@ CFWL_SysBtn* CFWL_FormImp::GetSysBtnByState(uint32_t dwState) {
   if (m_pCaptionBox && (m_pCaptionBox->m_dwState & dwState)) {
     return m_pCaptionBox;
   }
-  return NULL;
+  return nullptr;
 }
 CFWL_SysBtn* CFWL_FormImp::GetSysBtnByIndex(int32_t nIndex) {
   if (nIndex < 0)
@@ -616,7 +620,7 @@ void CFWL_FormImp::GetEdgeRect(CFX_RectF& rtEdge) {
 }
 void CFWL_FormImp::SetWorkAreaRect() {
   m_rtRestore = m_pProperties->m_rtWidget;
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return;
   m_bSetMaximize = TRUE;
@@ -765,7 +769,7 @@ FX_BOOL CFWL_FormImp::HasIcon() {
   return !!pData->GetIcon(m_pInterface, FALSE);
 }
 void CFWL_FormImp::UpdateIcon() {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return;
   IFWL_FormDP* pData =
@@ -778,7 +782,7 @@ void CFWL_FormImp::UpdateIcon() {
     m_pSmallIcon = pSmallIcon;
 }
 void CFWL_FormImp::UpdateCaption() {
-  CFWL_WidgetMgr* pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   if (!pWidgetMgr)
     return;
   IFWL_FormDP* pData =
@@ -797,7 +801,7 @@ void CFWL_FormImp::DoWidthLimit(FX_FLOAT& fLeft,
                                 FX_BOOL bLeft) {
   FX_FLOAT fx = fCurX;
   FX_FLOAT fy = 0;
-  TransformTo(NULL, fx, fy);
+  TransformTo(nullptr, fx, fy);
   FX_FLOAT fTemp =
       bLeft ? (fWidth - fx + fLeft + fSpace) : (fx - fLeft + fSpace);
   if (fTemp >= fLimitMin && fTemp <= fLimitMax) {
@@ -822,7 +826,7 @@ void CFWL_FormImp::DoHeightLimit(FX_FLOAT& fTop,
                                  FX_BOOL bTop) {
   FX_FLOAT fx = 0;
   FX_FLOAT fy = fCurY;
-  TransformTo(NULL, fx, fy);
+  TransformTo(nullptr, fx, fy);
   FX_FLOAT fTemp = bTop ? (fHeight - fy + fTop + fSpace) : (fy - fTop + fSpace);
   if (fTemp >= fLimitMin && fTemp <= fLimitMax) {
     fHeight = fTemp;
@@ -935,8 +939,7 @@ void CFWL_FormImpDelegate::OnProcessMessage(CFWL_Message* pMessage) {
       break;
     }
     case CFWL_MessageType::Size: {
-      CFWL_WidgetMgr* pWidgetMgr =
-          static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+      CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
       if (!pWidgetMgr)
         return;
 
@@ -1128,4 +1131,42 @@ void CFWL_FormImpDelegate::OnClose(CFWL_MsgClose* pMsg) {
   CFWL_EvtClose eClose;
   eClose.m_pSrcTarget = m_pOwner->m_pInterface;
   m_pOwner->DispatchEvent(&eClose);
+}
+
+CFWL_SysBtn::CFWL_SysBtn() {
+  m_rtBtn.Set(0, 0, 0, 0);
+  m_dwState = 0;
+}
+
+bool CFWL_SysBtn::IsDisabled() const {
+  return !!(m_dwState & FWL_SYSBUTTONSTATE_Disabled);
+}
+
+void CFWL_SysBtn::SetNormal() {
+  m_dwState &= 0xFFF0;
+}
+
+void CFWL_SysBtn::SetPressed() {
+  SetNormal();
+  m_dwState |= FWL_SYSBUTTONSTATE_Pressed;
+}
+
+void CFWL_SysBtn::SetHover() {
+  SetNormal();
+  m_dwState |= FWL_SYSBUTTONSTATE_Hover;
+}
+
+void CFWL_SysBtn::SetDisabled(FX_BOOL bDisabled) {
+  bDisabled ? m_dwState |= FWL_SYSBUTTONSTATE_Disabled
+            : m_dwState &= ~FWL_SYSBUTTONSTATE_Disabled;
+}
+
+uint32_t CFWL_SysBtn::GetPartState() const {
+  if (IsDisabled())
+    return CFWL_PartState_Disabled;
+  if (m_dwState & FWL_SYSBUTTONSTATE_Pressed)
+    return CFWL_PartState_Pressed;
+  if (m_dwState & FWL_SYSBUTTONSTATE_Hover)
+    return CFWL_PartState_Hovered;
+  return CFWL_PartState_Normal;
 }

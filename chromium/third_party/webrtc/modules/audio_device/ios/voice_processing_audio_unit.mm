@@ -370,14 +370,17 @@ void VoiceProcessingAudioUnit::DisposeAudioUnit() {
       case kStarted:
         Stop();
         // Fall through.
+        FALLTHROUGH();
       case kInitialized:
         Uninitialize();
         break;
       case kUninitialized:
+        FALLTHROUGH();
       case kInitRequired:
         break;
     }
 
+    RTCLog(@"Disposing audio unit.");
     OSStatus result = AudioComponentInstanceDispose(vpio_unit_);
     if (result != noErr) {
       RTCLogError(@"AudioComponentInstanceDispose failed. Error=%ld.",

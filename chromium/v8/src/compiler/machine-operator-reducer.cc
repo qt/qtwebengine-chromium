@@ -6,6 +6,7 @@
 
 #include "src/base/bits.h"
 #include "src/base/division-by-constant.h"
+#include "src/base/ieee754.h"
 #include "src/codegen.h"
 #include "src/compiler/diamond.h"
 #include "src/compiler/graph.h"
@@ -152,14 +153,8 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
     }
     case IrOpcode::kWord32Shl:
       return ReduceWord32Shl(node);
-    case IrOpcode::kWord32Shr: {
-      Uint32BinopMatcher m(node);
-      if (m.right().Is(0)) return Replace(m.left().node());  // x >>> 0 => x
-      if (m.IsFoldable()) {                                  // K >>> K => K
-        return ReplaceInt32(m.left().Value() >> m.right().Value());
-      }
-      return ReduceWord32Shifts(node);
-    }
+    case IrOpcode::kWord32Shr:
+      return ReduceWord32Shr(node);
     case IrOpcode::kWord32Sar:
       return ReduceWord32Sar(node);
     case IrOpcode::kWord32Ror: {
@@ -239,18 +234,6 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       if (m.IsFoldable()) {  // K < K => K
         return ReplaceBool(m.left().Value() < m.right().Value());
       }
-      if (m.left().IsInt32Sub() && m.right().Is(0)) {  // x - y < 0 => x < y
-        Int32BinopMatcher msub(m.left().node());
-        node->ReplaceInput(0, msub.left().node());
-        node->ReplaceInput(1, msub.right().node());
-        return Changed(node);
-      }
-      if (m.left().Is(0) && m.right().IsInt32Sub()) {  // 0 < x - y => y < x
-        Int32BinopMatcher msub(m.right().node());
-        node->ReplaceInput(0, msub.right().node());
-        node->ReplaceInput(1, msub.left().node());
-        return Changed(node);
-      }
       if (m.LeftEqualsRight()) return ReplaceBool(false);  // x < x => false
       break;
     }
@@ -258,18 +241,6 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       Int32BinopMatcher m(node);
       if (m.IsFoldable()) {  // K <= K => K
         return ReplaceBool(m.left().Value() <= m.right().Value());
-      }
-      if (m.left().IsInt32Sub() && m.right().Is(0)) {  // x - y <= 0 => x <= y
-        Int32BinopMatcher msub(m.left().node());
-        node->ReplaceInput(0, msub.left().node());
-        node->ReplaceInput(1, msub.right().node());
-        return Changed(node);
-      }
-      if (m.left().Is(0) && m.right().IsInt32Sub()) {  // 0 <= x - y => y <= x
-        Int32BinopMatcher msub(m.right().node());
-        node->ReplaceInput(0, msub.right().node());
-        node->ReplaceInput(1, msub.left().node());
-        return Changed(node);
       }
       if (m.LeftEqualsRight()) return ReplaceBool(true);  // x <= x => true
       break;
@@ -380,6 +351,80 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       if (m.IsFoldable()) {  // K % K => K
         return ReplaceFloat64(modulo(m.left().Value(), m.right().Value()));
       }
+      break;
+    }
+    case IrOpcode::kFloat64Atan: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::atan(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Atan2: {
+      Float64BinopMatcher m(node);
+      if (m.right().IsNaN()) {
+        return Replace(m.right().node());
+      }
+      if (m.left().IsNaN()) {
+        return Replace(m.left().node());
+      }
+      if (m.IsFoldable()) {
+        return ReplaceFloat64(
+            base::ieee754::atan2(m.left().Value(), m.right().Value()));
+      }
+      break;
+    }
+    case IrOpcode::kFloat64Atanh: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::atanh(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Cos: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::cos(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Exp: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::exp(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Expm1: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::expm1(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Log: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::log(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Log1p: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::log1p(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Log2: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::log2(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Log10: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::log10(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Cbrt: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::cbrt(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Sin: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::sin(m.Value()));
+      break;
+    }
+    case IrOpcode::kFloat64Tan: {
+      Float64Matcher m(node->InputAt(0));
+      if (m.HasValue()) return ReplaceFloat64(base::ieee754::tan(m.Value()));
       break;
     }
     case IrOpcode::kChangeFloat32ToFloat64: {
@@ -785,6 +830,25 @@ Reduction MachineOperatorReducer::ReduceWord32Shl(Node* node) {
   return ReduceWord32Shifts(node);
 }
 
+Reduction MachineOperatorReducer::ReduceWord32Shr(Node* node) {
+  Uint32BinopMatcher m(node);
+  if (m.right().Is(0)) return Replace(m.left().node());  // x >>> 0 => x
+  if (m.IsFoldable()) {                                  // K >>> K => K
+    return ReplaceInt32(m.left().Value() >> m.right().Value());
+  }
+  if (m.left().IsWord32And() && m.right().HasValue()) {
+    Uint32BinopMatcher mleft(m.left().node());
+    if (mleft.right().HasValue()) {
+      uint32_t shift = m.right().Value() & 0x1f;
+      uint32_t mask = mleft.right().Value();
+      if ((mask >> shift) == 0) {
+        // (m >>> s) == 0 implies ((x & m) >>> s) == 0
+        return ReplaceInt32(0);
+      }
+    }
+  }
+  return ReduceWord32Shifts(node);
+}
 
 Reduction MachineOperatorReducer::ReduceWord32Sar(Node* node) {
   Int32BinopMatcher m(node);

@@ -140,9 +140,9 @@ class LocalDeclEncoder {
 
   // Prepend local declarations by creating a new buffer and copying data
   // over. The new buffer must be delete[]'d by the caller.
-  void Prepend(const byte** start, const byte** end) const {
+  void Prepend(Zone* zone, const byte** start, const byte** end) const {
     size_t size = (*end - *start);
-    byte* buffer = new byte[Size() + size];
+    byte* buffer = reinterpret_cast<byte*>(zone->New(Size() + size));
     size_t pos = Emit(buffer);
     memcpy(buffer + pos, *start, size);
     pos += size;
@@ -153,7 +153,7 @@ class LocalDeclEncoder {
   size_t Emit(byte* buffer) const {
     size_t pos = 0;
     pos = WriteUint32v(buffer, pos, static_cast<uint32_t>(local_decls.size()));
-    for (size_t i = 0; i < local_decls.size(); i++) {
+    for (size_t i = 0; i < local_decls.size(); ++i) {
       pos = WriteUint32v(buffer, pos, local_decls[i].first);
       buffer[pos++] = WasmOpcodes::LocalTypeCodeFor(local_decls[i].second);
     }
@@ -364,6 +364,15 @@ class LocalDeclEncoder {
       static_cast<byte>(                                                   \
           v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, true)), \
       ZERO_ALIGNMENT, static_cast<byte>(offset)
+#define WASM_LOAD_MEM_ALIGNMENT(type, index, alignment)                        \
+  index, static_cast<byte>(                                                    \
+             v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, false)), \
+      alignment, ZERO_OFFSET
+#define WASM_STORE_MEM_ALIGNMENT(type, index, alignment, val)              \
+  index, val,                                                              \
+      static_cast<byte>(                                                   \
+          v8::internal::wasm::WasmOpcodes::LoadStoreOpcodeOf(type, true)), \
+      alignment, ZERO_OFFSET
 
 #define WASM_CALL_FUNCTION0(index) \
   kExprCallFunction, 0, static_cast<byte>(index)

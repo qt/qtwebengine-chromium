@@ -35,8 +35,6 @@ bool IsConfigEvent(const rtclog::Event& event) {
 RtcEventLogHelperThread::RtcEventLogHelperThread(
     SwapQueue<ControlMessage>* message_queue,
     SwapQueue<std::unique_ptr<rtclog::Event>>* event_queue,
-    rtc::Event* wake_up,
-    rtc::Event* stopped,
     const Clock* const clock)
     : message_queue_(message_queue),
       event_queue_(event_queue),
@@ -51,13 +49,12 @@ RtcEventLogHelperThread::RtcEventLogHelperThread(
       has_recent_event_(false),
       most_recent_event_(),
       output_string_(),
-      wake_up_(wake_up),
-      stopped_(stopped),
+      wake_periodically_(false, false),
+      wake_from_hibernation_(false, false),
+      file_finished_(false, false),
       clock_(clock) {
   RTC_DCHECK(message_queue_);
   RTC_DCHECK(event_queue_);
-  RTC_DCHECK(wake_up_);
-  RTC_DCHECK(stopped_);
   RTC_DCHECK(clock_);
   thread_.Start();
 }
@@ -75,8 +72,19 @@ RtcEventLogHelperThread::~RtcEventLogHelperThread() {
     LOG(LS_WARNING) << "Clearing message queue to terminate thread.";
     message_queue_->Clear();
   }
-  wake_up_->Set();  // Wake up the output thread.
+  wake_from_hibernation_.Set();
+  wake_periodically_.Set();  // Wake up the output thread.
   thread_.Stop();   // Wait for the thread to terminate.
+}
+
+void RtcEventLogHelperThread::WaitForFileFinished() {
+  wake_from_hibernation_.Set();
+  wake_periodically_.Set();
+  file_finished_.Wait(rtc::Event::kForever);
+}
+
+void RtcEventLogHelperThread::SignalNewEvent() {
+  wake_from_hibernation_.Set();
 }
 
 bool RtcEventLogHelperThread::AppendEventToString(rtclog::Event* event) {
@@ -98,8 +106,9 @@ bool RtcEventLogHelperThread::AppendEventToString(rtclog::Event* event) {
   return stop;
 }
 
-void RtcEventLogHelperThread::LogToMemory() {
-  RTC_DCHECK(!file_->Open());
+bool RtcEventLogHelperThread::LogToMemory() {
+  RTC_DCHECK(!file_->is_open());
+  bool message_received = false;
 
   // Process each event earlier than the current time and append it to the
   // appropriate history_.
@@ -115,11 +124,13 @@ void RtcEventLogHelperThread::LogToMemory() {
       history_.push_back(std::move(most_recent_event_));
     }
     has_recent_event_ = event_queue_->Remove(&most_recent_event_);
+    message_received = true;
   }
+  return message_received;
 }
 
 void RtcEventLogHelperThread::StartLogFile() {
-  RTC_DCHECK(file_->Open());
+  RTC_DCHECK(file_->is_open());
   bool stop = false;
   output_string_.clear();
 
@@ -143,7 +154,12 @@ void RtcEventLogHelperThread::StartLogFile() {
   }
 
   // Write to file.
-  file_->Write(output_string_.data(), output_string_.size());
+  if (!file_->Write(output_string_.data(), output_string_.size())) {
+    LOG(LS_ERROR) << "FileWrapper failed to write WebRtcEventLog file.";
+    // The current FileWrapper implementation closes the file on error.
+    RTC_DCHECK(!file_->is_open());
+    return;
+  }
   written_bytes_ += output_string_.size();
 
   // Free the allocated memory since we probably won't need this amount of
@@ -152,14 +168,15 @@ void RtcEventLogHelperThread::StartLogFile() {
   output_string_.shrink_to_fit();
 
   if (stop) {
-    RTC_DCHECK(file_->Open());
+    RTC_DCHECK(file_->is_open());
     StopLogFile();
   }
 }
 
-void RtcEventLogHelperThread::LogToFile() {
-  RTC_DCHECK(file_->Open());
+bool RtcEventLogHelperThread::LogToFile() {
+  RTC_DCHECK(file_->is_open());
   output_string_.clear();
+  bool message_received = false;
 
   // Append each event older than both the current time and the stop time
   // to the output_string_.
@@ -178,15 +195,17 @@ void RtcEventLogHelperThread::LogToFile() {
       }
       has_recent_event_ = event_queue_->Remove(&most_recent_event_);
     }
+    message_received = true;
   }
 
   // Write string to file.
-  file_->Write(output_string_.data(), output_string_.size());
-  written_bytes_ += output_string_.size();
-
-  if (!file_->Open()) {
-    LOG(LS_WARNING) << "WebRTC event log file closed by FileWrapper.";
+  if (!file_->Write(output_string_.data(), output_string_.size())) {
+    LOG(LS_ERROR) << "FileWrapper failed to write WebRtcEventLog file.";
+    // The current FileWrapper implementation closes the file on error.
+    RTC_DCHECK(!file_->is_open());
+    return message_received;
   }
+  written_bytes_ += output_string_.size();
 
   // We want to stop logging if we have reached the file size limit. We also
   // want to stop logging if the remaining events are more recent than the
@@ -194,13 +213,14 @@ void RtcEventLogHelperThread::LogToFile() {
   // having more events in the queue.
   if ((has_recent_event_ && most_recent_event_->timestamp_us() > stop_time_) ||
       stop) {
-    RTC_DCHECK(file_->Open());
+    RTC_DCHECK(file_->is_open());
     StopLogFile();
   }
+  return message_received;
 }
 
 void RtcEventLogHelperThread::StopLogFile() {
-  RTC_DCHECK(file_->Open());
+  RTC_DCHECK(file_->is_open());
   output_string_.clear();
 
   rtclog::Event end_event;
@@ -210,7 +230,11 @@ void RtcEventLogHelperThread::StopLogFile() {
 
   if (written_bytes_ + static_cast<int64_t>(output_string_.size()) <=
       max_size_bytes_) {
-    file_->Write(output_string_.data(), output_string_.size());
+    if (!file_->Write(output_string_.data(), output_string_.size())) {
+      LOG(LS_ERROR) << "FileWrapper failed to write WebRtcEventLog file.";
+      // The current FileWrapper implementation closes the file on error.
+      RTC_DCHECK(!file_->is_open());
+    }
     written_bytes_ += output_string_.size();
   }
 
@@ -220,18 +244,19 @@ void RtcEventLogHelperThread::StopLogFile() {
   stop_time_ = std::numeric_limits<int64_t>::max();
   output_string_.clear();
   file_->CloseFile();
-  RTC_DCHECK(!file_->Open());
+  RTC_DCHECK(!file_->is_open());
 }
 
-void RtcEventLogHelperThread::WriteLog() {
+void RtcEventLogHelperThread::ProcessEvents() {
   ControlMessage message;
 
   while (true) {
+    bool message_received = false;
     // Process control messages.
     while (message_queue_->Remove(&message)) {
       switch (message.message_type) {
         case ControlMessage::START_FILE:
-          if (!file_->Open()) {
+          if (!file_->is_open()) {
             max_size_bytes_ = message.max_size_bytes;
             start_time_ = message.start_time;
             stop_time_ = message.stop_time;
@@ -241,42 +266,48 @@ void RtcEventLogHelperThread::WriteLog() {
             // Already started. Ignore message and close file handle.
             message.file->CloseFile();
           }
+          message_received = true;
           break;
         case ControlMessage::STOP_FILE:
-          if (file_->Open()) {
+          if (file_->is_open()) {
             stop_time_ = message.stop_time;
             LogToFile();  // Log remaining events from message queues.
           }
           // LogToFile might stop on it's own so we need to recheck the state.
-          if (file_->Open()) {
+          if (file_->is_open()) {
             StopLogFile();
           }
-          stopped_->Set();
+          file_finished_.Set();
+          message_received = true;
           break;
         case ControlMessage::TERMINATE_THREAD:
-          if (file_->Open()) {
+          if (file_->is_open()) {
             StopLogFile();
           }
           return;
       }
     }
 
-    // Write events to file or memory
-    if (file_->Open()) {
-      LogToFile();
+    // Write events to file or memory.
+    if (file_->is_open()) {
+      message_received |= LogToFile();
     } else {
-      LogToMemory();
+      message_received |= LogToMemory();
     }
 
     // Accumulate a new batch of events instead of processing them one at a
     // time.
-    wake_up_->Wait(50);
+    if (message_received) {
+      wake_periodically_.Wait(100);
+    } else {
+      wake_from_hibernation_.Wait(rtc::Event::kForever);
+    }
   }
 }
 
 bool RtcEventLogHelperThread::ThreadOutputFunction(void* obj) {
   RtcEventLogHelperThread* helper = static_cast<RtcEventLogHelperThread*>(obj);
-  helper->WriteLog();
+  helper->ProcessEvents();
   return false;
 }
 

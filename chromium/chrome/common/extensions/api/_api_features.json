@@ -699,6 +699,14 @@
     "extension_types": ["platform_app"],
     "contexts": ["blessed_extension"]
   },
+  "quickUnlockPrivate": {
+    "channel": "stable",
+    "contexts": ["webui"],
+    "matches": [
+      "chrome://md-settings/*"
+    ],
+    "platforms": ["chromeos"]
+  },
   "resourcesPrivate": [{
     "dependencies": ["permission:resourcesPrivate"],
     "contexts": ["blessed_extension"]
@@ -756,7 +764,7 @@
   "tabs": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
-    "contexts": ["blessed_extension"]
+    "contexts": ["blessed_extension", "extension_service_worker"]
   },
   "terminalPrivate": {
     "dependencies": ["permission:terminalPrivate"],

@@ -1014,7 +1014,6 @@ void InstructionSelector::VisitFloat64Abs(Node* node) {
   VisitFloatUnop(this, node, node->InputAt(0), kAVXFloat64Abs, kSSEFloat64Abs);
 }
 
-
 void InstructionSelector::VisitFloat32Sqrt(Node* node) {
   VisitRO(this, node, kSSEFloat32Sqrt);
 }
@@ -1069,6 +1068,24 @@ void InstructionSelector::VisitFloat64RoundTiesEven(Node* node) {
   VisitRR(this, node, kSSEFloat64Round | MiscField::encode(kRoundToNearest));
 }
 
+void InstructionSelector::VisitFloat32Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Ieee754Binop(Node* node,
+                                                   InstructionCode opcode) {
+  IA32OperandGenerator g(this);
+  Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(0)),
+       g.UseRegister(node->InputAt(1)))
+      ->MarkAsCall();
+}
+
+void InstructionSelector::VisitFloat64Ieee754Unop(Node* node,
+                                                  InstructionCode opcode) {
+  IA32OperandGenerator g(this);
+  Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(node->InputAt(0)))
+      ->MarkAsCall();
+}
 
 void InstructionSelector::EmitPrepareArguments(
     ZoneVector<PushParameter>* arguments, const CallDescriptor* descriptor,
@@ -1103,7 +1120,7 @@ void InstructionSelector::EmitPrepareArguments(
           g.CanBeImmediate(input.node())
               ? g.UseImmediate(input.node())
               : IsSupported(ATOM) ||
-                        sequence()->IsFloat(GetVirtualRegister(input.node()))
+                        sequence()->IsFP(GetVirtualRegister(input.node()))
                     ? g.UseRegister(input.node())
                     : g.Use(input.node());
       if (input.type() == MachineType::Float32()) {
@@ -1583,6 +1600,12 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
        g.UseRegister(left), g.Use(right));
 }
 
+void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
+  IA32OperandGenerator g(this);
+  Emit(kSSEFloat64SilenceNaN, g.DefineSameAsFirst(node),
+       g.UseRegister(node->InputAt(0)));
+}
+
 void InstructionSelector::VisitAtomicLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
   DCHECK(load_rep.representation() == MachineRepresentation::kWord8 ||
@@ -1654,6 +1677,13 @@ InstructionSelector::SupportedMachineOperatorFlags() {
              MachineOperatorBuilder::kFloat64RoundTiesEven;
   }
   return flags;
+}
+
+// static
+MachineOperatorBuilder::AlignmentRequirements
+InstructionSelector::AlignmentRequirements() {
+  return MachineOperatorBuilder::AlignmentRequirements::
+      FullUnalignedAccessSupport();
 }
 
 }  // namespace compiler

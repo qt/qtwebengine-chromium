@@ -15,22 +15,13 @@ class CXFA_ScriptContext;
 
 class CXFA_ResolveNodesData {
  public:
-  CXFA_ResolveNodesData(CXFA_ScriptContext* pSC = NULL)
-      : m_pSC(pSC),
-        m_CurNode(NULL),
-        m_wsName(),
-        m_uHashName(0),
-        m_wsCondition(),
-        m_nLevel(0),
-        m_Nodes(),
-        m_dwStyles(XFA_RESOLVENODE_Children),
-        m_pScriptAttribute(NULL),
-        m_dwFlag(XFA_RESOVENODE_RSTYPE_Nodes) {}
-  ~CXFA_ResolveNodesData() { m_Nodes.RemoveAll(); }
+  CXFA_ResolveNodesData(CXFA_ScriptContext* pSC = nullptr);
+  ~CXFA_ResolveNodesData();
+
   CXFA_ScriptContext* m_pSC;
   CXFA_Object* m_CurNode;
   CFX_WideString m_wsName;
-  uint32_t m_uHashName;
+  XFA_HashCode m_uHashName;
   CFX_WideString m_wsCondition;
   int32_t m_nLevel;
   CXFA_ObjArray m_Nodes;
@@ -38,10 +29,12 @@ class CXFA_ResolveNodesData {
   const XFA_SCRIPTATTRIBUTEINFO* m_pScriptAttribute;
   XFA_RESOVENODE_RSTYPE m_dwFlag;
 };
+
 class CXFA_ResolveProcessor {
  public:
-  CXFA_ResolveProcessor(void);
-  ~CXFA_ResolveProcessor(void);
+  CXFA_ResolveProcessor();
+  ~CXFA_ResolveProcessor();
+
   int32_t XFA_ResolveNodes(CXFA_ResolveNodesData& rnd);
   int32_t XFA_ResolveNodes_AnyChild(CXFA_ResolveNodesData& rnd);
   int32_t XFA_ResolveNodes_Dollar(CXFA_ResolveNodesData& rnd);

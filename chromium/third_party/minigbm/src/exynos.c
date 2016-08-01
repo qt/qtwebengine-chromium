@@ -17,8 +17,9 @@
 #include "helpers.h"
 #include "util.h"
 
-int gbm_exynos_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
-			 uint32_t format, uint32_t flags)
+static int gbm_exynos_bo_create(struct gbm_bo *bo,
+				uint32_t width, uint32_t height,
+				uint32_t format, uint32_t flags)
 {
 	size_t plane;
 
@@ -33,8 +34,7 @@ int gbm_exynos_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
 		bo->sizes[0] = bo->strides[0] * height + 64;
 		bo->sizes[1] = bo->strides[1] * chroma_height + 64;
 		bo->offsets[0] = bo->offsets[1] = 0;
-	} else if (format == GBM_FORMAT_XRGB8888 || format == GBM_FORMAT_ARGB8888 ||
-			format == GBM_BO_FORMAT_XRGB8888 || format == GBM_BO_FORMAT_ARGB8888 ) {
+	} else if (format == GBM_FORMAT_XRGB8888 || format == GBM_FORMAT_ARGB8888) {
 		bo->strides[0] = gbm_stride_from_format(format, width);
 		bo->sizes[0] = height * bo->strides[0];
 		bo->offsets[0] = 0;
@@ -44,10 +44,10 @@ int gbm_exynos_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
 		return -EINVAL;
 	}
 
+	int ret;
 	for (plane = 0; plane < bo->num_planes; plane++) {
 		size_t size = bo->sizes[plane];
 		struct drm_exynos_gem_create gem_create;
-		int ret;
 
 		memset(&gem_create, 0, sizeof(gem_create));
 		gem_create.size = size;
@@ -57,13 +57,29 @@ int gbm_exynos_bo_create(struct gbm_bo *bo, uint32_t width, uint32_t height,
 		if (ret) {
 			fprintf(stderr, "minigbm: DRM_IOCTL_EXYNOS_GEM_CREATE failed "
 					"(size=%zu)\n", size);
-			return ret;
+			goto cleanup_planes;
 		}
 
 		bo->handles[plane].u32 = gem_create.handle;
 	}
 
 	return 0;
+
+cleanup_planes:
+	for ( ; plane != 0; plane--) {
+		struct drm_gem_close gem_close;
+		memset(&gem_close, 0, sizeof(gem_close));
+		gem_close.handle = bo->handles[plane - 1].u32;
+		int gem_close_ret = drmIoctl(bo->gbm->fd, DRM_IOCTL_GEM_CLOSE,
+					     &gem_close);
+		if (gem_close_ret) {
+			fprintf(stderr,
+				"minigbm: DRM_IOCTL_GEM_CLOSE failed: %d\n",
+				gem_close_ret);
+		}
+	}
+
+	return ret;
 }
 
 const struct gbm_driver gbm_driver_exynos =
@@ -72,11 +88,11 @@ const struct gbm_driver gbm_driver_exynos =
 	.bo_create = gbm_exynos_bo_create,
 	.bo_destroy = gbm_gem_bo_destroy,
 	.format_list = {
-		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING | GBM_BO_USE_WRITE},
-		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
-		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING | GBM_BO_USE_WRITE},
-		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
-		{GBM_FORMAT_NV12, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | GBM_BO_USE_WRITE},
+		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING},
+		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_RENDERING},
+		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_NV12, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING},
 	}
 };
 

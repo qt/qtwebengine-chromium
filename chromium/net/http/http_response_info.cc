@@ -96,6 +96,10 @@ enum {
   // This bit is set if the response has a key-exchange-info field at the end.
   RESPONSE_INFO_HAS_KEY_EXCHANGE_INFO = 1 << 22,
 
+  // This bit is set if ssl_info recorded that PKP was bypassed due to a local
+  // trust anchor.
+  RESPONSE_INFO_PKP_BYPASSED = 1 << 23,
+
   // TODO(darin): Add other bits to indicate alternate request methods.
   // For now, we don't support storing those.
 };
@@ -296,6 +300,8 @@ bool HttpResponseInfo::InitFromPickle(const base::Pickle& pickle,
 
   unused_since_prefetch = (flags & RESPONSE_INFO_UNUSED_SINCE_PREFETCH) != 0;
 
+  ssl_info.pkp_bypassed = (flags & RESPONSE_INFO_PKP_BYPASSED) != 0;
+
   return true;
 }
 
@@ -333,6 +339,8 @@ void HttpResponseInfo::Persist(base::Pickle* pickle,
     flags |= RESPONSE_INFO_UNUSED_SINCE_PREFETCH;
   if (!ssl_info.signed_certificate_timestamps.empty())
     flags |= RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS;
+  if (ssl_info.pkp_bypassed)
+    flags |= RESPONSE_INFO_PKP_BYPASSED;
 
   pickle->WriteInt(flags);
   pickle->WriteInt64(request_time.ToInternalValue());
@@ -411,8 +419,8 @@ std::string HttpResponseInfo::ConnectionInfoToString(
   switch (connection_info) {
     case CONNECTION_INFO_UNKNOWN:
       return "unknown";
-    case CONNECTION_INFO_HTTP1:
-      return "http/1";
+    case CONNECTION_INFO_HTTP1_1:
+      return "http/1.1";
     case CONNECTION_INFO_DEPRECATED_SPDY2:
       NOTREACHED();
       return "";
@@ -428,6 +436,10 @@ std::string HttpResponseInfo::ConnectionInfoToString(
       return "h2";
     case CONNECTION_INFO_QUIC1_SPDY3:
       return "quic/1+spdy/3";
+    case CONNECTION_INFO_HTTP0_9:
+      return "http/0.9";
+    case CONNECTION_INFO_HTTP1_0:
+      return "http/1.0";
     case NUM_OF_CONNECTION_INFOS:
       break;
   }

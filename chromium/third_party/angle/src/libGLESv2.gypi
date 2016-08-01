@@ -25,6 +25,11 @@
             'common/platform.h',
             'common/string_utils.cpp',
             'common/string_utils.h',
+            'common/third_party/numerics/base/logging.h',
+            'common/third_party/numerics/base/numerics/safe_conversions.h',
+            'common/third_party/numerics/base/numerics/safe_conversions_impl.h',
+            'common/third_party/numerics/base/numerics/safe_math.h',
+            'common/third_party/numerics/base/numerics/safe_math_impl.h',
             'common/tls.cpp',
             'common/tls.h',
             'common/utilities.cpp',
@@ -87,12 +92,16 @@
             'libANGLE/FramebufferAttachment.h',
             'libANGLE/HandleAllocator.cpp',
             'libANGLE/HandleAllocator.h',
+            'libANGLE/HandleRangeAllocator.h',
+            'libANGLE/HandleRangeAllocator.cpp',
             'libANGLE/Image.h',
             'libANGLE/Image.cpp',
             'libANGLE/ImageIndex.h',
             'libANGLE/ImageIndex.cpp',
             'libANGLE/IndexRangeCache.cpp',
             'libANGLE/IndexRangeCache.h',
+            'libANGLE/Path.h',
+            'libANGLE/Path.cpp',
             'libANGLE/Platform.cpp',
             'libANGLE/Program.cpp',
             'libANGLE/Program.h',
@@ -146,6 +155,7 @@
             'libANGLE/renderer/EGLImplFactory.h',
             'libANGLE/renderer/FenceNVImpl.h',
             'libANGLE/renderer/FenceSyncImpl.h',
+            'libANGLE/renderer/FramebufferAttachmentObjectImpl.h',
             'libANGLE/renderer/FramebufferImpl.h',
             'libANGLE/renderer/GLImplFactory.h',
             'libANGLE/renderer/ImageImpl.h',
@@ -160,6 +170,14 @@
             'libANGLE/renderer/TextureImpl.h',
             'libANGLE/renderer/TransformFeedbackImpl.h',
             'libANGLE/renderer/VertexArrayImpl.h',
+            'libANGLE/renderer/copyimage.cpp',
+            'libANGLE/renderer/copyimage.h',
+            'libANGLE/renderer/copyimage.inl',
+            'libANGLE/renderer/imageformats.h',
+            'libANGLE/renderer/renderer_utils.cpp',
+            'libANGLE/renderer/renderer_utils.h',
+            'libANGLE/signal_utils.cpp',
+            'libANGLE/signal_utils.h',
             'libANGLE/validationEGL.cpp',
             'libANGLE/validationEGL.h',
             'libANGLE/validationES.cpp',
@@ -177,9 +195,6 @@
             'libANGLE/renderer/d3d/BufferD3D.h',
             'libANGLE/renderer/d3d/CompilerD3D.cpp',
             'libANGLE/renderer/d3d/CompilerD3D.h',
-            'libANGLE/renderer/d3d/copyimage.cpp',
-            'libANGLE/renderer/d3d/copyimage.h',
-            'libANGLE/renderer/d3d/copyimage.inl',
             'libANGLE/renderer/d3d/DeviceD3D.cpp',
             'libANGLE/renderer/d3d/DeviceD3D.h',
             'libANGLE/renderer/d3d/DisplayD3D.cpp',
@@ -188,7 +203,6 @@
             'libANGLE/renderer/d3d/DynamicHLSL.h',
             'libANGLE/renderer/d3d/EGLImageD3D.cpp',
             'libANGLE/renderer/d3d/EGLImageD3D.h',
-            'libANGLE/renderer/d3d/formatutilsD3D.cpp',
             'libANGLE/renderer/d3d/formatutilsD3D.h',
             'libANGLE/renderer/d3d/FramebufferD3D.cpp',
             'libANGLE/renderer/d3d/FramebufferD3D.h',
@@ -198,7 +212,6 @@
             'libANGLE/renderer/d3d/HLSLCompiler.h',
             'libANGLE/renderer/d3d/ImageD3D.cpp',
             'libANGLE/renderer/d3d/ImageD3D.h',
-            'libANGLE/renderer/d3d/imageformats.h',
             'libANGLE/renderer/d3d/IndexBuffer.cpp',
             'libANGLE/renderer/d3d/IndexBuffer.h',
             'libANGLE/renderer/d3d/IndexDataManager.cpp',
@@ -444,6 +457,8 @@
             'libANGLE/renderer/gl/FramebufferGL.h',
             'libANGLE/renderer/gl/FunctionsGL.cpp',
             'libANGLE/renderer/gl/FunctionsGL.h',
+            'libANGLE/renderer/gl/PathGL.h',
+            'libANGLE/renderer/gl/PathGL.cpp',
             'libANGLE/renderer/gl/ProgramGL.cpp',
             'libANGLE/renderer/gl/ProgramGL.h',
             'libANGLE/renderer/gl/QueryGL.cpp',
@@ -507,9 +522,17 @@
         ],
         'libangle_gl_egl_sources':
         [
+            'libANGLE/renderer/gl/egl/DisplayEGL.cpp',
+            'libANGLE/renderer/gl/egl/DisplayEGL.h',
             'libANGLE/renderer/gl/egl/FunctionsEGL.cpp',
             'libANGLE/renderer/gl/egl/FunctionsEGL.h',
             'libANGLE/renderer/gl/egl/functionsegl_typedefs.h',
+            'libANGLE/renderer/gl/egl/PbufferSurfaceEGL.cpp',
+            'libANGLE/renderer/gl/egl/PbufferSurfaceEGL.h',
+            'libANGLE/renderer/gl/egl/SurfaceEGL.cpp',
+            'libANGLE/renderer/gl/egl/SurfaceEGL.h',
+            'libANGLE/renderer/gl/egl/WindowSurfaceEGL.cpp',
+            'libANGLE/renderer/gl/egl/WindowSurfaceEGL.h',
         ],
         'libangle_gl_egl_dl_sources':
         [
@@ -523,6 +546,11 @@
             'libANGLE/renderer/gl/egl/ozone/SurfaceOzone.cpp',
             'libANGLE/renderer/gl/egl/ozone/SurfaceOzone.h',
         ],
+        'libangle_gl_egl_android_sources':
+        [
+            'libANGLE/renderer/gl/egl/android/DisplayAndroid.cpp',
+            'libANGLE/renderer/gl/egl/android/DisplayAndroid.h',
+        ],
         'libangle_gl_cgl_sources':
         [
             'libANGLE/renderer/gl/cgl/DisplayCGL.mm',
@@ -531,6 +559,47 @@
             'libANGLE/renderer/gl/cgl/PbufferSurfaceCGL.h',
             'libANGLE/renderer/gl/cgl/WindowSurfaceCGL.mm',
             'libANGLE/renderer/gl/cgl/WindowSurfaceCGL.h',
+        ],
+        'libangle_vulkan_sources':
+        [
+            'libANGLE/renderer/vulkan/BufferVk.cpp',
+            'libANGLE/renderer/vulkan/BufferVk.h',
+            'libANGLE/renderer/vulkan/CompilerVk.cpp',
+            'libANGLE/renderer/vulkan/CompilerVk.h',
+            'libANGLE/renderer/vulkan/ContextVk.cpp',
+            'libANGLE/renderer/vulkan/ContextVk.h',
+            'libANGLE/renderer/vulkan/DeviceVk.cpp',
+            'libANGLE/renderer/vulkan/DeviceVk.h',
+            'libANGLE/renderer/vulkan/DisplayVk.cpp',
+            'libANGLE/renderer/vulkan/DisplayVk.h',
+            'libANGLE/renderer/vulkan/FenceNVVk.cpp',
+            'libANGLE/renderer/vulkan/FenceNVVk.h',
+            'libANGLE/renderer/vulkan/FenceSyncVk.cpp',
+            'libANGLE/renderer/vulkan/FenceSyncVk.h',
+            'libANGLE/renderer/vulkan/FramebufferVk.cpp',
+            'libANGLE/renderer/vulkan/FramebufferVk.h',
+            'libANGLE/renderer/vulkan/ImageVk.cpp',
+            'libANGLE/renderer/vulkan/ImageVk.h',
+            'libANGLE/renderer/vulkan/ProgramVk.cpp',
+            'libANGLE/renderer/vulkan/ProgramVk.h',
+            'libANGLE/renderer/vulkan/QueryVk.cpp',
+            'libANGLE/renderer/vulkan/QueryVk.h',
+            'libANGLE/renderer/vulkan/RenderbufferVk.cpp',
+            'libANGLE/renderer/vulkan/RenderbufferVk.h',
+            'libANGLE/renderer/vulkan/RendererVk.cpp',
+            'libANGLE/renderer/vulkan/RendererVk.h',
+            'libANGLE/renderer/vulkan/SamplerVk.cpp',
+            'libANGLE/renderer/vulkan/SamplerVk.h',
+            'libANGLE/renderer/vulkan/ShaderVk.cpp',
+            'libANGLE/renderer/vulkan/ShaderVk.h',
+            'libANGLE/renderer/vulkan/SurfaceVk.cpp',
+            'libANGLE/renderer/vulkan/SurfaceVk.h',
+            'libANGLE/renderer/vulkan/TextureVk.cpp',
+            'libANGLE/renderer/vulkan/TextureVk.h',
+            'libANGLE/renderer/vulkan/TransformFeedbackVk.cpp',
+            'libANGLE/renderer/vulkan/TransformFeedbackVk.h',
+            'libANGLE/renderer/vulkan/VertexArrayVk.cpp',
+            'libANGLE/renderer/vulkan/VertexArrayVk.h',
         ],
         'libglesv2_sources':
         [
@@ -589,6 +658,10 @@
             'defines':
             [
                 'LIBANGLE_IMPLEMENTATION',
+            ],
+            'export_dependent_settings':
+            [
+                'angle_common',
             ],
             'direct_dependent_settings':
             {
@@ -653,6 +726,13 @@
                                     'ANGLE_USE_X11',
                                 ],
                             }],
+                        ],
+                    }],
+                    ['angle_enable_vulkan==1',
+                    {
+                        'defines':
+                        [
+                            'ANGLE_ENABLE_VULKAN',
                         ],
                     }],
                 ],
@@ -849,6 +929,17 @@
                                 },
                             }
                         }],
+                    ],
+                }],
+                ['angle_enable_vulkan==1',
+                {
+                    'sources':
+                    [
+                        '<@(libangle_vulkan_sources)',
+                    ],
+                    'defines':
+                    [
+                        'ANGLE_ENABLE_VULKAN',
                     ],
                 }],
                 ['angle_build_winrt==0 and OS=="win"',

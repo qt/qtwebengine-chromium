@@ -38,7 +38,7 @@ struct TranslatedAttribute;
 namespace gl
 {
 struct Caps;
-struct ContextState;
+class ContextState;
 class ResourceManager;
 class Shader;
 class InfoLog;
@@ -366,7 +366,11 @@ class Program final : angle::NonCopyable, public LabeledObject
                                           const sh::ShaderVariable &fragmentVariable,
                                           bool validatePrecision);
 
-    static bool linkValidateVaryings(InfoLog &infoLog, const std::string &varyingName, const sh::Varying &vertexVarying, const sh::Varying &fragmentVarying);
+    static bool linkValidateVaryings(InfoLog &infoLog,
+                                     const std::string &varyingName,
+                                     const sh::Varying &vertexVarying,
+                                     const sh::Varying &fragmentVarying,
+                                     int shaderVersion);
     bool linkValidateTransformFeedback(InfoLog &infoLog,
                                        const std::vector<const sh::Varying *> &linkedVaryings,
                                        const Caps &caps) const;

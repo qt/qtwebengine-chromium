@@ -38,6 +38,10 @@ VendorID GetVendorID(const FunctionsGL *functions)
     {
         return VENDOR_ID_AMD;
     }
+    else if (nativeVendorString.find("Qualcomm") != std::string::npos)
+    {
+        return VENDOR_ID_QUALCOMM;
+    }
     else
     {
         return VENDOR_ID_UNKNOWN;
@@ -532,6 +536,17 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
         LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
     }
 
+    // Check if index constant sampler array indexing is supported
+    if (!functions->isAtLeastGL(gl::Version(4, 0)) &&
+        !functions->isAtLeastGLES(gl::Version(2, 0)) &&
+        !functions->hasExtension("GL_ARB_gpu_shader5"))
+    {
+        // This should also be required for ES2 but there are some driver support index constant
+        // sampler array indexing without meeting the requirements above. Don't limit their ES
+        // version as it would break WebGL for some users.
+        LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
+    }
+
     // Check if sampler objects are supported
     if (!functions->isAtLeastGL(gl::Version(3, 3)) &&
         !functions->hasGLExtension("GL_ARB_sampler_objects") &&
@@ -663,15 +678,17 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
     extensions->multisampleCompatibility = functions->isAtLeastGL(gl::Version(1, 3)) ||
         functions->hasGLESExtension("GL_EXT_multisample_compatibility");
 
-    extensions->framebufferMixedSamples = functions->hasGLExtension("GL_NV_framebuffer_mixed_samples") ||
+    extensions->framebufferMixedSamples =
+        functions->hasGLExtension("GL_NV_framebuffer_mixed_samples") ||
         functions->hasGLESExtension("GL_NV_framebuffer_mixed_samples");
 
-    // ANGLE emulates vertex array objects in its GL layer
-    extensions->vertexArrayObject = true;
-
-    extensions->noError = true;
-
-    extensions->bindUniformLocation = true;
+    // if NV_path_rendering is to be supported then EXT_direct_state_access
+    // must also be available. NV_path_rendering needs some of the matrix loads
+    // from this extension.
+    extensions->pathRendering = (functions->hasGLExtension("GL_NV_path_rendering") &&
+                                 functions->hasGLExtension("GL_EXT_direct_state_access")) ||
+                                (functions->hasGLESExtension("GL_NV_path_rendering") &&
+                                 functions->hasGLESExtension("GL_EXT_direct_state_access"));
 }
 
 void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workarounds)
@@ -699,6 +716,8 @@ void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workaround
 
     // TODO(cwallez): Disable this workaround for MacOSX versions 10.9 or later.
     workarounds->alwaysCallUseProgramAfterLink = true;
+
+    workarounds->unpackOverlappingRowsSeparatelyUnpackBuffer = vendor == VENDOR_ID_NVIDIA;
 }
 
 }

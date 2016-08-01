@@ -14,7 +14,6 @@
 class CFX_BinaryBuf;
 class CFX_IccProfileCache;
 class CFX_IccTransformCache;
-class CFX_PrivateData;
 class IFX_FileRead;
 
 class CCodec_IccModule {
@@ -44,6 +43,7 @@ class CCodec_IccModule {
     double Gamma;
   };
 
+  CCodec_IccModule();
   ~CCodec_IccModule();
 
   IccCS GetProfileCS(const uint8_t* pProfileData, unsigned int dwProfileSize);

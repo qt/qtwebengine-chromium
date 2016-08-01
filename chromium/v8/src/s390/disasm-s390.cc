@@ -37,6 +37,8 @@
 namespace v8 {
 namespace internal {
 
+const auto GetRegConfig = RegisterConfiguration::Crankshaft;
+
 //------------------------------------------------------------------------------
 
 // Decoder decodes and disassembles instructions into an output buffer.
@@ -111,7 +113,7 @@ void Decoder::PrintRegister(int reg) {
 
 // Print the double FP register name according to the active name converter.
 void Decoder::PrintDRegister(int reg) {
-  Print(DoubleRegister::from_code(reg).ToString());
+  Print(GetRegConfig()->GetDoubleRegisterName(reg));
 }
 
 // Print SoftwareInterrupt codes. Factoring this out reduces the complexity of
@@ -1357,7 +1359,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
 namespace disasm {
 
 const char* NameConverter::NameOfAddress(byte* addr) const {
-  v8::internal::SNPrintF(tmp_buffer_, "%p", addr);
+  v8::internal::SNPrintF(tmp_buffer_, "%p", static_cast<void*>(addr));
   return tmp_buffer_.start();
 }
 
@@ -1366,7 +1368,7 @@ const char* NameConverter::NameOfConstant(byte* addr) const {
 }
 
 const char* NameConverter::NameOfCPURegister(int reg) const {
-  return v8::internal::Register::from_code(reg).ToString();
+  return v8::internal::GetRegConfig()->GetGeneralRegisterName(reg);
 }
 
 const char* NameConverter::NameOfByteCPURegister(int reg) const {
@@ -1411,7 +1413,7 @@ void Disassembler::Disassemble(FILE* f, byte* begin, byte* end) {
     buffer[0] = '\0';
     byte* prev_pc = pc;
     pc += d.InstructionDecode(buffer, pc);
-    v8::internal::PrintF(f, "%p    %08x      %s\n", prev_pc,
+    v8::internal::PrintF(f, "%p    %08x      %s\n", static_cast<void*>(prev_pc),
                          *reinterpret_cast<int32_t*>(prev_pc), buffer.start());
   }
 }

@@ -4,6 +4,7 @@
 
 #include "src/assembler.h"
 #include "src/macro-assembler.h"
+#include "src/register-configuration.h"
 
 #include "src/wasm/wasm-module.h"
 
@@ -31,6 +32,8 @@ MachineType MachineTypeFor(LocalType type) {
       return MachineType::Float64();
     case kAstF32:
       return MachineType::Float32();
+    case kAstS128:
+      return MachineType::Simd128();
     default:
       UNREACHABLE();
       return MachineType::AnyTagged();
@@ -176,7 +179,18 @@ struct Allocator {
     if (IsFloatingPoint(type)) {
       // Allocate a floating point register/stack location.
       if (fp_offset < fp_count) {
-        return regloc(fp_regs[fp_offset++]);
+        DoubleRegister reg = fp_regs[fp_offset++];
+#if V8_TARGET_ARCH_ARM
+        // Allocate floats using a double register, but modify the code to
+        // reflect how ARM FP registers alias.
+        // TODO(bbudge) Modify wasm linkage to allow use of all float regs.
+        if (type == kAstF32) {
+          int float_reg_code = reg.code() * 2;
+          DCHECK(float_reg_code < RegisterConfiguration::kMaxFPRegisters);
+          return regloc(DoubleRegister::from_code(float_reg_code));
+        }
+#endif
+        return regloc(reg);
       } else {
         int offset = -1 - stack_offset;
         stack_offset += Words(type);
@@ -197,11 +211,7 @@ struct Allocator {
     return type == kAstF32 || type == kAstF64;
   }
   int Words(LocalType type) {
-    // The code generation for pushing parameters on the stack does not
-    // distinguish between float32 and float64. Therefore also float32 needs
-    // two words.
-    if (kPointerSize < 8 &&
-        (type == kAstI64 || type == kAstF64 || type == kAstF32)) {
+    if (kPointerSize < 8 && (type == kAstI64 || type == kAstF64)) {
       return 2;
     }
     return 1;

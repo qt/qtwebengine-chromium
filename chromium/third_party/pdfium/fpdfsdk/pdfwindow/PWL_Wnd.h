@@ -85,6 +85,7 @@ class IPWL_Provider;
 #define PWL_CLASSNAME_EDIT "CPWL_Edit"
 
 struct CPWL_Dash {
+  CPWL_Dash() : nDash(0), nGap(0), nPhase(0) {}
   CPWL_Dash(int32_t dash, int32_t gap, int32_t phase)
       : nDash(dash), nGap(gap), nPhase(phase) {}
 
@@ -186,28 +187,8 @@ class IPWL_FocusHandler {
 
 struct PWL_CREATEPARAM {
  public:
-  PWL_CREATEPARAM()
-      : rcRectWnd(0, 0, 0, 0),
-        pSystemHandler(NULL),
-        pFontMap(NULL),
-        pProvider(NULL),
-        pFocusHandler(NULL),
-        dwFlags(0),
-        sBackgroundColor(),
-        hAttachedWnd(NULL),
-        nBorderStyle(BorderStyle::SOLID),
-        dwBorderWidth(1),
-        sBorderColor(),
-        sTextColor(),
-        sTextStrokeColor(),
-        nTransparency(255),
-        fFontSize(PWL_DEFAULT_FONTSIZE),
-        sDash(3, 0, 0),
-        pAttachedData(NULL),
-        pParentWnd(NULL),
-        pMsgControl(NULL),
-        eCursorType(FXCT_ARROW),
-        mtChild(1, 0, 0, 1, 0, 0) {}
+  PWL_CREATEPARAM();
+  PWL_CREATEPARAM(const PWL_CREATEPARAM& other);
 
   CFX_FloatRect rcRectWnd;            // required
   CFX_SystemHandler* pSystemHandler;  // required
@@ -274,7 +255,7 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   void InvalidateProvider(IPWL_Provider* provider);
   void Destroy();
   void Move(const CFX_FloatRect& rcNew, FX_BOOL bReset, FX_BOOL bRefresh);
-  virtual void InvalidateRect(CFX_FloatRect* pRect = NULL);
+  virtual void InvalidateRect(CFX_FloatRect* pRect = nullptr);
 
   void DrawAppearance(CFX_RenderDevice* pDevice, CFX_Matrix* pUser2Device);
 
@@ -364,9 +345,9 @@ class CPWL_Wnd : public CPWL_TimerHandler {
   virtual CFX_FloatRect ParentToChild(const CFX_FloatRect& rect) const;
 
   // those methods only implemented by listctrl item
-  virtual FX_FLOAT GetItemHeight(FX_FLOAT fLimitWidth) { return 0; }
-  virtual FX_FLOAT GetItemLeftMargin() { return 0; }
-  virtual FX_FLOAT GetItemRightMargin() { return 0; }
+  virtual FX_FLOAT GetItemHeight(FX_FLOAT fLimitWidth);
+  virtual FX_FLOAT GetItemLeftMargin();
+  virtual FX_FLOAT GetItemRightMargin();
 
   void EnableWindow(FX_BOOL bEnable);
   FX_BOOL IsEnabled();

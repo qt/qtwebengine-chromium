@@ -14,7 +14,7 @@
 #include "fpdfsdk/pdfwindow/PWL_ComboBox.h"
 
 CFFL_ComboBox::CFFL_ComboBox(CPDFDoc_Environment* pApp, CPDFSDK_Annot* pAnnot)
-    : CFFL_FormFiller(pApp, pAnnot), m_pFontMap(NULL) {
+    : CFFL_FormFiller(pApp, pAnnot), m_pFontMap(nullptr) {
   m_State.nIndex = 0;
   m_State.nStart = 0;
   m_State.nEnd = 0;
@@ -227,7 +227,7 @@ CPWL_Wnd* CFFL_ComboBox::ResetPDFWindow(CPDFSDK_PageView* pPageView,
 
   DestroyPDFWindow(pPageView);
 
-  CPWL_Wnd* pRet = NULL;
+  CPWL_Wnd* pRet = nullptr;
 
   if (bRestoreValue) {
     RestoreState(pPageView);
@@ -257,7 +257,7 @@ void CFFL_ComboBox::OnSetFocus(CPWL_Wnd* pWnd) {
 
   if (pWnd->GetClassName() == PWL_CLASSNAME_EDIT) {
     CPWL_Edit* pEdit = (CPWL_Edit*)pWnd;
-    pEdit->SetCharSet(134);
+    pEdit->SetCharSet(FXFONT_GB2312_CHARSET);
     pEdit->SetCodePage(936);
 
     pEdit->SetReadyToInput();

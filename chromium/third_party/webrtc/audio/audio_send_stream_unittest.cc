@@ -74,6 +74,7 @@ struct ConfigHelper {
           EXPECT_CALL(*channel_proxy_, SetRTCPStatus(true)).Times(1);
           EXPECT_CALL(*channel_proxy_, SetLocalSSRC(kSsrc)).Times(1);
           EXPECT_CALL(*channel_proxy_, SetRTCP_CNAME(StrEq(kCName))).Times(1);
+          EXPECT_CALL(*channel_proxy_, SetNACKStatus(true, 10)).Times(1);
           EXPECT_CALL(*channel_proxy_,
               SetSendAbsoluteSenderTimeStatus(true, kAbsSendTimeId)).Times(1);
           EXPECT_CALL(*channel_proxy_,
@@ -97,17 +98,19 @@ struct ConfigHelper {
         }));
     stream_config_.voe_channel_id = kChannelId;
     stream_config_.rtp.ssrc = kSsrc;
+    stream_config_.rtp.nack.rtp_history_ms = 200;
     stream_config_.rtp.c_name = kCName;
     stream_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAudioLevel, kAudioLevelId));
+        RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelId));
     stream_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
+        RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeId));
     stream_config_.rtp.extensions.push_back(RtpExtension(
-        RtpExtension::kTransportSequenceNumber, kTransportSequenceNumberId));
+        RtpExtension::kTransportSequenceNumberUri, kTransportSequenceNumberId));
   }
 
   AudioSendStream::Config& config() { return stream_config_; }
   rtc::scoped_refptr<AudioState> audio_state() { return audio_state_; }
+  MockVoEChannelProxy* channel_proxy() { return channel_proxy_; }
   CongestionController* congestion_controller() {
     return &congestion_controller_;
   }
@@ -171,16 +174,15 @@ TEST(AudioSendStreamTest, ConfigToString) {
   AudioSendStream::Config config(nullptr);
   config.rtp.ssrc = kSsrc;
   config.rtp.extensions.push_back(
-      RtpExtension(RtpExtension::kAbsSendTime, kAbsSendTimeId));
+      RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeId));
   config.rtp.c_name = kCName;
   config.voe_channel_id = kChannelId;
   config.cng_payload_type = 42;
-  config.red_payload_type = 17;
   EXPECT_EQ(
-      "{rtp: {ssrc: 1234, extensions: [{name: "
+      "{rtp: {ssrc: 1234, extensions: [{uri: "
       "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time, id: 3}], "
-      "c_name: foo_name}, voe_channel_id: 1, cng_payload_type: 42, "
-      "red_payload_type: 17}",
+      "nack: {rtp_history_ms: 0}, c_name: foo_name}, voe_channel_id: 1, "
+      "cng_payload_type: 42}",
       config.ToString());
 }
 
@@ -197,6 +199,14 @@ TEST(AudioSendStreamTest, SendTelephoneEvent) {
   helper.SetupMockForSendTelephoneEvent();
   EXPECT_TRUE(send_stream.SendTelephoneEvent(kTelephoneEventPayloadType,
       kTelephoneEventCode, kTelephoneEventDuration));
+}
+
+TEST(AudioSendStreamTest, SetMuted) {
+  ConfigHelper helper;
+  internal::AudioSendStream send_stream(helper.config(), helper.audio_state(),
+                                        helper.congestion_controller());
+  EXPECT_CALL(*helper.channel_proxy(), SetInputMute(true));
+  send_stream.SetMuted(true);
 }
 
 TEST(AudioSendStreamTest, GetStats) {

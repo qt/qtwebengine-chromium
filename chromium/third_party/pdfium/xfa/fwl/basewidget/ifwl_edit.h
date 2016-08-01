@@ -48,49 +48,46 @@
 #define FWL_STYLEEXT_EDT_OuterScrollbar (1L << 26)
 #define FWL_STYLEEXT_EDT_LastLineHeight (1L << 27)
 
-typedef struct FWL_HEDTFIND_ { void* pData; } * FWL_HEDTFIND;
-
 enum FWL_EDT_TEXTCHANGED {
   FWL_EDT_TEXTCHANGED_Insert = 0,
   FWL_EDT_TEXTCHANGED_Delete,
   FWL_EDT_TEXTCHANGED_Replace,
 };
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtTextChanged, CFWL_EventType::TextChanged)
-int32_t nChangeType;
-CFX_WideString wsInsert;
-CFX_WideString wsDelete;
-CFX_WideString wsPrevText;
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtTextChanged,
+              CFWL_EventType::TextChanged,
+              int32_t nChangeType;
+              CFX_WideString wsInsert;
+              CFX_WideString wsDelete;
+              CFX_WideString wsPrevText;)
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtTextFull, CFWL_EventType::TextFull)
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtTextFull, CFWL_EventType::TextFull)
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtPreSelfAdaption, CFWL_EventType::PreSelfAdaption)
-FX_BOOL bHSelfAdaption;
-FX_BOOL bVSelfAdaption;
-CFX_RectF rtAfterChange;
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtPreSelfAdaption,
+              CFWL_EventType::PreSelfAdaption,
+              FX_BOOL bHSelfAdaption;
+              FX_BOOL bVSelfAdaption;
+              CFX_RectF rtAfterChange;)
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtValidate, CFWL_EventType::Validate)
-IFWL_Widget* pDstWidget;
-CFX_WideString wsInsert;
-FX_BOOL bValidate;
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtValidate,
+              CFWL_EventType::Validate,
+              IFWL_Widget* pDstWidget;
+              CFX_WideString wsInsert;
+              FX_BOOL bValidate;)
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtCheckWord, CFWL_EventType::CheckWord)
-CFX_ByteString bsWord;
-FX_BOOL bCheckWord;
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtCheckWord,
+              CFWL_EventType::CheckWord,
+              CFX_ByteString bsWord;
+              FX_BOOL bCheckWord;)
 
-BEGIN_FWL_EVENT_DEF(CFWL_EvtEdtGetSuggestWords,
-                    CFWL_EventType::GetSuggestedWords)
-FX_BOOL bSuggestWords;
-CFX_ByteString bsWord;
-std::vector<CFX_ByteString> bsArraySuggestWords;
-END_FWL_EVENT_DEF
+FWL_EVENT_DEF(CFWL_EvtEdtGetSuggestWords,
+              CFWL_EventType::GetSuggestedWords,
+              FX_BOOL bSuggestWords;
+              CFX_ByteString bsWord;
+              std::vector<CFX_ByteString> bsArraySuggestWords;)
 
 class CFWL_WidgetImpProperties;
+class IFDE_TxtEdtDoRecord;
 
 class IFWL_EditDP : public IFWL_DataProvider {};
 
@@ -116,7 +113,6 @@ class IFWL_Edit : public IFWL_Widget {
   int32_t GetLimit();
   FWL_Error SetLimit(int32_t nLimit);
   FWL_Error SetAliasChar(FX_WCHAR wAlias);
-  FWL_Error SetFormatString(const CFX_WideString& wsFormat);
   FWL_Error Insert(int32_t nStart, const FX_WCHAR* lpText, int32_t nLen);
   FWL_Error DeleteSelections();
   FWL_Error DeleteRange(int32_t nStart, int32_t nCount = -1);
@@ -128,8 +124,8 @@ class IFWL_Edit : public IFWL_Widget {
   FX_BOOL Cut(CFX_WideString& wsCut);
   FX_BOOL Paste(const CFX_WideString& wsPaste);
   FX_BOOL Delete();
-  FX_BOOL Redo(const CFX_ByteStringC& bsRecord);
-  FX_BOOL Undo(const CFX_ByteStringC& bsRecord);
+  FX_BOOL Redo(const IFDE_TxtEdtDoRecord* pRecord);
+  FX_BOOL Undo(const IFDE_TxtEdtDoRecord* pRecord);
   FX_BOOL Undo();
   FX_BOOL Redo();
   FX_BOOL CanUndo();

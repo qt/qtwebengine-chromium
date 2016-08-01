@@ -189,37 +189,25 @@ uint32_t RelocInfo::wasm_memory_size_reference() {
   return Memory::uint32_at(Assembler::target_pointer_address_at(pc_));
 }
 
-void RelocInfo::update_wasm_memory_reference(
-    Address old_base, Address new_base, uint32_t old_size, uint32_t new_size,
-    ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsWasmMemoryReference(rmode_) || IsWasmMemorySizeReference(rmode_));
-  if (IsWasmMemoryReference(rmode_) && old_base != new_base) {
-    Address updated_memory_reference;
-    DCHECK(old_base <= wasm_memory_reference() &&
-           wasm_memory_reference() < old_base + old_size);
-    updated_memory_reference = new_base + (wasm_memory_reference() - old_base);
-    DCHECK(new_base <= updated_memory_reference &&
-           updated_memory_reference < new_base + new_size);
-    Assembler::set_target_address_at(
-        isolate_, pc_, host_, updated_memory_reference, icache_flush_mode);
-  } else if (IsWasmMemorySizeReference(rmode_)) {
-    uint32_t updated_size_reference;
-    DCHECK(wasm_memory_size_reference() <= old_size);
-    updated_size_reference =
-        new_size + (wasm_memory_size_reference() - old_size);
-    DCHECK(updated_size_reference <= new_size);
-    Memory::uint32_at(Assembler::target_pointer_address_at(pc_)) =
-        updated_size_reference;
-  } else {
-    UNREACHABLE();
-  }
+Address RelocInfo::wasm_global_reference() {
+  DCHECK(IsWasmGlobalReference(rmode_));
+  return Memory::Address_at(Assembler::target_pointer_address_at(pc_));
+}
+
+void RelocInfo::unchecked_update_wasm_memory_reference(
+    Address address, ICacheFlushMode flush_mode) {
+  Assembler::set_target_address_at(isolate_, pc_, host_, address, flush_mode);
+}
+
+void RelocInfo::unchecked_update_wasm_memory_size(uint32_t size,
+                                                  ICacheFlushMode flush_mode) {
+  Memory::uint32_at(Assembler::target_pointer_address_at(pc_)) = size;
 }
 
 Register GetAllocatableRegisterThatIsNotOneOf(Register reg1, Register reg2,
                                               Register reg3, Register reg4) {
   CPURegList regs(reg1, reg2, reg3, reg4);
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   for (int i = 0; i < config->num_allocatable_double_registers(); ++i) {
     int code = config->GetAllocatableDoubleCode(i);
     Register candidate = Register::from_code(code);
@@ -614,6 +602,8 @@ void Assembler::GetCode(CodeDesc* desc) {
                          reloc_info_writer.pos());
     desc->origin = this;
     desc->constant_pool_size = 0;
+    desc->unwinding_info_size = 0;
+    desc->unwinding_info = nullptr;
   }
 }
 
@@ -982,14 +972,12 @@ void Assembler::EndBlockVeneerPool() {
 
 
 void Assembler::br(const Register& xn) {
-  positions_recorder()->WriteRecordedPositions();
   DCHECK(xn.Is64Bits());
   Emit(BR | Rn(xn));
 }
 
 
 void Assembler::blr(const Register& xn) {
-  positions_recorder()->WriteRecordedPositions();
   DCHECK(xn.Is64Bits());
   // The pattern 'blr xzr' is used as a guard to detect when execution falls
   // through the constant pool. It should not be emitted.
@@ -999,7 +987,6 @@ void Assembler::blr(const Register& xn) {
 
 
 void Assembler::ret(const Register& xn) {
-  positions_recorder()->WriteRecordedPositions();
   DCHECK(xn.Is64Bits());
   Emit(RET | Rn(xn));
 }
@@ -1011,7 +998,6 @@ void Assembler::b(int imm26) {
 
 
 void Assembler::b(Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   b(LinkAndGetInstructionOffsetTo(label));
 }
 
@@ -1022,47 +1008,40 @@ void Assembler::b(int imm19, Condition cond) {
 
 
 void Assembler::b(Label* label, Condition cond) {
-  positions_recorder()->WriteRecordedPositions();
   b(LinkAndGetInstructionOffsetTo(label), cond);
 }
 
 
 void Assembler::bl(int imm26) {
-  positions_recorder()->WriteRecordedPositions();
   Emit(BL | ImmUncondBranch(imm26));
 }
 
 
 void Assembler::bl(Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   bl(LinkAndGetInstructionOffsetTo(label));
 }
 
 
 void Assembler::cbz(const Register& rt,
                     int imm19) {
-  positions_recorder()->WriteRecordedPositions();
   Emit(SF(rt) | CBZ | ImmCmpBranch(imm19) | Rt(rt));
 }
 
 
 void Assembler::cbz(const Register& rt,
                     Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   cbz(rt, LinkAndGetInstructionOffsetTo(label));
 }
 
 
 void Assembler::cbnz(const Register& rt,
                      int imm19) {
-  positions_recorder()->WriteRecordedPositions();
   Emit(SF(rt) | CBNZ | ImmCmpBranch(imm19) | Rt(rt));
 }
 
 
 void Assembler::cbnz(const Register& rt,
                      Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   cbnz(rt, LinkAndGetInstructionOffsetTo(label));
 }
 
@@ -1070,7 +1049,6 @@ void Assembler::cbnz(const Register& rt,
 void Assembler::tbz(const Register& rt,
                     unsigned bit_pos,
                     int imm14) {
-  positions_recorder()->WriteRecordedPositions();
   DCHECK(rt.Is64Bits() || (rt.Is32Bits() && (bit_pos < kWRegSizeInBits)));
   Emit(TBZ | ImmTestBranchBit(bit_pos) | ImmTestBranch(imm14) | Rt(rt));
 }
@@ -1079,7 +1057,6 @@ void Assembler::tbz(const Register& rt,
 void Assembler::tbz(const Register& rt,
                     unsigned bit_pos,
                     Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   tbz(rt, bit_pos, LinkAndGetInstructionOffsetTo(label));
 }
 
@@ -1087,7 +1064,6 @@ void Assembler::tbz(const Register& rt,
 void Assembler::tbnz(const Register& rt,
                      unsigned bit_pos,
                      int imm14) {
-  positions_recorder()->WriteRecordedPositions();
   DCHECK(rt.Is64Bits() || (rt.Is32Bits() && (bit_pos < kWRegSizeInBits)));
   Emit(TBNZ | ImmTestBranchBit(bit_pos) | ImmTestBranch(imm14) | Rt(rt));
 }
@@ -1096,7 +1072,6 @@ void Assembler::tbnz(const Register& rt,
 void Assembler::tbnz(const Register& rt,
                      unsigned bit_pos,
                      Label* label) {
-  positions_recorder()->WriteRecordedPositions();
   tbnz(rt, bit_pos, LinkAndGetInstructionOffsetTo(label));
 }
 
@@ -1716,6 +1691,83 @@ void Assembler::ldr(const CPURegister& rt, const Immediate& imm) {
   ldr_pcrel(rt, 0);
 }
 
+void Assembler::ldar(const Register& rt, const Register& rn) {
+  DCHECK(rn.Is64Bits());
+  LoadStoreAcquireReleaseOp op = rt.Is32Bits() ? LDAR_w : LDAR_x;
+  Emit(op | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::ldaxr(const Register& rt, const Register& rn) {
+  DCHECK(rn.Is64Bits());
+  LoadStoreAcquireReleaseOp op = rt.Is32Bits() ? LDAXR_w : LDAXR_x;
+  Emit(op | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlr(const Register& rt, const Register& rn) {
+  DCHECK(rn.Is64Bits());
+  LoadStoreAcquireReleaseOp op = rt.Is32Bits() ? STLR_w : STLR_x;
+  Emit(op | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlxr(const Register& rs, const Register& rt,
+                      const Register& rn) {
+  DCHECK(rs.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  LoadStoreAcquireReleaseOp op = rt.Is32Bits() ? STLXR_w : STLXR_x;
+  Emit(op | Rs(rs) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::ldarb(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(LDAR_b | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::ldaxrb(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(LDAXR_b | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlrb(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(STLR_b | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlxrb(const Register& rs, const Register& rt,
+                       const Register& rn) {
+  DCHECK(rs.Is32Bits());
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(STLXR_b | Rs(rs) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::ldarh(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(LDAR_h | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::ldaxrh(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(LDAXR_h | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlrh(const Register& rt, const Register& rn) {
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(STLR_h | Rs(x31) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
+
+void Assembler::stlxrh(const Register& rs, const Register& rt,
+                       const Register& rn) {
+  DCHECK(rs.Is32Bits());
+  DCHECK(rt.Is32Bits());
+  DCHECK(rn.Is64Bits());
+  Emit(STLXR_h | Rs(rs) | Rt2(x31) | Rn(rn) | Rt(rt));
+}
 
 void Assembler::mov(const Register& rd, const Register& rm) {
   // Moves involving the stack pointer are encoded as add immediate with

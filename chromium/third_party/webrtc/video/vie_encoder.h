@@ -47,8 +47,7 @@ class VideoEncoder;
 // 3. Call RegisterExternalEncoder if available.
 // 4. Call SetEncoder with the codec settings and the object that shall receive
 //    the encoded bit stream.
-// 5. Call Start.
-// 6. For each available raw video frame call EncodeVideoFrame.
+// 5. For each available raw video frame call EncodeVideoFrame.
 class ViEEncoder : public VideoEncoderRateObserver,
                    public EncodedImageCallback,
                    public VCMSendStatisticsCallback {
@@ -58,7 +57,8 @@ class ViEEncoder : public VideoEncoderRateObserver,
   ViEEncoder(uint32_t number_of_cores,
              ProcessThread* module_process_thread,
              SendStatisticsProxy* stats_proxy,
-             OveruseFrameDetector* overuse_detector);
+             OveruseFrameDetector* overuse_detector,
+             EncodedImageCallback* sink);
   ~ViEEncoder();
 
   vcm::VideoSender* video_sender();
@@ -66,30 +66,26 @@ class ViEEncoder : public VideoEncoderRateObserver,
   // Returns the id of the owning channel.
   int Owner() const;
 
-  void Start();
-  // Drops incoming packets before they get to the encoder.
-  void Pause();
-
   // Codec settings.
   int32_t RegisterExternalEncoder(VideoEncoder* encoder,
                                   uint8_t pl_type,
                                   bool internal_source);
   int32_t DeRegisterExternalEncoder(uint8_t pl_type);
   void SetEncoder(const VideoCodec& video_codec,
-                  int min_transmit_bitrate_bps,
-                  size_t max_data_payload_length,
-                  EncodedImageCallback* sink);
+                  size_t max_data_payload_length);
 
   void EncodeVideoFrame(const VideoFrame& video_frame);
   void SendKeyFrame();
 
-  uint32_t LastObservedBitrateBps() const;
-  // Loss protection. Must be called before SetEncoder() to have max packet size
-  // updated according to protection.
-  // TODO(pbos): Set protection method on construction.
-  void SetProtectionMethod(bool nack, bool fec);
+  // Returns the time when the encoder last received an input frame or produced
+  // an encoded frame.
+  int64_t time_of_last_frame_activity_ms();
 
   // Implements VideoEncoderRateObserver.
+  // TODO(perkj): Refactor VideoEncoderRateObserver. This is only used for
+  // stats. The stats should be set in VideoSendStream instead.
+  // |bitrate_bps| is the target bitrate and |framerate| is the input frame
+  // rate so it has nothing to do with the actual encoder.
   void OnSetRates(uint32_t bitrate_bps, int framerate) override;
 
   // Implements EncodedImageCallback.
@@ -107,8 +103,6 @@ class ViEEncoder : public VideoEncoderRateObserver,
   virtual void OnReceivedSLI(uint8_t picture_id);
   virtual void OnReceivedRPSI(uint64_t picture_id);
 
-  int GetPaddingNeededBps() const;
-
   void OnBitrateUpdated(uint32_t bitrate_bps,
                         uint8_t fraction_lost,
                         int64_t round_trip_time_ms);
@@ -119,6 +113,7 @@ class ViEEncoder : public VideoEncoderRateObserver,
   void TraceFrameDropEnd() EXCLUSIVE_LOCKS_REQUIRED(data_cs_);
 
   const uint32_t number_of_cores_;
+  EncodedImageCallback* const sink_;
 
   const std::unique_ptr<VideoProcessing> vp_;
   vcm::VideoSender video_sender_;
@@ -133,13 +128,8 @@ class ViEEncoder : public VideoEncoderRateObserver,
   // padding.
   int64_t time_of_last_frame_activity_ms_ GUARDED_BY(data_cs_);
   VideoCodec encoder_config_ GUARDED_BY(data_cs_);
-  int min_transmit_bitrate_bps_ GUARDED_BY(data_cs_);
   uint32_t last_observed_bitrate_bps_ GUARDED_BY(data_cs_);
-  bool encoder_paused_ GUARDED_BY(data_cs_);
   bool encoder_paused_and_dropped_frame_ GUARDED_BY(data_cs_);
-
-  rtc::CriticalSection sink_cs_;
-  EncodedImageCallback* sink_ GUARDED_BY(sink_cs_);
 
   ProcessThread* module_process_thread_;
 

@@ -6,8 +6,8 @@
 
 #include "xfa/fxfa/app/xfa_ffpushbutton.h"
 
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/lightwidget/cfwl_pushbutton.h"
 #include "xfa/fxfa/app/xfa_fffield.h"
 #include "xfa/fxfa/app/xfa_ffwidgetacc.h"
@@ -21,18 +21,17 @@
 CXFA_FFPushButton::CXFA_FFPushButton(CXFA_FFPageView* pPageView,
                                      CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFField(pPageView, pDataAcc),
-      m_pRolloverTextLayout(NULL),
-      m_pDownTextLayout(NULL),
-      m_pDownProvider(NULL),
-      m_pRollProvider(NULL),
-      m_pOldDelegate(NULL) {}
+      m_pRolloverTextLayout(nullptr),
+      m_pDownTextLayout(nullptr),
+      m_pDownProvider(nullptr),
+      m_pRollProvider(nullptr),
+      m_pOldDelegate(nullptr) {}
 CXFA_FFPushButton::~CXFA_FFPushButton() {
   CXFA_FFPushButton::UnloadWidget();
 }
 void CXFA_FFPushButton::RenderWidget(CFX_Graphics* pGS,
                                      CFX_Matrix* pMatrix,
-                                     uint32_t dwStatus,
-                                     int32_t iRotate) {
+                                     uint32_t dwStatus) {
   if (!IsMatchVisibleStatus(dwStatus)) {
     return;
   }
@@ -58,9 +57,9 @@ FX_BOOL CXFA_FFPushButton::LoadWidget() {
     pPushButton->Initialize();
   }
   m_pOldDelegate = pPushButton->SetDelegate(this);
-  m_pNormalWidget = (CFWL_Widget*)pPushButton;
+  m_pNormalWidget = pPushButton;
+  m_pNormalWidget->SetLayoutItem(this);
   IFWL_Widget* pWidget = m_pNormalWidget->GetWidget();
-  m_pNormalWidget->SetPrivateData(pWidget, this, NULL);
   CFWL_NoteDriver* pNoteDriver = FWL_GetApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pNormalWidget->LockUpdate();
@@ -140,7 +139,7 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
       CFX_WideString wsRollover;
       FX_BOOL bRichText;
       if (m_pDataAcc->GetButtonRollover(wsRollover, bRichText)) {
-        if (m_pRollProvider == NULL) {
+        if (!m_pRollProvider) {
           m_pRollProvider =
               new CXFA_TextProvider(m_pDataAcc, XFA_TEXTPROVIDERTYPE_Rollover);
         }
@@ -148,7 +147,7 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
       }
       CFX_WideString wsDown;
       if (m_pDataAcc->GetButtonDown(wsDown, bRichText)) {
-        if (m_pDownProvider == NULL) {
+        if (!m_pDownProvider) {
           m_pDownProvider =
               new CXFA_TextProvider(m_pDataAcc, XFA_TEXTPROVIDERTYPE_Down);
         }

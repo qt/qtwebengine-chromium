@@ -19,6 +19,9 @@
     'SK_HAS_JPEG_LIBRARY',
     'SK_HAS_PNG_LIBRARY',
     'SK_HAS_WEBP_LIBRARY',
+
+    # Temporarily test against the QCMS library.
+    'SK_TEST_QCMS',
   ],
   'conditions' : [
     [ 'skia_is_bot', {
@@ -63,6 +66,8 @@
           '_CRT_SECURE_NO_WARNINGS',
           'GR_GL_FUNCTION_TYPE=__stdcall',
           '_HAS_EXCEPTIONS=0',
+          'WIN32_LEAN_AND_MEAN',
+          'NOMINMAX',
         ],
         'msvs_disabled_warnings': [
             4275,  # An exported class was derived from a class that was not exported
@@ -239,6 +244,7 @@
           '-Winit-self',
           '-Wpointer-arith',
           '-Wsign-compare',
+          '-Wvla',
 
           '-Wno-unused-parameter',
         ],
@@ -306,13 +312,17 @@
             ],
           }],
           [ '"mips" in skia_arch_type', {
-            'cflags': [ '-EL' ],
-            'conditions': [
-              [ 'mips_arch_variant == "mips32r2"', {
-                'cflags': [ '-march=mips32r2' ],
-                'conditions': [
-                  [ 'mips_dsp == 1', { 'cflags': [ '-mdsp'   ] }],
-                  [ 'mips_dsp == 2', { 'cflags': [ '-mdspr2' ] }],
+            'target_conditions': [
+              [ '_toolset == "target"', {
+                'cflags' : ['-EL'],
+                'conditions' : [
+                  [ 'mips_arch_variant == "mips32r2"', {
+                    'cflags': [ '-march=mips32r2' ],
+                    'conditions': [
+                      [ 'mips_dsp == 1', { 'cflags': [ '-mdsp'   ] }],
+                      [ 'mips_dsp == 2', { 'cflags': [ '-mdspr2' ] }],
+                    ],
+                  }],
                 ],
               }],
             ],
@@ -552,6 +562,7 @@
             '-Winit-self',
             '-Wpointer-arith',
             '-Wsign-compare',
+            '-Wvla',
 
             '-Wno-unused-parameter',
           ],
@@ -562,7 +573,12 @@
     [ 'skia_os == "ios"',
       {
         'defines': [
+          # When targetting iOS and using gyp to generate the build files, it is
+          # not possible to select files to build depending on the architecture
+          # (i.e. it is not possible to use hand optimized assembly version). In
+          # that configuration, disable all optimisation.
           'SK_BUILD_FOR_IOS',
+          'SK_BUILD_NO_OPTS',
         ],
         'conditions' : [
           [ 'skia_warnings_as_errors', {

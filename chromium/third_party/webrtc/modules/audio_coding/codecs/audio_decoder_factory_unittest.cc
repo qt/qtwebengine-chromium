@@ -16,13 +16,15 @@
 namespace webrtc {
 
 TEST(AudioDecoderFactoryTest, CreateUnknownDecoder) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("rey", 8000, 1)));
 }
 
 TEST(AudioDecoderFactoryTest, CreatePcmu) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // PCMu supports 8 kHz, and any number of channels.
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("pcmu", 8000, 0)));
@@ -33,7 +35,8 @@ TEST(AudioDecoderFactoryTest, CreatePcmu) {
 }
 
 TEST(AudioDecoderFactoryTest, CreatePcma) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // PCMa supports 8 kHz, and any number of channels.
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("pcma", 8000, 0)));
@@ -44,23 +47,19 @@ TEST(AudioDecoderFactoryTest, CreatePcma) {
 }
 
 TEST(AudioDecoderFactoryTest, CreateIlbc) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // iLBC supports 8 kHz, 1 channel.
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("ilbc", 8000, 0)));
   EXPECT_TRUE(adf->MakeAudioDecoder(SdpAudioFormat("ilbc", 8000, 1)));
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("ilbc", 8000, 2)));
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("ilbc", 16000, 1)));
-
-  // iLBC actually uses a 16 kHz sample rate instead of the nominal 8 kHz.
-  // TODO(kwiberg): Uncomment this once AudioDecoder has a SampleRateHz method.
-  // std::unique_ptr<AudioDecoder> dec =
-  //    adf->MakeAudioDecoder(SdpAudioFormat("ilbc", 8000, 1));
-  // EXPECT_EQ(16000, dec->SampleRateHz());
 }
 
 TEST(AudioDecoderFactoryTest, CreateIsac) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // iSAC supports 16 kHz, 1 channel. The float implementation additionally
   // supports 32 kHz, 1 channel.
@@ -77,7 +76,8 @@ TEST(AudioDecoderFactoryTest, CreateIsac) {
 }
 
 TEST(AudioDecoderFactoryTest, CreateL16) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // L16 supports any clock rate, any number of channels.
   const int clockrates[] = {8000, 16000, 32000, 48000};
@@ -92,7 +92,8 @@ TEST(AudioDecoderFactoryTest, CreateL16) {
 }
 
 TEST(AudioDecoderFactoryTest, CreateG722) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // g722 supports 8 kHz, 1-2 channels.
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("g722", 8000, 0)));
@@ -101,10 +102,16 @@ TEST(AudioDecoderFactoryTest, CreateG722) {
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("g722", 8000, 3)));
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("g722", 16000, 1)));
   EXPECT_FALSE(adf->MakeAudioDecoder(SdpAudioFormat("g722", 32000, 1)));
+
+  // g722 actually uses a 16 kHz sample rate instead of the nominal 8 kHz.
+  std::unique_ptr<AudioDecoder> dec =
+      adf->MakeAudioDecoder(SdpAudioFormat("g722", 8000, 1));
+  EXPECT_EQ(16000, dec->SampleRateHz());
 }
 
 TEST(AudioDecoderFactoryTest, CreateOpus) {
-  std::unique_ptr<AudioDecoderFactory> adf = CreateBuiltinAudioDecoderFactory();
+  rtc::scoped_refptr<AudioDecoderFactory> adf =
+      CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
   // Opus supports 48 kHz, 2 channels, and wants a "stereo" parameter whose
   // value is either "0" or "1".

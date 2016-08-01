@@ -107,6 +107,9 @@ enum FX_CHARTYPE {
   FX_CHARTYPE_ArabicForm = (11 << FX_CHARTYPEBITS),
   FX_CHARTYPE_Arabic = (12 << FX_CHARTYPEBITS),
 };
+inline FX_CHARTYPE GetCharTypeFromProp(uint32_t prop) {
+  return static_cast<FX_CHARTYPE>(prop & FX_CHARTYPEBITSMASK);
+}
 
 FX_BOOL FX_IsCtrlCode(FX_WCHAR ch);
 FX_WCHAR FX_GetMirrorChar(FX_WCHAR wch,
@@ -133,7 +136,9 @@ class CFX_Char {
         m_iCharWidth(0),
         m_iHorizontalScale(100),
         m_iVertialScale(100) {}
-  uint32_t GetCharType() const { return m_dwCharProps & FX_CHARTYPEBITSMASK; }
+
+  FX_CHARTYPE GetCharType() const { return GetCharTypeFromProp(m_dwCharProps); }
+
   uint16_t m_wCharCode;
   uint8_t m_nBreakType;
   int8_t m_nRotation;
@@ -147,13 +152,12 @@ typedef CFX_ArrayTemplate<CFX_Char> CFX_CharArray;
 class CFX_TxtChar : public CFX_Char {
  public:
   CFX_TxtChar()
-      : CFX_Char(),
-        m_dwStatus(0),
+      : m_dwStatus(0),
         m_iBidiClass(0),
         m_iBidiLevel(0),
         m_iBidiPos(0),
         m_iBidiOrder(0),
-        m_pUserData(NULL) {}
+        m_pUserData(nullptr) {}
   uint32_t m_dwStatus;
   int16_t m_iBidiClass;
   int16_t m_iBidiLevel;
@@ -164,17 +168,9 @@ class CFX_TxtChar : public CFX_Char {
 typedef CFX_ArrayTemplate<CFX_TxtChar> CFX_TxtCharArray;
 class CFX_RTFChar : public CFX_Char {
  public:
-  CFX_RTFChar()
-      : CFX_Char(),
-        m_dwStatus(0),
-        m_iFontSize(0),
-        m_iFontHeight(0),
-        m_iBidiClass(0),
-        m_iBidiLevel(0),
-        m_iBidiPos(0),
-        m_dwLayoutStyles(0),
-        m_dwIdentity(0),
-        m_pUserData(NULL) {}
+  CFX_RTFChar();
+  CFX_RTFChar(const CFX_RTFChar& other);
+
   uint32_t m_dwStatus;
   int32_t m_iFontSize;
   int32_t m_iFontHeight;
@@ -184,8 +180,22 @@ class CFX_RTFChar : public CFX_Char {
   int16_t m_iBidiOrder;
   uint32_t m_dwLayoutStyles;
   uint32_t m_dwIdentity;
-  IFX_Unknown* m_pUserData;
+  IFX_Retainable* m_pUserData;
 };
+
+inline CFX_RTFChar::CFX_RTFChar()
+    : m_dwStatus(0),
+      m_iFontSize(0),
+      m_iFontHeight(0),
+      m_iBidiClass(0),
+      m_iBidiLevel(0),
+      m_iBidiPos(0),
+      m_dwLayoutStyles(0),
+      m_dwIdentity(0),
+      m_pUserData(nullptr) {}
+
+inline CFX_RTFChar::CFX_RTFChar(const CFX_RTFChar& other) = default;
+
 typedef CFX_ArrayTemplate<CFX_RTFChar> CFX_RTFCharArray;
 #endif  // PDF_ENABLE_XFA
 

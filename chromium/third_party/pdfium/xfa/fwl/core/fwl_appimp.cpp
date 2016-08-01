@@ -6,8 +6,8 @@
 
 #include "xfa/fwl/core/fwl_appimp.h"
 
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
 #include "xfa/fwl/core/ifwl_widget.h"
 #include "xfa/fxfa/app/xfa_fwladapter.h"
@@ -17,6 +17,10 @@ IFWL_App* IFWL_App::Create(CXFA_FFApp* pAdapter) {
   pApp->SetImpl(new CFWL_AppImp(pApp, pAdapter));
   return pApp;
 }
+
+IFWL_App::IFWL_App() {}
+
+IFWL_App::~IFWL_App() {}
 
 void IFWL_App::Release() {}
 
@@ -32,7 +36,7 @@ CXFA_FFApp* IFWL_App::GetAdapterNative() {
   return static_cast<CFWL_AppImp*>(GetImpl())->GetAdapterNative();
 }
 
-IFWL_WidgetMgr* IFWL_App::GetWidgetMgr() {
+CFWL_WidgetMgr* IFWL_App::GetWidgetMgr() {
   return static_cast<CFWL_AppImp*>(GetImpl())->GetWidgetMgr();
 }
 
@@ -76,10 +80,9 @@ CXFA_FFApp* CFWL_AppImp::GetAdapterNative() const {
   return m_pAdapterNative;
 }
 CXFA_FWLAdapterWidgetMgr* FWL_GetAdapterWidgetMgr() {
-  return static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr())
-      ->GetAdapterWidgetMgr();
+  return CFWL_WidgetMgr::GetInstance()->GetAdapterWidgetMgr();
 }
-IFWL_WidgetMgr* CFWL_AppImp::GetWidgetMgr() const {
+CFWL_WidgetMgr* CFWL_AppImp::GetWidgetMgr() const {
   return m_pWidgetMgr.get();
 }
 
@@ -100,7 +103,7 @@ IFWL_ThemeProvider* CFWL_AppImp::GetThemeProvider() const {
 CXFA_FFApp* FWL_GetAdapterNative() {
   IFWL_App* pApp = FWL_GetApp();
   if (!pApp)
-    return NULL;
+    return nullptr;
   return pApp->GetAdapterNative();
 }
 

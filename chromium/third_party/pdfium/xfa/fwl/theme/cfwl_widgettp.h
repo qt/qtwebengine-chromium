@@ -91,14 +91,14 @@ enum class CFWL_WidgetCapacity {
   Width
 };
 
-class IFWL_Widget;
 class CFDE_TextOut;
-class IFX_Font;
-class IFX_FontMgr;
+class CFGAS_GEFont;
 class CFWL_ArrowData;
 class CFWL_ThemeBackground;
 class CFWL_ThemePart;
 class CFWL_ThemeText;
+class IFGAS_FontMgr;
+class IFWL_Widget;
 
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
 class CFX_FontSourceEnum_File;
@@ -135,10 +135,10 @@ class CFWL_WidgetTP {
                     FX_FLOAT fFontSize,
                     FX_ARGB rgbFont);
   FWL_Error SetFont(IFWL_Widget* pWidget,
-                    IFX_Font* pFont,
+                    CFGAS_GEFont* pFont,
                     FX_FLOAT fFontSize,
                     FX_ARGB rgbFont);
-  IFX_Font* GetFont(IFWL_Widget* pWidget);
+  CFGAS_GEFont* GetFont(IFWL_Widget* pWidget);
 
  protected:
   CFWL_WidgetTP();
@@ -147,7 +147,7 @@ class CFWL_WidgetTP {
   void DrawEdge(CFX_Graphics* pGraphics,
                 uint32_t dwStyles,
                 const CFX_RectF* pRect,
-                CFX_Matrix* pMatrix = NULL);
+                CFX_Matrix* pMatrix = nullptr);
   void Draw3DRect(CFX_Graphics* pGraphics,
                   FWLTHEME_EDGE eType,
                   FX_FLOAT fWidth,
@@ -156,7 +156,7 @@ class CFWL_WidgetTP {
                   FX_ARGB cr2,
                   FX_ARGB cr3,
                   FX_ARGB cr4,
-                  CFX_Matrix* pMatrix = NULL);
+                  CFX_Matrix* pMatrix = nullptr);
   void Draw3DCircle(CFX_Graphics* pGraphics,
                     FWLTHEME_EDGE eType,
                     FX_FLOAT fWidth,
@@ -165,17 +165,17 @@ class CFWL_WidgetTP {
                     FX_ARGB cr2,
                     FX_ARGB cr3,
                     FX_ARGB cr4,
-                    CFX_Matrix* pMatrix = NULL);
+                    CFX_Matrix* pMatrix = nullptr);
   void DrawBorder(CFX_Graphics* pGraphics,
                   const CFX_RectF* pRect,
-                  CFX_Matrix* pMatrix = NULL);
+                  CFX_Matrix* pMatrix = nullptr);
   void FillBackground(CFX_Graphics* pGraphics,
                       const CFX_RectF* pRect,
-                      CFX_Matrix* pMatrix = NULL);
+                      CFX_Matrix* pMatrix = nullptr);
   void FillSoildRect(CFX_Graphics* pGraphics,
                      FX_ARGB fillColor,
                      const CFX_RectF* pRect,
-                     CFX_Matrix* pMatrix = NULL);
+                     CFX_Matrix* pMatrix = nullptr);
   void DrawAxialShading(CFX_Graphics* pGraphics,
                         FX_FLOAT fx1,
                         FX_FLOAT fy1,
@@ -185,43 +185,43 @@ class CFWL_WidgetTP {
                         FX_ARGB endColor,
                         CFX_Path* path,
                         int32_t fillMode = FXFILL_WINDING,
-                        CFX_Matrix* pMatrix = NULL);
+                        CFX_Matrix* pMatrix = nullptr);
   void DrawAnnulusRect(CFX_Graphics* pGraphics,
                        FX_ARGB fillColor,
                        const CFX_RectF* pRect,
                        FX_FLOAT fRingWidth = 1,
-                       CFX_Matrix* pMatrix = NULL);
+                       CFX_Matrix* pMatrix = nullptr);
   void DrawAnnulusCircle(CFX_Graphics* pGraphics,
                          FX_ARGB fillColor,
                          const CFX_RectF* pRect,
                          FX_FLOAT fWidth = 1,
-                         CFX_Matrix* pMatrix = NULL);
+                         CFX_Matrix* pMatrix = nullptr);
   void DrawFocus(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
-                 CFX_Matrix* pMatrix = NULL);
+                 CFX_Matrix* pMatrix = nullptr);
   void DrawArrow(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
                  FWLTHEME_DIRECTION eDict,
                  FX_ARGB argbFill,
                  FX_BOOL bPressed,
-                 CFX_Matrix* pMatrix = NULL);
+                 CFX_Matrix* pMatrix = nullptr);
   void DrawArrow(CFX_Graphics* pGraphics,
                  const CFX_RectF* pRect,
                  FWLTHEME_DIRECTION eDict,
                  FX_ARGB argSign,
-                 CFX_Matrix* pMatrix = NULL);
+                 CFX_Matrix* pMatrix = nullptr);
   void DrawBtn(CFX_Graphics* pGraphics,
                const CFX_RectF* pRect,
                FWLTHEME_STATE eState,
-               CFX_Matrix* pMatrix = NULL);
+               CFX_Matrix* pMatrix = nullptr);
   void DrawArrowBtn(CFX_Graphics* pGraphics,
                     const CFX_RectF* pRect,
                     FWLTHEME_DIRECTION eDict,
                     FWLTHEME_STATE eState,
-                    CFX_Matrix* pMatrix = NULL);
+                    CFX_Matrix* pMatrix = nullptr);
   uint32_t m_dwRefCount;
   std::unique_ptr<CFDE_TextOut> m_pTextOut;
-  IFX_Font* m_pFDEFont;
+  CFGAS_GEFont* m_pFDEFont;
   FX_FLOAT m_fValue;
   uint32_t m_dwValue;
   CFX_RectF m_rtMargin;
@@ -264,14 +264,14 @@ class CFWL_FontData {
   FX_BOOL LoadFont(const CFX_WideStringC& wsFontFamily,
                    uint32_t dwFontStyles,
                    uint16_t wCodePage);
-  IFX_Font* GetFont() const { return m_pFont; }
+  CFGAS_GEFont* GetFont() const { return m_pFont; }
 
  protected:
   CFX_WideString m_wsFamily;
   uint32_t m_dwStyles;
   uint32_t m_dwCodePage;
-  IFX_Font* m_pFont;
-  IFX_FontMgr* m_pFontMgr;
+  CFGAS_GEFont* m_pFont;
+  IFGAS_FontMgr* m_pFontMgr;
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
   CFX_FontSourceEnum_File* m_pFontSource;
 #endif
@@ -282,9 +282,9 @@ class CFWL_FontManager {
   static CFWL_FontManager* GetInstance();
   static void DestroyInstance();
 
-  IFX_Font* FindFont(const CFX_WideStringC& wsFontFamily,
-                     uint32_t dwFontStyles,
-                     uint16_t dwCodePage);
+  CFGAS_GEFont* FindFont(const CFX_WideStringC& wsFontFamily,
+                         uint32_t dwFontStyles,
+                         uint16_t dwCodePage);
 
  protected:
   CFWL_FontManager();

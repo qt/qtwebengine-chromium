@@ -61,6 +61,7 @@ class X87OperandConverter : public InstructionOperandConverter {
     Constant constant = ToConstant(operand);
     if (constant.type() == Constant::kInt32 &&
         (constant.rmode() == RelocInfo::WASM_MEMORY_REFERENCE ||
+         constant.rmode() == RelocInfo::WASM_GLOBAL_REFERENCE ||
          constant.rmode() == RelocInfo::WASM_MEMORY_SIZE_REFERENCE)) {
       return Immediate(reinterpret_cast<Address>(constant.ToInt32()),
                        constant.rmode());
@@ -113,8 +114,8 @@ class X87OperandConverter : public InstructionOperandConverter {
       }
       case kMode_MRI: {
         Register base = InputRegister(NextOffset(offset));
-        int32_t disp = InputInt32(NextOffset(offset));
-        return Operand(base, disp);
+        Constant ctant = ToConstant(instr_->InputAt(NextOffset(offset)));
+        return Operand(base, ctant.ToInt32(), ctant.rmode());
       }
       case kMode_MR1:
       case kMode_MR2:
@@ -133,8 +134,8 @@ class X87OperandConverter : public InstructionOperandConverter {
         Register base = InputRegister(NextOffset(offset));
         Register index = InputRegister(NextOffset(offset));
         ScaleFactor scale = ScaleFor(kMode_MR1I, mode);
-        int32_t disp = InputInt32(NextOffset(offset));
-        return Operand(base, index, scale, disp);
+        Constant ctant = ToConstant(instr_->InputAt(NextOffset(offset)));
+        return Operand(base, index, scale, ctant.ToInt32(), ctant.rmode());
       }
       case kMode_M1:
       case kMode_M2:
@@ -151,12 +152,12 @@ class X87OperandConverter : public InstructionOperandConverter {
       case kMode_M8I: {
         Register index = InputRegister(NextOffset(offset));
         ScaleFactor scale = ScaleFor(kMode_M1I, mode);
-        int32_t disp = InputInt32(NextOffset(offset));
-        return Operand(index, scale, disp);
+        Constant ctant = ToConstant(instr_->InputAt(NextOffset(offset)));
+        return Operand(index, scale, ctant.ToInt32(), ctant.rmode());
       }
       case kMode_MI: {
-        int32_t disp = InputInt32(NextOffset(offset));
-        return Operand(Immediate(disp));
+        Constant ctant = ToConstant(instr_->InputAt(NextOffset(offset)));
+        return Operand(ctant.ToInt32(), ctant.rmode());
       }
       case kMode_None:
         UNREACHABLE();
@@ -369,6 +370,50 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
       }                                                               \
     }                                                                 \
   } while (0)
+
+#define ASSEMBLE_IEEE754_BINOP(name)                                          \
+  do {                                                                        \
+    /* Saves the esp into ebx */                                              \
+    __ push(ebx);                                                             \
+    __ mov(ebx, esp);                                                         \
+    /* Pass one double as argument on the stack. */                           \
+    __ PrepareCallCFunction(4, eax);                                          \
+    __ fstp(0);                                                               \
+    /* Load first operand from original stack */                              \
+    __ fld_d(MemOperand(ebx, 4 + kDoubleSize));                               \
+    /* Put first operand into stack for function call */                      \
+    __ fstp_d(Operand(esp, 0 * kDoubleSize));                                 \
+    /* Load second operand from original stack */                             \
+    __ fld_d(MemOperand(ebx, 4));                                             \
+    /* Put second operand into stack for function call */                     \
+    __ fstp_d(Operand(esp, 1 * kDoubleSize));                                 \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     4);                                                      \
+    /* Restore the ebx */                                                     \
+    __ pop(ebx);                                                              \
+    /* Return value is in st(0) on x87. */                                    \
+    __ lea(esp, Operand(esp, 2 * kDoubleSize));                               \
+  } while (false)
+
+#define ASSEMBLE_IEEE754_UNOP(name)                                           \
+  do {                                                                        \
+    /* Saves the esp into ebx */                                              \
+    __ push(ebx);                                                             \
+    __ mov(ebx, esp);                                                         \
+    /* Pass one double as argument on the stack. */                           \
+    __ PrepareCallCFunction(2, eax);                                          \
+    __ fstp(0);                                                               \
+    /* Load operand from original stack */                                    \
+    __ fld_d(MemOperand(ebx, 4));                                             \
+    /* Put operand into stack for function call */                            \
+    __ fstp_d(Operand(esp, 0));                                               \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     2);                                                      \
+    /* Restore the ebx */                                                     \
+    __ pop(ebx);                                                              \
+    /* Return value is in st(0) on x87. */                                    \
+    __ lea(esp, Operand(esp, kDoubleSize));                                   \
+  } while (false)
 
 void CodeGenerator::AssembleDeconstructFrame() {
   __ mov(esp, ebp);
@@ -606,6 +651,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchTableSwitch:
       AssembleArchTableSwitch(instr);
       break;
+    case kArchComment: {
+      Address comment_string = i.InputExternalReference(0).address();
+      __ RecordComment(reinterpret_cast<const char*>(comment_string));
+      break;
+    }
+    case kArchDebugBreak:
+      __ int3();
+      break;
     case kArchNop:
     case kArchThrowTerminator:
       // don't emit code for nops.
@@ -695,6 +748,53 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ lea(i.OutputRegister(), Operand(base, offset.offset()));
       break;
     }
+    case kIeee754Float64Atan:
+      ASSEMBLE_IEEE754_UNOP(atan);
+      break;
+    case kIeee754Float64Atan2:
+      ASSEMBLE_IEEE754_BINOP(atan2);
+      break;
+    case kIeee754Float64Cbrt:
+      ASSEMBLE_IEEE754_UNOP(cbrt);
+      break;
+    case kIeee754Float64Cos:
+      __ X87SetFPUCW(0x027F);
+      ASSEMBLE_IEEE754_UNOP(cos);
+      __ X87SetFPUCW(0x037F);
+      break;
+    case kIeee754Float64Expm1:
+      __ X87SetFPUCW(0x027F);
+      ASSEMBLE_IEEE754_UNOP(expm1);
+      __ X87SetFPUCW(0x037F);
+      break;
+    case kIeee754Float64Exp:
+      ASSEMBLE_IEEE754_UNOP(exp);
+      break;
+    case kIeee754Float64Atanh:
+      ASSEMBLE_IEEE754_UNOP(atanh);
+      break;
+    case kIeee754Float64Log:
+      ASSEMBLE_IEEE754_UNOP(log);
+      break;
+    case kIeee754Float64Log1p:
+      ASSEMBLE_IEEE754_UNOP(log1p);
+      break;
+    case kIeee754Float64Log2:
+      ASSEMBLE_IEEE754_UNOP(log2);
+      break;
+    case kIeee754Float64Log10:
+      ASSEMBLE_IEEE754_UNOP(log10);
+      break;
+    case kIeee754Float64Sin:
+      __ X87SetFPUCW(0x027F);
+      ASSEMBLE_IEEE754_UNOP(sin);
+      __ X87SetFPUCW(0x037F);
+      break;
+    case kIeee754Float64Tan:
+      __ X87SetFPUCW(0x027F);
+      ASSEMBLE_IEEE754_UNOP(tan);
+      __ X87SetFPUCW(0x037F);
+      break;
     case kX87Add:
       if (HasImmediateInput(instr, 1)) {
         __ add(i.InputOperand(0), i.InputImmediate(1));
@@ -1523,6 +1623,30 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ lea(esp, Operand(esp, 2 * kDoubleSize));
       break;
     }
+    case kX87Float64SilenceNaN: {
+      Label end, return_qnan;
+      __ fstp(0);
+      __ push(ebx);
+      // Load Half word of HoleNan(SNaN) into ebx
+      __ mov(ebx, MemOperand(esp, 2 * kInt32Size));
+      __ cmp(ebx, Immediate(kHoleNanUpper32));
+      // Check input is HoleNaN(SNaN)?
+      __ j(equal, &return_qnan, Label::kNear);
+      // If input isn't HoleNaN(SNaN), just load it and return
+      __ fld_d(MemOperand(esp, 1 * kInt32Size));
+      __ jmp(&end);
+      __ bind(&return_qnan);
+      // If input is HoleNaN(SNaN), Return QNaN
+      __ push(Immediate(0xffffffff));
+      __ push(Immediate(0xfff7ffff));
+      __ fld_d(MemOperand(esp, 0));
+      __ lea(esp, Operand(esp, kDoubleSize));
+      __ bind(&end);
+      __ pop(ebx);
+      // Clear stack.
+      __ lea(esp, Operand(esp, 1 * kDoubleSize));
+      break;
+    }
     case kX87Movsxbl:
       __ movsx_b(i.OutputRegister(), i.MemoryOperand());
       break;
@@ -1661,27 +1785,29 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       if (instr->InputAt(0)->IsFPRegister()) {
         auto allocated = AllocatedOperand::cast(*instr->InputAt(0));
         if (allocated.representation() == MachineRepresentation::kFloat32) {
-          __ sub(esp, Immediate(kDoubleSize));
+          __ sub(esp, Immediate(kFloatSize));
           __ fst_s(Operand(esp, 0));
+          frame_access_state()->IncreaseSPDelta(kFloatSize / kPointerSize);
         } else {
           DCHECK(allocated.representation() == MachineRepresentation::kFloat64);
           __ sub(esp, Immediate(kDoubleSize));
           __ fst_d(Operand(esp, 0));
-        }
         frame_access_state()->IncreaseSPDelta(kDoubleSize / kPointerSize);
+        }
       } else if (instr->InputAt(0)->IsFPStackSlot()) {
         auto allocated = AllocatedOperand::cast(*instr->InputAt(0));
         if (allocated.representation() == MachineRepresentation::kFloat32) {
-          __ sub(esp, Immediate(kDoubleSize));
+          __ sub(esp, Immediate(kFloatSize));
           __ fld_s(i.InputOperand(0));
           __ fstp_s(MemOperand(esp, 0));
+          frame_access_state()->IncreaseSPDelta(kFloatSize / kPointerSize);
         } else {
           DCHECK(allocated.representation() == MachineRepresentation::kFloat64);
           __ sub(esp, Immediate(kDoubleSize));
           __ fld_d(i.InputOperand(0));
           __ fstp_d(MemOperand(esp, 0));
-        }
         frame_access_state()->IncreaseSPDelta(kDoubleSize / kPointerSize);
+        }
       } else if (HasImmediateInput(instr, 0)) {
         __ push(i.InputImmediate(0));
         frame_access_state()->IncreaseSPDelta(1);

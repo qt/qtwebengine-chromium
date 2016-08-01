@@ -81,11 +81,11 @@ class V8TemplateMap {
  public:
   typedef v8::GlobalValueMap<void*, v8::Object, V8TemplateMapTraits> MapType;
 
-  void set(void* key, v8::Local<v8::Object> handle) {
-    ASSERT(!m_map.Contains(key));
-    m_map.Set(key, handle);
-  }
-  explicit V8TemplateMap(v8::Isolate* isolate) : m_map(isolate) {}
+  explicit V8TemplateMap(v8::Isolate* isolate);
+  ~V8TemplateMap();
+
+  void set(void* key, v8::Local<v8::Object> handle);
+
   friend class V8TemplateMapTraits;
 
  private:
@@ -94,8 +94,11 @@ class V8TemplateMap {
 
 class FXJS_PerIsolateData {
  public:
+  ~FXJS_PerIsolateData();
+
   static void SetUp(v8::Isolate* pIsolate);
   static FXJS_PerIsolateData* Get(v8::Isolate* pIsolate);
+
   void CreateDynamicObjsMap(v8::Isolate* pIsolate) {
     if (!m_pDynamicObjsMap)
       m_pDynamicObjsMap = new V8TemplateMap(pIsolate);
@@ -112,12 +115,7 @@ class FXJS_PerIsolateData {
   V8TemplateMap* m_pDynamicObjsMap;
 
  protected:
-#ifndef PDF_ENABLE_XFA
-  FXJS_PerIsolateData() : m_pDynamicObjsMap(nullptr) {}
-#else   // PDF_ENABLE_XFA
-  FXJS_PerIsolateData()
-      : m_pFXJSERuntimeData(nullptr), m_pDynamicObjsMap(nullptr) {}
-#endif  // PDF_ENABLE_XFA
+  FXJS_PerIsolateData();
 };
 
 extern const wchar_t kFXJSValueNameString[];
@@ -138,7 +136,6 @@ class FXJS_ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 using FXJS_CONSTRUCTOR = void (*)(IJS_Runtime* cc, v8::Local<v8::Object> obj);
 using FXJS_DESTRUCTOR = void (*)(v8::Local<v8::Object> obj);
 
-// Call before making FXJS_PrepareIsolate call.
 void FXJS_Initialize(unsigned int embedderDataSlot, v8::Isolate* pIsolate);
 void FXJS_Release();
 
@@ -149,14 +146,6 @@ bool FXJS_GetIsolate(v8::Isolate** pResultIsolate);
 
 // Get the global isolate's ref count.
 size_t FXJS_GlobalIsolateRefCount();
-
-// Call before making FXJS_Define* calls. Resources allocated here are cleared
-// as part of FXJS_ReleaseRuntime().
-void FXJS_PrepareIsolate(v8::Isolate* pIsolate);
-
-// Call before making JS_Define* calls. Resources allocated here are cleared
-// as part of JS_ReleaseRuntime().
-void JS_PrepareIsolate(v8::Isolate* pIsolate);
 
 // Always returns a valid, newly-created objDefnID.
 int FXJS_DefineObj(v8::Isolate* pIsolate,
@@ -211,8 +200,7 @@ void FXJS_SetRuntimeForV8Context(v8::Local<v8::Context> v8Context,
 
 // Called after FXJS_InitializeRuntime call made.
 int FXJS_Execute(v8::Isolate* pIsolate,
-                 IJS_Context* pJSContext,
-                 const wchar_t* script,
+                 const CFX_WideString& script,
                  FXJSErr* perror);
 
 v8::Local<v8::Object> FXJS_NewFxDynamicObj(v8::Isolate* pIsolate,

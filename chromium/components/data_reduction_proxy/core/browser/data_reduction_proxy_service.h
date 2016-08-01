@@ -40,6 +40,7 @@ namespace data_reduction_proxy {
 class DataReductionProxyCompressionStats;
 class DataReductionProxyEventStore;
 class DataReductionProxyIOData;
+class DataReductionProxyPingbackClient;
 class DataReductionProxyServiceObserver;
 class DataReductionProxySettings;
 
@@ -136,6 +137,9 @@ class DataReductionProxyService
   void AddObserver(DataReductionProxyServiceObserver* observer);
   void RemoveObserver(DataReductionProxyServiceObserver* observer);
 
+  // Sets the reporting fraction in the pingback client.
+  void SetPingbackReportingFraction(float pingback_reporting_fraction);
+
   // Accessor methods.
   DataReductionProxyCompressionStats* compression_stats() const {
     return compression_stats_.get();
@@ -147,6 +151,10 @@ class DataReductionProxyService
 
   net::URLRequestContextGetter* url_request_context_getter() const {
     return url_request_context_getter_;
+  }
+
+  DataReductionProxyPingbackClient* pingback_client() const {
+    return pingback_client_.get();
   }
 
   base::WeakPtr<DataReductionProxyService> GetWeakPtr();
@@ -175,6 +183,8 @@ class DataReductionProxyService
   std::unique_ptr<DataReductionProxyCompressionStats> compression_stats_;
 
   std::unique_ptr<DataReductionProxyEventStore> event_store_;
+
+  std::unique_ptr<DataReductionProxyPingbackClient> pingback_client_;
 
   DataReductionProxySettings* settings_;
 

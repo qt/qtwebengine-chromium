@@ -42,7 +42,6 @@ class CPDF_Object {
   virtual CPDF_Object* Clone(FX_BOOL bDirect = FALSE) const = 0;
   virtual CPDF_Object* GetDirect() const;
 
-  FX_BOOL IsModified() const { return FALSE; }
   void Release();
 
   virtual CFX_ByteString GetString() const;
@@ -50,7 +49,6 @@ class CPDF_Object {
   virtual FX_FLOAT GetNumber() const;
   virtual int GetInteger() const;
   virtual CPDF_Dictionary* GetDict() const;
-  virtual CPDF_Array* GetArray() const;
 
   virtual void SetString(const CFX_ByteString& str);
 

@@ -14,6 +14,11 @@
 #include "libANGLE/ContextState.h"
 #include "libANGLE/renderer/GLImplFactory.h"
 
+namespace gl
+{
+class Path;
+}
+
 namespace rx
 {
 class ContextImpl : public GLImplFactory
@@ -23,14 +28,6 @@ class ContextImpl : public GLImplFactory
     virtual ~ContextImpl();
 
     virtual gl::Error initialize() = 0;
-
-    const gl::ContextState &getContextState() { return mState; }
-    int getClientVersion() const { return mState.clientVersion; }
-    const gl::State &getState() const { return *mState.state; }
-    const gl::Caps &getCaps() const { return *mState.caps; }
-    const gl::TextureCapsMap &getTextureCaps() const { return *mState.textureCaps; }
-    const gl::Extensions &getExtensions() const { return *mState.extensions; }
-    const gl::Limitations &getLimitations() const { return *mState.limitations; }
 
     // Flush and finish.
     virtual gl::Error flush() = 0;
@@ -62,6 +59,21 @@ class ContextImpl : public GLImplFactory
                                         const GLvoid *indices,
                                         const gl::IndexRange &indexRange) = 0;
 
+    // CHROMIUM_path_rendering path drawing methods.
+    virtual void stencilFillPath(const gl::Path *path, GLenum fillMode, GLuint mask);
+    virtual void stencilStrokePath(const gl::Path *path, GLint reference, GLuint mask);
+    virtual void coverFillPath(const gl::Path *path, GLenum coverMode);
+    virtual void coverStrokePath(const gl::Path *path, GLenum coverMode);
+    virtual void stencilThenCoverFillPath(const gl::Path *path,
+                                          GLenum fillMode,
+                                          GLuint mask,
+                                          GLenum coverMode);
+
+    virtual void stencilThenCoverStrokePath(const gl::Path *path,
+                                            GLint reference,
+                                            GLuint mask,
+                                            GLenum coverMode);
+
     // TODO(jmadill): Investigate proper impl methods for this.
     virtual void notifyDeviceLost() = 0;
     virtual bool isDeviceLost() const = 0;
@@ -92,6 +104,14 @@ class ContextImpl : public GLImplFactory
     virtual const gl::TextureCapsMap &getNativeTextureCaps() const = 0;
     virtual const gl::Extensions &getNativeExtensions() const = 0;
     virtual const gl::Limitations &getNativeLimitations() const = 0;
+
+    const gl::ContextState &getContextState() { return mState; }
+    int getClientVersion() const { return mState.getClientVersion(); }
+    const gl::State &getGLState() const { return mState.getState(); }
+    const gl::Caps &getCaps() const { return mState.getCaps(); }
+    const gl::TextureCapsMap &getTextureCaps() const { return mState.getTextureCaps(); }
+    const gl::Extensions &getExtensions() const { return mState.getExtensions(); }
+    const gl::Limitations &getLimitations() const { return mState.getLimitations(); }
 
   protected:
     const gl::ContextState &mState;

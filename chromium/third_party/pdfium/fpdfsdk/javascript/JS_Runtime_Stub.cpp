@@ -139,18 +139,16 @@ class CJS_RuntimeStub final : public IJS_Runtime {
   CPDFSDK_Document* GetReaderDocument() override { return m_pDoc; }
 
 #ifdef PDF_ENABLE_XFA
-  FX_BOOL GetHValueByName(const CFX_ByteStringC&, FXJSE_HVALUE) override {
+  FX_BOOL GetValueByName(const CFX_ByteStringC&, CFXJSE_Value*) override {
     return FALSE;
   }
 
-  FX_BOOL SetHValueByName(const CFX_ByteStringC&, FXJSE_HVALUE) override {
+  FX_BOOL SetValueByName(const CFX_ByteStringC&, CFXJSE_Value*) override {
     return FALSE;
   }
 #endif  // PDF_ENABLE_XFA
 
-  int Execute(IJS_Context* cc,
-              const wchar_t* script,
-              CFX_WideString* info) override {
+  int Execute(const CFX_WideString& script, CFX_WideString* info) override {
     return 0;
   }
 
@@ -161,6 +159,9 @@ class CJS_RuntimeStub final : public IJS_Runtime {
 
 // static
 void IJS_Runtime::Initialize(unsigned int slot, void* isolate) {}
+
+// static
+void IJS_Runtime::Destroy() {}
 
 // static
 IJS_Runtime* IJS_Runtime::Create(CPDFDoc_Environment* pEnv) {

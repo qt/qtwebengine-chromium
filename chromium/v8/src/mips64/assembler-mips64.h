@@ -125,8 +125,6 @@ struct Register {
     return r;
   }
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kNumRegisters; }
   bool is(Register reg) const { return reg_code == reg.reg_code; }
   int code() const {
@@ -155,6 +153,8 @@ int ToNumber(Register reg);
 
 Register ToRegister(int num);
 
+static const bool kSimpleFPAliasing = true;
+
 // Coprocessor register.
 struct FPURegister {
   enum Code {
@@ -173,8 +173,6 @@ struct FPURegister {
   // to number of 32-bit FPU regs, but kNumAllocatableRegisters refers to
   // number of Double regs (64-bit regs, or FPU-reg-pairs).
 
-  const char* ToString();
-  bool IsAllocatable() const;
   bool is_valid() const { return 0 <= reg_code && reg_code < kMaxNumRegisters; }
   bool is(FPURegister reg) const { return reg_code == reg.reg_code; }
   FPURegister low() const {
@@ -906,6 +904,12 @@ class Assembler : public AssemblerBase {
   void dbitswap(Register rd, Register rt);
   void align(Register rd, Register rs, Register rt, uint8_t bp);
   void dalign(Register rd, Register rs, Register rt, uint8_t bp);
+
+  void wsbh(Register rd, Register rt);
+  void dsbh(Register rd, Register rt);
+  void dshd(Register rd, Register rt);
+  void seh(Register rd, Register rt);
+  void seb(Register rd, Register rt);
 
   // --------Coprocessor-instructions----------------
 

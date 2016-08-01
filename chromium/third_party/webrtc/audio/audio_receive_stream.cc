@@ -38,7 +38,7 @@ bool UseSendSideBwe(const webrtc::AudioReceiveStream::Config& config) {
     return false;
   }
   for (const auto& extension : config.rtp.extensions) {
-    if (extension.name == RtpExtension::kTransportSequenceNumber) {
+    if (extension.uri == RtpExtension::kTransportSequenceNumberUri) {
       return true;
     }
   }
@@ -50,6 +50,8 @@ std::string AudioReceiveStream::Config::Rtp::ToString() const {
   std::stringstream ss;
   ss << "{remote_ssrc: " << remote_ssrc;
   ss << ", local_ssrc: " << local_ssrc;
+  ss << ", transport_cc: " << (transport_cc ? "on" : "off");
+  ss << ", nack: " << nack.ToString();
   ss << ", extensions: [";
   for (size_t i = 0; i < extensions.size(); ++i) {
     ss << extensions[i].ToString();
@@ -58,7 +60,6 @@ std::string AudioReceiveStream::Config::Rtp::ToString() const {
     }
   }
   ss << ']';
-  ss << ", transport_cc: " << (transport_cc ? "on" : "off");
   ss << '}';
   return ss.str();
 }
@@ -93,21 +94,34 @@ AudioReceiveStream::AudioReceiveStream(
   VoiceEngineImpl* voe_impl = static_cast<VoiceEngineImpl*>(voice_engine());
   channel_proxy_ = voe_impl->GetChannelProxy(config_.voe_channel_id);
   channel_proxy_->SetLocalSSRC(config.rtp.local_ssrc);
+  // TODO(solenberg): Config NACK history window (which is a packet count),
+  // using the actual packet size for the configured codec.
+  channel_proxy_->SetNACKStatus(config_.rtp.nack.rtp_history_ms != 0,
+                                config_.rtp.nack.rtp_history_ms / 20);
+
+  // TODO(ossu): This is where we'd like to set the decoder factory to
+  // use. However, since it needs to be included when constructing Channel, we
+  // cannot do that until we're able to move Channel ownership into the
+  // Audio{Send,Receive}Streams.  The best we can do is check that we're not
+  // trying to use two different factories using the different interfaces.
+  RTC_CHECK(config.decoder_factory);
+  RTC_CHECK_EQ(config.decoder_factory,
+               channel_proxy_->GetAudioDecoderFactory());
 
   channel_proxy_->RegisterExternalTransport(config.rtcp_send_transport);
 
   for (const auto& extension : config.rtp.extensions) {
-    if (extension.name == RtpExtension::kAudioLevel) {
+    if (extension.uri == RtpExtension::kAudioLevelUri) {
       channel_proxy_->SetReceiveAudioLevelIndicationStatus(true, extension.id);
       bool registered = rtp_header_parser_->RegisterRtpHeaderExtension(
           kRtpExtensionAudioLevel, extension.id);
       RTC_DCHECK(registered);
-    } else if (extension.name == RtpExtension::kAbsSendTime) {
+    } else if (extension.uri == RtpExtension::kAbsSendTimeUri) {
       channel_proxy_->SetReceiveAbsoluteSenderTimeStatus(true, extension.id);
       bool registered = rtp_header_parser_->RegisterRtpHeaderExtension(
           kRtpExtensionAbsoluteSendTime, extension.id);
       RTC_DCHECK(registered);
-    } else if (extension.name == RtpExtension::kTransportSequenceNumber) {
+    } else if (extension.uri == RtpExtension::kTransportSequenceNumberUri) {
       channel_proxy_->EnableReceiveTransportSequenceNumber(extension.id);
       bool registered = rtp_header_parser_->RegisterRtpHeaderExtension(
           kRtpExtensionTransportSequenceNumber, extension.id);
@@ -194,6 +208,11 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
 void AudioReceiveStream::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
   channel_proxy_->SetSink(std::move(sink));
+}
+
+void AudioReceiveStream::SetGain(float gain) {
+  RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  channel_proxy_->SetChannelOutputVolumeScaling(gain);
 }
 
 const webrtc::AudioReceiveStream::Config& AudioReceiveStream::config() const {

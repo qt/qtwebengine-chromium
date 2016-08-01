@@ -9,6 +9,7 @@
 #include "core/fpdfapi/fpdf_font/font_int.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_dictionary.h"
 #include "core/fxge/include/fx_freetype.h"
+#include "core/fxge/include/fx_ge.h"
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
 #include "core/fxge/apple/apple_int.h"
@@ -23,24 +24,21 @@ struct GlyphNameMap {
 };
 
 const GlyphNameMap g_GlyphNameSubsts[] = {{"ff", "uniFB00"},
-                                          {"fi", "uniFB01"},
-                                          {"fl", "uniFB02"},
                                           {"ffi", "uniFB03"},
-                                          {"ffl", "uniFB04"}};
+                                          {"ffl", "uniFB04"},
+                                          {"fi", "uniFB01"},
+                                          {"fl", "uniFB02"}};
 
 int compareString(const void* key, const void* element) {
-  return FXSYS_stricmp((const FX_CHAR*)key,
-                       ((GlyphNameMap*)element)->m_pStrAdobe);
+  return FXSYS_stricmp(static_cast<const FX_CHAR*>(key),
+                       static_cast<const GlyphNameMap*>(element)->m_pStrAdobe);
 }
 
 const FX_CHAR* GlyphNameRemap(const FX_CHAR* pStrAdobe) {
-  GlyphNameMap* found = (GlyphNameMap*)FXSYS_bsearch(
-      pStrAdobe, g_GlyphNameSubsts,
-      sizeof(g_GlyphNameSubsts) / sizeof(GlyphNameMap), sizeof(GlyphNameMap),
-      compareString);
-  if (found)
-    return found->m_pStrUnicode;
-  return NULL;
+  const GlyphNameMap* found = static_cast<const GlyphNameMap*>(FXSYS_bsearch(
+      pStrAdobe, g_GlyphNameSubsts, FX_ArraySize(g_GlyphNameSubsts),
+      sizeof(GlyphNameMap), compareString));
+  return found ? found->m_pStrUnicode : nullptr;
 }
 
 #endif  // _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
@@ -118,19 +116,18 @@ void CPDF_Type1Font::LoadGlyphMap() {
     return;
 
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-  FX_BOOL bCoreText = TRUE;
+  bool bCoreText = true;
   CQuartz2D& quartz2d =
       static_cast<CApplePlatform*>(CFX_GEModule::Get()->GetPlatformData())
           ->m_quartz2d;
   if (!m_Font.GetPlatformFont()) {
-    if (m_Font.GetPsName() == CFX_WideString::FromLocal("DFHeiStd-W5")) {
-      bCoreText = FALSE;
-    }
+    if (m_Font.GetPsName() == "DFHeiStd-W5")
+      bCoreText = false;
+
     m_Font.SetPlatformFont(
         quartz2d.CreateFont(m_Font.GetFontData(), m_Font.GetSize()));
-    if (!m_Font.GetPlatformFont()) {
-      bCoreText = FALSE;
-    }
+    if (!m_Font.GetPlatformFont())
+      bCoreText = false;
   }
 #endif
   if (!IsEmbedded() && (m_Base14Font < 12) && m_Font.IsTTFont()) {
@@ -164,9 +161,8 @@ void CPDF_Type1Font::LoadGlyphMap() {
       }
       if (bGotOne) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-        if (!bCoreText) {
+        if (!bCoreText)
           FXSYS_memcpy(m_ExtGID, m_GlyphIndex, 256);
-        }
 #endif
         return;
       }
@@ -218,9 +214,8 @@ void CPDF_Type1Font::LoadGlyphMap() {
       }
     }
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-    if (!bCoreText) {
+    if (!bCoreText)
       FXSYS_memcpy(m_ExtGID, m_GlyphIndex, 256);
-    }
 #endif
     return;
   }
@@ -366,9 +361,9 @@ void CPDF_Type1Font::LoadGlyphMap() {
       }
     }
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-    if (!bCoreText) {
+    if (!bCoreText)
       FXSYS_memcpy(m_ExtGID, m_GlyphIndex, 256);
-    }
+
 #endif
     return;
   }
@@ -397,8 +392,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
     }
   }
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_APPLE_
-  if (!bCoreText) {
+  if (!bCoreText)
     FXSYS_memcpy(m_ExtGID, m_GlyphIndex, 256);
-  }
 #endif
 }

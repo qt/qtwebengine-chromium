@@ -18,7 +18,7 @@ RequestInfo::RequestInfo()
       routing_id(0),
       download_to_file(false),
       has_user_gesture(false),
-      skip_service_worker(false),
+      skip_service_worker(SkipServiceWorker::NONE),
       should_reset_appcache(false),
       fetch_request_mode(FETCH_REQUEST_MODE_NO_CORS),
       fetch_credentials_mode(FETCH_CREDENTIALS_MODE_OMIT),
@@ -28,7 +28,8 @@ RequestInfo::RequestInfo()
       do_not_prompt_for_login(false),
       report_raw_headers(false),
       extra_data(NULL),
-      loading_web_task_runner(nullptr) {}
+      loading_web_task_runner(nullptr),
+      lofi_state(LOFI_UNSPECIFIED) {}
 
 RequestInfo::~RequestInfo() {}
 

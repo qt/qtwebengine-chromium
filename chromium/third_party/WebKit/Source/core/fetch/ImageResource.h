@@ -32,6 +32,7 @@
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/ImageOrientation.h"
 #include "wtf/HashMap.h"
+#include <memory>
 
 namespace blink {
 
@@ -90,6 +91,8 @@ public:
     // the Lo-Fi state set to off and bypassing the cache.
     void reloadIfLoFi(ResourceFetcher*);
 
+    void didAddClient(ResourceClient*) override;
+
     void addObserver(ImageResourceObserver*);
     void removeObserver(ImageResourceObserver*);
     bool hasClientsOrObservers() const override { return Resource::hasClientsOrObservers() || !m_observers.isEmpty() || !m_finishedObservers.isEmpty(); }
@@ -100,7 +103,7 @@ public:
 
     void appendData(const char*, size_t) override;
     void error(const ResourceError&) override;
-    void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    void responseReceived(const ResourceResponse&, std::unique_ptr<WebDataConsumerHandle>) override;
     void finish(double finishTime = 0.0) override;
 
     // For compatibility, images keep loading even if there are HTTP errors.
@@ -157,8 +160,12 @@ private:
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = nullptr);
 
+    void ensureImage();
+
     void checkNotify() override;
     void markClientsAndObserversFinished() override;
+
+    void doResetAnimation();
 
     float m_devicePixelRatioHeaderValue;
 

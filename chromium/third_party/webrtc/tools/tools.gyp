@@ -177,6 +177,26 @@
             }],
           ],
         }, # tools_unittests
+        {
+          'target_name': 'rtp_analyzer',
+          'type': 'none',
+          'variables': {
+            'copy_output_dir%': '<(PRODUCT_DIR)',
+          },
+          'copies': [
+            {
+              'destination': '<(copy_output_dir)/',
+              'files': [
+                'py_event_log_analyzer/misc.py',
+                'py_event_log_analyzer/pb_parse.py',
+                'py_event_log_analyzer/rtp_analyzer.py',
+                'py_event_log_analyzer/rtp_analyzer.sh',
+              ]
+            },
+          ],
+          'dependencies': [ '<(webrtc_root)/webrtc.gyp:rtc_event_log_proto' ],
+          'process_outputs_as_sources': 1,
+        }, # rtp_analyzer
       ], # targets
       'conditions': [
         ['OS=="android"', {
@@ -185,7 +205,7 @@
               'target_name': 'tools_unittests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):tools_unittests_apk',
+                '<(android_tests_path):tools_unittests_apk',
               ],
             },
           ],
@@ -197,7 +217,7 @@
                     'target_name': 'tools_unittests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):tools_unittests_apk',
+                      '<(android_tests_path):tools_unittests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',

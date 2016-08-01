@@ -19,6 +19,7 @@
 #include "src/interpreter/bytecodes.h"
 #include "src/machine-type.h"
 #include "src/macro-assembler.h"
+#include "src/utils.h"
 #include "src/zone.h"
 
 namespace v8 {
@@ -158,6 +159,28 @@ Node* CodeAssembler::Parameter(int value) {
 
 void CodeAssembler::Return(Node* value) {
   return raw_assembler_->Return(value);
+}
+
+void CodeAssembler::DebugBreak() { raw_assembler_->DebugBreak(); }
+
+void CodeAssembler::Comment(const char* format, ...) {
+  if (!FLAG_code_comments) return;
+  char buffer[4 * KB];
+  StringBuilder builder(buffer, arraysize(buffer));
+  va_list arguments;
+  va_start(arguments, format);
+  builder.AddFormattedList(format, arguments);
+  va_end(arguments);
+
+  // Copy the string before recording it in the assembler to avoid
+  // issues when the stack allocated buffer goes out of scope.
+  const int prefix_len = 2;
+  int length = builder.position() + 1;
+  char* copy = reinterpret_cast<char*>(malloc(length + prefix_len));
+  MemCopy(copy + prefix_len, builder.Finalize(), length);
+  copy[0] = ';';
+  copy[1] = ' ';
+  raw_assembler_->Comment(copy);
 }
 
 void CodeAssembler::Bind(CodeAssembler::Label* label) { return label->Bind(); }
@@ -392,6 +415,12 @@ Node* CodeAssembler::CallStub(Callable const& callable, Node* context,
                   result_size);
 }
 
+Node* CodeAssembler::CallStubN(Callable const& callable, Node** args,
+                               size_t result_size) {
+  Node* target = HeapConstant(callable.code());
+  return CallStubN(callable.descriptor(), target, args, result_size);
+}
+
 Node* CodeAssembler::CallStub(const CallInterfaceDescriptor& descriptor,
                               Node* target, Node* context, Node* arg1,
                               size_t result_size) {
@@ -479,6 +508,16 @@ Node* CodeAssembler::CallStub(const CallInterfaceDescriptor& descriptor,
   return CallN(call_descriptor, target, args);
 }
 
+Node* CodeAssembler::CallStubN(const CallInterfaceDescriptor& descriptor,
+                               Node* target, Node** args, size_t result_size) {
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      isolate(), zone(), descriptor, descriptor.GetStackParameterCount(),
+      CallDescriptor::kNoFlags, Operator::kNoProperties,
+      MachineType::AnyTagged(), result_size);
+
+  return CallN(call_descriptor, target, args);
+}
+
 Node* CodeAssembler::TailCallStub(Callable const& callable, Node* context,
                                   Node* arg1, Node* arg2, size_t result_size) {
   Node* target = HeapConstant(callable.code());
@@ -527,6 +566,25 @@ Node* CodeAssembler::TailCallStub(const CallInterfaceDescriptor& descriptor,
   return raw_assembler_->TailCallN(call_descriptor, target, args);
 }
 
+Node* CodeAssembler::TailCallStub(const CallInterfaceDescriptor& descriptor,
+                                  Node* target, Node* context, Node* arg1,
+                                  Node* arg2, Node* arg3, Node* arg4,
+                                  size_t result_size) {
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      isolate(), zone(), descriptor, descriptor.GetStackParameterCount(),
+      CallDescriptor::kSupportsTailCalls, Operator::kNoProperties,
+      MachineType::AnyTagged(), result_size);
+
+  Node** args = zone()->NewArray<Node*>(5);
+  args[0] = arg1;
+  args[1] = arg2;
+  args[2] = arg3;
+  args[3] = arg4;
+  args[4] = context;
+
+  return raw_assembler_->TailCallN(call_descriptor, target, args);
+}
+
 Node* CodeAssembler::TailCallBytecodeDispatch(
     const CallInterfaceDescriptor& interface_descriptor,
     Node* code_target_address, Node** args) {
@@ -534,6 +592,66 @@ Node* CodeAssembler::TailCallBytecodeDispatch(
       isolate(), zone(), interface_descriptor,
       interface_descriptor.GetStackParameterCount());
   return raw_assembler_->TailCallN(descriptor, code_target_address, args);
+}
+
+Node* CodeAssembler::CallJS(Callable const& callable, Node* context,
+                            Node* function, Node* receiver,
+                            size_t result_size) {
+  const int argc = 0;
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      isolate(), zone(), callable.descriptor(), argc + 1,
+      CallDescriptor::kNoFlags, Operator::kNoProperties,
+      MachineType::AnyTagged(), result_size);
+  Node* target = HeapConstant(callable.code());
+
+  Node** args = zone()->NewArray<Node*>(argc + 4);
+  args[0] = function;
+  args[1] = Int32Constant(argc);
+  args[2] = receiver;
+  args[3] = context;
+
+  return CallN(call_descriptor, target, args);
+}
+
+Node* CodeAssembler::CallJS(Callable const& callable, Node* context,
+                            Node* function, Node* receiver, Node* arg1,
+                            size_t result_size) {
+  const int argc = 1;
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      isolate(), zone(), callable.descriptor(), argc + 1,
+      CallDescriptor::kNoFlags, Operator::kNoProperties,
+      MachineType::AnyTagged(), result_size);
+  Node* target = HeapConstant(callable.code());
+
+  Node** args = zone()->NewArray<Node*>(argc + 4);
+  args[0] = function;
+  args[1] = Int32Constant(argc);
+  args[2] = receiver;
+  args[3] = arg1;
+  args[4] = context;
+
+  return CallN(call_descriptor, target, args);
+}
+
+Node* CodeAssembler::CallJS(Callable const& callable, Node* context,
+                            Node* function, Node* receiver, Node* arg1,
+                            Node* arg2, size_t result_size) {
+  const int argc = 2;
+  CallDescriptor* call_descriptor = Linkage::GetStubCallDescriptor(
+      isolate(), zone(), callable.descriptor(), argc + 1,
+      CallDescriptor::kNoFlags, Operator::kNoProperties,
+      MachineType::AnyTagged(), result_size);
+  Node* target = HeapConstant(callable.code());
+
+  Node** args = zone()->NewArray<Node*>(argc + 4);
+  args[0] = function;
+  args[1] = Int32Constant(argc);
+  args[2] = receiver;
+  args[3] = arg1;
+  args[4] = arg2;
+  args[5] = context;
+
+  return CallN(call_descriptor, target, args);
 }
 
 void CodeAssembler::Goto(CodeAssembler::Label* label) {
@@ -598,9 +716,11 @@ class CodeAssembler::Variable::Impl : public ZoneObject {
 
 CodeAssembler::Variable::Variable(CodeAssembler* assembler,
                                   MachineRepresentation rep)
-    : impl_(new (assembler->zone()) Impl(rep)) {
-  assembler->variables_.push_back(impl_);
+    : impl_(new (assembler->zone()) Impl(rep)), assembler_(assembler) {
+  assembler->variables_.insert(impl_);
 }
+
+CodeAssembler::Variable::~Variable() { assembler_->variables_.erase(impl_); }
 
 void CodeAssembler::Variable::Bind(Node* value) { impl_->value_ = value; }
 

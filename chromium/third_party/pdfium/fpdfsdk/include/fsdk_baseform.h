@@ -15,10 +15,6 @@
 #include "core/fxge/include/fx_dib.h"
 #include "fpdfsdk/include/fsdk_baseannot.h"
 
-#ifdef PDF_ENABLE_XFA
-#include "xfa/fxfa/include/xfa_ffwidgethandler.h"
-#endif  // PDF_ENABLE_XFA
-
 #if _FX_OS_ == _FX_ANDROID_
 #include "time.h"
 #else
@@ -34,6 +30,8 @@ class CPDF_FormField;
 struct CPWL_Color;
 
 #ifdef PDF_ENABLE_XFA
+class CXFA_FFWidgetHandler;
+
 typedef enum _PDFSDK_XFAAActionType {
   PDFSDK_XFA_Click = 0,
   PDFSDK_XFA_Full,
@@ -43,16 +41,8 @@ typedef enum _PDFSDK_XFAAActionType {
 #endif  // PDF_ENABLE_XFA
 
 struct PDFSDK_FieldAction {
-  PDFSDK_FieldAction() {
-    bModifier = FALSE;
-    bShift = FALSE;
-    nCommitKey = 0;
-    bKeyDown = FALSE;
-    nSelEnd = nSelStart = 0;
-    bWillCommit = FALSE;
-    bFieldFull = FALSE;
-    bRC = TRUE;
-  }
+  PDFSDK_FieldAction();
+  PDFSDK_FieldAction(const PDFSDK_FieldAction& other) = delete;
 
   FX_BOOL bModifier;         // in
   FX_BOOL bShift;            // in
@@ -104,7 +94,7 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
   CPDF_Action GetAAction(CPDF_AAction::AActionType eAAT) override;
   FX_BOOL IsAppearanceValid() override;
 
-  int GetLayoutOrder() const override { return 2; }
+  int GetLayoutOrder() const override;
 
   int GetFieldType() const;
 
@@ -212,7 +202,7 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
   FX_BOOL HitTest(FX_FLOAT pageX, FX_FLOAT pageY);
 
  private:
-  CPDFSDK_InterForm* m_pInterForm;
+  CPDFSDK_InterForm* const m_pInterForm;
   FX_BOOL m_bAppModified;
   int32_t m_nAppAge;
   int32_t m_nValueAge;
@@ -232,9 +222,9 @@ class CPDFSDK_XFAWidget : public CPDFSDK_Annot {
   ~CPDFSDK_XFAWidget() override {}
 
   FX_BOOL IsXFAField() override;
-  CXFA_FFWidget* GetXFAWidget() const override { return m_hXFAWidget; }
+  CXFA_FFWidget* GetXFAWidget() const override;
   CFX_ByteString GetType() const override;
-  CFX_ByteString GetSubType() const override { return ""; }
+  CFX_ByteString GetSubType() const override;
   CFX_FloatRect GetRect() const override;
 
   CPDFSDK_InterForm* GetInterForm() { return m_pInterForm; }
@@ -245,12 +235,12 @@ class CPDFSDK_XFAWidget : public CPDFSDK_Annot {
 };
 #endif  // PDF_ENABLE_XFA
 
-class CPDFSDK_InterForm : public CPDF_FormNotify {
+class CPDFSDK_InterForm : public IPDF_FormNotify {
  public:
   explicit CPDFSDK_InterForm(CPDFSDK_Document* pDocument);
   ~CPDFSDK_InterForm() override;
 
-  CPDF_InterForm* GetInterForm() const { return m_pInterForm; }
+  CPDF_InterForm* GetInterForm() const { return m_pInterForm.get(); }
   CPDFSDK_Document* GetDocument() const { return m_pDocument; }
 
   FX_BOOL HighlightWidgets();
@@ -281,7 +271,7 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
   FX_BOOL OnKeyStrokeCommit(CPDF_FormField* pFormField,
                             const CFX_WideString& csValue);
   FX_BOOL OnValidate(CPDF_FormField* pFormField, const CFX_WideString& csValue);
-  void OnCalculate(CPDF_FormField* pFormField = NULL);
+  void OnCalculate(CPDF_FormField* pFormField = nullptr);
   CFX_WideString OnFormat(CPDF_FormField* pFormField, FX_BOOL& bFormated);
 
   void ResetFieldAppearance(CPDF_FormField* pFormField,
@@ -313,7 +303,7 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
 #endif  // PDF_ENABLE_XFA
 
  private:
-  // CPDF_FormNotify:
+  // IPDF_FormNotify:
   int BeforeValueChange(CPDF_FormField* pField,
                         const CFX_WideString& csValue) override;
   void AfterValueChange(CPDF_FormField* pField) override;
@@ -335,7 +325,7 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
   using CPDFSDK_WidgetMap = std::map<CPDF_FormControl*, CPDFSDK_Widget*>;
 
   CPDFSDK_Document* m_pDocument;
-  CPDF_InterForm* m_pInterForm;
+  std::unique_ptr<CPDF_InterForm> m_pInterForm;
   CPDFSDK_WidgetMap m_Map;
 #ifdef PDF_ENABLE_XFA
   std::map<CXFA_FFWidget*, CPDFSDK_XFAWidget*> m_XFAMap;

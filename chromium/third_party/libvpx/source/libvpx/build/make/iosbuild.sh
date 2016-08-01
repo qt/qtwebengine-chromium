@@ -196,7 +196,12 @@ build_framework() {
   for target in ${targets}; do
     build_target "${target}"
     target_dist_dir="${BUILD_ROOT}/${target}/${DIST_DIR}"
-    lib_list="${lib_list} ${target_dist_dir}/lib/libvpx.a"
+    if [ "${ENABLE_SHARED}" = "yes" ]; then
+      local suffix="dylib"
+    else
+      local suffix="a"
+    fi
+    lib_list="${lib_list} ${target_dist_dir}/lib/libvpx.${suffix}"
   done
 
   cd "${ORIG_PWD}"
@@ -214,6 +219,18 @@ build_framework() {
 
   # Copy in vpx_version.h.
   cp -p "${BUILD_ROOT}/${target}/vpx_version.h" "${HEADER_DIR}"
+
+  if [ "${ENABLE_SHARED}" = "yes" ]; then
+    # Adjust the dylib's name so dynamic linking in apps works as expected.
+    install_name_tool -id '@rpath/VPX.framework/VPX' ${FRAMEWORK_DIR}/VPX
+
+    # Copy in Info.plist.
+    cat "${SCRIPT_DIR}/ios-Info.plist" \
+      | sed "s/\${FULLVERSION}/${FULLVERSION}/g" \
+      | sed "s/\${VERSION}/${VERSION}/g" \
+      | sed "s/\${IOS_VERSION_MIN}/${IOS_VERSION_MIN}/g" \
+      > "${FRAMEWORK_DIR}/Info.plist"
+  fi
 
   # Confirm VPX.framework/VPX contains the targets requested.
   verify_framework_targets ${targets}
@@ -252,6 +269,7 @@ iosbuild_usage() {
 cat << EOF
   Usage: ${0##*/} [arguments]
     --help: Display this message and exit.
+    --enable-shared: Build a dynamic framework for use on iOS 8 or later.
     --extra-configure-args <args>: Extra args to pass when configuring libvpx.
     --macosx: Uses darwin15 targets instead of iphonesimulator targets for x86
               and x86_64. Allows linking to framework when builds target MacOSX
@@ -290,6 +308,9 @@ while [ -n "$1" ]; do
       iosbuild_usage
       exit
       ;;
+    --enable-shared)
+      ENABLE_SHARED=yes
+      ;;
     --preserve-build-output)
       PRESERVE_BUILD_OUTPUT=yes
       ;;
@@ -317,6 +338,21 @@ while [ -n "$1" ]; do
   shift
 done
 
+if [ "${ENABLE_SHARED}" = "yes" ]; then
+  CONFIGURE_ARGS="--enable-shared ${CONFIGURE_ARGS}"
+fi
+
+FULLVERSION=$("${SCRIPT_DIR}"/version.sh --bare "${LIBVPX_SOURCE_DIR}")
+VERSION=$(echo "${FULLVERSION}" | sed -E 's/^v([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')
+
+if [ "$ENABLE_SHARED" = "yes" ]; then
+  IOS_VERSION_OPTIONS="--enable-shared"
+  IOS_VERSION_MIN="8.0"
+else
+  IOS_VERSION_OPTIONS=""
+  IOS_VERSION_MIN="6.0"
+fi
+
 if [ "${VERBOSE}" = "yes" ]; then
 cat << EOF
   BUILD_ROOT=${BUILD_ROOT}
@@ -332,8 +368,13 @@ cat << EOF
   ORIG_PWD=${ORIG_PWD}
   PRESERVE_BUILD_OUTPUT=${PRESERVE_BUILD_OUTPUT}
   TARGETS="$(print_list "" ${TARGETS})"
+  ENABLE_SHARED=${ENABLE_SHARED}
   OSX_TARGETS="${OSX_TARGETS}"
   SIM_TARGETS="${SIM_TARGETS}"
+  SCRIPT_DIR="${SCRIPT_DIR}"
+  FULLVERSION="${FULLVERSION}"
+  VERSION="${VERSION}"
+  IOS_VERSION_MIN="${IOS_VERSION_MIN}"
 EOF
 fi
 

@@ -17,12 +17,13 @@ namespace egl
 class AttributeMap;
 struct Config;
 class ImageSibling;
+struct SurfaceState;
 }
 
 namespace gl
 {
 class Context;
-struct ContextState;
+class ContextState;
 }
 
 namespace rx
@@ -37,15 +38,19 @@ class EGLImplFactory : angle::NonCopyable
     EGLImplFactory() {}
     virtual ~EGLImplFactory() {}
 
-    virtual SurfaceImpl *createWindowSurface(const egl::Config *configuration,
+    virtual SurfaceImpl *createWindowSurface(const egl::SurfaceState &state,
+                                             const egl::Config *configuration,
                                              EGLNativeWindowType window,
                                              const egl::AttributeMap &attribs) = 0;
-    virtual SurfaceImpl *createPbufferSurface(const egl::Config *configuration,
+    virtual SurfaceImpl *createPbufferSurface(const egl::SurfaceState &state,
+                                              const egl::Config *configuration,
                                               const egl::AttributeMap &attribs) = 0;
-    virtual SurfaceImpl *createPbufferFromClientBuffer(const egl::Config *configuration,
+    virtual SurfaceImpl *createPbufferFromClientBuffer(const egl::SurfaceState &state,
+                                                       const egl::Config *configuration,
                                                        EGLClientBuffer shareHandle,
                                                        const egl::AttributeMap &attribs) = 0;
-    virtual SurfaceImpl *createPixmapSurface(const egl::Config *configuration,
+    virtual SurfaceImpl *createPixmapSurface(const egl::SurfaceState &state,
+                                             const egl::Config *configuration,
                                              NativePixmapType nativePixmap,
                                              const egl::AttributeMap &attribs) = 0;
 

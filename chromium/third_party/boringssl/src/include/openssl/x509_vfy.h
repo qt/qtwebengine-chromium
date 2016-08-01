@@ -109,8 +109,10 @@ The X509_STORE then calls a function to actually verify the
 certificate chain.
 */
 
+/* The following are legacy constants that should not be used. */
 #define X509_LU_RETRY		-1
 #define X509_LU_FAIL		0
+
 #define X509_LU_X509		1
 #define X509_LU_CRL		2
 #define X509_LU_PKEY		3
@@ -228,7 +230,6 @@ struct x509_lookup_st
 struct x509_store_ctx_st      /* X509_STORE_CTX */
 	{
 	X509_STORE *ctx;
-	int current_method;	/* used when looking up certs */
 
 	/* The following are set by the caller */
 	X509 *cert;		/* The cert to check */
@@ -292,7 +293,7 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 		X509_LOOKUP_ctrl((x),X509_L_ADD_DIR,(name),(long)(type),NULL)
 
 #define		X509_V_OK					0
-/* illegal error (for uninitialized values, to avoid X509_V_OK): 1 */
+#define		X509_V_ERR_UNSPECIFIED				1
 
 #define		X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT		2
 #define		X509_V_ERR_UNABLE_TO_GET_CRL			3
@@ -347,6 +348,7 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 #define		X509_V_ERR_PERMITTED_VIOLATION			47
 #define		X509_V_ERR_EXCLUDED_VIOLATION			48
 #define		X509_V_ERR_SUBTREE_MINMAX			49
+#define		X509_V_ERR_APPLICATION_VERIFICATION		50
 #define		X509_V_ERR_UNSUPPORTED_CONSTRAINT_TYPE		51
 #define		X509_V_ERR_UNSUPPORTED_CONSTRAINT_SYNTAX	52
 #define		X509_V_ERR_UNSUPPORTED_NAME_SYNTAX		53
@@ -365,8 +367,10 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 #define		X509_V_ERR_EMAIL_MISMATCH			63
 #define		X509_V_ERR_IP_ADDRESS_MISMATCH			64
 
-/* The application is not happy */
-#define		X509_V_ERR_APPLICATION_VERIFICATION		50
+/* Caller error */
+#define		X509_V_ERR_INVALID_CALL				65
+/* Issuer lookup error */
+#define		X509_V_ERR_STORE_LOOKUP				66
 
 /* Certificate verify flags */
 
@@ -614,4 +618,3 @@ OPENSSL_EXPORT const X509_POLICY_NODE *
 }
 #endif
 #endif
-

@@ -40,7 +40,6 @@ enum {
   // Disable local TCP ports. This doesn't impact how we connect to relay
   // servers.
   PORTALLOCATOR_DISABLE_TCP = 0x08,
-  PORTALLOCATOR_ENABLE_SHAKER = 0x10,
   PORTALLOCATOR_ENABLE_IPV6 = 0x40,
   // TODO(pthatcher): Remove this once it's no longer used in:
   // remoting/client/plugin/pepper_port_allocator.cc
@@ -61,6 +60,16 @@ enum {
   // Disallow use of UDP when connecting to a relay server. Since proxy servers
   // usually don't handle UDP, using UDP will leak the IP address.
   PORTALLOCATOR_DISABLE_UDP_RELAY = 0x1000,
+
+  // When multiple networks exist, do not gather candidates on the ones with
+  // high cost. So if both Wi-Fi and cellular networks exist, gather only on the
+  // Wi-Fi network. If a network type is "unknown", it has a cost lower than
+  // cellular but higher than Wi-Fi/Ethernet. So if an unknown network exists,
+  // cellular networks will not be used to gather candidates and if a Wi-Fi
+  // network is present, "unknown" networks will not be usd to gather
+  // candidates. Doing so ensures that even if a cellular network type was not
+  // detected initially, it would not be used if a Wi-Fi network is present.
+  PORTALLOCATOR_DISABLE_COSTLY_NETWORKS = 0x2000,
 };
 
 const uint32_t kDefaultPortAllocatorFlags = 0;
@@ -142,6 +151,13 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   const std::string& ice_pwd() const { return ice_pwd_; }
   bool pooled() const { return ice_ufrag_.empty(); }
 
+  // Setting this filter should affect not only candidates gathered in the
+  // future, but candidates already gathered and ports already "ready",
+  // which would be returned by ReadyCandidates() and ReadyPorts().
+  //
+  // Default filter should be CF_ALL.
+  virtual void SetCandidateFilter(uint32_t filter) = 0;
+
   // Starts gathering STUN and Relay configurations.
   virtual void StartGettingPorts() = 0;
   virtual void StopGettingPorts() = 0;
@@ -205,8 +221,12 @@ class PortAllocatorSession : public sigslot::has_slots<> {
   friend class PortAllocator;
 };
 
-// Note that this class should only be used on one thread.
-// This includes calling the destructor.
+// Every method of PortAllocator (including the destructor) must be called on
+// the same thread, except for the constructor which may be called on any
+// thread.
+//
+// This allows constructing a PortAllocator subclass on one thread and
+// passing it into an object that uses it on a different thread.
 class PortAllocator : public sigslot::has_slots<> {
  public:
   PortAllocator() :
@@ -216,9 +236,12 @@ class PortAllocator : public sigslot::has_slots<> {
       step_delay_(kDefaultStepDelay),
       allow_tcp_listen_(true),
       candidate_filter_(CF_ALL) {
-    // This will allow us to have old behavior on non webrtc clients.
   }
   virtual ~PortAllocator() {}
+
+  // This should be called on the PortAllocator's thread before the
+  // PortAllocator is used. Subclasses may override this if necessary.
+  virtual void Initialize() {}
 
   // Set STUN and TURN servers to be used in future sessions, and set
   // candidate pool size, as described in JSEP.
@@ -301,7 +324,6 @@ class PortAllocator : public sigslot::has_slots<> {
 
   uint32_t candidate_filter() { return candidate_filter_; }
   void set_candidate_filter(uint32_t filter) {
-    // TODO(mallinath) - Do transition check?
     candidate_filter_ = filter;
   }
 

@@ -1294,6 +1294,10 @@ void InstructionSelector::VisitFloat32Max(Node* node) { UNREACHABLE(); }
 
 void InstructionSelector::VisitFloat64Max(Node* node) { UNREACHABLE(); }
 
+void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
+  VisitRR(this, kPPC_Float64SilenceNaN, node);
+}
+
 
 void InstructionSelector::VisitFloat32Min(Node* node) { UNREACHABLE(); }
 
@@ -1310,11 +1314,24 @@ void InstructionSelector::VisitFloat64Abs(Node* node) {
   VisitRR(this, kPPC_AbsDouble, node);
 }
 
-
 void InstructionSelector::VisitFloat32Sqrt(Node* node) {
   VisitRR(this, kPPC_SqrtDouble | MiscField::encode(1), node);
 }
 
+void InstructionSelector::VisitFloat64Ieee754Unop(Node* node,
+                                                  InstructionCode opcode) {
+  PPCOperandGenerator g(this);
+  Emit(opcode, g.DefineAsFixed(node, d1), g.UseFixed(node->InputAt(0), d1))
+       ->MarkAsCall();
+}
+
+void InstructionSelector::VisitFloat64Ieee754Binop(Node* node,
+                                                  InstructionCode opcode) {
+  PPCOperandGenerator g(this);
+  Emit(opcode, g.DefineAsFixed(node, d1),
+       g.UseFixed(node->InputAt(0), d1),
+       g.UseFixed(node->InputAt(1), d2))->MarkAsCall();
+}
 
 void InstructionSelector::VisitFloat64Sqrt(Node* node) {
   VisitRR(this, kPPC_SqrtDouble, node);
@@ -1365,6 +1382,9 @@ void InstructionSelector::VisitFloat64RoundTiesEven(Node* node) {
   UNREACHABLE();
 }
 
+void InstructionSelector::VisitFloat32Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Neg(Node* node) { UNREACHABLE(); }
 
 void InstructionSelector::VisitInt32AddWithOverflow(Node* node) {
   if (Node* ovf = NodeProperties::FindProjection(node, 1)) {
@@ -1989,6 +2009,13 @@ InstructionSelector::SupportedMachineOperatorFlags() {
          MachineOperatorBuilder::kWord32Popcnt |
          MachineOperatorBuilder::kWord64Popcnt;
   // We omit kWord32ShiftIsSafe as s[rl]w use 0x3f as a mask rather than 0x1f.
+}
+
+// static
+MachineOperatorBuilder::AlignmentRequirements
+InstructionSelector::AlignmentRequirements() {
+  return MachineOperatorBuilder::AlignmentRequirements::
+      FullUnalignedAccessSupport();
 }
 
 }  // namespace compiler

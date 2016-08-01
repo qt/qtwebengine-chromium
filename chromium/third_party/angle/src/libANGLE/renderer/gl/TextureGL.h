@@ -59,8 +59,6 @@ class TextureGL : public TextureImpl
               BlitGL *blitter);
     ~TextureGL() override;
 
-    void setUsage(GLenum usage) override;
-
     gl::Error setImage(GLenum target, size_t level, GLenum internalFormat, const gl::Extents &size, GLenum format, GLenum type,
                        const gl::PixelUnpackState &unpack, const uint8_t *pixels) override;
     gl::Error setSubImage(GLenum target, size_t level, const gl::Box &area, GLenum format, GLenum type,
@@ -82,7 +80,7 @@ class TextureGL : public TextureImpl
                                egl::Stream *stream,
                                const egl::Stream::GLTextureDescription &desc) override;
 
-    gl::Error generateMipmaps() override;
+    gl::Error generateMipmap() override;
 
     void bindTexImage(egl::Surface *surface) override;
     void releaseTexImage() override;
@@ -101,6 +99,27 @@ class TextureGL : public TextureImpl
     void setBaseLevel(GLuint) override {}
 
   private:
+    void setImageHelper(GLenum target,
+                        size_t level,
+                        GLenum internalFormat,
+                        const gl::Extents &size,
+                        GLenum format,
+                        GLenum type,
+                        const uint8_t *pixels);
+    void reserveTexImageToBeFilled(GLenum target,
+                                   size_t level,
+                                   GLenum internalFormat,
+                                   const gl::Extents &size,
+                                   GLenum format,
+                                   GLenum type);
+    gl::Error setSubImageRowByRowWorkaround(GLenum target,
+                                            size_t level,
+                                            const gl::Box &area,
+                                            GLenum format,
+                                            GLenum type,
+                                            const gl::PixelUnpackState &unpack,
+                                            const uint8_t *pixels);
+
     const FunctionsGL *mFunctions;
     const WorkaroundsGL &mWorkarounds;
     StateManagerGL *mStateManager;

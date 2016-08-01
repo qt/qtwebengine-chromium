@@ -38,7 +38,7 @@ class CPWL_Icon : public CPWL_Image {
   CPWL_Icon();
   ~CPWL_Icon() override;
 
-  virtual CPDF_IconFit* GetIconFit() { return m_pIconFit; }
+  virtual CPDF_IconFit* GetIconFit();
 
   // CPWL_Image
   void GetScale(FX_FLOAT& fHScale, FX_FLOAT& fVScale) override;
@@ -47,7 +47,6 @@ class CPWL_Icon : public CPWL_Image {
   int32_t GetScaleMethod();
   FX_BOOL IsProportionalScale();
   void GetIconPosition(FX_FLOAT& fLeft, FX_FLOAT& fBottom);
-  FX_BOOL GetFittingBounds();
 
   void SetIconFit(CPDF_IconFit* pIconFit) { m_pIconFit = pIconFit; }
 

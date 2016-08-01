@@ -12,8 +12,8 @@
 
 #include "xfa/fde/css/fde_css.h"
 #include "xfa/fde/fde_gedevice.h"
-#include "xfa/fgas/layout/fgas_rtfbreak.h"
 #include "xfa/fxfa/include/xfa_ffdoc.h"
+#include "xfa/fgas/layout/fgas_rtfbreak.h"
 #include "xfa/fxfa/parser/xfa_object.h"
 
 #define XFA_LOADERCNTXTFLG_FILTERSPACE 0x001
@@ -26,12 +26,13 @@ class CXFA_TextTabstopsContext;
 
 class CXFA_CSSTagProvider {
  public:
-  CXFA_CSSTagProvider() : m_bTagAviliable(FALSE), m_bContent(FALSE) {}
-  ~CXFA_CSSTagProvider() {}
+  using AttributeMap = std::map<CFX_WideString, CFX_WideString>;
+
+  CXFA_CSSTagProvider();
+  ~CXFA_CSSTagProvider();
 
   CFX_WideString GetTagName() { return m_wsTagName; }
 
-  using AttributeMap = std::map<CFX_WideString, CFX_WideString>;
   AttributeMap::iterator begin() { return m_Attributes.begin(); }
   AttributeMap::iterator end() { return m_Attributes.end(); }
 
@@ -43,7 +44,7 @@ class CXFA_CSSTagProvider {
     m_Attributes.insert({wsAttr, wsValue});
   }
 
-  FX_BOOL m_bTagAviliable;
+  FX_BOOL m_bTagAvailable;
   FX_BOOL m_bContent;
 
  protected:
@@ -53,16 +54,9 @@ class CXFA_CSSTagProvider {
 
 class CXFA_TextParseContext : public CFX_Target {
  public:
-  CXFA_TextParseContext()
-      : m_pParentStyle(nullptr),
-        m_ppMatchedDecls(nullptr),
-        m_dwMatchedDecls(0),
-        m_eDisplay(FDE_CSSDISPLAY_None) {}
-  ~CXFA_TextParseContext() {
-    if (m_pParentStyle)
-      m_pParentStyle->Release();
-    FX_Free(m_ppMatchedDecls);
-  }
+  CXFA_TextParseContext();
+  ~CXFA_TextParseContext() override;
+
   void SetDisplay(FDE_CSSDISPLAY eDisplay) { m_eDisplay = eDisplay; }
   FDE_CSSDISPLAY GetDisplay() const { return m_eDisplay; }
   void SetDecls(const CFDE_CSSDeclaration** ppDeclArray, int32_t iDeclCount);
@@ -70,6 +64,7 @@ class CXFA_TextParseContext : public CFX_Target {
     return const_cast<const CFDE_CSSDeclaration**>(m_ppMatchedDecls);
   }
   uint32_t CountDecls() const { return m_dwMatchedDecls; }
+
   IFDE_CSSComputedStyle* m_pParentStyle;
 
  protected:
@@ -82,12 +77,13 @@ class CXFA_TextParser {
  public:
   CXFA_TextParser();
   virtual ~CXFA_TextParser();
+
   void Reset();
   void DoParse(CFDE_XMLNode* pXMLContainer, CXFA_TextProvider* pTextProvider);
   IFDE_CSSComputedStyle* CreateRootStyle(CXFA_TextProvider* pTextProvider);
   IFDE_CSSComputedStyle* ComputeStyle(CFDE_XMLNode* pXMLNode,
                                       IFDE_CSSComputedStyle* pParentStyle);
-  FX_BOOL IsParsed() const { return m_pAllocator != NULL; }
+  FX_BOOL IsParsed() const { return !!m_pAllocator; }
 
   int32_t GetVAlign(CXFA_TextProvider* pTextProvider) const;
   FX_FLOAT GetTabInterval(IFDE_CSSComputedStyle* pStyle) const;
@@ -95,8 +91,8 @@ class CXFA_TextParser {
   FX_BOOL IsSpaceRun(IFDE_CSSComputedStyle* pStyle) const;
   FX_BOOL GetTabstops(IFDE_CSSComputedStyle* pStyle,
                       CXFA_TextTabstopsContext* pTabstopContext);
-  IFX_Font* GetFont(CXFA_TextProvider* pTextProvider,
-                    IFDE_CSSComputedStyle* pStyle) const;
+  CFGAS_GEFont* GetFont(CXFA_TextProvider* pTextProvider,
+                        IFDE_CSSComputedStyle* pStyle) const;
   FX_FLOAT GetFontSize(CXFA_TextProvider* pTextProvider,
                        IFDE_CSSComputedStyle* pStyle) const;
   int32_t GetHorScale(CXFA_TextProvider* pTextProvider,
@@ -124,6 +120,9 @@ class CXFA_TextParser {
                        CFX_WideString& wsValue);
   CXFA_TextParseContext* GetParseContextFromMap(CFDE_XMLNode* pXMLNode);
 
+ protected:
+  bool TagValidate(const CFX_WideString& str) const;
+
  private:
   void InitCSSData(CXFA_TextProvider* pTextProvider);
   void ParseRichText(CFDE_XMLNode* pXMLNode,
@@ -131,7 +130,7 @@ class CXFA_TextParser {
   void ParseTagInfo(CFDE_XMLNode* pXMLNode, CXFA_CSSTagProvider& tagProvider);
   IFDE_CSSStyleSheet* LoadDefaultSheetStyle();
   IFDE_CSSComputedStyle* CreateStyle(IFDE_CSSComputedStyle* pParentStyle);
-  IFX_MemoryAllocator* m_pAllocator;
+  std::unique_ptr<IFX_MemoryAllocator> m_pAllocator;
   std::unique_ptr<CFDE_CSSStyleSelector> m_pSelector;
   IFDE_CSSStyleSheet* m_pUASheet;
   CFX_MapPtrTemplate<CFDE_XMLNode*, CXFA_TextParseContext*>
@@ -140,18 +139,9 @@ class CXFA_TextParser {
 
 class CXFA_LoaderContext {
  public:
-  CXFA_LoaderContext()
-      : m_bSaveLineHeight(FALSE),
-        m_fWidth(0),
-        m_fHeight(0),
-        m_fLastPos(0),
-        m_fStartLineOffset(0),
-        m_iChar(0),
-        m_iTotalLines(-1),
-        m_pXMLNode(NULL),
-        m_pNode(NULL),
-        m_pParentStyle(NULL),
-        m_dwFlags(0) {}
+  CXFA_LoaderContext();
+  ~CXFA_LoaderContext();
+
   FX_BOOL m_bSaveLineHeight;
   FX_FLOAT m_fWidth;
   FX_FLOAT m_fHeight;
@@ -168,67 +158,35 @@ class CXFA_LoaderContext {
   CFX_FloatArray m_BlocksHeight;
 };
 
-class CXFA_LinkUserData : public IFX_Unknown, public CFX_Target {
+class CXFA_LinkUserData : public IFX_Retainable, public CFX_Target {
  public:
-  CXFA_LinkUserData(IFX_MemoryAllocator* pAllocator, FX_WCHAR* pszText)
-      : m_pAllocator(pAllocator), m_dwRefCount(1) {
-    m_pszURLContent = pszText;
-  }
-  ~CXFA_LinkUserData() {}
-  virtual uint32_t Release() {
-    uint32_t dwRefCount = --m_dwRefCount;
-    if (dwRefCount <= 0) {
-      FXTARGET_DeleteWith(CXFA_LinkUserData, m_pAllocator, this);
-    }
-    return dwRefCount;
-  }
-  virtual uint32_t AddRef() { return ++m_dwRefCount; }
+  CXFA_LinkUserData(IFX_MemoryAllocator* pAllocator, FX_WCHAR* pszText);
+  ~CXFA_LinkUserData() override;
 
-  const FX_WCHAR* GetLinkURL() { return m_pszURLContent.c_str(); }
+  // IFX_Retainable:
+  uint32_t Retain() override;
+  uint32_t Release() override;
+
+  const FX_WCHAR* GetLinkURL();
 
  protected:
   IFX_MemoryAllocator* m_pAllocator;
   uint32_t m_dwRefCount;
-  CFX_WideString m_pszURLContent;
+  CFX_WideString m_wsURLContent;
 };
 
-class CXFA_TextUserData : public IFX_Unknown, public CFX_Target {
+class CXFA_TextUserData : public IFX_Retainable, public CFX_Target {
  public:
   CXFA_TextUserData(IFX_MemoryAllocator* pAllocator,
-                    IFDE_CSSComputedStyle* pStyle)
-      : m_pStyle(pStyle),
-        m_pLinkData(nullptr),
-        m_pAllocator(pAllocator),
-        m_dwRefCount(0) {
-    ASSERT(m_pAllocator);
-    if (m_pStyle)
-      m_pStyle->AddRef();
-  }
+                    IFDE_CSSComputedStyle* pStyle);
   CXFA_TextUserData(IFX_MemoryAllocator* pAllocator,
                     IFDE_CSSComputedStyle* pStyle,
-                    CXFA_LinkUserData* pLinkData)
-      : m_pStyle(pStyle),
-        m_pLinkData(pLinkData),
-        m_pAllocator(pAllocator),
-        m_dwRefCount(0) {
-    ASSERT(m_pAllocator);
-    if (m_pStyle)
-      m_pStyle->AddRef();
-  }
-  ~CXFA_TextUserData() {
-    if (m_pStyle)
-      m_pStyle->Release();
-    if (m_pLinkData)
-      m_pLinkData->Release();
-  }
-  virtual uint32_t Release() {
-    uint32_t dwRefCount = --m_dwRefCount;
-    if (dwRefCount == 0) {
-      FXTARGET_DeleteWith(CXFA_TextUserData, m_pAllocator, this);
-    }
-    return dwRefCount;
-  }
-  virtual uint32_t AddRef() { return ++m_dwRefCount; }
+                    CXFA_LinkUserData* pLinkData);
+  ~CXFA_TextUserData() override;
+
+  // IFX_Retainable:
+  uint32_t Retain() override;
+  uint32_t Release() override;
 
   IFDE_CSSComputedStyle* m_pStyle;
   CXFA_LinkUserData* m_pLinkData;
@@ -240,11 +198,8 @@ class CXFA_TextUserData : public IFX_Unknown, public CFX_Target {
 
 class XFA_TextPiece : public CFX_Target {
  public:
-  XFA_TextPiece() : pszText(nullptr), pFont(nullptr), pLinkData(nullptr) {}
-  ~XFA_TextPiece() {
-    if (pLinkData)
-      pLinkData->Release();
-  }
+  XFA_TextPiece();
+  ~XFA_TextPiece() override;
 
   FX_WCHAR* pszText;
   int32_t iChars;
@@ -255,7 +210,7 @@ class XFA_TextPiece : public CFX_Target {
   int32_t iUnderline;
   int32_t iPeriod;
   int32_t iLineThrough;
-  IFX_Font* pFont;
+  CFGAS_GEFont* pFont;
   FX_ARGB dwColor;
   FX_FLOAT fFontSize;
   CFX_RectF rtPiece;
@@ -265,7 +220,9 @@ typedef CFX_ArrayTemplate<XFA_TextPiece*> CXFA_PieceArray;
 
 class CXFA_PieceLine : public CFX_Target {
  public:
-  CXFA_PieceLine() {}
+  CXFA_PieceLine();
+  ~CXFA_PieceLine() override;
+
   CXFA_PieceArray m_textPieces;
   CFX_Int32Array m_charCounts;
 };
@@ -278,37 +235,13 @@ struct XFA_TABSTOPS {
 
 class CXFA_TextTabstopsContext {
  public:
-  CXFA_TextTabstopsContext()
-      : m_iTabCount(0),
-        m_iTabIndex(-1),
-        m_bTabstops(FALSE),
-        m_fTabWidth(0),
-        m_fLeft(0) {}
-  void Append(uint32_t dwAlign, FX_FLOAT fTabstops) {
-    int32_t i = 0;
-    for (i = 0; i < m_iTabCount; i++) {
-      XFA_TABSTOPS* pTabstop = m_tabstops.GetDataPtr(i);
-      if (fTabstops < pTabstop->fTabstops) {
-        break;
-      }
-    }
-    m_tabstops.InsertSpaceAt(i, 1);
-    XFA_TABSTOPS tabstop;
-    tabstop.dwAlign = dwAlign;
-    tabstop.fTabstops = fTabstops;
-    m_tabstops.SetAt(i, tabstop);
-    m_iTabCount++;
-  }
-  void RemoveAll() {
-    m_tabstops.RemoveAll();
-    m_iTabCount = 0;
-  }
-  void Reset() {
-    m_iTabIndex = -1;
-    m_bTabstops = FALSE;
-    m_fTabWidth = 0;
-    m_fLeft = 0;
-  }
+  CXFA_TextTabstopsContext();
+  ~CXFA_TextTabstopsContext();
+
+  void Append(uint32_t dwAlign, FX_FLOAT fTabstops);
+  void RemoveAll();
+  void Reset();
+
   CFX_ArrayTemplate<XFA_TABSTOPS> m_tabstops;
   int32_t m_iTabCount;
   int32_t m_iTabIndex;
@@ -319,8 +252,9 @@ class CXFA_TextTabstopsContext {
 
 class CXFA_TextLayout {
  public:
-  CXFA_TextLayout(CXFA_TextProvider* pTextProvider);
-  virtual ~CXFA_TextLayout();
+  explicit CXFA_TextLayout(CXFA_TextProvider* pTextProvider);
+  ~CXFA_TextLayout();
+
   int32_t GetText(CFX_WideString& wsText);
   FX_FLOAT GetLayoutHeight();
   FX_FLOAT StartLayout(FX_FLOAT fWidth = -1);
@@ -332,7 +266,7 @@ class CXFA_TextLayout {
   FX_BOOL CalcSize(const CFX_SizeF& minSize,
                    const CFX_SizeF& maxSize,
                    CFX_SizeF& defaultSize);
-  FX_BOOL Layout(const CFX_SizeF& size, FX_FLOAT* fHeight = NULL);
+  FX_BOOL Layout(const CFX_SizeF& size, FX_FLOAT* fHeight = nullptr);
   void ItemBlocks(const CFX_RectF& rtText, int32_t iBlockIndex);
   FX_BOOL DrawString(CFX_RenderDevice* pFxDevice,
                      const CFX_Matrix& tmDoc2Device,
@@ -354,7 +288,7 @@ class CXFA_TextLayout {
                  FDE_CSSDISPLAY eDisplay,
                  FX_FLOAT fLineWidth,
                  CFDE_XMLNode* pXMLNode,
-                 IFDE_CSSComputedStyle* pParentStyle = NULL);
+                 IFDE_CSSComputedStyle* pParentStyle = nullptr);
   FX_BOOL Loader(const CFX_SizeF& szText,
                  FX_FLOAT& fLinePos,
                  FX_BOOL bSavePieces = TRUE);
@@ -367,7 +301,7 @@ class CXFA_TextLayout {
                        FX_FLOAT& fLinePos,
                        IFDE_CSSComputedStyle* pParentStyle,
                        FX_BOOL bSavePieces,
-                       CXFA_LinkUserData* pLinkData = NULL,
+                       CXFA_LinkUserData* pLinkData = nullptr,
                        FX_BOOL bEndBreak = TRUE,
                        FX_BOOL bIsOl = FALSE,
                        int32_t iLiCount = 0);
@@ -406,14 +340,14 @@ class CXFA_TextLayout {
   CXFA_TextProvider* m_pTextProvider;
   CXFA_Node* m_pTextDataNode;
   FX_BOOL m_bRichText;
-  IFX_MemoryAllocator* m_pAllocator;
-  CFX_RTFBreak* m_pBreak;
-  CXFA_LoaderContext* m_pLoader;
+  std::unique_ptr<IFX_MemoryAllocator> m_pAllocator;
+  std::unique_ptr<CFX_RTFBreak> m_pBreak;
+  std::unique_ptr<CXFA_LoaderContext> m_pLoader;
   int32_t m_iLines;
   FX_FLOAT m_fMaxWidth;
   CXFA_TextParser m_textParser;
   CXFA_PieceLineArray m_pieceLines;
-  CXFA_TextTabstopsContext* m_pTabstopContext;
+  std::unique_ptr<CXFA_TextTabstopsContext> m_pTabstopContext;
   FX_BOOL m_bBlockContinue;
 };
 

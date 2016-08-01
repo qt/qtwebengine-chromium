@@ -123,8 +123,9 @@ mojo::Array<arc::mojom::IPConfigurationPtr> TranslateONCIPConfigs(
     list->GetDictionary(i, &ip_dict);
     DCHECK(ip_dict);
 
+    // crbug.com/625229 - Gateway is not always present (but it should be).
     configuration->gateway = GetStringFromOncDictionary(
-        ip_dict, onc::ipconfig::kGateway, true /* required */);
+        ip_dict, onc::ipconfig::kGateway, false /* required */);
     configuration->ip_address = GetStringFromOncDictionary(
         ip_dict, onc::ipconfig::kIPAddress, true /* required */);
 
@@ -145,7 +146,8 @@ mojo::Array<arc::mojom::IPConfigurationPtr> TranslateONCIPConfigs(
                               : arc::mojom::IPAddressType::IPV4;
 
     configuration->web_proxy_auto_discovery_url = GetStringFromOncDictionary(
-        ip_dict, onc::ipconfig::kWebProxyAutoDiscoveryUrl, true /* required */);
+        ip_dict, onc::ipconfig::kWebProxyAutoDiscoveryUrl,
+        false /* required */);
 
     configs.push_back(std::move(configuration));
   }
@@ -303,24 +305,24 @@ namespace arc {
 
 ArcNetHostImpl::ArcNetHostImpl(ArcBridgeService* bridge_service)
     : ArcService(bridge_service), binding_(this), weak_factory_(this) {
-  arc_bridge_service()->AddObserver(this);
+  arc_bridge_service()->net()->AddObserver(this);
   GetStateHandler()->AddObserver(this, FROM_HERE);
 }
 
 ArcNetHostImpl::~ArcNetHostImpl() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  arc_bridge_service()->RemoveObserver(this);
+  arc_bridge_service()->net()->RemoveObserver(this);
   if (chromeos::NetworkHandler::IsInitialized()) {
     GetStateHandler()->RemoveObserver(this, FROM_HERE);
   }
 }
 
-void ArcNetHostImpl::OnNetInstanceReady() {
+void ArcNetHostImpl::OnInstanceReady() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   mojom::NetHostPtr host;
   binding_.Bind(GetProxy(&host));
-  arc_bridge_service()->net_instance()->Init(std::move(host));
+  arc_bridge_service()->net()->instance()->Init(std::move(host));
 }
 
 void ArcNetHostImpl::GetNetworksDeprecated(
@@ -369,7 +371,7 @@ void ArcNetHostImpl::GetNetworks(mojom::GetNetworksRequestType type,
   // property.
   mojo::Array<mojom::WifiConfigurationPtr> networks =
       mojo::Array<mojom::WifiConfigurationPtr>::New(0);
-  for (base::Value* value : *network_properties_list) {
+  for (const auto& value : *network_properties_list) {
     mojom::WifiConfigurationPtr wc = mojom::WifiConfiguration::New();
 
     base::DictionaryValue* network_dict = nullptr;
@@ -551,16 +553,16 @@ void ArcNetHostImpl::StartScan() {
 }
 
 void ArcNetHostImpl::ScanCompleted(const chromeos::DeviceState* /*unused*/) {
-  if (!arc_bridge_service()->net_instance()) {
+  if (!arc_bridge_service()->net()->instance()) {
     VLOG(2) << "NetInstance not ready yet";
     return;
   }
-  if (arc_bridge_service()->net_version() < 1) {
+  if (arc_bridge_service()->net()->version() < 1) {
     VLOG(1) << "NetInstance does not support ScanCompleted.";
     return;
   }
 
-  arc_bridge_service()->net_instance()->ScanCompleted();
+  arc_bridge_service()->net()->instance()->ScanCompleted();
 }
 
 void ArcNetHostImpl::GetDefaultNetwork(
@@ -584,22 +586,22 @@ void ArcNetHostImpl::GetDefaultNetwork(
 void ArcNetHostImpl::DefaultNetworkSuccessCallback(
     const std::string& service_path,
     const base::DictionaryValue& dictionary) {
-  arc_bridge_service()->net_instance()->DefaultNetworkChanged(
+  arc_bridge_service()->net()->instance()->DefaultNetworkChanged(
       TranslateONCConfiguration(&dictionary),
       TranslateONCConfiguration(&dictionary));
 }
 
 void ArcNetHostImpl::DefaultNetworkChanged(
     const chromeos::NetworkState* network) {
-  if (arc_bridge_service()->net_version() < 2) {
+  if (arc_bridge_service()->net()->version() < 2) {
     VLOG(1) << "ArcBridgeService does not support DefaultNetworkChanged.";
     return;
   }
 
   if (!network) {
     VLOG(1) << "No default network";
-    arc_bridge_service()->net_instance()->DefaultNetworkChanged(nullptr,
-                                                                nullptr);
+    arc_bridge_service()->net()->instance()->DefaultNetworkChanged(nullptr,
+                                                                   nullptr);
     return;
   }
 
@@ -610,6 +612,17 @@ void ArcNetHostImpl::DefaultNetworkChanged(
       base::Bind(&arc::ArcNetHostImpl::DefaultNetworkSuccessCallback,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&DefaultNetworkFailureCallback));
+}
+
+void ArcNetHostImpl::DeviceListChanged() {
+  if (arc_bridge_service()->net()->version() < 3) {
+    VLOG(1) << "ArcBridgeService does not support DeviceListChanged.";
+    return;
+  }
+
+  bool is_enabled = GetStateHandler()->IsTechnologyEnabled(
+      chromeos::NetworkTypePattern::WiFi());
+  arc_bridge_service()->net()->instance()->WifiEnabledStateChanged(is_enabled);
 }
 
 void ArcNetHostImpl::OnShuttingDown() {

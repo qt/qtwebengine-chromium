@@ -26,14 +26,14 @@
 #ifndef WAYLAND_SERVER_CORE_H
 #define WAYLAND_SERVER_CORE_H
 
-#ifdef  __cplusplus
-extern "C" {
-#endif
-
 #include <sys/types.h>
 #include <stdint.h>
 #include "wayland-util.h"
 #include "wayland-version.h"
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
 enum {
 	WL_EVENT_READABLE = 0x01,
@@ -181,6 +181,9 @@ wl_client_flush(struct wl_client *client);
 void
 wl_client_get_credentials(struct wl_client *client,
 			  pid_t *pid, uid_t *uid, gid_t *gid);
+
+int
+wl_client_get_fd(struct wl_client *client);
 
 void
 wl_client_add_destroy_listener(struct wl_client *client,

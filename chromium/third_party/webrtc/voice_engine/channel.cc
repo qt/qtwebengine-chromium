@@ -21,6 +21,7 @@
 #include "webrtc/base/timeutils.h"
 #include "webrtc/common.h"
 #include "webrtc/config.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/modules/include/module_common_types.h"
@@ -48,8 +49,8 @@ namespace {
 bool RegisterReceiveCodec(std::unique_ptr<AudioCodingModule>* acm,
                           acm2::RentACodec* rac,
                           const CodecInst& ci) {
-  const int result =
-      (*acm)->RegisterReceiveCodec(ci, [&] { return rac->RentIsacDecoder(); });
+  const int result = (*acm)->RegisterReceiveCodec(
+      ci, [&] { return rac->RentIsacDecoder(ci.plfreq); });
   return result == 0;
 }
 
@@ -72,11 +73,13 @@ class TransportFeedbackProxy : public TransportFeedbackObserver {
   }
 
   // Implements TransportFeedbackObserver.
-  void AddPacket(uint16_t sequence_number, size_t length) override {
+  void AddPacket(uint16_t sequence_number,
+                 size_t length,
+                 int probe_cluster_id) override {
     RTC_DCHECK(pacer_thread_.CalledOnValidThread());
     rtc::CritScope lock(&crit_);
     if (feedback_observer_)
-      feedback_observer_->AddPacket(sequence_number, length);
+      feedback_observer_->AddPacket(sequence_number, length, probe_cluster_id);
   }
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override {
     RTC_DCHECK(network_thread_.CalledOnValidThread());
@@ -670,11 +673,23 @@ int32_t Channel::CreateChannel(Channel*& channel,
                                uint32_t instanceId,
                                RtcEventLog* const event_log,
                                const Config& config) {
+  return CreateChannel(channel, channelId, instanceId, event_log, config,
+                       CreateBuiltinAudioDecoderFactory());
+}
+
+int32_t Channel::CreateChannel(
+    Channel*& channel,
+    int32_t channelId,
+    uint32_t instanceId,
+    RtcEventLog* const event_log,
+    const Config& config,
+    const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory) {
   WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(instanceId, channelId),
                "Channel::CreateChannel(channelId=%d, instanceId=%d)", channelId,
                instanceId);
 
-  channel = new Channel(channelId, instanceId, event_log, config);
+  channel =
+      new Channel(channelId, instanceId, event_log, config, decoder_factory);
   if (channel == NULL) {
     WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(instanceId, channelId),
                  "Channel::CreateChannel() unable to allocate memory for"
@@ -734,7 +749,8 @@ void Channel::RecordFileEnded(int32_t id) {
 Channel::Channel(int32_t channelId,
                  uint32_t instanceId,
                  RtcEventLog* const event_log,
-                 const Config& config)
+                 const Config& config,
+                 const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory)
     : _instanceId(instanceId),
       _channelId(channelId),
       event_log_(event_log),
@@ -809,7 +825,8 @@ Channel::Channel(int32_t channelId,
       pacing_enabled_(config.Get<VoicePacing>().enabled),
       feedback_observer_proxy_(new TransportFeedbackProxy()),
       seq_num_allocator_proxy_(new TransportSequenceNumberProxy()),
-      rtp_packet_sender_proxy_(new RtpPacketSenderProxy()) {
+      rtp_packet_sender_proxy_(new RtpPacketSenderProxy()),
+      decoder_factory_(decoder_factory) {
   WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(_instanceId, _channelId),
                "Channel::Channel() - ctor");
   AudioCodingModule::Config acm_config;
@@ -823,6 +840,7 @@ Channel::Channel(int32_t channelId,
   acm_config.neteq_config.enable_fast_accelerate =
       config.Get<NetEqFastAccelerate>().enabled;
   acm_config.neteq_config.enable_muted_state = true;
+  acm_config.decoder_factory = decoder_factory;
   audio_coding_.reset(AudioCodingModule::Create(acm_config));
 
   _outputAudioLevel.Clear();
@@ -1009,18 +1027,6 @@ int32_t Channel::Init() {
                      codec.pltype, codec.plfreq);
       }
     }
-#ifdef WEBRTC_CODEC_RED
-    // Register RED to the receiving side of the ACM.
-    // We will not receive an OnInitializeDecoder() callback for RED.
-    if (!STR_CASE_CMP(codec.plname, "RED")) {
-      if (!RegisterReceiveCodec(&audio_coding_, &rent_a_codec_, codec)) {
-        WEBRTC_TRACE(kTraceWarning, kTraceVoice, VoEId(_instanceId, _channelId),
-                     "Channel::Init() failed to register RED (%d/%d) "
-                     "correctly",
-                     codec.pltype, codec.plfreq);
-      }
-    }
-#endif
   }
 
   if (rx_audioproc_->noise_suppression()->set_level(kDefaultNsMode) != 0) {
@@ -1062,6 +1068,11 @@ int32_t Channel::UpdateLocalTimeStamp() {
 void Channel::SetSink(std::unique_ptr<AudioSinkInterface> sink) {
   rtc::CritScope cs(&_callbackCritSect);
   audio_sink_ = std::move(sink);
+}
+
+const rtc::scoped_refptr<AudioDecoderFactory>&
+Channel::GetAudioDecoderFactory() const {
+  return decoder_factory_;
 }
 
 int32_t Channel::StartPlayout() {
@@ -2855,53 +2866,6 @@ int Channel::GetRTPStatistics(CallStatistics& stats) {
   return 0;
 }
 
-int Channel::SetREDStatus(bool enable, int redPayloadtype) {
-  WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
-               "Channel::SetREDStatus()");
-
-  if (enable) {
-    if (redPayloadtype < 0 || redPayloadtype > 127) {
-      _engineStatisticsPtr->SetLastError(
-          VE_PLTYPE_ERROR, kTraceError,
-          "SetREDStatus() invalid RED payload type");
-      return -1;
-    }
-
-    if (SetRedPayloadType(redPayloadtype) < 0) {
-      _engineStatisticsPtr->SetLastError(
-          VE_CODEC_ERROR, kTraceError,
-          "SetSecondarySendCodec() Failed to register RED ACM");
-      return -1;
-    }
-  }
-
-  if (!codec_manager_.SetCopyRed(enable) ||
-      !codec_manager_.MakeEncoder(&rent_a_codec_, audio_coding_.get())) {
-    _engineStatisticsPtr->SetLastError(
-        VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-        "SetREDStatus() failed to set RED state in the ACM");
-    return -1;
-  }
-  return 0;
-}
-
-int Channel::GetREDStatus(bool& enabled, int& redPayloadtype) {
-  enabled = codec_manager_.GetStackParams()->use_red;
-  if (enabled) {
-    int8_t payloadType = 0;
-    if (_rtpRtcpModule->SendREDPayloadType(&payloadType) != 0) {
-      _engineStatisticsPtr->SetLastError(
-          VE_RTP_RTCP_MODULE_ERROR, kTraceError,
-          "GetREDStatus() failed to retrieve RED PT from RTP/RTCP "
-          "module");
-      return -1;
-    }
-    redPayloadtype = payloadType;
-    return 0;
-  }
-  return 0;
-}
-
 int Channel::SetCodecFECStatus(bool enable) {
   WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId, _channelId),
                "Channel::SetCodecFECStatus()");
@@ -2991,6 +2955,7 @@ uint32_t Channel::PrepareEncodeAndSend(int mixingFrequency) {
   if (_includeAudioLevelIndication) {
     size_t length =
         _audioFrame.samples_per_channel_ * _audioFrame.num_channels_;
+    RTC_CHECK_LE(length, sizeof(_audioFrame.data_));
     if (is_muted && previous_frame_muted_) {
       rms_level_.ProcessMuted(length);
     } else {
@@ -3439,46 +3404,6 @@ void Channel::RegisterReceiveCodecsToRTPModule() {
                    codec.rate);
     }
   }
-}
-
-// Assuming this method is called with valid payload type.
-int Channel::SetRedPayloadType(int red_payload_type) {
-  CodecInst codec;
-  bool found_red = false;
-
-  // Get default RED settings from the ACM database
-  const int num_codecs = AudioCodingModule::NumberOfCodecs();
-  for (int idx = 0; idx < num_codecs; idx++) {
-    audio_coding_->Codec(idx, &codec);
-    if (!STR_CASE_CMP(codec.plname, "RED")) {
-      found_red = true;
-      break;
-    }
-  }
-
-  if (!found_red) {
-    _engineStatisticsPtr->SetLastError(
-        VE_CODEC_ERROR, kTraceError,
-        "SetRedPayloadType() RED is not supported");
-    return -1;
-  }
-
-  codec.pltype = red_payload_type;
-  if (!codec_manager_.RegisterEncoder(codec) ||
-      !codec_manager_.MakeEncoder(&rent_a_codec_, audio_coding_.get())) {
-    _engineStatisticsPtr->SetLastError(
-        VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-        "SetRedPayloadType() RED registration in ACM module failed");
-    return -1;
-  }
-
-  if (_rtpRtcpModule->SetSendREDPayloadType(red_payload_type) != 0) {
-    _engineStatisticsPtr->SetLastError(
-        VE_RTP_RTCP_MODULE_ERROR, kTraceError,
-        "SetRedPayloadType() RED registration in RTP/RTCP module failed");
-    return -1;
-  }
-  return 0;
 }
 
 int Channel::SetSendRtpHeaderExtension(bool enable,

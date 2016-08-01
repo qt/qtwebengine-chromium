@@ -1160,7 +1160,7 @@ void InstructionSelector::VisitFloat32Sub(Node* node) {
 }
 
 void InstructionSelector::VisitFloat32SubPreserveNan(Node* node) {
-  VisitRRR(this, kMips64SubS, node);
+  VisitRRR(this, kMips64SubPreserveNanS, node);
 }
 
 void InstructionSelector::VisitFloat64Sub(Node* node) {
@@ -1182,7 +1182,7 @@ void InstructionSelector::VisitFloat64Sub(Node* node) {
 }
 
 void InstructionSelector::VisitFloat64SubPreserveNan(Node* node) {
-  VisitRRR(this, kMips64SubD, node);
+  VisitRRR(this, kMips64SubPreserveNanD, node);
 }
 
 void InstructionSelector::VisitFloat32Mul(Node* node) {
@@ -1282,7 +1282,6 @@ void InstructionSelector::VisitFloat64Abs(Node* node) {
   VisitRR(this, kMips64AbsD, node);
 }
 
-
 void InstructionSelector::VisitFloat32Sqrt(Node* node) {
   VisitRR(this, kMips64SqrtS, node);
 }
@@ -1337,6 +1336,24 @@ void InstructionSelector::VisitFloat64RoundTiesEven(Node* node) {
   VisitRR(this, kMips64Float64RoundTiesEven, node);
 }
 
+void InstructionSelector::VisitFloat32Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Ieee754Binop(Node* node,
+                                                   InstructionCode opcode) {
+  Mips64OperandGenerator g(this);
+  Emit(opcode, g.DefineAsFixed(node, f0), g.UseFixed(node->InputAt(0), f12),
+       g.UseFixed(node->InputAt(1), f14))
+      ->MarkAsCall();
+}
+
+void InstructionSelector::VisitFloat64Ieee754Unop(Node* node,
+                                                  InstructionCode opcode) {
+  Mips64OperandGenerator g(this);
+  Emit(opcode, g.DefineAsFixed(node, f0), g.UseFixed(node->InputAt(0), f12))
+      ->MarkAsCall();
+}
 
 void InstructionSelector::EmitPrepareArguments(
     ZoneVector<PushParameter>* arguments, const CallDescriptor* descriptor,
@@ -1947,6 +1964,9 @@ void InstructionSelector::VisitFloat64ExtractHighWord32(Node* node) {
   VisitRR(this, kMips64Float64ExtractHighWord32, node);
 }
 
+void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
+  VisitRR(this, kMips64Float64SilenceNaN, node);
+}
 
 void InstructionSelector::VisitFloat64InsertLowWord32(Node* node) {
   Mips64OperandGenerator g(this);
@@ -2055,6 +2075,19 @@ InstructionSelector::SupportedMachineOperatorFlags() {
          MachineOperatorBuilder::kFloat32RoundTruncate |
          MachineOperatorBuilder::kFloat64RoundTiesEven |
          MachineOperatorBuilder::kFloat32RoundTiesEven;
+}
+
+// static
+MachineOperatorBuilder::AlignmentRequirements
+InstructionSelector::AlignmentRequirements() {
+  if (kArchVariant == kMips64r6) {
+    return MachineOperatorBuilder::AlignmentRequirements::
+        FullUnalignedAccessSupport();
+  } else {
+    DCHECK(kArchVariant == kMips64r2);
+    return MachineOperatorBuilder::AlignmentRequirements::
+        NoUnalignedAccessSupport();
+  }
 }
 
 }  // namespace compiler

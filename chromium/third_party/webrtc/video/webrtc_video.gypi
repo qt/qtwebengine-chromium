@@ -26,8 +26,6 @@
     'webrtc_video_sources': [
       'video/call_stats.cc',
       'video/call_stats.h',
-      'video/encoded_frame_callback_adapter.cc',
-      'video/encoded_frame_callback_adapter.h',
       'video/encoder_state_feedback.cc',
       'video/encoder_state_feedback.h',
       'video/overuse_frame_detector.cc',
@@ -44,6 +42,8 @@
       'video/send_delay_stats.h',
       'video/send_statistics_proxy.cc',
       'video/send_statistics_proxy.h',
+      'video/stats_counter.cc',
+      'video/stats_counter.h',
       'video/stream_synchronization.cc',
       'video/stream_synchronization.h',
       'video/video_capture_input.cc',

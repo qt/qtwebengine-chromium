@@ -7,6 +7,8 @@
 #ifndef XFA_FXBARCODE_CBC_CODEBASE_H_
 #define XFA_FXBARCODE_CBC_CODEBASE_H_
 
+#include <memory>
+
 #include "core/fxcrt/include/fx_system.h"
 #include "core/fxge/include/fx_dib.h"
 #include "xfa/fxbarcode/include/BC_Library.h"
@@ -18,7 +20,7 @@ class CFX_RenderDevice;
 
 class CBC_CodeBase {
  public:
-  CBC_CodeBase();
+  explicit CBC_CodeBase(CBC_Writer* pWriter);
   virtual ~CBC_CodeBase();
 
   virtual BC_TYPE GetType() = 0;
@@ -29,24 +31,17 @@ class CBC_CodeBase {
                                const CFX_Matrix* matrix,
                                int32_t& e) = 0;
   virtual FX_BOOL RenderBitmap(CFX_DIBitmap*& pOutBitmap, int32_t& e) = 0;
-  virtual CFX_WideString Decode(uint8_t* buf,
-                                int32_t width,
-                                int32_t height,
-                                int32_t& e) = 0;
-  virtual CFX_WideString Decode(CFX_DIBitmap* pBitmap, int32_t& e) = 0;
 
-  virtual FX_BOOL SetCharEncoding(int32_t encoding);
-  virtual FX_BOOL SetModuleHeight(int32_t moduleHeight);
-  virtual FX_BOOL SetModuleWidth(int32_t moduleWidth);
-
-  virtual FX_BOOL SetHeight(int32_t height);
-  virtual FX_BOOL SetWidth(int32_t width);
-  virtual void SetBackgroundColor(FX_ARGB backgroundColor);
-  virtual void SetBarcodeColor(FX_ARGB foregroundColor);
+  FX_BOOL SetCharEncoding(int32_t encoding);
+  FX_BOOL SetModuleHeight(int32_t moduleHeight);
+  FX_BOOL SetModuleWidth(int32_t moduleWidth);
+  FX_BOOL SetHeight(int32_t height);
+  FX_BOOL SetWidth(int32_t width);
+  void SetBackgroundColor(FX_ARGB backgroundColor);
+  void SetBarcodeColor(FX_ARGB foregroundColor);
 
  protected:
-  CBC_Writer* m_pBCWriter;
-  CBC_Reader* m_pBCReader;
+  std::unique_ptr<CBC_Writer> m_pBCWriter;
 };
 
 #endif  // XFA_FXBARCODE_CBC_CODEBASE_H_

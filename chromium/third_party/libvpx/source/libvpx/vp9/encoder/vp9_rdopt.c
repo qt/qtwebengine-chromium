@@ -1214,6 +1214,11 @@ static int64_t rd_pick_intra_sbuv_mode(VP9_COMP *cpi, MACROBLOCK *x,
   for (mode = DC_PRED; mode <= TM_PRED; ++mode) {
     if (!(cpi->sf.intra_uv_mode_mask[max_tx_size] & (1 << mode)))
       continue;
+#if CONFIG_BETTER_HW_COMPATIBILITY && CONFIG_VP9_HIGHBITDEPTH
+    if ((xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) &&
+        (xd->above_mi == NULL || xd->left_mi == NULL) && need_top_left[mode])
+      continue;
+#endif  // CONFIG_BETTER_HW_COMPATIBILITY && CONFIG_VP9_HIGHBITDEPTH
 
     xd->mi[0]->uv_mode = mode;
 
@@ -1589,7 +1594,7 @@ static void joint_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
 
   // Do joint motion search in compound mode to get more accurate mv.
   struct buf_2d backup_yv12[2][MAX_MB_PLANE];
-  int last_besterr[2] = {INT_MAX, INT_MAX};
+  uint32_t last_besterr[2] = {UINT32_MAX, UINT32_MAX};
   const YV12_BUFFER_CONFIG *const scaled_ref_frame[2] = {
     vp9_get_scaled_ref_frame(cpi, mi->ref_frame[0]),
     vp9_get_scaled_ref_frame(cpi, mi->ref_frame[1])
@@ -1635,7 +1640,7 @@ static void joint_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   // and break out of the search loop if it couldn't find a better mv.
   for (ite = 0; ite < 4; ite++) {
     struct buf_2d ref_yv12[2];
-    int bestsme = INT_MAX;
+    uint32_t bestsme = UINT32_MAX;
     int sadpb = x->sadperbit16;
     MV tmp_mv;
     int search_range = 3;
@@ -1700,7 +1705,7 @@ static void joint_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
                                        search_range,
                                        &cpi->fn_ptr[bsize],
                                        &ref_mv[id].as_mv, second_pred);
-    if (bestsme < INT_MAX)
+    if (bestsme < UINT32_MAX)
       bestsme = vp9_get_mvpred_av_var(x, &tmp_mv, &ref_mv[id].as_mv,
                                       second_pred, &cpi->fn_ptr[bsize], 1);
 
@@ -1709,9 +1714,9 @@ static void joint_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
     x->mv_row_min = tmp_row_min;
     x->mv_row_max = tmp_row_max;
 
-    if (bestsme < INT_MAX) {
-      int dis; /* TODO: use dis in distortion calculation later. */
-      unsigned int sse;
+    if (bestsme < UINT32_MAX) {
+      uint32_t dis; /* TODO: use dis in distortion calculation later. */
+      uint32_t sse;
       bestsme = cpi->find_fractional_mv_step(
           x, &tmp_mv,
           &ref_mv[id].as_mv,
@@ -1855,7 +1860,7 @@ static int64_t rd_pick_best_sub8x8_mode(VP9_COMP *cpi, MACROBLOCK *x,
             seg_mvs[i][mi->ref_frame[0]].as_int == INVALID_MV) {
           MV *const new_mv = &mode_mv[NEWMV][0].as_mv;
           int step_param = 0;
-          int bestsme = INT_MAX;
+          uint32_t bestsme = UINT32_MAX;
           int sadpb = x->sadperbit4;
           MV mvp_full;
           int max_mv;
@@ -1910,8 +1915,8 @@ static int64_t rd_pick_best_sub8x8_mode(VP9_COMP *cpi, MACROBLOCK *x,
               &bsi->ref_mv[0]->as_mv, new_mv,
               INT_MAX, 1);
 
-          if (bestsme < INT_MAX) {
-            int distortion;
+          if (bestsme < UINT32_MAX) {
+            uint32_t distortion;
             cpi->find_fractional_mv_step(
                 x,
                 new_mv,
@@ -2341,7 +2346,7 @@ static void single_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   x->mv_row_max = tmp_row_max;
 
   if (bestsme < INT_MAX) {
-    int dis;  /* TODO: use dis in distortion calculation later. */
+    uint32_t dis;  /* TODO: use dis in distortion calculation later. */
     cpi->find_fractional_mv_step(x, &tmp_mv->as_mv, &ref_mv,
                                  cm->allow_high_precision_mv,
                                  x->errorperbit,
@@ -3395,9 +3400,10 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
           rate2 += skip_cost0;
         } else {
           // FIXME(rbultje) make this work for splitmv also
+          assert(total_sse >= 0);
+
           rate2 += skip_cost1;
           distortion2 = total_sse;
-          assert(total_sse >= 0);
           rate2 -= (rate_y + rate_uv);
           this_skip2 = 1;
         }

@@ -7,7 +7,6 @@
 #include "xfa/fxfa/parser/xfa_layout_appadapter.h"
 
 #include "xfa/fxfa/app/xfa_ffnotify.h"
-#include "xfa/fxfa/fm2js/xfa_fm2jsapi.h"
 #include "xfa/fxfa/parser/xfa_doclayout.h"
 #include "xfa/fxfa/parser/xfa_document.h"
 #include "xfa/fxfa/parser/xfa_document_layout_imp.h"
@@ -35,7 +34,7 @@ void XFA_ReleaseLayoutItem(CXFA_LayoutItem* pLayoutItem) {
     pNode = pNext;
   }
   pNotify->OnLayoutItemRemoving(pDocLayout, pLayoutItem);
-  if (pLayoutItem->m_pFormNode->GetClassID() == XFA_ELEMENT_PageArea) {
+  if (pLayoutItem->m_pFormNode->GetElementType() == XFA_Element::PageArea) {
     pNotify->OnPageEvent(static_cast<CXFA_ContainerLayoutItem*>(pLayoutItem),
                          XFA_PAGEVIEWEVENT_PostRemoved);
   }

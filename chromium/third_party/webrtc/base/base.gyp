@@ -54,6 +54,8 @@
         'event_tracer.h',
         'exp_filter.cc',
         'exp_filter.h',
+        'location.h',
+        'location.cc',
         'md5.cc',
         'md5.h',
         'md5digest.cc',
@@ -83,13 +85,13 @@
         'swap_queue.h',
         'systeminfo.cc',
         'systeminfo.h',
-        'task_queue.h',
-        'task_queue_posix.h',
         'template_util.h',
         'thread_annotations.h',
         'thread_checker.h',
         'thread_checker_impl.cc',
         'thread_checker_impl.h',
+        'timestampaligner.cc',
+        'timestampaligner.h',
         'timeutils.cc',
         'timeutils.h',
         'trace_event.h',
@@ -113,6 +115,29 @@
             'logging_mac.mm',
           ],
         }],
+        ['OS=="mac" and build_with_chromium==0', {
+          'all_dependent_settings': {
+            'xcode_settings': {
+              'OTHER_LDFLAGS': [
+                # needed for logging_mac.mm
+                '-framework Foundation',
+              ],
+            },
+          },
+        }], # OS=="mac" and build_with_chromium==0
+      ],
+    },
+    {
+      'target_name': 'rtc_task_queue',
+      'type': 'static_library',
+      'dependencies': [
+        'rtc_base_approved',
+      ],
+      'sources': [
+        'task_queue.h',
+        'task_queue_posix.h',
+      ],
+      'conditions': [
         ['build_libevent==1', {
           'dependencies': [
             '<(DEPTH)/base/third_party/libevent/libevent.gyp:libevent',
@@ -137,16 +162,6 @@
             }]
           ],
         }],
-        ['OS=="mac" and build_with_chromium==0', {
-          'all_dependent_settings': {
-            'xcode_settings': {
-              'OTHER_LDFLAGS': [
-                # needed for logging_mac.mm
-                '-framework Foundation',
-              ],
-            },
-          },
-        }], # OS=="mac" and build_with_chromium==0
       ],
     },
     {
@@ -475,7 +490,7 @@
             ],
           },
         }],
-        ['OS=="mac" or OS=="ios"', {
+        ['(OS=="mac" or OS=="ios") and nacl_untrusted_build==0', {
           'sources': [
             'maccocoathreadhelper.h',
             'maccocoathreadhelper.mm',
@@ -555,7 +570,7 @@
             }],
           ],
         }],
-        ['OS=="win"', {
+        ['OS=="win" and nacl_untrusted_build==0', {
           'sources': [
             'win32.cc',
             'win32.h',

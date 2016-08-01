@@ -20,17 +20,17 @@
 namespace webrtc {
 
 ReceiveStatisticsProxy::ReceiveStatisticsProxy(
-    const VideoReceiveStream::Config& config,
+    const VideoReceiveStream::Config* config,
     Clock* clock)
     : clock_(clock),
-      config_(config),
+      config_(*config),
       // 1000ms window, scale 1000 for ms to s.
       decode_fps_estimator_(1000, 1000),
       renders_fps_estimator_(1000, 1000),
       render_fps_tracker_(100, 10u),
       render_pixel_tracker_(100, 10u) {
-  stats_.ssrc = config.rtp.remote_ssrc;
-  for (auto it : config.rtp.rtx)
+  stats_.ssrc = config_.rtp.remote_ssrc;
+  for (auto it : config_.rtp.rtx)
     rtx_stats_[it.second.ssrc] = StreamDataCounters();
 }
 
@@ -247,7 +247,7 @@ void ReceiveStatisticsProxy::OnDecodedFrame() {
 
   rtc::CritScope lock(&crit_);
   decode_fps_estimator_.Update(1, now);
-  stats_.decode_frame_rate = decode_fps_estimator_.Rate(now);
+  stats_.decode_frame_rate = decode_fps_estimator_.Rate(now).value_or(0);
 }
 
 void ReceiveStatisticsProxy::OnRenderedFrame(int width, int height) {
@@ -257,7 +257,7 @@ void ReceiveStatisticsProxy::OnRenderedFrame(int width, int height) {
 
   rtc::CritScope lock(&crit_);
   renders_fps_estimator_.Update(1, now);
-  stats_.render_frame_rate = renders_fps_estimator_.Rate(now);
+  stats_.render_frame_rate = renders_fps_estimator_.Rate(now).value_or(0);
   render_width_counter_.Add(width);
   render_height_counter_.Add(height);
   render_fps_tracker_.AddSamples(1);

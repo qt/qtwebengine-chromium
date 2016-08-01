@@ -78,12 +78,19 @@ class MetaBuildWrapper(object):
                         help='master name to look up config from')
       subp.add_argument('-c', '--config',
                         help='configuration to analyze')
+      subp.add_argument('--phase', type=int,
+                        help=('build phase for a given build '
+                              '(int in [1, 2, ...))'))
       subp.add_argument('-f', '--config-file', metavar='PATH',
                         default=self.default_config,
                         help='path to config file '
                             '(default is //tools/mb/mb_config.pyl)')
       subp.add_argument('-g', '--goma-dir',
                         help='path to goma directory')
+      subp.add_argument('--gyp-script', metavar='PATH',
+                        default=self.PathJoin('build', 'gyp_chromium'),
+                        help='path to gyp script relative to project root '
+                             '(default is %(default)s)')
       subp.add_argument('--android-version-code',
                         help='Sets GN arg android_default_version_code and '
                              'GYP_DEFINE app_manifest_version_code')
@@ -324,7 +331,11 @@ class MetaBuildWrapper(object):
     all_configs = {}
     for master in self.masters:
       for config in self.masters[master].values():
-        all_configs[config] = master
+        if isinstance(config, list):
+          for c in config:
+            all_configs[c] = master
+        else:
+          all_configs[config] = master
 
     # Check that every referenced args file or config actually exists.
     for config, loc in all_configs.items():
@@ -471,10 +482,15 @@ class MetaBuildWrapper(object):
         config = self.masters[master][builder]
         if config == 'tbd':
           tbd.add(builder)
+        elif isinstance(config, list):
+          vals = self.FlattenConfig(config[0])
+          if vals['type'] == 'gyp':
+            gyp.add(builder)
+          else:
+            done.add(builder)
         elif config.startswith('//'):
           done.add(builder)
         else:
-          # TODO(dpranke): Check if MB is actually running?
           vals = self.FlattenConfig(config)
           if vals['type'] == 'gyp':
             gyp.add(builder)
@@ -518,16 +534,11 @@ class MetaBuildWrapper(object):
         self.RunGNGen(vals)
       return vals
 
-    # TODO: We can only get the config for GN build dirs, not GYP build dirs.
-    # GN stores the args that were used in args.gn in the build dir,
-    # but GYP doesn't store them anywhere. We should consider modifying
-    # gyp_chromium to record the arguments it runs with in a similar
-    # manner.
-
     mb_type_path = self.PathJoin(self.ToAbsPath(build_dir), 'mb_type')
     if not self.Exists(mb_type_path):
-      gn_args_path = self.PathJoin(self.ToAbsPath(build_dir), 'args.gn')
-      if not self.Exists(gn_args_path):
+      toolchain_path = self.PathJoin(self.ToAbsPath(build_dir),
+                                     'toolchain.ninja')
+      if not self.Exists(toolchain_path):
         self.Print('Must either specify a path to an existing GN build dir '
                    'or pass in a -m/-b pair or a -c flag to specify the '
                    'configuration')
@@ -546,8 +557,10 @@ class MetaBuildWrapper(object):
     return vals
 
   def GNValsFromDir(self, build_dir):
-    args_contents = self.ReadFile(
-        self.PathJoin(self.ToAbsPath(build_dir), 'args.gn'))
+    args_contents = ""
+    gn_args_path = self.PathJoin(self.ToAbsPath(build_dir), 'args.gn')
+    if self.Exists(gn_args_path):
+      args_contents = self.ReadFile(gn_args_path)
     gn_args = []
     for l in args_contents.splitlines():
       fields = l.split(' ')
@@ -649,12 +662,24 @@ class MetaBuildWrapper(object):
       raise MBErr('Builder name "%s"  not found under masters[%s] in "%s"' %
                   (self.args.builder, self.args.master, self.args.config_file))
 
-    return self.masters[self.args.master][self.args.builder]
+    config = self.masters[self.args.master][self.args.builder]
+    if isinstance(config, list):
+      if self.args.phase is None:
+        raise MBErr('Must specify a build --phase for %s on %s' %
+                    (self.args.builder, self.args.master))
+      phase = int(self.args.phase)
+      if phase < 1 or phase > len(config):
+        raise MBErr('Phase %d out of bounds for %s on %s' %
+                    (phase, self.args.builder, self.args.master))
+      return config[phase-1]
+
+    if self.args.phase is not None:
+      raise MBErr('Must not specify a build --phase for %s on %s' %
+                  (self.args.builder, self.args.master))
+    return config
 
   def FlattenConfig(self, config):
     mixins = self.configs[config]
-    # TODO(dpranke): We really should provide a constructor for the
-    # default set of values.
     vals = {
       'args_file': '',
       'cros_passthrough': False,
@@ -672,8 +697,6 @@ class MetaBuildWrapper(object):
     for m in mixins:
       if m not in self.mixins:
         raise MBErr('Unknown mixin "%s"' % m)
-
-      # TODO: check for cycles in mixins.
 
       visited.append(m)
 
@@ -969,7 +992,6 @@ class MetaBuildWrapper(object):
 
     # This needs to mirror the settings in //build/config/ui.gni:
     # use_x11 = is_linux && !use_ozone.
-    # TODO(dpranke): Figure out how to keep this in sync better.
     use_x11 = (self.platform == 'linux2' and
                not android and
                not 'use_ozone=true' in vals['gn_args'])
@@ -991,6 +1013,7 @@ class MetaBuildWrapper(object):
       cmdline = [
           self.PathJoin('bin', 'run_%s' % target_name),
           '--logcat-output-dir', '${ISOLATED_OUTDIR}/logcats',
+          '--target-devices-file', '${SWARMING_BOT_FILE}',
           '-v',
       ]
     elif use_x11 and test_type == 'windowed_test_launcher':
@@ -1105,7 +1128,7 @@ class MetaBuildWrapper(object):
 
     cmd = [
         self.executable,
-        self.PathJoin('build', 'gyp_chromium'),
+        self.args.gyp_script,
         '-G',
         'output_dir=' + output_dir,
     ]
@@ -1124,9 +1147,19 @@ class MetaBuildWrapper(object):
     # to get rid of the arg and add the old var in, instead.
     # See crbug.com/582737 for more on this. This can hopefully all
     # go away with GYP.
-    if 'llvm_force_head_revision=1' in gyp_defines:
+    m = re.search('llvm_force_head_revision=1\s*', gyp_defines)
+    if m:
       env['LLVM_FORCE_HEAD_REVISION'] = '1'
-      gyp_defines = gyp_defines.replace('llvm_force_head_revision=1', '')
+      gyp_defines = gyp_defines.replace(m.group(0), '')
+
+    # This is another terrible hack to work around the fact that
+    # GYP sets the link concurrency to use via the GYP_LINK_CONCURRENCY
+    # environment variable, and not via a proper GYP_DEFINE. See
+    # crbug.com/611491 for more on this.
+    m = re.search('gyp_link_concurrency=(\d+)(\s*)', gyp_defines)
+    if m:
+      env['GYP_LINK_CONCURRENCY'] = m.group(1)
+      gyp_defines = gyp_defines.replace(m.group(0), '')
 
     env['GYP_GENERATORS'] = 'ninja'
     if 'GYP_CHROMIUM_NO_ACTION' in env:
@@ -1320,6 +1353,8 @@ class MetaBuildWrapper(object):
 
     print_env('GYP_CROSSCOMPILE')
     print_env('GYP_DEFINES')
+    print_env('GYP_LINK_CONCURRENCY')
+    print_env('LLVM_FORCE_HEAD_REVISION')
 
     if cmd[0] == self.executable:
       cmd = ['python'] + cmd[1:]

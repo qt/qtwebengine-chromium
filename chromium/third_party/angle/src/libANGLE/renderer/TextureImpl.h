@@ -14,9 +14,9 @@
 #include "angle_gl.h"
 #include "common/angleutils.h"
 #include "libANGLE/Error.h"
-#include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/ImageIndex.h"
 #include "libANGLE/Stream.h"
+#include "libANGLE/renderer/FramebufferAttachmentObjectImpl.h"
 
 namespace egl
 {
@@ -44,8 +44,6 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
     TextureImpl(const gl::TextureState &state) : mState(state) {}
     virtual ~TextureImpl() {}
 
-    virtual void setUsage(GLenum usage) = 0;
-
     virtual gl::Error setImage(GLenum target, size_t level, GLenum internalFormat, const gl::Extents &size, GLenum format, GLenum type,
                                const gl::PixelUnpackState &unpack, const uint8_t *pixels) = 0;
     virtual gl::Error setSubImage(GLenum target, size_t level, const gl::Box &area, GLenum format, GLenum type,
@@ -69,7 +67,7 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
                                        egl::Stream *stream,
                                        const egl::Stream::GLTextureDescription &desc) = 0;
 
-    virtual gl::Error generateMipmaps() = 0;
+    virtual gl::Error generateMipmap() = 0;
 
     virtual void setBaseLevel(GLuint baseLevel) = 0;
 

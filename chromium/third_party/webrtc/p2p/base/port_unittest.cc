@@ -76,6 +76,8 @@ static const int kTiebreaker2 = 22222;
 
 static const char* data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
 
+static const int kGturnUserNameLength = 16;
+
 static Candidate GetCandidate(Port* port) {
   assert(port->Candidates().size() >= 1);
   return port->Candidates()[0];
@@ -167,7 +169,7 @@ class TestPort : public Port {
   virtual Connection* CreateConnection(const Candidate& remote_candidate,
                                        CandidateOrigin origin) {
     Connection* conn = new ProxyConnection(this, 0, remote_candidate);
-    AddConnection(conn);
+    AddOrReplaceConnection(conn);
     // Set use-candidate attribute flag as this will add USE-CANDIDATE attribute
     // in STUN binding requests.
     conn->set_use_candidate_attr(true);
@@ -525,9 +527,10 @@ class PortTest : public testing::Test, public sigslot::has_slots<> {
   }
   RelayPort* CreateGturnPort(const SocketAddress& addr) {
     // TODO(pthatcher):  Remove GTURN.
-    return RelayPort::Create(main_, &socket_factory_, &network_,
-                             addr.ipaddr(), 0, 0,
-                             username_, password_);
+    // Generate a username with length of 16 for Gturn only.
+    std::string username = rtc::CreateRandomString(kGturnUserNameLength);
+    return RelayPort::Create(main_, &socket_factory_, &network_, addr.ipaddr(),
+                             0, 0, username, password_);
     // TODO: Add an external address for ext_proto, so that the
     // other side can connect to this port using a non-UDP protocol.
   }
@@ -759,7 +762,6 @@ class PortTest : public testing::Test, public sigslot::has_slots<> {
     return &nat_socket_factory1_;
   }
 
- protected:
   rtc::VirtualSocketServer* vss() { return ss_.get(); }
 
  private:
@@ -1647,12 +1649,21 @@ TEST_F(PortTest, TestSendStunMessage) {
   // Save a copy of the BINDING-REQUEST for use below.
   std::unique_ptr<IceMessage> request(CopyStunMessage(msg));
 
-  // Respond with a BINDING-RESPONSE.
-  rport->SendBindingResponse(request.get(), lport->Candidates()[0].address());
+  // Receive the BINDING-REQUEST and respond with BINDING-RESPONSE.
+  rconn->OnReadPacket(lport->last_stun_buf()->data<char>(),
+                      lport->last_stun_buf()->size(), rtc::PacketTime());
   msg = rport->last_stun_msg();
   ASSERT_TRUE(msg != NULL);
   EXPECT_EQ(STUN_BINDING_RESPONSE, msg->type());
-
+  // Received a BINDING-RESPONSE.
+  lconn->OnReadPacket(rport->last_stun_buf()->data<char>(),
+                      rport->last_stun_buf()->size(), rtc::PacketTime());
+  // Verify the STUN Stats.
+  EXPECT_EQ(1U, lconn->stats().sent_ping_requests_total);
+  EXPECT_EQ(1U, lconn->stats().sent_ping_requests_before_first_response);
+  EXPECT_EQ(1U, lconn->stats().recv_ping_responses);
+  EXPECT_EQ(1U, rconn->stats().recv_ping_requests);
+  EXPECT_EQ(1U, rconn->stats().sent_ping_responses);
 
   EXPECT_FALSE(msg->IsLegacy());
   const StunAddressAttribute* addr_attr = msg->GetAddress(
@@ -1726,8 +1737,24 @@ TEST_F(PortTest, TestSendStunMessage) {
 
   // Respond with a BINDING-RESPONSE.
   request.reset(CopyStunMessage(msg));
-  lport->SendBindingResponse(request.get(), rport->Candidates()[0].address());
+  lconn->OnReadPacket(rport->last_stun_buf()->data<char>(),
+                      rport->last_stun_buf()->size(), rtc::PacketTime());
   msg = lport->last_stun_msg();
+  // Receive the BINDING-RESPONSE.
+  rconn->OnReadPacket(lport->last_stun_buf()->data<char>(),
+                      lport->last_stun_buf()->size(), rtc::PacketTime());
+
+  // Verify the Stun ping stats.
+  EXPECT_EQ(3U, rconn->stats().sent_ping_requests_total);
+  EXPECT_EQ(3U, rconn->stats().sent_ping_requests_before_first_response);
+  EXPECT_EQ(1U, rconn->stats().recv_ping_responses);
+  EXPECT_EQ(1U, lconn->stats().sent_ping_responses);
+  EXPECT_EQ(1U, lconn->stats().recv_ping_requests);
+  // Ping after receiver the first response
+  rconn->Ping(0);
+  rconn->Ping(0);
+  EXPECT_EQ(5U, rconn->stats().sent_ping_requests_total);
+  EXPECT_EQ(3U, rconn->stats().sent_ping_requests_before_first_response);
 
   // Response should include same ping count.
   retransmit_attr = msg->GetUInt32(STUN_ATTR_RETRANSMIT_COUNT);
@@ -1762,11 +1789,69 @@ TEST_F(PortTest, TestUseCandidateAttribute) {
   ASSERT_TRUE(use_candidate_attr != NULL);
 }
 
+// Tests that when the network type changes, the network cost of the port will
+// change, the network cost of the local candidates will change. Also tests that
+// the remote network costs are updated with the stun binding requests.
+TEST_F(PortTest, TestNetworkCostChange) {
+  std::unique_ptr<TestPort> lport(
+      CreateTestPort(kLocalAddr1, "lfrag", "lpass"));
+  std::unique_ptr<TestPort> rport(
+      CreateTestPort(kLocalAddr2, "rfrag", "rpass"));
+  lport->SetIceRole(cricket::ICEROLE_CONTROLLING);
+  lport->SetIceTiebreaker(kTiebreaker1);
+  rport->SetIceRole(cricket::ICEROLE_CONTROLLED);
+  rport->SetIceTiebreaker(kTiebreaker2);
+  lport->PrepareAddress();
+  rport->PrepareAddress();
+
+  // Default local port cost is rtc::kNetworkCostUnknown.
+  EXPECT_EQ(rtc::kNetworkCostUnknown, lport->network_cost());
+  ASSERT_TRUE(!lport->Candidates().empty());
+  for (const cricket::Candidate& candidate : lport->Candidates()) {
+    EXPECT_EQ(rtc::kNetworkCostUnknown, candidate.network_cost());
+  }
+
+  // Change the network type to wifi.
+  SetNetworkType(rtc::ADAPTER_TYPE_WIFI);
+  EXPECT_EQ(rtc::kNetworkCostLow, lport->network_cost());
+  for (const cricket::Candidate& candidate : lport->Candidates()) {
+    EXPECT_EQ(rtc::kNetworkCostLow, candidate.network_cost());
+  }
+
+  // Add a connection and then change the network type.
+  Connection* lconn =
+      lport->CreateConnection(rport->Candidates()[0], Port::ORIGIN_MESSAGE);
+  // Change the network type to cellular.
+  SetNetworkType(rtc::ADAPTER_TYPE_CELLULAR);
+  EXPECT_EQ(rtc::kNetworkCostHigh, lport->network_cost());
+  for (const cricket::Candidate& candidate : lport->Candidates()) {
+    EXPECT_EQ(rtc::kNetworkCostHigh, candidate.network_cost());
+  }
+
+  SetNetworkType(rtc::ADAPTER_TYPE_WIFI);
+  Connection* rconn =
+      rport->CreateConnection(lport->Candidates()[0], Port::ORIGIN_MESSAGE);
+  SetNetworkType(rtc::ADAPTER_TYPE_CELLULAR);
+  lconn->Ping(0);
+  // The rconn's remote candidate cost is rtc::kNetworkCostLow, but the ping
+  // contains an attribute of network cost of rtc::kNetworkCostHigh. Once the
+  // message is handled in rconn, The rconn's remote candidate will have cost
+  // rtc::kNetworkCostHigh;
+  EXPECT_EQ(rtc::kNetworkCostLow, rconn->remote_candidate().network_cost());
+  ASSERT_TRUE_WAIT(lport->last_stun_msg() != NULL, 1000);
+  IceMessage* msg = lport->last_stun_msg();
+  EXPECT_EQ(STUN_BINDING_REQUEST, msg->type());
+  // Pass the binding request to rport.
+  rconn->OnReadPacket(lport->last_stun_buf()->data<char>(),
+                      lport->last_stun_buf()->size(), rtc::PacketTime());
+  // Wait until rport sends the response and then check the remote network cost.
+  ASSERT_TRUE_WAIT(rport->last_stun_msg() != NULL, 1000);
+  EXPECT_EQ(rtc::kNetworkCostHigh, rconn->remote_candidate().network_cost());
+}
+
 TEST_F(PortTest, TestNetworkInfoAttribute) {
   std::unique_ptr<TestPort> lport(
       CreateTestPort(kLocalAddr1, "lfrag", "lpass"));
-  // Set the network type for rport to be cellular so its cost will be 999.
-  SetNetworkType(rtc::ADAPTER_TYPE_CELLULAR);
   std::unique_ptr<TestPort> rport(
       CreateTestPort(kLocalAddr2, "rfrag", "rpass"));
   lport->SetIceRole(cricket::ICEROLE_CONTROLLING);
@@ -1789,10 +1874,12 @@ TEST_F(PortTest, TestNetworkInfoAttribute) {
   ASSERT_TRUE(network_info_attr != NULL);
   uint32_t network_info = network_info_attr->value();
   EXPECT_EQ(lnetwork_id, network_info >> 16);
-  // Default network cost is 0.
-  EXPECT_EQ(0U, network_info & 0xFFFF);
+  // Default network has unknown type and cost kNetworkCostUnknown.
+  EXPECT_EQ(rtc::kNetworkCostUnknown, network_info & 0xFFFF);
 
+  // Set the network type to be cellular so its cost will be kNetworkCostHigh.
   // Send a fake ping from rport to lport.
+  SetNetworkType(rtc::ADAPTER_TYPE_CELLULAR);
   uint16_t rnetwork_id = 8;
   rport->Network()->set_id(rnetwork_id);
   Connection* rconn =
@@ -1804,7 +1891,7 @@ TEST_F(PortTest, TestNetworkInfoAttribute) {
   ASSERT_TRUE(network_info_attr != NULL);
   network_info = network_info_attr->value();
   EXPECT_EQ(rnetwork_id, network_info >> 16);
-  EXPECT_EQ(cricket::kMaxNetworkCost, network_info & 0xFFFF);
+  EXPECT_EQ(rtc::kNetworkCostHigh, network_info & 0xFFFF);
 }
 
 // Test handling STUN messages.
@@ -2337,11 +2424,11 @@ TEST_F(PortTest, TestWritableState) {
   ch1.Ping();
   WAIT(!ch2.remote_address().IsNil(), kTimeout);
 
-  // Data should be unsendable until the connection is accepted.
+  // Data should be sendable before the connection is accepted.
   char data[] = "abcd";
   int data_size = arraysize(data);
   rtc::PacketOptions options;
-  EXPECT_EQ(SOCKET_ERROR, ch1.conn()->Send(data, data_size, options));
+  EXPECT_EQ(data_size, ch1.conn()->Send(data, data_size, options));
 
   // Accept the connection to return the binding response, transition to
   // writable, and allow data to be sent.
@@ -2377,8 +2464,9 @@ TEST_F(PortTest, TestWritableState) {
                           500u);
   EXPECT_EQ(Connection::STATE_WRITE_TIMEOUT, ch1.conn()->write_state());
 
-  // Now that the connection has completely timed out, data send should fail.
-  EXPECT_EQ(SOCKET_ERROR, ch1.conn()->Send(data, data_size, options));
+  // Even if the connection has timed out, the Connection shouldn't block
+  // the sending of data.
+  EXPECT_EQ(data_size, ch1.conn()->Send(data, data_size, options));
 
   ch1.Stop();
   ch2.Stop();
@@ -2602,4 +2690,32 @@ TEST_F(PortTest, TestSetIceParameters) {
   EXPECT_EQ(1, candidate.component());
   EXPECT_EQ("ufrag2", candidate.username());
   EXPECT_EQ("password2", candidate.password());
+}
+
+TEST_F(PortTest, TestAddConnectionWithSameAddress) {
+  std::unique_ptr<TestPort> port(
+      CreateTestPort(kLocalAddr1, "ufrag1", "password1"));
+  port->PrepareAddress();
+  EXPECT_EQ(1u, port->Candidates().size());
+  rtc::SocketAddress address("1.1.1.1", 5000);
+  cricket::Candidate candidate(1, "udp", address, 0, "", "", "relay", 0, "");
+  cricket::Connection* conn1 =
+      port->CreateConnection(candidate, Port::ORIGIN_MESSAGE);
+  cricket::Connection* conn_in_use = port->GetConnection(address);
+  EXPECT_EQ(conn1, conn_in_use);
+  EXPECT_EQ(0u, conn_in_use->remote_candidate().generation());
+
+  // Creating with a candidate with the same address again will get us a
+  // different connection with the new candidate.
+  candidate.set_generation(2);
+  cricket::Connection* conn2 =
+      port->CreateConnection(candidate, Port::ORIGIN_MESSAGE);
+  EXPECT_NE(conn1, conn2);
+  conn_in_use = port->GetConnection(address);
+  EXPECT_EQ(conn2, conn_in_use);
+  EXPECT_EQ(2u, conn_in_use->remote_candidate().generation());
+
+  // Make sure the new connection was not deleted.
+  rtc::Thread::Current()->ProcessMessages(300);
+  EXPECT_TRUE(port->GetConnection(address) != nullptr);
 }

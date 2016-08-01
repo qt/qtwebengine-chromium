@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/feature_list.h"
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
@@ -415,13 +416,12 @@ TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
 }
 
 // Verify that an initialization where first setup is not complete does not
-// purge preferences and/or the directory.
+// start up the backend.
 TEST_F(ProfileSyncServiceTest, NeedsConfirmation) {
   prefs()->SetManagedPref(sync_driver::prefs::kSyncManaged,
                           new base::FundamentalValue(false));
   IssueTestTokens();
   CreateService(ProfileSyncService::MANUAL_START);
-  ExpectSyncBackendHostCreation(1);
   sync_driver::SyncPrefs sync_prefs(prefs());
   base::Time now = base::Time::Now();
   sync_prefs.SetLastSyncedTime(now);
@@ -444,9 +444,9 @@ TEST_F(ProfileSyncServiceTest, SetupInProgress) {
   TestSyncServiceObserver observer(service());
   service()->AddObserver(&observer);
 
-  service()->SetSetupInProgress(true);
+  auto sync_blocker = service()->GetSetupInProgressHandle();
   EXPECT_TRUE(observer.setup_in_progress());
-  service()->SetSetupInProgress(false);
+  sync_blocker.reset();
   EXPECT_FALSE(observer.setup_in_progress());
 
   service()->RemoveObserver(&observer);
@@ -726,8 +726,9 @@ TEST_F(ProfileSyncServiceTest, MemoryPressureRecording) {
 // Verify that OnLocalSetPassphraseEncryption triggers catch up configure sync
 // cycle, calls ClearServerData, shuts down and restarts sync.
 TEST_F(ProfileSyncServiceTest, OnLocalSetPassphraseEncryption) {
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSyncEnableClearDataOnPassphraseEncryption);
+  base::FeatureList::ClearInstanceForTesting();
+  ASSERT_TRUE(base::FeatureList::InitializeInstance(
+      switches::kSyncClearDataOnPassphraseEncryption.name, std::string()));
   IssueTestTokens();
   CreateService(ProfileSyncService::AUTO_START);
 
@@ -777,8 +778,9 @@ TEST_F(ProfileSyncServiceTest, OnLocalSetPassphraseEncryption) {
 TEST_F(ProfileSyncServiceTest,
        OnLocalSetPassphraseEncryption_RestartDuringCatchUp) {
   syncer::ConfigureReason configure_reason = syncer::CONFIGURE_REASON_UNKNOWN;
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSyncEnableClearDataOnPassphraseEncryption);
+  base::FeatureList::ClearInstanceForTesting();
+  ASSERT_TRUE(base::FeatureList::InitializeInstance(
+      switches::kSyncClearDataOnPassphraseEncryption.name, std::string()));
   IssueTestTokens();
   CreateService(ProfileSyncService::AUTO_START);
   ExpectSyncBackendHostCreation(1);
@@ -832,8 +834,9 @@ TEST_F(ProfileSyncServiceTest,
        OnLocalSetPassphraseEncryption_RestartDuringClearServerData) {
   syncer::SyncManager::ClearServerDataCallback captured_callback;
   syncer::ConfigureReason configure_reason = syncer::CONFIGURE_REASON_UNKNOWN;
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kSyncEnableClearDataOnPassphraseEncryption);
+  base::FeatureList::ClearInstanceForTesting();
+  ASSERT_TRUE(base::FeatureList::InitializeInstance(
+      switches::kSyncClearDataOnPassphraseEncryption.name, std::string()));
   IssueTestTokens();
   CreateService(ProfileSyncService::AUTO_START);
   ExpectSyncBackendHostCreationCaptureClearServerData(&captured_callback);
@@ -923,6 +926,37 @@ TEST_F(ProfileSyncServiceTest, ResetSyncData) {
   syncer::SyncProtocolError client_cmd;
   client_cmd.action = syncer::RESET_LOCAL_SYNC_DATA;
   service()->OnActionableError(client_cmd);
+}
+
+// Test that when ProfileSyncService receives actionable error
+// DISABLE_SYNC_ON_CLIENT it disables sync and signs out.
+TEST_F(ProfileSyncServiceTest, DisableSyncOnClient) {
+  IssueTestTokens();
+  CreateService(ProfileSyncService::AUTO_START);
+  ExpectDataTypeManagerCreation(1, GetDefaultConfigureCalledCallback());
+  ExpectSyncBackendHostCreation(1);
+  InitializeForNthSync();
+
+  EXPECT_TRUE(service()->IsSyncActive());
+  EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SYNC_TIME_JUST_NOW),
+            service()->GetLastSyncedTimeString());
+  EXPECT_TRUE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
+
+  syncer::SyncProtocolError client_cmd;
+  client_cmd.action = syncer::DISABLE_SYNC_ON_CLIENT;
+  service()->OnActionableError(client_cmd);
+
+// CrOS does not support signout.
+#if !defined(OS_CHROMEOS)
+  EXPECT_TRUE(signin_manager()->GetAuthenticatedAccountId().empty());
+#else
+  EXPECT_FALSE(signin_manager()->GetAuthenticatedAccountId().empty());
+#endif
+
+  EXPECT_FALSE(service()->IsSyncActive());
+  EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SYNC_TIME_NEVER),
+            service()->GetLastSyncedTimeString());
+  EXPECT_FALSE(service()->GetLocalDeviceInfoProvider()->GetLocalDeviceInfo());
 }
 
 // Regression test for crbug/555434. The issue is that check for sessions DTC in

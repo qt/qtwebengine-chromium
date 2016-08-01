@@ -336,22 +336,22 @@ int AudioDeviceIOS::GetRecordAudioParameters(AudioParameters* params) const {
 
 void AudioDeviceIOS::OnInterruptionBegin() {
   RTC_DCHECK(thread_);
-  thread_->Post(this, kMessageTypeInterruptionBegin);
+  thread_->Post(RTC_FROM_HERE, this, kMessageTypeInterruptionBegin);
 }
 
 void AudioDeviceIOS::OnInterruptionEnd() {
   RTC_DCHECK(thread_);
-  thread_->Post(this, kMessageTypeInterruptionEnd);
+  thread_->Post(RTC_FROM_HERE, this, kMessageTypeInterruptionEnd);
 }
 
 void AudioDeviceIOS::OnValidRouteChange() {
   RTC_DCHECK(thread_);
-  thread_->Post(this, kMessageTypeValidRouteChange);
+  thread_->Post(RTC_FROM_HERE, this, kMessageTypeValidRouteChange);
 }
 
 void AudioDeviceIOS::OnCanPlayOrRecordChange(bool can_play_or_record) {
   RTC_DCHECK(thread_);
-  thread_->Post(this, kMessageTypeCanPlayOrRecordChange,
+  thread_->Post(RTC_FROM_HERE, this, kMessageTypeCanPlayOrRecordChange,
                 new rtc::TypedMessageData<bool>(can_play_or_record));
 }
 
@@ -431,6 +431,20 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
     memset(destination, 0, size_in_bytes);
     return noErr;
   }
+  // Produce silence and log a warning message for the case when Core Audio is
+  // asking for an invalid number of audio frames. I don't expect this to happen
+  // but it is done as a safety measure to avoid bad audio if such as case would
+  // ever be triggered e.g. in combination with BT devices.
+  const size_t frames_per_buffer = playout_parameters_.frames_per_buffer();
+  if (num_frames != frames_per_buffer) {
+    RTCLogWarning(@"Expected %u frames but got %u",
+                  static_cast<unsigned int>(frames_per_buffer),
+                  static_cast<unsigned int>(num_frames));
+    *flags |= kAudioUnitRenderAction_OutputIsSilence;
+    memset(destination, 0, size_in_bytes);
+    return noErr;
+  }
+
   // Read decoded 16-bit PCM samples from WebRTC (using a size that matches
   // the native I/O audio unit) to a preallocated intermediate buffer and
   // copy the result to the audio buffer in the |io_data| destination.
@@ -688,19 +702,23 @@ void AudioDeviceIOS::UpdateAudioUnit(bool can_play_or_record) {
 
   switch (audio_unit_->GetState()) {
     case VoiceProcessingAudioUnit::kInitRequired:
+      RTCLog(@"VPAU state: InitRequired");
       RTC_NOTREACHED();
       break;
     case VoiceProcessingAudioUnit::kUninitialized:
+      RTCLog(@"VPAU state: Uninitialized");
       should_initialize_audio_unit = can_play_or_record;
       should_start_audio_unit = should_initialize_audio_unit &&
           (playing_ || recording_);
       break;
     case VoiceProcessingAudioUnit::kInitialized:
+      RTCLog(@"VPAU state: Initialized");
       should_start_audio_unit =
           can_play_or_record && (playing_ || recording_);
       should_uninitialize_audio_unit = !can_play_or_record;
       break;
     case VoiceProcessingAudioUnit::kStarted:
+      RTCLog(@"VPAU state: Started");
       RTC_DCHECK(playing_ || recording_);
       should_stop_audio_unit = !can_play_or_record;
       should_uninitialize_audio_unit = should_stop_audio_unit;
@@ -719,6 +737,9 @@ void AudioDeviceIOS::UpdateAudioUnit(bool can_play_or_record) {
 
   if (should_start_audio_unit) {
     RTCLog(@"Starting audio unit for UpdateAudioUnit");
+    // Log session settings before trying to start audio streaming.
+    RTCAudioSession* session = [RTCAudioSession sharedInstance];
+    RTCLog(@"%@", session);
     if (!audio_unit_->Start()) {
       RTCLogError(@"Failed to start audio unit.");
       return;
@@ -807,6 +828,9 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
 
 void AudioDeviceIOS::ShutdownPlayOrRecord() {
   LOGI() << "ShutdownPlayOrRecord";
+
+  // Stop the audio unit to prevent any additional audio callbacks.
+  audio_unit_->Stop();
 
   // Close and delete the voice-processing I/O unit.
   audio_unit_.reset();

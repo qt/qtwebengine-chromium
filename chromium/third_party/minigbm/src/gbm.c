@@ -38,6 +38,7 @@ extern struct gbm_driver gbm_driver_rockchip;
 extern struct gbm_driver gbm_driver_tegra;
 #endif
 extern struct gbm_driver gbm_driver_udl;
+extern struct gbm_driver gbm_driver_virtio_gpu;
 
 static struct gbm_driver *gbm_get_driver(int fd)
 {
@@ -72,6 +73,7 @@ static struct gbm_driver *gbm_get_driver(int fd)
 		&gbm_driver_tegra,
 #endif
 		&gbm_driver_udl,
+		&gbm_driver_virtio_gpu,
 	};
 
 	for(i = 0; i < ARRAY_SIZE(driver_list); i++)
@@ -102,11 +104,6 @@ gbm_device_is_format_supported(struct gbm_device *gbm,
 			       uint32_t format, uint32_t usage)
 {
 	unsigned i;
-
-	if (format == GBM_BO_FORMAT_XRGB8888)
-		format = GBM_FORMAT_XRGB8888;
-	if (format == GBM_BO_FORMAT_ARGB8888)
-		format = GBM_FORMAT_ARGB8888;
 
 	if (usage & GBM_BO_USE_CURSOR &&
 		usage & GBM_BO_USE_RENDERING)
@@ -267,11 +264,13 @@ gbm_bo_import(struct gbm_device *gbm, uint32_t type,
 		return NULL;
 
 	bo = gbm_bo_new(gbm, fd_data->width, fd_data->height, fd_data->format);
-	bo->strides[0] = fd_data->stride;
-
 	if (!bo)
 		return NULL;
 
+	bo->strides[0] = fd_data->stride;
+	bo->sizes[0] = fd_data->height * fd_data->stride;
+
+	memset(&prime_handle, 0, sizeof(prime_handle));
 	prime_handle.fd = fd_data->fd;
 
 	ret = drmIoctl(bo->gbm->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle);
@@ -317,6 +316,12 @@ gbm_bo_get_format(struct gbm_bo *bo)
 	return bo->format;
 }
 
+PUBLIC uint64_t
+gbm_bo_get_format_modifier(struct gbm_bo *bo)
+{
+	return gbm_bo_get_plane_format_modifier(bo, 0);
+}
+
 PUBLIC struct gbm_device *
 gbm_bo_get_device(struct gbm_bo *bo)
 {
@@ -348,6 +353,10 @@ gbm_bo_get_plane_handle(struct gbm_bo *bo, size_t plane)
 	return bo->handles[plane];
 }
 
+#ifndef DRM_RDWR
+#define DRM_RDWR O_RDWR
+#endif
+
 PUBLIC int
 gbm_bo_get_plane_fd(struct gbm_bo *bo, size_t plane)
 {
@@ -357,7 +366,7 @@ gbm_bo_get_plane_fd(struct gbm_bo *bo, size_t plane)
 	if (drmPrimeHandleToFD(
 			gbm_device_get_fd(bo->gbm),
 			gbm_bo_get_plane_handle(bo, plane).u32,
-			DRM_CLOEXEC,
+			DRM_CLOEXEC | DRM_RDWR,
 			&fd))
 		return -1;
 	else
@@ -383,6 +392,13 @@ gbm_bo_get_plane_stride(struct gbm_bo *bo, size_t plane)
 {
 	assert(plane < bo->num_planes);
 	return bo->strides[plane];
+}
+
+PUBLIC uint64_t
+gbm_bo_get_plane_format_modifier(struct gbm_bo *bo, size_t plane)
+{
+	assert(plane < bo->num_planes);
+	return bo->format_modifiers[plane];
 }
 
 PUBLIC void

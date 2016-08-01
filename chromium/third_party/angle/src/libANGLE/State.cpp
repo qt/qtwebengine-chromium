@@ -8,7 +8,12 @@
 
 #include "libANGLE/State.h"
 
+#include <limits>
+#include <string.h>
+
 #include "common/BitSetIterator.h"
+#include "common/matrix_utils.h"
+#include "common/mathutil.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/Debug.h"
@@ -180,6 +185,12 @@ void State::initialize(const Caps &caps,
     }
 
     mCoverageModulation = GL_NONE;
+
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixMV);
+    mPathStencilFunc = GL_ALWAYS;
+    mPathStencilRef  = 0;
+    mPathStencilMask = std::numeric_limits<GLuint>::max();
 }
 
 void State::reset()
@@ -226,6 +237,12 @@ void State::reset()
     mUnpack.pixelBuffer.set(NULL);
 
     mProgram = NULL;
+
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixProj);
+    angle::Matrix<GLfloat>::setToIdentity(mPathMatrixMV);
+    mPathStencilFunc = GL_ALWAYS;
+    mPathStencilRef  = 0;
+    mPathStencilMask = std::numeric_limits<GLuint>::max();
 
     // TODO(jmadill): Is this necessary?
     setAllDirtyBits();
@@ -610,7 +627,7 @@ void State::setEnableFeature(GLenum feature, bool enabled)
     }
 }
 
-bool State::getEnableFeature(GLenum feature)
+bool State::getEnableFeature(GLenum feature) const
 {
     switch (feature)
     {
@@ -810,7 +827,7 @@ GLuint State::getRenderbufferId() const
     return mRenderbuffer.id();
 }
 
-Renderbuffer *State::getCurrentRenderbuffer()
+Renderbuffer *State::getCurrentRenderbuffer() const
 {
     return mRenderbuffer.get();
 }
@@ -889,22 +906,12 @@ Framebuffer *State::getTargetFramebuffer(GLenum target) const
     }
 }
 
-Framebuffer *State::getReadFramebuffer()
+Framebuffer *State::getReadFramebuffer() const
 {
     return mReadFramebuffer;
 }
 
-Framebuffer *State::getDrawFramebuffer()
-{
-    return mDrawFramebuffer;
-}
-
-const Framebuffer *State::getReadFramebuffer() const
-{
-    return mReadFramebuffer;
-}
-
-const Framebuffer *State::getDrawFramebuffer() const
+Framebuffer *State::getDrawFramebuffer() const
 {
     return mDrawFramebuffer;
 }
@@ -1372,6 +1379,62 @@ GLenum State::getCoverageModulation() const
     return mCoverageModulation;
 }
 
+void State::loadPathRenderingMatrix(GLenum matrixMode, const GLfloat *matrix)
+{
+    if (matrixMode == GL_PATH_MODELVIEW_CHROMIUM)
+    {
+        memcpy(mPathMatrixMV, matrix, 16 * sizeof(GLfloat));
+        mDirtyBits.set(DIRTY_BIT_PATH_RENDERING_MATRIX_MV);
+    }
+    else if (matrixMode == GL_PATH_PROJECTION_CHROMIUM)
+    {
+        memcpy(mPathMatrixProj, matrix, 16 * sizeof(GLfloat));
+        mDirtyBits.set(DIRTY_BIT_PATH_RENDERING_MATRIX_PROJ);
+    }
+    else
+    {
+        UNREACHABLE();
+    }
+}
+
+const GLfloat *State::getPathRenderingMatrix(GLenum which) const
+{
+    if (which == GL_PATH_MODELVIEW_MATRIX_CHROMIUM)
+    {
+        return mPathMatrixMV;
+    }
+    else if (which == GL_PATH_PROJECTION_MATRIX_CHROMIUM)
+    {
+        return mPathMatrixProj;
+    }
+
+    UNREACHABLE();
+    return nullptr;
+}
+
+void State::setPathStencilFunc(GLenum func, GLint ref, GLuint mask)
+{
+    mPathStencilFunc = func;
+    mPathStencilRef  = ref;
+    mPathStencilMask = mask;
+    mDirtyBits.set(DIRTY_BIT_PATH_RENDERING_STENCIL_STATE);
+}
+
+GLenum State::getPathStencilFunc() const
+{
+    return mPathStencilFunc;
+}
+
+GLint State::getPathStencilRef() const
+{
+    return mPathStencilRef;
+}
+
+GLuint State::getPathStencilMask() const
+{
+    return mPathStencilMask;
+}
+
 void State::getBooleanv(GLenum pname, GLboolean *params)
 {
     switch (pname)
@@ -1454,8 +1517,8 @@ void State::getFloatv(GLenum pname, GLfloat *params)
       case GL_SAMPLE_ALPHA_TO_ONE_EXT:
         *params = static_cast<GLfloat>(mSampleAlphaToOne);
       case GL_COVERAGE_MODULATION_CHROMIUM:
-        params[0] = static_cast<GLfloat>(mCoverageModulation);
-        break;
+          params[0] = static_cast<GLfloat>(mCoverageModulation);
+          break;
       default:
         UNREACHABLE();
         break;

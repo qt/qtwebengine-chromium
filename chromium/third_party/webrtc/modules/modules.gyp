@@ -89,7 +89,6 @@
             'audio_coding/test/TestStereo.cc',
             'audio_coding/test/TestVADDTX.cc',
             'audio_coding/test/Tester.cc',
-            'audio_coding/test/TimedTrace.cc',
             'audio_coding/test/TwoWayCommunication.cc',
             'audio_coding/test/iSACTest.cc',
             'audio_coding/test/opus_test.cc',
@@ -151,6 +150,7 @@
             '<(DEPTH)/testing/gmock.gyp:gmock',
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+            '<(webrtc_root)/base/base.gyp:rtc_base_approved',
             '<(webrtc_root)/common.gyp:webrtc_common',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(webrtc_root)/common_video/common_video.gyp:common_video',
@@ -200,7 +200,7 @@
             'audio_coding/neteq/dtmf_tone_generator_unittest.cc',
             'audio_coding/neteq/expand_unittest.cc',
             'audio_coding/neteq/merge_unittest.cc',
-            'audio_coding/neteq/nack_unittest.cc',
+            'audio_coding/neteq/nack_tracker_unittest.cc',
             'audio_coding/neteq/neteq_external_decoder_unittest.cc',
             'audio_coding/neteq/neteq_impl_unittest.cc',
             'audio_coding/neteq/neteq_network_stats_unittest.cc',
@@ -236,7 +236,7 @@
             'audio_processing/agc/agc_manager_direct_unittest.cc',
             # TODO(ajm): Fix to match new interface.
             # 'audio_processing/agc/agc_unittest.cc',
-            'audio_processing/agc/histogram_unittest.cc',
+            'audio_processing/agc/loudness_histogram_unittest.cc',
             'audio_processing/agc/mock_agc.h',
             'audio_processing/beamformer/array_util_unittest.cc',
             'audio_processing/beamformer/complex_matrix_unittest.cc',
@@ -270,6 +270,7 @@
             'bitrate_controller/bitrate_controller_unittest.cc',
             'bitrate_controller/send_side_bandwidth_estimation_unittest.cc',
             'congestion_controller/congestion_controller_unittest.cc',
+            'congestion_controller/delay_based_bwe_unittest.cc',
             'media_file/media_file_unittest.cc',
             'module_common_types_unittest.cc',
             'pacing/bitrate_prober_unittest.cc',
@@ -296,11 +297,10 @@
             'rtp_rtcp/source/fec_receiver_unittest.cc',
             'rtp_rtcp/source/fec_test_helper.cc',
             'rtp_rtcp/source/fec_test_helper.h',
-            'rtp_rtcp/source/h264_sps_parser_unittest.cc',
-            'rtp_rtcp/source/h264_bitstream_parser_unittest.cc',
             'rtp_rtcp/source/nack_rtx_unittest.cc',
             'rtp_rtcp/source/packet_loss_stats_unittest.cc',
             'rtp_rtcp/source/producer_fec_unittest.cc',
+            'rtp_rtcp/source/playout_delay_oracle_unittest.cc',
             'rtp_rtcp/source/receive_statistics_unittest.cc',
             'rtp_rtcp/source/remote_ntp_time_estimator_unittest.cc',
             'rtp_rtcp/source/rtcp_format_remb_unittest.cc',
@@ -370,8 +370,9 @@
             'video_coding/jitter_estimator_tests.cc',
             'video_coding/media_optimization_unittest.cc',
             'video_coding/nack_module_unittest.cc',
-            'video_coding/packet_buffer_unittest.cc',
+            'video_coding/video_packet_buffer_unittest.cc',
             'video_coding/percentile_filter_unittest.cc',
+            'video_coding/protection_bitrate_calculator_unittest.cc',
             'video_coding/receiver_unittest.cc',
             'video_coding/session_info_unittest.cc',
             'video_coding/sequence_number_util_unittest.cc',
@@ -382,6 +383,7 @@
             'video_coding/test/stream_generator.cc',
             'video_coding/test/stream_generator.h',
             'video_coding/utility/frame_dropper_unittest.cc',
+            'video_coding/utility/h264_bitstream_parser_unittest.cc',
             'video_coding/utility/ivf_file_writer_unittest.cc',
             'video_coding/utility/quality_scaler_unittest.cc',
             'video_processing/test/denoiser_test.cc',
@@ -391,16 +393,13 @@
           'conditions': [
             ['libvpx_build_vp9==1', {
               'sources': [
-                'video_coding/codecs/vp9/screenshare_layers_unittest.cc',
+                'video_coding/codecs/vp9/vp9_screenshare_layers_unittest.cc',
               ],
             }],
             ['enable_bwe_test_logging==1', {
               'defines': [ 'BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=1' ],
             }, {
               'defines': [ 'BWE_TEST_LOGGING_COMPILE_TIME_ENABLE=0' ],
-              'sources!': [
-                'remote_bitrate_estimator/test/bwe_test_logging.cc'
-              ],
             }],
             # Run screen/window capturer tests only on platforms where they are
             # supported.
@@ -447,8 +446,8 @@
                 'audio_processing/audio_processing_impl_locking_unittest.cc',
                 'audio_processing/audio_processing_impl_unittest.cc',
                 'audio_processing/audio_processing_unittest.cc',
+                'audio_processing/echo_cancellation_bit_exact_unittest.cc',
                 'audio_processing/echo_control_mobile_unittest.cc',
-                'audio_processing/echo_cancellation_unittest.cc',
                 'audio_processing/gain_control_unittest.cc',
                 'audio_processing/high_pass_filter_unittest.cc',
                 'audio_processing/level_estimator_unittest.cc',
@@ -621,28 +620,28 @@
               'target_name': 'audio_codec_speed_tests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):audio_codec_speed_tests_apk',
+                '<(android_tests_path):audio_codec_speed_tests_apk',
               ],
             },
             {
               'target_name': 'audio_decoder_unittests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):audio_decoder_unittests_apk',
+                '<(android_tests_path):audio_decoder_unittests_apk',
               ],
             },
             {
               'target_name': 'modules_tests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):modules_tests_apk',
+                '<(android_tests_path):modules_tests_apk',
               ],
             },
             {
               'target_name': 'modules_unittests_apk_target',
               'type': 'none',
               'dependencies': [
-                '<(apk_tests_path):modules_unittests_apk',
+                '<(android_tests_path):modules_unittests_apk',
               ],
             },
           ],
@@ -654,7 +653,7 @@
                     'target_name': 'audio_codec_speed_tests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):audio_codec_speed_tests_apk',
+                      '<(android_tests_path):audio_codec_speed_tests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',
@@ -667,7 +666,7 @@
                     'target_name': 'audio_decoder_unittests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):audio_decoder_unittests_apk',
+                      '<(android_tests_path):audio_decoder_unittests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',
@@ -680,7 +679,7 @@
                     'target_name': 'modules_tests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):modules_tests_apk',
+                      '<(android_tests_path):modules_tests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',
@@ -693,7 +692,7 @@
                     'target_name': 'modules_unittests_apk_run',
                     'type': 'none',
                     'dependencies': [
-                      '<(apk_tests_path):modules_unittests_apk',
+                      '<(android_tests_path):modules_unittests_apk',
                     ],
                     'includes': [
                       '../build/isolate.gypi',

@@ -196,8 +196,32 @@ void HistoryController::UpdateForCommit(RenderFrameImpl* frame,
                                         bool navigation_within_page) {
   switch (commit_type) {
     case blink::WebBackForwardCommit:
-      if (!provisional_entry_)
+      if (!provisional_entry_) {
+        // The provisional entry may have been discarded due to a navigation in
+        // a different frame.  For main frames, it is not safe to leave the
+        // current_entry_ in place, which may have a cross-site page and will be
+        // included in the PageState for this commit.  Replace it with a new
+        // HistoryEntry corresponding to the commit, and clear any stale
+        // NavigationParams which might point to the wrong entry.
+        //
+        // This will lack any subframe history items that were in the original
+        // provisional entry, but we don't know what those were after discarding
+        // it.  We'll load the default URL in those subframes instead.
+        //
+        // TODO(creis): It's also possible to get here for subframe commits.
+        // We'll leave a stale current_entry_ in that case, but that only causes
+        // an earlier URL to load in the subframe when leaving and coming back,
+        // and only in rare cases.  It does not risk a URL spoof, unlike the
+        // main frame case.  Since this bug is not present in the new
+        // FrameNavigationEntry-based navigation path (https://crbug.com/236848)
+        // we'll wait for that to fix the subframe case.
+        if (frame->IsMainFrame()) {
+          current_entry_.reset(new HistoryEntry(item));
+          navigation_params_.reset();
+        }
+
         return;
+      }
 
       // If the current entry is null, this must be a main frame commit.
       DCHECK(current_entry_ || frame->IsMainFrame());
@@ -230,6 +254,13 @@ void HistoryController::UpdateForCommit(RenderFrameImpl* frame,
 
       if (HistoryEntry::HistoryNode* node =
               current_entry_->GetHistoryNodeForFrame(frame)) {
+        // Clear the children and any NavigationParams if this commit isn't for
+        // the same item.  Otherwise we might have stale data from a race.
+        if (node->item().itemSequenceNumber() != item.itemSequenceNumber()) {
+          node->RemoveChildren();
+          navigation_params_.reset();
+        }
+
         node->set_item(item);
       }
       break;

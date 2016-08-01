@@ -131,32 +131,23 @@ static int gbm_tegra_bo_create(struct gbm_bo *bo, uint32_t width,
 		}
 
 		/* Encode blocklinear parameters for EGLImage creation. */
-
-		/* XXX Bringup hack: If the highest order bit is set in
-		 * EGL_DMA_BUF_PLANE0_PITCH_EXT, Nvidia driver treats it as
-		 * a hint that the buffer is tiled, and the remaining bits in
-		 * the pitch attribute are treated as vendor specific tiling
-		 * arguments.  Using this hack means that we don't need to add
-		 * a new FOURCC format, or EGL_DMA_BUF_PLANE0_TILING_EXT
-		 * attribute to the dma-buf import extension.
-		 */
-		bo->tiling = (1 << 31) |
-			     (kind & 0xff) |
+		bo->tiling = (kind & 0xff) |
 			     ((block_height_log2 & 0xf) << 8);
+		bo->format_modifiers[0] = gbm_fourcc_mod_code(NV, bo->tiling);
 	}
 
 	return 0;
 }
 
-struct gbm_driver gbm_driver_tegra =
+const struct gbm_driver gbm_driver_tegra =
 {
 	.name = "tegra",
 	.bo_create = gbm_tegra_bo_create,
 	.bo_destroy = gbm_gem_bo_destroy,
 	.format_list = {
 		/* Linear support */
-		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
-		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
+		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_CURSOR | GBM_BO_USE_LINEAR},
 		/* Blocklinear support */
 		{GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING},
 		{GBM_FORMAT_ARGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING},

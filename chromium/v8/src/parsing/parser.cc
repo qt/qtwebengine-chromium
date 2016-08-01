@@ -205,7 +205,16 @@ FunctionLiteral* Parser::DefaultConstructor(const AstRawString* name,
     body = new (zone()) ZoneList<Statement*>(call_super ? 2 : 1, zone());
     if (call_super) {
       // $super_constructor = %_GetSuperConstructor(<this-function>)
-      // %reflect_construct($super_constructor, arguments, new.target)
+      // %reflect_construct(
+      //     $super_constructor, InternalArray(...args), new.target)
+      auto constructor_args_name = ast_value_factory()->empty_string();
+      bool is_duplicate;
+      bool is_rest = true;
+      bool is_optional = false;
+      Variable* constructor_args =
+          function_scope->DeclareParameter(constructor_args_name, TEMPORARY,
+                                           is_optional, is_rest, &is_duplicate);
+
       ZoneList<Expression*>* args =
           new (zone()) ZoneList<Expression*>(2, zone());
       VariableProxy* this_function_proxy = scope_->NewUnresolved(
@@ -217,10 +226,12 @@ FunctionLiteral* Parser::DefaultConstructor(const AstRawString* name,
       Expression* super_constructor = factory()->NewCallRuntime(
           Runtime::kInlineGetSuperConstructor, tmp, pos);
       args->Add(super_constructor, zone());
-      VariableProxy* arguments_proxy = scope_->NewUnresolved(
-          factory(), ast_value_factory()->arguments_string(), Variable::NORMAL,
-          pos);
-      args->Add(arguments_proxy, zone());
+      Spread* spread_args = factory()->NewSpread(
+          factory()->NewVariableProxy(constructor_args), pos, pos);
+      ZoneList<Expression*>* spread_args_expr =
+          new (zone()) ZoneList<Expression*>(1, zone());
+      spread_args_expr->Add(spread_args, zone());
+      args->AddAll(*PrepareSpreadArguments(spread_args_expr), zone());
       VariableProxy* new_target_proxy = scope_->NewUnresolved(
           factory(), ast_value_factory()->new_target_string(), Variable::NORMAL,
           pos);
@@ -669,13 +680,14 @@ Expression* ParserTraits::NewTargetExpression(Scope* scope,
 Expression* ParserTraits::FunctionSentExpression(Scope* scope,
                                                  AstNodeFactory* factory,
                                                  int pos) {
-  // We desugar function.sent into %GeneratorGetInput(generator).
+  // We desugar function.sent into %_GeneratorGetInputOrDebugPos(generator).
   Zone* zone = parser_->zone();
   ZoneList<Expression*>* args = new (zone) ZoneList<Expression*>(1, zone);
   VariableProxy* generator = factory->NewVariableProxy(
       parser_->function_state_->generator_object_variable());
   args->Add(generator, zone);
-  return factory->NewCallRuntime(Runtime::kGeneratorGetInput, args, pos);
+  return factory->NewCallRuntime(Runtime::kInlineGeneratorGetInputOrDebugPos,
+                                 args, pos);
 }
 
 
@@ -796,13 +808,13 @@ Parser::Parser(ParseInfo* info)
                       info->isolate()->is_tail_call_elimination_enabled());
   set_allow_harmony_do_expressions(FLAG_harmony_do_expressions);
   set_allow_harmony_for_in(FLAG_harmony_for_in);
-  set_allow_harmony_function_name(FLAG_harmony_function_name);
   set_allow_harmony_function_sent(FLAG_harmony_function_sent);
   set_allow_harmony_restrictive_declarations(
       FLAG_harmony_restrictive_declarations);
   set_allow_harmony_exponentiation_operator(
       FLAG_harmony_exponentiation_operator);
   set_allow_harmony_async_await(FLAG_harmony_async_await);
+  set_allow_harmony_restrictive_generators(FLAG_harmony_restrictive_generators);
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
     use_counts_[feature] = 0;
@@ -1971,10 +1983,24 @@ Variable* Parser::Declare(Declaration* declaration,
     } else if (IsLexicalVariableMode(mode) ||
                IsLexicalVariableMode(var->mode())) {
       // Allow duplicate function decls for web compat, see bug 4693.
+      bool duplicate_allowed = false;
       if (is_sloppy(language_mode()) && is_function_declaration &&
           var->is_function()) {
         DCHECK(IsLexicalVariableMode(mode) &&
                IsLexicalVariableMode(var->mode()));
+        // If the duplication is allowed, then the var will show up
+        // in the SloppyBlockFunctionMap and the new FunctionKind
+        // will be a permitted duplicate.
+        FunctionKind function_kind =
+            declaration->AsFunctionDeclaration()->fun()->kind();
+        duplicate_allowed =
+            scope->DeclarationScope()->sloppy_block_function_map()->Lookup(
+                const_cast<AstRawString*>(name), name->hash()) != nullptr &&
+            !IsAsyncFunction(function_kind) &&
+            !(allow_harmony_restrictive_generators() &&
+              IsGeneratorFunction(function_kind));
+      }
+      if (duplicate_allowed) {
         ++use_counts_[v8::Isolate::kSloppyModeBlockScopedFunctionRedefinition];
       } else {
         // The name was declared in this scope before; check for conflicting
@@ -2010,13 +2036,12 @@ Variable* Parser::Declare(Declaration* declaration,
     // In a var binding in a sloppy direct eval, pollute the enclosing scope
     // with this new binding by doing the following:
     // The proxy is bound to a lookup variable to force a dynamic declaration
-    // using the DeclareLookupSlot runtime function.
+    // using the DeclareEvalVar or DeclareEvalFunction runtime functions.
     Variable::Kind kind = Variable::NORMAL;
     // TODO(sigurds) figure out if kNotAssigned is OK here
     var = new (zone()) Variable(declaration_scope, name, mode, kind,
                                 declaration->initialization(), kNotAssigned);
     var->AllocateTo(VariableLocation::LOOKUP, -1);
-    var->SetFromEval();
     resolve = true;
   }
 
@@ -2036,7 +2061,7 @@ Variable* Parser::Declare(Declaration* declaration,
   // same variable if it is declared several times. This is not a
   // semantic issue as long as we keep the source order, but it may be
   // a performance issue since it may lead to repeated
-  // RuntimeHidden_DeclareLookupSlot calls.
+  // DeclareEvalVar or DeclareEvalFunction calls.
   declaration_scope->AddDeclaration(declaration);
 
   // If requested and we have a local variable, bind the proxy to the variable
@@ -2188,7 +2213,13 @@ Statement* Parser::ParseHoistableDeclaration(
   Declare(declaration, DeclarationDescriptor::NORMAL, true, CHECK_OK);
   if (names) names->Add(name, zone());
   EmptyStatement* empty = factory()->NewEmptyStatement(RelocInfo::kNoPosition);
-  if (is_sloppy(language_mode()) && !scope_->is_declaration_scope()) {
+  // Async functions don't undergo sloppy mode block scoped hoisting, and don't
+  // allow duplicates in a block. Both are represented by the
+  // sloppy_block_function_map. Don't add them to the map for async functions.
+  // Generators are also supposed to be prohibited; currently doing this behind
+  // a flag and UseCounting violations to assess web compatibility.
+  if (is_sloppy(language_mode()) && !scope_->is_declaration_scope() &&
+      !is_async && !(allow_harmony_restrictive_generators() && is_generator)) {
     SloppyBlockFunctionStatement* delegate =
         factory()->NewSloppyBlockFunctionStatement(empty, scope_);
     scope_->DeclarationScope()->sloppy_block_function_map()->Declare(name,
@@ -2412,9 +2443,7 @@ Block* Parser::ParseVariableDeclarations(
         }
       }
 
-      if (allow_harmony_function_name()) {
-        ParserTraits::SetFunctionNameFromIdentifierRef(value, pattern);
-      }
+      ParserTraits::SetFunctionNameFromIdentifierRef(value, pattern);
 
       // End position of the initializer is after the assignment expression.
       initializer_position = scanner()->location().end_pos;
@@ -2518,7 +2547,6 @@ Statement* Parser::ParseExpressionOrLabelledStatement(
       ReportUnexpectedToken(Next());
       *ok = false;
       return nullptr;
-
     default:
       break;
   }
@@ -2725,7 +2753,7 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
       Expression* is_spec_object_call = factory()->NewCallRuntime(
           Runtime::kInlineIsJSReceiver, is_spec_object_args, pos);
 
-      // %_IsJSReceiver(temp) ? temp : throw_expression
+      // %_IsJSReceiver(temp) ? temp : 1;
       Expression* is_object_conditional = factory()->NewConditional(
           is_spec_object_call, factory()->NewVariableProxy(temp),
           factory()->NewSmiLiteral(1, pos), pos);
@@ -4705,7 +4733,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
       // We produce:
       //
       // try { InitialYield; ...body...; return {value: undefined, done: true} }
-      // finally { %GeneratorClose(generator) }
+      // finally { %_GeneratorClose(generator) }
       //
       // - InitialYield yields the actual generator object.
       // - Any return statement inside the body will have its argument wrapped
@@ -4724,8 +4752,11 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
             Token::INIT, init_proxy, allocation, RelocInfo::kNoPosition);
         VariableProxy* get_proxy = factory()->NewVariableProxy(
             function_state_->generator_object_variable());
-        Yield* yield =
-            factory()->NewYield(get_proxy, assignment, RelocInfo::kNoPosition);
+        // The position of the yield is important for reporting the exception
+        // caused by calling the .throw method on a generator suspended at the
+        // initial yield (i.e. right after generator instantiation).
+        Yield* yield = factory()->NewYield(get_proxy, assignment,
+                                           scope_->start_position());
         try_block->statements()->Add(
             factory()->NewExpressionStatement(yield, RelocInfo::kNoPosition),
             zone());
@@ -4745,7 +4776,7 @@ ZoneList<Statement*>* Parser::ParseEagerFunctionBody(
           function_state_->generator_object_variable());
       args->Add(call_proxy, zone());
       Expression* call = factory()->NewCallRuntime(
-          Runtime::kGeneratorClose, args, RelocInfo::kNoPosition);
+          Runtime::kInlineGeneratorClose, args, RelocInfo::kNoPosition);
       finally_block->statements()->Add(
           factory()->NewExpressionStatement(call, RelocInfo::kNoPosition),
           zone());
@@ -4844,7 +4875,6 @@ PreParser::PreParseResult Parser::ParseLazyFunctionBodyWithPreParser(
     SET_ALLOW(natives);
     SET_ALLOW(harmony_do_expressions);
     SET_ALLOW(harmony_for_in);
-    SET_ALLOW(harmony_function_name);
     SET_ALLOW(harmony_function_sent);
     SET_ALLOW(harmony_exponentiation_operator);
     SET_ALLOW(harmony_restrictive_declarations);
@@ -4943,8 +4973,7 @@ ClassLiteral* Parser::ParseClassLiteral(ExpressionClassifier* classifier,
 
     if (fni_ != NULL) fni_->Infer();
 
-    if (allow_harmony_function_name() &&
-        property_name != ast_value_factory()->constructor_string()) {
+    if (property_name != ast_value_factory()->constructor_string()) {
       SetFunctionNameFromPropertyName(property, property_name);
     }
   }
@@ -4953,7 +4982,7 @@ ClassLiteral* Parser::ParseClassLiteral(ExpressionClassifier* classifier,
   int end_pos = scanner()->location().end_pos;
 
   if (constructor == NULL) {
-    constructor = DefaultConstructor(name, extends != NULL, block_scope, pos,
+    constructor = DefaultConstructor(name, has_extends, block_scope, pos,
                                      end_pos, block_scope->language_mode());
   }
 
@@ -5189,7 +5218,7 @@ void Parser::Internalize(Isolate* isolate, Handle<Script> script, bool error) {
   // Move statistics to Isolate.
   for (int feature = 0; feature < v8::Isolate::kUseCounterFeatureCount;
        ++feature) {
-    for (int i = 0; i < use_counts_[feature]; ++i) {
+    if (use_counts_[feature] > 0) {
       isolate->CountUsage(v8::Isolate::UseCounterFeature(feature));
     }
   }
@@ -5586,7 +5615,8 @@ void ParserTraits::RewriteNonPattern(Type::ExpressionClassifier* classifier,
   parser_->RewriteNonPattern(classifier, ok);
 }
 
-Expression* ParserTraits::RewriteAwaitExpression(Expression* value, int pos) {
+Expression* ParserTraits::RewriteAwaitExpression(Expression* value,
+                                                 int await_pos) {
   // yield %AsyncFunctionAwait(.generator_object, <operand>)
   Variable* generator_object_variable =
       parser_->function_state_->generator_object_variable();
@@ -5594,30 +5624,53 @@ Expression* ParserTraits::RewriteAwaitExpression(Expression* value, int pos) {
   // If generator_object_variable is null,
   if (!generator_object_variable) return value;
 
-  Expression* generator_object =
-      parser_->factory()->NewVariableProxy(generator_object_variable);
+  auto factory = parser_->factory();
+  const int nopos = RelocInfo::kNoPosition;
+
+  Variable* temp_var = parser_->scope_->NewTemporary(
+      parser_->ast_value_factory()->empty_string());
+  VariableProxy* temp_proxy = factory->NewVariableProxy(temp_var);
+  Block* do_block = factory->NewBlock(nullptr, 2, false, nopos);
+
+  // Wrap value evaluation to provide a break location.
+  Expression* value_assignment =
+      factory->NewAssignment(Token::ASSIGN, temp_proxy, value, nopos);
+  do_block->statements()->Add(
+      factory->NewExpressionStatement(value_assignment, value->position()),
+      zone());
 
   ZoneList<Expression*>* async_function_await_args =
       new (zone()) ZoneList<Expression*>(2, zone());
+  Expression* generator_object =
+      factory->NewVariableProxy(generator_object_variable);
   async_function_await_args->Add(generator_object, zone());
-  async_function_await_args->Add(value, zone());
+  async_function_await_args->Add(temp_proxy, zone());
   Expression* async_function_await = parser_->factory()->NewCallRuntime(
-      Context::ASYNC_FUNCTION_AWAIT_INDEX, async_function_await_args,
-      RelocInfo::kNoPosition);
+      Context::ASYNC_FUNCTION_AWAIT_INDEX, async_function_await_args, nopos);
+  // Wrap await to provide a break location between value evaluation and yield.
+  Expression* await_assignment = factory->NewAssignment(
+      Token::ASSIGN, temp_proxy, async_function_await, nopos);
+  do_block->statements()->Add(
+      factory->NewExpressionStatement(await_assignment, await_pos), zone());
+  Expression* do_expr = factory->NewDoExpression(do_block, temp_var, nopos);
 
-  generator_object =
-      parser_->factory()->NewVariableProxy(generator_object_variable);
-  return parser_->factory()->NewYield(generator_object, async_function_await,
-                                      pos);
+  generator_object = factory->NewVariableProxy(generator_object_variable);
+  return factory->NewYield(generator_object, do_expr, nopos);
 }
-
-Zone* ParserTraits::zone() const {
-  return parser_->function_state_->scope()->zone();
-}
-
 
 ZoneList<Expression*>* ParserTraits::GetNonPatternList() const {
   return parser_->function_state_->non_patterns_to_rewrite();
+}
+
+
+ZoneList<typename ParserTraits::Type::ExpressionClassifier::Error>*
+ParserTraits::GetReportedErrorList() const {
+  return parser_->function_state_->GetReportedErrorList();
+}
+
+
+Zone* ParserTraits::zone() const {
+  return parser_->function_state_->scope()->zone();
 }
 
 
@@ -5834,9 +5887,9 @@ void ParserTraits::QueueDestructuringAssignmentForRewriting(Expression* expr) {
 }
 
 
-void ParserTraits::QueueNonPatternForRewriting(Expression* expr) {
+void ParserTraits::QueueNonPatternForRewriting(Expression* expr, bool* ok) {
   DCHECK(expr->IsRewritableExpression());
-  parser_->function_state_->AddNonPatternForRewriting(expr);
+  parser_->function_state_->AddNonPatternForRewriting(expr, ok);
 }
 
 
@@ -6529,8 +6582,6 @@ void ParserTraits::BuildIteratorClose(ZoneList<Statement*>* statements,
 void ParserTraits::FinalizeIteratorUse(Variable* completion,
                                        Expression* condition, Variable* iter,
                                        Block* iterator_use, Block* target) {
-  if (!FLAG_harmony_iterator_close) return;
-
   //
   // This function adds two statements to [target], corresponding to the
   // following code:
@@ -6813,8 +6864,6 @@ void ParserTraits::BuildIteratorCloseForCompletion(
 
 
 Statement* ParserTraits::FinalizeForOfStatement(ForOfStatement* loop, int pos) {
-  if (!FLAG_harmony_iterator_close) return loop;
-
   //
   // This function replaces the loop with the following wrapping:
   //

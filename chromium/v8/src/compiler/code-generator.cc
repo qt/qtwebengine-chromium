@@ -399,10 +399,10 @@ void CodeGenerator::AssembleSourcePosition(Instruction* instr) {
   if (source_position.IsUnknown()) return;
   int code_pos = source_position.raw();
   masm()->positions_recorder()->RecordPosition(code_pos);
-  masm()->positions_recorder()->WriteRecordedPositions();
   if (FLAG_code_comments) {
-    Vector<char> buffer = Vector<char>::New(256);
     CompilationInfo* info = this->info();
+    if (!info->parse_info()) return;
+    Vector<char> buffer = Vector<char>::New(256);
     int ln = Script::GetLineNumber(info->script(), code_pos);
     int cn = Script::GetColumnNumber(info->script(), code_pos);
     if (info->script()->name()->IsString()) {
@@ -716,8 +716,12 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
       CHECK(false);
     }
   } else if (op->IsFPStackSlot()) {
-    DCHECK(IsFloatingPoint(type.representation()));
-    translation->StoreDoubleStackSlot(LocationOperand::cast(op)->index());
+    if (type.representation() == MachineRepresentation::kFloat64) {
+      translation->StoreDoubleStackSlot(LocationOperand::cast(op)->index());
+    } else {
+      DCHECK_EQ(MachineRepresentation::kFloat32, type.representation());
+      translation->StoreFloatStackSlot(LocationOperand::cast(op)->index());
+    }
   } else if (op->IsRegister()) {
     InstructionOperandConverter converter(this, instr);
     if (type.representation() == MachineRepresentation::kBit) {
@@ -734,9 +738,13 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
       CHECK(false);
     }
   } else if (op->IsFPRegister()) {
-    DCHECK(IsFloatingPoint(type.representation()));
     InstructionOperandConverter converter(this, instr);
-    translation->StoreDoubleRegister(converter.ToDoubleRegister(op));
+    if (type.representation() == MachineRepresentation::kFloat64) {
+      translation->StoreDoubleRegister(converter.ToDoubleRegister(op));
+    } else {
+      DCHECK_EQ(MachineRepresentation::kFloat32, type.representation());
+      translation->StoreFloatRegister(converter.ToFloatRegister(op));
+    }
   } else if (op->IsImmediate()) {
     InstructionOperandConverter converter(this, instr);
     Constant constant = converter.ToConstant(op);

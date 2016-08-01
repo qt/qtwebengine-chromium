@@ -237,7 +237,10 @@ OPENSSL_EXPORT int SSL_is_server(SSL *ssl);
  * In DTLS, if |rbio| is blocking, it must handle
  * |BIO_CTRL_DGRAM_SET_NEXT_TIMEOUT| control requests to set read timeouts.
  *
- * Calling this function on an already-configured |ssl| is deprecated. */
+ * If |rbio| (respectively, |wbio|) is the same as the currently configured
+ * |BIO| for reading (respectively, writing), that side is left untouched and is
+ * not freed. Using this behavior and calling this function if |ssl| already has
+ * |BIO|s configured is deprecated. */
 OPENSSL_EXPORT void SSL_set_bio(SSL *ssl, BIO *rbio, BIO *wbio);
 
 /* SSL_get_rbio returns the |BIO| that |ssl| reads from. */
@@ -537,6 +540,7 @@ OPENSSL_EXPORT int DTLSv1_handle_timeout(SSL *ssl);
 #define TLS1_VERSION 0x0301
 #define TLS1_1_VERSION 0x0302
 #define TLS1_2_VERSION 0x0303
+#define TLS1_3_VERSION 0x0304
 
 #define DTLS1_VERSION 0xfeff
 #define DTLS1_2_VERSION 0xfefd
@@ -1094,8 +1098,14 @@ OPENSSL_EXPORT int SSL_CIPHER_is_block_cipher(const SSL_CIPHER *cipher);
 /* SSL_CIPHER_is_ECDSA returns one if |cipher| uses ECDSA. */
 OPENSSL_EXPORT int SSL_CIPHER_is_ECDSA(const SSL_CIPHER *cipher);
 
+/* SSL_CIPHER_is_DHE returns one if |cipher| uses DHE. */
+OPENSSL_EXPORT int SSL_CIPHER_is_DHE(const SSL_CIPHER *cipher);
+
 /* SSL_CIPHER_is_ECDHE returns one if |cipher| uses ECDHE. */
 OPENSSL_EXPORT int SSL_CIPHER_is_ECDHE(const SSL_CIPHER *cipher);
+
+/* SSL_CIPHER_is_CECPQ1 returns one if |cipher| uses CECPQ1. */
+OPENSSL_EXPORT int SSL_CIPHER_is_CECPQ1(const SSL_CIPHER *cipher);
 
 /* SSL_CIPHER_get_min_version returns the minimum protocol version required
  * for |cipher|. */
@@ -1839,9 +1849,9 @@ OPENSSL_EXPORT int SSL_CTX_set1_curves(SSL_CTX *ctx, const int *curves,
 OPENSSL_EXPORT int SSL_set1_curves(SSL *ssl, const int *curves,
                                    size_t curves_len);
 
-/* SSL_get_curve_name returns a human-readable name for the elliptic curve
- * specified by the given TLS curve id, or NULL if the curve if unknown. */
-OPENSSL_EXPORT const char *SSL_get_curve_name(uint16_t curve_id);
+/* SSL_get_curve_name returns a human-readable name for the group specified by
+ * the given TLS group id, or NULL if the group is unknown. */
+OPENSSL_EXPORT const char *SSL_get_curve_name(uint16_t group_id);
 
 
 /* Multiplicative Diffie-Hellman.
@@ -2721,6 +2731,13 @@ OPENSSL_EXPORT void SSL_set_msg_callback_arg(SSL *ssl, void *arg);
 OPENSSL_EXPORT void SSL_CTX_set_keylog_callback(
     SSL_CTX *ctx, void (*cb)(const SSL *ssl, const char *line));
 
+/* SSL_CTX_set_current_time_cb configures a callback to retrieve the current
+ * time, which should be set in |*out_clock|. This can be used for testing
+ * purposes; for example, a callback can be configured that returns a time
+ * set explicitly by the test. */
+OPENSSL_EXPORT void SSL_CTX_set_current_time_cb(
+    SSL_CTX *ctx, void (*cb)(const SSL *ssl, struct timeval *out_clock));
+
 enum ssl_renegotiate_mode_t {
   ssl_renegotiate_never = 0,
   ssl_renegotiate_once,
@@ -3230,6 +3247,7 @@ DECLARE_STACK_OF(SSL_COMP)
 #define SSL_OP_NO_TLSv1 0x04000000L
 #define SSL_OP_NO_TLSv1_2 0x08000000L
 #define SSL_OP_NO_TLSv1_1 0x10000000L
+#define SSL_OP_NO_TLSv1_3 0x20000000L
 #define SSL_OP_NO_DTLSv1 SSL_OP_NO_TLSv1
 #define SSL_OP_NO_DTLSv1_2 SSL_OP_NO_TLSv1_2
 
@@ -3356,6 +3374,7 @@ OPENSSL_EXPORT const char *SSL_alert_desc_string(int value);
 #define SSL_TXT_kDHE "kDHE"
 #define SSL_TXT_kEDH "kEDH"
 #define SSL_TXT_kECDHE "kECDHE"
+#define SSL_TXT_kCECPQ1 "kCECPQ1"
 #define SSL_TXT_kEECDH "kEECDH"
 #define SSL_TXT_kPSK "kPSK"
 #define SSL_TXT_aRSA "aRSA"
@@ -3386,6 +3405,7 @@ OPENSSL_EXPORT const char *SSL_alert_desc_string(int value);
 #define SSL_TXT_TLSV1 "TLSv1"
 #define SSL_TXT_TLSV1_1 "TLSv1.1"
 #define SSL_TXT_TLSV1_2 "TLSv1.2"
+#define SSL_TXT_TLSV1_3 "TLSv1.3"
 #define SSL_TXT_ALL "ALL"
 #define SSL_TXT_CMPDEF "COMPLEMENTOFDEFAULT"
 
@@ -3795,9 +3815,9 @@ struct ssl_ctx_st {
   /* SRTP profiles we are willing to do from RFC 5764 */
   STACK_OF(SRTP_PROTECTION_PROFILE) *srtp_profiles;
 
-  /* EC extension values inherited by SSL structure */
-  size_t tlsext_ellipticcurvelist_length;
-  uint16_t *tlsext_ellipticcurvelist;
+  /* Supported group values inherited by SSL structure */
+  size_t supported_group_list_len;
+  uint16_t *supported_group_list;
 
   /* The client's Channel ID private key. */
   EVP_PKEY *tlsext_channel_id_private;
@@ -3815,7 +3835,8 @@ struct ssl_ctx_st {
   void (*keylog_callback)(const SSL *ssl, const char *line);
 
   /* current_time_cb, if not NULL, is the function to use to get the current
-   * time. It sets |*out_clock| to the current time. */
+   * time. It sets |*out_clock| to the current time. See
+   * |SSL_CTX_set_current_time_cb|. */
   void (*current_time_cb)(const SSL *ssl, struct timeval *out_clock);
 
   /* quiet_shutdown is true if the connection should not send a close_notify on
@@ -3863,7 +3884,9 @@ struct ssl_st {
   BIO *wbio; /* used by SSL_write */
 
   /* bbio, if non-NULL, is a buffer placed in front of |wbio| to pack handshake
-   * messages within one flight into a single |BIO_write|.
+   * messages within one flight into a single |BIO_write|. In this case, |wbio|
+   * and |bbio| are equal and the true caller-configured BIO is
+   * |bbio->next_bio|.
    *
    * TODO(davidben): This does not work right for DTLS. It assumes the MTU is
    * smaller than the buffer size so that the buffer's internal flushing never
@@ -3958,8 +3981,8 @@ struct ssl_st {
   char *tlsext_hostname;
   /* RFC4507 session ticket expected to be received or sent */
   int tlsext_ticket_expected;
-  size_t tlsext_ellipticcurvelist_length;
-  uint16_t *tlsext_ellipticcurvelist; /* our list */
+  size_t supported_group_list_len;
+  uint16_t *supported_group_list; /* our list */
 
   SSL_CTX *initial_ctx; /* initial ctx, used to store sessions */
 
@@ -4164,12 +4187,9 @@ typedef struct ssl3_state_st {
       uint16_t received;
     } custom_extensions;
 
-    /* SNI extension */
-
     /* should_ack_sni is used by a server and indicates that the SNI extension
      * should be echoed in the ServerHello. */
     unsigned should_ack_sni:1;
-
 
     /* Client-only: cert_req determines if a client certificate is to be sent.
      * This is 0 if no client Certificate message is to be sent, 1 if there is
@@ -4205,11 +4225,11 @@ typedef struct ssl3_state_st {
     /* ocsp_stapling_requested is true if a client requested OCSP stapling. */
     unsigned ocsp_stapling_requested:1;
 
-    /* Server-only: peer_ellipticcurvelist contains the EC curve IDs advertised
-     * by the peer. This is only set on the server's end. The server does not
-     * advertise this extension to the client. */
-    uint16_t *peer_ellipticcurvelist;
-    size_t peer_ellipticcurvelist_length;
+    /* Server-only: peer_supported_group_list contains the supported group IDs
+     * advertised by the peer. This is only set on the server's end. The server
+     * does not advertise this extension to the client. */
+    uint16_t *peer_supported_group_list;
+    size_t peer_supported_group_list_len;
 
     /* extended_master_secret indicates whether the extended master secret
      * computation is used in this handshake. Note that this is different from

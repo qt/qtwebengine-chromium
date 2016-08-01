@@ -119,7 +119,7 @@ static int socket_read(BIO* b, char* out, int outl) {
     return -1;
   rtc::AsyncSocket* socket = static_cast<rtc::AsyncSocket*>(b->ptr);
   BIO_clear_retry_flags(b);
-  int result = socket->Recv(out, outl);
+  int result = socket->Recv(out, outl, nullptr);
   if (result > 0) {
     return result;
   } else if (result == 0) {
@@ -404,7 +404,8 @@ OpenSSLAdapter::ContinueSSL() {
     if (DTLSv1_get_timeout(ssl_, &timeout)) {
       int delay = timeout.tv_sec * 1000 + timeout.tv_usec/1000;
 
-      Thread::Current()->PostDelayed(delay, this, MSG_TIMEOUT, 0);
+      Thread::Current()->PostDelayed(RTC_FROM_HERE, delay, this, MSG_TIMEOUT,
+                                     0);
     }
     break;
 
@@ -524,13 +525,12 @@ OpenSSLAdapter::SendTo(const void* pv, size_t cb, const SocketAddress& addr) {
   return SOCKET_ERROR;
 }
 
-int
-OpenSSLAdapter::Recv(void* pv, size_t cb) {
+int OpenSSLAdapter::Recv(void* pv, size_t cb, int64_t* timestamp) {
   //LOG(LS_INFO) << "OpenSSLAdapter::Recv(" << cb << ")";
   switch (state_) {
 
   case SSL_NONE:
-    return AsyncSocketAdapter::Recv(pv, cb);
+    return AsyncSocketAdapter::Recv(pv, cb, timestamp);
 
   case SSL_WAIT:
   case SSL_CONNECTING:
@@ -579,10 +579,12 @@ OpenSSLAdapter::Recv(void* pv, size_t cb) {
   return SOCKET_ERROR;
 }
 
-int
-OpenSSLAdapter::RecvFrom(void* pv, size_t cb, SocketAddress* paddr) {
+int OpenSSLAdapter::RecvFrom(void* pv,
+                             size_t cb,
+                             SocketAddress* paddr,
+                             int64_t* timestamp) {
   if (socket_->GetState() == Socket::CS_CONNECTED) {
-    int ret = Recv(pv, cb);
+    int ret = Recv(pv, cb, timestamp);
 
     *paddr = GetRemoteAddress();
 

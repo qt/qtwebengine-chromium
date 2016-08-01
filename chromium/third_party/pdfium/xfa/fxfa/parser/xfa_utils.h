@@ -8,6 +8,8 @@
 #define XFA_FXFA_PARSER_XFA_UTILS_H_
 
 #include "xfa/fde/xml/fde_xml.h"
+#include "xfa/fgas/crt/fgas_stream.h"
+#include "xfa/fgas/crt/fgas_utils.h"
 #include "xfa/fxfa/include/fxfa_basic.h"
 
 class CFDE_XMLElement;
@@ -16,21 +18,16 @@ class CXFA_LocaleValue;
 class CXFA_Node;
 class CXFA_WidgetData;
 
-inline FX_BOOL XFA_IsSpace(FX_WCHAR c) {
-  return (c == 0x20) || (c == 0x0d) || (c == 0x0a) || (c == 0x09);
-}
-inline FX_BOOL XFA_IsDigit(FX_WCHAR c) {
-  return c >= '0' && c <= '9';
-}
-
 FX_BOOL XFA_FDEExtension_ResolveNamespaceQualifier(
     CFDE_XMLElement* pNode,
     const CFX_WideStringC& wsQualifier,
     CFX_WideString& wsNamespaceURI);
+
 template <class NodeType, class TraverseStrategy>
 class CXFA_NodeIteratorTemplate {
  public:
-  CXFA_NodeIteratorTemplate(NodeType* pRootNode = NULL) : m_pRoot(pRootNode) {
+  CXFA_NodeIteratorTemplate(NodeType* pRootNode = nullptr)
+      : m_pRoot(pRootNode) {
     if (pRootNode) {
       m_NodeStack.Push(pRootNode);
     }
@@ -72,13 +69,13 @@ class CXFA_NodeIteratorTemplate {
     return TRUE;
   }
   NodeType* GetCurrent() const {
-    return m_NodeStack.GetSize() ? *m_NodeStack.GetTopElement() : NULL;
+    return m_NodeStack.GetSize() ? *m_NodeStack.GetTopElement() : nullptr;
   }
   NodeType* GetRoot() const { return m_pRoot; }
   NodeType* MoveToPrev() {
     int32_t nStackLength = m_NodeStack.GetSize();
     if (nStackLength == 1) {
-      return NULL;
+      return nullptr;
     } else if (nStackLength > 1) {
       NodeType* pCurItem = *m_NodeStack.GetTopElement();
       m_NodeStack.Pop();
@@ -88,7 +85,7 @@ class CXFA_NodeIteratorTemplate {
       if (pCurItem == pParentFirstChildItem) {
         return pParentItem;
       }
-      NodeType *pPrevItem = pParentFirstChildItem, *pPrevItemNext = NULL;
+      NodeType *pPrevItem = pParentFirstChildItem, *pPrevItemNext = nullptr;
       for (; pPrevItem; pPrevItem = pPrevItemNext) {
         pPrevItemNext = TraverseStrategy::GetNextSibling(pPrevItem);
         if (!pPrevItemNext || pPrevItemNext == pCurItem) {
@@ -105,7 +102,7 @@ class CXFA_NodeIteratorTemplate {
     if (m_NodeStack.GetSize() > 0) {
       NodeType* pChildItem = *m_NodeStack.GetTopElement();
       while ((pChildItem = TraverseStrategy::GetFirstChild(pChildItem)) !=
-             NULL) {
+             nullptr) {
         while (NodeType* pNextItem =
                    TraverseStrategy::GetNextSibling(pChildItem)) {
           pChildItem = pNextItem;
@@ -114,23 +111,23 @@ class CXFA_NodeIteratorTemplate {
       }
       return *m_NodeStack.GetTopElement();
     }
-    return NULL;
+    return nullptr;
   }
   NodeType* MoveToNext() {
-    NodeType** ppNode = NULL;
+    NodeType** ppNode = nullptr;
     NodeType* pCurrent = GetCurrent();
     while (m_NodeStack.GetSize() > 0) {
-      while ((ppNode = m_NodeStack.GetTopElement())) {
+      while ((ppNode = m_NodeStack.GetTopElement()) != nullptr) {
         if (pCurrent != *ppNode) {
           return *ppNode;
         }
         NodeType* pChild = TraverseStrategy::GetFirstChild(*ppNode);
-        if (pChild == NULL) {
+        if (!pChild) {
           break;
         }
         m_NodeStack.Push(pChild);
       }
-      while ((ppNode = m_NodeStack.GetTopElement())) {
+      while ((ppNode = m_NodeStack.GetTopElement()) != nullptr) {
         NodeType* pNext = TraverseStrategy::GetNextSibling(*ppNode);
         m_NodeStack.Pop();
         if (m_NodeStack.GetSize() == 0) {
@@ -142,11 +139,11 @@ class CXFA_NodeIteratorTemplate {
         }
       }
     }
-    return NULL;
+    return nullptr;
   }
   NodeType* SkipChildrenAndMoveToNext() {
-    NodeType** ppNode = NULL;
-    while ((ppNode = m_NodeStack.GetTopElement())) {
+    NodeType** ppNode = nullptr;
+    while ((ppNode = m_NodeStack.GetTopElement()) != nullptr) {
       NodeType* pNext = TraverseStrategy::GetNextSibling(*ppNode);
       m_NodeStack.Pop();
       if (m_NodeStack.GetSize() == 0) {
@@ -165,7 +162,7 @@ class CXFA_NodeIteratorTemplate {
   CFX_StackTemplate<NodeType*> m_NodeStack;
 };
 
-CXFA_Node* XFA_CreateUIChild(CXFA_Node* pNode, XFA_ELEMENT& eWidgetType);
+CXFA_Node* XFA_CreateUIChild(CXFA_Node* pNode, XFA_Element& eWidgetType);
 CXFA_LocaleValue XFA_GetLocaleValue(CXFA_WidgetData* pWidgetData);
 FX_DOUBLE XFA_WideStringToDouble(const CFX_WideString& wsStringVal);
 FX_DOUBLE XFA_ByteStringToDouble(const CFX_ByteStringC& szStringVal);
@@ -176,13 +173,13 @@ void XFA_GetPlainTextFromRichText(CFDE_XMLNode* pXMLNode,
                                   CFX_WideString& wsPlainText);
 FX_BOOL XFA_FieldIsMultiListBox(CXFA_Node* pFieldNode);
 IFX_Stream* XFA_CreateWideTextRead(const CFX_WideString& wsBuffer);
-FX_BOOL XFA_IsLayoutElement(XFA_ELEMENT eElement,
+FX_BOOL XFA_IsLayoutElement(XFA_Element eElement,
                             FX_BOOL bLayoutContainer = FALSE);
 
 void XFA_DataExporter_DealWithDataGroupNode(CXFA_Node* pDataNode);
 void XFA_DataExporter_RegenerateFormFile(CXFA_Node* pNode,
                                          IFX_Stream* pStream,
-                                         const FX_CHAR* pChecksum = NULL,
+                                         const FX_CHAR* pChecksum = nullptr,
                                          FX_BOOL bSaveXML = FALSE);
 
 #endif  // XFA_FXFA_PARSER_XFA_UTILS_H_

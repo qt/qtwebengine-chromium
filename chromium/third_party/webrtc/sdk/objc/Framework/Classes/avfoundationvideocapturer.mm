@@ -12,7 +12,9 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+#if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+#endif
 
 #import "RTCDispatcher+Private.h"
 #import "WebRTC/RTCLogging.h"
@@ -37,9 +39,11 @@ static cricket::VideoFormat const kDefaultFormat =
     <AVCaptureVideoDataOutputSampleBufferDelegate>
 
 @property(nonatomic, readonly) AVCaptureSession *captureSession;
-@property(nonatomic, readonly) BOOL isRunning;
+@property(nonatomic, readonly) dispatch_queue_t frameQueue;
 @property(nonatomic, readonly) BOOL canUseBackCamera;
 @property(nonatomic, assign) BOOL useBackCamera;  // Defaults to NO.
+@property(nonatomic, assign) BOOL isRunning;  // Whether the capture session is running.
+@property(atomic, assign) BOOL hasStarted;  // Whether we have an unmatched start.
 
 // We keep a pointer back to AVFoundationVideoCapturer to make callbacks on it
 // when we receive frames. This is safe because this object should be owned by
@@ -61,11 +65,16 @@ static cricket::VideoFormat const kDefaultFormat =
   // The cricket::VideoCapturer that owns this class. Should never be NULL.
   webrtc::AVFoundationVideoCapturer *_capturer;
   BOOL _orientationHasChanged;
+  BOOL _hasRetriedOnFatalError;
+  BOOL _isRunning;
+  BOOL _hasStarted;
+  rtc::CriticalSection _crit;
 }
 
 @synthesize captureSession = _captureSession;
-@synthesize isRunning = _isRunning;
+@synthesize frameQueue = _frameQueue;
 @synthesize useBackCamera = _useBackCamera;
+@synthesize hasStarted = _hasStarted;
 
 // This is called from the thread that creates the video source, which is likely
 // the main thread.
@@ -81,28 +90,56 @@ static cricket::VideoFormat const kDefaultFormat =
       return nil;
     }
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+#if TARGET_OS_IPHONE
     [center addObserver:self
                selector:@selector(deviceOrientationDidChange:)
                    name:UIDeviceOrientationDidChangeNotification
                  object:nil];
-    [center addObserverForName:AVCaptureSessionRuntimeErrorNotification
-                        object:nil
-                         queue:nil
-                    usingBlock:^(NSNotification *notification) {
-      RTCLogError(@"Capture session error: %@", notification.userInfo);
-    }];
+    [center addObserver:self
+               selector:@selector(handleCaptureSessionInterruption:)
+                   name:AVCaptureSessionWasInterruptedNotification
+                 object:_captureSession];
+    [center addObserver:self
+               selector:@selector(handleCaptureSessionInterruptionEnded:)
+                   name:AVCaptureSessionInterruptionEndedNotification
+                 object:_captureSession];
+#endif
+    [center addObserver:self
+               selector:@selector(handleCaptureSessionRuntimeError:)
+                   name:AVCaptureSessionRuntimeErrorNotification
+                 object:_captureSession];
+    [center addObserver:self
+               selector:@selector(handleCaptureSessionDidStartRunning:)
+                   name:AVCaptureSessionDidStartRunningNotification
+                 object:_captureSession];
+    [center addObserver:self
+               selector:@selector(handleCaptureSessionDidStopRunning:)
+                   name:AVCaptureSessionDidStopRunningNotification
+                 object:_captureSession];
   }
   return self;
 }
 
 - (void)dealloc {
-  RTC_DCHECK(!_isRunning);
+  RTC_DCHECK(!self.hasStarted);
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   _capturer = nullptr;
 }
 
 - (AVCaptureSession *)captureSession {
   return _captureSession;
+}
+
+- (dispatch_queue_t)frameQueue {
+  if (!_frameQueue) {
+    _frameQueue =
+        dispatch_queue_create("org.webrtc.avfoundationvideocapturer.video",
+                              DISPATCH_QUEUE_SERIAL);
+    dispatch_set_target_queue(
+        _frameQueue,
+        dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
+  }
+  return _frameQueue;
 }
 
 // Called from any thread (likely main thread).
@@ -135,17 +172,29 @@ static cricket::VideoFormat const kDefaultFormat =
   }
 }
 
+- (BOOL)isRunning {
+  rtc::CritScope cs(&_crit);
+  return _isRunning;
+}
+
+- (void)setIsRunning:(BOOL)isRunning {
+  rtc::CritScope cs(&_crit);
+  _isRunning = isRunning;
+}
+
 // Called from WebRTC thread.
 - (void)start {
-  if (_isRunning) {
+  if (self.hasStarted) {
     return;
   }
-  _isRunning = YES;
+  self.hasStarted = YES;
   [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
                                block:^{
     _orientationHasChanged = NO;
     [self updateOrientation];
+#if TARGET_OS_IPHONE
     [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+#endif
     AVCaptureSession *captureSession = self.captureSession;
     [captureSession startRunning];
   }];
@@ -153,17 +202,34 @@ static cricket::VideoFormat const kDefaultFormat =
 
 // Called from same thread as start.
 - (void)stop {
-  if (!_isRunning) {
+  if (!self.hasStarted) {
     return;
   }
-  _isRunning = NO;
+  self.hasStarted = NO;
+  // Due to this async block, it's possible that the ObjC object outlives the
+  // C++ one. In order to not invoke functions on the C++ object, we set
+  // hasStarted immediately instead of dispatching it async.
   [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
                                block:^{
     [_videoDataOutput setSampleBufferDelegate:nil queue:nullptr];
     [_captureSession stopRunning];
+#if TARGET_OS_IPHONE
     [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
+#endif
   }];
 }
+
+#pragma mark iOS notifications
+
+#if TARGET_OS_IPHONE
+- (void)deviceOrientationDidChange:(NSNotification *)notification {
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
+    _orientationHasChanged = YES;
+    [self updateOrientation];
+  }];
+}
+#endif
 
 #pragma mark AVCaptureVideoDataOutputSampleBufferDelegate
 
@@ -171,7 +237,7 @@ static cricket::VideoFormat const kDefaultFormat =
     didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
            fromConnection:(AVCaptureConnection *)connection {
   NSParameterAssert(captureOutput == _videoDataOutput);
-  if (!_isRunning) {
+  if (!self.hasStarted) {
     return;
   }
   _capturer->CaptureSampleBuffer(sampleBuffer);
@@ -181,6 +247,97 @@ static cricket::VideoFormat const kDefaultFormat =
     didDropSampleBuffer:(CMSampleBufferRef)sampleBuffer
          fromConnection:(AVCaptureConnection *)connection {
   RTCLogError(@"Dropped sample buffer.");
+}
+
+#pragma mark - AVCaptureSession notifications
+
+- (void)handleCaptureSessionInterruption:(NSNotification *)notification {
+  NSString *reasonString = nil;
+#if defined(__IPHONE_9_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_9_0
+  NSNumber *reason =
+      notification.userInfo[AVCaptureSessionInterruptionReasonKey];
+  if (reason) {
+    switch (reason.intValue) {
+      case AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableInBackground:
+        reasonString = @"VideoDeviceNotAvailableInBackground";
+        break;
+      case AVCaptureSessionInterruptionReasonAudioDeviceInUseByAnotherClient:
+        reasonString = @"AudioDeviceInUseByAnotherClient";
+        break;
+      case AVCaptureSessionInterruptionReasonVideoDeviceInUseByAnotherClient:
+        reasonString = @"VideoDeviceInUseByAnotherClient";
+        break;
+      case AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableWithMultipleForegroundApps:
+        reasonString = @"VideoDeviceNotAvailableWithMultipleForegroundApps";
+        break;
+    }
+  }
+#endif
+  RTCLog(@"Capture session interrupted: %@", reasonString);
+  // TODO(tkchin): Handle this case.
+}
+
+- (void)handleCaptureSessionInterruptionEnded:(NSNotification *)notification {
+  RTCLog(@"Capture session interruption ended.");
+  // TODO(tkchin): Handle this case.
+}
+
+- (void)handleCaptureSessionRuntimeError:(NSNotification *)notification {
+  NSError *error =
+      [notification.userInfo objectForKey:AVCaptureSessionErrorKey];
+  RTCLogError(@"Capture session runtime error: %@", error.localizedDescription);
+
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
+#if TARGET_OS_IPHONE
+    if (error.code == AVErrorMediaServicesWereReset) {
+      [self handleNonFatalError];
+    } else {
+      [self handleFatalError];
+    }
+#else
+    [self handleFatalError];
+#endif
+  }];
+}
+
+- (void)handleCaptureSessionDidStartRunning:(NSNotification *)notification {
+  RTCLog(@"Capture session started.");
+  self.isRunning = YES;
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
+    // If we successfully restarted after an unknown error, allow future
+    // retries on fatal errors.
+    _hasRetriedOnFatalError = NO;
+  }];
+}
+
+- (void)handleCaptureSessionDidStopRunning:(NSNotification *)notification {
+  RTCLog(@"Capture session stopped.");
+  self.isRunning = NO;
+}
+
+- (void)handleFatalError {
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
+    if (!_hasRetriedOnFatalError) {
+      RTCLogWarning(@"Attempting to recover from fatal capture error.");
+      [self handleNonFatalError];
+      _hasRetriedOnFatalError = YES;
+    } else {
+      RTCLogError(@"Previous fatal error recovery failed.");
+    }
+  }];
+}
+
+- (void)handleNonFatalError {
+  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
+                               block:^{
+    if (self.hasStarted) {
+      RTCLog(@"Restarting capture session after error.");
+      [self.captureSession startRunning];
+    }
+  }];
 }
 
 #pragma mark - Private
@@ -241,9 +398,7 @@ static cricket::VideoFormat const kDefaultFormat =
         @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
     };
     videoDataOutput.alwaysDiscardsLateVideoFrames = NO;
-    dispatch_queue_t queue =
-        [RTCDispatcher dispatchQueueForType:RTCDispatcherTypeCaptureSession];
-    [videoDataOutput setSampleBufferDelegate:self queue:queue];
+    [videoDataOutput setSampleBufferDelegate:self queue:self.frameQueue];
     _videoDataOutput = videoDataOutput;
   }
   return _videoDataOutput;
@@ -262,8 +417,13 @@ static cricket::VideoFormat const kDefaultFormat =
 
 - (AVCaptureDeviceInput *)frontCameraInput {
   if (!_frontCameraInput) {
+#if TARGET_OS_IPHONE
     AVCaptureDevice *frontCameraDevice =
         [self videoCaptureDeviceForPosition:AVCaptureDevicePositionFront];
+#else
+    AVCaptureDevice *frontCameraDevice =
+        [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+#endif
     if (!frontCameraDevice) {
       RTCLogWarning(@"Failed to find front capture device.");
       return nil;
@@ -304,14 +464,6 @@ static cricket::VideoFormat const kDefaultFormat =
   return _backCameraInput;
 }
 
-- (void)deviceOrientationDidChange:(NSNotification *)notification {
-  [RTCDispatcher dispatchAsyncOnType:RTCDispatcherTypeCaptureSession
-                               block:^{
-    _orientationHasChanged = YES;
-    [self updateOrientation];
-  }];
-}
-
 // Called from capture session queue.
 - (void)updateOrientation {
   AVCaptureConnection *connection =
@@ -320,6 +472,7 @@ static cricket::VideoFormat const kDefaultFormat =
     // TODO(tkchin): set rotation bit on frames.
     return;
   }
+#if TARGET_OS_IPHONE
   AVCaptureVideoOrientation orientation = AVCaptureVideoOrientationPortrait;
   switch ([UIDevice currentDevice].orientation) {
     case UIDeviceOrientationPortrait:
@@ -343,6 +496,7 @@ static cricket::VideoFormat const kDefaultFormat =
       return;
   }
   connection.videoOrientation = orientation;
+#endif
 }
 
 // Update the current session input to match what's stored in _useBackCamera.
@@ -470,7 +624,7 @@ void AVFoundationVideoCapturer::CaptureSampleBuffer(
   // after it has successfully been signaled.
   CVBufferRetain(image_buffer);
   AVFoundationFrame frame(image_buffer, rtc::TimeNanos());
-  _startThread->Post(this, kMessageTypeFrame,
+  _startThread->Post(RTC_FROM_HERE, this, kMessageTypeFrame,
                      new rtc::TypedMessageData<AVFoundationFrame>(frame));
 }
 

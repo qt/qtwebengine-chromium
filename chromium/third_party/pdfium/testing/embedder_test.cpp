@@ -25,7 +25,16 @@
 #endif  // PDF_ENABLE_V8
 
 namespace {
-const char* g_exe_path_ = nullptr;
+
+const char* g_exe_path = nullptr;
+
+#ifdef PDF_ENABLE_V8
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+v8::StartupData* g_v8_natives = nullptr;
+v8::StartupData* g_v8_snapshot = nullptr;
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // PDF_ENABLE_V8
+
 }  // namespace
 
 FPDF_BOOL Is_Data_Avail(FX_FILEAVAIL* pThis, size_t offset, size_t size) {
@@ -50,15 +59,27 @@ EmbedderTest::EmbedderTest()
 
 #ifdef PDF_ENABLE_V8
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  InitializeV8ForPDFium(g_exe_path_, std::string(), &natives_, &snapshot_,
-                        &platform_);
+  if (g_v8_natives && g_v8_snapshot) {
+    InitializeV8ForPDFium(g_exe_path, std::string(), nullptr, nullptr,
+                          &platform_);
+  } else {
+    g_v8_natives = new v8::StartupData;
+    g_v8_snapshot = new v8::StartupData;
+    InitializeV8ForPDFium(g_exe_path, std::string(), g_v8_natives,
+                          g_v8_snapshot, &platform_);
+  }
 #else
-  InitializeV8ForPDFium(&platform_);
+  InitializeV8ForPDFium(g_exe_path, &platform_);
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 #endif  // FPDF_ENABLE_V8
 }
 
-EmbedderTest::~EmbedderTest() {}
+EmbedderTest::~EmbedderTest() {
+#ifdef PDF_ENABLE_V8
+  v8::V8::ShutdownPlatform();
+  delete platform_;
+#endif  // PDF_ENABLE_V8
+}
 
 void EmbedderTest::SetUp() {
   FPDF_LIBRARY_CONFIG config;
@@ -93,11 +114,6 @@ void EmbedderTest::TearDown() {
   FPDFAvail_Destroy(avail_);
   FPDF_DestroyLibrary();
 
-#ifdef PDF_ENABLE_V8
-  v8::V8::ShutdownPlatform();
-  delete platform_;
-#endif  // PDF_ENABLE_V8
-
   delete loader_;
 }
 
@@ -111,6 +127,7 @@ bool EmbedderTest::CreateEmptyDocument() {
 }
 
 bool EmbedderTest::OpenDocument(const std::string& filename,
+                                const char* password,
                                 bool must_linearize) {
   std::string file_path;
   if (!PathService::GetTestFilePath(filename, &file_path))
@@ -119,6 +136,7 @@ bool EmbedderTest::OpenDocument(const std::string& filename,
   if (!file_contents_)
     return false;
 
+  EXPECT_TRUE(!loader_);
   loader_ = new TestLoader(file_contents_.get(), file_length_);
   file_access_.m_FileLen = static_cast<unsigned long>(file_length_);
   file_access_.m_GetBlock = TestLoader::GetBlock;
@@ -133,7 +151,7 @@ bool EmbedderTest::OpenDocument(const std::string& filename,
   avail_ = FPDFAvail_Create(&file_avail_, &file_access_);
 
   if (FPDFAvail_IsLinearized(avail_) == PDF_LINEARIZED) {
-    document_ = FPDFAvail_GetDocument(avail_, nullptr);
+    document_ = FPDFAvail_GetDocument(avail_, password);
     if (!document_) {
       return false;
     }
@@ -318,8 +336,19 @@ FPDF_PAGE EmbedderTest::GetPageTrampoline(FPDF_FORMFILLINFO* info,
 // Can't use gtest-provided main since we need to stash the path to the
 // executable in order to find the external V8 binary data files.
 int main(int argc, char** argv) {
-  g_exe_path_ = argv[0];
+  g_exe_path = argv[0];
   testing::InitGoogleTest(&argc, argv);
   testing::InitGoogleMock(&argc, argv);
-  return RUN_ALL_TESTS();
+  int ret_val = RUN_ALL_TESTS();
+
+#ifdef PDF_ENABLE_V8
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  if (g_v8_natives)
+    free(const_cast<char*>(g_v8_natives->data));
+  if (g_v8_snapshot)
+    free(const_cast<char*>(g_v8_snapshot->data));
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // PDF_ENABLE_V8
+
+  return ret_val;
 }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/fpdfapi/fpdf_page/include/cpdf_page.h"
 #include "core/fpdfapi/fpdf_parser/include/cpdf_document.h"
 #include "fpdfsdk/cfx_systemhandler.h"
 #include "fpdfsdk/include/fsdk_actionhandler.h"
@@ -31,22 +32,10 @@ class CPDFSDK_PageView;
 class CPDFSDK_Widget;
 class IJS_Runtime;
 
-// NOTE: |bsUTF16LE| must outlive the use of the result. Care must be taken
-// since modifying the result would impact |bsUTF16LE|.
-FPDF_WIDESTRING AsFPDFWideString(CFX_ByteString* bsUTF16LE);
-
 class CPDFDoc_Environment final {
  public:
   CPDFDoc_Environment(UnderlyingDocumentType* pDoc, FPDF_FORMFILLINFO* pFFinfo);
   ~CPDFDoc_Environment();
-
-#ifdef PDF_ENABLE_XFA
-  void Release() {
-    if (m_pInfo && m_pInfo->Release)
-      m_pInfo->Release(m_pInfo);
-    delete this;
-  }
-#endif  // PDF_ENABLE_XFA
 
   void FFI_Invalidate(FPDF_PAGE page,
                       double left,
@@ -118,13 +107,13 @@ class CPDFDoc_Environment final {
   FPDF_PAGE FFI_GetPage(FPDF_DOCUMENT document, int nPageIndex) {
     if (m_pInfo && m_pInfo->FFI_GetPage)
       return m_pInfo->FFI_GetPage(m_pInfo, document, nPageIndex);
-    return NULL;
+    return nullptr;
   }
 
   FPDF_PAGE FFI_GetCurrentPage(FPDF_DOCUMENT document) {
     if (m_pInfo && m_pInfo->FFI_GetCurrentPage)
       return m_pInfo->FFI_GetCurrentPage(m_pInfo, document);
-    return NULL;
+    return nullptr;
   }
 
   int FFI_GetRotation(FPDF_PAGE page) {
@@ -188,7 +177,7 @@ class CPDFDoc_Environment final {
 
   CFX_WideString FFI_GetPlatform() {
     if (m_pInfo && m_pInfo->FFI_GetPlatform) {
-      int nRequiredLen = m_pInfo->FFI_GetPlatform(m_pInfo, NULL, 0);
+      int nRequiredLen = m_pInfo->FFI_GetPlatform(m_pInfo, nullptr, 0);
       if (nRequiredLen <= 0)
         return L"";
 
@@ -282,7 +271,7 @@ class CPDFDoc_Environment final {
                                  const char* mode) {
     if (m_pInfo && m_pInfo->FFI_OpenFile)
       return m_pInfo->FFI_OpenFile(m_pInfo, fileType, wsURL, mode);
-    return NULL;
+    return nullptr;
   }
 
   CFX_WideString FFI_GetFilePath(FPDF_FILEHANDLER* pFileHandler) const {
@@ -303,7 +292,7 @@ class CPDFDoc_Environment final {
 
       return new CFPDF_FileStream(fileHandler);
     }
-    return NULL;
+    return nullptr;
   }
 
   CFX_WideString FFI_PostRequestURL(const FX_WCHAR* wsURL,
@@ -368,7 +357,7 @@ class CPDFDoc_Environment final {
 
   CFX_WideString FFI_GetLanguage() {
     if (m_pInfo && m_pInfo->FFI_GetLanguage) {
-      int nRequiredLen = m_pInfo->FFI_GetLanguage(m_pInfo, NULL, 0);
+      int nRequiredLen = m_pInfo->FFI_GetLanguage(m_pInfo, nullptr, 0);
       if (nRequiredLen <= 0)
         return L"";
 
@@ -538,7 +527,7 @@ class CPDFSDK_Document {
   FX_BOOL m_bBeingDestroyed;
 };
 
-class CPDFSDK_PageView final {
+class CPDFSDK_PageView final : public CPDF_Page::View {
  public:
   CPDFSDK_PageView(CPDFSDK_Document* pSDKDoc, UnderlyingPageType* page);
   ~CPDFSDK_PageView();
@@ -611,7 +600,7 @@ class CPDFSDK_PageView final {
     return m_fxAnnotArray;
   }
 
-  int GetPageIndex();
+  int GetPageIndex() const;
   void LoadFXAnnots();
   void ClearFXAnnots();
   void SetValid(FX_BOOL bValid) { m_bValid = bValid; }
@@ -623,11 +612,10 @@ class CPDFSDK_PageView final {
 #endif  // PDF_ENABLE_XFA
 
  private:
-  void PageView_OnHighlightFormFields(CFX_RenderDevice* pDevice,
-                                      CPDFSDK_Widget* pWidget);
+  int GetPageIndexForStaticPDF() const;
 
   CFX_Matrix m_curMatrix;
-  UnderlyingPageType* m_page;
+  UnderlyingPageType* const m_page;
   std::unique_ptr<CPDF_AnnotList> m_pAnnotList;
   std::vector<CPDFSDK_Annot*> m_fxAnnotArray;
   CPDFSDK_Document* m_pSDKDoc;

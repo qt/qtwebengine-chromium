@@ -318,7 +318,10 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         // Built-in function emulation needs to happen after validateLimitations pass.
         if (success)
         {
+            // TODO(jmadill): Remove global pool allocator.
+            GetGlobalPoolAllocator()->lock();
             initBuiltInFunctionEmulator(&builtInFunctionEmulator, compileOptions);
+            GetGlobalPoolAllocator()->unlock();
             builtInFunctionEmulator.MarkBuiltInFunctionsForEmulation(root);
         }
 
@@ -480,6 +483,8 @@ void TCompiler::initSamplerDefaultPrecision(TBasicType samplerType)
 void TCompiler::setResourceString()
 {
     std::ostringstream strstream;
+
+    // clang-format off
     strstream << ":MaxVertexAttribs:" << compileResources.MaxVertexAttribs
               << ":MaxVertexUniformVectors:" << compileResources.MaxVertexUniformVectors
               << ":MaxVaryingVectors:" << compileResources.MaxVaryingVectors
@@ -490,6 +495,8 @@ void TCompiler::setResourceString()
               << ":MaxDrawBuffers:" << compileResources.MaxDrawBuffers
               << ":OES_standard_derivatives:" << compileResources.OES_standard_derivatives
               << ":OES_EGL_image_external:" << compileResources.OES_EGL_image_external
+              << ":OES_EGL_image_external_essl3:" << compileResources.OES_EGL_image_external_essl3
+              << ":NV_EGL_stream_consumer_external:" << compileResources.NV_EGL_stream_consumer_external
               << ":ARB_texture_rectangle:" << compileResources.ARB_texture_rectangle
               << ":EXT_draw_buffers:" << compileResources.EXT_draw_buffers
               << ":FragmentPrecisionHigh:" << compileResources.FragmentPrecisionHigh
@@ -509,6 +516,7 @@ void TCompiler::setResourceString()
               << ":MaxDualSourceDrawBuffers:" << compileResources.MaxDualSourceDrawBuffers
               << ":NV_draw_buffers:" << compileResources.NV_draw_buffers
               << ":WEBGL_debug_shader_precision:" << compileResources.WEBGL_debug_shader_precision;
+    // clang-format on
 
     builtInResourcesString = strstream.str();
 }

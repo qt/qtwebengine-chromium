@@ -64,14 +64,13 @@ class CPDF_Font {
   virtual int CountChar(const FX_CHAR* pString, int size) const;
   virtual int AppendChar(FX_CHAR* buf, uint32_t charcode) const;
   virtual int GetCharSize(uint32_t charcode) const;
-  virtual int GlyphFromCharCode(uint32_t charcode,
-                                FX_BOOL* pVertGlyph = nullptr);
+  virtual int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) = 0;
   virtual int GlyphFromCharCodeExt(uint32_t charcode);
   virtual CFX_WideString UnicodeFromCharCode(uint32_t charcode) const;
   virtual uint32_t CharCodeFromUnicode(FX_WCHAR Unicode) const;
 
   const CFX_ByteString& GetBaseFont() const { return m_BaseFont; }
-  const CFX_SubstFont* GetSubstFont() const { return m_Font.GetSubstFont(); }
+  CFX_SubstFont* GetSubstFont() const { return m_Font.GetSubstFont(); }
   uint32_t GetFlags() const { return m_Flags; }
   FX_BOOL IsEmbedded() const { return IsType3Font() || m_pFontFile != nullptr; }
   CPDF_StreamAcc* GetFontFile() const { return m_pFontFile; }
@@ -99,7 +98,7 @@ class CPDF_Font {
   virtual FX_BOOL Load() = 0;
 
   FX_BOOL Initialize();
-  void LoadUnicodeMap();
+  void LoadUnicodeMap() const;  // logically const only.
   void LoadPDFEncoding(CPDF_Object* pEncoding,
                        int& iBaseEncoding,
                        CFX_ByteString*& pCharNames,
@@ -115,8 +114,8 @@ class CPDF_Font {
   CFX_ByteString m_BaseFont;
   CPDF_StreamAcc* m_pFontFile;
   CPDF_Dictionary* m_pFontDict;
-  CPDF_ToUnicodeMap* m_pToUnicodeMap;
-  FX_BOOL m_bToUnicodeLoaded;
+  mutable CPDF_ToUnicodeMap* m_pToUnicodeMap;
+  mutable FX_BOOL m_bToUnicodeLoaded;
   int m_Flags;
   FX_RECT m_FontBBox;
   int m_StemV;

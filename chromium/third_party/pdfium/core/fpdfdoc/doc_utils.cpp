@@ -23,7 +23,7 @@ CPDF_Object* SearchNumberNode(const CPDF_Dictionary* pNode, int num) {
   CPDF_Array* pLimits = pNode->GetArrayBy("Limits");
   if (pLimits &&
       (num < pLimits->GetIntegerAt(0) || num > pLimits->GetIntegerAt(1))) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Array* pNumbers = pNode->GetArrayBy("Nums");
   if (pNumbers) {
@@ -36,11 +36,11 @@ CPDF_Object* SearchNumberNode(const CPDF_Dictionary* pNode, int num) {
         break;
       }
     }
-    return NULL;
+    return nullptr;
   }
   CPDF_Array* pKids = pNode->GetArrayBy("Kids");
   if (!pKids) {
-    return NULL;
+    return nullptr;
   }
   for (size_t i = 0; i < pKids->GetCount(); i++) {
     CPDF_Dictionary* pKid = pKids->GetDictAt(i);
@@ -52,7 +52,7 @@ CPDF_Object* SearchNumberNode(const CPDF_Dictionary* pNode, int num) {
       return pFound;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace
@@ -267,10 +267,11 @@ CFX_Matrix CPDF_DefaultAppearance::GetTextMatrix() {
   }
   return tm;
 }
+
 void InitInterFormDict(CPDF_Dictionary*& pFormDict, CPDF_Document* pDocument) {
-  if (!pDocument) {
+  if (!pDocument)
     return;
-  }
+
   if (!pFormDict) {
     pFormDict = new CPDF_Dictionary;
     uint32_t dwObjNum = pDocument->AddIndirectObject(pFormDict);
@@ -279,16 +280,17 @@ void InitInterFormDict(CPDF_Dictionary*& pFormDict, CPDF_Document* pDocument) {
   }
   CFX_ByteString csDA;
   if (!pFormDict->KeyExist("DR")) {
-    CPDF_Font* pFont = NULL;
-    CFX_ByteString csBaseName, csDefault;
+    CFX_ByteString csBaseName;
+    CFX_ByteString csDefault;
     uint8_t charSet = CPDF_InterForm::GetNativeCharSet();
-    pFont = CPDF_InterForm::AddStandardFont(pDocument, "Helvetica");
+    CPDF_Font* pFont = CPDF_InterForm::AddStandardFont(pDocument, "Helvetica");
     if (pFont) {
       AddInterFormFont(pFormDict, pDocument, pFont, csBaseName);
       csDefault = csBaseName;
     }
-    if (charSet != 0) {
-      CFX_ByteString csFontName = CPDF_InterForm::GetNativeFont(charSet, NULL);
+    if (charSet != FXFONT_ANSI_CHARSET) {
+      CFX_ByteString csFontName =
+          CPDF_InterForm::GetNativeFont(charSet, nullptr);
       if (!pFont || csFontName != "Helvetica") {
         pFont = CPDF_InterForm::AddNativeFont(pDocument);
         if (pFont) {
@@ -341,15 +343,15 @@ CPDF_Font* GetInterFormFont(CPDF_Dictionary* pFormDict,
                             uint32_t index,
                             CFX_ByteString& csNameTag) {
   if (!pFormDict) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pDR = pFormDict->GetDictBy("DR");
   if (!pDR) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pFonts = pDR->GetDictBy("Font");
   if (!pFonts) {
-    return NULL;
+    return nullptr;
   }
   uint32_t dwCount = 0;
   for (const auto& it : *pFonts) {
@@ -369,46 +371,46 @@ CPDF_Font* GetInterFormFont(CPDF_Dictionary* pFormDict,
     }
     dwCount++;
   }
-  return NULL;
+  return nullptr;
 }
 CPDF_Font* GetInterFormFont(CPDF_Dictionary* pFormDict,
                             CPDF_Document* pDocument,
                             CFX_ByteString csNameTag) {
   CFX_ByteString csAlias = PDF_NameDecode(csNameTag);
   if (!pFormDict || csAlias.IsEmpty()) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pDR = pFormDict->GetDictBy("DR");
   if (!pDR) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pFonts = pDR->GetDictBy("Font");
   if (!pFonts) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pElement = pFonts->GetDictBy(csAlias);
   if (!pElement) {
-    return NULL;
+    return nullptr;
   }
   if (pElement->GetStringBy("Type") == "Font") {
     return pDocument->LoadFont(pElement);
   }
-  return NULL;
+  return nullptr;
 }
 CPDF_Font* GetInterFormFont(CPDF_Dictionary* pFormDict,
                             CPDF_Document* pDocument,
                             CFX_ByteString csFontName,
                             CFX_ByteString& csNameTag) {
   if (!pFormDict || csFontName.IsEmpty()) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pDR = pFormDict->GetDictBy("DR");
   if (!pDR) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pFonts = pDR->GetDictBy("Font");
   if (!pFonts) {
-    return NULL;
+    return nullptr;
   }
   for (const auto& it : *pFonts) {
     const CFX_ByteString& csKey = it.first;
@@ -434,22 +436,22 @@ CPDF_Font* GetInterFormFont(CPDF_Dictionary* pFormDict,
       return pFind;
     }
   }
-  return NULL;
+  return nullptr;
 }
 CPDF_Font* GetNativeInterFormFont(CPDF_Dictionary* pFormDict,
                                   CPDF_Document* pDocument,
                                   uint8_t charSet,
                                   CFX_ByteString& csNameTag) {
   if (!pFormDict) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pDR = pFormDict->GetDictBy("DR");
   if (!pDR) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Dictionary* pFonts = pDR->GetDictBy("Font");
   if (!pFonts) {
-    return NULL;
+    return nullptr;
   }
   for (const auto& it : *pFonts) {
     const CFX_ByteString& csKey = it.first;
@@ -466,7 +468,7 @@ CPDF_Font* GetNativeInterFormFont(CPDF_Dictionary* pFormDict,
     if (!pFind) {
       continue;
     }
-    CFX_SubstFont* pSubst = (CFX_SubstFont*)pFind->GetSubstFont();
+    CFX_SubstFont* pSubst = pFind->GetSubstFont();
     if (!pSubst) {
       continue;
     }
@@ -475,17 +477,17 @@ CPDF_Font* GetNativeInterFormFont(CPDF_Dictionary* pFormDict,
       return pFind;
     }
   }
-  return NULL;
+  return nullptr;
 }
+
 CPDF_Font* GetNativeInterFormFont(CPDF_Dictionary* pFormDict,
                                   CPDF_Document* pDocument,
                                   CFX_ByteString& csNameTag) {
-  csNameTag = "";
+  csNameTag.clear();
   uint8_t charSet = CPDF_InterForm::GetNativeCharSet();
-  CFX_SubstFont* pSubst;
   CPDF_Font* pFont = GetDefaultInterFormFont(pFormDict, pDocument);
   if (pFont) {
-    pSubst = (CFX_SubstFont*)pFont->GetSubstFont();
+    CFX_SubstFont* pSubst = pFont->GetSubstFont();
     if (pSubst && pSubst->m_Charset == (int)charSet) {
       FindInterFormFont(pFormDict, pFont, csNameTag);
       return pFont;
@@ -493,6 +495,7 @@ CPDF_Font* GetNativeInterFormFont(CPDF_Dictionary* pFormDict,
   }
   return GetNativeInterFormFont(pFormDict, pDocument, charSet, csNameTag);
 }
+
 FX_BOOL FindInterFormFont(CPDF_Dictionary* pFormDict,
                           const CPDF_Font* pFont,
                           CFX_ByteString& csNameTag) {
@@ -622,10 +625,9 @@ CPDF_Font* AddNativeInterFormFont(CPDF_Dictionary*& pFormDict,
     return pFont;
   }
   CFX_ByteString csFontName = CPDF_InterForm::GetNativeFont(charSet);
-  if (!csFontName.IsEmpty()) {
-    if (FindInterFormFont(pFormDict, pDocument, csFontName, pFont, csNameTag)) {
-      return pFont;
-    }
+  if (!csFontName.IsEmpty() &&
+      FindInterFormFont(pFormDict, pDocument, csFontName, pFont, csNameTag)) {
+    return pFont;
   }
   pFont = CPDF_InterForm::AddNativeFont(charSet, pDocument);
   if (pFont) {
@@ -651,6 +653,7 @@ void RemoveInterFormFont(CPDF_Dictionary* pFormDict, const CPDF_Font* pFont) {
   CPDF_Dictionary* pFonts = pDR->GetDictBy("Font");
   pFonts->RemoveAt(csTag);
 }
+
 void RemoveInterFormFont(CPDF_Dictionary* pFormDict, CFX_ByteString csNameTag) {
   if (!pFormDict || csNameTag.IsEmpty()) {
     return;
@@ -669,7 +672,7 @@ void RemoveInterFormFont(CPDF_Dictionary* pFormDict, CFX_ByteString csNameTag) {
 CPDF_Font* GetDefaultInterFormFont(CPDF_Dictionary* pFormDict,
                                    CPDF_Document* pDocument) {
   if (!pFormDict) {
-    return NULL;
+    return nullptr;
   }
   CPDF_DefaultAppearance cDA(pFormDict->GetStringBy("DA"));
   CFX_ByteString csFontNameTag;
@@ -716,11 +719,9 @@ void CPDF_IconFit::GetIconPosition(FX_FLOAT& fLeft, FX_FLOAT& fBottom) {
     }
   }
 }
-FX_BOOL CPDF_IconFit::GetFittingBounds() {
-  if (!m_pDict) {
-    return FALSE;
-  }
-  return m_pDict->GetBooleanBy("FB");
+
+bool CPDF_IconFit::GetFittingBounds() {
+  return m_pDict ? m_pDict->GetBooleanBy("FB") : false;
 }
 
 std::vector<bool> SaveCheckedFieldStatus(CPDF_FormField* pField) {
@@ -737,10 +738,10 @@ CPDF_Object* FPDF_GetFieldAttr(CPDF_Dictionary* pFieldDict,
                                const FX_CHAR* name,
                                int nLevel) {
   if (nLevel > FPDFDOC_UTILS_MAXRECURSION) {
-    return NULL;
+    return nullptr;
   }
   if (!pFieldDict) {
-    return NULL;
+    return nullptr;
   }
   CPDF_Object* pAttr = pFieldDict->GetDirectObjectBy(name);
   if (pAttr) {
@@ -748,7 +749,7 @@ CPDF_Object* FPDF_GetFieldAttr(CPDF_Dictionary* pFieldDict,
   }
   CPDF_Dictionary* pParent = pFieldDict->GetDictBy("Parent");
   if (!pParent) {
-    return NULL;
+    return nullptr;
   }
   return FPDF_GetFieldAttr(pParent, name, nLevel + 1);
 }

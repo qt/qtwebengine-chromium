@@ -27,9 +27,13 @@
   * A C compiler is required. On Windows, MSVC 14 (Visual Studio 2015) or later
     with Platform SDK 8.1 or later are supported. Recent versions of GCC (4.8+)
     and Clang should work on non-Windows platforms, and maybe on Windows too.
+    To build the tests, you also need a C++ compiler with C++11 support.
 
   * [Go](https://golang.org/dl/) is required. If not found by CMake, the go
     executable may be configured explicitly by setting `GO_EXECUTABLE`.
+
+  * To build the x86 and x86\_64 assembly, your assembler must support AVX2
+    instructions. If using GNU binutils, you must have 2.22 or later.
 
 ## Building
 
@@ -79,18 +83,18 @@ It's possible to build BoringSSL with the Android NDK using CMake. This has
 been tested with version 10d of the NDK.
 
 Unpack the Android NDK somewhere and export `ANDROID_NDK` to point to the
-directory. Clone https://github.com/taka-no-me/android-cmake into `util/`.  Then
-make a build directory as above and run CMake *twice* like this:
+directory. Then make a build directory as above and run CMake like this:
 
-    cmake -DANDROID_NATIVE_API_LEVEL=android-9 \
-          -DANDROID_ABI=armeabi-v7a \
-          -DCMAKE_TOOLCHAIN_FILE=../util/android-cmake/android.toolchain.cmake \
+    cmake -DANDROID_ABI=armeabi-v7a \
+          -DCMAKE_TOOLCHAIN_FILE=../third_party/android-cmake/android.toolchain.cmake \
           -DANDROID_NATIVE_API_LEVEL=16 \
           -GNinja ..
 
-Once you've run that twice, Ninja should produce Android-compatible binaries.
-You can replace `armeabi-v7a` in the above with `arm64-v8a` to build aarch64
-binaries.
+Once you've run that, Ninja should produce Android-compatible binaries.  You
+can replace `armeabi-v7a` in the above with `arm64-v8a` and use API level 21 or
+higher to build aarch64 binaries.
+
+For other options, see [android-cmake's documentation](./third_party/android-cmake/README.md).
 
 ## Known Limitations on Windows
 

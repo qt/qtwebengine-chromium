@@ -32,7 +32,7 @@ class CFWL_ScrollBarImp : public CFWL_WidgetImp, public IFWL_Timer {
                        const CFX_Matrix* pMatrix = nullptr) override;
 
   // IFWL_Timer
-  int32_t Run(FWL_HTIMER hTimer) override;
+  void Run(IFWL_TimerInfo* pTimerInfo) override;
 
   FX_BOOL IsVertical();
   FWL_Error GetRange(FX_FLOAT& fMin, FX_FLOAT& fMax);
@@ -54,14 +54,14 @@ class CFWL_ScrollBarImp : public CFWL_WidgetImp, public IFWL_Timer {
   void DrawTrack(CFX_Graphics* pGraphics,
                  IFWL_ThemeProvider* pTheme,
                  FX_BOOL bLower = TRUE,
-                 const CFX_Matrix* pMatrix = NULL);
+                 const CFX_Matrix* pMatrix = nullptr);
   void DrawArrowBtn(CFX_Graphics* pGraphics,
                     IFWL_ThemeProvider* pTheme,
                     FX_BOOL bMinBtn = TRUE,
-                    const CFX_Matrix* pMatrix = NULL);
+                    const CFX_Matrix* pMatrix = nullptr);
   void DrawThumb(CFX_Graphics* pGraphics,
                  IFWL_ThemeProvider* pTheme,
-                 const CFX_Matrix* pMatrix = NULL);
+                 const CFX_Matrix* pMatrix = nullptr);
   void Layout();
   void CalcButtonLen();
   void CalcMinButtonRect(CFX_RectF& rect);
@@ -74,7 +74,7 @@ class CFWL_ScrollBarImp : public CFWL_WidgetImp, public IFWL_Timer {
   FX_BOOL SendEvent();
   FX_BOOL OnScroll(uint32_t dwCode, FX_FLOAT fPos);
 
-  FWL_HTIMER m_hTimer;
+  IFWL_TimerInfo* m_pTimerInfo;
   FX_FLOAT m_fRangeMin;
   FX_FLOAT m_fRangeMax;
   FX_FLOAT m_fPageSize;
@@ -111,7 +111,7 @@ class CFWL_ScrollBarImpDelegate : public CFWL_WidgetImpDelegate {
   CFWL_ScrollBarImpDelegate(CFWL_ScrollBarImp* pOwner);
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
 
  protected:
   void OnLButtonDown(uint32_t dwFlags, FX_FLOAT fx, FX_FLOAT fy);

@@ -15,7 +15,7 @@ class CFDE_CSSFunction : public CFX_Target {
  public:
   CFDE_CSSFunction(const FX_WCHAR* pszFuncName, IFDE_CSSValueList* pArgList)
       : m_pArgList(pArgList), m_pszFuncName(pszFuncName) {
-    ASSERT(pArgList != NULL);
+    ASSERT(pArgList);
   }
   int32_t CountArgs() const { return m_pArgList->CountValues(); }
   IFDE_CSSValue* GetArgs(int32_t index) const {
@@ -27,56 +27,26 @@ class CFDE_CSSFunction : public CFX_Target {
   IFDE_CSSValueList* m_pArgList;
   const FX_WCHAR* m_pszFuncName;
 };
+
 class CFDE_CSSPrimitiveValue : public IFDE_CSSPrimitiveValue,
                                public CFX_Target {
  public:
-  CFDE_CSSPrimitiveValue(const CFDE_CSSPrimitiveValue& src) { *this = src; }
-  CFDE_CSSPrimitiveValue(FX_ARGB color)
-      : m_eType(FDE_CSSPRIMITIVETYPE_RGB), m_dwColor(color) {}
-  CFDE_CSSPrimitiveValue(FDE_CSSPROPERTYVALUE eValue)
-      : m_eType(FDE_CSSPRIMITIVETYPE_Enum), m_eEnum(eValue) {}
-  CFDE_CSSPrimitiveValue(FDE_CSSPRIMITIVETYPE eType, FX_FLOAT fValue)
-      : m_eType(eType), m_fNumber(fValue) {}
-  CFDE_CSSPrimitiveValue(FDE_CSSPRIMITIVETYPE eType, const FX_WCHAR* pValue)
-      : m_eType(eType), m_pString(pValue) {
-    ASSERT(m_pString != NULL);
-  }
-  CFDE_CSSPrimitiveValue(CFDE_CSSFunction* pFunction)
-      : m_eType(FDE_CSSPRIMITIVETYPE_Function), m_pFunction(pFunction) {}
+  explicit CFDE_CSSPrimitiveValue(FX_ARGB color);
+  explicit CFDE_CSSPrimitiveValue(FDE_CSSPROPERTYVALUE eValue);
+  explicit CFDE_CSSPrimitiveValue(CFDE_CSSFunction* pFunction);
+  CFDE_CSSPrimitiveValue(FDE_CSSPRIMITIVETYPE eType, FX_FLOAT fValue);
+  CFDE_CSSPrimitiveValue(FDE_CSSPRIMITIVETYPE eType, const FX_WCHAR* pValue);
+  CFDE_CSSPrimitiveValue(const CFDE_CSSPrimitiveValue& src);
 
-  virtual FDE_CSSPRIMITIVETYPE GetPrimitiveType() const { return m_eType; }
-
-  virtual FX_ARGB GetRGBColor() const {
-    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_RGB);
-    return m_dwColor;
-  }
-  virtual FX_FLOAT GetFloat() const {
-    ASSERT(m_eType >= FDE_CSSPRIMITIVETYPE_Number &&
-           m_eType <= FDE_CSSPRIMITIVETYPE_PC);
-    return m_fNumber;
-  }
-  virtual const FX_WCHAR* GetString(int32_t& iLength) const {
-    ASSERT(m_eType >= FDE_CSSPRIMITIVETYPE_String &&
-           m_eType <= FDE_CSSPRIMITIVETYPE_URI);
-    iLength = FXSYS_wcslen(m_pString);
-    return m_pString;
-  }
-  virtual FDE_CSSPROPERTYVALUE GetEnum() const {
-    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Enum);
-    return m_eEnum;
-  }
-  virtual const FX_WCHAR* GetFuncName() const {
-    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
-    return m_pFunction->GetFuncName();
-  }
-  virtual int32_t CountArgs() const {
-    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
-    return m_pFunction->CountArgs();
-  }
-  virtual IFDE_CSSValue* GetArgs(int32_t index) const {
-    ASSERT(m_eType == FDE_CSSPRIMITIVETYPE_Function);
-    return m_pFunction->GetArgs(index);
-  }
+  // IFDE_CSSPrimitiveValue
+  FDE_CSSPRIMITIVETYPE GetPrimitiveType() const override;
+  FX_ARGB GetRGBColor() const override;
+  FX_FLOAT GetFloat() const override;
+  const FX_WCHAR* GetString(int32_t& iLength) const override;
+  FDE_CSSPROPERTYVALUE GetEnum() const override;
+  const FX_WCHAR* GetFuncName() const override;
+  int32_t CountArgs() const override;
+  IFDE_CSSValue* GetArgs(int32_t index) const override;
 
   FDE_CSSPRIMITIVETYPE m_eType;
   union {
@@ -87,26 +57,29 @@ class CFDE_CSSPrimitiveValue : public IFDE_CSSPrimitiveValue,
     CFDE_CSSFunction* m_pFunction;
   };
 };
+
 typedef CFX_ArrayTemplate<IFDE_CSSPrimitiveValue*> CFDE_CSSPrimitiveArray;
 typedef CFX_ArrayTemplate<IFDE_CSSValue*> CFDE_CSSValueArray;
+
 class CFDE_CSSValueList : public IFDE_CSSValueList, public CFX_Target {
  public:
   CFDE_CSSValueList(IFX_MemoryAllocator* pStaticStore,
                     const CFDE_CSSValueArray& list);
-  virtual int32_t CountValues() const { return m_iCount; }
-  virtual IFDE_CSSValue* GetValue(int32_t index) const {
-    return m_ppList[index];
-  }
+
+  // IFDE_CSSValueList
+  int32_t CountValues() const override;
+  IFDE_CSSValue* GetValue(int32_t index) const override;
 
  protected:
   IFDE_CSSValue** m_ppList;
   int32_t m_iCount;
 };
+
 class CFDE_CSSValueListParser : public CFX_Target {
  public:
   CFDE_CSSValueListParser(const FX_WCHAR* psz, int32_t iLen, FX_WCHAR separator)
       : m_Separator(separator), m_pCur(psz), m_pEnd(psz + iLen) {
-    ASSERT(psz != NULL && iLen > 0);
+    ASSERT(psz && iLen > 0);
   }
   FX_BOOL NextValue(FDE_CSSPRIMITIVETYPE& eType,
                     const FX_WCHAR*& pStart,
@@ -117,6 +90,7 @@ class CFDE_CSSValueListParser : public CFX_Target {
   int32_t SkipTo(FX_WCHAR wch,
                  FX_BOOL bWSSeparator = FALSE,
                  FX_BOOL bBrContinue = FALSE);
+
   const FX_WCHAR* m_pCur;
   const FX_WCHAR* m_pEnd;
 };
@@ -129,27 +103,29 @@ class CFDE_CSSValueListParser : public CFX_Target {
 #define FDE_CSSVALUETYPE_MaybeFunction 0x2000
 #define FDE_IsOnlyValue(type, enum) \
   (((type) & ~(enum)) == FDE_CSSVALUETYPE_Primitive)
+
 struct FDE_CSSPROPERTYTABLE {
   FDE_CSSPROPERTY eName;
   const FX_WCHAR* pszName;
   uint32_t dwHash;
   uint32_t dwType;
 };
-typedef FDE_CSSPROPERTYTABLE const* FDE_LPCCSSPROPERTYTABLE;
 
-FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByName(const CFX_WideStringC& wsName);
-FDE_LPCCSSPROPERTYTABLE FDE_GetCSSPropertyByEnum(FDE_CSSPROPERTY eName);
+const FDE_CSSPROPERTYTABLE* FDE_GetCSSPropertyByName(
+    const CFX_WideStringC& wsName);
+const FDE_CSSPROPERTYTABLE* FDE_GetCSSPropertyByEnum(FDE_CSSPROPERTY eName);
+
 struct FDE_CSSPROPERTYVALUETABLE {
   FDE_CSSPROPERTYVALUE eName;
   const FX_WCHAR* pszName;
   uint32_t dwHash;
 };
-typedef FDE_CSSPROPERTYVALUETABLE const* FDE_LPCCSSPROPERTYVALUETABLE;
 
-FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByName(
+const FDE_CSSPROPERTYVALUETABLE* FDE_GetCSSPropertyValueByName(
     const CFX_WideStringC& wsName);
-FDE_LPCCSSPROPERTYVALUETABLE FDE_GetCSSPropertyValueByEnum(
+const FDE_CSSPROPERTYVALUETABLE* FDE_GetCSSPropertyValueByEnum(
     FDE_CSSPROPERTYVALUE eName);
+
 struct FDE_CSSMEDIATYPETABLE {
   uint16_t wHash;
   uint16_t wValue;

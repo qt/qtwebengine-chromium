@@ -30,7 +30,7 @@ class CCodec_Jbig2Context {
 }  // namespace
 
 // Holds per-document JBig2 related data.
-class JBig2DocumentContext : public CFX_DestructObject {
+class JBig2DocumentContext : public CFX_Deletable {
  public:
   std::list<CJBig2_CachePair>* GetSymbolDictCache() {
     return &m_SymbolDictCache;
@@ -46,17 +46,11 @@ class JBig2DocumentContext : public CFX_DestructObject {
   std::list<CJBig2_CachePair> m_SymbolDictCache;
 };
 
-JBig2DocumentContext* GetJBig2DocumentContext(CCodec_Jbig2Module* pModule,
-                                              CFX_PrivateData* pPrivateData) {
-  void* pModulePrivateData = pPrivateData->GetPrivateData(pModule);
-  if (pModulePrivateData) {
-    CFX_DestructObject* pDestructObject =
-        reinterpret_cast<CFX_DestructObject*>(pModulePrivateData);
-    return static_cast<JBig2DocumentContext*>(pDestructObject);
-  }
-  JBig2DocumentContext* pJBig2DocumentContext = new JBig2DocumentContext();
-  pPrivateData->SetPrivateObj(pModule, pJBig2DocumentContext);
-  return pJBig2DocumentContext;
+JBig2DocumentContext* GetJBig2DocumentContext(
+    std::unique_ptr<CFX_Deletable>* pContextHolder) {
+  if (!pContextHolder->get())
+    pContextHolder->reset(new JBig2DocumentContext());
+  return static_cast<JBig2DocumentContext*>(pContextHolder->get());
 }
 
 CCodec_Jbig2Context::CCodec_Jbig2Context() {
@@ -74,22 +68,23 @@ void CCodec_Jbig2Module::DestroyJbig2Context(void* pJbig2Content) {
         ((CCodec_Jbig2Context*)pJbig2Content)->m_pContext);
     delete (CCodec_Jbig2Context*)pJbig2Content;
   }
-  pJbig2Content = NULL;
+  pJbig2Content = nullptr;
 }
-FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(void* pJbig2Context,
-                                               CFX_PrivateData* pPrivateData,
-                                               uint32_t width,
-                                               uint32_t height,
-                                               CPDF_StreamAcc* src_stream,
-                                               CPDF_StreamAcc* global_stream,
-                                               uint8_t* dest_buf,
-                                               uint32_t dest_pitch,
-                                               IFX_Pause* pPause) {
+FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(
+    void* pJbig2Context,
+    std::unique_ptr<CFX_Deletable>* pContextHolder,
+    uint32_t width,
+    uint32_t height,
+    CPDF_StreamAcc* src_stream,
+    CPDF_StreamAcc* global_stream,
+    uint8_t* dest_buf,
+    uint32_t dest_pitch,
+    IFX_Pause* pPause) {
   if (!pJbig2Context) {
     return FXCODEC_STATUS_ERR_PARAMS;
   }
   JBig2DocumentContext* pJBig2DocumentContext =
-      GetJBig2DocumentContext(this, pPrivateData);
+      GetJBig2DocumentContext(pContextHolder);
   CCodec_Jbig2Context* m_pJbig2Context = (CCodec_Jbig2Context*)pJbig2Context;
   m_pJbig2Context->m_width = width;
   m_pJbig2Context->m_height = height;
@@ -110,7 +105,7 @@ FXCODEC_STATUS CCodec_Jbig2Module::StartDecode(void* pJbig2Context,
   if (m_pJbig2Context->m_pContext->GetProcessingStatus() ==
       FXCODEC_STATUS_DECODE_FINISH) {
     CJBig2_Context::DestroyContext(m_pJbig2Context->m_pContext);
-    m_pJbig2Context->m_pContext = NULL;
+    m_pJbig2Context->m_pContext = nullptr;
     if (ret != JBIG2_SUCCESS) {
       return FXCODEC_STATUS_ERROR;
     }
@@ -132,7 +127,7 @@ FXCODEC_STATUS CCodec_Jbig2Module::ContinueDecode(void* pJbig2Context,
     return m_pJbig2Context->m_pContext->GetProcessingStatus();
   }
   CJBig2_Context::DestroyContext(m_pJbig2Context->m_pContext);
-  m_pJbig2Context->m_pContext = NULL;
+  m_pJbig2Context->m_pContext = nullptr;
   if (ret != JBIG2_SUCCESS) {
     return FXCODEC_STATUS_ERROR;
   }

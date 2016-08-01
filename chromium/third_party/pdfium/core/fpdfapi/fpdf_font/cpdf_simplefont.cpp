@@ -13,27 +13,24 @@
 
 CPDF_SimpleFont::CPDF_SimpleFont()
     : m_pCharNames(nullptr), m_BaseEncoding(PDFFONT_ENCODING_BUILTIN) {
-  FXSYS_memset(m_CharWidth, 0xff, sizeof m_CharWidth);
-  FXSYS_memset(m_GlyphIndex, 0xff, sizeof m_GlyphIndex);
-  FXSYS_memset(m_ExtGID, 0xff, sizeof m_ExtGID);
+  FXSYS_memset(m_CharWidth, 0xff, sizeof(m_CharWidth));
+  FXSYS_memset(m_GlyphIndex, 0xff, sizeof(m_GlyphIndex));
+  FXSYS_memset(m_ExtGID, 0xff, sizeof(m_ExtGID));
 }
 
 CPDF_SimpleFont::~CPDF_SimpleFont() {
   delete[] m_pCharNames;
 }
 
-int CPDF_SimpleFont::GlyphFromCharCode(uint32_t charcode, FX_BOOL* pVertGlyph) {
-  if (pVertGlyph) {
-    *pVertGlyph = FALSE;
-  }
-  if (charcode > 0xff) {
+int CPDF_SimpleFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
+  if (pVertGlyph)
+    *pVertGlyph = false;
+
+  if (charcode > 0xff)
     return -1;
-  }
+
   int index = m_GlyphIndex[(uint8_t)charcode];
-  if (index == 0xffff) {
-    return -1;
-  }
-  return index;
+  return index != 0xffff ? index : -1;
 }
 
 void CPDF_SimpleFont::LoadCharMetrics(int charcode) {
@@ -142,11 +139,11 @@ FX_BOOL CPDF_SimpleFont::LoadCommon() {
     m_BaseEncoding = PDFFONT_ENCODING_STANDARD;
   }
   CPDF_Object* pEncoding = m_pFontDict->GetDirectObjectBy("Encoding");
-  LoadPDFEncoding(pEncoding, m_BaseEncoding, m_pCharNames, m_pFontFile != NULL,
+  LoadPDFEncoding(pEncoding, m_BaseEncoding, m_pCharNames, !!m_pFontFile,
                   m_Font.IsTTFont());
   LoadGlyphMap();
   delete[] m_pCharNames;
-  m_pCharNames = NULL;
+  m_pCharNames = nullptr;
   if (!m_Font.GetFace())
     return TRUE;
 
@@ -189,8 +186,6 @@ void CPDF_SimpleFont::LoadSubstFont() {
   int weight = m_StemV < 140 ? m_StemV * 5 : (m_StemV * 4 + 140);
   m_Font.LoadSubst(m_BaseFont, IsTrueTypeFont(), m_Flags, weight, m_ItalicAngle,
                    0);
-  if (m_Font.GetSubstFont()->m_SubstFlags & FXFONT_SUBST_NONSYMBOL) {
-  }
 }
 
 FX_BOOL CPDF_SimpleFont::IsUnicodeCompatible() const {

@@ -44,7 +44,6 @@ using cricket::kFecSsrcGroupSemantics;
 using cricket::LOCAL_PORT_TYPE;
 using cricket::NS_JINGLE_DRAFT_SCTP;
 using cricket::NS_JINGLE_RTP;
-using cricket::RtpHeaderExtension;
 using cricket::RELAY_PORT_TYPE;
 using cricket::SessionDescription;
 using cricket::StreamParams;
@@ -57,6 +56,7 @@ using webrtc::IceCandidateCollection;
 using webrtc::IceCandidateInterface;
 using webrtc::JsepIceCandidate;
 using webrtc::JsepSessionDescription;
+using webrtc::RtpExtension;
 using webrtc::SdpParseError;
 using webrtc::SessionDescriptionInterface;
 
@@ -1110,8 +1110,8 @@ class WebRtcSdpTest : public testing::Test {
     ASSERT_EQ(cd1->rtp_header_extensions().size(),
               cd2->rtp_header_extensions().size());
     for (size_t i = 0; i< cd1->rtp_header_extensions().size(); ++i) {
-      const RtpHeaderExtension ext1 = cd1->rtp_header_extensions().at(i);
-      const RtpHeaderExtension ext2 = cd2->rtp_header_extensions().at(i);
+      const RtpExtension ext1 = cd1->rtp_header_extensions().at(i);
+      const RtpExtension ext2 = cd2->rtp_header_extensions().at(i);
       EXPECT_EQ(ext1.uri, ext2.uri);
       EXPECT_EQ(ext1.id, ext2.id);
     }
@@ -1333,10 +1333,8 @@ class WebRtcSdpTest : public testing::Test {
         audio_desc_->Copy());
     video_desc_ = static_cast<VideoContentDescription*>(
         video_desc_->Copy());
-    audio_desc_->AddRtpHeaderExtension(
-        RtpHeaderExtension(kExtmapUri, kExtmapId));
-    video_desc_->AddRtpHeaderExtension(
-        RtpHeaderExtension(kExtmapUri, kExtmapId));
+    audio_desc_->AddRtpHeaderExtension(RtpExtension(kExtmapUri, kExtmapId));
+    video_desc_->AddRtpHeaderExtension(RtpExtension(kExtmapUri, kExtmapId));
     desc_.RemoveContentByName(kAudioContentName);
     desc_.RemoveContentByName(kVideoContentName);
     desc_.AddContent(kAudioContentName, NS_JINGLE_RTP, audio_desc_);
@@ -2915,6 +2913,42 @@ TEST_F(WebRtcSdpTest, DeserializeVideoFmtp) {
   found = vp8.params.find("x-google-max-quantization");
   ASSERT_TRUE(found != vp8.params.end());
   EXPECT_EQ(found->second, "40");
+}
+
+TEST_F(WebRtcSdpTest, DeserializeVideoFmtpWithSprops) {
+  JsepSessionDescription jdesc_output(kDummyString);
+
+  const char kSdpWithFmtpString[] =
+      "v=0\r\n"
+      "o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=video 49170 RTP/AVP 98\r\n"
+      "a=rtpmap:98 H264/90000\r\n"
+      "a=fmtp:98 profile-level-id=42A01E; "
+      "sprop-parameter-sets=Z0IACpZTBYmI,aMljiA==\r\n";
+
+  // Deserialize.
+  SdpParseError error;
+  EXPECT_TRUE(
+      webrtc::SdpDeserialize(kSdpWithFmtpString, &jdesc_output, &error));
+
+  const ContentInfo* vc = GetFirstVideoContent(jdesc_output.description());
+  ASSERT_TRUE(vc != NULL);
+  const VideoContentDescription* vcd =
+      static_cast<const VideoContentDescription*>(vc->description);
+  ASSERT_TRUE(vcd != NULL);
+  ASSERT_FALSE(vcd->codecs().empty());
+  cricket::VideoCodec h264 = vcd->codecs()[0];
+  EXPECT_EQ("H264", h264.name);
+  EXPECT_EQ(98, h264.id);
+  cricket::CodecParameterMap::const_iterator found =
+      h264.params.find("profile-level-id");
+  ASSERT_TRUE(found != h264.params.end());
+  EXPECT_EQ(found->second, "42A01E");
+  found = h264.params.find("sprop-parameter-sets");
+  ASSERT_TRUE(found != h264.params.end());
+  EXPECT_EQ(found->second, "Z0IACpZTBYmI,aMljiA==");
 }
 
 TEST_F(WebRtcSdpTest, DeserializeVideoFmtpWithSpace) {

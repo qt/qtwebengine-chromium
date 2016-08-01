@@ -9,13 +9,14 @@
 #include <algorithm>
 
 #include "xfa/fde/tto/fde_textout.h"
+#include "xfa/fgas/font/fgas_gefont.h"
 #include "xfa/fgas/font/fgas_stdfontmgr.h"
 #include "xfa/fwl/core/cfwl_themebackground.h"
 #include "xfa/fwl/core/cfwl_themepart.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 #include "xfa/fwl/core/ifwl_widget.h"
-#include "xfa/fwl/core/ifwl_widgetmgr.h"
 #include "xfa/fxgraphics/cfx_color.h"
 #include "xfa/fxgraphics/cfx_path.h"
 #include "xfa/fxgraphics/cfx_shading.h"
@@ -35,16 +36,15 @@ const float kCYBorder = 1.0f;
 }  // namespace
 
 static void FWL_SetChildThemeID(IFWL_Widget* pParent, uint32_t dwThemeID) {
-  IFWL_WidgetMgr* pWidgetMgr = FWL_GetWidgetMgr();
-  IFWL_Widget* pChild =
-      pWidgetMgr->GetWidget(pParent, FWL_WGTRELATION_FirstChild);
+  CFWL_WidgetMgr* pWidgetMgr = CFWL_WidgetMgr::GetInstance();
+  IFWL_Widget* pChild = pWidgetMgr->GetFirstChildWidget(pParent);
   while (pChild) {
     IFWL_ThemeProvider* pTheme = pChild->GetThemeProvider();
     if (pTheme) {
       pTheme->SetThemeID(pChild, dwThemeID, FALSE);
     }
     FWL_SetChildThemeID(pChild, dwThemeID);
-    pChild = pWidgetMgr->GetWidget(pChild, FWL_WGTRELATION_NextSibling);
+    pChild = pWidgetMgr->GetNextSiblingWidget(pChild);
   }
 }
 
@@ -150,7 +150,7 @@ void* CFWL_WidgetTP::GetCapacity(CFWL_ThemePart* pThemePart,
       m_rtMargin.Set(0, 0, 0, 0);
       return &m_rtMargin;
     }
-    default: { return NULL; }
+    default: { return nullptr; }
   }
   return &m_fValue;
 }
@@ -202,7 +202,7 @@ FWL_Error CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
   return FWL_Error::Succeeded;
 }
 FWL_Error CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
-                                 IFX_Font* pFont,
+                                 CFGAS_GEFont* pFont,
                                  FX_FLOAT fFontSize,
                                  FX_ARGB rgbFont) {
   if (!m_pTextOut)
@@ -213,7 +213,7 @@ FWL_Error CFWL_WidgetTP::SetFont(IFWL_Widget* pWidget,
   m_pTextOut->SetTextColor(rgbFont);
   return FWL_Error::Succeeded;
 }
-IFX_Font* CFWL_WidgetTP::GetFont(IFWL_Widget* pWidget) {
+CFGAS_GEFont* CFWL_WidgetTP::GetFont(IFWL_Widget* pWidget) {
   return m_pFDEFont;
 }
 
@@ -665,17 +665,17 @@ void CFWL_WidgetTP::DrawArrowBtn(CFX_Graphics* pGraphics,
       CFWL_ArrowData::GetInstance()->m_pColorData;
   DrawArrow(pGraphics, pRect, eDict, pColorData->clrSign[eState - 1], pMatrix);
 }
-CFWL_ArrowData::CFWL_ArrowData() : m_pColorData(NULL) {
+CFWL_ArrowData::CFWL_ArrowData() : m_pColorData(nullptr) {
   SetColorData(0);
 }
 CFWL_FontData::CFWL_FontData()
     : m_dwStyles(0),
       m_dwCodePage(0),
       m_pFont(0),
-      m_pFontMgr(NULL)
+      m_pFontMgr(nullptr)
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
       ,
-      m_pFontSource(NULL)
+      m_pFontSource(nullptr)
 #endif
 {
 }
@@ -687,7 +687,7 @@ CFWL_FontData::~CFWL_FontData() {
     m_pFontMgr->Release();
   }
 #if _FXM_PLATFORM_ != _FXM_PLATFORM_WINDOWS_
-  if (m_pFontSource != NULL) {
+  if (m_pFontSource) {
     m_pFontSource->Release();
   }
 #endif
@@ -706,15 +706,15 @@ FX_BOOL CFWL_FontData::LoadFont(const CFX_WideStringC& wsFontFamily,
   m_dwCodePage = dwCodePage;
   if (!m_pFontMgr) {
 #if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
-    m_pFontMgr = IFX_FontMgr::Create(FX_GetDefFontEnumerator());
+    m_pFontMgr = IFGAS_FontMgr::Create(FX_GetDefFontEnumerator());
 #else
     m_pFontSource = new CFX_FontSourceEnum_File;
-    m_pFontMgr = IFX_FontMgr::Create(m_pFontSource);
+    m_pFontMgr = IFGAS_FontMgr::Create(m_pFontSource);
 #endif
   }
-  m_pFont = IFX_Font::LoadFont(wsFontFamily.c_str(), dwFontStyles, dwCodePage,
-                               m_pFontMgr);
-  return m_pFont != NULL;
+  m_pFont = CFGAS_GEFont::LoadFont(wsFontFamily.c_str(), dwFontStyles,
+                                   dwCodePage, m_pFontMgr);
+  return !!m_pFont;
 }
 
 CFWL_FontManager* CFWL_FontManager::s_FontManager = nullptr;
@@ -729,9 +729,9 @@ void CFWL_FontManager::DestroyInstance() {
 }
 CFWL_FontManager::CFWL_FontManager() {}
 CFWL_FontManager::~CFWL_FontManager() {}
-IFX_Font* CFWL_FontManager::FindFont(const CFX_WideStringC& wsFontFamily,
-                                     uint32_t dwFontStyles,
-                                     uint16_t wCodePage) {
+CFGAS_GEFont* CFWL_FontManager::FindFont(const CFX_WideStringC& wsFontFamily,
+                                         uint32_t dwFontStyles,
+                                         uint16_t wCodePage) {
   for (const auto& pData : m_FontsArray) {
     if (pData->Equal(wsFontFamily, dwFontStyles, wCodePage))
       return pData->GetFont();
@@ -756,7 +756,7 @@ uint32_t FWL_GetThemeColor(uint32_t dwThemeID) {
   return 0x0000ffff & dwThemeID;
 }
 
-CFWL_ArrowData* CFWL_ArrowData::m_pInstance = NULL;
+CFWL_ArrowData* CFWL_ArrowData::m_pInstance = nullptr;
 
 CFWL_ArrowData* CFWL_ArrowData::GetInstance() {
   if (!m_pInstance)

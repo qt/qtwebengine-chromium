@@ -7,6 +7,7 @@
 
 #include <iosfwd>
 
+#include "src/compiler/type-hints.h"
 #include "src/handles.h"
 #include "src/machine-type.h"
 #include "src/objects.h"
@@ -102,7 +103,33 @@ std::ostream& operator<<(std::ostream&, ElementAccess const&);
 
 ElementAccess const& ElementAccessOf(const Operator* op) WARN_UNUSED_RESULT;
 
+enum class CheckFloat64HoleMode : uint8_t {
+  kNeverReturnHole,  // Never return the hole (deoptimize instead).
+  kAllowReturnHole   // Allow to return the hole (signaling NaN).
+};
+
+size_t hash_value(CheckFloat64HoleMode);
+
+std::ostream& operator<<(std::ostream&, CheckFloat64HoleMode);
+
+CheckFloat64HoleMode CheckFloat64HoleModeOf(const Operator*) WARN_UNUSED_RESULT;
+
+enum class CheckTaggedHoleMode : uint8_t {
+  kNeverReturnHole,        // Never return the hole (deoptimize instead).
+  kConvertHoleToUndefined  // Convert the hole to undefined.
+};
+
+size_t hash_value(CheckTaggedHoleMode);
+
+std::ostream& operator<<(std::ostream&, CheckTaggedHoleMode);
+
+CheckTaggedHoleMode CheckTaggedHoleModeOf(const Operator*) WARN_UNUSED_RESULT;
+
 Type* TypeOf(const Operator* op) WARN_UNUSED_RESULT;
+
+BinaryOperationHints::Hint BinaryOperationHintOf(const Operator* op);
+
+CompareOperationHints::Hint CompareOperationHintOf(const Operator* op);
 
 // Interface for building simplified operators, which represent the
 // medium-level operations of V8, including adding numbers, allocating objects,
@@ -148,21 +175,54 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* NumberShiftRight();
   const Operator* NumberShiftRightLogical();
   const Operator* NumberImul();
+  const Operator* NumberAbs();
   const Operator* NumberClz32();
   const Operator* NumberCeil();
   const Operator* NumberFloor();
+  const Operator* NumberFround();
+  const Operator* NumberAtan();
+  const Operator* NumberAtan2();
+  const Operator* NumberAtanh();
+  const Operator* NumberCbrt();
+  const Operator* NumberCos();
+  const Operator* NumberExp();
+  const Operator* NumberExpm1();
+  const Operator* NumberLog();
+  const Operator* NumberLog1p();
+  const Operator* NumberLog10();
+  const Operator* NumberLog2();
   const Operator* NumberRound();
+  const Operator* NumberSin();
+  const Operator* NumberSqrt();
+  const Operator* NumberTan();
   const Operator* NumberTrunc();
   const Operator* NumberToInt32();
   const Operator* NumberToUint32();
-  const Operator* NumberIsHoleNaN();
+
+  const Operator* NumberSilenceNaN();
+
+  const Operator* SpeculativeNumberAdd(BinaryOperationHints::Hint hint);
+  const Operator* SpeculativeNumberSubtract(BinaryOperationHints::Hint hint);
+  const Operator* SpeculativeNumberMultiply(BinaryOperationHints::Hint hint);
+  const Operator* SpeculativeNumberDivide(BinaryOperationHints::Hint hint);
+  const Operator* SpeculativeNumberModulus(BinaryOperationHints::Hint hint);
+
+  const Operator* SpeculativeNumberLessThan(CompareOperationHints::Hint hint);
+  const Operator* SpeculativeNumberLessThanOrEqual(
+      CompareOperationHints::Hint hint);
+  const Operator* SpeculativeNumberEqual(CompareOperationHints::Hint hint);
 
   const Operator* ReferenceEqual(Type* type);
 
   const Operator* StringEqual();
   const Operator* StringLessThan();
   const Operator* StringLessThanOrEqual();
+  const Operator* StringFromCharCode();
   const Operator* StringToNumber();
+
+  const Operator* PlainPrimitiveToNumber();
+  const Operator* PlainPrimitiveToWord32();
+  const Operator* PlainPrimitiveToFloat64();
 
   const Operator* ChangeTaggedSignedToInt32();
   const Operator* ChangeTaggedToInt32();
@@ -175,6 +235,21 @@ class SimplifiedOperatorBuilder final : public ZoneObject {
   const Operator* ChangeTaggedToBit();
   const Operator* ChangeBitToTagged();
   const Operator* TruncateTaggedToWord32();
+  const Operator* TruncateTaggedToFloat64();
+
+  const Operator* CheckBounds();
+  const Operator* CheckTaggedPointer();
+  const Operator* CheckTaggedSigned();
+
+  const Operator* CheckedInt32Add();
+  const Operator* CheckedInt32Sub();
+  const Operator* CheckedUint32ToInt32();
+  const Operator* CheckedFloat64ToInt32();
+  const Operator* CheckedTaggedToInt32();
+  const Operator* CheckedTaggedToFloat64();
+
+  const Operator* CheckFloat64Hole(CheckFloat64HoleMode);
+  const Operator* CheckTaggedHole(CheckTaggedHoleMode);
 
   const Operator* ObjectIsCallable();
   const Operator* ObjectIsNumber();

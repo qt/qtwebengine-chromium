@@ -23,6 +23,7 @@
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_doc.h"
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
 #include "public/fpdf_formfill.h"
+#include "xfa/fxfa/include/cxfa_eventparam.h"
 #include "xfa/fxfa/include/xfa_checksum.h"
 #include "xfa/fxfa/include/xfa_ffapp.h"
 #include "xfa/fxfa/include/xfa_ffdocview.h"
@@ -49,7 +50,7 @@ class CFX_IFileWrite final : public IFX_StreamWrite {
 };
 
 CFX_IFileWrite::CFX_IFileWrite() {
-  m_pFileWriteStruct = NULL;
+  m_pFileWriteStruct = nullptr;
 }
 
 FX_BOOL CFX_IFileWrite::Init(FPDF_FILEWRITE* pFileWriteStruct) {
@@ -107,10 +108,7 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
   if (!pXFA)
     return true;
 
-  if (!pXFA->IsArray())
-    return false;
-
-  CPDF_Array* pArray = pXFA->GetArray();
+  CPDF_Array* pArray = pXFA->AsArray();
   if (!pArray)
     return false;
 
@@ -130,8 +128,7 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
     else if (pPDFObj->GetString() == "template")
       iTemplate = i + 1;
   }
-  std::unique_ptr<CXFA_ChecksumContext, ReleaseDeleter<CXFA_ChecksumContext>>
-      pContext(new CXFA_ChecksumContext);
+  std::unique_ptr<CXFA_ChecksumContext> pContext(new CXFA_ChecksumContext);
   pContext->StartChecksum();
 
   // template
@@ -144,8 +141,8 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
     ScopedFileStream pTemplate(FX_CreateMemoryStream(pData, dwSize2));
     pContext->UpdateChecksum(pTemplate.get());
   }
-  CPDF_Stream* pFormStream = NULL;
-  CPDF_Stream* pDataSetsStream = NULL;
+  CPDF_Stream* pFormStream = nullptr;
+  CPDF_Stream* pDataSetsStream = nullptr;
   if (iFormIndex != -1) {
     // Get form CPDF_Stream
     CPDF_Object* pFormPDFObj = pArray->GetObjectAt(iFormIndex);
@@ -175,8 +172,8 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
   // L"datasets"
   {
     ScopedFileStream pDsfileWrite(FX_CreateMemoryStream());
-    if (pXFADocView->GetDoc()->SavePackage(CFX_WideStringC(L"datasets"),
-                                           pDsfileWrite.get()) &&
+    if (pXFADocView->GetDoc()->SavePackage(XFA_HASHCODE_Datasets,
+                                           pDsfileWrite.get(), nullptr) &&
         pDsfileWrite->GetSize() > 0) {
       // Datasets
       pContext->UpdateChecksum(pDsfileWrite.get());
@@ -186,7 +183,7 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
         if (pDataSetsStream)
           pDataSetsStream->InitStreamFromFile(pDsfileWrite.get(), pDataDict);
       } else {
-        CPDF_Stream* pData = new CPDF_Stream(NULL, 0, NULL);
+        CPDF_Stream* pData = new CPDF_Stream(nullptr, 0, nullptr);
         pData->InitStreamFromFile(pDsfileWrite.get(), pDataDict);
         pPDFDocument->AddIndirectObject(pData);
         iLast = pArray->GetCount() - 2;
@@ -199,15 +196,15 @@ bool SaveXFADocumentData(CPDFXFA_Document* pDocument,
   // L"form"
   {
     ScopedFileStream pfileWrite(FX_CreateMemoryStream());
-    if (pXFADocView->GetDoc()->SavePackage(CFX_WideStringC(L"form"),
-                                           pfileWrite.get(), pContext.get()) &&
+    if (pXFADocView->GetDoc()->SavePackage(XFA_HASHCODE_Form, pfileWrite.get(),
+                                           pContext.get()) &&
         pfileWrite->GetSize() > 0) {
       CPDF_Dictionary* pDataDict = new CPDF_Dictionary;
       if (iFormIndex != -1) {
         if (pFormStream)
           pFormStream->InitStreamFromFile(pfileWrite.get(), pDataDict);
       } else {
-        CPDF_Stream* pData = new CPDF_Stream(NULL, 0, NULL);
+        CPDF_Stream* pData = new CPDF_Stream(nullptr, 0, nullptr);
         pData->InitStreamFromFile(pfileWrite.get(), pDataDict);
         pPDFDocument->AddIndirectObject(pData);
         iLast = pArray->GetCount() - 2;
@@ -233,17 +230,13 @@ bool SendPostSaveToXFADoc(CPDFXFA_Document* pDocument) {
     return false;
 
   CXFA_FFWidgetHandler* pWidgetHander = pXFADocView->GetWidgetHandler();
-  CXFA_WidgetAcc* pWidgetAcc = NULL;
-  CXFA_WidgetAccIterator* pWidgetAccIterator =
-      pXFADocView->CreateWidgetAccIterator();
-  pWidgetAcc = pWidgetAccIterator->MoveToNext();
-  while (pWidgetAcc) {
+  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator(
+      pXFADocView->CreateWidgetAccIterator());
+  while (CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext()) {
     CXFA_EventParam preParam;
     preParam.m_eType = XFA_EVENT_PostSave;
     pWidgetHander->ProcessEvent(pWidgetAcc, &preParam);
-    pWidgetAcc = pWidgetAccIterator->MoveToNext();
   }
-  pWidgetAccIterator->Release();
   pXFADocView->UpdateDocView();
   pDocument->_ClearChangeMark();
   return true;
@@ -260,17 +253,13 @@ bool SendPreSaveToXFADoc(CPDFXFA_Document* pDocument,
     return true;
 
   CXFA_FFWidgetHandler* pWidgetHander = pXFADocView->GetWidgetHandler();
-  CXFA_WidgetAcc* pWidgetAcc = NULL;
-  CXFA_WidgetAccIterator* pWidgetAccIterator =
-      pXFADocView->CreateWidgetAccIterator();
-  pWidgetAcc = pWidgetAccIterator->MoveToNext();
-  while (pWidgetAcc) {
+  std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator(
+      pXFADocView->CreateWidgetAccIterator());
+  while (CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext()) {
     CXFA_EventParam preParam;
     preParam.m_eType = XFA_EVENT_PreSave;
     pWidgetHander->ProcessEvent(pWidgetAcc, &preParam);
-    pWidgetAcc = pWidgetAccIterator->MoveToNext();
   }
-  pWidgetAccIterator->Release();
   pXFADocView->UpdateDocView();
   return SaveXFADocumentData(pDocument, fileList);
 }
@@ -302,8 +291,7 @@ bool FPDF_Doc_Save(FPDF_DOCUMENT document,
     FileMaker.RemoveSecurity();
   }
 
-  CFX_IFileWrite* pStreamWrite = NULL;
-  pStreamWrite = new CFX_IFileWrite;
+  CFX_IFileWrite* pStreamWrite = new CFX_IFileWrite;
   pStreamWrite->Init(pFileWrite);
   bool bRet = FileMaker.Create(pStreamWrite, flags);
 #ifdef PDF_ENABLE_XFA

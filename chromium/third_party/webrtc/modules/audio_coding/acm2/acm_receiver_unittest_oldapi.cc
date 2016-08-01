@@ -17,7 +17,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/safe_conversions.h"
 #include "webrtc/modules/audio_coding/include/audio_coding_module.h"
-#include "webrtc/modules/audio_coding/acm2/audio_coding_module_impl.h"
+#include "webrtc/modules/audio_coding/codecs/builtin_audio_decoder_factory.h"
 #include "webrtc/modules/audio_coding/neteq/tools/rtp_generator.h"
 #include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/test/test_suite.h"
@@ -60,12 +60,13 @@ class AcmReceiverTestOldApi : public AudioPacketizationCallback,
         packet_sent_(false),
         last_packet_send_timestamp_(timestamp_),
         last_frame_type_(kEmptyFrame) {
+    config_.decoder_factory = CreateBuiltinAudioDecoderFactory();
   }
 
   ~AcmReceiverTestOldApi() {}
 
   void SetUp() override {
-    acm_.reset(new AudioCodingModuleImpl(config_));
+    acm_.reset(AudioCodingModule::Create(config_));
     receiver_.reset(new AcmReceiver(config_));
     ASSERT_TRUE(receiver_.get() != NULL);
     ASSERT_TRUE(acm_.get() != NULL);

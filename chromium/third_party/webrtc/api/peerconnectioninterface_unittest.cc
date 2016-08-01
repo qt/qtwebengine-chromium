@@ -26,7 +26,7 @@
 #include "webrtc/api/test/androidtestinitializer.h"
 #endif
 #include "webrtc/api/test/fakeconstraints.h"
-#include "webrtc/api/test/fakedtlsidentitystore.h"
+#include "webrtc/api/test/fakertccertificategenerator.h"
 #include "webrtc/api/test/fakevideotracksource.h"
 #include "webrtc/api/test/mockpeerconnectionobservers.h"
 #include "webrtc/api/test/testsdpstrings.h"
@@ -333,7 +333,7 @@ bool ContainsSender(
     const std::string& id,
     const std::string& stream_id) {
   for (const auto& sender : senders) {
-    if (sender->id() == id && sender->stream_id() == stream_id) {
+    if (sender->id() == id && sender->stream_ids()[0] == stream_id) {
       return true;
     }
   }
@@ -473,16 +473,18 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
     return remote_streams_->find(label);
   }
   StreamCollectionInterface* remote_streams() const { return remote_streams_; }
-  void OnAddStream(MediaStreamInterface* stream) override {
+  void OnAddStream(rtc::scoped_refptr<MediaStreamInterface> stream) override {
     last_added_stream_ = stream;
     remote_streams_->AddStream(stream);
   }
-  void OnRemoveStream(MediaStreamInterface* stream) override {
+  void OnRemoveStream(
+      rtc::scoped_refptr<MediaStreamInterface> stream) override {
     last_removed_stream_ = stream;
     remote_streams_->RemoveStream(stream);
   }
   void OnRenegotiationNeeded() override { renegotiation_needed_ = true; }
-  void OnDataChannel(DataChannelInterface* data_channel) override {
+  void OnDataChannel(
+      rtc::scoped_refptr<DataChannelInterface> data_channel) override {
     last_datachannel_ = data_channel;
   }
 
@@ -593,17 +595,17 @@ class PeerConnectionInterfaceTest : public testing::Test {
           webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, false);
     }
 
-    std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store;
+    std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator;
     bool dtls;
     if (FindConstraint(constraints,
                        webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
                        &dtls,
                        nullptr) && dtls) {
-      dtls_identity_store.reset(new FakeDtlsIdentityStore());
+      cert_generator.reset(new FakeRTCCertificateGenerator());
     }
     pc_ = pc_factory_->CreatePeerConnection(
         config, constraints, std::move(port_allocator),
-        std::move(dtls_identity_store), &observer_);
+        std::move(cert_generator), &observer_);
     ASSERT_TRUE(pc_.get() != NULL);
     observer_.SetPeerConnectionInterface(pc_.get());
     EXPECT_EQ(PeerConnectionInterface::kStable, observer_.state_);
@@ -1048,6 +1050,8 @@ TEST_F(PeerConnectionInterfaceTest, CreatePeerConnectionWithPooledCandidates) {
   config.disable_ipv6 = true;
   config.tcp_candidate_policy =
       PeerConnectionInterface::kTcpCandidatePolicyDisabled;
+  config.candidate_network_policy =
+      PeerConnectionInterface::kCandidateNetworkPolicyLowCost;
   config.ice_candidate_pool_size = 1;
   CreatePeerConnection(config, nullptr);
 
@@ -1058,7 +1062,30 @@ TEST_F(PeerConnectionInterfaceTest, CreatePeerConnectionWithPooledCandidates) {
   EXPECT_EQ(1UL, session->stun_servers().size());
   EXPECT_EQ(0U, session->flags() & cricket::PORTALLOCATOR_ENABLE_IPV6);
   EXPECT_LT(0U, session->flags() & cricket::PORTALLOCATOR_DISABLE_TCP);
-  EXPECT_EQ(cricket::CF_RELAY, session->candidate_filter());
+  EXPECT_LT(0U,
+            session->flags() & cricket::PORTALLOCATOR_DISABLE_COSTLY_NETWORKS);
+}
+
+// Test that the PeerConnection initializes the port allocator passed into it,
+// and on the correct thread.
+TEST_F(PeerConnectionInterfaceTest,
+       CreatePeerConnectionInitializesPortAllocator) {
+  rtc::Thread network_thread;
+  network_thread.Start();
+  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory(
+      webrtc::CreatePeerConnectionFactory(
+          &network_thread, rtc::Thread::Current(), rtc::Thread::Current(),
+          nullptr, nullptr, nullptr));
+  std::unique_ptr<cricket::FakePortAllocator> port_allocator(
+      new cricket::FakePortAllocator(&network_thread, nullptr));
+  cricket::FakePortAllocator* raw_port_allocator = port_allocator.get();
+  PeerConnectionInterface::RTCConfiguration config;
+  rtc::scoped_refptr<PeerConnectionInterface> pc(
+      pc_factory->CreatePeerConnection(
+          config, nullptr, std::move(port_allocator), nullptr, &observer_));
+  // FakePortAllocator RTC_CHECKs that it's initialized on the right thread,
+  // so all we have to do here is check that it's initialized.
+  EXPECT_TRUE(raw_port_allocator->initialized());
 }
 
 TEST_F(PeerConnectionInterfaceTest, AddStreams) {
@@ -1161,10 +1188,12 @@ TEST_F(PeerConnectionInterfaceTest, AddTrackRemoveTrack) {
       pc_factory_->CreateVideoSource(new cricket::FakeVideoCapturer())));
   auto audio_sender = pc_->AddTrack(audio_track, stream_list);
   auto video_sender = pc_->AddTrack(video_track, stream_list);
-  EXPECT_EQ(kStreamLabel1, audio_sender->stream_id());
+  EXPECT_EQ(1UL, audio_sender->stream_ids().size());
+  EXPECT_EQ(kStreamLabel1, audio_sender->stream_ids()[0]);
   EXPECT_EQ("audio_track", audio_sender->id());
   EXPECT_EQ(audio_track, audio_sender->track());
-  EXPECT_EQ(kStreamLabel1, video_sender->stream_id());
+  EXPECT_EQ(1UL, video_sender->stream_ids().size());
+  EXPECT_EQ(kStreamLabel1, video_sender->stream_ids()[0]);
   EXPECT_EQ("video_track", video_sender->id());
   EXPECT_EQ(video_track, video_sender->track());
 
@@ -1237,7 +1266,7 @@ TEST_F(PeerConnectionInterfaceTest, AddTrackWithoutStream) {
   EXPECT_EQ(video_track, video_sender->track());
   // If the ID is truly a random GUID, it should be infinitely unlikely they
   // will be the same.
-  EXPECT_NE(video_sender->stream_id(), audio_sender->stream_id());
+  EXPECT_NE(video_sender->stream_ids(), audio_sender->stream_ids());
 }
 
 TEST_F(PeerConnectionInterfaceTest, CreateOfferReceiveAnswer) {
@@ -1973,14 +2002,13 @@ TEST_F(PeerConnectionInterfaceTest,
   server.uri = kStunAddressOnly;
   config.servers.push_back(server);
   config.type = PeerConnectionInterface::kRelay;
-  CreatePeerConnection(config, nullptr);
+  EXPECT_TRUE(pc_->SetConfiguration(config));
 
   const cricket::FakePortAllocatorSession* session =
       static_cast<const cricket::FakePortAllocatorSession*>(
           port_allocator_->GetPooledSession());
   ASSERT_NE(nullptr, session);
   EXPECT_EQ(1UL, session->stun_servers().size());
-  EXPECT_EQ(cricket::CF_RELAY, session->candidate_filter());
 }
 
 // Test that PeerConnection::Close changes the states to closed and all remote

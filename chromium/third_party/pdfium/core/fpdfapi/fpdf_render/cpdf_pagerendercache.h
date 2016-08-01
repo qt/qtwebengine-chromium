@@ -21,12 +21,7 @@ class IFX_Pause;
 
 class CPDF_PageRenderCache {
  public:
-  explicit CPDF_PageRenderCache(CPDF_Page* pPage)
-      : m_pPage(pPage),
-        m_pCurImageCacheEntry(nullptr),
-        m_nTimeCount(0),
-        m_nCacheSize(0),
-        m_bCurFindCache(FALSE) {}
+  explicit CPDF_PageRenderCache(CPDF_Page* pPage);
   ~CPDF_PageRenderCache();
 
   uint32_t EstimateSize();
@@ -41,7 +36,7 @@ class CPDF_PageRenderCache {
                        FX_BOOL bStdCS = FALSE,
                        uint32_t GroupFamily = 0,
                        FX_BOOL bLoadMask = FALSE,
-                       CPDF_RenderStatus* pRenderStatus = NULL,
+                       CPDF_RenderStatus* pRenderStatus = nullptr,
                        int32_t downsampleWidth = 0,
                        int32_t downsampleHeight = 0);
 
@@ -56,7 +51,7 @@ class CPDF_PageRenderCache {
                                FX_BOOL bStdCS = FALSE,
                                uint32_t GroupFamily = 0,
                                FX_BOOL bLoadMask = FALSE,
-                               CPDF_RenderStatus* pRenderStatus = NULL,
+                               CPDF_RenderStatus* pRenderStatus = nullptr,
                                int32_t downsampleWidth = 0,
                                int32_t downsampleHeight = 0);
 

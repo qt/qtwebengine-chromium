@@ -15,12 +15,12 @@
 class CPDF_SimpleFont : public CPDF_Font {
  public:
   CPDF_SimpleFont();
-  virtual ~CPDF_SimpleFont();
+  ~CPDF_SimpleFont() override;
 
-  // CPDF_Font:
+  // CPDF_Font
   int GetCharWidthF(uint32_t charcode, int level = 0) override;
   FX_RECT GetCharBBox(uint32_t charcode, int level = 0) override;
-  int GlyphFromCharCode(uint32_t charcode, FX_BOOL* pVertGlyph = NULL) override;
+  int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) override;
   FX_BOOL IsUnicodeCompatible() const override;
   CFX_WideString UnicodeFromCharCode(uint32_t charcode) const override;
   uint32_t CharCodeFromUnicode(FX_WCHAR Unicode) const override;
@@ -32,7 +32,6 @@ class CPDF_SimpleFont : public CPDF_Font {
 
   FX_BOOL LoadCommon();
   void LoadSubstFont();
-  void LoadFaceMetrics();
   void LoadCharMetrics(int charcode);
 
   CPDF_FontEncoding m_Encoding;

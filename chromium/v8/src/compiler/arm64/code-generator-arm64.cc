@@ -210,7 +210,8 @@ class Arm64OperandConverter final : public InstructionOperandConverter {
           return Operand(constant.ToInt32());
         }
       case Constant::kInt64:
-        if (constant.rmode() == RelocInfo::WASM_MEMORY_REFERENCE) {
+        if (constant.rmode() == RelocInfo::WASM_MEMORY_REFERENCE ||
+            constant.rmode() == RelocInfo::WASM_GLOBAL_REFERENCE) {
           return Operand(constant.ToInt64(), constant.rmode());
         } else {
           DCHECK(constant.rmode() != RelocInfo::WASM_MEMORY_SIZE_REFERENCE);
@@ -400,6 +401,17 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
 
 }  // namespace
 
+#define ASSEMBLE_BOUNDS_CHECK(offset, length, out_of_bounds)   \
+  do {                                                         \
+    if (length.IsImmediate() &&                                \
+        base::bits::IsPowerOfTwo64(length.ImmediateValue())) { \
+      __ Tst(offset, ~(length.ImmediateValue() - 1));          \
+      __ B(ne, out_of_bounds);                                 \
+    } else {                                                   \
+      __ Cmp(offset, length);                                  \
+      __ B(hs, out_of_bounds);                                 \
+    }                                                          \
+  } while (0)
 
 #define ASSEMBLE_CHECKED_LOAD_FLOAT(width)                         \
   do {                                                             \
@@ -407,13 +419,11 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto buffer = i.InputRegister(0);                              \
     auto offset = i.InputRegister32(1);                            \
     auto length = i.InputOperand32(2);                             \
-    __ Cmp(offset, length);                                        \
     auto ool = new (zone()) OutOfLineLoadNaN##width(this, result); \
-    __ B(hs, ool->entry());                                        \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, ool->entry());           \
     __ Ldr(result, MemOperand(buffer, offset, UXTW));              \
     __ Bind(ool->exit());                                          \
   } while (0)
-
 
 #define ASSEMBLE_CHECKED_LOAD_INTEGER(asm_instr)             \
   do {                                                       \
@@ -421,13 +431,11 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto buffer = i.InputRegister(0);                        \
     auto offset = i.InputRegister32(1);                      \
     auto length = i.InputOperand32(2);                       \
-    __ Cmp(offset, length);                                  \
     auto ool = new (zone()) OutOfLineLoadZero(this, result); \
-    __ B(hs, ool->entry());                                  \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, ool->entry());     \
     __ asm_instr(result, MemOperand(buffer, offset, UXTW));  \
     __ Bind(ool->exit());                                    \
   } while (0)
-
 
 #define ASSEMBLE_CHECKED_LOAD_INTEGER_64(asm_instr)          \
   do {                                                       \
@@ -435,9 +443,8 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto buffer = i.InputRegister(0);                        \
     auto offset = i.InputRegister32(1);                      \
     auto length = i.InputOperand32(2);                       \
-    __ Cmp(offset, length);                                  \
     auto ool = new (zone()) OutOfLineLoadZero(this, result); \
-    __ B(hs, ool->entry());                                  \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, ool->entry());     \
     __ asm_instr(result, MemOperand(buffer, offset, UXTW));  \
     __ Bind(ool->exit());                                    \
   } while (0)
@@ -448,9 +455,8 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto offset = i.InputRegister32(1);                  \
     auto length = i.InputOperand32(2);                   \
     auto value = i.InputFloat##width##OrZeroRegister(3); \
-    __ Cmp(offset, length);                              \
     Label done;                                          \
-    __ B(hs, &done);                                     \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, &done);        \
     __ Str(value, MemOperand(buffer, offset, UXTW));     \
     __ Bind(&done);                                      \
   } while (0)
@@ -461,9 +467,8 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto offset = i.InputRegister32(1);                    \
     auto length = i.InputOperand32(2);                     \
     auto value = i.InputOrZeroRegister32(3);               \
-    __ Cmp(offset, length);                                \
     Label done;                                            \
-    __ B(hs, &done);                                       \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, &done);          \
     __ asm_instr(value, MemOperand(buffer, offset, UXTW)); \
     __ Bind(&done);                                        \
   } while (0)
@@ -474,9 +479,8 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     auto offset = i.InputRegister32(1);                    \
     auto length = i.InputOperand32(2);                     \
     auto value = i.InputOrZeroRegister64(3);               \
-    __ Cmp(offset, length);                                \
     Label done;                                            \
-    __ B(hs, &done);                                       \
+    ASSEMBLE_BOUNDS_CHECK(offset, length, &done);          \
     __ asm_instr(value, MemOperand(buffer, offset, UXTW)); \
     __ Bind(&done);                                        \
   } while (0)
@@ -507,6 +511,20 @@ Condition FlagsConditionToCondition(FlagsCondition condition) {
     __ asm_instr(i.InputRegister(2),                                  \
                  MemOperand(i.InputRegister(0), i.InputRegister(1))); \
     __ Dmb(InnerShareable, BarrierAll);                               \
+  } while (0)
+
+#define ASSEMBLE_IEEE754_BINOP(name)                                          \
+  do {                                                                        \
+    FrameScope scope(masm(), StackFrame::MANUAL);                             \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     0, 2);                                                   \
+  } while (0)
+
+#define ASSEMBLE_IEEE754_UNOP(name)                                           \
+  do {                                                                        \
+    FrameScope scope(masm(), StackFrame::MANUAL);                             \
+    __ CallCFunction(ExternalReference::ieee754_##name##_function(isolate()), \
+                     0, 1);                                                   \
   } while (0)
 
 void CodeGenerator::AssembleDeconstructFrame() {
@@ -711,6 +729,14 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchLookupSwitch:
       AssembleArchLookupSwitch(instr);
       break;
+    case kArchDebugBreak:
+      __ Debug("kArchDebugBreak", 0, BREAK);
+      break;
+    case kArchComment: {
+      Address comment_string = i.InputExternalReference(0).address();
+      __ RecordComment(reinterpret_cast<const char*>(comment_string));
+      break;
+    }
     case kArchNop:
     case kArchThrowTerminator:
       // don't emit code for nops.
@@ -781,6 +807,45 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Add(i.OutputRegister(0), base, Operand(offset.offset()));
       break;
     }
+    case kIeee754Float64Atan:
+      ASSEMBLE_IEEE754_UNOP(atan);
+      break;
+    case kIeee754Float64Atan2:
+      ASSEMBLE_IEEE754_BINOP(atan2);
+      break;
+    case kIeee754Float64Cos:
+      ASSEMBLE_IEEE754_UNOP(cos);
+      break;
+    case kIeee754Float64Cbrt:
+      ASSEMBLE_IEEE754_UNOP(cbrt);
+      break;
+    case kIeee754Float64Exp:
+      ASSEMBLE_IEEE754_UNOP(exp);
+      break;
+    case kIeee754Float64Expm1:
+      ASSEMBLE_IEEE754_UNOP(expm1);
+      break;
+    case kIeee754Float64Atanh:
+      ASSEMBLE_IEEE754_UNOP(atanh);
+      break;
+    case kIeee754Float64Log:
+      ASSEMBLE_IEEE754_UNOP(log);
+      break;
+    case kIeee754Float64Log1p:
+      ASSEMBLE_IEEE754_UNOP(log1p);
+      break;
+    case kIeee754Float64Log2:
+      ASSEMBLE_IEEE754_UNOP(log2);
+      break;
+    case kIeee754Float64Log10:
+      ASSEMBLE_IEEE754_UNOP(log10);
+      break;
+    case kIeee754Float64Sin:
+      ASSEMBLE_IEEE754_UNOP(sin);
+      break;
+    case kIeee754Float64Tan:
+      ASSEMBLE_IEEE754_UNOP(tan);
+      break;
     case kArm64Float32RoundDown:
       __ Frintm(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
@@ -1035,6 +1100,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // Pseudo instructions turned into tbz/tbnz in AssembleArchBranch.
       break;
     case kArm64CompareAndBranch32:
+    case kArm64CompareAndBranch:
       // Pseudo instruction turned into cbz/cbnz in AssembleArchBranch.
       break;
     case kArm64ClaimCSP: {
@@ -1179,6 +1245,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArm64Float32Abs:
       __ Fabs(i.OutputFloat32Register(), i.InputFloat32Register(0));
+      break;
+    case kArm64Float32Neg:
+      __ Fneg(i.OutputFloat32Register(), i.InputFloat32Register(0));
       break;
     case kArm64Float32Sqrt:
       __ Fsqrt(i.OutputFloat32Register(), i.InputFloat32Register(0));
@@ -1357,6 +1426,9 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64Float64MoveU64:
       __ Fmov(i.OutputFloat64Register(), i.InputRegister(0));
       break;
+    case kArm64Float64SilenceNaN:
+      __ CanonicalizeNaN(i.OutputDoubleRegister(), i.InputDoubleRegister(0));
+      break;
     case kArm64U64MoveFloat64:
       __ Fmov(i.OutputRegister(), i.InputDoubleRegister(0));
       break;
@@ -1493,6 +1565,17 @@ void CodeGenerator::AssembleArchBranch(Instruction* instr, BranchInfo* branch) {
         break;
       case kNotEqual:
         __ Cbnz(i.InputRegister32(0), tlabel);
+        break;
+      default:
+        UNREACHABLE();
+    }
+  } else if (opcode == kArm64CompareAndBranch) {
+    switch (condition) {
+      case kEqual:
+        __ Cbz(i.InputRegister64(0), tlabel);
+        break;
+      case kNotEqual:
+        __ Cbnz(i.InputRegister64(0), tlabel);
         break;
       default:
         UNREACHABLE();

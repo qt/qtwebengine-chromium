@@ -23,12 +23,6 @@ namespace webrtc {
 // to optimized bitstream readers. See avcodec_decode_video2.
 const size_t EncodedImage::kBufferPaddingBytesH264 = 8;
 
-int ExpectedSize(int plane_stride, int image_height, PlaneType type) {
-  if (type == kYPlane)
-    return plane_stride * image_height;
-  return plane_stride * ((image_height + 1) / 2);
-}
-
 VideoFrame::VideoFrame()
     : video_frame_buffer_(nullptr),
       timestamp_(0),
@@ -45,6 +39,7 @@ VideoFrame::VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
       ntp_time_ms_(0),
       render_time_ms_(render_time_ms),
       rotation_(rotation) {
+  RTC_DCHECK(buffer);
 }
 
 void VideoFrame::CreateEmptyFrame(int width,
@@ -65,19 +60,8 @@ void VideoFrame::CreateEmptyFrame(int width,
   render_time_ms_ = 0;
   rotation_ = kVideoRotation_0;
 
-  // Check if it's safe to reuse allocation.
-  if (video_frame_buffer_ && video_frame_buffer_->IsMutable() &&
-      !video_frame_buffer_->native_handle() &&
-      width == video_frame_buffer_->width() &&
-      height == video_frame_buffer_->height() &&
-      stride_y == video_frame_buffer_->StrideY() &&
-      stride_u == video_frame_buffer_->StrideU() &&
-      stride_v == video_frame_buffer_->StrideV()) {
-    return;
-  }
-
-  // Need to allocate new buffer.
-  video_frame_buffer_ = new rtc::RefCountedObject<I420Buffer>(
+  // Allocate a new buffer.
+  video_frame_buffer_ = I420Buffer::Create(
       width, height, stride_y, stride_u, stride_v);
 }
 
@@ -169,19 +153,6 @@ bool VideoFrame::IsZeroSize() const {
 const rtc::scoped_refptr<VideoFrameBuffer>& VideoFrame::video_frame_buffer()
     const {
   return video_frame_buffer_;
-}
-
-void VideoFrame::set_video_frame_buffer(
-    const rtc::scoped_refptr<webrtc::VideoFrameBuffer>& buffer) {
-  video_frame_buffer_ = buffer;
-}
-
-VideoFrame VideoFrame::ConvertNativeToI420Frame() const {
-  RTC_DCHECK(video_frame_buffer_->native_handle());
-  VideoFrame frame;
-  frame.ShallowCopy(*this);
-  frame.set_video_frame_buffer(video_frame_buffer_->NativeToI420Buffer());
-  return frame;
 }
 
 size_t EncodedImage::GetBufferPaddingBytes(VideoCodecType codec_type) {

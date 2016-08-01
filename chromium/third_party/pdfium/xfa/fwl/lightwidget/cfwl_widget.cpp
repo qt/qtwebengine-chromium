@@ -8,10 +8,10 @@
 
 #include "xfa/fde/tto/fde_textout.h"
 #include "xfa/fwl/core/cfwl_themetext.h"
+#include "xfa/fwl/core/cfwl_widgetmgr.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/fwl_noteimp.h"
 #include "xfa/fwl/core/fwl_widgetimp.h"
-#include "xfa/fwl/core/fwl_widgetmgrimp.h"
 #include "xfa/fwl/core/ifwl_app.h"
 #include "xfa/fwl/core/ifwl_themeprovider.h"
 
@@ -41,12 +41,11 @@ FX_BOOL CFWL_Widget::IsInstance(const CFX_WideStringC& wsClass) const {
   return m_pIface->IsInstance(wsClass);
 }
 
-static void* gs_pFWLWidget = (void*)FXBSTR_ID('l', 'i', 'g', 't');
-
 FWL_Error CFWL_Widget::Initialize(const CFWL_WidgetProperties* pProperties) {
   if (!m_pIface)
     return FWL_Error::Indefinite;
-  return m_pIface->SetPrivateData(gs_pFWLWidget, this, nullptr);
+  m_pIface->SetAssociateWidget(this);
+  return FWL_Error::Succeeded;
 }
 
 FWL_Error CFWL_Widget::GetWidgetRect(CFX_RectF& rect, FX_BOOL bAutoSize) {
@@ -78,9 +77,10 @@ CFWL_Widget* CFWL_Widget::GetParent() {
     return nullptr;
 
   IFWL_Widget* parent = m_pIface->GetParent();
-  if (parent)
-    return static_cast<CFWL_Widget*>(parent->GetPrivateData(gs_pFWLWidget));
-  return nullptr;
+  if (!parent)
+    return nullptr;
+
+  return static_cast<CFWL_Widget*>(parent->GetAssociateWidget());
 }
 
 FWL_Error CFWL_Widget::SetParent(CFWL_Widget* pParent) {
@@ -124,9 +124,7 @@ FWL_Error CFWL_Widget::ModifyStylesEx(uint32_t dwStylesExAdded,
 }
 
 uint32_t CFWL_Widget::GetStates() {
-  if (!m_pIface)
-    return 0;
-  return m_pIface->GetStates();
+  return m_pIface ? m_pIface->GetStates() : 0;
 }
 
 void CFWL_Widget::SetStates(uint32_t dwStates, FX_BOOL bSet) {
@@ -134,18 +132,13 @@ void CFWL_Widget::SetStates(uint32_t dwStates, FX_BOOL bSet) {
     m_pIface->SetStates(dwStates, bSet);
 }
 
-FWL_Error CFWL_Widget::SetPrivateData(void* module_id,
-                                      void* pData,
-                                      PD_CALLBACK_FREEDATA callback) {
-  if (!m_pIface)
-    return FWL_Error::Indefinite;
-  return m_pIface->SetPrivateData(module_id, pData, callback);
+void* CFWL_Widget::GetLayoutItem() const {
+  return m_pIface ? m_pIface->GetLayoutItem() : nullptr;
 }
 
-void* CFWL_Widget::GetPrivateData(void* module_id) {
-  if (!m_pIface)
-    return nullptr;
-  return m_pIface->GetPrivateData(module_id);
+void CFWL_Widget::SetLayoutItem(void* pItem) {
+  if (m_pIface)
+    m_pIface->SetLayoutItem(pItem);
 }
 
 FWL_Error CFWL_Widget::Update() {
@@ -217,7 +210,7 @@ IFWL_WidgetDelegate* CFWL_Widget::SetDelegate(IFWL_WidgetDelegate* pDelegate) {
 CFWL_Widget::CFWL_Widget()
     : m_pIface(nullptr), m_pDelegate(nullptr), m_pProperties(nullptr) {
   m_pProperties = new CFWL_WidgetProperties;
-  m_pWidgetMgr = static_cast<CFWL_WidgetMgr*>(FWL_GetWidgetMgr());
+  m_pWidgetMgr = CFWL_WidgetMgr::GetInstance();
   ASSERT(m_pWidgetMgr);
 }
 

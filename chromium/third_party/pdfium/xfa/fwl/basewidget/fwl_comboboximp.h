@@ -117,8 +117,8 @@ class CFWL_ComboBoxImp : public CFWL_WidgetImp {
   int32_t GetEditLimit();
   FWL_Error SetEditLimit(int32_t nLimit);
   FWL_Error EditDoClipboard(int32_t iCmd);
-  FX_BOOL EditRedo(const CFX_ByteStringC& bsRecord);
-  FX_BOOL EditUndo(const CFX_ByteStringC& bsRecord);
+  FX_BOOL EditRedo(const IFDE_TxtEdtDoRecord* pRecord);
+  FX_BOOL EditUndo(const IFDE_TxtEdtDoRecord* pRecord);
   IFWL_ListBox* GetListBoxt();
   FX_BOOL AfterFocusShowDropList();
   FWL_Error OpenDropDownList(FX_BOOL bActivate);
@@ -170,7 +170,7 @@ class CFWL_ComboBoxImp : public CFWL_WidgetImp {
   FWL_Error DisForm_Update();
   FWL_WidgetHit DisForm_HitTest(FX_FLOAT fx, FX_FLOAT fy);
   FWL_Error DisForm_DrawWidget(CFX_Graphics* pGraphics,
-                               const CFX_Matrix* pMatrix = NULL);
+                               const CFX_Matrix* pMatrix = nullptr);
   FWL_Error DisForm_GetBBox(CFX_RectF& rect);
   void DisForm_Layout();
 
@@ -199,7 +199,7 @@ class CFWL_ComboBoxImpDelegate : public CFWL_WidgetImpDelegate {
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
 
  protected:
   void OnFocusChanged(CFWL_Message* pMsg, FX_BOOL bSet = TRUE);
@@ -226,7 +226,7 @@ class CFWL_ComboProxyImpDelegate : public CFWL_WidgetImpDelegate {
   CFWL_ComboProxyImpDelegate(IFWL_Form* pForm, CFWL_ComboBoxImp* pComboBox);
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
   void Reset() { m_bLButtonUpSelf = FALSE; }
 
  protected:

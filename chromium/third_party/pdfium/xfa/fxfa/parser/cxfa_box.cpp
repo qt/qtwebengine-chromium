@@ -13,7 +13,7 @@ namespace {
 
 void GetStrokesInternal(CXFA_Node* pNode,
                         CXFA_StrokeArray& strokes,
-                        FX_BOOL bNULL) {
+                        FX_BOOL bNull) {
   strokes.RemoveAll();
   if (!pNode)
     return;
@@ -22,10 +22,10 @@ void GetStrokesInternal(CXFA_Node* pNode,
   int32_t i, j;
   for (i = 0, j = 0; i < 4; i++) {
     CXFA_Corner corner =
-        CXFA_Corner(pNode->GetProperty(i, XFA_ELEMENT_Corner, i == 0));
+        CXFA_Corner(pNode->GetProperty(i, XFA_Element::Corner, i == 0));
     if (corner || i == 0)
       strokes.SetAt(j, corner);
-    else if (bNULL)
+    else if (bNull)
       strokes.SetAt(j, CXFA_Stroke(nullptr));
     else if (i == 1)
       strokes.SetAt(j, strokes[0]);
@@ -35,10 +35,11 @@ void GetStrokesInternal(CXFA_Node* pNode,
       strokes.SetAt(j, strokes[2]);
 
     j++;
-    CXFA_Edge edge = CXFA_Edge(pNode->GetProperty(i, XFA_ELEMENT_Edge, i == 0));
+    CXFA_Edge edge =
+        CXFA_Edge(pNode->GetProperty(i, XFA_Element::Edge, i == 0));
     if (edge || i == 0)
       strokes.SetAt(j, edge);
-    else if (bNULL)
+    else if (bNull)
       strokes.SetAt(j, CXFA_Stroke(nullptr));
     else if (i == 1)
       strokes.SetAt(j, strokes[1]);
@@ -94,12 +95,12 @@ int32_t CXFA_Box::GetPresence() const {
 int32_t CXFA_Box::CountEdges() const {
   if (!m_pNode)
     return 0;
-  return m_pNode->CountChildren(XFA_ELEMENT_Edge);
+  return m_pNode->CountChildren(XFA_Element::Edge);
 }
 
 CXFA_Edge CXFA_Box::GetEdge(int32_t nIndex) const {
   return CXFA_Edge(
-      m_pNode ? m_pNode->GetProperty(nIndex, XFA_ELEMENT_Edge, nIndex == 0)
+      m_pNode ? m_pNode->GetProperty(nIndex, XFA_Element::Edge, nIndex == 0)
               : nullptr);
 }
 
@@ -143,12 +144,12 @@ CXFA_Fill CXFA_Box::GetFill(FX_BOOL bModified) const {
   if (!m_pNode)
     return CXFA_Fill(nullptr);
 
-  CXFA_Node* pFillNode = m_pNode->GetProperty(0, XFA_ELEMENT_Fill, bModified);
+  CXFA_Node* pFillNode = m_pNode->GetProperty(0, XFA_Element::Fill, bModified);
   return CXFA_Fill(pFillNode);
 }
 
 CXFA_Margin CXFA_Box::GetMargin() const {
-  return CXFA_Margin(m_pNode ? m_pNode->GetChild(0, XFA_ELEMENT_Margin)
+  return CXFA_Margin(m_pNode ? m_pNode->GetChild(0, XFA_Element::Margin)
                              : nullptr);
 }
 
@@ -158,7 +159,7 @@ int32_t CXFA_Box::Get3DStyle(FX_BOOL& bVisible, FX_FLOAT& fThickness) const {
 
   CXFA_StrokeArray strokes;
   GetStrokesInternal(m_pNode, strokes, TRUE);
-  CXFA_Stroke stroke(NULL);
+  CXFA_Stroke stroke(nullptr);
   int32_t iType = Style3D(strokes, stroke);
   if (iType) {
     bVisible = stroke.IsVisible();

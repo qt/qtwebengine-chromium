@@ -23,13 +23,17 @@ class CXML_AttrItem {
 
 class CXML_AttrMap {
  public:
+  CXML_AttrMap();
+  ~CXML_AttrMap();
+
   const CFX_WideString* Lookup(const CFX_ByteString& space,
                                const CFX_ByteString& name) const;
+  int GetSize() const;
+  CXML_AttrItem& GetAt(int index) const;
+
   void SetAt(const CFX_ByteString& space,
              const CFX_ByteString& name,
              const CFX_WideString& value);
-  int GetSize() const;
-  CXML_AttrItem& GetAt(int index) const;
 
   std::unique_ptr<std::vector<CXML_AttrItem>> m_pMap;
 };
@@ -53,13 +57,13 @@ class CXML_Element {
   static CXML_Element* Parse(const void* pBuffer,
                              size_t size,
                              FX_BOOL bSaveSpaceChars = FALSE,
-                             FX_FILESIZE* pParsedSize = NULL);
+                             FX_FILESIZE* pParsedSize = nullptr);
   static CXML_Element* Parse(IFX_FileRead* pFile,
                              FX_BOOL bSaveSpaceChars = FALSE,
-                             FX_FILESIZE* pParsedSize = NULL);
+                             FX_FILESIZE* pParsedSize = nullptr);
   static CXML_Element* Parse(IFX_BufferRead* pBuffer,
                              FX_BOOL bSaveSpaceChars = FALSE,
-                             FX_FILESIZE* pParsedSize = NULL);
+                             FX_FILESIZE* pParsedSize = nullptr);
 
   CXML_Element(const CFX_ByteStringC& qSpace, const CFX_ByteStringC& tagName);
   CXML_Element(const CFX_ByteStringC& qTagName);

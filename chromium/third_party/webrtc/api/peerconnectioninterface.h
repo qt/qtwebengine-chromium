@@ -57,7 +57,6 @@
 #include <vector>
 
 #include "webrtc/api/datachannelinterface.h"
-#include "webrtc/api/dtlsidentitystore.h"
 #include "webrtc/api/dtmfsenderinterface.h"
 #include "webrtc/api/jsep.h"
 #include "webrtc/api/mediastreaminterface.h"
@@ -68,6 +67,7 @@
 #include "webrtc/base/fileutils.h"
 #include "webrtc/base/network.h"
 #include "webrtc/base/rtccertificate.h"
+#include "webrtc/base/rtccertificategenerator.h"
 #include "webrtc/base/socketaddress.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/media/base/mediachannel.h"
@@ -217,6 +217,11 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     kTcpCandidatePolicyDisabled
   };
 
+  enum CandidateNetworkPolicy {
+    kCandidateNetworkPolicyAll,
+    kCandidateNetworkPolicyLowCost
+  };
+
   enum ContinualGatheringPolicy {
     GATHER_ONCE,
     GATHER_CONTINUALLY
@@ -276,6 +281,8 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     BundlePolicy bundle_policy = kBundlePolicyBalanced;
     RtcpMuxPolicy rtcp_mux_policy = kRtcpMuxPolicyNegotiate;
     TcpCandidatePolicy tcp_candidate_policy = kTcpCandidatePolicyEnabled;
+    CandidateNetworkPolicy candidate_network_policy =
+        kCandidateNetworkPolicyAll;
     int audio_jitter_buffer_max_packets = kAudioJitterBufferMaxPackets;
     bool audio_jitter_buffer_fast_accelerate = false;
     int ice_connection_receiving_timeout = kUndefined;         // ms
@@ -503,27 +510,40 @@ class PeerConnectionObserver {
   virtual void OnSignalingChange(
       PeerConnectionInterface::SignalingState new_state) = 0;
 
+  // TODO(deadbeef): Once all subclasses override the scoped_refptr versions
+  // of the below three methods, make them pure virtual and remove the raw
+  // pointer version.
+
   // Triggered when media is received on a new stream from remote peer.
-  virtual void OnAddStream(MediaStreamInterface* stream) = 0;
+  virtual void OnAddStream(rtc::scoped_refptr<MediaStreamInterface> stream) {}
+  // Deprecated; please use the version that uses a scoped_refptr.
+  virtual void OnAddStream(MediaStreamInterface* stream) {}
 
   // Triggered when a remote peer close a stream.
-  virtual void OnRemoveStream(MediaStreamInterface* stream) = 0;
+  virtual void OnRemoveStream(rtc::scoped_refptr<MediaStreamInterface> stream) {
+  }
+  // Deprecated; please use the version that uses a scoped_refptr.
+  virtual void OnRemoveStream(MediaStreamInterface* stream) {}
 
-  // Triggered when a remote peer open a data channel.
-  virtual void OnDataChannel(DataChannelInterface* data_channel) = 0;
+  // Triggered when a remote peer opens a data channel.
+  virtual void OnDataChannel(
+      rtc::scoped_refptr<DataChannelInterface> data_channel){};
+  // Deprecated; please use the version that uses a scoped_refptr.
+  virtual void OnDataChannel(DataChannelInterface* data_channel) {}
 
-  // Triggered when renegotiation is needed, for example the ICE has restarted.
+  // Triggered when renegotiation is needed. For example, an ICE restart
+  // has begun.
   virtual void OnRenegotiationNeeded() = 0;
 
-  // Called any time the IceConnectionState changes
+  // Called any time the IceConnectionState changes.
   virtual void OnIceConnectionChange(
       PeerConnectionInterface::IceConnectionState new_state) = 0;
 
-  // Called any time the IceGatheringState changes
+  // Called any time the IceGatheringState changes.
   virtual void OnIceGatheringChange(
       PeerConnectionInterface::IceGatheringState new_state) = 0;
 
-  // New Ice candidate have been found.
+  // A new ICE candidate has been gathered.
   virtual void OnIceCandidate(const IceCandidateInterface* candidate) = 0;
 
   // Ice candidates have been removed.
@@ -580,13 +600,13 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
       const PeerConnectionInterface::RTCConfiguration& configuration,
       const MediaConstraintsInterface* constraints,
       std::unique_ptr<cricket::PortAllocator> allocator,
-      std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
       PeerConnectionObserver* observer) = 0;
 
   virtual rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
       const PeerConnectionInterface::RTCConfiguration& configuration,
       std::unique_ptr<cricket::PortAllocator> allocator,
-      std::unique_ptr<DtlsIdentityStoreInterface> dtls_identity_store,
+      std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
       PeerConnectionObserver* observer) = 0;
 
   virtual rtc::scoped_refptr<MediaStreamInterface>

@@ -23,12 +23,17 @@
 #include "public/platform/Platform.h"
 #include "public/platform/modules/permissions/WebPermissionClient.h"
 #include "wtf/NotFound.h"
+#include "wtf/PtrUtil.h"
 #include "wtf/Vector.h"
+#include <memory>
 
 namespace blink {
 
 namespace {
 
+// Websites will be able to run code when `name()` is called, changing the
+// current context. The caller should make sure that no assumption is made
+// after this has been called.
 WebPermissionType getPermissionType(ScriptState* scriptState, const Dictionary& rawPermission, const PermissionDescriptor& permission, ExceptionState& exceptionState)
 {
     const String& name = permission.name();
@@ -104,14 +109,16 @@ WebPermissionClient* Permissions::getClient(ExecutionContext* executionContext)
 
 ScriptPromise Permissions::query(ScriptState* scriptState, const Dictionary& rawPermission)
 {
-    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
-    if (!client)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't query permissions."));
-
     ExceptionState exceptionState(ExceptionState::GetterContext,  "query", "Permissions", scriptState->context()->Global(), scriptState->isolate());
     Nullable<WebPermissionType> type = parsePermission(scriptState, rawPermission, exceptionState);
     if (exceptionState.hadException())
         return exceptionState.reject(scriptState);
+
+    // This must be called after `parsePermission` because the website might
+    // be able to run code.
+    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
+    if (!client)
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't query permissions."));
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
@@ -126,14 +133,16 @@ ScriptPromise Permissions::query(ScriptState* scriptState, const Dictionary& raw
 
 ScriptPromise Permissions::request(ScriptState* scriptState, const Dictionary& rawPermission)
 {
-    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
-    if (!client)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't request permissions."));
-
     ExceptionState exceptionState(ExceptionState::GetterContext,  "request", "Permissions", scriptState->context()->Global(), scriptState->isolate());
     Nullable<WebPermissionType> type = parsePermission(scriptState, rawPermission, exceptionState);
     if (exceptionState.hadException())
         return exceptionState.reject(scriptState);
+
+    // This must be called after `parsePermission` because the website might
+    // be able to run code.
+    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
+    if (!client)
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't request permissions."));
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
@@ -144,14 +153,16 @@ ScriptPromise Permissions::request(ScriptState* scriptState, const Dictionary& r
 
 ScriptPromise Permissions::revoke(ScriptState* scriptState, const Dictionary& rawPermission)
 {
-    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
-    if (!client)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't revoke permissions."));
-
     ExceptionState exceptionState(ExceptionState::GetterContext,  "revoke", "Permissions", scriptState->context()->Global(), scriptState->isolate());
     Nullable<WebPermissionType> type = parsePermission(scriptState, rawPermission, exceptionState);
     if (exceptionState.hadException())
         return exceptionState.reject(scriptState);
+
+    // This must be called after `parsePermission` because the website might
+    // be able to run code.
+    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
+    if (!client)
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't revoke permissions."));
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
@@ -162,13 +173,9 @@ ScriptPromise Permissions::revoke(ScriptState* scriptState, const Dictionary& ra
 
 ScriptPromise Permissions::requestAll(ScriptState* scriptState, const Vector<Dictionary>& rawPermissions)
 {
-    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
-    if (!client)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't request permissions."));
-
     ExceptionState exceptionState(ExceptionState::GetterContext,  "request", "Permissions", scriptState->context()->Global(), scriptState->isolate());
-    OwnPtr<Vector<WebPermissionType>> internalPermissions = adoptPtr(new Vector<WebPermissionType>());
-    OwnPtr<Vector<int>> callerIndexToInternalIndex = adoptPtr(new Vector<int>(rawPermissions.size()));
+    std::unique_ptr<Vector<WebPermissionType>> internalPermissions = wrapUnique(new Vector<WebPermissionType>());
+    std::unique_ptr<Vector<int>> callerIndexToInternalIndex = wrapUnique(new Vector<int>(rawPermissions.size()));
     for (size_t i = 0; i < rawPermissions.size(); ++i) {
         const Dictionary& rawPermission = rawPermissions[i];
 
@@ -188,6 +195,12 @@ ScriptPromise Permissions::requestAll(ScriptState* scriptState, const Vector<Dic
         }
         callerIndexToInternalIndex->operator[](i) = internalIndex;
     }
+
+    // This must be called after `parsePermission` because the website might
+    // be able to run code.
+    WebPermissionClient* client = getClient(scriptState->getExecutionContext());
+    if (!client)
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "In its current state, the global scope can't request permissions."));
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();

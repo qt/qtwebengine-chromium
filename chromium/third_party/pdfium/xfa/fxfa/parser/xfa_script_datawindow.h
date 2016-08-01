@@ -7,27 +7,28 @@
 #ifndef XFA_FXFA_PARSER_XFA_SCRIPT_DATAWINDOW_H_
 #define XFA_FXFA_PARSER_XFA_SCRIPT_DATAWINDOW_H_
 
+#include "fxjse/include/cfxjse_arguments.h"
 #include "xfa/fxfa/parser/xfa_object.h"
-#include "xfa/fxjse/cfxjse_arguments.h"
 
-class CScript_DataWindow : public CXFA_OrdinaryObject {
+class CScript_DataWindow : public CXFA_Object {
  public:
   CScript_DataWindow(CXFA_Document* pDocument);
-  virtual ~CScript_DataWindow();
+  ~CScript_DataWindow() override;
+
   void Script_DataWindow_MoveCurrentRecord(CFXJSE_Arguments* pArguments);
   void Script_DataWindow_Record(CFXJSE_Arguments* pArguments);
   void Script_DataWindow_GotoRecord(CFXJSE_Arguments* pArguments);
   void Script_DataWindow_IsRecordGroup(CFXJSE_Arguments* pArguments);
-  void Script_DataWindow_RecordsBefore(FXJSE_HVALUE hValue,
+  void Script_DataWindow_RecordsBefore(CFXJSE_Value* pValue,
                                        FX_BOOL bSetting,
                                        XFA_ATTRIBUTE eAttribute);
-  void Script_DataWindow_CurrentRecordNumber(FXJSE_HVALUE hValue,
+  void Script_DataWindow_CurrentRecordNumber(CFXJSE_Value* pValue,
                                              FX_BOOL bSetting,
                                              XFA_ATTRIBUTE eAttribute);
-  void Script_DataWindow_RecordsAfter(FXJSE_HVALUE hValue,
+  void Script_DataWindow_RecordsAfter(CFXJSE_Value* pValue,
                                       FX_BOOL bSetting,
                                       XFA_ATTRIBUTE eAttribute);
-  void Script_DataWindow_IsDefined(FXJSE_HVALUE hValue,
+  void Script_DataWindow_IsDefined(CFXJSE_Value* pValue,
                                    FX_BOOL bSetting,
                                    XFA_ATTRIBUTE eAttribute);
 };

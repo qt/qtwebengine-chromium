@@ -294,13 +294,13 @@ void CPWL_Edit::GetThisAppearanceStream(CFX_ByteTextBuf& sAppStream) {
           << sEditAfter.AsStringC() << "ET\n";
 
   if (sText.GetLength() > 0) {
-    CFX_FloatRect rcClient = GetClientRect();
+    CFX_FloatRect rect = GetClientRect();
     sAppStream << "q\n/Tx BMC\n";
 
     if (!HasFlag(PES_TEXTOVERFLOW))
-      sAppStream << rcClient.left << " " << rcClient.bottom << " "
-                 << rcClient.right - rcClient.left << " "
-                 << rcClient.top - rcClient.bottom << " re W n\n";
+      sAppStream << rect.left << " " << rect.bottom << " "
+                 << rect.right - rect.left << " " << rect.top - rect.bottom
+                 << " re W n\n";
 
     sAppStream << sText;
 
@@ -388,7 +388,7 @@ void CPWL_Edit::DrawThisAppearance(CFX_RenderDevice* pDevice,
 
   CFX_FloatRect rcClip;
   CPVT_WordRange wrRange = m_pEdit->GetVisibleWordRange();
-  CPVT_WordRange* pRange = NULL;
+  CPVT_WordRange* pRange = nullptr;
 
   if (!HasFlag(PES_TEXTOVERFLOW)) {
     rcClip = GetClientRect();
@@ -464,7 +464,7 @@ void CPWL_Edit::OnKillFocus() {
   m_pEdit->SelectNone();
   SetCaret(FALSE, CFX_FloatPoint(0.0f, 0.0f), CFX_FloatPoint(0.0f, 0.0f));
 
-  SetCharSet(0);
+  SetCharSet(FXFONT_ANSI_CHARSET);
 
   if (!IsReadOnly()) {
     if (IPWL_FocusHandler* pFocusHandler = GetFocusHandler())
@@ -938,7 +938,7 @@ void CPWL_Edit::GeneratePageObjects(
     const CFX_FloatPoint& ptOffset,
     CFX_ArrayTemplate<CPDF_TextObject*>& ObjArray) {
   IFX_Edit::GeneratePageObjects(
-      pObjectHolder, m_pEdit, ptOffset, NULL,
+      pObjectHolder, m_pEdit, ptOffset, nullptr,
       CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
       ObjArray);
 }
@@ -947,7 +947,7 @@ void CPWL_Edit::GeneratePageObjects(CPDF_PageObjectHolder* pObjectHolder,
                                     const CFX_FloatPoint& ptOffset) {
   CFX_ArrayTemplate<CPDF_TextObject*> ObjArray;
   IFX_Edit::GeneratePageObjects(
-      pObjectHolder, m_pEdit, ptOffset, NULL,
+      pObjectHolder, m_pEdit, ptOffset, nullptr,
       CPWL_Utils::PWLColorToFXColor(GetTextColor(), GetTransparency()),
       ObjArray);
 }

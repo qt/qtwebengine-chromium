@@ -18,7 +18,6 @@ class CXFA_FFPageView : public CXFA_ContainerLayoutItem {
   ~CXFA_FFPageView() override;
 
   CXFA_FFDocView* GetDocView() const;
-  int32_t GetPageViewIndex() const;
   void GetPageViewRect(CFX_RectF& rtPage) const;
   void GetDisplayMatrix(CFX_Matrix& mt,
                         const CFX_Rect& rtDisp,
@@ -59,14 +58,16 @@ class CXFA_FFPageWidgetIterator : public IXFA_WidgetIterator {
   CXFA_LayoutItemIterator m_sIterator;
 };
 typedef CFX_ArrayTemplate<CXFA_FFWidget*> CXFA_WidgetArray;
+
 class CXFA_TabParam {
  public:
-  CXFA_TabParam() : m_pWidget(NULL) {}
-  ~CXFA_TabParam() {}
+  CXFA_TabParam();
+  ~CXFA_TabParam();
 
   CXFA_FFWidget* m_pWidget;
   CXFA_WidgetArray m_Children;
 };
+
 class CXFA_FFTabOrderPageWidgetIterator : public IXFA_WidgetIterator {
  public:
   CXFA_FFTabOrderPageWidgetIterator(CXFA_FFPageView* pPageView,

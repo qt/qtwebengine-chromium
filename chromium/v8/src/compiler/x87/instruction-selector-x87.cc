@@ -1009,7 +1009,6 @@ void InstructionSelector::VisitFloat64Abs(Node* node) {
   Emit(kX87Float64Abs, g.DefineAsFixed(node, stX_0), 0, nullptr);
 }
 
-
 void InstructionSelector::VisitFloat32Sqrt(Node* node) {
   X87OperandGenerator g(this);
   Emit(kX87PushFloat32, g.NoOutput(), g.Use(node->InputAt(0)));
@@ -1084,6 +1083,24 @@ void InstructionSelector::VisitFloat64RoundTiesEven(Node* node) {
        g.UseFixed(node, stX_0), g.Use(node->InputAt(0)));
 }
 
+void InstructionSelector::VisitFloat32Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Neg(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitFloat64Ieee754Binop(Node* node,
+                                                   InstructionCode opcode) {
+  X87OperandGenerator g(this);
+  Emit(kX87PushFloat64, g.NoOutput(), g.Use(node->InputAt(0)));
+  Emit(kX87PushFloat64, g.NoOutput(), g.Use(node->InputAt(1)));
+  Emit(opcode, g.DefineAsFixed(node, stX_0), 0, nullptr)->MarkAsCall();
+}
+
+void InstructionSelector::VisitFloat64Ieee754Unop(Node* node,
+                                                  InstructionCode opcode) {
+  X87OperandGenerator g(this);
+  Emit(kX87PushFloat64, g.NoOutput(), g.Use(node->InputAt(0)));
+  Emit(opcode, g.DefineAsFixed(node, stX_0), 0, nullptr)->MarkAsCall();
+}
 
 void InstructionSelector::EmitPrepareArguments(
     ZoneVector<PushParameter>* arguments, const CallDescriptor* descriptor,
@@ -1118,7 +1135,7 @@ void InstructionSelector::EmitPrepareArguments(
           g.CanBeImmediate(input.node())
               ? g.UseImmediate(input.node())
               : IsSupported(ATOM) ||
-                        sequence()->IsFloat(GetVirtualRegister(input.node()))
+                        sequence()->IsFP(GetVirtualRegister(input.node()))
                     ? g.UseRegister(input.node())
                     : g.Use(input.node());
       Emit(kX87Push, g.NoOutput(), value);
@@ -1612,6 +1629,12 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
        g.UseRegister(left), g.UseRegister(right));
 }
 
+void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
+  X87OperandGenerator g(this);
+  Emit(kX87PushFloat64, g.NoOutput(), g.Use(node->InputAt(0)));
+  Emit(kX87Float64SilenceNaN, g.DefineAsFixed(node, stX_0), 0, nullptr);
+}
+
 void InstructionSelector::VisitAtomicLoad(Node* node) {
   LoadRepresentation load_rep = LoadRepresentationOf(node->op());
   DCHECK(load_rep.representation() == MachineRepresentation::kWord8 ||
@@ -1681,6 +1704,13 @@ InstructionSelector::SupportedMachineOperatorFlags() {
            MachineOperatorBuilder::kFloat32RoundTiesEven |
            MachineOperatorBuilder::kFloat64RoundTiesEven;
   return flags;
+}
+
+// static
+MachineOperatorBuilder::AlignmentRequirements
+InstructionSelector::AlignmentRequirements() {
+  return MachineOperatorBuilder::AlignmentRequirements::
+      FullUnalignedAccessSupport();
 }
 
 }  // namespace compiler

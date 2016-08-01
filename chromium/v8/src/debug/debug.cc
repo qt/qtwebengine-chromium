@@ -477,8 +477,8 @@ void Debug::ThreadInit() {
   thread_local_.last_statement_position_ = RelocInfo::kNoPosition;
   thread_local_.last_fp_ = 0;
   thread_local_.target_fp_ = 0;
-  thread_local_.step_in_enabled_ = false;
   thread_local_.return_value_ = Handle<Object>();
+  clear_suspended_generator();
   // TODO(isolates): frames_are_dropped_?
   base::NoBarrier_Store(&thread_local_.current_debug_scope_,
                         static_cast<base::AtomicWord>(0));
@@ -486,24 +486,23 @@ void Debug::ThreadInit() {
 
 
 char* Debug::ArchiveDebug(char* storage) {
-  char* to = storage;
-  MemCopy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
+  // Simply reset state. Don't archive anything.
   ThreadInit();
   return storage + ArchiveSpacePerThread();
 }
 
 
 char* Debug::RestoreDebug(char* storage) {
-  char* from = storage;
-  MemCopy(reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
+  // Simply reset state. Don't restore anything.
+  ThreadInit();
   return storage + ArchiveSpacePerThread();
 }
 
+int Debug::ArchiveSpacePerThread() { return 0; }
 
-int Debug::ArchiveSpacePerThread() {
-  return sizeof(ThreadLocal);
+void Debug::Iterate(ObjectVisitor* v) {
+  v->VisitPointer(&thread_local_.suspended_generator_);
 }
-
 
 DebugInfoListNode::DebugInfoListNode(DebugInfo* debug_info): next_(NULL) {
   // Globalize the request debug info object and make it weak.
@@ -537,9 +536,13 @@ bool Debug::Load() {
   // Create the debugger context.
   HandleScope scope(isolate_);
   ExtensionConfiguration no_extensions;
+  // TODO(yangguo): we rely on the fact that first context snapshot is usable
+  //                as debug context. This dependency is gone once we remove
+  //                debug context completely.
+  static const int kFirstContextSnapshotIndex = 0;
   Handle<Context> context = isolate_->bootstrapper()->CreateEnvironment(
       MaybeHandle<JSGlobalProxy>(), v8::Local<ObjectTemplate>(), &no_extensions,
-      DEBUG_CONTEXT);
+      kFirstContextSnapshotIndex, DEBUG_CONTEXT);
 
   // Fail if no context could be created.
   if (context.is_null()) return false;
@@ -588,14 +591,14 @@ void Debug::Break(JavaScriptFrame* frame) {
     // Return if we failed to retrieve the debug info.
     return;
   }
-  Handle<DebugInfo> debug_info(shared->GetDebugInfo());
+  Handle<DebugInfo> debug_info(shared->GetDebugInfo(), isolate_);
 
   // Find the break location where execution has stopped.
   BreakLocation location = BreakLocation::FromFrame(debug_info, frame);
 
   // Find actual break points, if any, and trigger debug break event.
   Handle<Object> break_points_hit = CheckBreakPoints(&location);
-  if (!break_points_hit->IsUndefined()) {
+  if (!break_points_hit->IsUndefined(isolate_)) {
     // Clear all current stepping setup.
     ClearStepping();
     // Notify the debug event listeners.
@@ -666,7 +669,7 @@ Handle<Object> Debug::CheckBreakPoints(BreakLocation* location,
   // they are in a FixedArray.
   Handle<FixedArray> break_points_hit;
   int break_points_hit_count = 0;
-  DCHECK(!break_point_objects->IsUndefined());
+  DCHECK(!break_point_objects->IsUndefined(isolate_));
   if (break_point_objects->IsFixedArray()) {
     Handle<FixedArray> array(FixedArray::cast(*break_point_objects));
     break_points_hit = factory->NewFixedArray(array->length());
@@ -714,7 +717,7 @@ bool Debug::IsMutedAtCurrentLocation(JavaScriptFrame* frame) {
     Handle<Object> check_result =
         CheckBreakPoints(&break_locations[i], &has_break_points);
     has_break_points_at_all |= has_break_points;
-    if (has_break_points && !check_result->IsUndefined()) return false;
+    if (has_break_points && !check_result->IsUndefined(isolate_)) return false;
   }
   return has_break_points_at_all;
 }
@@ -753,7 +756,7 @@ bool Debug::CheckBreakPoint(Handle<Object> break_point_object) {
   }
 
   // Return whether the break point is triggered.
-  return result->IsTrue();
+  return result->IsTrue(isolate_);
 }
 
 
@@ -795,7 +798,7 @@ bool Debug::SetBreakPointForScript(Handle<Script> script,
   // Obtain shared function info for the function.
   Handle<Object> result =
       FindSharedFunctionInfoInScript(script, *source_position);
-  if (result->IsUndefined()) return false;
+  if (result->IsUndefined(isolate_)) return false;
 
   // Make sure the function has set up the debug info.
   Handle<SharedFunctionInfo> shared = Handle<SharedFunctionInfo>::cast(result);
@@ -842,7 +845,7 @@ void Debug::ClearBreakPoint(Handle<Object> break_point_object) {
   while (node != NULL) {
     Handle<Object> result =
         DebugInfo::FindBreakPointInfo(node->debug_info(), break_point_object);
-    if (!result->IsUndefined()) {
+    if (!result->IsUndefined(isolate_)) {
       // Get information in the break point.
       Handle<BreakPointInfo> break_point_info =
           Handle<BreakPointInfo>::cast(result);
@@ -932,14 +935,22 @@ bool Debug::IsBreakOnException(ExceptionBreakType type) {
 
 
 void Debug::PrepareStepIn(Handle<JSFunction> function) {
+  CHECK(last_step_action() >= StepIn);
   if (!is_active()) return;
-  if (last_step_action() < StepIn) return;
   if (in_debug_scope()) return;
-  if (thread_local_.step_in_enabled_) {
-    FloodWithOneShot(function);
-  }
+  FloodWithOneShot(function);
 }
 
+void Debug::PrepareStepInSuspendedGenerator() {
+  CHECK(has_suspended_generator());
+  if (!is_active()) return;
+  if (in_debug_scope()) return;
+  thread_local_.last_step_action_ = StepIn;
+  Handle<JSFunction> function(
+      JSGeneratorObject::cast(thread_local_.suspended_generator_)->function());
+  FloodWithOneShot(function);
+  clear_suspended_generator();
+}
 
 void Debug::PrepareStepOnThrow() {
   if (!is_active()) return;
@@ -994,10 +1005,7 @@ void Debug::PrepareStep(StepAction step_action) {
 
   feature_tracker()->Track(DebugFeatureTracker::kStepping);
 
-  // Remember this step action and count.
   thread_local_.last_step_action_ = step_action;
-  STATIC_ASSERT(StepFrame > StepIn);
-  thread_local_.step_in_enabled_ = (step_action >= StepIn);
 
   // If the function on the top frame is unresolved perform step out. This will
   // be the case when calling unknown function and having the debugger stopped
@@ -1041,6 +1049,8 @@ void Debug::PrepareStep(StepAction step_action) {
       debug_info->abstract_code()->SourceStatementPosition(
           summary.code_offset());
   thread_local_.last_fp_ = frame->UnpaddedFP();
+  // No longer perform the current async step.
+  clear_suspended_generator();
 
   switch (step_action) {
     case StepNone:
@@ -1057,11 +1067,7 @@ void Debug::PrepareStep(StepAction step_action) {
         Deoptimizer::DeoptimizeFunction(frames_it.frame()->function());
         frames_it.Advance();
       }
-      if (frames_it.done()) {
-        // Stepping out to the embedder. Disable step-in to avoid stepping into
-        // the next (unrelated) call that the embedder makes.
-        thread_local_.step_in_enabled_ = false;
-      } else {
+      if (!frames_it.done()) {
         // Fill the caller function to return to with one-shot break points.
         Handle<JSFunction> caller_function(frames_it.frame()->function());
         FloodWithOneShot(caller_function);
@@ -1092,19 +1098,18 @@ Handle<Object> Debug::GetSourceBreakLocations(
     Handle<SharedFunctionInfo> shared,
     BreakPositionAlignment position_alignment) {
   Isolate* isolate = shared->GetIsolate();
-  Heap* heap = isolate->heap();
   if (!shared->HasDebugInfo()) {
-    return Handle<Object>(heap->undefined_value(), isolate);
+    return isolate->factory()->undefined_value();
   }
   Handle<DebugInfo> debug_info(shared->GetDebugInfo());
   if (debug_info->GetBreakPointCount() == 0) {
-    return Handle<Object>(heap->undefined_value(), isolate);
+    return isolate->factory()->undefined_value();
   }
   Handle<FixedArray> locations =
       isolate->factory()->NewFixedArray(debug_info->GetBreakPointCount());
   int count = 0;
   for (int i = 0; i < debug_info->break_points()->length(); ++i) {
-    if (!debug_info->break_points()->get(i)->IsUndefined()) {
+    if (!debug_info->break_points()->get(i)->IsUndefined(isolate)) {
       BreakPointInfo* break_point_info =
           BreakPointInfo::cast(debug_info->break_points()->get(i));
       int break_points = break_point_info->GetBreakPointCount();
@@ -1130,7 +1135,6 @@ void Debug::ClearStepping() {
   ClearOneShot();
 
   thread_local_.last_step_action_ = StepNone;
-  thread_local_.step_in_enabled_ = false;
   thread_local_.last_statement_position_ = RelocInfo::kNoPosition;
   thread_local_.last_fp_ = 0;
   thread_local_.target_fp_ = 0;
@@ -1152,12 +1156,6 @@ void Debug::ClearOneShot() {
       it->GetBreakLocation().ClearOneShot();
     }
   }
-}
-
-
-void Debug::EnableStepIn() {
-  STATIC_ASSERT(StepFrame > StepIn);
-  thread_local_.step_in_enabled_ = (last_step_action() >= StepIn);
 }
 
 
@@ -1313,9 +1311,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
   {
     SharedFunctionInfo::Iterator iterator(isolate_);
     while (SharedFunctionInfo* shared = iterator.Next()) {
-      if (!shared->OptimizedCodeMapIsCleared()) {
-        shared->ClearOptimizedCodeMap();
-      }
+      shared->ClearCodeFromOptimizedCodeMap();
     }
   }
 
@@ -1323,6 +1319,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
   isolate_->heap()->CollectAllGarbage(Heap::kMakeHeapIterableMask,
                                       "prepare for break points");
 
+  DCHECK(shared->is_compiled());
   bool is_interpreted = shared->HasBytecodeArray();
 
   {
@@ -1331,7 +1328,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
     // smarter here and avoid the heap walk.
     HeapIterator iterator(isolate_->heap());
     HeapObject* obj;
-    bool include_generators = !is_interpreted && shared->is_generator();
+    bool find_resumables = !is_interpreted && shared->is_resumable();
 
     while ((obj = iterator.next())) {
       if (obj->IsJSFunction()) {
@@ -1342,7 +1339,9 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
         }
         if (is_interpreted) continue;
         if (function->shared() == *shared) functions.Add(handle(function));
-      } else if (include_generators && obj->IsJSGeneratorObject()) {
+      } else if (find_resumables && obj->IsJSGeneratorObject()) {
+        // This case handles async functions as well, as they use generator
+        // objects for in-progress async function execution.
         JSGeneratorObject* generator_obj = JSGeneratorObject::cast(obj);
         if (!generator_obj->is_suspended()) continue;
         JSFunction* function = generator_obj->function();
@@ -1368,6 +1367,7 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
 
   for (Handle<JSFunction> const function : functions) {
     function->ReplaceCode(shared->code());
+    JSFunction::EnsureLiterals(function);
   }
 
   for (Handle<JSGeneratorObject> const generator_obj : suspended_generators) {
@@ -1384,6 +1384,13 @@ bool Debug::PrepareFunctionForBreakPoints(Handle<SharedFunctionInfo> shared) {
   return true;
 }
 
+void Debug::RecordAsyncFunction(Handle<JSGeneratorObject> generator_object) {
+  if (last_step_action() <= StepOut) return;
+  if (!generator_object->function()->shared()->is_async()) return;
+  DCHECK(!has_suspended_generator());
+  thread_local_.suspended_generator_ = *generator_object;
+  ClearStepping();
+}
 
 class SharedFunctionInfoFinder {
  public:
@@ -1725,7 +1732,7 @@ void Debug::OnPromiseReject(Handle<JSObject> promise, Handle<Object> value) {
   HandleScope scope(isolate_);
   // Check whether the promise has been marked as having triggered a message.
   Handle<Symbol> key = isolate_->factory()->promise_debug_marker_symbol();
-  if (JSReceiver::GetDataProperty(promise, key)->IsUndefined()) {
+  if (JSReceiver::GetDataProperty(promise, key)->IsUndefined(isolate_)) {
     OnException(value, promise);
   }
 }
@@ -1752,7 +1759,7 @@ void Debug::OnException(Handle<Object> exception, Handle<Object> promise) {
     ASSIGN_RETURN_ON_EXCEPTION_VALUE(
         isolate_, has_reject_handler,
         PromiseHasUserDefinedRejectHandler(jspromise), /* void */);
-    uncaught = has_reject_handler->IsFalse();
+    uncaught = has_reject_handler->IsFalse(isolate_);
   }
   // Bail out if exception breaks are not active
   if (uncaught) {
@@ -2051,7 +2058,7 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
                            request_args, &maybe_exception);
 
     if (maybe_result.ToHandle(&answer_value)) {
-      if (answer_value->IsUndefined()) {
+      if (answer_value->IsUndefined(isolate_)) {
         answer = isolate_->factory()->empty_string();
       } else {
         answer = Handle<String>::cast(answer_value);
@@ -2068,7 +2075,7 @@ void Debug::NotifyMessageHandler(v8::DebugEvent event,
           isolate_, is_running, cmd_processor, 1, is_running_args);
       Handle<Object> result;
       if (!maybe_result.ToHandle(&result)) break;
-      running = result->IsTrue();
+      running = result->IsTrue(isolate_);
     } else {
       Handle<Object> exception;
       if (!maybe_exception.ToHandle(&exception)) break;
@@ -2102,7 +2109,7 @@ void Debug::SetEventListener(Handle<Object> callback,
   event_listener_data_ = Handle<Object>();
 
   // Set new entry.
-  if (!callback->IsUndefined() && !callback->IsNull()) {
+  if (!callback->IsUndefined(isolate_) && !callback->IsNull(isolate_)) {
     event_listener_ = global_handles->Create(*callback);
     if (data.is_null()) data = isolate_->factory()->undefined_value();
     event_listener_data_ = global_handles->Create(*data);
@@ -2492,6 +2499,9 @@ v8::Debug::ClientData* EventDetailsImpl::GetClientData() const {
   return client_data_;
 }
 
+v8::Isolate* EventDetailsImpl::GetIsolate() const {
+  return reinterpret_cast<v8::Isolate*>(exec_state_->GetIsolate());
+}
 
 CommandMessage::CommandMessage() : text_(Vector<uint16_t>::empty()),
                                    client_data_(NULL) {

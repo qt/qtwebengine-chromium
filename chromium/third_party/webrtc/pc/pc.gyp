@@ -24,6 +24,12 @@
         '<(webrtc_root)/media/media.gyp:rtc_media',
       ],
       'conditions': [
+        ['build_with_chromium==1', {
+          'sources': [
+            'externalhmac.h',
+            'externalhmac.cc',
+          ],
+        }],
         ['build_libsrtp==1', {
           'dependencies': [
             '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
@@ -79,6 +85,7 @@
             '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
             '<(webrtc_root)/media/media.gyp:rtc_unittest_main',
             '<(webrtc_root)/pc/pc.gyp:rtc_pc',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
           ],
           'include_dirs': [
             '<(DEPTH)/third_party/libsrtp/srtp',

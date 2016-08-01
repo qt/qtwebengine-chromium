@@ -24,6 +24,7 @@ source_set("utility") {
     "source/file_recorder_impl.cc",
     "source/file_recorder_impl.h",
     "source/helpers_android.cc",
+    "source/helpers_ios.mm",
     "source/jvm_android.cc",
     "source/process_thread_impl.cc",
     "source/process_thread_impl.h",
@@ -38,8 +39,13 @@ source_set("utility") {
     configs -= [ "//build/config/clang:find_bad_constructs" ]
   }
 
+  if (is_ios) {
+    libs = [ "AVFoundation.framework" ]
+  }
+
   deps = [
     "../..:webrtc_common",
+    "../../base:rtc_task_queue",
     "../../common_audio",
     "../../system_wrappers",
     "../audio_coding",

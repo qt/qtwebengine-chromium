@@ -161,8 +161,8 @@ class HttpCache::Transaction : public HttpTransaction {
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
   void SetBeforeNetworkStartCallback(
       const BeforeNetworkStartCallback& callback) override;
-  void SetBeforeProxyHeadersSentCallback(
-      const BeforeProxyHeadersSentCallback& callback) override;
+  void SetBeforeHeadersSentCallback(
+      const BeforeHeadersSentCallback& callback) override;
   int ResumeNetworkStart() override;
   void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
@@ -484,6 +484,9 @@ class HttpCache::Transaction : public HttpTransaction {
   base::TimeTicks entry_lock_waiting_since_;
   base::TimeTicks first_cache_access_since_;
   base::TimeTicks send_request_since_;
+  base::Time open_entry_last_used_;
+  base::TimeDelta stale_entry_freshness_;
+  base::TimeDelta stale_entry_age_;
 
   int64_t total_received_bytes_;
   int64_t total_sent_bytes_;
@@ -504,7 +507,7 @@ class HttpCache::Transaction : public HttpTransaction {
       websocket_handshake_stream_base_create_helper_;
 
   BeforeNetworkStartCallback before_network_start_callback_;
-  BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+  BeforeHeadersSentCallback before_headers_sent_callback_;
 
   base::WeakPtrFactory<Transaction> weak_factory_;
 

@@ -250,8 +250,9 @@ endif
 
 # Architectures and modes to be compiled. Consider these to be internal
 # variables, don't override them (use the targets instead).
-ARCHES = ia32 x64 x32 arm arm64 mips mipsel mips64 mips64el x87 ppc ppc64 \
-		 s390 s390x
+ARCHES = ia32 x64 arm arm64 mips mipsel mips64 mips64el x87 ppc ppc64 s390 \
+         s390x
+ARCHES32 = ia32 arm mips mipsel x87 ppc s390
 DEFAULT_ARCHES = ia32 x64 arm
 MODES = release debug optdebug
 DEFAULT_MODES = release debug
@@ -447,6 +448,10 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	        cut -f 2 -d " " | cut -f 1 -d "-" ))
 	$(eval CXX_TARGET_ARCH:=$(subst aarch64,arm64,$(CXX_TARGET_ARCH)))
 	$(eval CXX_TARGET_ARCH:=$(subst x86_64,x64,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst s390x,s390,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst powerpc,ppc,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst ppc64,ppc,$(CXX_TARGET_ARCH)))
+	$(eval CXX_TARGET_ARCH:=$(subst ppcle,ppc,$(CXX_TARGET_ARCH)))
 	$(eval V8_TARGET_ARCH:=$(subst .,,$(suffix $(basename $@))))
 	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(shell pwd)/gypfiles:$(PYTHONPATH):$(shell pwd)/tools/gyp/pylib:$(PYTHONPATH)" \
 	GYP_GENERATORS=make \
@@ -454,12 +459,14 @@ $(OUT_MAKEFILES): $(GYPFILES) $(ENVFILE)
 	              -Igypfiles/standalone.gypi --depth=. \
 	              -Dv8_target_arch=$(V8_TARGET_ARCH) \
 	              $(if $(findstring $(CXX_TARGET_ARCH),$(V8_TARGET_ARCH)), \
-	              -Dtarget_arch=$(V8_TARGET_ARCH),) \
+	              -Dtarget_arch=$(V8_TARGET_ARCH), \
+	                  $(if $(shell echo $(ARCHES32) | grep $(V8_TARGET_ARCH)), \
+	                  -Dtarget_arch=ia32,)) \
 	              $(if $(findstring optdebug,$@),-Dv8_optimized_debug=1,) \
 	              -S$(suffix $(basename $@))$(suffix $@) $(GYPFLAGS)
 
 $(OUTDIR)/Makefile.native: $(GYPFILES) $(ENVFILE)
-	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(shell pwd)/build:$(PYTHONPATH):$(shell pwd)/tools/gyp/pylib:$(PYTHONPATH)" \
+	PYTHONPATH="$(shell pwd)/tools/generate_shim_headers:$(shell pwd)/gypfiles:$(PYTHONPATH):$(shell pwd)/tools/gyp/pylib:$(PYTHONPATH)" \
 	GYP_GENERATORS=make \
 	tools/gyp/gyp --generator-output="$(OUTDIR)" gypfiles/all.gyp \
 	              -Igypfiles/standalone.gypi --depth=. -S.native $(GYPFLAGS)

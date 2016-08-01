@@ -15,6 +15,7 @@
 #include "core/fpdfapi/include/cpdf_modulemgr.h"
 #include "core/fxcodec/include/fx_codec.h"
 #include "core/fxcrt/include/fx_safe_types.h"
+#include "core/fxge/include/fx_ge.h"
 #include "fpdfsdk/include/fsdk_define.h"
 #include "fpdfsdk/include/fsdk_mgr.h"
 #include "fpdfsdk/include/fsdk_rendercontext.h"
@@ -30,6 +31,10 @@
 #include "fpdfsdk/fpdfxfa/include/fpdfxfa_util.h"
 #include "public/fpdf_formfill.h"
 #endif  // PDF_ENABLE_XFA
+
+#if _FXM_PLATFORM_ == _FXM_PLATFORM_WINDOWS_
+#include "core/fxge/include/fx_ge_win32.h"
+#endif
 
 UnderlyingDocumentType* UnderlyingFromFPDFDocument(FPDF_DOCUMENT doc) {
   return static_cast<UnderlyingDocumentType*>(doc);
@@ -69,6 +74,10 @@ CPDF_Page* CPDFPageFromFPDFPage(FPDF_PAGE page) {
 #endif  // PDF_ENABLE_XFA
 }
 
+CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
+  return static_cast<CFX_DIBitmap*>(bitmap);
+}
+
 #ifdef PDF_ENABLE_XFA
 CFPDF_FileStream::CFPDF_FileStream(FPDF_FILEHANDLER* pFS) {
   m_pFS = pFS;
@@ -93,6 +102,10 @@ FX_FILESIZE CFPDF_FileStream::GetSize() {
 
 FX_BOOL CFPDF_FileStream::IsEOF() {
   return m_nCurPos >= GetSize();
+}
+
+FX_FILESIZE CFPDF_FileStream::GetPosition() {
+  return m_nCurPos;
 }
 
 FX_BOOL CFPDF_FileStream::ReadBlock(void* buffer,
@@ -158,6 +171,10 @@ CPDF_CustomAccess::CPDF_CustomAccess(FPDF_FILEACCESS* pFileAccess) {
 }
 
 #ifdef PDF_ENABLE_XFA
+CFX_ByteString CPDF_CustomAccess::GetFullPath() {
+  return "";
+}
+
 FX_BOOL CPDF_CustomAccess::GetByte(uint32_t pos, uint8_t& ch) {
   if (pos >= m_FileAccess.m_FileLen)
     return FALSE;
@@ -184,6 +201,14 @@ FX_BOOL CPDF_CustomAccess::GetBlock(uint32_t pos,
   return m_FileAccess.m_GetBlock(m_FileAccess.m_Param, pos, pBuf, size);
 }
 #endif  // PDF_ENABLE_XFA
+
+FX_FILESIZE CPDF_CustomAccess::GetSize() {
+  return m_FileAccess.m_FileLen;
+}
+
+void CPDF_CustomAccess::Release() {
+  delete this;
+}
 
 FX_BOOL CPDF_CustomAccess::ReadBlock(void* buffer,
                                      FX_FILESIZE offset,
@@ -237,24 +262,20 @@ DLLEXPORT void STDCALL
 FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   g_pCodecModule = new CCodec_ModuleMgr();
 
-  CFX_GEModule::Create(cfg ? cfg->m_pUserFontPaths : nullptr);
-  CFX_GEModule::Get()->SetCodecModule(g_pCodecModule);
-
+  CFX_GEModule::Create(cfg ? cfg->m_pUserFontPaths : nullptr, g_pCodecModule);
   CPDF_ModuleMgr::Create();
   CPDF_ModuleMgr* pModuleMgr = CPDF_ModuleMgr::Get();
   pModuleMgr->SetCodecModule(g_pCodecModule);
   pModuleMgr->InitPageModule();
-
-#ifdef PDF_ENABLE_XFA
-  CPDFXFA_App::GetInstance()->Initialize(
-      (cfg && cfg->version >= 2)
-          ? reinterpret_cast<FXJSE_HRUNTIME>(cfg->m_pIsolate)
-          : nullptr);
-#else   // PDF_ENABLE_XFA
   pModuleMgr->LoadEmbeddedGB1CMaps();
   pModuleMgr->LoadEmbeddedJapan1CMaps();
   pModuleMgr->LoadEmbeddedCNS1CMaps();
   pModuleMgr->LoadEmbeddedKorea1CMaps();
+
+#ifdef PDF_ENABLE_XFA
+  CPDFXFA_App::GetInstance()->Initialize(
+      (cfg && cfg->version >= 2) ? static_cast<v8::Isolate*>(cfg->m_pIsolate)
+                                 : nullptr);
 #endif  // PDF_ENABLE_XFA
 
   if (cfg && cfg->version >= 2)
@@ -270,6 +291,8 @@ DLLEXPORT void STDCALL FPDF_DestroyLibrary() {
 
   delete g_pCodecModule;
   g_pCodecModule = nullptr;
+
+  IJS_Runtime::Destroy();
 }
 
 #ifndef _WIN32
@@ -327,12 +350,12 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadDocument(FPDF_STRING file_path,
   if (error != CPDF_Parser::SUCCESS) {
     delete pParser;
     ProcessParseError(error);
-    return NULL;
+    return nullptr;
   }
 #ifdef PDF_ENABLE_XFA
   CPDF_Document* pPDFDoc = pParser->GetDocument();
   if (!pPDFDoc)
-    return NULL;
+    return nullptr;
 
   CPDFXFA_App* pProvider = CPDFXFA_App::GetInstance();
   return new CPDFXFA_Document(pPDFDoc, pProvider);
@@ -364,13 +387,8 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_HasXFAField(FPDF_DOCUMENT document,
   if (!pXFA)
     return FALSE;
 
-  FX_BOOL bDynamicXFA = pRoot->GetBooleanBy("NeedsRendering", FALSE);
-
-  if (bDynamicXFA)
-    *docType = DOCTYPE_DYNAMIC_XFA;
-  else
-    *docType = DOCTYPE_STATIC_XFA;
-
+  bool bDynamicXFA = pRoot->GetBooleanBy("NeedsRendering", false);
+  *docType = bDynamicXFA ? DOCTYPE_DYNAMIC_XFA : DOCTYPE_STATIC_XFA;
   return TRUE;
 }
 
@@ -416,10 +434,9 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadMemDocument(const void* data_buf,
   if (error != CPDF_Parser::SUCCESS) {
     delete pParser;
     ProcessParseError(error);
-    return NULL;
+    return nullptr;
   }
-  CPDF_Document* pDoc = NULL;
-  pDoc = pParser ? pParser->GetDocument() : NULL;
+  CPDF_Document* pDoc = pParser ? pParser->GetDocument() : nullptr;
   CheckUnSupportError(pDoc, error);
   return FPDFDocumentFromCPDFDocument(pParser->GetDocument());
 }
@@ -434,10 +451,9 @@ FPDF_LoadCustomDocument(FPDF_FILEACCESS* pFileAccess,
   if (error != CPDF_Parser::SUCCESS) {
     delete pParser;
     ProcessParseError(error);
-    return NULL;
+    return nullptr;
   }
-  CPDF_Document* pDoc = NULL;
-  pDoc = pParser ? pParser->GetDocument() : NULL;
+  CPDF_Document* pDoc = pParser ? pParser->GetDocument() : nullptr;
   CheckUnSupportError(pDoc, error);
   return FPDFDocumentFromCPDFDocument(pParser->GetDocument());
 }
@@ -464,15 +480,16 @@ DLLEXPORT FPDF_BOOL STDCALL FPDF_GetFileVersion(FPDF_DOCUMENT doc,
 // header).
 DLLEXPORT unsigned long STDCALL FPDF_GetDocPermissions(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc || !pDoc->GetParser())
+  // https://bugs.chromium.org/p/pdfium/issues/detail?id=499
+  if (!pDoc) {
 #ifndef PDF_ENABLE_XFA
     return 0;
 #else   // PDF_ENABLE_XFA
-    return (uint32_t)-1;
+    return 0xFFFFFFFF;
 #endif  // PDF_ENABLE_XFA
+  }
 
-  CPDF_Dictionary* pDict = pDoc->GetParser()->GetEncryptDict();
-  return pDict ? pDict->GetIntegerBy("P") : (uint32_t)-1;
+  return pDoc->GetUserPermissions();
 }
 
 DLLEXPORT int STDCALL FPDF_GetSecurityHandlerRevision(FPDF_DOCUMENT document) {
@@ -521,10 +538,6 @@ DLLEXPORT double STDCALL FPDF_GetPageHeight(FPDF_PAGE page) {
   return pPage ? pPage->GetPageHeight() : 0.0;
 }
 
-void DropContext(void* data) {
-  delete (CRenderContext*)data;
-}
-
 #if defined(_WIN32)
 DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
                                        FPDF_PAGE page,
@@ -539,9 +552,8 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
     return;
 
   CRenderContext* pContext = new CRenderContext;
-  pPage->SetPrivateData((void*)1, pContext, DropContext);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>(pContext));
 
-#if !defined(_WIN32_WCE)
   CFX_DIBitmap* pBitmap = nullptr;
   FX_BOOL bBackgroundAlphaNeeded = pPage->BackgroundAlphaNeeded();
   FX_BOOL bHasImageMask = pPage->HasImageMask();
@@ -549,14 +561,15 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
     pBitmap = new CFX_DIBitmap;
     pBitmap->Create(size_x, size_y, FXDIB_Argb);
     pBitmap->Clear(0x00ffffff);
-    pContext->m_pDevice = new CFX_FxgeDevice;
-    ((CFX_FxgeDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)pBitmap);
+    CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
+    pContext->m_pDevice = pDevice;
+    pDevice->Attach(pBitmap, false, nullptr, false);
   } else {
     pContext->m_pDevice = new CFX_WindowsDevice(dc);
   }
 
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
-                         rotate, flags, TRUE, NULL);
+                         rotate, flags, TRUE, nullptr);
 
   if (bBackgroundAlphaNeeded || bHasImageMask) {
     if (pBitmap) {
@@ -568,7 +581,7 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
         pDst->Create(size_x, size_y, FXDIB_Rgb32);
         FXSYS_memset(pDst->GetBuffer(), -1, pitch * size_y);
         pDst->CompositeBitmap(0, 0, size_x, size_y, pBitmap, 0, 0,
-                              FXDIB_BLEND_NORMAL, NULL, FALSE, NULL);
+                              FXDIB_BLEND_NORMAL, nullptr, FALSE, nullptr);
         WinDC.StretchDIBits(pDst, 0, 0, size_x, size_y);
         delete pDst;
       } else {
@@ -576,55 +589,10 @@ DLLEXPORT void STDCALL FPDF_RenderPage(HDC dc,
       }
     }
   }
-#else
-  // get clip region
-  RECT rect, cliprect;
-  rect.left = start_x;
-  rect.top = start_y;
-  rect.right = start_x + size_x;
-  rect.bottom = start_y + size_y;
-  GetClipBox(dc, &cliprect);
-  IntersectRect(&rect, &rect, &cliprect);
-  int width = rect.right - rect.left;
-  int height = rect.bottom - rect.top;
-
-  // Create a DIB section
-  LPVOID pBuffer;
-  BITMAPINFOHEADER bmih;
-  FXSYS_memset(&bmih, 0, sizeof bmih);
-  bmih.biSize = sizeof bmih;
-  bmih.biBitCount = 24;
-  bmih.biHeight = -height;
-  bmih.biPlanes = 1;
-  bmih.biWidth = width;
-  pContext->m_hBitmap = CreateDIBSection(dc, (BITMAPINFO*)&bmih, DIB_RGB_COLORS,
-                                         &pBuffer, NULL, 0);
-  FXSYS_memset(pBuffer, 0xff, height * ((width * 3 + 3) / 4 * 4));
-
-  // Create a device with this external buffer
-  pContext->m_pBitmap = new CFX_DIBitmap;
-  pContext->m_pBitmap->Create(width, height, FXDIB_Rgb, (uint8_t*)pBuffer);
-  pContext->m_pDevice = new CPDF_FxgeDevice;
-  ((CPDF_FxgeDevice*)pContext->m_pDevice)->Attach(pContext->m_pBitmap);
-
-  // output to bitmap device
-  FPDF_RenderPage_Retail(pContext, page, start_x - rect.left,
-                         start_y - rect.top, size_x, size_y, rotate, flags);
-
-  // Now output to real device
-  HDC hMemDC = CreateCompatibleDC(dc);
-  HGDIOBJ hOldBitmap = SelectObject(hMemDC, pContext->m_hBitmap);
-
-  BitBlt(dc, rect.left, rect.top, width, height, hMemDC, 0, 0, SRCCOPY);
-  SelectObject(hMemDC, hOldBitmap);
-  DeleteDC(hMemDC);
-
-#endif  // !defined(_WIN32_WCE)
   if (bBackgroundAlphaNeeded || bHasImageMask)
     delete pBitmap;
 
-  delete pContext;
-  pPage->RemovePrivateData((void*)1);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>());
 }
 #endif  // defined(_WIN32)
 
@@ -638,24 +606,22 @@ DLLEXPORT void STDCALL FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
                                              int flags) {
   if (!bitmap)
     return;
+
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return;
-  CRenderContext* pContext = new CRenderContext;
-  pPage->SetPrivateData((void*)1, pContext, DropContext);
-  pContext->m_pDevice = new CFX_FxgeDevice;
 
-  if (flags & FPDF_REVERSE_BYTE_ORDER)
-    ((CFX_FxgeDevice*)pContext->m_pDevice)
-        ->Attach((CFX_DIBitmap*)bitmap, 0, TRUE);
-  else
-    ((CFX_FxgeDevice*)pContext->m_pDevice)->Attach((CFX_DIBitmap*)bitmap);
+  CRenderContext* pContext = new CRenderContext;
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>(pContext));
+  CFX_FxgeDevice* pDevice = new CFX_FxgeDevice;
+  pContext->m_pDevice = pDevice;
+  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
   FPDF_RenderPage_Retail(pContext, page, start_x, start_y, size_x, size_y,
-                         rotate, flags, TRUE, NULL);
+                         rotate, flags, TRUE, nullptr);
 
-  delete pContext;
-  pPage->RemovePrivateData((void*)1);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>());
 }
 
 #ifdef _SKIA_SUPPORT_
@@ -665,33 +631,33 @@ DLLEXPORT FPDF_RECORDER STDCALL FPDF_RenderPageSkp(FPDF_PAGE page,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return nullptr;
-  std::unique_ptr<CRenderContext> pContext(new CRenderContext);
-  pPage->SetPrivateData((void*)1, pContext.get(), DropContext);
+
+  CRenderContext* pContext = new CRenderContext;
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>(pContext));
   CFX_FxgeDevice* skDevice = new CFX_FxgeDevice;
   FPDF_RECORDER recorder = skDevice->CreateRecorder(size_x, size_y);
   pContext->m_pDevice = skDevice;
-
-  FPDF_RenderPage_Retail(pContext.get(), page, 0, 0, size_x, size_y, 0, 0, TRUE,
-                         NULL);
-  pPage->RemovePrivateData((void*)1);
+  FPDF_RenderPage_Retail(pContext, page, 0, 0, size_x, size_y, 0, 0, TRUE,
+                         nullptr);
+  pPage->SetRenderContext(std::unique_ptr<CFX_Deletable>());
   return recorder;
 }
 #endif
 
 DLLEXPORT void STDCALL FPDF_ClosePage(FPDF_PAGE page) {
+  UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
   if (!page)
     return;
 #ifdef PDF_ENABLE_XFA
-  CPDFXFA_Page* pPage = (CPDFXFA_Page*)page;
   pPage->Release();
 #else   // PDF_ENABLE_XFA
   CPDFSDK_PageView* pPageView =
-      (CPDFSDK_PageView*)(((CPDF_Page*)page))->GetPrivateData((void*)page);
+      static_cast<CPDFSDK_PageView*>(pPage->GetView());
   if (pPageView && pPageView->IsLocked()) {
     pPageView->TakeOverPage();
     return;
   }
-  delete (CPDF_Page*)page;
+  delete pPage;
 #endif  // PDF_ENABLE_XFA
 }
 
@@ -780,7 +746,7 @@ DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_Create(int width,
                                                 int alpha) {
   std::unique_ptr<CFX_DIBitmap> pBitmap(new CFX_DIBitmap);
   if (!pBitmap->Create(width, height, alpha ? FXDIB_Argb : FXDIB_Rgb32)) {
-    return NULL;
+    return nullptr;
   }
   return pBitmap.release();
 }
@@ -805,7 +771,7 @@ DLLEXPORT FPDF_BITMAP STDCALL FPDFBitmap_CreateEx(int width,
       fx_format = FXDIB_Argb;
       break;
     default:
-      return NULL;
+      return nullptr;
   }
   CFX_DIBitmap* pBitmap = new CFX_DIBitmap;
   pBitmap->Create(width, height, fx_format, (uint8_t*)first_scan, stride);
@@ -820,32 +786,34 @@ DLLEXPORT void STDCALL FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
                                            FPDF_DWORD color) {
   if (!bitmap)
     return;
+
   CFX_FxgeDevice device;
-  device.Attach((CFX_DIBitmap*)bitmap);
-  if (!((CFX_DIBitmap*)bitmap)->HasAlpha())
+  CFX_DIBitmap* pBitmap = CFXBitmapFromFPDFBitmap(bitmap);
+  device.Attach(pBitmap, false, nullptr, false);
+  if (!pBitmap->HasAlpha())
     color |= 0xFF000000;
   FX_RECT rect(left, top, left + width, top + height);
   device.FillRect(&rect, color);
 }
 
 DLLEXPORT void* STDCALL FPDFBitmap_GetBuffer(FPDF_BITMAP bitmap) {
-  return bitmap ? ((CFX_DIBitmap*)bitmap)->GetBuffer() : nullptr;
+  return bitmap ? CFXBitmapFromFPDFBitmap(bitmap)->GetBuffer() : nullptr;
 }
 
 DLLEXPORT int STDCALL FPDFBitmap_GetWidth(FPDF_BITMAP bitmap) {
-  return bitmap ? ((CFX_DIBitmap*)bitmap)->GetWidth() : 0;
+  return bitmap ? CFXBitmapFromFPDFBitmap(bitmap)->GetWidth() : 0;
 }
 
 DLLEXPORT int STDCALL FPDFBitmap_GetHeight(FPDF_BITMAP bitmap) {
-  return bitmap ? ((CFX_DIBitmap*)bitmap)->GetHeight() : 0;
+  return bitmap ? CFXBitmapFromFPDFBitmap(bitmap)->GetHeight() : 0;
 }
 
 DLLEXPORT int STDCALL FPDFBitmap_GetStride(FPDF_BITMAP bitmap) {
-  return bitmap ? ((CFX_DIBitmap*)bitmap)->GetPitch() : 0;
+  return bitmap ? CFXBitmapFromFPDFBitmap(bitmap)->GetPitch() : 0;
 }
 
 DLLEXPORT void STDCALL FPDFBitmap_Destroy(FPDF_BITMAP bitmap) {
-  delete (CFX_DIBitmap*)bitmap;
+  delete CFXBitmapFromFPDFBitmap(bitmap);
 }
 
 void FPDF_RenderPage_Retail(CRenderContext* pContext,
@@ -909,14 +877,14 @@ void FPDF_RenderPage_Retail(CRenderContext* pContext,
     pContext->m_pAnnots = new CPDF_AnnotList(pPage);
     FX_BOOL bPrinting = pContext->m_pDevice->GetDeviceClass() != FXDC_DISPLAY;
     pContext->m_pAnnots->DisplayAnnots(pPage, pContext->m_pContext, bPrinting,
-                                       &matrix, TRUE, NULL);
+                                       &matrix, TRUE, nullptr);
   }
 
   pContext->m_pRenderer = new CPDF_ProgressiveRenderer(
       pContext->m_pContext, pContext->m_pDevice, pContext->m_pOptions);
   pContext->m_pRenderer->Start(pause);
   if (bNeedToRestore)
-    pContext->m_pDevice->RestoreState();
+    pContext->m_pDevice->RestoreState(false);
 }
 
 DLLEXPORT int STDCALL FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
@@ -970,7 +938,7 @@ DLLEXPORT FPDF_PAGERANGE STDCALL
 FPDF_VIEWERREF_GetPrintPageRange(FPDF_DOCUMENT document) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
-    return NULL;
+    return nullptr;
   CPDF_ViewerPreferences viewRef(pDoc);
   return viewRef.PrintPageRange();
 }
@@ -1047,7 +1015,7 @@ DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Set(FPDF_BSTR* str,
   if (length == 0) {
     if (str->str) {
       FX_Free(str->str);
-      str->str = NULL;
+      str->str = nullptr;
     }
     str->len = 0;
     return 0;
@@ -1059,9 +1027,6 @@ DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Set(FPDF_BSTR* str,
     str->str = FX_Alloc(char, length + 1);
 
   str->str[length] = 0;
-  if (str->str == NULL)
-    return -1;
-
   FXSYS_memcpy(str->str, bstr, length);
   str->len = length;
 
@@ -1074,7 +1039,7 @@ DLLEXPORT FPDF_RESULT STDCALL FPDF_BStr_Clear(FPDF_BSTR* str) {
 
   if (str->str) {
     FX_Free(str->str);
-    str->str = NULL;
+    str->str = nullptr;
   }
   str->len = 0;
   return 0;

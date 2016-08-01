@@ -23,6 +23,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_piece.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -699,12 +700,15 @@ struct ArgumentCopyingWebSocketStreamCreator {
       const GURL& socket_url,
       const std::vector<std::string>& requested_subprotocols,
       const url::Origin& origin,
+      const GURL& first_party_for_cookies,
+      const std::string& additional_headers,
       URLRequestContext* url_request_context,
       const BoundNetLog& net_log,
       std::unique_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
     this->socket_url = socket_url;
     this->requested_subprotocols = requested_subprotocols;
     this->origin = origin;
+    this->first_party_for_cookies = first_party_for_cookies;
     this->url_request_context = url_request_context;
     this->net_log = net_log;
     this->connect_delegate = std::move(connect_delegate);
@@ -713,6 +717,7 @@ struct ArgumentCopyingWebSocketStreamCreator {
 
   GURL socket_url;
   url::Origin origin;
+  GURL first_party_for_cookies;
   std::vector<std::string> requested_subprotocols;
   URLRequestContext* url_request_context;
   BoundNetLog net_log;
@@ -744,9 +749,8 @@ class WebSocketChannelTest : public ::testing::Test {
     channel_.reset(new WebSocketChannel(CreateEventInterface(),
                                         &connect_data_.url_request_context));
     channel_->SendAddChannelRequestForTesting(
-        connect_data_.socket_url,
-        connect_data_.requested_subprotocols,
-        connect_data_.origin,
+        connect_data_.socket_url, connect_data_.requested_subprotocols,
+        connect_data_.origin, connect_data_.first_party_for_cookies, "",
         base::Bind(&ArgumentCopyingWebSocketStreamCreator::Create,
                    base::Unretained(&connect_data_.creator)));
   }
@@ -779,7 +783,10 @@ class WebSocketChannelTest : public ::testing::Test {
   // A struct containing the data that will be used to connect the channel.
   // Grouped for readability.
   struct ConnectData {
-    ConnectData() : socket_url("ws://ws/"), origin(GURL("http://ws")) {}
+    ConnectData()
+        : socket_url("ws://ws/"),
+          origin(GURL("http://ws")),
+          first_party_for_cookies("http://ws/") {}
 
     // URLRequestContext object.
     URLRequestContext url_request_context;
@@ -790,6 +797,8 @@ class WebSocketChannelTest : public ::testing::Test {
     std::vector<std::string> requested_subprotocols;
     // Origin of the request
     url::Origin origin;
+    // First party for cookies for the request.
+    GURL first_party_for_cookies;
 
     // A fake WebSocketStreamCreator that just records its arguments.
     ArgumentCopyingWebSocketStreamCreator creator;
@@ -1004,6 +1013,7 @@ class WebSocketChannelReceiveUtf8Test : public WebSocketChannelStreamTest {
 TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   connect_data_.socket_url = GURL("ws://example.com/test");
   connect_data_.origin = url::Origin(GURL("http://example.com"));
+  connect_data_.first_party_for_cookies = GURL("http://example.com/");
   connect_data_.requested_subprotocols.push_back("Sinbad");
 
   CreateChannelAndConnect();
@@ -1016,6 +1026,8 @@ TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   EXPECT_EQ(connect_data_.requested_subprotocols,
             actual.requested_subprotocols);
   EXPECT_EQ(connect_data_.origin.Serialize(), actual.origin.Serialize());
+  EXPECT_EQ(connect_data_.first_party_for_cookies,
+            actual.first_party_for_cookies);
 }
 
 // Verify that calling SendFlowControl before the connection is established does
@@ -1068,7 +1080,7 @@ TEST_F(WebSocketChannelDeletingTest, OnDataFrameAsync) {
 
   CreateChannelAndConnectSuccessfully();
   EXPECT_TRUE(channel_);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1116,7 +1128,7 @@ TEST_F(WebSocketChannelDeletingTest, OnClosingHandshakeAsync) {
   deleting_ = EVENT_ON_CLOSING_HANDSHAKE;
   CreateChannelAndConnectSuccessfully();
   ASSERT_TRUE(channel_);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1139,7 +1151,7 @@ TEST_F(WebSocketChannelDeletingTest, OnDropChannelReadError) {
   deleting_ = EVENT_ON_DROP_CHANNEL;
   CreateChannelAndConnectSuccessfully();
   ASSERT_TRUE(channel_);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1158,7 +1170,7 @@ TEST_F(WebSocketChannelDeletingTest, OnNotifyStartOpeningHandshakeError) {
       std::unique_ptr<WebSocketHandshakeRequestInfo>(
           new WebSocketHandshakeRequestInfo(GURL("http://www.example.com/"),
                                             base::Time())));
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1179,7 +1191,7 @@ TEST_F(WebSocketChannelDeletingTest, OnNotifyFinishOpeningHandshakeError) {
       base::WrapUnique(new WebSocketHandshakeResponseInfo(
           GURL("http://www.example.com/"), 200, "OK", response_headers,
           base::Time())));
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1203,7 +1215,7 @@ TEST_F(WebSocketChannelDeletingTest, FailChannelInOnReadDone) {
   deleting_ = EVENT_ON_FAIL_CHANNEL;
   CreateChannelAndConnectSuccessfully();
   ASSERT_TRUE(channel_);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(nullptr, channel_.get());
 }
 
@@ -1453,7 +1465,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, NormalAsyncRead) {
 
   CreateChannelAndConnectSuccessfully();
   checkpoint.Call(1);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   checkpoint.Call(2);
 }
 
@@ -1484,7 +1496,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, AsyncThenSyncRead) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Data frames are delivered the same regardless of how many reads they arrive
@@ -1538,7 +1550,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, FragmentedMessage) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // A message can consist of one frame with null payload.
@@ -1573,7 +1585,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, AsyncAbnormalClosure) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // A connection reset should produce the same event as an unexpected closure.
@@ -1592,7 +1604,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, ConnectionReset) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // RFC6455 5.1 "A client MUST close a connection if it detects a masked frame."
@@ -1615,7 +1627,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, MaskedFramesAreRejected) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // RFC6455 5.2 "If an unknown opcode is received, the receiving endpoint MUST
@@ -1636,7 +1648,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, UnknownOpCodeIsRejected) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // RFC6455 5.4 "Control frames ... MAY be injected in the middle of a
@@ -1673,7 +1685,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, ControlFrameInDataMessage) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // It seems redundant to repeat the entirety of the above test, so just test a
@@ -1689,7 +1701,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, PongWithNullData) {
   EXPECT_CALL(*event_interface_, OnFlowControl(_));
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // If a frame has an invalid header, then the connection is closed and
@@ -1714,7 +1726,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, FrameAfterInvalidFrame) {
   }
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // If the renderer sends lots of small writes, we don't want to update the quota
@@ -1838,7 +1850,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, SendCloseDropsChannel) {
 
   ASSERT_EQ(CHANNEL_ALIVE,
             channel_->StartClosingHandshake(kWebSocketNormalClosure, "Fred"));
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // StartClosingHandshake() also works before connection completes, and calls
@@ -1866,7 +1878,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, OnDropChannelCalledOnce) {
   CreateChannelAndConnectSuccessfully();
 
   channel_->SendFrame(true, WebSocketFrameHeader::kOpCodeText, AsVector("yt?"));
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // When the remote server sends a Close frame with an empty payload,
@@ -1938,7 +1950,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, AsyncProtocolErrorGivesStatus1002) {
   EXPECT_CALL(*event_interface_, OnFailChannel("Invalid frame header"));
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(WebSocketChannelEventInterfaceTest, StartHandshakeRequest) {
@@ -1957,7 +1969,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, StartHandshakeRequest) {
   connect_data_.creator.connect_delegate->OnStartOpeningHandshake(
       std::move(request_info));
 
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(WebSocketChannelEventInterfaceTest, FinishHandshakeRequest) {
@@ -1977,7 +1989,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, FinishHandshakeRequest) {
                                          "OK", response_headers, base::Time()));
   connect_data_.creator.connect_delegate->OnFinishOpeningHandshake(
       std::move(response_info));
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(WebSocketChannelEventInterfaceTest, FailJustAfterHandshake) {
@@ -2004,7 +2016,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, FailJustAfterHandshake) {
   connect_delegate->OnFinishOpeningHandshake(std::move(response_info));
 
   connect_delegate->OnFailure("bye");
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Any frame after close is invalid. This test uses a Text frame. See also
@@ -2364,7 +2376,7 @@ TEST_F(WebSocketChannelFlowControlTest, SingleFrameMessageSplitAsync) {
 
   CreateChannelAndConnectWithQuota(2);
   checkpoint.Call(1);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   checkpoint.Call(2);
   ASSERT_EQ(CHANNEL_ALIVE, channel_->SendFlowControl(1));
   checkpoint.Call(3);
@@ -3042,7 +3054,7 @@ TEST_F(WebSocketChannelEventInterfaceTest, ReceivedInvalidUtf8) {
               OnFailChannel("Could not decode a text frame as UTF-8."));
 
   CreateChannelAndConnectSuccessfully();
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Invalid UTF-8 is not sent over the network.

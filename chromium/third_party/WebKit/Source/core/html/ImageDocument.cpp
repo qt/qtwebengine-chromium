@@ -122,7 +122,7 @@ static String imageTitle(const String& filename, const IntSize& size)
 {
     StringBuilder result;
     result.append(filename);
-    result.appendLiteral(" (");
+    result.append(" (");
     // FIXME: Localize numbers. Safari/OSX shows localized numbers with group
     // separaters. For example, "1,920x1,080".
     result.appendNumber(size.width());
@@ -208,8 +208,6 @@ void ImageDocument::createDocumentStructure()
     appendChild(rootElement);
     rootElement->insertedByParser();
 
-    frame()->loader().dispatchDocumentElementAvailable();
-    frame()->loader().runScriptsAtDocumentElementAvailable();
     if (isStopped())
         return; // runScriptsAtDocumentElementAvailable can detach the frame.
 

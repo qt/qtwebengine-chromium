@@ -258,16 +258,16 @@ void RenderWidgetHostViewGuest::SetTooltipText(
 
 void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     uint32_t output_surface_id,
-    std::unique_ptr<cc::CompositorFrame> frame) {
+    cc::CompositorFrame frame) {
   TRACE_EVENT0("content", "RenderWidgetHostViewGuest::OnSwapCompositorFrame");
 
-  last_scroll_offset_ = frame->metadata.root_scroll_offset;
+  last_scroll_offset_ = frame.metadata.root_scroll_offset;
 
   cc::RenderPass* root_pass =
-      frame->delegated_frame_data->render_pass_list.back().get();
+      frame.delegated_frame_data->render_pass_list.back().get();
 
   gfx::Size frame_size = root_pass->output_rect.size();
-  float scale_factor = frame->metadata.device_scale_factor;
+  float scale_factor = frame.metadata.device_scale_factor;
 
   // Check whether we need to recreate the cc::Surface, which means the child
   // frame renderer has changed its output surface, or size, or scale factor.
@@ -472,17 +472,6 @@ void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
     embedder_view->GetScreenInfo(results);
 }
 
-bool RenderWidgetHostViewGuest::GetScreenColorProfile(
-    std::vector<char>* color_profile) {
-  if (!guest_)
-    return false;
-  DCHECK(color_profile->empty());
-  RenderWidgetHostViewBase* embedder_view = GetOwnerRenderWidgetHostView();
-  if (embedder_view)
-    return embedder_view->GetScreenColorProfile(color_profile);
-  return false;
-}
-
 #if defined(OS_MACOSX)
 void RenderWidgetHostViewGuest::SetActive(bool active) {
   platform_view_->SetActive(active);
@@ -566,6 +555,24 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
     RenderWidgetHostImpl* embedder,
     int browser_plugin_instance_id,
     const blink::WebInputEvent* event) {
+  // WebMouseWheelEvents go into a queue, and may not be forwarded to the
+  // renderer until after this method goes out of scope. Therefore we need to
+  // explicitly remove the additional device scale factor from the coordinates
+  // before allowing the event to be queued.
+  if (IsUseZoomForDSFEnabled() &&
+      event->type == blink::WebInputEvent::MouseWheel) {
+    blink::WebMouseWheelEvent rescaled_event =
+        *static_cast<const blink::WebMouseWheelEvent*>(event);
+    rescaled_event.x /= current_device_scale_factor();
+    rescaled_event.y /= current_device_scale_factor();
+    rescaled_event.deltaX /= current_device_scale_factor();
+    rescaled_event.deltaY /= current_device_scale_factor();
+    rescaled_event.wheelTicksX /= current_device_scale_factor();
+    rescaled_event.wheelTicksY /= current_device_scale_factor();
+    host_->ForwardWheelEvent(rescaled_event);
+    return;
+  }
+
   ScopedInputScaleDisabler disable(host_, current_device_scale_factor());
   if (blink::WebInputEvent::isMouseEventType(event->type)) {
     // The mouse events for BrowserPlugin are modified by all

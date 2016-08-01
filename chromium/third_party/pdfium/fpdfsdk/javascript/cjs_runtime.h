@@ -42,10 +42,8 @@ class CJS_Runtime : public IJS_Runtime {
   void ReleaseContext(IJS_Context* pContext) override;
   IJS_Context* GetCurrentContext() override;
   void SetReaderDocument(CPDFSDK_Document* pReaderDoc) override;
-  CPDFSDK_Document* GetReaderDocument() override { return m_pDocument; }
-  int Execute(IJS_Context* cc,
-              const wchar_t* script,
-              CFX_WideString* info) override;
+  CPDFSDK_Document* GetReaderDocument() override;
+  int Execute(const CFX_WideString& script, CFX_WideString* info) override;
 
   CPDFDoc_Environment* GetReaderApp() const { return m_pApp; }
 
@@ -64,10 +62,10 @@ class CJS_Runtime : public IJS_Runtime {
   v8::Local<v8::Array> GetConstArray(const CFX_WideString& name);
 
 #ifdef PDF_ENABLE_XFA
-  FX_BOOL GetHValueByName(const CFX_ByteStringC& utf8Name,
-                          FXJSE_HVALUE hValue) override;
-  FX_BOOL SetHValueByName(const CFX_ByteStringC& utf8Name,
-                          FXJSE_HVALUE hValue) override;
+  FX_BOOL GetValueByName(const CFX_ByteStringC& utf8Name,
+                         CFXJSE_Value* pValue) override;
+  FX_BOOL SetValueByName(const CFX_ByteStringC& utf8Name,
+                         CFXJSE_Value* pValue) override;
 #endif  // PDF_ENABLE_XFA
 
   void AddObserver(Observer* observer);

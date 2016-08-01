@@ -7,6 +7,8 @@
 #ifndef CORE_FXCODEC_CODEC_INCLUDE_CCODEC_PROGRESSIVEDECODER_H_
 #define CORE_FXCODEC_CODEC_INCLUDE_CCODEC_PROGRESSIVEDECODER_H_
 
+#include <vector>
+
 #include "core/fxcodec/include/fx_codec_def.h"
 #include "core/fxcrt/include/fx_system.h"
 #include "core/fxge/include/fx_dib.h"
@@ -40,12 +42,13 @@ class CCodec_ProgressiveDecoder {
     FXCodec_Cmyk = 0x120
   };
 
-  CCodec_ProgressiveDecoder(CCodec_ModuleMgr* pCodecMgr);
+  explicit CCodec_ProgressiveDecoder(CCodec_ModuleMgr* pCodecMgr);
   ~CCodec_ProgressiveDecoder();
 
   FXCODEC_STATUS LoadImageInfo(IFX_FileRead* pFile,
                                FXCODEC_IMAGE_TYPE imageType,
-                               CFX_DIBAttribute* pAttribute);
+                               CFX_DIBAttribute* pAttribute,
+                               bool bSkipImageTypeCheck);
 
   FXCODEC_IMAGE_TYPE GetType() const { return m_imagType; }
   int32_t GetWidth() const { return m_SrcWidth; }
@@ -73,8 +76,8 @@ class CCodec_ProgressiveDecoder {
 
   class CFXCODEC_WeightTable {
    public:
-    CFXCODEC_WeightTable() { m_pWeightTables = NULL; }
-    ~CFXCODEC_WeightTable() { FX_Free(m_pWeightTables); }
+    CFXCODEC_WeightTable();
+    ~CFXCODEC_WeightTable();
 
     void Calc(int dest_len,
               int dest_min,
@@ -84,37 +87,42 @@ class CCodec_ProgressiveDecoder {
               int src_max,
               FX_BOOL bInterpol);
     PixelWeight* GetPixelWeight(int pixel) {
-      return (PixelWeight*)(m_pWeightTables + (pixel - m_DestMin) * m_ItemSize);
+      return reinterpret_cast<PixelWeight*>(m_pWeightTables.data() +
+                                            (pixel - m_DestMin) * m_ItemSize);
     }
 
-    int m_DestMin, m_ItemSize;
-    uint8_t* m_pWeightTables;
+    int m_DestMin;
+    int m_ItemSize;
+    std::vector<uint8_t> m_pWeightTables;
   };
 
   class CFXCODEC_HorzTable {
    public:
-    CFXCODEC_HorzTable() { m_pWeightTables = NULL; }
-    ~CFXCODEC_HorzTable() { FX_Free(m_pWeightTables); }
+    CFXCODEC_HorzTable();
+    ~CFXCODEC_HorzTable();
 
     void Calc(int dest_len, int src_len, FX_BOOL bInterpol);
     PixelWeight* GetPixelWeight(int pixel) {
-      return (PixelWeight*)(m_pWeightTables + pixel * m_ItemSize);
+      return reinterpret_cast<PixelWeight*>(m_pWeightTables.data() +
+                                            pixel * m_ItemSize);
     }
 
     int m_ItemSize;
-    uint8_t* m_pWeightTables;
+    std::vector<uint8_t> m_pWeightTables;
   };
 
   class CFXCODEC_VertTable {
    public:
-    CFXCODEC_VertTable() { m_pWeightTables = NULL; }
-    ~CFXCODEC_VertTable() { FX_Free(m_pWeightTables); }
+    CFXCODEC_VertTable();
+    ~CFXCODEC_VertTable();
+
     void Calc(int dest_len, int src_len);
     PixelWeight* GetPixelWeight(int pixel) {
-      return (PixelWeight*)(m_pWeightTables + pixel * m_ItemSize);
+      return reinterpret_cast<PixelWeight*>(m_pWeightTables.data() +
+                                            pixel * m_ItemSize);
     }
     int m_ItemSize;
-    uint8_t* m_pWeightTables;
+    std::vector<uint8_t> m_pWeightTables;
   };
 
   IFX_FileRead* m_pFile;

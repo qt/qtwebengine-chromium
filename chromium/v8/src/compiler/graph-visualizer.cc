@@ -36,14 +36,34 @@ base::SmartArrayPointer<const char> GetVisualizerLogFileName(
   } else {
     SNPrintF(filename, "turbo-none-%s", phase);
   }
+  EmbeddedVector<char, 256> source_file(0);
+  bool source_available = false;
+  if (FLAG_trace_file_names && info->parse_info()) {
+    Object* source_name = info->script()->name();
+    if (source_name->IsString()) {
+      String* str = String::cast(source_name);
+      if (str->length() > 0) {
+        SNPrintF(source_file, "%s", str->ToCString().get());
+        std::replace(source_file.start(),
+                     source_file.start() + source_file.length(), '/', '_');
+        source_available = true;
+      }
+    }
+  }
   std::replace(filename.start(), filename.start() + filename.length(), ' ',
                '_');
 
   EmbeddedVector<char, 256> full_filename;
-  if (phase == nullptr) {
+  if (phase == nullptr && !source_available) {
     SNPrintF(full_filename, "%s.%s", filename.start(), suffix);
-  } else {
+  } else if (phase != nullptr && !source_available) {
     SNPrintF(full_filename, "%s-%s.%s", filename.start(), phase, suffix);
+  } else if (phase == nullptr && source_available) {
+    SNPrintF(full_filename, "%s_%s.%s", filename.start(), source_file.start(),
+             suffix);
+  } else {
+    SNPrintF(full_filename, "%s_%s-%s.%s", filename.start(),
+             source_file.start(), phase, suffix);
   }
 
   char* buffer = new char[full_filename.length() + 1];
@@ -494,9 +514,8 @@ void GraphC1Visualizer::PrintSchedule(const char* phase,
       for (int j = instruction_block->first_instruction_index();
            j <= instruction_block->last_instruction_index(); j++) {
         PrintIndent();
-        PrintableInstruction printable = {
-            RegisterConfiguration::ArchDefault(RegisterConfiguration::TURBOFAN),
-            instructions->InstructionAt(j)};
+        PrintableInstruction printable = {RegisterConfiguration::Turbofan(),
+                                          instructions->InstructionAt(j)};
         os_ << j << " " << printable << " <|@\n";
       }
     }
@@ -539,13 +558,17 @@ void GraphC1Visualizer::PrintLiveRange(const LiveRange* range, const char* type,
     os_ << vreg << ":" << range->relative_id() << " " << type;
     if (range->HasRegisterAssigned()) {
       AllocatedOperand op = AllocatedOperand::cast(range->GetAssignedOperand());
-      if (op.IsFPRegister()) {
-        DoubleRegister assigned_reg = op.GetDoubleRegister();
-        os_ << " \"" << assigned_reg.ToString() << "\"";
+      const auto config = RegisterConfiguration::Turbofan();
+      if (op.IsRegister()) {
+        os_ << " \"" << config->GetGeneralRegisterName(op.register_code())
+            << "\"";
+      } else if (op.IsDoubleRegister()) {
+        os_ << " \"" << config->GetDoubleRegisterName(op.register_code())
+            << "\"";
       } else {
-        DCHECK(op.IsRegister());
-        Register assigned_reg = op.GetRegister();
-        os_ << " \"" << assigned_reg.ToString() << "\"";
+        DCHECK(op.IsFloatRegister());
+        os_ << " \"" << config->GetFloatRegisterName(op.register_code())
+            << "\"";
       }
     } else if (range->spilled()) {
       const TopLevelLiveRange* top = range->TopLevel();
@@ -618,6 +641,20 @@ const int kVisited = 2;
 std::ostream& operator<<(std::ostream& os, const AsRPO& ar) {
   base::AccountingAllocator allocator;
   Zone local_zone(&allocator);
+
+  // Do a post-order depth-first search on the RPO graph. For every node,
+  // print:
+  //
+  //   - the node id
+  //   - the operator mnemonic
+  //   - in square brackets its parameter (if present)
+  //   - in parentheses the list of argument ids and their mnemonics
+  //   - the node type (if it is typed)
+
+  // Post-order guarantees that all inputs of a node will be printed before
+  // the node itself, if there are no cycles. Any cycles are broken
+  // arbitrarily.
+
   ZoneVector<byte> state(ar.graph.NodeCount(), kUnvisited, &local_zone);
   ZoneStack<Node*> stack(&local_zone);
 
@@ -638,12 +675,14 @@ std::ostream& operator<<(std::ostream& os, const AsRPO& ar) {
       state[n->id()] = kVisited;
       stack.pop();
       os << "#" << n->id() << ":" << *n->op() << "(";
+      // Print the inputs.
       int j = 0;
       for (Node* const i : n->inputs()) {
         if (j++ > 0) os << ", ";
         os << "#" << SafeId(i) << ":" << SafeMnemonic(i);
       }
       os << ")";
+      // Print the node type, if any.
       if (NodeProperties::IsTyped(n)) {
         os << "  [Type: ";
         NodeProperties::GetType(n)->PrintTo(os);

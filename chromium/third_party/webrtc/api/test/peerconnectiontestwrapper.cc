@@ -10,8 +10,8 @@
 
 #include <utility>
 
-#include "webrtc/api/test/fakedtlsidentitystore.h"
 #include "webrtc/api/test/fakeperiodicvideocapturer.h"
+#include "webrtc/api/test/fakertccertificategenerator.h"
 #include "webrtc/api/test/mockpeerconnectionobservers.h"
 #include "webrtc/api/test/peerconnectiontestwrapper.h"
 #include "webrtc/base/gunit.h"
@@ -79,12 +79,12 @@ bool PeerConnectionTestWrapper::CreatePc(
   webrtc::PeerConnectionInterface::IceServer ice_server;
   ice_server.uri = "stun:stun.l.google.com:19302";
   config.servers.push_back(ice_server);
-  std::unique_ptr<webrtc::DtlsIdentityStoreInterface> dtls_identity_store(
-      rtc::SSLStreamAdapter::HaveDtlsSrtp() ? new FakeDtlsIdentityStore()
+  std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator(
+      rtc::SSLStreamAdapter::HaveDtlsSrtp() ? new FakeRTCCertificateGenerator()
                                             : nullptr);
   peer_connection_ = peer_connection_factory_->CreatePeerConnection(
-      config, constraints, std::move(port_allocator),
-      std::move(dtls_identity_store), this);
+      config, constraints, std::move(port_allocator), std::move(cert_generator),
+      this);
 
   return peer_connection_.get() != NULL;
 }
@@ -96,7 +96,8 @@ PeerConnectionTestWrapper::CreateDataChannel(
   return peer_connection_->CreateDataChannel(label, &init);
 }
 
-void PeerConnectionTestWrapper::OnAddStream(MediaStreamInterface* stream) {
+void PeerConnectionTestWrapper::OnAddStream(
+    rtc::scoped_refptr<MediaStreamInterface> stream) {
   LOG(LS_INFO) << "PeerConnectionTestWrapper " << name_
                << ": OnAddStream";
   // TODO(ronghuawu): support multiple streams.
@@ -116,7 +117,7 @@ void PeerConnectionTestWrapper::OnIceCandidate(
 }
 
 void PeerConnectionTestWrapper::OnDataChannel(
-    webrtc::DataChannelInterface* data_channel) {
+    rtc::scoped_refptr<webrtc::DataChannelInterface> data_channel) {
   SignalOnDataChannel(data_channel);
 }
 

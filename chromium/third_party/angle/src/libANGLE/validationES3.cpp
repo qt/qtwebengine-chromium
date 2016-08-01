@@ -7,6 +7,7 @@
 // validationES3.cpp: Validation functions for OpenGL ES 3.0 entry point parameters
 
 #include "libANGLE/validationES3.h"
+
 #include "libANGLE/validationES.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Texture.h"
@@ -17,6 +18,8 @@
 
 #include "common/mathutil.h"
 #include "common/utilities.h"
+
+using namespace angle;
 
 namespace gl
 {
@@ -196,6 +199,16 @@ ES3FormatCombinationSet BuildES3FormatSet()
 
     // From GL_ANGLE_depth_texture
     InsertES3FormatCombo(&set, GL_DEPTH_COMPONENT32_OES,  GL_DEPTH_COMPONENT, GL_UNSIGNED_INT_24_8_OES         );
+
+    // From GL_EXT_texture_norm16
+    InsertES3FormatCombo(&set, GL_R16_EXT, GL_RED, GL_UNSIGNED_SHORT);
+    InsertES3FormatCombo(&set, GL_RG16_EXT, GL_RG, GL_UNSIGNED_SHORT);
+    InsertES3FormatCombo(&set, GL_RGB16_EXT, GL_RGB, GL_UNSIGNED_SHORT);
+    InsertES3FormatCombo(&set, GL_RGBA16_EXT, GL_RGBA, GL_UNSIGNED_SHORT);
+    InsertES3FormatCombo(&set, GL_R16_SNORM_EXT, GL_RED, GL_SHORT);
+    InsertES3FormatCombo(&set, GL_RG16_SNORM_EXT, GL_RG, GL_SHORT);
+    InsertES3FormatCombo(&set, GL_RGB16_SNORM_EXT, GL_RGB, GL_SHORT);
+    InsertES3FormatCombo(&set, GL_RGBA16_SNORM_EXT, GL_RGBA, GL_SHORT);
 
     return set;
 }
@@ -454,33 +467,54 @@ bool ValidateES3TexImageParametersBase(Context *context,
     }
 
     // Check for pixel unpack buffer related API errors
-    gl::Buffer *pixelUnpackBuffer = context->getState().getTargetBuffer(GL_PIXEL_UNPACK_BUFFER);
+    gl::Buffer *pixelUnpackBuffer = context->getGLState().getTargetBuffer(GL_PIXEL_UNPACK_BUFFER);
     if (pixelUnpackBuffer != NULL)
     {
         // ...the data would be unpacked from the buffer object such that the memory reads required
         // would exceed the data store size.
-        size_t widthSize = static_cast<size_t>(width);
-        size_t heightSize = static_cast<size_t>(height);
-        size_t depthSize = static_cast<size_t>(depth);
         GLenum sizedFormat = GetSizedInternalFormat(actualInternalFormat, type);
+        const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(sizedFormat);
+        const gl::Extents size(width, height, depth);
+        const auto &unpack = context->getGLState().getUnpackState();
 
-        size_t pixelBytes = static_cast<size_t>(gl::GetInternalFormatInfo(sizedFormat).pixelBytes);
-
-        if (!rx::IsUnsignedMultiplicationSafe(widthSize, heightSize) ||
-            !rx::IsUnsignedMultiplicationSafe(widthSize * heightSize, depthSize) ||
-            !rx::IsUnsignedMultiplicationSafe(widthSize * heightSize * depthSize, pixelBytes))
+        auto copyBytesOrErr = formatInfo.computeUnpackSize(type, size, unpack);
+        if (copyBytesOrErr.isError())
         {
-            // Overflow past the end of the buffer
-            context->handleError(Error(GL_INVALID_OPERATION));
+            context->handleError(copyBytesOrErr.getError());
+            return false;
+        }
+        CheckedNumeric<size_t> checkedCopyBytes(copyBytesOrErr.getResult());
+        CheckedNumeric<size_t> checkedOffset(reinterpret_cast<size_t>(pixels));
+        checkedCopyBytes += checkedOffset;
+
+        auto rowPitchOrErr =
+            formatInfo.computeRowPitch(type, width, unpack.alignment, unpack.rowLength);
+        if (rowPitchOrErr.isError())
+        {
+            context->handleError(rowPitchOrErr.getError());
+            return false;
+        }
+        auto depthPitchOrErr = formatInfo.computeDepthPitch(type, width, height, unpack.alignment,
+                                                            unpack.rowLength, unpack.imageHeight);
+        if (depthPitchOrErr.isError())
+        {
+            context->handleError(depthPitchOrErr.getError());
             return false;
         }
 
-        const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(sizedFormat);
-        size_t copyBytes = formatInfo.computeBlockSize(type, width, height);
-        size_t offset = reinterpret_cast<size_t>(pixels);
+        bool targetIs3D     = target == GL_TEXTURE_3D || target == GL_TEXTURE_2D_ARRAY;
+        auto skipBytesOrErr = formatInfo.computeSkipBytes(
+            rowPitchOrErr.getResult(), depthPitchOrErr.getResult(), unpack.skipImages,
+            unpack.skipRows, unpack.skipPixels, targetIs3D);
+        if (skipBytesOrErr.isError())
+        {
+            context->handleError(skipBytesOrErr.getError());
+            return false;
+        }
+        checkedCopyBytes += skipBytesOrErr.getResult();
 
-        if (!rx::IsUnsignedAdditionSafe(offset, copyBytes) ||
-            ((offset + copyBytes) > static_cast<size_t>(pixelUnpackBuffer->getSize())))
+        if (!checkedCopyBytes.IsValid() ||
+            (checkedCopyBytes.ValueOrDie() > static_cast<size_t>(pixelUnpackBuffer->getSize())))
         {
             // Overflow past the end of the buffer
             context->handleError(Error(GL_INVALID_OPERATION));
@@ -493,7 +527,7 @@ bool ValidateES3TexImageParametersBase(Context *context,
         {
             size_t dataBytesPerPixel = static_cast<size_t>(gl::GetTypeInfo(type).bytes);
 
-            if ((offset % dataBytesPerPixel) != 0)
+            if ((checkedOffset.ValueOrDie() % dataBytesPerPixel) != 0)
             {
                 context->handleError(Error(GL_INVALID_OPERATION));
                 return false;
@@ -883,17 +917,17 @@ bool ValidateES3CopyTexImageParametersBase(ValidationContext *context,
         return false;
     }
 
-    const auto &state                  = context->getState();
-    const gl::Framebuffer *framebuffer = state.getReadFramebuffer();
-    GLuint readFramebufferID           = framebuffer->id();
+    const auto &state            = context->getGLState();
+    gl::Framebuffer *framebuffer = state.getReadFramebuffer();
+    GLuint readFramebufferID     = framebuffer->id();
 
-    if (framebuffer->checkStatus(context->getData()) != GL_FRAMEBUFFER_COMPLETE)
+    if (framebuffer->checkStatus(context->getContextState()) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
     }
 
-    if (readFramebufferID != 0 && framebuffer->getSamples(context->getData()) != 0)
+    if (readFramebufferID != 0 && framebuffer->getSamples(context->getContextState()) != 0)
     {
         context->handleError(Error(GL_INVALID_OPERATION));
         return false;
@@ -1246,7 +1280,10 @@ bool ValidateFramebufferTextureLayer(Context *context, GLenum target, GLenum att
     return true;
 }
 
-bool ValidES3ReadFormatType(Context *context, GLenum internalFormat, GLenum format, GLenum type)
+bool ValidES3ReadFormatType(ValidationContext *context,
+                            GLenum internalFormat,
+                            GLenum format,
+                            GLenum type)
 {
     const gl::InternalFormat &internalFormatInfo = gl::GetInternalFormatInfo(internalFormat);
 
@@ -1257,6 +1294,13 @@ bool ValidES3ReadFormatType(Context *context, GLenum internalFormat, GLenum form
         {
           case GL_UNSIGNED_BYTE:
             break;
+          case GL_UNSIGNED_SHORT:
+              if (internalFormatInfo.componentType != GL_UNSIGNED_NORMALIZED &&
+                  internalFormatInfo.type != GL_UNSIGNED_SHORT)
+              {
+                  return false;
+              }
+              break;
           case GL_UNSIGNED_INT_2_10_10_10_REV:
             if (internalFormat != GL_RGB10_A2)
             {
@@ -1313,6 +1357,13 @@ bool ValidES3ReadFormatType(Context *context, GLenum internalFormat, GLenum form
         {
         case GL_UNSIGNED_BYTE:
             break;
+        case GL_UNSIGNED_SHORT:
+            if (internalFormatInfo.componentType != GL_UNSIGNED_NORMALIZED &&
+                internalFormatInfo.type != GL_UNSIGNED_SHORT)
+            {
+                return false;
+            }
+            break;
         default:
             return false;
         }
@@ -1368,11 +1419,11 @@ bool ValidateInvalidateFramebuffer(Context *context, GLenum target, GLsizei numA
     {
       case GL_DRAW_FRAMEBUFFER:
       case GL_FRAMEBUFFER:
-        defaultFramebuffer = context->getState().getDrawFramebuffer()->id() == 0;
-        break;
+          defaultFramebuffer = context->getGLState().getDrawFramebuffer()->id() == 0;
+          break;
       case GL_READ_FRAMEBUFFER:
-        defaultFramebuffer = context->getState().getReadFramebuffer()->id() == 0;
-        break;
+          defaultFramebuffer = context->getGLState().getReadFramebuffer()->id() == 0;
+          break;
       default:
           context->handleError(Error(GL_INVALID_ENUM, "Invalid framebuffer target"));
         return false;
@@ -1389,8 +1440,8 @@ bool ValidateClearBuffer(ValidationContext *context)
         return false;
     }
 
-    const gl::Framebuffer *fbo = context->getState().getDrawFramebuffer();
-    if (!fbo || fbo->checkStatus(context->getData()) != GL_FRAMEBUFFER_COMPLETE)
+    if (context->getGLState().getDrawFramebuffer()->checkStatus(context->getContextState()) !=
+        GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(Error(GL_INVALID_FRAMEBUFFER_OPERATION));
         return false;
@@ -1454,7 +1505,7 @@ bool ValidateReadBuffer(Context *context, GLenum src)
         return false;
     }
 
-    Framebuffer *readFBO = context->getState().getReadFramebuffer();
+    const Framebuffer *readFBO = context->getGLState().getReadFramebuffer();
 
     if (readFBO == nullptr)
     {
@@ -1514,10 +1565,34 @@ bool ValidateCompressedTexImage3D(Context *context,
         return false;
     }
 
+    if (!ValidTextureTarget(context, target))
+    {
+        context->handleError(Error(GL_INVALID_ENUM));
+        return false;
+    }
+
+    // Validate image size
+    if (!ValidImageSizeParameters(context, target, level, width, height, depth, false))
+    {
+        context->handleError(Error(GL_INVALID_VALUE));
+        return false;
+    }
+
     const InternalFormat &formatInfo = GetInternalFormatInfo(internalformat);
-    if (imageSize < 0 ||
-        static_cast<GLuint>(imageSize) !=
-            formatInfo.computeBlockSize(GL_UNSIGNED_BYTE, width, height))
+    if (!formatInfo.compressed)
+    {
+        context->handleError(Error(GL_INVALID_ENUM, "Not a valid compressed texture format"));
+        return false;
+    }
+
+    auto blockSizeOrErr =
+        formatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, gl::Extents(width, height, depth));
+    if (blockSizeOrErr.isError())
+    {
+        context->handleError(Error(GL_INVALID_VALUE));
+        return false;
+    }
+    if (imageSize < 0 || static_cast<GLuint>(imageSize) != blockSizeOrErr.getResult())
     {
         context->handleError(Error(GL_INVALID_VALUE));
         return false;
@@ -1859,9 +1934,14 @@ bool ValidateCompressedTexSubImage3D(Context *context,
     }
 
     const InternalFormat &formatInfo = GetInternalFormatInfo(format);
-    if (imageSize < 0 ||
-        static_cast<GLuint>(imageSize) !=
-            formatInfo.computeBlockSize(GL_UNSIGNED_BYTE, width, height))
+    auto blockSizeOrErr =
+        formatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, gl::Extents(width, height, depth));
+    if (blockSizeOrErr.isError())
+    {
+        context->handleError(blockSizeOrErr.getError());
+        return false;
+    }
+    if (imageSize < 0 || static_cast<GLuint>(imageSize) != blockSizeOrErr.getResult())
     {
         context->handleError(Error(GL_INVALID_VALUE));
         return false;
@@ -1976,7 +2056,7 @@ bool ValidateBeginTransformFeedback(Context *context, GLenum primitiveMode)
             return false;
     }
 
-    TransformFeedback *transformFeedback = context->getState().getCurrentTransformFeedback();
+    TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
     ASSERT(transformFeedback != nullptr);
 
     if (transformFeedback->isActive())

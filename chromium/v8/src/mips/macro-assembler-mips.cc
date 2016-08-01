@@ -18,6 +18,19 @@
 namespace v8 {
 namespace internal {
 
+// Floating point constants.
+const uint32_t kDoubleSignMask = HeapNumber::kSignMask;
+const uint32_t kDoubleExponentShift = HeapNumber::kExponentShift;
+const uint32_t kDoubleNaNShift = kDoubleExponentShift - 1;
+const uint32_t kDoubleNaNMask =
+    HeapNumber::kExponentMask | (1 << kDoubleNaNShift);
+
+const uint32_t kSingleSignMask = kBinary32SignMask;
+const uint32_t kSingleExponentMask = kBinary32ExponentMask;
+const uint32_t kSingleExponentShift = kBinary32ExponentShift;
+const uint32_t kSingleNaNShift = kSingleExponentShift - 1;
+const uint32_t kSingleNaNMask = kSingleExponentMask | (1 << kSingleNaNShift);
+
 MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
                                CodeObjectRequired create_code_object)
     : Assembler(arg_isolate, buffer, size),
@@ -29,7 +42,6 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
         Handle<Object>::New(isolate()->heap()->undefined_value(), isolate());
   }
 }
-
 
 void MacroAssembler::Load(Register dst,
                           const MemOperand& src,
@@ -66,7 +78,6 @@ void MacroAssembler::Store(Register src,
     sw(src, dst);
   }
 }
-
 
 void MacroAssembler::LoadRoot(Register destination,
                               Heap::RootListIndex index) {
@@ -1190,6 +1201,79 @@ void MacroAssembler::Lsa(Register rd, Register rt, Register rs, uint8_t sa,
 
 
 // ------------Pseudo-instructions-------------
+
+// Word Swap Byte
+void MacroAssembler::ByteSwapSigned(Register reg, int operand_size) {
+  DCHECK(operand_size == 1 || operand_size == 2 || operand_size == 4);
+  if (IsMipsArchVariant(kMips32r2) || IsMipsArchVariant(kMips32r6)) {
+    if (operand_size == 2) {
+      seh(reg, reg);
+    } else if (operand_size == 1) {
+      seb(reg, reg);
+    }
+    // No need to do any preparation if operand_size is 4
+
+    wsbh(reg, reg);
+    rotr(reg, reg, 16);
+  } else if (IsMipsArchVariant(kMips32r1) || IsMipsArchVariant(kLoongson)) {
+    if (operand_size == 1) {
+      sll(reg, reg, 24);
+      sra(reg, reg, 24);
+    } else if (operand_size == 2) {
+      sll(reg, reg, 16);
+      sra(reg, reg, 16);
+    }
+    // No need to do any preparation if operand_size is 4
+
+    Register tmp = t0;
+    Register tmp2 = t1;
+
+    andi(tmp2, reg, 0xFF);
+    sll(tmp2, tmp2, 24);
+    or_(tmp, zero_reg, tmp2);
+
+    andi(tmp2, reg, 0xFF00);
+    sll(tmp2, tmp2, 8);
+    or_(tmp, tmp, tmp2);
+
+    srl(reg, reg, 8);
+    andi(tmp2, reg, 0xFF00);
+    or_(tmp, tmp, tmp2);
+
+    srl(reg, reg, 16);
+    andi(tmp2, reg, 0xFF);
+    or_(tmp, tmp, tmp2);
+
+    or_(reg, tmp, zero_reg);
+  }
+}
+
+void MacroAssembler::ByteSwapUnsigned(Register reg, int operand_size) {
+  DCHECK(operand_size == 1 || operand_size == 2);
+
+  if (IsMipsArchVariant(kMips32r2) || IsMipsArchVariant(kMips32r6)) {
+    if (operand_size == 1) {
+      andi(reg, reg, 0xFF);
+    } else {
+      andi(reg, reg, 0xFFFF);
+    }
+    // No need to do any preparation if operand_size is 4
+
+    wsbh(reg, reg);
+    rotr(reg, reg, 16);
+  } else if (IsMipsArchVariant(kMips32r1) || IsMipsArchVariant(kLoongson)) {
+    if (operand_size == 1) {
+      sll(reg, reg, 24);
+    } else {
+      Register tmp = t0;
+
+      andi(tmp, reg, 0xFF00);
+      sll(reg, reg, 24);
+      sll(tmp, tmp, 8);
+      or_(reg, tmp, reg);
+    }
+  }
+}
 
 void MacroAssembler::Ulw(Register rd, const MemOperand& rs) {
   DCHECK(!rd.is(at));
@@ -3832,9 +3916,6 @@ void MacroAssembler::Call(Address target,
   Label start;
   bind(&start);
   int32_t target_int = reinterpret_cast<int32_t>(target);
-  // Must record previous source positions before the
-  // li() generates a new code target.
-  positions_recorder()->WriteRecordedPositions();
   li(t9, Operand(target_int, rmode), CONSTANT_SIZE);
   Call(t9, cond, rs, rt, bd);
   DCHECK_EQ(CallSize(target, rmode, cond, rs, rt, bd),
@@ -4655,9 +4736,7 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
                                                  int elements_offset) {
   DCHECK(!AreAliased(value_reg, key_reg, elements_reg, scratch1, scratch2,
                      scratch3));
-  Label smi_value, maybe_nan, have_double_value, is_nan, done;
-  Register mantissa_reg = scratch2;
-  Register exponent_reg = scratch3;
+  Label smi_value, done;
 
   // Handle smi values specially.
   JumpIfSmi(value_reg, &smi_value);
@@ -4669,52 +4748,97 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
            fail,
            DONT_DO_SMI_CHECK);
 
-  // Check for nan: all NaN values have a value greater (signed) than 0x7ff00000
-  // in the exponent.
-  li(scratch1, Operand(kHoleNanUpper32 & HeapNumber::kExponentMask));
-  lw(exponent_reg, FieldMemOperand(value_reg, HeapNumber::kExponentOffset));
-  Branch(&maybe_nan, ge, exponent_reg, Operand(scratch1));
+  // Double value, turn potential sNaN into qNan.
+  DoubleRegister double_result = f0;
+  DoubleRegister double_scratch = f2;
 
-  lw(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
-
-  bind(&have_double_value);
-  Lsa(scratch1, elements_reg, key_reg, kDoubleSizeLog2 - kSmiTagSize);
-  sw(mantissa_reg,
-      FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize - elements_offset
-          + kHoleNanLower32Offset));
-  sw(exponent_reg,
-      FieldMemOperand(scratch1, FixedDoubleArray::kHeaderSize - elements_offset
-          + kHoleNanUpper32Offset));
-  jmp(&done);
-
-  bind(&maybe_nan);
-  // Could be NaN or Infinity. If fraction is not zero, it's NaN, otherwise
-  // it's an Infinity, and the non-NaN code path applies.
-  Branch(&is_nan, gt, exponent_reg, Operand(scratch1));
-  lw(mantissa_reg, FieldMemOperand(value_reg, HeapNumber::kMantissaOffset));
-  Branch(&have_double_value, eq, mantissa_reg, Operand(zero_reg));
-  bind(&is_nan);
-  // Load canonical NaN for storing into the double array.
-  LoadRoot(at, Heap::kNanValueRootIndex);
-  lw(mantissa_reg, FieldMemOperand(at, HeapNumber::kMantissaOffset));
-  lw(exponent_reg, FieldMemOperand(at, HeapNumber::kExponentOffset));
-  jmp(&have_double_value);
+  ldc1(double_result, FieldMemOperand(value_reg, HeapNumber::kValueOffset));
+  Branch(USE_DELAY_SLOT, &done);  // Canonicalization is one instruction.
+  FPUCanonicalizeNaN(double_result, double_result);
 
   bind(&smi_value);
+  Register untagged_value = scratch2;
+  SmiUntag(untagged_value, value_reg);
+  mtc1(untagged_value, double_scratch);
+  cvt_d_w(double_result, double_scratch);
+
+  bind(&done);
   Addu(scratch1, elements_reg,
       Operand(FixedDoubleArray::kHeaderSize - kHeapObjectTag -
               elements_offset));
   Lsa(scratch1, scratch1, key_reg, kDoubleSizeLog2 - kSmiTagSize);
   // scratch1 is now effective address of the double element
+  sdc1(double_result, MemOperand(scratch1, 0));
+}
 
-  Register untagged_value = scratch2;
-  SmiUntag(untagged_value, value_reg);
-  mtc1(untagged_value, f2);
-  cvt_d_w(f0, f2);
-  sdc1(f0, MemOperand(scratch1, 0));
+void MacroAssembler::SubNanPreservePayloadAndSign_s(FloatRegister fd,
+                                                    FloatRegister fs,
+                                                    FloatRegister ft) {
+  FloatRegister dest = fd.is(fs) || fd.is(ft) ? kLithiumScratchDouble : fd;
+  Label check_nan, save_payload, done;
+  Register scratch1 = t8;
+  Register scratch2 = t9;
+
+  sub_s(dest, fs, ft);
+  // Check if the result of subtraction is NaN.
+  BranchF32(nullptr, &check_nan, eq, fs, ft);
+  Branch(USE_DELAY_SLOT, &done);
+  dest.is(fd) ? nop() : mov_s(fd, dest);
+
+  bind(&check_nan);
+  // Check if first operand is a NaN.
+  mfc1(scratch1, fs);
+  BranchF32(nullptr, &save_payload, eq, fs, fs);
+  // Second operand must be a NaN.
+  mfc1(scratch1, ft);
+
+  bind(&save_payload);
+  // Reserve payload.
+  And(scratch1, scratch1,
+      Operand(kSingleSignMask | ((1 << kSingleNaNShift) - 1)));
+  mfc1(scratch2, dest);
+  And(scratch2, scratch2, Operand(kSingleNaNMask));
+  Or(scratch2, scratch2, scratch1);
+  mtc1(scratch2, fd);
+
   bind(&done);
 }
 
+void MacroAssembler::SubNanPreservePayloadAndSign_d(DoubleRegister fd,
+                                                    DoubleRegister fs,
+                                                    DoubleRegister ft) {
+  FloatRegister dest = fd.is(fs) || fd.is(ft) ? kLithiumScratchDouble : fd;
+  Label check_nan, save_payload, done;
+  Register scratch1 = t8;
+  Register scratch2 = t9;
+
+  sub_d(dest, fs, ft);
+  // Check if the result of subtraction is NaN.
+  BranchF64(nullptr, &check_nan, eq, fs, ft);
+  Branch(USE_DELAY_SLOT, &done);
+  dest.is(fd) ? nop() : mov_d(fd, dest);
+
+  bind(&check_nan);
+  // Check if first operand is a NaN.
+  Mfhc1(scratch1, fs);
+  mov_s(dest, fs);
+  BranchF64(nullptr, &save_payload, eq, fs, fs);
+  // Second operand must be a NaN.
+  Mfhc1(scratch1, ft);
+  mov_s(dest, ft);
+
+  bind(&save_payload);
+  // Reserve payload.
+  And(scratch1, scratch1,
+      Operand(kDoubleSignMask | ((1 << kDoubleNaNShift) - 1)));
+  Mfhc1(scratch2, dest);
+  And(scratch2, scratch2, Operand(kDoubleNaNMask));
+  Or(scratch2, scratch2, scratch1);
+  Move_s(fd, dest);
+  Mthc1(scratch2, fd);
+
+  bind(&done);
+}
 
 void MacroAssembler::CompareMapAndBranch(Register obj,
                                          Register scratch,
@@ -4778,6 +4902,10 @@ void MacroAssembler::CheckMap(Register obj,
   Branch(fail, ne, scratch, Operand(at));
 }
 
+void MacroAssembler::FPUCanonicalizeNaN(const DoubleRegister dst,
+                                        const DoubleRegister src) {
+  sub_d(dst, src, kDoubleRegZero);
+}
 
 void MacroAssembler::GetWeakValue(Register value, Handle<WeakCell> cell) {
   li(value, Operand(cell));
@@ -4998,11 +5126,12 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  li(t0, Operand(step_in_enabled));
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  STATIC_ASSERT(StepFrame > StepIn);
+  li(t0, Operand(last_step_action));
   lb(t0, MemOperand(t0));
-  Branch(&skip_flooding, eq, t0, Operand(zero_reg));
+  Branch(&skip_flooding, lt, t0, Operand(StepIn));
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -5746,9 +5875,8 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   lw(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  lw(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  lw(vector,
-     FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  lw(vector, FieldMemOperand(vector, JSFunction::kLiteralsOffset));
+  lw(vector, FieldMemOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 
@@ -6662,8 +6790,7 @@ Register GetRegisterThatIsNotOneOf(Register reg1,
   if (reg5.is_valid()) regs |= reg5.bit();
   if (reg6.is_valid()) regs |= reg6.bit();
 
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   for (int i = 0; i < config->num_allocatable_general_registers(); ++i) {
     int code = config->GetAllocatableGeneralCode(i);
     Register candidate = Register::from_code(code);

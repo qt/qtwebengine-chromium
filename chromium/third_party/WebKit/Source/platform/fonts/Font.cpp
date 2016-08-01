@@ -57,6 +57,8 @@ using namespace Unicode;
 namespace blink {
 
 Font::Font()
+    : m_canShapeWordByWord(0)
+    , m_shapeWordByWordComputed(0)
 {
 }
 
@@ -70,6 +72,9 @@ Font::Font(const FontDescription& fd)
 Font::Font(const Font& other)
     : m_fontDescription(other.m_fontDescription)
     , m_fontFallbackList(other.m_fontFallbackList)
+    // TODO(yosin): We should have a comment the reason why don't we copy
+    // |m_canShapeWordByWord| and |m_shapeWordByWordComputed| from |other|,
+    // since |operator=()| copies them from |other|.
     , m_canShapeWordByWord(0)
     , m_shapeWordByWordComputed(0)
 {
@@ -467,11 +472,11 @@ bool Font::computeCanShapeWordByWord() const
     return !platformData.hasSpaceInLigaturesOrKerning(features);
 };
 
-void Font::willUseFontData(UChar32 character) const
+void Font::willUseFontData(const String& text) const
 {
     const FontFamily& family = getFontDescription().family();
     if (m_fontFallbackList && m_fontFallbackList->getFontSelector() && !family.familyIsEmpty())
-        m_fontFallbackList->getFontSelector()->willUseFontData(getFontDescription(), family.family(), character);
+        m_fontFallbackList->getFontSelector()->willUseFontData(getFontDescription(), family.family(), text);
 }
 
 static inline GlyphData glyphDataForNonCJKCharacterWithGlyphOrientation(UChar32 character, bool isUpright, GlyphData& data, unsigned pageNumber)
@@ -768,7 +773,11 @@ Vector<CharacterRange> Font::individualCharacterRanges(const TextRun& run) const
     FontCachePurgePreventer purgePreventer;
     CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
     auto ranges = shaper.individualCharacterRanges(this, run);
-    DCHECK_EQ(ranges.size(), static_cast<unsigned>(run.length()));
+    // The shaper should return ranges.size == run.length but on some platforms
+    // (OSX10.9.5) we are seeing cases in the upper end of the unicode range
+    // where this is not true (see: crbug.com/620952). To catch these cases on
+    // more popular platforms, and to protect users, we are using a CHECK here.
+    CHECK_EQ(ranges.size(), run.length());
     return ranges;
 }
 

@@ -14,8 +14,8 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:metrics_default',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-        '<(webrtc_root)/test/test.gyp:histogram',
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
       'sources': [
@@ -25,12 +25,11 @@
         'source/condition_variable_unittest.cc',
         'source/critical_section_unittest.cc',
         'source/logging_unittest.cc',
-        'source/data_log_unittest.cc',
-        'source/data_log_unittest_disabled.cc',
         'source/data_log_helpers_unittest.cc',
         'source/data_log_c_helpers_unittest.c',
         'source/data_log_c_helpers_unittest.h',
         'source/event_timer_posix_unittest.cc',
+        'source/metrics_default_unittest.cc',
         'source/metrics_unittest.cc',
         'source/ntp_time_unittest.cc',
         'source/rtp_to_ntp_unittest.cc',
@@ -39,9 +38,9 @@
       ],
       'conditions': [
         ['enable_data_logging==1', {
-          'sources!': [ 'source/data_log_unittest_disabled.cc', ],
+          'sources': [ 'source/data_log_unittest.cc', ],
         }, {
-          'sources!': [ 'source/data_log_unittest.cc', ],
+          'sources': [ 'source/data_log_unittest_disabled.cc', ],
         }],
         ['OS=="android"', {
           'dependencies': [
@@ -62,7 +61,7 @@
           'target_name': 'system_wrappers_unittests_apk_target',
           'type': 'none',
           'dependencies': [
-            '<(apk_tests_path):system_wrappers_unittests_apk',
+            '<(android_tests_path):system_wrappers_unittests_apk',
           ],
         },
       ],
@@ -74,7 +73,7 @@
                 'target_name': 'system_wrappers_unittests_apk_run',
                 'type': 'none',
                 'dependencies': [
-                  '<(apk_tests_path):system_wrappers_unittests_apk',
+                  '<(android_tests_path):system_wrappers_unittests_apk',
                 ],
                 'includes': [
                   '../build/isolate.gypi',

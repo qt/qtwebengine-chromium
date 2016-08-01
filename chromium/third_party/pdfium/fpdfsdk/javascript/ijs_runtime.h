@@ -11,7 +11,7 @@
 #include "core/fxcrt/include/fx_system.h"
 
 #ifdef PDF_ENABLE_XFA
-#include "xfa/fxjse/include/fxjse.h"
+#include "fxjse/include/fxjse.h"
 #endif  // PDF_ENABLE_XFA
 
 class CPDFDoc_Environment;
@@ -22,6 +22,7 @@ class IJS_Context;
 class IJS_Runtime {
  public:
   static void Initialize(unsigned int slot, void* isolate);
+  static void Destroy();
   static IJS_Runtime* Create(CPDFDoc_Environment* pEnv);
   virtual ~IJS_Runtime() {}
 
@@ -30,15 +31,13 @@ class IJS_Runtime {
   virtual IJS_Context* GetCurrentContext() = 0;
   virtual void SetReaderDocument(CPDFSDK_Document* pReaderDoc) = 0;
   virtual CPDFSDK_Document* GetReaderDocument() = 0;
-  virtual int Execute(IJS_Context* cc,
-                      const wchar_t* script,
-                      CFX_WideString* info) = 0;
+  virtual int Execute(const CFX_WideString& script, CFX_WideString* info) = 0;
 
 #ifdef PDF_ENABLE_XFA
-  virtual FX_BOOL GetHValueByName(const CFX_ByteStringC& utf8Name,
-                                  FXJSE_HVALUE hValue) = 0;
-  virtual FX_BOOL SetHValueByName(const CFX_ByteStringC& utf8Name,
-                                  FXJSE_HVALUE hValue) = 0;
+  virtual FX_BOOL GetValueByName(const CFX_ByteStringC& utf8Name,
+                                 CFXJSE_Value* pValue) = 0;
+  virtual FX_BOOL SetValueByName(const CFX_ByteStringC& utf8Name,
+                                 CFXJSE_Value* pValue) = 0;
 #endif  // PDF_ENABLE_XFA
 
  protected:

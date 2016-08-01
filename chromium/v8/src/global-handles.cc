@@ -879,7 +879,7 @@ void ObjectGroupsTracer::PrintObject(Object* object) {
     PrintInternalFields(js_object);
     PrintF(" ] }\n");
   } else {
-    PrintF("object of unexpected type: %p\n", object);
+    PrintF("object of unexpected type: %p\n", static_cast<void*>(object));
   }
 }
 
@@ -891,7 +891,7 @@ void ObjectGroupsTracer::PrintConstructor(JSObject* js_object) {
     if (name->length() == 0) name = constructor->shared()->inferred_name();
 
     PrintF("%s", name->ToCString().get());
-  } else if (maybe_constructor->IsNull()) {
+  } else if (maybe_constructor->IsNull(isolate_)) {
     if (js_object->IsOddball()) {
       PrintF("<oddball>");
     } else {
@@ -907,7 +907,7 @@ void ObjectGroupsTracer::PrintInternalFields(JSObject* js_object) {
     if (i != 0) {
       PrintF(", ");
     }
-    PrintF("%p", js_object->GetInternalField(i));
+    PrintF("%p", static_cast<void*>(js_object->GetInternalField(i)));
   }
 }
 

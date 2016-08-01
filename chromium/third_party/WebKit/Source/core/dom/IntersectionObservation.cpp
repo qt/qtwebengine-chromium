@@ -7,9 +7,8 @@
 #include "core/dom/ElementRareData.h"
 #include "core/dom/IntersectionObserver.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutBox.h"
-#include "core/layout/LayoutPart.h"
-#include "core/layout/LayoutText.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/PaintLayer.h"
 
@@ -42,7 +41,7 @@ void IntersectionObservation::initializeTargetRect(LayoutRect& rect) const
     DCHECK(m_target);
     LayoutObject* targetLayoutObject = target()->layoutObject();
     DCHECK(targetLayoutObject && targetLayoutObject->isBoxModelObject());
-    rect = toLayoutBoxModelObject(targetLayoutObject)->visualOverflowRect();
+    rect = LayoutRect(toLayoutBoxModelObject(targetLayoutObject)->borderBoundingBox());
 }
 
 void IntersectionObservation::initializeRootRect(LayoutRect& rect) const

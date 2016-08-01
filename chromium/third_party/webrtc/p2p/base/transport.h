@@ -95,8 +95,13 @@ struct ConnectionInfo {
         sent_bytes_second(0),
         sent_discarded_packets(0),
         sent_total_packets(0),
+        sent_ping_requests_total(0),
+        sent_ping_requests_before_first_response(0),
+        sent_ping_responses(0),
         recv_total_bytes(0),
         recv_bytes_second(0),
+        recv_ping_requests(0),
+        recv_ping_responses(0),
         key(NULL) {}
 
   bool best_connection;        // Is this the best connection we have?
@@ -111,9 +116,15 @@ struct ConnectionInfo {
                                   // socket errors.
   size_t sent_total_packets;  // Number of total outgoing packets attempted for
                               // sending.
+  size_t sent_ping_requests_total;  // Number of STUN ping request sent.
+  size_t sent_ping_requests_before_first_response;  // Number of STUN ping
+  // sent before receiving the first response.
+  size_t sent_ping_responses;  // Number of STUN ping response sent.
 
   size_t recv_total_bytes;     // Total bytes received on this connection.
   size_t recv_bytes_second;    // Bps over the last measurement interval.
+  size_t recv_ping_requests;   // Number of STUN ping request received.
+  size_t recv_ping_responses;  // Number of STUN ping response received.
   Candidate local_candidate;   // The local candidate for this connection.
   Candidate remote_candidate;  // The remote candidate for this connection.
   void* key;                   // A static value that identifies this conn.
@@ -141,6 +152,8 @@ struct TransportStats {
 };
 
 // Information about ICE configuration.
+// TODO(deadbeef): Use rtc::Optional to represent unset values, instead of
+// -1.
 struct IceConfig {
   // The ICE connection receiving timeout value in milliseconds.
   int receiving_timeout = -1;
@@ -154,23 +167,29 @@ struct IceConfig {
   // is writable yet.
   bool prioritize_most_likely_candidate_pairs = false;
 
-  // If the current best connection is both writable and receiving,
-  // then we will also try hard to make sure it is pinged at this rate
-  // (Default value is a little less than 2 * STRONG_PING_INTERVAL).
-  int max_strong_interval = -1;
+  // Writable connections are pinged at a slower rate once stablized.
+  int stable_writable_connection_ping_interval = -1;
+
+  // If set to true, this means the ICE transport should presume TURN-to-TURN
+  // candidate pairs will succeed, even before a binding response is received.
+  bool presume_writable_when_fully_relayed = false;
 
   IceConfig() {}
   IceConfig(int receiving_timeout_ms,
             int backup_connection_ping_interval,
             bool gather_continually,
             bool prioritize_most_likely_candidate_pairs,
-            int max_strong_interval_ms)
+            int stable_writable_connection_ping_interval_ms,
+            bool presume_writable_when_fully_relayed)
       : receiving_timeout(receiving_timeout_ms),
         backup_connection_ping_interval(backup_connection_ping_interval),
         gather_continually(gather_continually),
         prioritize_most_likely_candidate_pairs(
             prioritize_most_likely_candidate_pairs),
-        max_strong_interval(max_strong_interval_ms) {}
+        stable_writable_connection_ping_interval(
+            stable_writable_connection_ping_interval_ms),
+        presume_writable_when_fully_relayed(
+            presume_writable_when_fully_relayed) {}
 };
 
 bool BadTransportDescription(const std::string& desc, std::string* err_desc);
@@ -271,23 +290,25 @@ class Transport : public sigslot::has_slots<> {
     return false;
   }
 
- protected:
-  // These are called by Create/DestroyChannel above in order to create or
-  // destroy the appropriate type of channel.
-  virtual TransportChannelImpl* CreateTransportChannel(int component) = 0;
-  virtual void DestroyTransportChannel(TransportChannelImpl* channel) = 0;
-
   // The current local transport description, for use by derived classes
-  // when performing transport description negotiation.
+  // when performing transport description negotiation, and possibly used
+  // by the transport controller.
   const TransportDescription* local_description() const {
     return local_description_.get();
   }
 
   // The current remote transport description, for use by derived classes
-  // when performing transport description negotiation.
+  // when performing transport description negotiation, and possibly used
+  // by the transport controller.
   const TransportDescription* remote_description() const {
     return remote_description_.get();
   }
+
+ protected:
+  // These are called by Create/DestroyChannel above in order to create or
+  // destroy the appropriate type of channel.
+  virtual TransportChannelImpl* CreateTransportChannel(int component) = 0;
+  virtual void DestroyTransportChannel(TransportChannelImpl* channel) = 0;
 
   // Pushes down the transport parameters from the local description, such
   // as the ICE ufrag and pwd.

@@ -17,6 +17,18 @@
 namespace v8 {
 namespace internal {
 
+// Floating point constants.
+const uint64_t kDoubleSignMask = Double::kSignMask;
+const uint32_t kDoubleExponentShift = HeapNumber::kMantissaBits;
+const uint32_t kDoubleNaNShift = kDoubleExponentShift - 1;
+const uint64_t kDoubleNaNMask = Double::kExponentMask | (1L << kDoubleNaNShift);
+
+const uint32_t kSingleSignMask = kBinary32SignMask;
+const uint32_t kSingleExponentMask = kBinary32ExponentMask;
+const uint32_t kSingleExponentShift = kBinary32ExponentShift;
+const uint32_t kSingleNaNShift = kSingleExponentShift - 1;
+const uint32_t kSingleNaNMask = kSingleExponentMask | (1 << kSingleNaNShift);
+
 MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
                                CodeObjectRequired create_code_object)
     : Assembler(arg_isolate, buffer, size),
@@ -28,7 +40,6 @@ MacroAssembler::MacroAssembler(Isolate* arg_isolate, void* buffer, int size,
         Handle<Object>::New(isolate()->heap()->undefined_value(), isolate());
   }
 }
-
 
 void MacroAssembler::Load(Register dst,
                           const MemOperand& src,
@@ -1323,6 +1334,49 @@ void MacroAssembler::Dlsa(Register rd, Register rt, Register rs, uint8_t sa,
 
 
 // ------------Pseudo-instructions-------------
+
+// Change endianness
+void MacroAssembler::ByteSwapSigned(Register reg, int operand_size) {
+  DCHECK(operand_size == 1 || operand_size == 2 || operand_size == 4 ||
+         operand_size == 8);
+  DCHECK(kArchVariant == kMips64r6 || kArchVariant == kMips64r2);
+  if (operand_size == 1) {
+    seb(reg, reg);
+    sll(reg, reg, 0);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  } else if (operand_size == 2) {
+    seh(reg, reg);
+    sll(reg, reg, 0);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  } else if (operand_size == 4) {
+    sll(reg, reg, 0);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  } else {
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  }
+}
+
+void MacroAssembler::ByteSwapUnsigned(Register reg, int operand_size) {
+  DCHECK(operand_size == 1 || operand_size == 2 || operand_size == 4);
+  if (operand_size == 1) {
+    andi(reg, reg, 0xFF);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  } else if (operand_size == 2) {
+    andi(reg, reg, 0xFFFF);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  } else {
+    dsll32(reg, reg, 0);
+    dsrl32(reg, reg, 0);
+    dsbh(reg, reg);
+    dshd(reg, reg);
+  }
+}
 
 void MacroAssembler::Ulw(Register rd, const MemOperand& rs) {
   DCHECK(!rd.is(at));
@@ -4031,9 +4085,6 @@ void MacroAssembler::Call(Address target,
   Label start;
   bind(&start);
   int64_t target_int = reinterpret_cast<int64_t>(target);
-  // Must record previous source positions before the
-  // li() generates a new code target.
-  positions_recorder()->WriteRecordedPositions();
   li(t9, Operand(target_int, rmode), ADDRESS_LOAD);
   Call(t9, cond, rs, rt, bd);
   DCHECK_EQ(CallSize(target, rmode, cond, rs, rt, bd),
@@ -4854,6 +4905,72 @@ void MacroAssembler::StoreNumberToDoubleElements(Register value_reg,
   sdc1(double_result, MemOperand(scratch1, 0));
 }
 
+void MacroAssembler::SubNanPreservePayloadAndSign_s(FPURegister fd,
+                                                    FPURegister fs,
+                                                    FPURegister ft) {
+  FloatRegister dest = fd.is(fs) || fd.is(ft) ? kLithiumScratchDouble : fd;
+  Label check_nan, save_payload, done;
+  Register scratch1 = t8;
+  Register scratch2 = t9;
+
+  sub_s(dest, fs, ft);
+  // Check if the result of subtraction is NaN.
+  BranchF32(nullptr, &check_nan, eq, fs, ft);
+  Branch(USE_DELAY_SLOT, &done);
+  dest.is(fd) ? nop() : mov_s(fd, dest);
+
+  bind(&check_nan);
+  // Check if first operand is a NaN.
+  mfc1(scratch1, fs);
+  BranchF32(nullptr, &save_payload, eq, fs, fs);
+  // Second operand must be a NaN.
+  mfc1(scratch1, ft);
+
+  bind(&save_payload);
+  // Reserve payload.
+  And(scratch1, scratch1,
+      Operand(kSingleSignMask | ((1 << kSingleNaNShift) - 1)));
+  mfc1(scratch2, dest);
+  And(scratch2, scratch2, Operand(kSingleNaNMask));
+  Or(scratch2, scratch2, scratch1);
+  mtc1(scratch2, fd);
+
+  bind(&done);
+}
+
+void MacroAssembler::SubNanPreservePayloadAndSign_d(FPURegister fd,
+                                                    FPURegister fs,
+                                                    FPURegister ft) {
+  FloatRegister dest = fd.is(fs) || fd.is(ft) ? kLithiumScratchDouble : fd;
+  Label check_nan, save_payload, done;
+  Register scratch1 = t8;
+  Register scratch2 = t9;
+
+  sub_d(dest, fs, ft);
+  // Check if the result of subtraction is NaN.
+  BranchF64(nullptr, &check_nan, eq, fs, ft);
+  Branch(USE_DELAY_SLOT, &done);
+  dest.is(fd) ? nop() : mov_d(fd, dest);
+
+  bind(&check_nan);
+  // Check if first operand is a NaN.
+  dmfc1(scratch1, fs);
+  BranchF64(nullptr, &save_payload, eq, fs, fs);
+  // Second operand must be a NaN.
+  dmfc1(scratch1, ft);
+
+  bind(&save_payload);
+  // Reserve payload.
+  li(at, Operand(kDoubleSignMask | (1L << kDoubleNaNShift)));
+  Dsubu(at, at, Operand(1));
+  And(scratch1, scratch1, at);
+  dmfc1(scratch2, dest);
+  And(scratch2, scratch2, Operand(kDoubleNaNMask));
+  Or(scratch2, scratch2, scratch1);
+  dmtc1(scratch2, fd);
+
+  bind(&done);
+}
 
 void MacroAssembler::CompareMapAndBranch(Register obj,
                                          Register scratch,
@@ -5142,11 +5259,12 @@ void MacroAssembler::FloodFunctionIfStepping(Register fun, Register new_target,
                                              const ParameterCount& expected,
                                              const ParameterCount& actual) {
   Label skip_flooding;
-  ExternalReference step_in_enabled =
-      ExternalReference::debug_step_in_enabled_address(isolate());
-  li(t0, Operand(step_in_enabled));
+  ExternalReference last_step_action =
+      ExternalReference::debug_last_step_action_address(isolate());
+  STATIC_ASSERT(StepFrame > StepIn);
+  li(t0, Operand(last_step_action));
   lb(t0, MemOperand(t0));
-  Branch(&skip_flooding, eq, t0, Operand(zero_reg));
+  Branch(&skip_flooding, lt, t0, Operand(StepIn));
   {
     FrameScope frame(this,
                      has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
@@ -6031,9 +6149,8 @@ void MacroAssembler::Prologue(bool code_pre_aging) {
 
 void MacroAssembler::EmitLoadTypeFeedbackVector(Register vector) {
   ld(vector, MemOperand(fp, JavaScriptFrameConstants::kFunctionOffset));
-  ld(vector, FieldMemOperand(vector, JSFunction::kSharedFunctionInfoOffset));
-  ld(vector,
-     FieldMemOperand(vector, SharedFunctionInfo::kFeedbackVectorOffset));
+  ld(vector, FieldMemOperand(vector, JSFunction::kLiteralsOffset));
+  ld(vector, FieldMemOperand(vector, LiteralsArray::kFeedbackVectorOffset));
 }
 
 
@@ -7011,8 +7128,7 @@ Register GetRegisterThatIsNotOneOf(Register reg1,
   if (reg5.is_valid()) regs |= reg5.bit();
   if (reg6.is_valid()) regs |= reg6.bit();
 
-  const RegisterConfiguration* config =
-      RegisterConfiguration::ArchDefault(RegisterConfiguration::CRANKSHAFT);
+  const RegisterConfiguration* config = RegisterConfiguration::Crankshaft();
   for (int i = 0; i < config->num_allocatable_general_registers(); ++i) {
     int code = config->GetAllocatableGeneralCode(i);
     Register candidate = Register::from_code(code);

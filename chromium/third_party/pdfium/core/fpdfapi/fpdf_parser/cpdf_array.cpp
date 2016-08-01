@@ -25,12 +25,6 @@ CPDF_Object::Type CPDF_Array::GetType() const {
   return ARRAY;
 }
 
-CPDF_Array* CPDF_Array::GetArray() const {
-  // The method should be made non-const if we want to not be const.
-  // See bug #234.
-  return const_cast<CPDF_Array*>(this);
-}
-
 bool CPDF_Array::IsArray() const {
   return true;
 }
@@ -107,12 +101,12 @@ FX_FLOAT CPDF_Array::GetNumberAt(size_t i) const {
 CPDF_Dictionary* CPDF_Array::GetDictAt(size_t i) const {
   CPDF_Object* p = GetDirectObjectAt(i);
   if (!p)
-    return NULL;
+    return nullptr;
   if (CPDF_Dictionary* pDict = p->AsDictionary())
     return pDict;
   if (CPDF_Stream* pStream = p->AsStream())
     return pStream->GetDict();
-  return NULL;
+  return nullptr;
 }
 
 CPDF_Stream* CPDF_Array::GetStreamAt(size_t i) const {

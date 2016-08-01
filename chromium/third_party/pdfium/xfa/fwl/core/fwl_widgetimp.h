@@ -52,10 +52,6 @@ class CFWL_WidgetImp {
                                    uint32_t dwStylesExRemoved);
   virtual uint32_t GetStates();
   virtual void SetStates(uint32_t dwStates, FX_BOOL bSet = TRUE);
-  virtual FWL_Error SetPrivateData(void* module_id,
-                                   void* pData,
-                                   PD_CALLBACK_FREEDATA callback);
-  virtual void* GetPrivateData(void* module_id);
   virtual FWL_Error Update();
   virtual FWL_Error LockUpdate();
   virtual FWL_Error UnlockUpdate();
@@ -67,16 +63,23 @@ class CFWL_WidgetImp {
   virtual FWL_Error GetMatrix(CFX_Matrix& matrix, FX_BOOL bGlobal = FALSE);
   virtual FWL_Error SetMatrix(const CFX_Matrix& matrix);
   virtual FWL_Error DrawWidget(CFX_Graphics* pGraphics,
-                               const CFX_Matrix* pMatrix = NULL);
+                               const CFX_Matrix* pMatrix = nullptr);
   virtual IFWL_ThemeProvider* GetThemeProvider();
   virtual FWL_Error SetThemeProvider(IFWL_ThemeProvider* pThemeProvider);
   virtual FWL_Error SetDataProvider(IFWL_DataProvider* pDataProvider);
   virtual IFWL_WidgetDelegate* SetDelegate(IFWL_WidgetDelegate* pDelegate);
   virtual IFWL_App* GetOwnerApp() const;
+
   FWL_Error SetOwnerApp(CFWL_AppImp* pOwnerApp);
   IFWL_Widget* GetInterface() const;
   void SetInterface(IFWL_Widget* pInterface);
   CFX_SizeF GetOffsetFromParent(IFWL_Widget* pParent);
+  uint32_t GetEventKey() const;
+  void SetEventKey(uint32_t key);
+  void* GetLayoutItem() const;
+  void SetLayoutItem(void* pItem);
+  void* GetAssociateWidget() const;
+  void SetAssociateWidget(void* pAssociate);
 
  protected:
   friend class CFWL_WidgetImpDelegate;
@@ -129,24 +132,24 @@ class CFWL_WidgetImp {
                              const CFX_RectF& rtAnchor,
                              CFX_RectF& rtPopup);
   FX_BOOL GetScreenSize(FX_FLOAT& fx, FX_FLOAT& fy);
-  void RegisterEventTarget(IFWL_Widget* pEventSource = NULL,
+  void RegisterEventTarget(IFWL_Widget* pEventSource = nullptr,
                            uint32_t dwFilter = FWL_EVENT_ALL_MASK);
   void UnregisterEventTarget();
   void DispatchKeyEvent(CFWL_MsgKey* pNote);
   void DispatchEvent(CFWL_Event* pEvent);
-  void Repaint(const CFX_RectF* pRect = NULL);
+  void Repaint(const CFX_RectF* pRect = nullptr);
   void DrawBackground(CFX_Graphics* pGraphics,
                       CFWL_Part iPartBk,
                       IFWL_ThemeProvider* pTheme,
-                      const CFX_Matrix* pMatrix = NULL);
+                      const CFX_Matrix* pMatrix = nullptr);
   void DrawBorder(CFX_Graphics* pGraphics,
                   CFWL_Part iPartBorder,
                   IFWL_ThemeProvider* pTheme,
-                  const CFX_Matrix* pMatrix = NULL);
+                  const CFX_Matrix* pMatrix = nullptr);
   void DrawEdge(CFX_Graphics* pGraphics,
                 CFWL_Part iPartEdge,
                 IFWL_ThemeProvider* pTheme,
-                const CFX_Matrix* pMatrix = NULL);
+                const CFX_Matrix* pMatrix = nullptr);
   void NotifyDriver();
 
   FX_BOOL IsParent(IFWL_Widget* pParent);
@@ -154,12 +157,14 @@ class CFWL_WidgetImp {
   CFWL_WidgetMgr* m_pWidgetMgr;
   CFWL_AppImp* m_pOwnerApp;
   CFWL_WidgetImpProperties* m_pProperties;
-  CFX_PrivateData* m_pPrivateData;
   IFWL_WidgetDelegate* m_pDelegate;
   IFWL_WidgetDelegate* m_pCurDelegate;
   IFWL_Widget* m_pOuter;
   IFWL_Widget* m_pInterface;
+  void* m_pLayoutItem;
+  void* m_pAssociate;
   int32_t m_iLock;
+  uint32_t m_nEventKey;
 };
 
 class CFWL_WidgetImpDelegate : public IFWL_WidgetDelegate {
@@ -169,7 +174,7 @@ class CFWL_WidgetImpDelegate : public IFWL_WidgetDelegate {
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CFX_Graphics* pGraphics,
-                    const CFX_Matrix* pMatrix = NULL) override;
+                    const CFX_Matrix* pMatrix = nullptr) override;
 };
 
 #endif  // XFA_FWL_CORE_FWL_WIDGETIMP_H_

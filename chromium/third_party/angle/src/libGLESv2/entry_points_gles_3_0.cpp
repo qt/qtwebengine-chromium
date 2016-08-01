@@ -380,7 +380,7 @@ void GL_APIENTRY UniformMatrix2x3fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix2x3fv(location, count, transpose, value);
     }
 }
@@ -398,7 +398,7 @@ void GL_APIENTRY UniformMatrix3x2fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix3x2fv(location, count, transpose, value);
     }
 }
@@ -416,7 +416,7 @@ void GL_APIENTRY UniformMatrix2x4fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix2x4fv(location, count, transpose, value);
     }
 }
@@ -434,7 +434,7 @@ void GL_APIENTRY UniformMatrix4x2fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix4x2fv(location, count, transpose, value);
     }
 }
@@ -452,7 +452,7 @@ void GL_APIENTRY UniformMatrix3x4fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix3x4fv(location, count, transpose, value);
     }
 }
@@ -470,7 +470,7 @@ void GL_APIENTRY UniformMatrix4x3fv(GLint location, GLsizei count, GLboolean tra
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniformMatrix4x3fv(location, count, transpose, value);
     }
 }
@@ -515,7 +515,7 @@ void GL_APIENTRY RenderbufferStorageMultisample(GLenum target, GLsizei samples, 
             return;
         }
 
-        Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
+        Renderbuffer *renderbuffer = context->getGLState().getCurrentRenderbuffer();
         renderbuffer->setStorageMultisample(samples, internalformat, width, height);
     }
 }
@@ -767,7 +767,7 @@ void GL_APIENTRY EndTransformFeedback(void)
             return;
         }
 
-        TransformFeedback *transformFeedback = context->getState().getCurrentTransformFeedback();
+        TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
         ASSERT(transformFeedback != NULL);
 
         if (!transformFeedback->isActive())
@@ -836,7 +836,8 @@ void GL_APIENTRY BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLi
                 }
 
                 // Cannot bind a transform feedback buffer if the current transform feedback is active (3.0.4 pg 91 section 2.15.2)
-                TransformFeedback *curTransformFeedback = context->getState().getCurrentTransformFeedback();
+                TransformFeedback *curTransformFeedback =
+                    context->getGLState().getCurrentTransformFeedback();
                 if (curTransformFeedback && curTransformFeedback->isActive())
                 {
                     context->handleError(Error(GL_INVALID_OPERATION));
@@ -910,7 +911,8 @@ void GL_APIENTRY BindBufferBase(GLenum target, GLuint index, GLuint buffer)
           case GL_TRANSFORM_FEEDBACK_BUFFER:
             {
                 // Cannot bind a transform feedback buffer if the current transform feedback is active (3.0.4 pg 91 section 2.15.2)
-                TransformFeedback *curTransformFeedback = context->getState().getCurrentTransformFeedback();
+                TransformFeedback *curTransformFeedback =
+                    context->getGLState().getCurrentTransformFeedback();
                 if (curTransformFeedback && curTransformFeedback->isActive())
                 {
                     context->handleError(Error(GL_INVALID_OPERATION));
@@ -1075,14 +1077,14 @@ void GL_APIENTRY VertexAttribIPointer(GLuint index, GLint size, GLenum type, GLs
         // An INVALID_OPERATION error is generated when a non-zero vertex array object
         // is bound, zero is bound to the ARRAY_BUFFER buffer object binding point,
         // and the pointer argument is not NULL.
-        if (context->getState().getVertexArray()->id() != 0 && context->getState().getArrayBufferId() == 0 && pointer != NULL)
+        if (context->getGLState().getVertexArray()->id() != 0 &&
+            context->getGLState().getArrayBufferId() == 0 && pointer != NULL)
         {
             context->handleError(Error(GL_INVALID_OPERATION));
             return;
         }
 
-        context->getState().setVertexAttribState(index, context->getState().getTargetBuffer(GL_ARRAY_BUFFER), size, type, false, true,
-                                                 stride, pointer);
+        context->vertexAttribIPointer(index, size, type, stride, pointer);
     }
 }
 
@@ -1113,7 +1115,8 @@ void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint* params)
 
         if (pname == GL_CURRENT_VERTEX_ATTRIB)
         {
-            const VertexAttribCurrentValueData &currentValueData = context->getState().getVertexAttribCurrentValue(index);
+            const VertexAttribCurrentValueData &currentValueData =
+                context->getGLState().getVertexAttribCurrentValue(index);
             for (int i = 0; i < 4; ++i)
             {
                 params[i] = currentValueData.IntValues[i];
@@ -1121,7 +1124,8 @@ void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint* params)
         }
         else
         {
-            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
+            const VertexAttribute &attribState =
+                context->getGLState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLint>(attribState, pname);
         }
     }
@@ -1154,7 +1158,8 @@ void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint* params)
 
         if (pname == GL_CURRENT_VERTEX_ATTRIB)
         {
-            const VertexAttribCurrentValueData &currentValueData = context->getState().getVertexAttribCurrentValue(index);
+            const VertexAttribCurrentValueData &currentValueData =
+                context->getGLState().getVertexAttribCurrentValue(index);
             for (int i = 0; i < 4; ++i)
             {
                 params[i] = currentValueData.UnsignedIntValues[i];
@@ -1162,7 +1167,8 @@ void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint* params)
         }
         else
         {
-            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
+            const VertexAttribute &attribState =
+                context->getGLState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLuint>(attribState, pname);
         }
     }
@@ -1188,8 +1194,7 @@ void GL_APIENTRY VertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint 
             return;
         }
 
-        GLint vals[4] = { x, y, z, w };
-        context->getState().setVertexAttribi(index, vals);
+        context->vertexAttribI4i(index, x, y, z, w);
     }
 }
 
@@ -1213,8 +1218,7 @@ void GL_APIENTRY VertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GL
             return;
         }
 
-        GLuint vals[4] = { x, y, z, w };
-        context->getState().setVertexAttribu(index, vals);
+        context->vertexAttribI4ui(index, x, y, z, w);
     }
 }
 
@@ -1237,7 +1241,7 @@ void GL_APIENTRY VertexAttribI4iv(GLuint index, const GLint* v)
             return;
         }
 
-        context->getState().setVertexAttribi(index, v);
+        context->vertexAttribI4iv(index, v);
     }
 }
 
@@ -1260,7 +1264,7 @@ void GL_APIENTRY VertexAttribI4uiv(GLuint index, const GLuint* v)
             return;
         }
 
-        context->getState().setVertexAttribu(index, v);
+        context->vertexAttribI4uiv(index, v);
     }
 }
 
@@ -1354,7 +1358,7 @@ void GL_APIENTRY Uniform1uiv(GLint location, GLsizei count, const GLuint* value)
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniform1uiv(location, count, value);
     }
 }
@@ -1372,7 +1376,7 @@ void GL_APIENTRY Uniform2uiv(GLint location, GLsizei count, const GLuint* value)
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniform2uiv(location, count, value);
     }
 }
@@ -1390,7 +1394,7 @@ void GL_APIENTRY Uniform3uiv(GLint location, GLsizei count, const GLuint* value)
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniform3uiv(location, count, value);
     }
 }
@@ -1408,7 +1412,7 @@ void GL_APIENTRY Uniform4uiv(GLint location, GLsizei count, const GLuint* value)
             return;
         }
 
-        Program *program = context->getState().getProgram();
+        Program *program = context->getGLState().getProgram();
         program->setUniform4uiv(location, count, value);
     }
 }
@@ -1536,8 +1540,8 @@ void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintp
             return;
         }
 
-        Buffer *readBuffer = context->getState().getTargetBuffer(readTarget);
-        Buffer *writeBuffer = context->getState().getTargetBuffer(writeTarget);
+        Buffer *readBuffer  = context->getGLState().getTargetBuffer(readTarget);
+        Buffer *writeBuffer = context->getGLState().getTargetBuffer(writeTarget);
 
         if (!readBuffer || !writeBuffer)
         {
@@ -2246,7 +2250,7 @@ void GL_APIENTRY GetBufferParameteri64v(GLenum target, GLenum pname, GLint64* pa
             return;
         }
 
-        Buffer *buffer = context->getState().getTargetBuffer(target);
+        Buffer *buffer = context->getGLState().getTargetBuffer(target);
 
         if (!buffer)
         {
@@ -2507,7 +2511,8 @@ void GL_APIENTRY BindTransformFeedback(GLenum target, GLuint id)
           case GL_TRANSFORM_FEEDBACK:
             {
                 // Cannot bind a transform feedback object if the current one is started and not paused (3.0.2 pg 85 section 2.14.1)
-                TransformFeedback *curTransformFeedback = context->getState().getCurrentTransformFeedback();
+                TransformFeedback *curTransformFeedback =
+                    context->getGLState().getCurrentTransformFeedback();
                 if (curTransformFeedback && curTransformFeedback->isActive() && !curTransformFeedback->isPaused())
                 {
                     context->handleError(Error(GL_INVALID_OPERATION));
@@ -2612,7 +2617,7 @@ void GL_APIENTRY PauseTransformFeedback(void)
             return;
         }
 
-        TransformFeedback *transformFeedback = context->getState().getCurrentTransformFeedback();
+        TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
         ASSERT(transformFeedback != NULL);
 
         // Current transform feedback must be active and not paused in order to pause (3.0.2 pg 86)
@@ -2639,7 +2644,7 @@ void GL_APIENTRY ResumeTransformFeedback(void)
             return;
         }
 
-        TransformFeedback *transformFeedback = context->getState().getCurrentTransformFeedback();
+        TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
         ASSERT(transformFeedback != NULL);
 
         // Current transform feedback must be active and paused in order to resume (3.0.2 pg 86)

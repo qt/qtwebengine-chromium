@@ -156,7 +156,7 @@ int VirtualSocket::Bind(const SocketAddress& addr) {
     was_any_ = addr.IsAnyIP();
     // Post a message here such that test case could have chance to
     // process the local address. (i.e. SetAlternativeLocalAddress).
-    server_->msg_queue_->Post(this, MSG_ID_ADDRESS_BOUND);
+    server_->msg_queue_->Post(RTC_FROM_HERE, this, MSG_ID_ADDRESS_BOUND);
   }
   return result;
 }
@@ -264,12 +264,18 @@ int VirtualSocket::SendTo(const void* pv,
   }
 }
 
-int VirtualSocket::Recv(void* pv, size_t cb) {
+int VirtualSocket::Recv(void* pv, size_t cb, int64_t* timestamp) {
   SocketAddress addr;
-  return RecvFrom(pv, cb, &addr);
+  return RecvFrom(pv, cb, &addr, timestamp);
 }
 
-int VirtualSocket::RecvFrom(void* pv, size_t cb, SocketAddress* paddr) {
+int VirtualSocket::RecvFrom(void* pv,
+                            size_t cb,
+                            SocketAddress* paddr,
+                            int64_t* timestamp) {
+  if (timestamp) {
+    *timestamp = -1;
+  }
   // If we don't have a packet, then either error or wait for one to arrive.
   if (recv_buffer_.empty()) {
     if (async_) {
@@ -505,7 +511,7 @@ VirtualSocketServer::VirtualSocketServer(SocketServer* ss)
       server_owned_(false),
       msg_queue_(NULL),
       stop_on_idle_(false),
-      network_delay_(TimeMillis()),
+      network_delay_(0),
       next_ipv4_(kInitialNextIPv4),
       next_ipv6_(kInitialNextIPv6),
       next_port_(kFirstEphemeralPort),
@@ -754,19 +760,22 @@ int VirtualSocketServer::Connect(VirtualSocket* socket,
   }
   if (remote != NULL) {
     SocketAddress addr = socket->GetLocalAddress();
-    msg_queue_->PostDelayed(delay, remote, MSG_ID_CONNECT,
+    msg_queue_->PostDelayed(RTC_FROM_HERE, delay, remote, MSG_ID_CONNECT,
                             new MessageAddress(addr));
   } else {
     LOG(LS_INFO) << "No one listening at " << remote_addr;
-    msg_queue_->PostDelayed(delay, socket, MSG_ID_DISCONNECT);
+    msg_queue_->PostDelayed(RTC_FROM_HERE, delay, socket, MSG_ID_DISCONNECT);
   }
   return 0;
 }
 
 bool VirtualSocketServer::Disconnect(VirtualSocket* socket) {
   if (socket) {
+    // If we simulate packets being delayed, we should simulate the
+    // equivalent of a FIN being delayed as well.
+    uint32_t delay = GetRandomTransitDelay();
     // Remove the mapping.
-    msg_queue_->Post(socket, MSG_ID_DISCONNECT);
+    msg_queue_->PostDelayed(RTC_FROM_HERE, delay, socket, MSG_ID_DISCONNECT);
     return true;
   }
   return false;
@@ -914,7 +923,7 @@ void VirtualSocketServer::AddPacketToNetwork(VirtualSocket* sender,
     // introduces artificial delay.
     ts = std::max(ts, network_delay_);
   }
-  msg_queue_->PostAt(ts, recipient, MSG_ID_PACKET, p);
+  msg_queue_->PostAt(RTC_FROM_HERE, ts, recipient, MSG_ID_PACKET, p);
   network_delay_ = std::max(ts, network_delay_);
 }
 
