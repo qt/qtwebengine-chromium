@@ -31,6 +31,7 @@
 #include "components/version_info/version_info.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/resources/peak_gpu_memory_tracker_util.h"
+#include "components/viz/service/main/viz_main_impl.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/service/dawn_caching_interface.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
@@ -602,7 +603,8 @@ void GpuServiceImpl::InitializeWithHost(
     gpu::GpuProcessShmCount use_shader_cache_shm_count,
     scoped_refptr<gl::GLSurface> default_offscreen_surface,
     mojom::GpuServiceCreationParamsPtr creation_params,
-    base::WaitableEvent* shutdown_event) {
+    base::WaitableEvent* shutdown_event,
+    void* viz_delegate) {
   gpu::SyncPointManager* sync_point_manager = CreateSyncPointManager();
 #if BUILDFLAG(IS_OZONE)
   gpu::SharedImageManager* shared_image_manager =
@@ -619,7 +621,7 @@ void GpuServiceImpl::InitializeWithHost(
   InitializeWithHostInternal(
       std::move(pending_gpu_host), std::move(use_shader_cache_shm_count),
       default_offscreen_surface, std::move(creation_params), sync_point_manager,
-      shared_image_manager, scheduler, shutdown_event);
+      shared_image_manager, scheduler, shutdown_event, viz_delegate);
 }
 #endif
 
@@ -631,7 +633,8 @@ void GpuServiceImpl::InitializeWithHostInternal(
     gpu::SyncPointManager* sync_point_manager,
     gpu::SharedImageManager* shared_image_manager,
     gpu::Scheduler* scheduler,
-    base::WaitableEvent* shutdown_event) {
+    base::WaitableEvent* shutdown_event,
+    void* viz_delegate) {
   DCHECK(main_runner_->BelongsToCurrentThread());
 
   scheduler_ = scheduler;
@@ -662,6 +665,9 @@ void GpuServiceImpl::InitializeWithHostInternal(
       image_decode_accelerator_worker_.get(), vulkan_context_provider(),
       metal_context_provider(), dawn_context_provider(),
       dawn_caching_interface_factory(), gr_context_options_provider_);
+  if (viz_delegate) {
+    static_cast<viz::VizMainImpl::Delegate*>(viz_delegate)->OnGpuChannelManagerCreated(gpu_channel_manager_.get());
+  }
 
   media_gpu_channel_manager_ = std::make_unique<media::MediaGpuChannelManager>(
       gpu_channel_manager_.get());
