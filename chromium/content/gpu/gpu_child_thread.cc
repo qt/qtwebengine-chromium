@@ -26,6 +26,7 @@
 #include "content/common/process_visibility_tracker.h"
 #include "content/gpu/browser_exposed_gpu_interfaces.h"
 #include "content/gpu/gpu_service_factory.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/gpu/content_gpu_client.h"
@@ -108,11 +109,15 @@ viz::VizMainImpl::ExternalDependencies CreateVizMainDependencies() {
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
     : GpuChildThread(std::move(quit_closure),
                      GetOptions(),
-                     std::move(gpu_init)) {}
+                     std::move(gpu_init)) {
+  instance_ = this;
+}
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
@@ -132,6 +137,7 @@ GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
            base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kInProcessGPU));
   }
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() = default;
@@ -175,6 +181,12 @@ bool GpuChildThread::in_process_gpu() const {
 
 void GpuChildThread::OnInitializationFailed() {
   OnChannelError();
+}
+
+void GpuChildThread::OnGpuChannelManagerCreated(gpu::GpuChannelManager* manager) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  manager->set_share_group(GetContentClient()->gpu()->GetInProcessGpuShareGroup());
+#endif
 }
 
 void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
