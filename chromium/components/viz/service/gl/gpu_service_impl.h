@@ -150,7 +150,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
       gpu::SyncPointManager* sync_point_manager = nullptr,
       gpu::SharedImageManager* shared_image_manager = nullptr,
       gpu::Scheduler* scheduler = nullptr,
-      base::WaitableEvent* shutdown_event = nullptr);
+      base::WaitableEvent* shutdown_event = nullptr,
+      void* viz_delegate = nullptr);
   void Bind(mojo::PendingReceiver<mojom::GpuService> pending_receiver);
 
   scoped_refptr<gpu::SharedContextState> GetContextState();
