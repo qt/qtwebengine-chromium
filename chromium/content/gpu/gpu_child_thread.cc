@@ -22,6 +22,7 @@
 #include "content/child/child_process.h"
 #include "content/gpu/browser_exposed_gpu_interfaces.h"
 #include "content/gpu/gpu_service_factory.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_names.mojom.h"
@@ -121,11 +122,15 @@ viz::VizMainImpl::ExternalDependencies CreateVizMainDependencies() {
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
     : GpuChildThread(std::move(quit_closure),
                      GetOptions(),
-                     std::move(gpu_init)) {}
+                     std::move(gpu_init)) {
+  instance_ = this;
+}
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
@@ -149,6 +154,7 @@ GpuChildThread::GpuChildThread(base::RepeatingClosure quit_closure,
            base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kInProcessGPU));
   }
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() = default;
@@ -214,6 +220,10 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
                           base::ThreadTaskRunnerHandle::Get());
   gpu_service->media_gpu_channel_manager()->SetOverlayFactory(
       overlay_factory_cb);
+#endif
+
+#if defined(TOOLKIT_QT)
+  gpu_channel_manager()->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
 #endif
 
   // Only set once per process instance.
