@@ -57,6 +57,12 @@ class GpuChildThread : public ChildThreadImpl, public ui::GpuMain::Delegate {
 
   void Init(const base::Time& process_start_time);
 
+  static GpuChildThread* instance() { return instance_; }
+
+  gpu::GpuChannelManager* gpu_channel_manager() {
+    return gpu_main_.gpu_service()->gpu_channel_manager();
+  }
+
  private:
   GpuChildThread(const ChildThreadImpl::Options& options,
                  std::unique_ptr<gpu::GpuInit> gpu_init);
@@ -103,6 +109,8 @@ class GpuChildThread : public ChildThreadImpl, public ui::GpuMain::Delegate {
   base::Closure release_pending_requests_closure_;
 
   base::WeakPtrFactory<GpuChildThread> weak_factory_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };
