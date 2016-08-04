@@ -141,14 +141,18 @@ class GPU_EXPORT GpuChannelManager {
       bool allow_view_command_buffers,
       bool allow_real_time_streams);
 
+ public:
   SyncPointManager* sync_point_manager() const {
     return sync_point_manager_;
   }
-
-  gl::GLShareGroup* share_group() const { return share_group_.get(); }
   gles2::MailboxManager* mailbox_manager() const {
     return mailbox_manager_.get();
   }
+
+  gl::GLShareGroup* share_group() const { return share_group_.get(); }
+  void set_share_group(gl::GLShareGroup* share_group);
+
+ protected:
   PreemptionFlag* preemption_flag() const {
     return preemption_flag_.get();
   }

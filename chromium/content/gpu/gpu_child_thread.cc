@@ -142,6 +142,8 @@ ChildThreadImpl::Options GetOptions(
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(
     std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
     bool dead_on_arrival,
@@ -159,6 +161,8 @@ GpuChildThread::GpuChildThread(
   target_services_ = NULL;
 #endif
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::GpuChildThread(
@@ -184,6 +188,8 @@ GpuChildThread::GpuChildThread(
              switches::kInProcessGPU));
 
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() {
@@ -357,6 +363,10 @@ void GpuChildThread::OnInitialize(const gpu::GpuPreferences& gpu_preferences) {
       gpu_memory_buffer_factory_));
 
   media_service_.reset(new media::MediaService(gpu_channel_manager_.get()));
+
+#if defined(TOOLKIT_QT)
+  gpu_channel_manager_->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
+#endif
 
   // Only set once per process instance.
   service_factory_.reset(new GpuServiceFactory);
