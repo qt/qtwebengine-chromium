@@ -77,6 +77,12 @@ class GpuChildThread : public ChildThreadImpl,
 
   void Init(const base::Time& process_start_time);
 
+  static GpuChildThread* instance() { return instance_; }
+
+  gpu::GpuChannelManager* gpu_channel_manager() {
+    return gpu_service_->gpu_channel_manager();
+  }
+
  private:
   GpuChildThread(const ChildThreadImpl::Options& options,
                  std::unique_ptr<gpu::GpuWatchdogThread> gpu_watchdog_thread,
@@ -112,10 +118,6 @@ class GpuChildThread : public ChildThreadImpl,
       const service_manager::BindSourceInfo& source_info,
       service_manager::mojom::ServiceFactoryRequest request);
 
-  gpu::GpuChannelManager* gpu_channel_manager() {
-    return gpu_service_->gpu_channel_manager();
-  }
-
 #if defined(OS_ANDROID)
   static std::unique_ptr<media::AndroidOverlay> CreateAndroidOverlay(
       const base::UnguessableToken& routing_token,
@@ -147,6 +149,8 @@ class GpuChildThread : public ChildThreadImpl,
   base::Closure release_pending_requests_closure_;
 
   base::WeakPtrFactory<GpuChildThread> weak_factory_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

@@ -125,6 +125,7 @@ class GPU_EXPORT GpuChannelManager {
   }
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }
+  void set_share_group(gl::GLShareGroup* share_group);
 
   SyncPointManager* sync_point_manager() const { return sync_point_manager_; }
 

@@ -17,6 +17,7 @@
 #include "content/child/child_process.h"
 #include "content/common/field_trial_recorder.mojom.h"
 #include "content/gpu/gpu_service_factory.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/connection_filter.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -133,6 +134,8 @@ class QueueingConnectionFilter : public ConnectionFilter {
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(
     std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
     bool dead_on_arrival,
@@ -146,6 +149,8 @@ GpuChildThread::GpuChildThread(
                      gpu_info,
                      gpu_feature_info) {
   deferred_messages_ = std::move(deferred_messages);
+
+  instance_ = this;
 }
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
@@ -184,7 +189,9 @@ GpuChildThread::GpuChildThread(
            base::CommandLine::ForCurrentProcess()->HasSwitch(
                switches::kInProcessGPU));
   }
+
   gpu_service_->set_in_host_process(in_browser_process_);
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() {
@@ -281,6 +288,10 @@ void GpuChildThread::CreateGpuService(
       gpu::GpuProcessActivityFlags(std::move(activity_flags)),
       sync_point_manager, ChildProcess::current()->GetShutDownEvent());
   CHECK(gpu_service_->media_gpu_channel_manager());
+
+#if defined(TOOLKIT_QT)
+  gpu_channel_manager()->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
+#endif
 
   // Only set once per process instance.
   service_factory_.reset(new GpuServiceFactory(
