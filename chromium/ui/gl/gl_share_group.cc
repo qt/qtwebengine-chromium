@@ -20,6 +20,9 @@ GLShareGroup::GLShareGroup()
 }
 
 void GLShareGroup::AddContext(GLContext* context) {
+  if (contexts_.empty())
+    AboutToAddFirstContext();
+
   contexts_.insert(context);
 }
 
