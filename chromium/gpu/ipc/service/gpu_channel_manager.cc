@@ -443,6 +443,10 @@ GpuChannel* GpuChannelManager::LookupChannel(int32_t client_id) const {
   return it != gpu_channels_.end() ? it->second.get() : nullptr;
 }
 
+void GpuChannelManager::set_share_group(gl::GLShareGroup* share_group) {
+    share_group_ = share_group;
+}
+
 GpuChannel* GpuChannelManager::EstablishChannel(
     const base::UnguessableToken& channel_token,
     int client_id,
