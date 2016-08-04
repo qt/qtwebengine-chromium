@@ -60,6 +60,12 @@ class GpuChildThread : public ChildThreadImpl,
 
   viz::VizMainImpl *viz_main() { return &viz_main_; }
 
+  static GpuChildThread* instance() { return instance_; }
+
+  gpu::GpuChannelManager* gpu_channel_manager() {
+    return viz_main_.gpu_service()->gpu_channel_manager();
+  }
+
  private:
   GpuChildThread(base::RepeatingClosure quit_closure,
                  ChildThreadImpl::Options options,
@@ -132,6 +138,8 @@ class GpuChildThread : public ChildThreadImpl,
   std::vector<PendingServiceRequest> pending_service_requests_;
 
   base::WeakPtrFactory<GpuChildThread> weak_factory_{this};
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

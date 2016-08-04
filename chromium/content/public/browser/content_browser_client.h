@@ -85,6 +85,10 @@ namespace device {
 class LocationProvider;
 }  // namespace device
 
+namespace gl {
+class GLShareGroup;
+}
+
 namespace media {
 class AudioLogFactory;
 class AudioManager;
@@ -936,6 +940,10 @@ class CONTENT_EXPORT ContentBrowserClient {
       const base::FilePath& storage_partition_path,
       std::vector<std::unique_ptr<storage::FileSystemBackend>>*
           additional_backends) {}
+
+  // Allow an embedder to provide a share group reimplementation to connect renderer
+  // GL contexts with the root compositor.
+  virtual gl::GLShareGroup* GetInProcessGpuShareGroup() { return 0; }
 
   // Creates a new DevToolsManagerDelegate. The caller owns the returned value.
   // It's valid to return nullptr.
