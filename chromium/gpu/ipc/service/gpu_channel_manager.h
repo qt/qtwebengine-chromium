@@ -154,6 +154,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   MailboxManager* mailbox_manager() { return mailbox_manager_.get(); }
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }
+  void set_share_group(gl::GLShareGroup* share_group);
 
   SyncPointManager* sync_point_manager() const { return sync_point_manager_; }
 
