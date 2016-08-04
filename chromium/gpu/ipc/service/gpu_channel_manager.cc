@@ -121,6 +121,10 @@ GpuChannel* GpuChannelManager::LookupChannel(int32_t client_id) const {
   return it != gpu_channels_.end() ? it->second : nullptr;
 }
 
+void GpuChannelManager::set_share_group(gl::GLShareGroup* share_group) {
+    share_group_ = share_group;
+}
+
 std::unique_ptr<GpuChannel> GpuChannelManager::CreateGpuChannel(
     int client_id,
     uint64_t client_tracing_id,
