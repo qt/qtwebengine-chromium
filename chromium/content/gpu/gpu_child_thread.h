@@ -84,6 +84,12 @@ class GpuChildThread : public ChildThreadImpl,
     return gpu_service_->watchdog_thread();
   }
 
+  static GpuChildThread* instance() { return instance_; }
+
+  gpu::GpuChannelManager* gpu_channel_manager() {
+    return gpu_service_->gpu_channel_manager();
+  }
+
  private:
   void CreateGpuMainService(ui::mojom::GpuMainAssociatedRequest request);
 
@@ -135,10 +141,6 @@ class GpuChildThread : public ChildThreadImpl,
   void BindServiceFactoryRequest(
       service_manager::mojom::ServiceFactoryRequest request);
 
-  gpu::GpuChannelManager* gpu_channel_manager() {
-    return gpu_service_->gpu_channel_manager();
-  }
-
   // Set this flag to true if a fatal error occurred before we receive the
   // OnInitialize message, in which case we just declare ourselves DOA.
   const bool dead_on_arrival_;
@@ -168,6 +170,8 @@ class GpuChildThread : public ChildThreadImpl,
   AssociatedInterfaceRegistryImpl associated_interfaces_;
   std::unique_ptr<ui::GpuService> gpu_service_;
   mojo::AssociatedBinding<ui::mojom::GpuMain> gpu_main_binding_;
+
+  static GpuChildThread* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

@@ -135,11 +135,16 @@ class GPU_EXPORT GpuChannelManager {
     return exiting_for_lost_context_;
   }
 
+  SyncPointManager* sync_point_manager() const {
+    return sync_point_manager_;
+  }
+
   gles2::MailboxManager* mailbox_manager() const {
     return mailbox_manager_.get();
   }
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }
+  void set_share_group(gl::GLShareGroup* share_group);
 
  protected:
   virtual std::unique_ptr<GpuChannel> CreateGpuChannel(
@@ -148,10 +153,6 @@ class GPU_EXPORT GpuChannelManager {
       bool preempts,
       bool allow_view_command_buffers,
       bool allow_real_time_streams);
-
-  SyncPointManager* sync_point_manager() const {
-    return sync_point_manager_;
-  }
 
   PreemptionFlag* preemption_flag() const { return preemption_flag_.get(); }
 

@@ -20,6 +20,7 @@
 #include "content/common/establish_channel_params.h"
 #include "content/common/gpu_host_messages.h"
 #include "content/gpu/gpu_service_factory.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
@@ -144,6 +145,8 @@ ChildThreadImpl::Options GetOptions(
 
 }  // namespace
 
+GpuChildThread* GpuChildThread::instance_ = 0;
+
 GpuChildThread::GpuChildThread(
     std::unique_ptr<gpu::GpuWatchdogThread> watchdog_thread,
     bool dead_on_arrival,
@@ -166,6 +169,8 @@ GpuChildThread::GpuChildThread(
   target_services_ = NULL;
 #endif
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::GpuChildThread(
@@ -197,6 +202,8 @@ GpuChildThread::GpuChildThread(
              switches::kInProcessGPU));
 
   g_thread_safe_sender.Get() = thread_safe_sender();
+
+  instance_ = this;
 }
 
 GpuChildThread::~GpuChildThread() {
@@ -338,6 +345,10 @@ void GpuChildThread::CreateGpuService(
                                    sync_point_manager,
                                    ChildProcess::current()->GetShutDownEvent());
   CHECK(gpu_service_->media_gpu_channel_manager());
+
+#if defined(TOOLKIT_QT)
+  gpu_channel_manager()->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
+#endif
 
   // Only set once per process instance.
   service_factory_.reset(new GpuServiceFactory(
