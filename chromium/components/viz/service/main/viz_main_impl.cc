@@ -206,13 +206,13 @@ void VizMainImpl::CreateGpuService(
       gpu_init_->TakeDefaultOffscreenSurface(), std::move(params),
       dependencies_.sync_point_manager, dependencies_.shared_image_manager,
       dependencies_.scheduler, dependencies_.shutdown_event,
-      dependencies_.gr_context_options_provider);
+      dependencies_.gr_context_options_provider, delegate_);
 #else
   gpu_service_->InitializeWithHost(
       gpu_host.Unbind(),
       gpu::GpuProcessShmCount(std::move(use_shader_cache_shm_region)),
       gpu_init_->TakeDefaultOffscreenSurface(), std::move(params),
-      dependencies_.shutdown_event);
+      dependencies_.shutdown_event, delegate_);
 #endif
 
   gpu_service_->Bind(std::move(pending_receiver));

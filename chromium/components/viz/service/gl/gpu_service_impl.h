@@ -155,14 +155,16 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
       gpu::Scheduler* scheduler = nullptr,
       base::WaitableEvent* shutdown_event = nullptr,
       const gpu::SharedContextState::GrContextOptionsProvider*
-          gr_context_options_provider = nullptr);
+          gr_context_options_provider = nullptr,
+      void* viz_delegate = nullptr);
 #else
   void InitializeWithHost(
       mojo::PendingRemote<mojom::GpuHost> gpu_host,
       gpu::GpuProcessShmCount use_shader_cache_shm_count,
       scoped_refptr<gl::GLSurface> default_offscreen_surface,
       mojom::GpuServiceCreationParamsPtr creation_params,
-      base::WaitableEvent* shutdown_event = nullptr);
+      base::WaitableEvent* shutdown_event = nullptr,
+      void* viz_delegate = nullptr);
 #endif
 
   void Bind(mojo::PendingReceiver<mojom::GpuService> pending_receiver);
@@ -507,7 +509,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
       gpu::SyncPointManager* sync_point_manager,
       gpu::SharedImageManager* shared_image_manager,
       gpu::Scheduler* scheduler,
-      base::WaitableEvent* shutdown_event);
+      base::WaitableEvent* shutdown_event,
+      void* viz_delegate = nullptr
+  );
 
   // Private helper methods to create objects needed by this class during init.
   gpu::SyncPointManager* CreateSyncPointManager();
