@@ -40,7 +40,6 @@
         '../cc/cc.gyp:cc',
         '../components/components.gyp:devtools_discovery',
         '../components/components.gyp:devtools_http_handler',
-        '../components/components.gyp:network_session_configurator_switches',
         '../components/components.gyp:web_cache_renderer',
         '../components/test_runner/test_runner.gyp:test_runner',
         '../components/url_formatter/url_formatter.gyp:url_formatter',

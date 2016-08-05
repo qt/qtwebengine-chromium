@@ -95,14 +95,14 @@
             # GN version: //third_party/WebKit/public:test_support
             'target_name': 'blink_test_support',
             'type': 'none',
-            'dependencies': [
-                '../Source/platform/blink_platform_tests.gyp:blink_platform_test_support',
-                '../Source/web/web.gyp:blink_web_test_support',
-            ],
-            'export_dependent_settings': [
-                '../Source/platform/blink_platform_tests.gyp:blink_platform_test_support',
-                '../Source/web/web.gyp:blink_web_test_support',
-            ],
+#            'dependencies': [
+#                '../Source/platform/blink_platform_tests.gyp:blink_platform_test_support',
+#                '../Source/web/web.gyp:blink_web_test_support',
+#            ],
+#            'export_dependent_settings': [
+#                '../Source/platform/blink_platform_tests.gyp:blink_platform_test_support',
+#                '../Source/web/web.gyp:blink_web_test_support',
+#            ],
         },
         {
             # GN version: //third_party/WebKit/public:mojo_bindings_blink

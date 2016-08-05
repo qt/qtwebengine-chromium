@@ -10,7 +10,6 @@
       'type': 'none',
       'dependencies': [
         'mojo_base.gyp:mojo_base',
-        'mojo_edk_tests.gyp:mojo_edk_tests',
         'mojo_public.gyp:mojo_public',
       ],
     },
