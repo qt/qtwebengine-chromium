@@ -96,6 +96,7 @@ void PopupMenuHelper::ShowPopupMenu(
     return;
   }
 
+#if defined(USE_EXTERNAL_POPUP_MENU)
   if (!popup_was_hidden_) {
     if ([menu_runner_ menuItemWasChosen]) {
       render_frame_host_->DidSelectPopupMenuItem(
@@ -104,6 +105,7 @@ void PopupMenuHelper::ShowPopupMenu(
       render_frame_host_->DidCancelPopupMenu();
     }
   }
+#endif
   [menu_runner_ release];
   menu_runner_ = nil;
 }
