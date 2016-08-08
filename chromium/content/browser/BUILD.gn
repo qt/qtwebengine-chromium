@@ -2646,7 +2646,7 @@ source_set("browser") {
     ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     deps += [
       "//media",
       "//third_party/mozilla",
