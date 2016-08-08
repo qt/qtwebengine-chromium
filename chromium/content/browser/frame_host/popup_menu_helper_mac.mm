@@ -15,6 +15,7 @@
 #import "content/browser/renderer_host/render_widget_host_view_cocoa.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/browser/renderer_host/webmenurunner_mac.h"
+#include "content/common/buildflags.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -63,6 +64,7 @@ void PopupMenuHelper::ShowPopupMenu(
   if (!g_allow_showing_popup_menus)
     return;
 
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   // Retain the Cocoa view for the duration of the pop-up so that it can't be
   // dealloced if my Destroy() method is called while the pop-up's up (which
   // would in turn delete me, causing a crash once the -runMenuInView
@@ -119,6 +121,7 @@ void PopupMenuHelper::ShowPopupMenu(
       render_frame_host_->DidCancelPopupMenu();
   }
 
+#endif
   delegate_->OnMenuClosed();  // May delete |this|.
 }
 
