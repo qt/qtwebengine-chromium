@@ -144,7 +144,7 @@
             }],
 
             # Mac and Android use external popup menu.
-            ['OS=="mac" or OS=="android"', {
+            ['(OS=="mac" or OS=="android") and use_qt==0', {
               'use_external_popup_menu%': 1,
             }],
 

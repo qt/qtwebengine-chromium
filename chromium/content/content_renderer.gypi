@@ -786,15 +786,17 @@
     '<@(private_renderer_sources)',
   ],
   'conditions': [
+    ['use_external_popup_menu==1', {
+      'sources': [
+        'renderer/external_popup_menu.cc',
+        'renderer/external_popup_menu.h',
+      ],
+    }],
     ['OS=="mac"', {
       'sources!': [
         'common/process_watcher_posix.cc',
         'renderer/webscrollbarbehavior_impl_gtkoraura.cc',
         'renderer/webscrollbarbehavior_impl_gtkoraura.h',
-      ],
-      'sources': [
-        'renderer/external_popup_menu.cc',
-        'renderer/external_popup_menu.h',
       ],
     }, {
       'sources!': [
@@ -803,10 +805,6 @@
       ],
     }],
     ['OS=="android"', {
-      'sources': [
-        'renderer/external_popup_menu.cc',
-        'renderer/external_popup_menu.h',
-      ],
       'dependencies': [
         '../build/android/ndk.gyp:cpu_features',
         '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',

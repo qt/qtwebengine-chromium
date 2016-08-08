@@ -46,7 +46,7 @@
 
 struct BrowserPluginHostMsg_Attach_Params;
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && defined(USE_EXTERNAL_POPUP_MENU)
 struct FrameHostMsg_ShowPopup_Params;
 #endif
 
@@ -356,7 +356,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
       blink::WebInputEvent::Type event_type,
       InputEventAckState ack_result);
   void OnHasTouchEventHandlers(bool accept);
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && defined(USE_EXTERNAL_POPUP_MENU)
   // On MacOS X popups are painted by the browser process. We handle them here
   // so that they are positioned correctly.
   void OnShowPopup(RenderFrameHost* render_frame_host,
