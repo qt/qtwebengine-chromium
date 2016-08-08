@@ -23,6 +23,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
+#include "content/common/buildflags.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/guest_host.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -93,7 +94,7 @@ class BrowserPluginGuest : public GuestHost, public WebContentsObserver {
 
   void PrimaryMainFrameRenderProcessGone(
       base::TerminationStatus status) override;
-#if defined(OS_MAC)
+#if defined(OS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   // On MacOS X popups are painted by the browser process. We handle them here
   // so that they are positioned correctly.
   void ShowPopupMenu(
