@@ -100,9 +100,11 @@ void BluetoothRemoteGattServiceMac::DidDiscoverCharacteristics() {
     }
     gatt_characteristic_mac =
         new BluetoothRemoteGattCharacteristicMac(this, cb_characteristic);
-    const std::string& identifier = gatt_characteristic_mac->GetIdentifier();
-    auto result_iter = gatt_characteristic_macs_.insert(
-        {identifier, base::WrapUnique(gatt_characteristic_mac)});
+    const std::string identifier = gatt_characteristic_mac->GetIdentifier();
+    std::unordered_map<std::string,
+                       std::unique_ptr<BluetoothRemoteGattCharacteristicMac>>::value_type value =
+{identifier, base::WrapUnique(gatt_characteristic_mac)};
+    auto result_iter = gatt_characteristic_macs_.insert(std::move(value));
     DCHECK(result_iter.second);
     gatt_characteristic_mac->DiscoverDescriptors();
     GetMacAdapter()->NotifyGattCharacteristicAdded(gatt_characteristic_mac);
