@@ -26,7 +26,7 @@
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom.h"
 
-#if defined(OS_MAC)
+#if defined(OS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #include "content/browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h"
 #endif
 
@@ -216,7 +216,7 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
   }
 }
 
-#if defined(OS_MAC)
+#if defined(OS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 void BrowserPluginGuest::ShowPopupMenu(
     RenderFrameHost* render_frame_host,
     mojo::PendingRemote<blink::mojom::PopupMenuClient>* popup_client,
