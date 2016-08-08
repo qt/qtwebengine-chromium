@@ -2528,7 +2528,7 @@ jumbo_source_set("browser") {
     deps += [ "//third_party/flac" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     deps += [
       "//media",
       "//third_party/mozilla",

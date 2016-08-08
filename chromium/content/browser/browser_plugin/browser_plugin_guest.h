@@ -32,6 +32,7 @@
 #include "components/viz/common/surfaces/local_surface_id_allocation.h"
 #include "components/viz/common/surfaces/scoped_surface_id_allocator.h"
 #include "content/browser/renderer_host/input_event_shim.h"
+#include "content/common/buildflags.h"
 #include "content/common/edit_command.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/guest_host.h"
@@ -47,7 +48,7 @@
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 struct FrameHostMsg_ShowPopup_Params;
 #endif
 
@@ -299,7 +300,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void OnHandleInputEventAck(
       blink::WebInputEvent::Type event_type,
       InputEventAckState ack_result);
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   // On MacOS X popups are painted by the browser process. We handle them here
   // so that they are positioned correctly.
   void OnShowPopup(RenderFrameHost* render_frame_host,

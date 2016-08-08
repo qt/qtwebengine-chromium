@@ -53,7 +53,7 @@
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 #include "content/browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h"
 #include "content/common/frame_messages.h"
 #endif
@@ -407,7 +407,7 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message,
   // around the whole thing (unfortunate but temporary), and #if guards where
   // they belong, only around the one IPC handler. TODO(avi): Move more of the
   // frame-based handlers to this function and remove the outer #if layer.
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(BrowserPluginGuest, message,
                                    render_frame_host)
@@ -621,7 +621,7 @@ void BrowserPluginGuest::OnSynchronizeVisualProperties(
   render_widget_host->SynchronizeVisualProperties();
 }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
 void BrowserPluginGuest::OnShowPopup(
     RenderFrameHost* render_frame_host,
     const FrameHostMsg_ShowPopup_Params& params) {
