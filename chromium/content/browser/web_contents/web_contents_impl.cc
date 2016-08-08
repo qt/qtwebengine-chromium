@@ -2393,7 +2393,7 @@ void WebContentsImpl::CreateNewWidget(int32_t render_process_id,
   pending_widget_views_[std::make_pair(render_process_id, route_id)] =
       widget_view;
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   // A RenderWidgetHostViewMac has lifetime scoped to the view. We'll retain it
   // to allow it to survive the trip without being hosted.
   base::mac::NSObjectRetain(widget_view->GetNativeView());
@@ -2483,7 +2483,7 @@ void WebContentsImpl::ShowCreatedWidget(int process_id,
   // used to implement Pepper Flash fullscreen.
   render_widget_host_impl->set_allow_privileged_mouse_lock(is_fullscreen);
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   // A RenderWidgetHostViewMac has lifetime scoped to the view. Now that it's
   // properly embedded (or purposefully ignored) we can release the retain we
   // took in CreateNewWidget().

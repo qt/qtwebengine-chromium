@@ -104,6 +104,7 @@ void PopupMenuHelper::ShowPopupMenu(
 
   menu_runner_ = nil;
 
+#if defined(USE_EXTERNAL_POPUP_MENU)
   // The RenderFrameHost may be deleted while running the menu, or it may have
   // requested the close. Don't notify in these cases.
   if (render_frame_host_ && !popup_was_hidden_) {
@@ -113,6 +114,7 @@ void PopupMenuHelper::ShowPopupMenu(
       render_frame_host_->DidCancelPopupMenu();
   }
 
+#endif
   delegate_->OnMenuClosed();  // May delete |this|.
 }
 
