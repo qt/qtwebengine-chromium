@@ -8981,7 +8981,7 @@ bool WebContentsImpl::ShowPopupMenu(
     std::move(show_poup_menu_callback_).Run(bounds);
     return true;
   }
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) && BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   if (browser_plugin_guest_) {
     browser_plugin_guest_->ShowPopupMenu(
         render_frame_host, popup_client, bounds, item_height, font_size,
