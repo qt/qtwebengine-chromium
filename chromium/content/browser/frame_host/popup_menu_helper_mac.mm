@@ -13,6 +13,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/browser/renderer_host/webmenurunner_mac.h"
+#include "content/common/features.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -104,6 +105,7 @@ void PopupMenuHelper::ShowPopupMenu(
 
   menu_runner_ = nil;
 
+#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
   // The RenderFrameHost may be deleted while running the menu, or it may have
   // requested the close. Don't notify in these cases.
   if (render_frame_host_ && !popup_was_hidden_) {
@@ -113,6 +115,7 @@ void PopupMenuHelper::ShowPopupMenu(
       render_frame_host_->DidCancelPopupMenu();
   }
 
+#endif
   delegate_->OnMenuClosed();  // May delete |this|.
 }
 
