@@ -39,6 +39,11 @@
 
 #include <sys/mman.h>
 
+#if OS(LINUX) && defined(MADV_FREE)
+// Added in Linux 4.5, but we don't want to depend on 4.5 at runtime
+#undef MADV_FREE
+#endif
+
 #ifndef MADV_FREE
 #define MADV_FREE MADV_DONTNEED
 #endif
