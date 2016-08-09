@@ -473,9 +473,9 @@ class MemoryChunk {
              !chunk->high_water_mark_.TrySetValue(old_mark, new_mark));
   }
 
-  Address address() { return reinterpret_cast<Address>(this); }
+  static bool IsValid(MemoryChunk* chunk) { return chunk != nullptr; }
 
-  bool is_valid() { return address() != NULL; }
+  Address address() { return reinterpret_cast<Address>(this); }
 
   MemoryChunk* next_chunk() { return next_chunk_.Value(); }
 
