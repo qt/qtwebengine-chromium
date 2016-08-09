@@ -30,6 +30,7 @@
         '<(DEPTH)/third_party/swiftshader/include',
       ],
       'export_dependent_settings': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
       ],
       'sources': [

@@ -67,6 +67,7 @@
         '../../../gpu/gpu.gyp:gpu_config',
         '../../../gpu/gpu.gyp:gpu_ipc_service',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../third_party/khronos/khronos.gyp:khronos_headers',
         '../../../third_party/mesa/mesa.gyp:mesa_headers',
         '../../media.gyp:media',
         '../../media.gyp:media_gpu',
