@@ -1024,10 +1024,11 @@
           'enable_print_preview%': 0,
         }],
 
+        # pkg-config for qt builds is set by qmake config
         ['sysroot!=""', {
-          'pkg-config': '<(chroot_cmd) <(DEPTH)/build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
+          'pkg-config%': '<(chroot_cmd) <(DEPTH)/build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
         }, {
-          'pkg-config': 'pkg-config'
+          'pkg-config%': 'pkg-config'
         }],
 
         # Enable WebVR support by default on Android
