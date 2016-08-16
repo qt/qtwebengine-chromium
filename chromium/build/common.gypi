@@ -717,6 +717,10 @@
       # By default enable force touch API. It's only supported with OSX SDK 10.10.3+.
       'disable_force_touch%': 0,
 
+      # By default use -fstack-protector-strong. If the compiler does not
+      # support it, fallback to -fstack-protector.
+      'use_xcode_stack_protector_strong%': 1,
+
       'conditions': [
         # A flag for POSIX platforms
         ['OS=="win"', {
@@ -1259,6 +1263,7 @@
     'proprietary_codecs%': '<(proprietary_codecs)',
     'appstore_compliant_code%': '<(appstore_compliant_code)',
     'disable_force_touch%': '<(disable_force_touch)',
+    'use_xcode_stack_protector_strong%': '<(use_xcode_stack_protector_strong)',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',
     'use_lto%': '<(use_lto)',
@@ -3379,8 +3384,12 @@
           }],
           ['release_valgrind_build==0', {
             'xcode_settings': {
-              'OTHER_CFLAGS': [
-                '-fstack-protector-strong',  # Implies -fstack-protector
+              'conditions': [
+                ['use_xcode_stack_protector_strong==1', {
+                  'OTHER_CFLAGS': ['-fstack-protector-strong'], # Implies -fstack-protector
+                }, {
+                  'OTHER_CFLAGS': ['-fstack-protector'],
+                }],
               ],
             },
           }],
