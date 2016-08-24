@@ -227,8 +227,9 @@ class NinjaWriter(object):
     self.flavor = flavor
     self.abs_build_dir = None
     if toplevel_dir is not None:
-      self.abs_build_dir = os.path.abspath(os.path.join(toplevel_dir,
-                                                        build_dir))
+      self.abs_build_dir = os.path.abspath(os.path.join(toplevel_dir, build_dir))
+      self.abs_base_dir = os.path.abspath(os.path.join(toplevel_dir, base_dir))
+
     self.obj_ext = '.obj' if flavor == 'win' else '.o'
     if flavor == 'win':
       # See docstring of msvs_emulation.GenerateEnvironmentFiles().
@@ -340,14 +341,18 @@ class NinjaWriter(object):
 
     path_dir, path_basename = os.path.split(path)
     if os.path.isabs(path_dir):
-        path_dir = gyp.common.RelativePath(path_dir, self.abs_build_dir)
+        path_dir = gyp.common.RelativePath(path_dir, self.abs_base_dir)
     assert not os.path.isabs(path_dir), (
         "'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
 
     if qualified:
       path_basename = self.name + '.' + path_basename
-    return os.path.normpath(os.path.join(obj, self.base_dir, path_dir,
-                                         path_basename))
+
+    out_dir = os.path.normpath(os.path.join(self.base_dir, path_dir, path_basename))
+    if os.path.commonprefix([out_dir, os.path.pardir]) == os.path.pardir:
+      out_dir = out_dir.replace('..', '.')
+
+    return os.path.normpath(os.path.join(obj, out_dir))
 
   def WriteCollapsedDependencies(self, name, targets, order_only=None):
     """Given a list of targets, return a path for a single file
@@ -950,7 +955,11 @@ class NinjaWriter(object):
         obj = 'obj'
         if self.toolset != 'target':
           obj += '.' + self.toolset
-        pdbpath = os.path.normpath(os.path.join(obj, self.base_dir, self.name))
+        output_file_path = self.base_dir
+        if os.path.commonprefix([output_file_path, os.path.pardir]) == os.path.pardir:
+            output_file_path = output_file_path.replace('..', '.')
+
+        pdbpath = os.path.normpath(os.path.join(obj, output_file_path, self.name))
         pdbpath_c = pdbpath + '.c.pdb'
         pdbpath_cc = pdbpath + '.cc.pdb'
       self.WriteVariableList(ninja_file, 'pdbname_c', [pdbpath_c])
