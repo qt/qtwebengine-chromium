@@ -224,8 +224,9 @@ class NinjaWriter(object):
     self.flavor = flavor
     self.abs_build_dir = None
     if toplevel_dir is not None:
-      self.abs_build_dir = os.path.abspath(os.path.join(toplevel_dir,
-                                                        build_dir))
+      self.abs_build_dir = os.path.abspath(os.path.join(toplevel_dir, build_dir))
+      self.abs_base_dir = os.path.abspath(os.path.join(toplevel_dir, base_dir))
+
     self.obj_ext = '.obj' if flavor == 'win' else '.o'
     if flavor == 'win':
       # See docstring of msvs_emulation.GenerateEnvironmentFiles().
@@ -337,7 +338,7 @@ class NinjaWriter(object):
 
     path_dir, path_basename = os.path.split(path)
     if os.path.isabs(path_dir):
-        path_dir = gyp.common.RelativePath(path_dir, self.abs_build_dir)
+        path_dir = gyp.common.RelativePath(path_dir, self.abs_base_dir)
     #assert not os.path.isabs(path_dir), (
         #"'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
 
