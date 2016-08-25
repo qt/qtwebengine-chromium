@@ -940,7 +940,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(), storage_partition_impl_->GetURLRequestContext(),
       storage_partition_impl_->GetFileSystemContext(),
       blob_storage_context.get(), StreamContext::GetFor(browser_context)));
-  AddFilter(new BlobDispatcherHost(blob_storage_context.get()));
+  AddFilter(new BlobDispatcherHost(
+      GetID(), blob_storage_context,
+      make_scoped_refptr(storage_partition_impl_->GetFileSystemContext())));
   AddFilter(new FileUtilitiesMessageFilter(GetID()));
   AddFilter(
       new DatabaseMessageFilter(storage_partition_impl_->GetDatabaseTracker()));
@@ -2361,7 +2363,8 @@ void RenderProcessHostImpl::CreateSharedRendererHistogramAllocator() {
 
   // TODO(bcwhite): Update this with the correct memory size.
   std::unique_ptr<base::SharedMemory> shm(new base::SharedMemory());
-  shm->CreateAndMapAnonymous(2 << 20);  // 2 MiB
+  if (!shm->CreateAndMapAnonymous(2 << 20))  // 2 MiB
+    return;
   metrics_allocator_.reset(new base::SharedPersistentMemoryAllocator(
       std::move(shm), GetID(), "RendererMetrics", /*readonly=*/false));
 

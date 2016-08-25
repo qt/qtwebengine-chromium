@@ -49,6 +49,14 @@ const struct Accelerator {
     {ui::VKEY_W, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN},
     {ui::VKEY_F4, ui::EF_ALT_DOWN}};
 
+void UpdateShelfStateForFullscreenChange(views::Widget* widget) {
+  ash::wm::WindowState* window_state =
+      ash::wm::GetWindowState(widget->GetNativeWindow());
+  window_state->set_shelf_mode_in_fullscreen(
+      ash::wm::WindowState::SHELF_AUTO_HIDE_INVISIBLE);
+  ash::Shell::GetInstance()->UpdateShelfVisibility();
+}
+
 class CustomFrameView : public views::NonClientFrameView {
  public:
   explicit CustomFrameView(views::Widget* widget) : widget_(widget) {}
@@ -117,6 +125,7 @@ class CustomWindowStateDelegate : public ash::wm::WindowStateDelegate,
     if (widget_) {
       bool enter_fullscreen = !window_state->IsFullscreen();
       widget_->SetFullscreen(enter_fullscreen);
+      UpdateShelfStateForFullscreenChange(widget_);
     }
     return true;
   }
@@ -334,6 +343,15 @@ void ShellSurface::SetParent(ShellSurface* parent) {
   }
 }
 
+void ShellSurface::Activate() {
+  TRACE_EVENT0("exo", "ShellSurface::Activate");
+
+  if (!widget_ || widget_->IsActive())
+    return;
+
+  widget_->Activate();
+}
+
 void ShellSurface::Maximize() {
   TRACE_EVENT0("exo", "ShellSurface::Maximize");
 
@@ -380,6 +398,7 @@ void ShellSurface::SetFullscreen(bool fullscreen) {
   // state doesn't change.
   ScopedConfigure scoped_configure(this, true);
   widget_->SetFullscreen(fullscreen);
+  UpdateShelfStateForFullscreenChange(widget_);
 }
 
 void ShellSurface::SetPinned(bool pinned) {
@@ -484,6 +503,13 @@ void ShellSurface::SetRectangularShadow(const gfx::Rect& content_bounds) {
                content_bounds.ToString());
 
   shadow_content_bounds_ = content_bounds;
+}
+
+void ShellSurface::SetRectangularShadowBackgroundOpacity(float opacity) {
+  TRACE_EVENT1("exo", "ShellSurface::SetRectangularShadowBackgroundOpacity",
+               "opacity", opacity);
+
+  rectangular_shadow_background_opacity_ = opacity;
 }
 
 void ShellSurface::SetScale(double scale) {
@@ -635,11 +661,13 @@ bool ShellSurface::CanResize() const {
 }
 
 bool ShellSurface::CanMaximize() const {
-  return true;
+  // Shell surfaces in system modal container cannot be maximized.
+  return container_ != ash::kShellWindowId_SystemModalContainer;
 }
 
 bool ShellSurface::CanMinimize() const {
-  return true;
+  // Shell surfaces in system modal container cannot be minimized.
+  return container_ != ash::kShellWindowId_SystemModalContainer;
 }
 
 base::string16 ShellSurface::GetWindowTitle() const {
@@ -912,6 +940,13 @@ void ShellSurface::CreateShellSurfaceWidget(ui::WindowShowState show_state) {
   window->AddObserver(this);
   ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
   window_state->AddObserver(this);
+
+  // Absolete positioned shell surfaces may request the bounds that does not
+  // fill the entire work area / display in maximized / fullscreen state.
+  // Allow such clients to update the bounds in these states.
+  if (!initial_bounds_.IsEmpty())
+    window_state->set_allow_set_bounds_in_maximized(true);
+
   // Notify client of initial state if different than normal.
   if (window_state->GetStateType() != ash::wm::WINDOW_STATE_TYPE_NORMAL &&
       !state_changed_callback_.is_null()) {
@@ -1137,7 +1172,17 @@ void ShellSurface::UpdateWidgetBounds() {
   DCHECK(widget_);
 
   // Return early if the shell is currently managing the bounds of the widget.
-  if (widget_->IsMaximized() || widget_->IsFullscreen() || IsResizing())
+  // 1) When a window is either maximized/fullscreen/pinned, and the bounds
+  // isn't controlled by a client.
+  ash::wm::WindowState* window_state =
+      ash::wm::GetWindowState(widget_->GetNativeWindow());
+  if (window_state->IsMaximizedOrFullscreenOrPinned() &&
+      !window_state->allow_set_bounds_in_maximized()) {
+    return;
+  }
+
+  // 2) When a window is being dragged.
+  if (IsResizing())
     return;
 
   // Return early if there is pending configure requests.
@@ -1187,20 +1232,15 @@ void ShellSurface::UpdateShadow() {
       shadow_underlay_->Hide();
   } else {
     wm::SetShadowType(window, wm::SHADOW_TYPE_RECTANGULAR);
-    wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
-    // Maximized/Fullscreen window does not create a shadow.
-    if (!shadow)
-      return;
 
-    if (!shadow_overlay_) {
-      shadow_overlay_ = new aura::Window(nullptr);
-      DCHECK(shadow_overlay_->owned_by_parent());
-      shadow_overlay_->set_ignore_events(true);
-      shadow_overlay_->Init(ui::LAYER_NOT_DRAWN);
-      shadow_overlay_->layer()->Add(shadow->layer());
-      window->AddChild(shadow_overlay_);
-      shadow_overlay_->Show();
-    }
+    // TODO(oshima): Adjust the coordinates from client screen to
+    // chromeos screen when multi displays are supported.
+    gfx::Point origin = window->bounds().origin();
+    gfx::Point shadow_origin = shadow_content_bounds_.origin();
+    shadow_origin -= origin.OffsetFromOrigin();
+    gfx::Rect shadow_bounds(shadow_origin, shadow_content_bounds_.size());
+
+    // Always create and show the underlay, even in maximized/fullscreen.
     if (!shadow_underlay_) {
       shadow_underlay_ = new aura::Window(nullptr);
       DCHECK(shadow_underlay_->owned_by_parent());
@@ -1215,17 +1255,43 @@ void ShellSurface::UpdateShadow() {
       window->AddChild(shadow_underlay_);
       window->StackChildAtBottom(shadow_underlay_);
     }
+
+    // Put the black background layer behind the window if
+    // 1) the window is in immersive fullscreen.
+    // 2) the window can control the bounds of the window in fullscreen (
+    //    thus the background can be visible).
+    // 3) the window has no transform (the transformed background may
+    //    not cover the entire background, e.g. overview mode).
+    if (widget_->IsFullscreen() &&
+        ash::wm::GetWindowState(window)->allow_set_bounds_in_maximized() &&
+        window->layer()->transform().IsIdentity()) {
+      gfx::Point origin;
+      origin -= window->bounds().origin().OffsetFromOrigin();
+      gfx::Rect background_bounds(origin, window->parent()->bounds().size());
+      shadow_underlay_->SetBounds(background_bounds);
+      shadow_underlay_->layer()->SetOpacity(1.f);
+    } else {
+      shadow_underlay_->SetBounds(shadow_bounds);
+      shadow_underlay_->layer()->SetOpacity(
+          rectangular_shadow_background_opacity_);
+    }
     shadow_underlay_->Show();
 
-    // TODO(oshima): Adjust the coordinates from client screen to
-    // chromeos screen when multi displays are support.
-    gfx::Point origin = window->bounds().origin();
-    gfx::Point shadow_origin = shadow_content_bounds_.origin();
-    shadow_origin -= origin.OffsetFromOrigin();
-    gfx::Rect shadow_bounds(shadow_origin, shadow_content_bounds_.size());
+    wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+    // Maximized/Fullscreen window does not create a shadow.
+    if (!shadow)
+      return;
 
+    if (!shadow_overlay_) {
+      shadow_overlay_ = new aura::Window(nullptr);
+      DCHECK(shadow_overlay_->owned_by_parent());
+      shadow_overlay_->set_ignore_events(true);
+      shadow_overlay_->Init(ui::LAYER_NOT_DRAWN);
+      shadow_overlay_->layer()->Add(shadow->layer());
+      window->AddChild(shadow_overlay_);
+      shadow_overlay_->Show();
+    }
     shadow_overlay_->SetBounds(shadow_bounds);
-    shadow_underlay_->SetBounds(shadow_bounds);
     shadow->SetContentBounds(gfx::Rect(shadow_bounds.size()));
   }
 }

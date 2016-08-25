@@ -97,6 +97,9 @@ class ShellSurface : public SurfaceDelegate,
   // parent.
   void SetParent(ShellSurface* parent);
 
+  // Activates the shell surface.
+  void Activate();
+
   // Maximizes the shell surface.
   void Maximize();
 
@@ -146,6 +149,9 @@ class ShellSurface : public SurfaceDelegate,
   // Set the content bounds for the shadow. Empty bounds will delete
   // the shadow.
   void SetRectangularShadow(const gfx::Rect& content_bounds);
+
+  // Set the pacity of the background for the window that has a shadow.
+  void SetRectangularShadowBackgroundOpacity(float opacity);
 
   // Set scale factor for surface. The scale factor will be applied to surface
   // and all descendants.
@@ -212,6 +218,10 @@ class ShellSurface : public SurfaceDelegate,
 
   // Overridden from ui::AcceleratorTarget:
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+
+  const aura::Window* shadow_underlay_for_test() const {
+    return shadow_underlay_;
+  }
 
  private:
   class ScopedConfigure;
@@ -288,6 +298,7 @@ class ShellSurface : public SurfaceDelegate,
   std::unique_ptr<ScopedAnimationsDisabled> scoped_animations_disabled_;
   int top_inset_height_ = 0;
   int pending_top_inset_height_ = 0;
+  float rectangular_shadow_background_opacity_ = 1.0;
 
   DISALLOW_COPY_AND_ASSIGN(ShellSurface);
 };

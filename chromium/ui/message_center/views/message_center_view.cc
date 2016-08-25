@@ -397,7 +397,7 @@ void MessageCenterView::OnNotificationUpdated(const std::string& id) {
            notifications.begin(); iter != notifications.end(); ++iter) {
     if ((*iter)->id() == id) {
       int old_width = view->width();
-      int old_height = view->GetHeightForWidth(old_width);
+      int old_height = view->height();
       message_list_view_->UpdateNotification(view, **iter);
       if (view->GetHeightForWidth(old_width) != old_height)
         Update(true /* animate */);
@@ -527,6 +527,16 @@ void MessageCenterView::Update(bool animate) {
     SetVisibilityMode(Mode::BUTTONS_ONLY, animate);
   else
     SetVisibilityMode(Mode::NOTIFICATIONS, animate);
+
+  if (no_message_views) {
+    scroller_->SetFocusBehavior(FocusBehavior::NEVER);
+  } else {
+#if defined(OS_MACOSX)
+    scroller_->SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
+#else
+    scroller_->SetFocusBehavior(FocusBehavior::ALWAYS);
+#endif
+  }
 
   UpdateButtonBarStatus();
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Next MinVersion: 5
+
 module arc.mojom;
 
 [Extensible]
@@ -170,6 +172,7 @@ struct BluetoothGattValue {
 [Extensible]
 enum BluetoothAdvertisingDataType {
   DATA_TYPE_FLAGS = 0x01,
+  DATA_TYPE_SERVICE_UUIDS_16_BIT_COMPLETE = 0x03,
   DATA_TYPE_SERVICE_UUIDS_128_BIT_COMPLETE = 0x07,
   DATA_TYPE_LOCAL_NAME_COMPLETE = 0x09,
   DATA_TYPE_TX_POWER_LEVEL = 0x0A,
@@ -182,6 +185,7 @@ enum BluetoothAdvertisingDataType {
 // https://www.bluetooth.com/specifications/adopted-specifications
 union BluetoothAdvertisingData {
   uint8 flags;
+  array<uint16> service_uuids_16;
   array<BluetoothUUID> service_uuids;
   string local_name;
   uint8 tx_power_level;
@@ -287,8 +291,35 @@ interface BluetoothHost {
   [MinVersion=1] ReadRemoteRssi@28(BluetoothAddress remote_addr)
       => (int32 rssi);
 
+  // Bluetooth Gatt Server functions
+  // Copied from Android API
+  // https://source.android.com/devices/halref/bt__gatt__server_8h.html
+  [MinVersion=3] AddService@30(BluetoothGattServiceID service_id,
+                               int32 num_handles)
+      => (int32 service_handle);
+  [MinVersion=3] AddCharacteristic@31(int32 service_handle,
+                                      BluetoothUUID uuid,
+                                      int32 properties,
+                                      int32 permissions)
+      => (int32 characteristic_handle);
+  [MinVersion=3] AddDescriptor@32(int32 service_handle,
+                                  BluetoothUUID uuid,
+                                  int32 permissions)
+      => (int32 descriptor_handle);
+  [MinVersion=3] StartService@33(int32 service_handle)
+      => (BluetoothGattStatus status);
+  [MinVersion=3] StopService@34(int32 service_handle)
+      => (BluetoothGattStatus status);
+  [MinVersion=3] DeleteService@35(int32 service_handle)
+      => (BluetoothGattStatus status);
+  [MinVersion=3] SendIndication@36(int32 attribute_handle,
+                                   BluetoothAddress address,
+                                   bool confirm,
+                                   array<uint8> value)
+      => (BluetoothGattStatus status);
 };
 
+// Next Method ID: 17
 interface BluetoothInstance {
   Init@0(BluetoothHost host_ptr);
 
@@ -312,6 +343,8 @@ interface BluetoothInstance {
                                    array<BluetoothAdvertisingData> adv_data);
   [MinVersion=1] OnLEConnectionStateChange@8(BluetoothAddress remote_addr,
                                              bool connected);
+  [MinVersion=4] OnLEDeviceAddressChange@16(BluetoothAddress old_addr,
+                                            BluetoothAddress new_addr);
   [MinVersion=1] OnSearchComplete@9(BluetoothAddress remote_addr,
                                     BluetoothGattStatus status);
   [MinVersion=1] OnGetGattDB@10(BluetoothAddress remote_addr,
@@ -326,4 +359,16 @@ interface BluetoothInstance {
                                  BluetoothGattID char_id,
                                  bool is_notify,
                                  array<uint8> value);
+
+  // Bluetooth Gatt Server functions
+  [MinVersion=3] RequestGattRead@14(BluetoothAddress address,
+                                    int32 attribute_handle,
+                                    int32 offset,
+                                    bool is_long)
+      => (BluetoothGattStatus status, array<uint8> value);
+  [MinVersion=3] RequestGattWrite@15(BluetoothAddress address,
+                                     int32 attribute_handle,
+                                     int32 offset,
+                                     array<uint8> value)
+      => (BluetoothGattStatus status);
 };

@@ -76,6 +76,7 @@
 <translation id="1783075131180517613">Mettre à jour votre phrase secrète de synchronisation</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1821930232296380041">La demande ou ses paramètres ne sont pas valides.</translation>
+<translation id="1838667051080421715">Vous consultez actuellement la source d'une page Web.</translation>
 <translation id="1871208020102129563">Le proxy est configuré pour utiliser des serveurs proxy déterminés, pas une URL de script .pac.</translation>
 <translation id="1883255238294161206">Réduire la liste</translation>
 <translation id="1898423065542865115">Filtrage</translation>
@@ -356,7 +357,7 @@
 <translation id="5029568752722684782">Effacer la copie</translation>
 <translation id="5031870354684148875">À propos de Google Traduction</translation>
 <translation id="5040262127954254034">Confidentialité</translation>
-<translation id="5045550434625856497">Mot de passe incorrect.</translation>
+<translation id="5045550434625856497">Mot de passe incorrect</translation>
 <translation id="5070335125961472645"><ph name="BEGIN_LINK" />Vérifier l'adresse du proxy<ph name="END_LINK" /></translation>
 <translation id="5087286274860437796">Le certificat actuel du serveur n'est pas valide.</translation>
 <translation id="5089810972385038852">État</translation>

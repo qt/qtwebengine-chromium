@@ -76,6 +76,7 @@
 <translation id="1783075131180517613">Моля, актуализирайте пропуска си за синхронизиране.</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1821930232296380041">Заявката или параметрите й са невалидни</translation>
+<translation id="1838667051080421715">Преглеждате изходния код на уеб страницата.</translation>
 <translation id="1871208020102129563">За прокси сървъра е зададено да използва фиксирани прокси сървъри, а не URL адрес на скрипт във формат .pac.</translation>
 <translation id="1883255238294161206">Свиване на списъка</translation>
 <translation id="1898423065542865115">Филтриране</translation>
@@ -356,7 +357,7 @@
 <translation id="5029568752722684782">Изчистване на копието</translation>
 <translation id="5031870354684148875">Всичко за Google Преводач</translation>
 <translation id="5040262127954254034">Поверителност</translation>
-<translation id="5045550434625856497">Неправилна парола</translation>
+<translation id="5045550434625856497">Грешна парола</translation>
 <translation id="5070335125961472645"><ph name="BEGIN_LINK" />Проверете адреса на прокси сървъра<ph name="END_LINK" />.</translation>
 <translation id="5087286274860437796">Понастоящем сертификатът на сървъра не е валиден.</translation>
 <translation id="5089810972385038852">Щат</translation>
