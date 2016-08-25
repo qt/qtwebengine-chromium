@@ -76,6 +76,7 @@
 <translation id="1783075131180517613">Posodobite geslo za sinhronizacijo.</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1821930232296380041">Neveljavna zahteva ali parametri zahteve</translation>
+<translation id="1838667051080421715">Ogledujete si vir spletne strani.</translation>
 <translation id="1871208020102129563">Proxy je nastavljen na uporabo stalnih strežnikov proxy, ne na URL skripta .pac.</translation>
 <translation id="1883255238294161206">Strni seznam</translation>
 <translation id="1898423065542865115">Filtriranje</translation>
@@ -357,7 +358,7 @@
 <translation id="5029568752722684782">Počisti kopijo</translation>
 <translation id="5031870354684148875">Google Prevajalnik – vizitka</translation>
 <translation id="5040262127954254034">Zasebnost</translation>
-<translation id="5045550434625856497">Napačno geslo</translation>
+<translation id="5045550434625856497">Nepravilno geslo</translation>
 <translation id="5070335125961472645"><ph name="BEGIN_LINK" />preveriti naslov strežnika proxy<ph name="END_LINK" /></translation>
 <translation id="5087286274860437796">Potrdilo strežnika trenutno ni veljavno.</translation>
 <translation id="5089810972385038852">Zvezna država</translation>

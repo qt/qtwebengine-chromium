@@ -463,8 +463,7 @@ Resource* ResourceFetcher::requestResource(FetchRequest& request, const Resource
 
     updateMemoryCacheStats(resource, policy, request, factory, isStaticData);
 
-    if (policy != Use)
-        willSendRequest(identifier, request.mutableResourceRequest(), ResourceResponse(), request.options());
+    request.mutableResourceRequest().setAllowStoredCredentials(request.options().allowCredentials == AllowStoredCredentials);
 
     switch (policy) {
     case Reload:
@@ -689,6 +688,11 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
     // Never use cache entries for downloadToFile / useStreamOnResponse
     // requests. The data will be delivered through other paths.
     if (request.downloadToFile() || request.useStreamOnResponse())
+        return Reload;
+
+    // Never reuse opaque responses from a service worker for requests that
+    // are not no-cors. https://crbug.com/625575
+    if (existingResource->response().wasFetchedViaServiceWorker() && existingResource->response().serviceWorkerResponseType() == WebServiceWorkerResponseTypeOpaque && request.fetchRequestMode() != WebURLRequest::FetchRequestModeNoCORS)
         return Reload;
 
     // If resource was populated from a SubstituteData load or data: url, use it.
@@ -984,6 +988,9 @@ bool ResourceFetcher::startLoad(Resource* resource)
         return false;
     }
 
+    ResourceRequest request(resource->resourceRequest());
+    willSendRequest(resource->identifier(), request, ResourceResponse(), resource->options());
+
     ResourceLoader* loader = ResourceLoader::create(this, resource);
     if (resource->shouldBlockLoadEvent())
         m_loaders.add(loader);
@@ -992,7 +999,7 @@ bool ResourceFetcher::startLoad(Resource* resource)
 
     storeResourceTimingInitiatorInformation(resource);
     resource->setFetcherSecurityOrigin(context().getSecurityOrigin());
-    loader->start(resource->resourceRequest(), context().loadingTaskRunner(), context().defersLoading());
+    loader->start(request, context().loadingTaskRunner(), context().defersLoading());
     return true;
 }
 
@@ -1058,13 +1065,13 @@ bool ResourceFetcher::willFollowRedirect(Resource* resource, ResourceRequest& ne
     ResourceTimingInfoMap::iterator it = m_resourceTimingInfoMap.find(resource);
     if (it != m_resourceTimingInfoMap.end())
         it->value->addRedirect(redirectResponse);
+    newRequest.setAllowStoredCredentials(resource->options().allowCredentials == AllowStoredCredentials);
     willSendRequest(resource->identifier(), newRequest, redirectResponse, resource->options());
     return true;
 }
 
 void ResourceFetcher::willSendRequest(unsigned long identifier, ResourceRequest& newRequest, const ResourceResponse& redirectResponse, const ResourceLoaderOptions& options)
 {
-    newRequest.setAllowStoredCredentials(options.allowCredentials == AllowStoredCredentials);
     context().dispatchWillSendRequest(identifier, newRequest, redirectResponse, options.initiatorInfo);
 }
 

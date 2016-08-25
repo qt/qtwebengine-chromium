@@ -76,6 +76,7 @@
 <translation id="1783075131180517613">Opdater din adgangssætning til synkronisering.</translation>
 <translation id="1791429645902722292">Google Smart Lock</translation>
 <translation id="1821930232296380041">Ugyldig anmodning eller anmodningsparametre</translation>
+<translation id="1838667051080421715">Du får vist kilden for en webside.</translation>
 <translation id="1871208020102129563">Proxy er indstillet til at bruge faste proxyservere, ikke webadresser til .pac-scripts.</translation>
 <translation id="1883255238294161206">Skjul liste</translation>
 <translation id="1898423065542865115">Filtrering</translation>
@@ -465,7 +466,7 @@
 <translation id="6550675742724504774">Valgmuligheder</translation>
 <translation id="6596325263575161958">Krypteringsmuligheder</translation>
 <translation id="662080504995468778">Bliv her</translation>
-<translation id="6628463337424475685"><ph name="ENGINE" /> Søg</translation>
+<translation id="6628463337424475685"><ph name="ENGINE" /> -søgning</translation>
 <translation id="6634865548447745291">Du kan ikke gå til <ph name="SITE" /> lige nu, da <ph name="BEGIN_LINK" />dette certifikat er blevet tilbagekaldt<ph name="END_LINK" />. Netværksfejl og angreb er normalt midlertidige, så denne side vil sandsynligvis fungere senere.</translation>
 <translation id="6644283850729428850">Denne politik er forældet.</translation>
 <translation id="6656103420185847513">Rediger mappe</translation>

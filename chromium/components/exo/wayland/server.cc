@@ -17,6 +17,7 @@
 #include <gaming-input-unstable-v1-server-protocol.h>       // NOLINT
 #include <remote-shell-unstable-v1-server-protocol.h>       // NOLINT
 #include <secure-output-unstable-v1-server-protocol.h>      // NOLINT
+#include <stylus-unstable-v1-server-protocol.h>             // NOLINT
 #include <xdg-shell-unstable-v5-server-protocol.h>          // NOLINT
 #include <vsync-feedback-unstable-v1-server-protocol.h>     // NOLINT
 
@@ -32,6 +33,7 @@
 #include "ash/common/wm_shell.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/bind.h"
 #include "base/cancelable_callback.h"
 #include "base/files/file_path.h"
@@ -53,6 +55,7 @@
 #include "components/exo/notification_surface_manager.h"
 #include "components/exo/pointer.h"
 #include "components/exo/pointer_delegate.h"
+#include "components/exo/pointer_stylus_delegate.h"
 #include "components/exo/shared_memory.h"
 #include "components/exo/shell_surface.h"
 #include "components/exo/sub_surface.h"
@@ -1037,15 +1040,14 @@ wl_output_transform OutputTransform(display::Display::Rotation rotation) {
   return WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
-class WaylandDisplayObserver : public display::DisplayObserver {
+class WaylandPrimaryDisplayObserver : public display::DisplayObserver {
  public:
-  WaylandDisplayObserver(const display::Display& display,
-                         wl_resource* output_resource)
-      : display_id_(display.id()), output_resource_(output_resource) {
+  WaylandPrimaryDisplayObserver(wl_resource* output_resource)
+      : output_resource_(output_resource) {
     display::Screen::GetScreen()->AddObserver(this);
-    SendDisplayMetrics(display);
+    SendDisplayMetrics();
   }
-  ~WaylandDisplayObserver() override {
+  ~WaylandPrimaryDisplayObserver() override {
     display::Screen::GetScreen()->RemoveObserver(this);
   }
 
@@ -1054,18 +1056,29 @@ class WaylandDisplayObserver : public display::DisplayObserver {
   void OnDisplayRemoved(const display::Display& new_display) override {}
   void OnDisplayMetricsChanged(const display::Display& display,
                                uint32_t changed_metrics) override {
-    if (display.id() != display_id_)
+    if (display::Screen::GetScreen()->GetPrimaryDisplay().id() != display.id())
       return;
 
+    // There is no need to check DISPLAY_METRIC_PRIMARY because when primary
+    // changes, bounds always changes. (new primary should have had non
+    // 0,0 origin).
+    // Only exception is when switching to newly connected primary with
+    // the same bounds. This happens whenyou're in docked mode, suspend,
+    // unplug the dislpay, then resume to the internal display which has
+    // the same resolution. Since metrics does not change, there is no need
+    // to notify clients.
     if (changed_metrics &
         (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_DEVICE_SCALE_FACTOR |
          DISPLAY_METRIC_ROTATION)) {
-      SendDisplayMetrics(display);
+      SendDisplayMetrics();
     }
   }
 
  private:
-  void SendDisplayMetrics(const display::Display& display) {
+  void SendDisplayMetrics() {
+    display::Display display =
+        display::Screen::GetScreen()->GetPrimaryDisplay();
+
     const ash::DisplayInfo& info =
         ash::Shell::GetInstance()->display_manager()->GetDisplayInfo(
             display.id());
@@ -1098,13 +1111,10 @@ class WaylandDisplayObserver : public display::DisplayObserver {
     }
   }
 
-  // The identifier associated with the observed display.
-  const int64_t display_id_;
-
   // The output resource associated with the display.
   wl_resource* const output_resource_;
 
-  DISALLOW_COPY_AND_ASSIGN(WaylandDisplayObserver);
+  DISALLOW_COPY_AND_ASSIGN(WaylandPrimaryDisplayObserver);
 };
 
 const uint32_t output_version = 2;
@@ -1113,14 +1123,9 @@ void bind_output(wl_client* client, void* data, uint32_t version, uint32_t id) {
   wl_resource* resource = wl_resource_create(
       client, &wl_output_interface, std::min(version, output_version), id);
 
-  // TODO(reveman): Multi-display support.
-  const display::Display& display = ash::Shell::GetInstance()
-                                        ->display_manager()
-                                        ->GetPrimaryDisplayCandidate();
-
   SetImplementation(
       resource, nullptr,
-      base::WrapUnique(new WaylandDisplayObserver(display, resource)));
+      base::WrapUnique(new WaylandPrimaryDisplayObserver(resource)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1520,6 +1525,20 @@ void remote_surface_unset_system_modal(wl_client* client,
   GetUserDataAs<ShellSurface>(resource)->SetSystemModal(false);
 }
 
+void remote_surface_set_rectangular_shadow_background_opacity(
+    wl_client* client,
+    wl_resource* resource,
+    wl_fixed_t opacity) {
+  GetUserDataAs<ShellSurface>(resource)->SetRectangularShadowBackgroundOpacity(
+      wl_fixed_to_double(opacity));
+}
+
+void remote_surface_activate(wl_client* client,
+                             wl_resource* resource,
+                             uint32_t serial) {
+  GetUserDataAs<ShellSurface>(resource)->Activate();
+}
+
 const struct zwp_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_destroy,
     remote_surface_set_app_id,
@@ -1536,7 +1555,9 @@ const struct zwp_remote_surface_v1_interface remote_surface_implementation = {
     remote_surface_set_title,
     remote_surface_set_top_inset,
     remote_surface_set_system_modal,
-    remote_surface_unset_system_modal};
+    remote_surface_unset_system_modal,
+    remote_surface_set_rectangular_shadow_background_opacity,
+    remote_surface_activate};
 
 ////////////////////////////////////////////////////////////////////////////////
 // notification_surface_interface:
@@ -1558,17 +1579,22 @@ class WaylandRemoteShell : public ash::ShellObserver,
                            public display::DisplayObserver {
  public:
   WaylandRemoteShell(Display* display,
-                     int64_t display_id,
                      wl_resource* remote_shell_resource)
       : display_(display),
-        display_id_(display_id),
         remote_shell_resource_(remote_shell_resource),
         weak_ptr_factory_(this) {
     ash::WmShell::Get()->AddShellObserver(this);
     ash::Shell* shell = ash::Shell::GetInstance();
     shell->activation_client()->AddObserver(this);
     display::Screen::GetScreen()->AddObserver(this);
-    SendConfigure();
+
+    layout_mode_ = ash::Shell::GetInstance()
+                           ->maximize_mode_controller()
+                           ->IsMaximizeModeWindowManagerEnabled()
+                       ? ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_TABLET
+                       : ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_WINDOWED;
+
+    SendPrimaryDisplayMetrics();
     SendActivated(shell->activation_client()->GetActiveWindow(), nullptr);
   }
   ~WaylandRemoteShell() override {
@@ -1592,15 +1618,31 @@ class WaylandRemoteShell : public ash::ShellObserver,
   void OnDisplayAdded(const display::Display& new_display) override {}
   void OnDisplayRemoved(const display::Display& new_display) override {}
   void OnDisplayMetricsChanged(const display::Display& display,
-                               uint32_t metrics) override {
-    if (display.id() == display_id_)
-      SendConfigure();
+                               uint32_t changed_metrics) override {
+    if (display::Screen::GetScreen()->GetPrimaryDisplay().id() != display.id())
+      return;
+
+    // No need to update when a primary dislpay has changed without bounds
+    // change. See WaylandPrimaryDisplayObserver::OnDisplayMetricsChanged
+    // for more details.
+    if (changed_metrics &
+        (DISPLAY_METRIC_BOUNDS | DISPLAY_METRIC_DEVICE_SCALE_FACTOR |
+         DISPLAY_METRIC_ROTATION | DISPLAY_METRIC_WORK_AREA)) {
+      SendDisplayMetrics(display);
+    }
+    SendConfigure_DEPRECATED(display);
   }
 
   // Overridden from ash::ShellObserver:
-  void OnDisplayWorkAreaInsetsChanged() override { SendConfigure(); }
+  void OnDisplayWorkAreaInsetsChanged() override {
+    const display::Display primary =
+        display::Screen::GetScreen()->GetPrimaryDisplay();
+    SendConfigure_DEPRECATED(primary);
+  }
   void OnMaximizeModeStarted() override {
-    SendLayoutModeChange(ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_TABLET);
+    layout_mode_ = ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_TABLET;
+    SendLayoutModeChange_DEPRECATED();
+
     send_configure_after_layout_change_ = true;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, base::Bind(&WaylandRemoteShell::MaybeSendConfigure,
@@ -1608,7 +1650,8 @@ class WaylandRemoteShell : public ash::ShellObserver,
         base::TimeDelta::FromMilliseconds(kConfigureDelayAfterLayoutSwitchMs));
   }
   void OnMaximizeModeEnded() override {
-    SendLayoutModeChange(ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_WINDOWED);
+    layout_mode_ = ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_WINDOWED;
+    SendLayoutModeChange_DEPRECATED();
     send_configure_after_layout_change_ = true;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE, base::Bind(&WaylandRemoteShell::MaybeSendConfigure,
@@ -1625,17 +1668,44 @@ class WaylandRemoteShell : public ash::ShellObserver,
   }
 
  private:
-  void MaybeSendConfigure() {
-    if (send_configure_after_layout_change_)
-      SendConfigure();
+  void SendPrimaryDisplayMetrics() {
+    const display::Display primary =
+        display::Screen::GetScreen()->GetPrimaryDisplay();
+
+    SendConfigure_DEPRECATED(primary);
+    SendDisplayMetrics(primary);
   }
 
-  void SendConfigure() {
+  void MaybeSendConfigure() {
+    if (send_configure_after_layout_change_)
+      SendPrimaryDisplayMetrics();
+  }
+
+  void SendDisplayMetrics(const display::Display& display) {
     send_configure_after_layout_change_ = false;
-    const display::Display& display =
-        ash::Shell::GetInstance()->display_manager()->GetDisplayForId(
-            display_id_);
-    gfx::Insets work_area_insets = display.GetWorkAreaInsets();
+
+    if (wl_resource_get_version(remote_shell_resource_) < 9)
+      return;
+
+    const gfx::Insets& work_area_insets = display.GetWorkAreaInsets();
+
+    zwp_remote_shell_v1_send_configuration_changed(
+        remote_shell_resource_, display.size().width(), display.size().height(),
+        OutputTransform(display.rotation()),
+        wl_fixed_from_double(display.device_scale_factor()),
+        work_area_insets.left(), work_area_insets.top(),
+        work_area_insets.right(), work_area_insets.bottom(), layout_mode_);
+
+    wl_client_flush(wl_resource_get_client(remote_shell_resource_));
+  }
+
+  void SendConfigure_DEPRECATED(const display::Display& display) {
+    send_configure_after_layout_change_ = false;
+
+    if (wl_resource_get_version(remote_shell_resource_) >= 9)
+      return;
+
+    const gfx::Insets& work_area_insets = display.GetWorkAreaInsets();
     zwp_remote_shell_v1_send_configure(
         remote_shell_resource_, display.size().width(), display.size().height(),
         work_area_insets.left(), work_area_insets.top(),
@@ -1643,10 +1713,11 @@ class WaylandRemoteShell : public ash::ShellObserver,
     wl_client_flush(wl_resource_get_client(remote_shell_resource_));
   }
 
-  void SendLayoutModeChange(uint32_t mode) {
+  void SendLayoutModeChange_DEPRECATED() {
     if (wl_resource_get_version(remote_shell_resource_) < 8)
       return;
-    zwp_remote_shell_v1_send_layout_mode_changed(remote_shell_resource_, mode);
+    zwp_remote_shell_v1_send_layout_mode_changed(remote_shell_resource_,
+                                                 layout_mode_);
     wl_client_flush(wl_resource_get_client(remote_shell_resource_));
   }
 
@@ -1686,13 +1757,12 @@ class WaylandRemoteShell : public ash::ShellObserver,
   // The exo display instance. Not owned.
   Display* const display_;
 
-  // The identifier associated with the observed display.
-  const int64_t display_id_;
-
   // The remote shell resource associated with observer.
   wl_resource* const remote_shell_resource_;
 
   bool send_configure_after_layout_change_ = false;
+
+  int layout_mode_ = ZWP_REMOTE_SHELL_V1_LAYOUT_MODE_WINDOWED;
 
   base::WeakPtrFactory<WaylandRemoteShell> weak_ptr_factory_;
 
@@ -1839,7 +1909,7 @@ const struct zwp_remote_shell_v1_interface remote_shell_implementation = {
     remote_shell_destroy, remote_shell_get_remote_surface,
     remote_shell_get_notification_surface};
 
-const uint32_t remote_shell_version = 8;
+const uint32_t remote_shell_version = 10;
 
 void bind_remote_shell(wl_client* client,
                        void* data,
@@ -1849,14 +1919,9 @@ void bind_remote_shell(wl_client* client,
       wl_resource_create(client, &zwp_remote_shell_v1_interface,
                          std::min(version, remote_shell_version), id);
 
-  // TODO(reveman): Multi-display support.
-  const display::Display& display = ash::Shell::GetInstance()
-                                        ->display_manager()
-                                        ->GetPrimaryDisplayCandidate();
-
   SetImplementation(resource, &remote_shell_implementation,
                     base::WrapUnique(new WaylandRemoteShell(
-                        static_cast<Display*>(data), display.id(), resource)));
+                        static_cast<Display*>(data), resource)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2893,6 +2958,81 @@ void bind_gaming_input(wl_client* client,
                     std::move(gaming_input_thread));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// pointer_stylus interface:
+
+class WaylandPointerStylusDelegate : public PointerStylusDelegate {
+ public:
+  WaylandPointerStylusDelegate(wl_resource* resource, Pointer* pointer)
+      : resource_(resource), pointer_(pointer) {
+    pointer_->SetStylusDelegate(this);
+  }
+  ~WaylandPointerStylusDelegate() override {
+    if (pointer_ != nullptr)
+      pointer_->SetStylusDelegate(nullptr);
+  }
+  void OnPointerDestroying(Pointer* pointer) override { pointer_ = nullptr; }
+  void OnPointerToolChange(ui::EventPointerType type) override {
+    uint wayland_type = ZWP_POINTER_STYLUS_V1_TOOL_TYPE_MOUSE;
+    if (type == ui::EventPointerType::POINTER_TYPE_PEN)
+      wayland_type = ZWP_POINTER_STYLUS_V1_TOOL_TYPE_PEN;
+    zwp_pointer_stylus_v1_send_tool_change(resource_, wayland_type);
+  }
+  void OnPointerForce(base::TimeTicks time_stamp, float force) override {
+    zwp_pointer_stylus_v1_send_force(resource_,
+                                     TimeTicksToMilliseconds(time_stamp),
+                                     wl_fixed_from_double(force));
+  }
+  void OnPointerTilt(base::TimeTicks time_stamp, gfx::Vector2dF tilt) override {
+    zwp_pointer_stylus_v1_send_tilt(
+        resource_, TimeTicksToMilliseconds(time_stamp),
+        wl_fixed_from_double(tilt.x()), wl_fixed_from_double(tilt.y()));
+  }
+
+ private:
+  wl_resource* resource_;
+  Pointer* pointer_;
+
+  // The client who own this pointer stylus instance.
+  wl_client* client() const { return wl_resource_get_client(resource_); }
+
+  DISALLOW_COPY_AND_ASSIGN(WaylandPointerStylusDelegate);
+};
+
+void pointer_stylus_destroy(wl_client* client, wl_resource* resource) {
+  wl_resource_destroy(resource);
+}
+
+const struct zwp_pointer_stylus_v1_interface pointer_stylus_implementation = {
+    pointer_stylus_destroy};
+
+////////////////////////////////////////////////////////////////////////////////
+// stylus interface:
+
+void stylus_get_pointer_stylus(wl_client* client,
+                               wl_resource* resource,
+                               uint32_t id,
+                               wl_resource* pointer_resource) {
+  Pointer* pointer = GetUserDataAs<Pointer>(pointer_resource);
+
+  wl_resource* stylus_resource =
+      wl_resource_create(client, &zwp_pointer_stylus_v1_interface, 1, id);
+
+  SetImplementation(stylus_resource, &pointer_stylus_implementation,
+                    base::WrapUnique(new WaylandPointerStylusDelegate(
+                        stylus_resource, pointer)));
+}
+
+const struct zwp_stylus_v1_interface stylus_implementation = {
+    stylus_get_pointer_stylus};
+
+void bind_stylus(wl_client* client, void* data, uint32_t version, uint32_t id) {
+  wl_resource* resource =
+      wl_resource_create(client, &zwp_stylus_v1_interface, version, id);
+  wl_resource_set_implementation(resource, &stylus_implementation, data,
+                                 nullptr);
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2933,6 +3073,8 @@ Server::Server(Display* display)
                    remote_shell_version, display_, bind_remote_shell);
   wl_global_create(wl_display_.get(), &zwp_gaming_input_v1_interface, 1,
                    display_, bind_gaming_input);
+  wl_global_create(wl_display_.get(), &zwp_stylus_v1_interface, 1, display_,
+                   bind_stylus);
 }
 
 Server::~Server() {}

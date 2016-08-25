@@ -19,6 +19,7 @@
       'browser/android/data_usage/data_use_tab_model_unittest.cc',
       'browser/android/data_usage/data_use_ui_tab_model_unittest.cc',
       'browser/android/data_usage/external_data_use_observer_unittest.cc',
+      'browser/android/data_usage/external_data_use_reporter_unittest.cc',
       'browser/android/data_usage/tab_data_use_entry_unittest.cc',
       'browser/android/download/download_manager_service_unittest.cc',
       'browser/android/history_report/delta_file_backend_leveldb_unittest.cc',
@@ -153,6 +154,8 @@
       'browser/net/probe_message_unittest.cc',
       'browser/net/quota_policy_channel_id_store_unittest.cc',
       'browser/net/safe_search_util_unittest.cc',
+      'browser/net/spdyproxy/chrome_data_use_group_provider_unittest.cc',
+      'browser/net/spdyproxy/chrome_data_use_group_unittest.cc',
       'browser/net/spdyproxy/data_reduction_proxy_chrome_settings_unittest.cc',
       'browser/net/spdyproxy/data_reduction_proxy_settings_unittest_android.cc',
       'browser/net/url_info_unittest.cc',
@@ -982,6 +985,7 @@
       'browser/chromeos/extensions/external_cache_unittest.cc',
       'browser/chromeos/extensions/file_manager/device_event_router_unittest.cc',
       'browser/chromeos/extensions/file_manager/job_event_router_unittest.cc',
+      'browser/chromeos/extensions/gfx_utils_unittest.cc',
       'browser/chromeos/extensions/quick_unlock_private/quick_unlock_private_api_unittest.cc',
       'browser/chromeos/extensions/wallpaper_private_api_unittest.cc',
       'browser/chromeos/external_metrics_unittest.cc',
@@ -1133,6 +1137,7 @@
       'browser/metrics/perf/cpu_identity_unittest.cc',
       'browser/metrics/perf/random_selector_unittest.cc',
       'browser/notifications/login_state_notification_blocker_chromeos_unittest.cc',
+      'browser/policy/default_geolocation_policy_handler_unittest.cc',
       'browser/ui/browser_finder_chromeos_unittest.cc',
       # TODO(zturner): Enable this on Windows. See
       # BrowserWithTestWindowTest::SetUp() for a comment explaining why this is

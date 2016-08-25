@@ -498,7 +498,8 @@ bool RenderWidgetHostViewAndroid::HasFocus() const {
 }
 
 bool RenderWidgetHostViewAndroid::IsSurfaceAvailableForCopy() const {
-  return !using_browser_compositor_ || HasValidFrame();
+  return !using_browser_compositor_ ||
+         (HasValidFrame() && surface_factory_.get());
 }
 
 void RenderWidgetHostViewAndroid::Show() {
@@ -897,15 +898,19 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
       content_view_core_->GetWindowAndroid()->GetCompositor();
   DCHECK(compositor);
   DCHECK(!surface_id_.is_null());
+  scoped_refptr<cc::Layer> layer = CreateDelegatedLayer();
+  layer->SetHideLayerAndSubtree(true);
+  compositor->AttachLayerForReadback(layer);
+
   std::unique_ptr<cc::CopyOutputRequest> request =
-      cc::CopyOutputRequest::CreateRequest(base::Bind(
-          &PrepareTextureCopyOutputResult, weak_ptr_factory_.GetWeakPtr(),
-          dst_size_in_pixel, preferred_color_type, start_time, callback));
+      cc::CopyOutputRequest::CreateRequest(
+          base::Bind(&PrepareTextureCopyOutputResult,
+                     weak_ptr_factory_.GetWeakPtr(), layer, dst_size_in_pixel,
+                     preferred_color_type, start_time, callback));
+
   if (!src_subrect_in_pixel.IsEmpty())
     request->set_area(src_subrect_in_pixel);
-  // Make sure the layer doesn't get deleted until we fulfill the request.
-  LockCompositingSurface();
-  layer_->RequestCopyOfOutput(std::move(request));
+  surface_factory_->RequestCopyOfSurface(surface_id_, std::move(request));
 }
 
 void RenderWidgetHostViewAndroid::CopyFromCompositingSurfaceToVideoFrame(
@@ -975,8 +980,9 @@ void RenderWidgetHostViewAndroid::DestroyDelegatedContent() {
   RemoveLayers();
   if (!surface_id_.is_null()) {
     DCHECK(surface_factory_.get());
-    surface_factory_->Destroy(surface_id_);
-    surface_id_ = cc::SurfaceId();
+    cc::SurfaceId surface_id;
+    std::swap(surface_id, surface_id_);
+    surface_factory_->Destroy(surface_id);
   }
   layer_ = NULL;
 }
@@ -1899,6 +1905,7 @@ void RenderWidgetHostViewAndroid::OnLostResources() {
 // static
 void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     base::WeakPtr<RenderWidgetHostViewAndroid> rwhva,
+    scoped_refptr<cc::Layer> readback_layer,
     const gfx::Size& dst_size_in_pixel,
     SkColorType color_type,
     const base::TimeTicks& start_time,
@@ -1908,8 +1915,7 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
       base::Bind(callback, SkBitmap(), READBACK_FAILED));
   TRACE_EVENT0("cc",
                "RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult");
-  if (rwhva)
-    rwhva->UnlockCompositingSurface();
+  readback_layer->RemoveFromParent();
   if (!result->HasTexture() || result->IsEmpty() || result->size().IsEmpty())
     return;
   cc::TextureMailbox texture_mailbox;

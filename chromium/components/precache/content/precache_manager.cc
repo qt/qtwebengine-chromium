@@ -214,12 +214,27 @@ bool PrecacheManager::IsPrecaching() const {
   return is_precaching_;
 }
 
+void PrecacheManager::UpdatePrecacheMetricsAndState(
+    const GURL& url,
+    const GURL& referrer,
+    const base::TimeDelta& latency,
+    const base::Time& fetch_time,
+    const net::HttpResponseInfo& info,
+    int64_t size,
+    bool is_user_traffic) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  RecordStatsForFetch(url, referrer, latency, fetch_time, info, size);
+  if (is_user_traffic && IsPrecaching())
+    CancelPrecaching();
+}
+
 void PrecacheManager::RecordStatsForFetch(const GURL& url,
                                           const GURL& referrer,
                                           const base::TimeDelta& latency,
                                           const base::Time& fetch_time,
-                                          int64_t size,
-                                          bool was_cached) {
+                                          const net::HttpResponseInfo& info,
+                                          int64_t size) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (size == 0 || url.is_empty() || !url.SchemeIsHTTPOrHTTPS()) {
@@ -231,17 +246,16 @@ void PrecacheManager::RecordStatsForFetch(const GURL& url,
     return;
 
   history_service_->HostRankIfAvailable(
-      referrer,
-      base::Bind(&PrecacheManager::RecordStatsForFetchInternal, AsWeakPtr(),
-                 url, latency, fetch_time, size, was_cached));
+      referrer, base::Bind(&PrecacheManager::RecordStatsForFetchInternal,
+                           AsWeakPtr(), url, latency, fetch_time, info, size));
 }
 
 void PrecacheManager::RecordStatsForFetchInternal(
     const GURL& url,
     const base::TimeDelta& latency,
     const base::Time& fetch_time,
+    const net::HttpResponseInfo& info,
     int64_t size,
-    bool was_cached,
     int host_rank) {
   if (is_precaching_) {
     // Assume that precache is responsible for all requests made while
@@ -253,7 +267,7 @@ void PrecacheManager::RecordStatsForFetchInternal(
         BrowserThread::DB, FROM_HERE,
         base::Bind(&PrecacheDatabase::RecordURLPrefetch,
                    base::Unretained(precache_database_.get()), url, latency,
-                   fetch_time, size, was_cached));
+                   fetch_time, info, size));
   } else {
     bool is_connection_cellular =
         net::NetworkChangeNotifier::IsConnectionCellular(
@@ -263,8 +277,7 @@ void PrecacheManager::RecordStatsForFetchInternal(
         BrowserThread::DB, FROM_HERE,
         base::Bind(&PrecacheDatabase::RecordURLNonPrefetch,
                    base::Unretained(precache_database_.get()), url, latency,
-                   fetch_time, size, was_cached, host_rank,
-                   is_connection_cellular));
+                   fetch_time, info, size, host_rank, is_connection_cellular));
   }
 }
 
