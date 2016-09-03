@@ -717,6 +717,9 @@
       # By default enable force touch API. It's only supported with OSX SDK 10.10.3+.
       'disable_force_touch%': 0,
 
+      # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
+      'no_delete_null_pointer_checks%': 0,
+
       # By default use -fstack-protector-strong. If the compiler does not
       # support it, fallback to -fstack-protector.
       'use_xcode_stack_protector_strong%': 1,
@@ -1262,6 +1265,7 @@
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'proprietary_codecs%': '<(proprietary_codecs)',
     'appstore_compliant_code%': '<(appstore_compliant_code)',
+    'no_delete_null_pointer_checks%': '<(no_delete_null_pointer_checks)',
     'disable_force_touch%': '<(disable_force_touch)',
     'use_xcode_stack_protector_strong%': '<(use_xcode_stack_protector_strong)',
     'use_goma%': '<(use_goma)',
@@ -4729,6 +4733,9 @@
             'ldflags': [
               '-Wl,--disable-new-dtags',
             ],
+          }],
+          [ 'no_delete_null_pointer_checks==1', {
+              'cflags_cc': [ '-fno-delete-null-pointer-checks' ],
           }],
           ['clang==0', {
             'target_conditions': [
