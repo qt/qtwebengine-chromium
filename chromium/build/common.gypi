@@ -4722,6 +4722,9 @@
               '-Wl,--disable-new-dtags',
             ],
           }],
+          [ 'no_delete_null_pointer_checks==1', {
+              'cflags_cc': [ '-fno-delete-null-pointer-checks' ],
+          }],
           ['clang==0', {
             'target_conditions': [
               ['_toolset=="target"', {
