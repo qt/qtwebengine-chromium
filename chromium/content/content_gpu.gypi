@@ -13,6 +13,7 @@
     '../skia/skia.gyp:skia',
     '../ui/gl/gl.gyp:gl',
     '../ui/gl/init/gl_init.gyp:gl_init',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
     'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
   ],
   'sources': [
@@ -54,9 +55,6 @@
       },
     }],
     ['qt_os=="mac"', {
-      'dependencies': [
-        '../third_party/khronos/khronos.gyp:khronos_headers',
-      ],
       'export_dependent_settings': [
         '../third_party/khronos/khronos.gyp:khronos_headers',
       ],

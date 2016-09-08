@@ -15,6 +15,7 @@
     '../ui/gl/gl.gyp:gl',
     '../ui/gl/init/gl_init.gyp:gl_init',
     '../ui/platform_window/platform_window.gyp:platform_window',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
   ],
   'sources': [
     'gpu/fake_video_decode_accelerator.cc',

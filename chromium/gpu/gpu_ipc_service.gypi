@@ -13,6 +13,7 @@
     '../ui/gl/gl.gyp:gl',
     '../ui/gl/init/gl_init.gyp:gl_init',
     '../url/url.gyp:url_lib',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
   ],
   'include_dirs': [
     '..',
