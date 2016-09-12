@@ -201,7 +201,7 @@ base::FilePath HeadlessBrowserContextImpl::GetPath() const {
   return path_;
 }
 
-bool HeadlessBrowserContextImpl::IsOffTheRecord() {
+bool HeadlessBrowserContextImpl::IsOffTheRecord() const {
   return context_options_->incognito_mode();
 }
 

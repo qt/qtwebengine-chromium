@@ -395,7 +395,7 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Return whether this context is off the record. Default is false.
   // Note that for Chrome this does not imply Incognito as Guest sessions are
   // also off the record.
-  virtual bool IsOffTheRecord() = 0;
+  virtual bool IsOffTheRecord() const = 0;
 
   // Returns the DownloadManagerDelegate for this context. This will be called
   // once per context. The embedder owns the delegate and is responsible for
