@@ -469,6 +469,27 @@
 
 // Forward declare EGL types.
 typedef uint64_t EGLuint64CHROMIUM;
+#ifndef EGL_VERSION_1_5
+typedef intptr_t EGLAttrib;
+#endif
+#ifndef EGL_KHR_stream
+typedef void *EGLStreamKHR;
+typedef uint64_t EGLuint64KHR;
+#endif
+#ifndef EGL_ANDROID_presentation_time
+typedef khronos_stime_nanoseconds_t EGLnsecsANDROID;
+#endif
+#ifndef EGL_KHR_debug
+typedef void* EGLObjectKHR;
+typedef void* EGLLabelKHR;
+typedef void (APIENTRY *EGLDEBUGPROCKHR)(
+             EGLenum error,
+             const char *command,
+             EGLint messageType,
+             EGLLabelKHR threadLabel,
+             EGLLabelKHR objectLabel,
+             const char* message);
+#endif
 
 #include "gl_bindings_autogen_gl.h"
 
