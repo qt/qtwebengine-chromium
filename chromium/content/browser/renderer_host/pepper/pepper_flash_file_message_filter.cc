@@ -55,7 +55,7 @@ PepperFlashFileMessageFilter::PepperFlashFileMessageFilter(
     // will construct a bad path and could provide access to the wrong files.
     // In this case, |plugin_data_directory_| will remain unset and
     // |ValidateAndConvertPepperFilePath| will fail.
-    NOTREACHED();
+    DLOG(ERROR) << "Pepper Flash file access attemped with no data path";
   } else {
     plugin_data_directory_ = GetDataDirName(profile_data_directory).Append(
         base::FilePath::FromUTF8Unsafe(plugin_name));
