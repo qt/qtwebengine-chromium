@@ -392,6 +392,13 @@ typedef void (*OSMESAproc)();
 
 // Forward declare EGL types.
 typedef uint64_t EGLuint64CHROMIUM;
+#ifndef EGL_VERSION_1_5
+typedef intptr_t EGLAttrib;
+#endif
+#ifndef EGL_KHR_stream
+typedef void *EGLStreamKHR;
+typedef uint64_t EGLuint64KHR;
+#endif
 
 #include "gl_bindings_autogen_gl.h"
 #include "gl_bindings_autogen_osmesa.h"
