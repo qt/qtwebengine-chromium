@@ -10,9 +10,11 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/timer/timer.h"
 #include "components/arc/arc_bridge_service.h"
 #include "components/arc/arc_service.h"
 #include "components/arc/common/bluetooth.mojom.h"
@@ -262,6 +264,17 @@ class ArcBluetoothBridge
                       mojo::Array<uint8_t> value,
                       const SendIndicationCallback& callback) override;
 
+  void OpenBluetoothSocket(
+      const OpenBluetoothSocketCallback& callback) override;
+
+  // Bluetooth Mojo host interface - Bluetooth SDP functions
+  void GetSdpRecords(mojom::BluetoothAddressPtr remote_addr,
+                     mojom::BluetoothUUIDPtr target_uuid) override;
+  void CreateSdpRecord(mojom::BluetoothSdpRecordPtr record_mojo,
+                       const CreateSdpRecordCallback& callback) override;
+  void RemoveSdpRecord(uint32_t service_handle,
+                       const RemoveSdpRecordCallback& callback) override;
+
   // Chrome observer callbacks
   void OnPoweredOn(
       const base::Callback<void(mojom::BluetoothAdapterState)>& callback) const;
@@ -285,11 +298,11 @@ class ArcBluetoothBridge
                                  bool connected) const;
   void OnGattConnected(
       mojom::BluetoothAddressPtr addr,
-      std::unique_ptr<device::BluetoothGattConnection> connection) const;
+      std::unique_ptr<device::BluetoothGattConnection> connection);
   void OnGattConnectError(
       mojom::BluetoothAddressPtr addr,
       device::BluetoothDevice::ConnectErrorCode error_code) const;
-  void OnGattDisconnected(mojom::BluetoothAddressPtr addr) const;
+  void OnGattDisconnected(mojom::BluetoothAddressPtr addr);
 
   void OnStartLEListenDone(const StartLEListenCallback& callback,
                            scoped_refptr<device::BluetoothAdvertisement> adv);
@@ -356,6 +369,18 @@ class ArcBluetoothBridge
                                    const base::Closure& success_callback,
                                    const ErrorCallback& error_callback);
 
+  void OnSetDiscoverable(bool discoverable, bool success, uint32_t timeout);
+  void SetDiscoverable(bool discoverable, uint32_t timeout);
+
+  void OnGetServiceRecordsDone(
+      mojom::BluetoothAddressPtr remote_addr,
+      mojom::BluetoothUUIDPtr target_uuid,
+      const std::vector<bluez::BluetoothServiceRecordBlueZ>& records_bluez);
+  void OnGetServiceRecordsError(
+      mojom::BluetoothAddressPtr remote_addr,
+      mojom::BluetoothUUIDPtr target_uuid,
+      bluez::BluetoothServiceRecordBlueZ::ErrorCode error_code);
+
   bool CalledOnValidThread();
 
   mojo::Binding<mojom::BluetoothHost> binding_;
@@ -376,6 +401,14 @@ class ArcBluetoothBridge
   int32_t gatt_server_attribute_next_handle_ = 0;
   // Keeps track of all devices which initiated a GATT connection to us.
   std::unordered_set<std::string> gatt_connection_cache_;
+  // Map of device address to GATT connection objects for connections we
+  // have made. We need to hang on to these as long as the connection is
+  // active since their destructors will drop the connections otherwise.
+  std::unordered_map<std::string,
+                     std::unique_ptr<device::BluetoothGattConnection>>
+      gatt_connections_;
+  // Timer to turn adapter discoverable off.
+  base::OneShotTimer discoverable_off_timer_;
 
   base::ThreadChecker thread_checker_;
 

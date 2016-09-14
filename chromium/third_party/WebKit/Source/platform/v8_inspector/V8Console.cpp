@@ -17,6 +17,7 @@
 #include "platform/v8_inspector/V8RuntimeAgentImpl.h"
 #include "platform/v8_inspector/V8StackTraceImpl.h"
 #include "platform/v8_inspector/V8StringUtil.h"
+#include "platform/v8_inspector/V8ValueCopier.h"
 #include "platform/v8_inspector/public/V8DebuggerClient.h"
 
 namespace blink {
@@ -272,10 +273,9 @@ void createBoundFunctionProperty(v8::Local<v8::Context> context, v8::Local<v8::O
         v8::Local<v8::String> returnValue = toV8String(context->GetIsolate(), description);
         v8::Local<v8::Function> toStringFunction;
         if (v8::Function::New(context, returnDataCallback, returnValue, 0, v8::ConstructorBehavior::kThrow).ToLocal(&toStringFunction))
-            func->Set(toV8StringInternalized(context->GetIsolate(), "toString"), toStringFunction);
+            createDataProperty(context, func, toV8StringInternalized(context->GetIsolate(), "toString"), toStringFunction);
     }
-    if (!console->Set(context, funcName, func).FromMaybe(false))
-        return;
+    createDataProperty(context, console, funcName, func);
 }
 
 } // namespace
@@ -511,8 +511,7 @@ void V8Console::valuesCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
         v8::Local<v8::Value> value;
         if (!obj->Get(context, key).ToLocal(&value))
             continue;
-        if (!values->Set(context, i, value).FromMaybe(false))
-            continue;
+        createDataProperty(context, values, i, value);
     }
     info.GetReturnValue().Set(values);
 }
@@ -647,6 +646,8 @@ v8::Local<v8::Object> V8Console::createConsole(InspectedContext* inspectedContex
     v8::MicrotasksScope microtasksScope(isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
 
     v8::Local<v8::Object> console = v8::Object::New(isolate);
+    bool success = console->SetPrototype(context, v8::Object::New(isolate)).FromMaybe(false);
+    DCHECK(success);
 
     createBoundFunctionProperty(context, console, "debug", V8Console::debugCallback);
     createBoundFunctionProperty(context, console, "error", V8Console::errorCallback);
@@ -672,9 +673,6 @@ v8::Local<v8::Object> V8Console::createConsole(InspectedContext* inspectedContex
     createBoundFunctionProperty(context, console, "timeEnd", V8Console::timeEndCallback);
     createBoundFunctionProperty(context, console, "timeStamp", V8Console::timeStampCallback);
 
-    bool success = console->SetPrototype(context, v8::Object::New(isolate)).FromMaybe(false);
-    DCHECK(success);
-
     if (hasMemoryAttribute)
         console->SetAccessorProperty(toV8StringInternalized(isolate, "memory"), v8::Function::New(context, V8Console::memoryGetterCallback, console, 0, v8::ConstructorBehavior::kThrow).ToLocalChecked(), v8::Function::New(context, V8Console::memorySetterCallback, v8::Local<v8::Value>(), 0, v8::ConstructorBehavior::kThrow).ToLocalChecked(), static_cast<v8::PropertyAttribute>(v8::None), v8::DEFAULT);
 
@@ -695,6 +693,8 @@ v8::Local<v8::Object> V8Console::createCommandLineAPI(InspectedContext* inspecte
     v8::MicrotasksScope microtasksScope(isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
 
     v8::Local<v8::Object> commandLineAPI = v8::Object::New(isolate);
+    bool success = commandLineAPI->SetPrototype(context, v8::Null(isolate)).FromMaybe(false);
+    DCHECK(success);
 
     createBoundFunctionProperty(context, commandLineAPI, "dir", V8Console::dirCallback, "function dir(value) { [Command Line API] }");
     createBoundFunctionProperty(context, commandLineAPI, "dirxml", V8Console::dirxmlCallback, "function dirxml(value) { [Command Line API] }");
