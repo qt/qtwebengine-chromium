@@ -44,6 +44,7 @@
 #include "platform/v8_inspector/V8RuntimeAgentImpl.h"
 #include "platform/v8_inspector/V8StackTraceImpl.h"
 #include "platform/v8_inspector/V8StringUtil.h"
+#include "platform/v8_inspector/V8ValueCopier.h"
 #include "platform/v8_inspector/public/V8DebuggerClient.h"
 #include <v8-profiler.h>
 
@@ -644,14 +645,20 @@ v8::Local<v8::String> V8DebuggerImpl::v8InternalizedString(const char* str) cons
     return v8::String::NewFromUtf8(m_isolate, str, v8::NewStringType::kInternalized).ToLocalChecked();
 }
 
-v8::MaybeLocal<v8::Value> V8DebuggerImpl::functionScopes(v8::Local<v8::Function> function)
+v8::MaybeLocal<v8::Value> V8DebuggerImpl::functionScopes(v8::Local<v8::Context> context, v8::Local<v8::Function> function)
 {
     if (!enabled()) {
         NOTREACHED();
         return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
     }
     v8::Local<v8::Value> argv[] = { function };
-    return callDebuggerMethod("getFunctionScopes", 1, argv);
+    v8::Local<v8::Value> scopesValue;
+    if (!callDebuggerMethod("getFunctionScopes", 1, argv).ToLocal(&scopesValue))
+        return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
+    v8::Local<v8::Value> result;
+    if (!copyValueFromDebuggerContext(m_isolate, debuggerContext(), context, scopesValue).ToLocal(&result))
+        return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
+    return result;
 }
 
 v8::MaybeLocal<v8::Array> V8DebuggerImpl::internalProperties(v8::Local<v8::Context> context, v8::Local<v8::Value> value)
@@ -664,21 +671,27 @@ v8::MaybeLocal<v8::Array> V8DebuggerImpl::internalProperties(v8::Local<v8::Conte
     if (value->IsMap() || value->IsWeakMap() || value->IsSet() || value->IsWeakSet() || value->IsSetIterator() || value->IsMapIterator()) {
         v8::Local<v8::Value> entries = collectionEntries(context, v8::Local<v8::Object>::Cast(value));
         if (entries->IsArray()) {
-            properties->Set(properties->Length(), v8InternalizedString("[[Entries]]"));
-            properties->Set(properties->Length(), entries);
+            createDataProperty(context, properties, properties->Length(), v8InternalizedString("[[Entries]]"));
+            createDataProperty(context, properties, properties->Length(), entries);
         }
     }
     return properties;
 }
 
-v8::Local<v8::Value> V8DebuggerImpl::generatorObjectDetails(v8::Local<v8::Object>& object)
+v8::Local<v8::Value> V8DebuggerImpl::generatorObjectDetails(v8::Local<v8::Context> context, v8::Local<v8::Object>& object)
 {
     if (!enabled()) {
         NOTREACHED();
         return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
     }
     v8::Local<v8::Value> argv[] = { object };
-    return callDebuggerMethod("getGeneratorObjectDetails", 1, argv).ToLocalChecked();
+    v8::Local<v8::Value> objectDetails;
+    if (!callDebuggerMethod("getGeneratorObjectDetails", 1, argv).ToLocal(&objectDetails))
+        return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
+    v8::Local<v8::Value> result;
+    if (!copyValueFromDebuggerContext(m_isolate, debuggerContext(), context, objectDetails).ToLocal(&result))
+        return v8::Local<v8::Value>::New(m_isolate, v8::Undefined(m_isolate));
+    return result;
 }
 
 v8::Local<v8::Value> V8DebuggerImpl::collectionEntries(v8::Local<v8::Context> context, v8::Local<v8::Object> object)
@@ -691,7 +704,10 @@ v8::Local<v8::Value> V8DebuggerImpl::collectionEntries(v8::Local<v8::Context> co
     v8::Local<v8::Value> entriesValue = callDebuggerMethod("getCollectionEntries", 1, argv).ToLocalChecked();
     if (!entriesValue->IsArray())
         return v8::Undefined(m_isolate);
-    v8::Local<v8::Array> entries = entriesValue.As<v8::Array>();
+    v8::Local<v8::Value> copied;
+    if (!copyValueFromDebuggerContext(m_isolate, debuggerContext(), context, entriesValue).ToLocal(&copied) || !copied->IsArray())
+        return v8::Undefined(m_isolate);
+    v8::Local<v8::Array> entries = copied.As<v8::Array>();
     for (size_t i = 0; i < entries->Length(); ++i) {
         v8::Local<v8::Value> entry;
         if (!entries->Get(context, i).ToLocal(&entry) || !entry->IsObject())

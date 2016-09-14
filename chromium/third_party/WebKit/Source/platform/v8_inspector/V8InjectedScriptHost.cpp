@@ -9,6 +9,7 @@
 #include "platform/v8_inspector/V8Compat.h"
 #include "platform/v8_inspector/V8DebuggerImpl.h"
 #include "platform/v8_inspector/V8StringUtil.h"
+#include "platform/v8_inspector/V8ValueCopier.h"
 #include "platform/v8_inspector/public/V8DebuggerClient.h"
 
 namespace blink {
@@ -22,8 +23,7 @@ void setFunctionProperty(v8::Local<v8::Context> context, v8::Local<v8::Object> o
     if (!v8::Function::New(context, callback, external, 0, v8::ConstructorBehavior::kThrow).ToLocal(&func))
         return;
     func->SetName(funcName);
-    if (!obj->Set(context, funcName, func).FromMaybe(false))
-        return;
+    createDataProperty(context, obj, funcName, func);
 }
 
 V8DebuggerImpl* unwrapDebugger(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -41,6 +41,8 @@ v8::Local<v8::Object> V8InjectedScriptHost::create(v8::Local<v8::Context> contex
 {
     v8::Isolate* isolate = debugger->isolate();
     v8::Local<v8::Object> injectedScriptHost = v8::Object::New(isolate);
+    bool success = injectedScriptHost->SetPrototype(context, v8::Null(isolate)).FromMaybe(false);
+    DCHECK(success);
     v8::Local<v8::External> debuggerExternal = v8::External::New(isolate, debugger);
     setFunctionProperty(context, injectedScriptHost, "internalConstructorName", V8InjectedScriptHost::internalConstructorNameCallback, debuggerExternal);
     setFunctionProperty(context, injectedScriptHost, "formatAccessorsAsProperties", V8InjectedScriptHost::formatAccessorsAsProperties, debuggerExternal);

@@ -4,10 +4,15 @@
 
 #include "device/bluetooth/bluez/bluetooth_service_attribute_value_bluez.h"
 
+#include <utility>
+
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 
 namespace bluez {
+
+BluetoothServiceAttributeValueBlueZ::BluetoothServiceAttributeValueBlueZ()
+    : type_(NULLTYPE), size_(0), value_(base::Value::CreateNullValue()) {}
 
 BluetoothServiceAttributeValueBlueZ::BluetoothServiceAttributeValueBlueZ(
     Type type,
@@ -25,20 +30,23 @@ BluetoothServiceAttributeValueBlueZ::BluetoothServiceAttributeValueBlueZ(
 
 BluetoothServiceAttributeValueBlueZ::BluetoothServiceAttributeValueBlueZ(
     const BluetoothServiceAttributeValueBlueZ& attribute) {
-  this->type_ = attribute.type_;
-  this->size_ = attribute.size_;
-
-  if (attribute.type_ != SEQUENCE) {
-    this->value_ = base::WrapUnique(attribute.value_->DeepCopy());
-    return;
-  }
-
-  this->sequence_ = base::MakeUnique<Sequence>(*attribute.sequence_);
+  *this = attribute;
 }
 
-BluetoothServiceAttributeValueBlueZ BluetoothServiceAttributeValueBlueZ::
+BluetoothServiceAttributeValueBlueZ& BluetoothServiceAttributeValueBlueZ::
 operator=(const BluetoothServiceAttributeValueBlueZ& attribute) {
-  return BluetoothServiceAttributeValueBlueZ(attribute);
+  if (this != &attribute) {
+    type_ = attribute.type_;
+    size_ = attribute.size_;
+    if (attribute.type_ == SEQUENCE) {
+      value_ = nullptr;
+      sequence_ = base::MakeUnique<Sequence>(*attribute.sequence_);
+    } else {
+      value_ = attribute.value_->CreateDeepCopy();
+      sequence_ = nullptr;
+    }
+  }
+  return *this;
 }
 
 BluetoothServiceAttributeValueBlueZ::~BluetoothServiceAttributeValueBlueZ() {}

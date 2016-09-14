@@ -949,6 +949,10 @@ BrowserAccessibilityDelegate*
   return nullptr;
 }
 
+bool BrowserAccessibilityManager::IsRootTree() {
+  return delegate() && delegate()->AccessibilityGetAcceleratedWidget();
+}
+
 ui::AXTreeUpdate
 BrowserAccessibilityManager::SnapshotAXTreeForTesting() {
   std::unique_ptr<

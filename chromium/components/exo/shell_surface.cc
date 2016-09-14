@@ -218,8 +218,10 @@ ShellSurface::ScopedConfigure::~ScopedConfigure() {
   if (needs_configure_ || force_configure_)
     shell_surface_->Configure();
   // ScopedConfigure instance might have suppressed a widget bounds update.
-  if (shell_surface_->widget_)
+  if (shell_surface_->widget_) {
     shell_surface_->UpdateWidgetBounds();
+    shell_surface_->UpdateShadow();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1256,6 +1258,7 @@ void ShellSurface::UpdateShadow() {
       window->StackChildAtBottom(shadow_underlay_);
     }
 
+    float shadow_underlay_opacity = rectangular_shadow_background_opacity_;
     // Put the black background layer behind the window if
     // 1) the window is in immersive fullscreen.
     // 2) the window can control the bounds of the window in fullscreen (
@@ -1267,14 +1270,20 @@ void ShellSurface::UpdateShadow() {
         window->layer()->transform().IsIdentity()) {
       gfx::Point origin;
       origin -= window->bounds().origin().OffsetFromOrigin();
-      gfx::Rect background_bounds(origin, window->parent()->bounds().size());
-      shadow_underlay_->SetBounds(background_bounds);
-      shadow_underlay_->layer()->SetOpacity(1.f);
-    } else {
-      shadow_underlay_->SetBounds(shadow_bounds);
-      shadow_underlay_->layer()->SetOpacity(
-          rectangular_shadow_background_opacity_);
+      shadow_bounds.set_origin(origin);
+      shadow_bounds.set_size(window->parent()->bounds().size());
+      shadow_underlay_opacity = 1.0f;
     }
+
+    shadow_underlay_->SetBounds(shadow_bounds);
+
+    // TODO(oshima): Setting to the same value should be no-op.
+    // crbug.com/642223.
+    if (shadow_underlay_opacity !=
+        shadow_underlay_->layer()->GetTargetOpacity()) {
+      shadow_underlay_->layer()->SetOpacity(shadow_underlay_opacity);
+    }
+
     shadow_underlay_->Show();
 
     wm::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);

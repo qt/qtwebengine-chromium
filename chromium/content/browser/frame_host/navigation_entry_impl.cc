@@ -697,9 +697,25 @@ void NavigationEntryImpl::AddOrUpdateFrameEntry(
     const PageState& page_state,
     const std::string& method,
     int64_t post_id) {
+  // If this is called for the main frame, the FrameNavigationEntry is
+  // guaranteed to exist, so just update it directly and return.
+  if (frame_tree_node->IsMainFrame()) {
+    // If the document of the FrameNavigationEntry is changing, we must clear
+    // any child FrameNavigationEntries.
+    if (root_node()->frame_entry->document_sequence_number() !=
+        document_sequence_number)
+      root_node()->children.clear();
+
+    root_node()->frame_entry->UpdateEntry(
+        frame_tree_node->unique_name(), item_sequence_number,
+        document_sequence_number, site_instance,
+        std::move(source_site_instance), url, referrer, page_state, method,
+        post_id);
+    return;
+  }
+
   // We should already have a TreeNode for the parent node by the time this node
   // commits.  Find it first.
-  DCHECK(frame_tree_node->parent());
   NavigationEntryImpl::TreeNode* parent_node =
       FindFrameEntry(frame_tree_node->parent());
   if (!parent_node) {
