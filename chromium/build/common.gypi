@@ -734,6 +734,9 @@
       # By default enable force touch API. It's only supported with OSX SDK 10.10.3+.
       'disable_force_touch%': 0,
 
+      # Enable this to turn off the delete-null-pointer-checks optimization in GCC 6+
+      'no_delete_null_pointer_checks%': 0,
+
       'conditions': [
         # A flag for POSIX platforms
         ['OS=="win"', {
@@ -1279,6 +1282,7 @@
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'proprietary_codecs%': '<(proprietary_codecs)',
     'appstore_compliant_code%': '<(appstore_compliant_code)',
+    'no_delete_null_pointer_checks%': '<(no_delete_null_pointer_checks)',
     'disable_force_touch%': '<(disable_force_touch)',
     'use_goma%': '<(use_goma)',
     'gomadir%': '<(gomadir)',

@@ -72,10 +72,6 @@
     # Some versions of GCC 4.5 seem to need -fno-strict-aliasing.
     'v8_no_strict_aliasing%': 0,
 
-    # V8 needs support for illegal null this pointers, and must disable
-    # optimizations in GCC 6 that relies on correct behavior.
-    'v8_no_delete_null_pointer_checks%': 0,
-
     # Chrome needs this definition unconditionally. For standalone V8 builds,
     # it's handled in build/standalone.gypi.
     'want_separate_host_toolset%': 1,
@@ -1069,9 +1065,6 @@
         'conditions': [
           [ 'v8_no_strict_aliasing==1', {
             'cflags': [ '-fno-strict-aliasing' ],
-          }],
-          [ 'v8_no_delete_null_pointer_checks==1', {
-            'cflags_cc': [ '-fno-delete-null-pointer-checks' ],
           }],
         ],  # conditions
       }],
