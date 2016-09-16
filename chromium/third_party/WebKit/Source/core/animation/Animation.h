@@ -59,6 +59,7 @@ class CORE_EXPORT Animation final
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Animation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Animation);
+    USING_PRE_FINALIZER(Animation, dispose);
 public:
     enum AnimationPlayState {
         Idle,
@@ -299,6 +300,7 @@ private:
     int m_compositorGroup;
 
     OwnPtr<WebCompositorAnimationPlayer> m_compositorPlayer;
+    bool m_preFinalizerRegistered;
 
     bool m_currentTimePending;
     bool m_stateIsBeingUpdated;
