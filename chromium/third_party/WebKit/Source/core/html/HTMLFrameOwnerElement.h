@@ -93,6 +93,8 @@ protected:
 
     bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool replaceCurrentItem);
 
+    void disposeWidgetSoon(Widget*);
+
 private:
     bool isKeyboardFocusable() const override;
     bool isFrameOwnerElement() const final { return true; }
