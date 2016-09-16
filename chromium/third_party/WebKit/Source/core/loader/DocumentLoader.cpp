@@ -283,7 +283,9 @@ void DocumentLoader::notifyFinished(Resource* resource)
 
 void DocumentLoader::finishedLoading(double finishTime)
 {
-    ASSERT(!mainResourceLoader() || !mainResourceLoader()->defersLoading() || InspectorInstrumentation::isDebuggerPaused(m_frame));
+    ASSERT(m_frame->loader().stateMachine()->creatingInitialEmptyDocument()
+        || !mainResourceLoader() || !mainResourceLoader()->defersLoading() 
+        || InspectorInstrumentation::isDebuggerPaused(m_frame));
 
     RefPtrWillBeRawPtr<DocumentLoader> protect(this);
 

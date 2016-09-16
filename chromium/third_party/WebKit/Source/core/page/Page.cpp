@@ -45,6 +45,7 @@
 #include "core/page/DragController.h"
 #include "core/page/FocusController.h"
 #include "core/page/PointerLockController.h"
+#include "core/page/ScopedPageLoadDeferrer.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/paint/PaintLayer.h"
@@ -108,6 +109,8 @@ PassOwnPtrWillBeRawPtr<Page> Page::createOrdinary(PageClients& pageClients)
 {
     OwnPtrWillBeRawPtr<Page> page = create(pageClients);
     ordinaryPages().add(page.get());
+    if (ScopedPageLoadDeferrer::isActive())
+        page->setDefersLoading(true);
     page->memoryPurgeController().registerClient(page.get());
     return page.release();
 }
