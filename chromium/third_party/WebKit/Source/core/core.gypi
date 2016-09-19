@@ -3899,6 +3899,7 @@
             'dom/URLSearchParamsTest.cpp',
             'dom/shadow/ComposedTreeTraversalTest.cpp',
             'editing/EditingStrategyTest.cpp',
+            'editing/EditingStyleTest.cpp',
             'editing/EditingTestBase.cpp',
             'editing/EditingTestBase.h',
             'editing/EditingUtilitiesTest.cpp',

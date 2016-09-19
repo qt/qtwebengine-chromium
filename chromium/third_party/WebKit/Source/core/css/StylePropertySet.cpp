@@ -307,6 +307,8 @@ bool StylePropertySet::isPropertyImplicit(CSSPropertyID propertyID) const
 
 bool MutableStylePropertySet::setProperty(CSSPropertyID unresolvedProperty, const String& value, bool important, StyleSheetContents* contextStyleSheet)
 {
+    ASSERT(unresolvedProperty >= firstCSSProperty);
+
     // Setting the value to an empty string just removes the property in both IE and Gecko.
     // Setting it to null seems to produce less consistent results, but we treat it just the same.
     if (value.isEmpty())
