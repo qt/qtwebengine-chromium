@@ -31,7 +31,8 @@ class SaveItem {
            const Referrer& referrer,
            SavePackage* package,
            SaveFileCreateInfo::SaveFileSource save_source,
-           int frame_tree_node_id);
+           int frame_tree_node_id,
+           int container_frame_tree_node_id);
 
   ~SaveItem();
 
@@ -63,6 +64,9 @@ class SaveItem {
   const GURL& url() const { return url_; }
   const Referrer& referrer() const { return referrer_; }
   int frame_tree_node_id() const { return frame_tree_node_id_; }
+  int container_frame_tree_node_id() const {
+    return container_frame_tree_node_id_;
+  }
   int64_t total_bytes() const { return total_bytes_; }
   int64_t received_bytes() const { return received_bytes_; }
   bool has_final_name() const { return has_final_name_; }
@@ -90,8 +94,13 @@ class SaveItem {
   Referrer referrer_;
 
   // Frame tree node id, if this save item represents a frame
-  // (otherwise FrameTreeNode::kFrameTreeNodeInvalidID).
+  // (otherwise FrameTreeNode::kFrameTreeNodeInvalidId).
   int frame_tree_node_id_;
+
+  // Frame tree node id of the frame containing this save item.
+  // (FrameTreeNode::kFrameTreeNodeInvalidId if this save item represents the
+  // main frame, which obviously doesn't have a containing/parent frame).
+  int container_frame_tree_node_id_;
 
   // Total bytes expected.
   int64_t total_bytes_;

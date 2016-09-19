@@ -1837,9 +1837,22 @@ void ResourceDispatcherHostImpl::BeginSaveFile(const GURL& url,
                         render_frame_route_id, false, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
+  // Check if the renderer is permitted to request the requested URL.
+  using AuthorizationState = SaveFileResourceHandler::AuthorizationState;
+  AuthorizationState authorization_state = AuthorizationState::AUTHORIZED;
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(child_id,
+                                                                    url)) {
+    DVLOG(1) << "Denying unauthorized save of " << url.possibly_invalid_spec();
+    authorization_state = AuthorizationState::NOT_AUTHORIZED;
+    // No need to return here (i.e. okay to begin processing the request below),
+    // because NOT_AUTHORIZED will cause the request to be cancelled.  See also
+    // doc comments for AuthorizationState enum.
+  }
+
   scoped_ptr<ResourceHandler> handler(new SaveFileResourceHandler(
       request.get(), save_item_id, save_package_id, child_id,
-      render_frame_route_id, url, save_file_manager_.get()));
+      render_frame_route_id, url, save_file_manager_.get(),
+      authorization_state));
 
   BeginRequestInternal(std::move(request), std::move(handler));
 }
