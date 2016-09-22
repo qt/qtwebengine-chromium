@@ -174,18 +174,18 @@
               'CAN_USE_ARMV7_INSTRUCTIONS',
             ],
           }],
-          [ 'arm_fpu=="vfpv3-d16" or arm_fpu=="default"', {
+          [ 'arm_fpu=="vfpv3-d16" or arm_fpu=="vfpv4-d16" or arm_fpu=="default"', {
             'defines': [
               'CAN_USE_VFP3_INSTRUCTIONS',
             ],
           }],
-          [ 'arm_fpu=="vfpv3"', {
+          [ 'arm_fpu=="vfpv3" or arm_fpu=="vfpv4"', {
             'defines': [
               'CAN_USE_VFP3_INSTRUCTIONS',
               'CAN_USE_VFP32DREGS',
             ],
           }],
-          [ 'arm_fpu=="neon"', {
+          [ 'arm_fpu=="neon" or arm_neon==1', {
             'defines': [
               'CAN_USE_VFP3_INSTRUCTIONS',
               'CAN_USE_VFP32DREGS',
