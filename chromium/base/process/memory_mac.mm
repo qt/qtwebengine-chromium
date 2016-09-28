@@ -248,7 +248,7 @@ void oom_killer_new() {
 // === Core Foundation CFAllocators ===
 
 bool CanGetContextForCFAllocator() {
-  return !base::mac::IsOSLaterThanElCapitan_DontCallThis();
+  return !base::mac::IsOSLaterThanSierra_DontCallThis();
 }
 
 CFAllocatorContext* ContextForCFAllocator(CFAllocatorRef allocator) {
@@ -261,7 +261,8 @@ CFAllocatorContext* ContextForCFAllocator(CFAllocatorRef allocator) {
              base::mac::IsOSMountainLion() ||
              base::mac::IsOSMavericks() ||
              base::mac::IsOSYosemite() ||
-             base::mac::IsOSElCapitan()) {
+             base::mac::IsOSElCapitan() ||
+             base::mac::IsOSSierra()) {
     ChromeCFAllocatorLions* our_allocator =
         const_cast<ChromeCFAllocatorLions*>(
             reinterpret_cast<const ChromeCFAllocatorLions*>(allocator));
