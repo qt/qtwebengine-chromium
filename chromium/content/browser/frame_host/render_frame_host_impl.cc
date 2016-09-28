@@ -1361,6 +1361,13 @@ void RenderFrameHostImpl::OnRunJavaScriptMessage(
     const GURL& frame_url,
     JavaScriptMessageType type,
     IPC::Message* reply_msg) {
+
+  bool is_active = IsRFHStateActive(rfh_state_);
+  if (!is_active) {
+    JavaScriptDialogClosed(reply_msg, true, base::string16(), true);
+    return;
+  }
+
   // While a JS message dialog is showing, tabs in the same process shouldn't
   // process input events.
   GetProcess()->SetIgnoreInputEvents(true);
