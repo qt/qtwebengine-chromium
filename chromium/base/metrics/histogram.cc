@@ -109,7 +109,7 @@ HistogramBase* Histogram::FactoryGet(const std::string& name,
         StatisticsRecorder::RegisterOrDeleteDuplicate(tentative_histogram);
   }
 
-  DCHECK_EQ(HISTOGRAM, histogram->GetHistogramType());
+  CHECK_EQ(HISTOGRAM, histogram->GetHistogramType());
   if (!histogram->HasConstructionArguments(minimum, maximum, bucket_count)) {
     // The construction arguments do not match the existing histogram.  This can
     // come about if an extension updates in the middle of a chrome run and has
@@ -618,7 +618,7 @@ HistogramBase* LinearHistogram::FactoryGetWithRangeDescription(
         StatisticsRecorder::RegisterOrDeleteDuplicate(tentative_histogram);
   }
 
-  DCHECK_EQ(LINEAR_HISTOGRAM, histogram->GetHistogramType());
+  CHECK_EQ(LINEAR_HISTOGRAM, histogram->GetHistogramType());
   if (!histogram->HasConstructionArguments(minimum, maximum, bucket_count)) {
     // The construction arguments do not match the existing histogram.  This can
     // come about if an extension updates in the middle of a chrome run and has
@@ -724,7 +724,7 @@ HistogramBase* BooleanHistogram::FactoryGet(const std::string& name,
         StatisticsRecorder::RegisterOrDeleteDuplicate(tentative_histogram);
   }
 
-  DCHECK_EQ(BOOLEAN_HISTOGRAM, histogram->GetHistogramType());
+  CHECK_EQ(BOOLEAN_HISTOGRAM, histogram->GetHistogramType());
   return histogram;
 }
 
@@ -788,7 +788,7 @@ HistogramBase* CustomHistogram::FactoryGet(
         StatisticsRecorder::RegisterOrDeleteDuplicate(tentative_histogram);
   }
 
-  DCHECK_EQ(histogram->GetHistogramType(), CUSTOM_HISTOGRAM);
+  CHECK_EQ(histogram->GetHistogramType(), CUSTOM_HISTOGRAM);
   return histogram;
 }
 

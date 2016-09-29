@@ -30,7 +30,7 @@ HistogramBase* SparseHistogram::FactoryGet(const std::string& name,
     histogram =
         StatisticsRecorder::RegisterOrDeleteDuplicate(tentative_histogram);
   }
-  DCHECK_EQ(SPARSE_HISTOGRAM, histogram->GetHistogramType());
+  CHECK_EQ(SPARSE_HISTOGRAM, histogram->GetHistogramType());
   return histogram;
 }
 
