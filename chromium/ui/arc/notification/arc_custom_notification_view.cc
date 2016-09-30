@@ -186,6 +186,9 @@ void ArcCustomNotificationView::SetSurface(exo::NotificationSurface* surface) {
   if (surface_ == surface)
     return;
 
+  // Reset |floating_close_button_widget_| when |surface_| is changed.
+  floating_close_button_widget_.reset();
+
   if (surface_ && surface_->window()) {
     surface_->window()->RemoveObserver(this);
     surface_->window()->RemovePreTargetHandler(event_forwarder_.get());
@@ -200,7 +203,8 @@ void ArcCustomNotificationView::SetSurface(exo::NotificationSurface* surface) {
     if (GetWidget())
       AttachSurface();
 
-    UpdatePinnedState();
+    if (item_)
+      UpdatePinnedState();
   }
 }
 
@@ -238,6 +242,8 @@ void ArcCustomNotificationView::UpdateCloseButtonVisiblity() {
 }
 
 void ArcCustomNotificationView::UpdatePinnedState() {
+  DCHECK(item_);
+
   if (item_->pinned() && floating_close_button_widget_) {
     floating_close_button_widget_.reset();
   } else if (!item_->pinned() && !floating_close_button_widget_) {
