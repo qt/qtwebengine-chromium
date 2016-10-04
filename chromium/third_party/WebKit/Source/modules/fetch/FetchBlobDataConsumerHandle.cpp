@@ -76,6 +76,8 @@ public:
             m_loader->cancel();
             m_loader.clear();
         }
+        if (!m_registeredBlobURL.isEmpty())
+            BlobRegistry::revokePublicBlobURL(m_registeredBlobURL);
     }
 
     void start(ExecutionContext* executionContext) override
@@ -89,15 +91,15 @@ public:
     }
 
 private:
-    PassRefPtr<ThreadableLoader> createLoader(ExecutionContext* executionContext, ThreadableLoaderClient* client) const
+    PassRefPtr<ThreadableLoader> createLoader(ExecutionContext* executionContext, ThreadableLoaderClient* client)
     {
-        KURL url = BlobURL::createPublicURL(executionContext->securityOrigin());
-        if (url.isEmpty()) {
+        m_registeredBlobURL = BlobURL::createPublicURL(executionContext->securityOrigin());
+        if (m_registeredBlobURL.isEmpty()) {
             return nullptr;
         }
-        BlobRegistry::registerPublicBlobURL(executionContext->securityOrigin(), url, m_blobDataHandle);
+        BlobRegistry::registerPublicBlobURL(executionContext->securityOrigin(), m_registeredBlobURL, m_blobDataHandle);
 
-        ResourceRequest request(url);
+        ResourceRequest request(m_registeredBlobURL);
         request.setRequestContext(WebURLRequest::RequestContextInternal);
         request.setUseStreamOnResponse(true);
 
@@ -151,6 +153,7 @@ private:
     RefPtr<BlobDataHandle> m_blobDataHandle;
     Persistent<FetchBlobDataConsumerHandle::LoaderFactory> m_loaderFactory;
     RefPtr<ThreadableLoader> m_loader;
+    KURL m_registeredBlobURL;
 
     bool m_receivedResponse;
 };
