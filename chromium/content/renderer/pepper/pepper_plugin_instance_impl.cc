@@ -538,8 +538,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
   module_->InstanceCreated(this);
 
-  if (render_frame) {  // NULL in tests
-    render_frame->render_view()->PepperInstanceCreated(this);
+  if (render_frame_) {  // NULL in tests or if the frame has been destroyed.
+    render_frame_->render_view()->PepperInstanceCreated(this);
     // Bind a callback now so that we can inform the RenderViewImpl when we are
     // destroyed. This works around a temporary problem stemming from work to
     // move parts of RenderViewImpl in to RenderFrameImpl (see
