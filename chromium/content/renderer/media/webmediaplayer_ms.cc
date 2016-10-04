@@ -25,6 +25,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_types.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerSource.h"
@@ -52,6 +53,7 @@ WebMediaPlayerMS::WebMediaPlayerMS(
       client_(client),
       delegate_(delegate),
       delegate_id_(0),
+      last_frame_opaque_(true),
       paused_(true),
       render_frame_suspended_(false),
       received_first_frame_(false),
@@ -490,19 +492,28 @@ void WebMediaPlayerMS::OnFrameAvailable(
   } else {
     TRACE_EVENT0("webrtc", "WebMediaPlayerMS::OnFrameAvailable");
   }
+  const bool is_opaque = media::IsOpaque(frame->format());
 
   if (!received_first_frame_) {
     received_first_frame_ = true;
+    last_frame_opaque_ = is_opaque;
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
 
     if (video_frame_provider_.get()) {
       video_weblayer_.reset(new cc_blink::WebLayerImpl(
           cc::VideoLayer::Create(compositor_.get(), media::VIDEO_ROTATION_0)));
-      video_weblayer_->layer()->SetContentsOpaque(false);
+      video_weblayer_->layer()->SetContentsOpaque(is_opaque);
       video_weblayer_->SetContentsOpaqueIsFixed(true);
       get_client()->setWebLayer(video_weblayer_.get());
     }
+  }
+
+  // Only configure opacity on changes, since marking it as transparent is
+  // expensive, see https://crbug.com/647886.
+  if (video_weblayer_ && last_frame_opaque_ != is_opaque) {
+    last_frame_opaque_ = is_opaque;
+    video_weblayer_->layer()->SetContentsOpaque(is_opaque);
   }
 
   compositor_->EnqueueFrame(frame);

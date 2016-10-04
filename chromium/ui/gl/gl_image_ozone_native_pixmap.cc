@@ -167,6 +167,8 @@ bool GLImageOzoneNativePixmap::Initialize(ui::NativePixmap* pixmap,
          attrs_plane <
          gfx::NumberOfPlanesForBufferFormat(pixmap->GetBufferFormat());
          ++attrs_plane) {
+      attrs.push_back(EGL_DMA_BUF_PLANE0_FD_EXT + attrs_plane * 3);
+
       size_t pixmap_plane = attrs_plane;
 
 // TODO(dcastagna): Intel mesa flips V and U when the fourcc format is a
