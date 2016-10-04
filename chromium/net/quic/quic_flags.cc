@@ -63,7 +63,7 @@ bool FLAGS_quic_limit_max_cwnd = true;
 bool FLAGS_quic_require_handshake_confirmation = false;
 
 // If true, Cubic's epoch is shifted when the sender is application-limited.
-bool FLAGS_shift_quic_cubic_epoch_when_app_limited = true;
+bool FLAGS_shift_quic_cubic_epoch_when_app_limited = false;
 
 // If true, QUIC will measure head of line (HOL) blocking due between
 // streams due to packet losses on the headers stream.  The
