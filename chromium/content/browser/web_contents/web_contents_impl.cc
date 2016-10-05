@@ -767,7 +767,7 @@ SkColor WebContentsImpl::GetThemeColor() const {
 }
 
 void WebContentsImpl::SetAccessibilityMode(AccessibilityMode mode) {
-  if (mode == accessibility_mode_)
+  if (mode == accessibility_mode_ || is_being_destroyed_)
     return;
 
   accessibility_mode_ = mode;
