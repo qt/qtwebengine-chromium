@@ -245,6 +245,15 @@ def _CreateVersion(name, path, sdk_based=False):
                                   path=path,
                                   sdk_based=sdk_based,
                                   default_toolset='v140'),
+      '2015e': VisualStudioVersion('2015e',
+                                   'Visual Studio 2015',
+                                   solution_version='12.00',
+                                   project_version='14.0',
+                                   flat_sln=True,
+                                   uses_vcxproj=True,
+                                   path=path,
+                                   sdk_based=sdk_based,
+                                   default_toolset='v140'),
       '2013': VisualStudioVersion('2013',
                                   'Visual Studio 2013',
                                   solution_version='13.00',
@@ -374,7 +383,9 @@ def _DetectVisualStudioVersions(versions_to_check, force_express):
     keys = [r'HKLM\Software\Microsoft\VisualStudio\%s' % version,
             r'HKLM\Software\Wow6432Node\Microsoft\VisualStudio\%s' % version,
             r'HKLM\Software\Microsoft\VCExpress\%s' % version,
-            r'HKLM\Software\Wow6432Node\Microsoft\VCExpress\%s' % version]
+            r'HKLM\Software\Microsoft\WDExpress\%s' % version,
+            r'HKLM\Software\Wow6432Node\Microsoft\VCExpress\%s' % version,
+            r'HKLM\Software\Wow6432Node\Microsoft\WDExpress\%s' % version]
     for index in range(len(keys)):
       path = _RegistryGetValue(keys[index], 'InstallDir')
       if not path:
@@ -432,6 +443,7 @@ def SelectVisualStudioVersion(version='auto', allow_fallback=True):
     '2013': ('12.0',),
     '2013e': ('12.0',),
     '2015': ('14.0',),
+    '2015e': ('14.0',),
   }
   override_path = os.environ.get('GYP_MSVS_OVERRIDE_PATH')
   if override_path:
