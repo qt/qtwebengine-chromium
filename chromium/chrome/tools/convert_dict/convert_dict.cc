@@ -11,6 +11,8 @@
 //
 // See PrintHelp() below for usage.
 
+#if !defined(TOOLKIT_QT)
+
 #include <stddef.h>
 #include <stdio.h>
 
@@ -149,3 +151,4 @@ int main(int argc, char* argv[]) {
 
   return 0;
 }
+#endif

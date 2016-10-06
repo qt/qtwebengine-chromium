@@ -29,6 +29,7 @@
       ],
     },
     {
+      'let_qmake_do_the_linking': 1,
       'target_name': 'convert_dict',
       'type': 'executable',
       'variables': { 'enable_wexit_time_destructors': 1, },
