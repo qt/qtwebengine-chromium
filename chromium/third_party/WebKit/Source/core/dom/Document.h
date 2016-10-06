@@ -268,6 +268,7 @@ public:
 
     String outgoingReferrer() const;
     String outgoingOrigin() const;
+    ReferrerPolicy referrerPolicy() const override;
 
     void setDoctype(PassRefPtrWillBeRawPtr<DocumentType>);
     DocumentType* doctype() const { return m_docType.get(); }

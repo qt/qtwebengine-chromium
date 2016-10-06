@@ -157,7 +157,7 @@ public:
     virtual bool isSecureContext(const SecureContextCheck = StandardSecureContextCheck) const;
 
     virtual void setReferrerPolicy(ReferrerPolicy);
-    ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
+    virtual ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
 
 protected:
     ExecutionContext();

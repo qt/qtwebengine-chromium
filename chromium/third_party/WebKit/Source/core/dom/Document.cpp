@@ -3194,6 +3194,20 @@ String Document::outgoingOrigin() const
     return securityOrigin()->toString();
 }
 
+ReferrerPolicy Document::referrerPolicy() const {
+  ReferrerPolicy policy = ExecutionContext::referrerPolicy();
+  // For srcdoc documents without their own policy, walk up the frame
+  // tree to find the document that is either not a srcdoc or doesn't
+  // have its own policy. This algorithm is defined in
+  // https://html.spec.whatwg.org/multipage/browsers.html#set-up-a-browsing-context-environment-settings-object.
+  if (!m_frame || policy != ReferrerPolicyDefault || !isSrcdocDocument()) {
+    return policy;
+  }
+  LocalFrame* frame = toLocalFrame(m_frame->tree().parent());
+  ASSERT(frame);
+  return frame->document()->referrerPolicy();
+}
+
 MouseEventWithHitTestResults Document::prepareMouseEvent(const HitTestRequest& request, const LayoutPoint& documentPoint, const PlatformMouseEvent& event)
 {
     ASSERT(!layoutView() || layoutView()->isLayoutView());
