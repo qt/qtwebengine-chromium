@@ -155,7 +155,7 @@ public:
     // tokens are valid policies.
     void parseAndSetReferrerPolicy(const String& policies);
     void setReferrerPolicy(ReferrerPolicy);
-    ReferrerPolicy getReferrerPolicy() const { return m_referrerPolicy; }
+    virtual ReferrerPolicy getReferrerPolicy() const { return m_referrerPolicy; }
 
 protected:
     ExecutionContext();
