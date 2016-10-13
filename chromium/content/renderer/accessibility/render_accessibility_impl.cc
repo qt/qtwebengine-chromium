@@ -1096,7 +1096,7 @@ bool RenderAccessibilityImpl::SerializeUpdatesAndEvents(
 
     updates.push_back(update);
 
-    VLOG(1) << "Accessibility tree update:\n" << update.ToString();
+    DVLOG(1) << "Accessibility tree update:\n" << update.ToString();
   }
 
   // Loop over each event and generate an updated event message.
