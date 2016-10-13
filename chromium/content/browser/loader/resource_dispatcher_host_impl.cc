@@ -307,7 +307,7 @@ bool ShouldServiceRequest(int process_type,
                     origin_string != "null";
   if (has_origin) {
     GURL origin(origin_string);
-    if (!policy->CanCommitURL(child_id, origin) ||
+    if (!policy->CanSetAsOriginHeader(child_id, origin) ||
         GetContentClient()->browser()->IsIllegalOrigin(resource_context,
                                                        child_id, origin)) {
       VLOG(1) << "Killed renderer for illegal origin: " << origin_string;
