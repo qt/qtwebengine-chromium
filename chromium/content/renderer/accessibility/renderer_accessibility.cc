@@ -285,7 +285,7 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
           event_msg.update.nodes[i].location;
     }
 
-    DVLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
+    DVLOG(1) << "Accessibility event: " << ui::ToString(event.event_type)
              << " on node id " << event_msg.id
              << "\n" << event_msg.update.ToString();
   }
