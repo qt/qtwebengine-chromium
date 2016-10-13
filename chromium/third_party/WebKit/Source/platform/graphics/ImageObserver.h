@@ -27,6 +27,7 @@
 #define ImageObserver_h
 
 #include "platform/PlatformExport.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -39,7 +40,7 @@ class PLATFORM_EXPORT ImageObserver {
 protected:
     virtual ~ImageObserver();
 public:
-    virtual void decodedSizeChanged(const Image*, int delta) = 0;
+    virtual void decodedSizeChangedTo(const Image*, size_t newSize) = 0;
     virtual void didDraw(const Image*) = 0;
 
     virtual bool shouldPauseAnimation(const Image*) = 0;
