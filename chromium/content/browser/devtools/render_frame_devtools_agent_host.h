@@ -133,6 +133,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void OnSwapCompositorFrame(const IPC::Message& message);
   void DestroyOnRenderFrameGone();
 
+  bool CheckConsistency();
+
   bool MatchesMyTreeNode(NavigationHandle* navigation_handle);
 
   class FrameHostHolder;
@@ -159,6 +161,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   scoped_ptr<PowerSaveBlockerImpl> power_save_blocker_;
 #endif
   scoped_ptr<DevToolsProtocolHandler> protocol_handler_;
+  RenderFrameHostImpl* handlers_frame_host_;
   bool current_frame_crashed_;
 
   // PlzNavigate
