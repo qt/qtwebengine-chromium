@@ -135,6 +135,8 @@ void FontFaceCache::IncrementVersion() {
 CSSSegmentedFontFace* FontFaceCache::Get(
     const FontDescription& font_description,
     const AtomicString& family) {
+  if (family.IsEmpty())
+    return nullptr;
   TraitsMap* family_font_faces = font_faces_.at(family);
   if (!family_font_faces || family_font_faces->IsEmpty())
     return nullptr;
