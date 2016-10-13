@@ -148,6 +148,8 @@ void FontFaceCache::IncrementVersion() {
 CSSSegmentedFontFace* FontFaceCache::Get(
     const FontDescription& font_description,
     const AtomicString& family) {
+  if (family.IsEmpty())
+    return nullptr;
   SegmentedFacesByFamily::iterator segmented_faces_for_family =
       segmented_faces_.find(family);
   if (segmented_faces_for_family == segmented_faces_.end() ||
