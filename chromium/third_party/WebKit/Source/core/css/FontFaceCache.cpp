@@ -127,6 +127,9 @@ void FontFaceCache::clearAll()
 
 CSSSegmentedFontFace* FontFaceCache::get(const FontDescription& fontDescription, const AtomicString& family)
 {
+    if (family.isEmpty())
+        return nullptr;
+
     TraitsMap* familyFontFaces = m_fontFaces.get(family);
     if (!familyFontFaces || familyFontFaces->isEmpty())
         return nullptr;
