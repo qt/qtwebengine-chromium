@@ -512,7 +512,7 @@ void RenderAccessibilityImpl::SendPendingAccessibilityEvents() {
 
     bundle.updates.push_back(update);
 
-    VLOG(1) << "Accessibility tree update:\n" << update.ToString();
+    DVLOG(1) << "Accessibility tree update:\n" << update.ToString();
   }
 
   Send(new AccessibilityHostMsg_EventBundle(routing_id(), bundle, reset_token_,
