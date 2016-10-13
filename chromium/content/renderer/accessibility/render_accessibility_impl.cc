@@ -419,7 +419,7 @@ void RenderAccessibilityImpl::SendPendingAccessibilityEvents() {
         dst.transform.reset(new gfx::Transform(*src.transform));
     }
 
-    VLOG(1) << "Accessibility event: " << ui::ToString(event.event_type)
+    DVLOG(1) << "Accessibility event: " << ui::ToString(event.event_type)
             << " on node id " << event_msg.id
             << "\n" << event_msg.update.ToString();
   }
