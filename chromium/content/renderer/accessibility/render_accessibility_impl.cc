@@ -982,7 +982,7 @@ void RenderAccessibilityImpl::SendPendingAccessibilityEvents() {
 
     updates.push_back(update);
 
-    VLOG(1) << "Accessibility tree update:\n" << update.ToString();
+    DVLOG(1) << "Accessibility tree update:\n" << update.ToString();
   }
 
   event_schedule_status_ = EventScheduleStatus::kWaitingForAck;
