@@ -2371,6 +2371,11 @@ void FrameView::scheduleVisualUpdateForPaintInvalidationIfNeeded()
 // TODO(leviw): We don't assert lifecycle information from documents in child PluginViews.
 void FrameView::updateLifecyclePhasesInternal(LifeCycleUpdateOption phases)
 {
+    if (m_isUpdatingAllLifecyclePhases) {
+        NOTREACHED() << "FrameView::updateLifecyclePhasesInternal() reentrance";
+        return;
+    }
+
     Optional<TemporaryChange<bool>> isUpdatingAllLifecyclePhasesScope;
     if (phases == AllPhases)
         isUpdatingAllLifecyclePhasesScope.emplace(m_isUpdatingAllLifecyclePhases, true);
