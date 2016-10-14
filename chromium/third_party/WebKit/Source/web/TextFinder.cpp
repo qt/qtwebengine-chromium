@@ -205,6 +205,7 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
         }
     }
 
+    m_lastFindRequestCompletedWithNoMatches = false;
     return true;
 }
 
