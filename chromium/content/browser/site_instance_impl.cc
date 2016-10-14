@@ -361,18 +361,15 @@ GURL SiteInstanceImpl::GetEffectiveURL(BrowserContext* browser_context,
 // static
 bool SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
     BrowserContext* browser_context,
-    const GURL& url) {
+    const GURL& effective_url) {
   // If --site-per-process is enabled, site isolation is enabled everywhere.
   if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites())
     return true;
 
-  // Let the content embedder enable site isolation for specific URLs. Use the
-  // canonical site url for this check, so that schemes with nested origins
-  // (blob and filesystem) work properly.
-  GURL site_url = GetSiteForURL(browser_context, url);
+  // Let the content embedder enable site isolation for specific URLs.
   if (GetContentClient()->IsSupplementarySiteIsolationModeEnabled() &&
       GetContentClient()->browser()->DoesSiteRequireDedicatedProcess(
-          browser_context, site_url)) {
+          browser_context, effective_url)) {
     return true;
   }
 

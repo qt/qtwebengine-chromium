@@ -1419,6 +1419,8 @@ bool RenderFrameHostManager::IsRendererTransferNeededForNavigation(
   }
 
   BrowserContext* context = rfh->GetSiteInstance()->GetBrowserContext();
+  GURL effective_url = SiteInstanceImpl::GetEffectiveURL(context, dest_url);
+
   // TODO(nasko, nick): These following --site-per-process checks are
   // overly simplistic. Update them to match all the cases
   // considered by DetermineSiteInstanceForURL.
@@ -1432,7 +1434,7 @@ bool RenderFrameHostManager::IsRendererTransferNeededForNavigation(
   // then a transfer is needed.
   return rfh->GetSiteInstance()->RequiresDedicatedProcess() ||
          SiteInstanceImpl::DoesSiteRequireDedicatedProcess(context,
-                                                           dest_url);
+                                                           effective_url);
 }
 
 SiteInstance* RenderFrameHostManager::ConvertToSiteInstance(
