@@ -26,6 +26,7 @@
 
 #include "core/frame/FrameView.h"
 
+#include "base/logging.h"
 #include "core/HTMLNames.h"
 #include "core/MediaTypeNames.h"
 #include "core/css/FontFaceSet.h"
