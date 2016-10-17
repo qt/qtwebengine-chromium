@@ -130,8 +130,7 @@ function PDFViewer(browserApi) {
 
   this.delayedScriptingMessages_ = [];
 
-  this.isPrintPreview_ = this.originalUrl_.indexOf(
-                             'chrome://print') == 0;
+  this.isPrintPreview_ = location.origin === 'chrome://print';
   // Parse open pdf parameters.
   this.paramsParser_ =
       new OpenPDFParamsParser(this.getNamedDestination_.bind(this));
