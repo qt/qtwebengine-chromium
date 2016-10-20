@@ -60,6 +60,8 @@ def run_build(tempdir, options):
   else:
     build_rel = os.path.join('out', 'Release')
   build_root = os.path.join(SRC_ROOT, build_rel)
+  if options.shadow:
+    build_root = os.getcwd()
 
   print 'Building gn manually in a temporary directory for bootstrapping...'
   build_gn_with_ninja_manually(tempdir, options)
@@ -84,7 +86,7 @@ def main(argv):
                     help='Do a debug build. Defaults to release build.')
   parser.add_option('-o', '--output',
                     help='place output in PATH', metavar='PATH')
-  parser.add_option('-s', '--no-rebuild', action='store_true',
+  parser.add_option('-n', '--no-rebuild', action='store_true',
                     help='Do not rebuild GN with GN.')
   parser.add_option('--no-clean', action='store_true',
                     help='Re-used build directory instead of using new '
@@ -92,6 +94,8 @@ def main(argv):
   parser.add_option('--gn-gen-args', help='Args to pass to gn gen --args')
   parser.add_option('-v', '--verbose', action='store_true',
                     help='Log more details')
+  parser.add_option('-s', '--shadow', action='store_true',
+                    help='Use current dir as build dir')
   options, args = parser.parse_args(argv)
 
   if args:
@@ -104,6 +108,9 @@ def main(argv):
       build_dir = os.path.join(SRC_ROOT, 'out_bootstrap')
       if not os.path.exists(build_dir):
         os.makedirs(build_dir)
+      return run_build(build_dir, options)
+    elif options.shadow:
+      build_dir = os.getcwd()
       return run_build(build_dir, options)
     else:
       with scoped_tempdir() as tempdir:
