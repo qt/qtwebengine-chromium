@@ -106,6 +106,7 @@ def main(argv):
                     help='Log more details')
   parser.add_option('-s', '--shadow', action='store_true',
                     help='Use current dir as build dir')
+  parser.add_option('-p', '--path', help='Path to ninja binary')
   options, args = parser.parse_args(argv)
 
   if args:
@@ -202,7 +203,10 @@ def build_gn_with_ninja_manually(tempdir, options):
 
   write_gn_ninja(os.path.join(tempdir, 'build.ninja'),
                  root_gen_dir, options)
+
   cmd = ['ninja', '-C', tempdir]
+  if options.path:
+      cmd[0] = options.path
   if options.verbose:
     cmd.append('-v')
 
@@ -773,6 +777,8 @@ def build_gn_with_gn(temp_gn, build_dir, options):
   check_call(cmd)
 
   cmd = ['ninja', '-C', build_dir]
+  if options.path:
+    cmd[0] = options.path
   if options.verbose:
     cmd.append('-v')
   cmd.append('gn')
