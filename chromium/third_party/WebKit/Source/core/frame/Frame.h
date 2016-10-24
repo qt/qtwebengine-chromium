@@ -136,6 +136,8 @@ public:
 
     virtual void didChangeVisibilityState();
 
+    bool isDetaching() const { return m_isDetaching; }
+
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);
 
@@ -143,6 +145,8 @@ protected:
 
     Member<FrameHost> m_host;
     Member<FrameOwner> m_owner;
+
+    bool m_isDetaching = false;
 
 private:
     bool canNavigateWithoutFramebusting(const Frame&, String& errorReason);

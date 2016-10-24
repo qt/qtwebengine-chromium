@@ -29,6 +29,8 @@ bool WebFrame::swap(WebFrame* frame)
 {
     using std::swap;
     Frame* oldFrame = toImplBase()->frame();
+    if (oldFrame->isDetaching())
+        return false;
 
     // Unload the current Document in this frame: this calls unload handlers,
     // detaches child frames, etc. Since this runs script, make sure this frame
