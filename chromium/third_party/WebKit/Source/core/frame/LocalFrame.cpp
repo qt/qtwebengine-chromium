@@ -276,6 +276,10 @@ void LocalFrame::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedir
 
 void LocalFrame::detach(FrameDetachType type)
 {
+    // Note that detach() can be re-entered, so it's not possible to
+    // DCHECK(!m_isDetaching) here.
+    m_isDetaching = true;
+
     PluginScriptForbiddenScope forbidPluginDestructorScripting;
     // A lot of the following steps can result in the current frame being
     // detached, so protect a reference to it.

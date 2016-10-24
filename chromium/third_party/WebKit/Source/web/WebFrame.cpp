@@ -32,6 +32,8 @@ bool WebFrame::swap(WebFrame* frame)
 #if !ENABLE(OILPAN)
     RefPtr<WebFrameImplBase> protectThis = toImplBase();
 #endif
+    if (oldFrame->isDetaching())
+        return false;
 
     // Unload the current Document in this frame: this calls unload handlers,
     // detaches child frames, etc. Since this runs script, make sure this frame

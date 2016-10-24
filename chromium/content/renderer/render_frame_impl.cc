@@ -3135,7 +3135,8 @@ void RenderFrameImpl::didCommitProvisionalLoad(
     if (!proxy)
       return;
 
-    proxy->web_frame()->swap(frame_);
+    if (!proxy->web_frame()->swap(frame_))
+      return;
     proxy_routing_id_ = MSG_ROUTING_NONE;
     in_frame_tree_ = true;
 

@@ -133,6 +133,8 @@ public:
 
     virtual WindowProxyManager* windowProxyManager() const = 0;
 
+    bool isDetaching() const { return m_isDetaching; }
+
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);
 
@@ -140,6 +142,8 @@ protected:
 
     RawPtrWillBeMember<FrameHost> m_host;
     RawPtrWillBeMember<FrameOwner> m_owner;
+
+    bool m_isDetaching = false;
 
 private:
     RawPtrWillBeMember<FrameClient> m_client;

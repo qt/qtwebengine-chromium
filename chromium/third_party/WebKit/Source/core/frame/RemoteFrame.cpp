@@ -88,6 +88,8 @@ void RemoteFrame::reload(FrameLoadType frameLoadType, ClientRedirectPolicy clien
 
 void RemoteFrame::detach(FrameDetachType type)
 {
+    m_isDetaching = true;
+
     PluginScriptForbiddenScope forbidPluginDestructorScripting;
     // Frame::detach() requires the caller to keep a reference to this, since
     // otherwise it may clear the last reference to this, causing it to be
