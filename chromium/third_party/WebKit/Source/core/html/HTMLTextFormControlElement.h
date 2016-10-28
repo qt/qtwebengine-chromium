@@ -87,6 +87,7 @@ public:
     void setAutocapitalize(const AtomicString&);
 
     void dispatchFormControlChangeEvent() final;
+    void enqueueChangeEvent();
 
     virtual String value() const = 0;
     virtual void setValue(const String&, TextFieldEventBehavior = DispatchNoEvent) = 0;
