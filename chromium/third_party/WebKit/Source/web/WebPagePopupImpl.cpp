@@ -515,6 +515,7 @@ void WebPagePopupImpl::close()
 
 void WebPagePopupImpl::closePopup()
 {
+  {
     // This function can be called in EventDispatchForbiddenScope for the main
     // document, and the following operations dispatch some events.  It's safe
     // because web authors can't listen the events.
@@ -534,9 +535,9 @@ void WebPagePopupImpl::closePopup()
         // closeWidgetSoon() will call this->close() later.
         m_widgetClient->closeWidgetSoon();
     }
-
-    m_popupClient->didClosePopup();
-    m_webView->cleanupPagePopup();
+  }
+  m_popupClient->didClosePopup();
+  m_webView->cleanupPagePopup();
 }
 
 LocalDOMWindow* WebPagePopupImpl::window()
