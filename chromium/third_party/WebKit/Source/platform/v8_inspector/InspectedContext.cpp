@@ -70,15 +70,19 @@ v8::Isolate* InspectedContext::isolate() const
     return m_debugger->isolate();
 }
 
-void InspectedContext::createInjectedScript()
+bool InspectedContext::createInjectedScript()
 {
     DCHECK(!m_injectedScript);
     v8::HandleScope handles(isolate());
     v8::Local<v8::Context> localContext = context();
     v8::Local<v8::Context> callingContext = isolate()->GetCallingContext();
     if (!callingContext.IsEmpty() && !m_debugger->client()->callingContextCanAccessContext(callingContext, localContext))
-        return;
-    m_injectedScript = InjectedScript::create(this);
+        return false;
+    std::unique_ptr<InjectedScript> injectedScript = InjectedScript::create(this);
+    // InjectedScript::create can destroy |this|.
+    if (!injectedScript) return false;
+    m_injectedScript = std::move(injectedScript);
+    return true;
 }
 
 void InspectedContext::discardInjectedScript()

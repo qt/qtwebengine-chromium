@@ -93,9 +93,14 @@ std::unique_ptr<InjectedScript> InjectedScript::create(InspectedContext* inspect
     v8::Local<v8::Object> windowGlobal = context->Global();
     v8::Local<v8::Value> info[] = { scriptHostWrapper, windowGlobal, v8::Number::New(isolate, inspectedContext->contextId()) };
     v8::MicrotasksScope microtasksScope(isolate, v8::MicrotasksScope::kDoNotRunMicrotasks);
+    int contextGroupId = inspectedContext->contextGroupId();
+    int contextId = inspectedContext->contextId();
+    V8DebuggerImpl* inspector = inspectedContext->debugger();
     v8::Local<v8::Value> injectedScriptValue;
     if (!function->Call(context, windowGlobal, PROTOCOL_ARRAY_LENGTH(info), info).ToLocal(&injectedScriptValue))
         return nullptr;
+    if (inspector->getContext(contextGroupId, contextId) != inspectedContext)
+      return nullptr;
     if (!injectedScriptValue->IsObject())
         return nullptr;
     return wrapUnique(new InjectedScript(inspectedContext, injectedScriptValue.As<v8::Object>(), std::move(injectedScriptNative)));
