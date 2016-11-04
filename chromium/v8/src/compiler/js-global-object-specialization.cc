@@ -204,6 +204,13 @@ Reduction JSGlobalObjectSpecialization::ReduceJSStoreGlobal(Node* node) {
       Node* check = graph()->NewNode(simplified()->ObjectIsSmi(), value);
       Type* property_cell_value_type = Type::TaggedSigned();
       if (property_cell_value->IsHeapObject()) {
+        // We cannot do anything if the {property_cell_value}s map is no
+        // longer stable.
+        Handle<Map> property_cell_value_map(
+            Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
+        if (!property_cell_value_map->is_stable()) return NoChange();
+        dependencies()->AssumeMapStable(property_cell_value_map);
+
         // Deoptimize if the {value} is a Smi.
         Node* branch = graph()->NewNode(common()->Branch(BranchHint::kFalse),
                                         check, control);
@@ -219,8 +226,6 @@ Reduction JSGlobalObjectSpecialization::ReduceJSStoreGlobal(Node* node) {
         Node* value_map = effect =
             graph()->NewNode(simplified()->LoadField(AccessBuilder::ForMap()),
                              value, effect, control);
-        Handle<Map> property_cell_value_map(
-            Handle<HeapObject>::cast(property_cell_value)->map(), isolate());
         check = graph()->NewNode(
             simplified()->ReferenceEqual(Type::Any()), value_map,
             jsgraph()->HeapConstant(property_cell_value_map));
