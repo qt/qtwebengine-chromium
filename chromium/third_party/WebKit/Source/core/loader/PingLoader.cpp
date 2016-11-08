@@ -32,12 +32,14 @@
 #include "core/loader/PingLoader.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/SecurityContext.h"
 #include "core/fetch/FetchContext.h"
 #include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/UniqueIdentifier.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
@@ -84,6 +86,12 @@ void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 // http://www.whatwg.org/specs/web-apps/current-work/multipage/links.html#hyperlink-auditing
 void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const KURL& destinationURL)
 {
+    if (ContentSecurityPolicy* policy =
+          frame->securityContext()->contentSecurityPolicy()) {
+        if (!policy->allowConnectToSource(pingURL))
+            return;
+    }
+
     ResourceRequest request(pingURL);
     request.setHTTPMethod(HTTPNames::POST);
     request.setHTTPContentType("text/ping");
