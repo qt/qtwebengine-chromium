@@ -412,9 +412,12 @@ void HTMLFormElement::scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmissi
         return;
     }
 
+    if (!document().contentSecurityPolicy()->allowFormAction(
+            submission->action())) {
+      return;
+    }
+
     if (protocolIsJavaScript(submission->action())) {
-        if (!document().contentSecurityPolicy()->allowFormAction(submission->action()))
-            return;
         document().frame()->script().executeScriptIfJavaScriptURL(submission->action());
         return;
     }
