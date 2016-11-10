@@ -1989,7 +1989,7 @@ config("chromium_code") {
       if (is_chromeos_device && !lacros_use_chromium_toolchain) {
         fortify_level = "3"
       }
-      defines += [ "_FORTIFY_SOURCE=" + fortify_level ]
+      cflags += [ "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=" + fortify_level ]
     }
 
     if (is_apple) {
