@@ -1915,12 +1915,16 @@ test("browser_tests") {
     data_deps += [
       "//ppapi:ppapi_tests",
       "//ppapi:power_saver_test_plugin",
-      "//remoting/webapp:browser_test_resources",
-      "//remoting/webapp:unit_tests",
       "//third_party/mesa:osmesa",
       "//third_party/widevine/cdm:widevine_test_license_server",
     ]
 
+    if (enable_remoting) {
+      data_deps += [
+        "//remoting/webapp:browser_test_resources",
+        "//remoting/webapp:unit_tests",
+      ]
+    }
     data += [
       "data/",
       "//chrome/browser/policy/test/asn1der.py",
