@@ -2037,9 +2037,6 @@ void RenderViewImpl::didInvalidateRect(const blink::WebRect& rect) {
 void RenderViewImpl::didMeaningfulLayout(
     blink::WebMeaningfulLayout layout_type) {
   RenderWidget::didMeaningfulLayout(layout_type);
-
-  if (layout_type == blink::VisuallyNonEmpty)
-    FOR_EACH_OBSERVER(RenderViewObserver, observers_, OnFirstVisuallyNonEmptyLayout());
 }
 
 void RenderViewImpl::didOverscroll(
