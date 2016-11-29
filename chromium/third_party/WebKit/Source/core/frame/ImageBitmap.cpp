@@ -11,6 +11,7 @@
 #include "platform/image-decoders/ImageDecoder.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "wtf/CheckedNumeric.h"
 #include "wtf/PtrUtil.h"
 #include "wtf/RefPtr.h"
 #include <memory>
@@ -35,8 +36,19 @@ static bool frameIsValid(const SkBitmap& frameBitmap)
     return frameBitmap.colorType() == kN32_SkColorType;
 }
 
+bool dstBufferSizeHasOverflow(const IntRect& cropRect)
+{
+    CheckedNumeric<int> totalBytes = cropRect.width();
+    totalBytes *= cropRect.height();
+    totalBytes *= 4;
+    return !totalBytes.IsValid();
+}
+
 static std::unique_ptr<uint8_t[]> copySkImageData(SkImage* input, const SkImageInfo& info)
 {
+    if (dstBufferSizeHasOverflow(IntRect(0, 0, input->width(), input->height())))
+        return nullptr;
+
     std::unique_ptr<uint8_t[]> dstPixels = wrapArrayUnique(new uint8_t[input->width() * input->height() * info.bytesPerPixel()]);
     input->readPixels(info, dstPixels.get(), input->width() * info.bytesPerPixel(), 0, 0);
     return dstPixels;
@@ -90,6 +102,8 @@ static PassRefPtr<SkImage> premulSkImageToUnPremul(SkImage* input)
 {
     SkImageInfo info = SkImageInfo::Make(input->width(), input->height(), kN32_SkColorType, kUnpremul_SkAlphaType);
     std::unique_ptr<uint8_t[]> dstPixels = copySkImageData(input, info);
+    if (!dstPixels)
+        return nullptr;
     return newSkImageFromRaster(info, std::move(dstPixels), input->width() * info.bytesPerPixel());
 }
 
@@ -97,6 +111,8 @@ static PassRefPtr<SkImage> unPremulSkImageToPremul(SkImage* input)
 {
     SkImageInfo info = SkImageInfo::Make(input->width(), input->height(), kN32_SkColorType, kPremul_SkAlphaType);
     std::unique_ptr<uint8_t[]> dstPixels = copySkImageData(input, info);
+    if (!dstPixels)
+        return nullptr;
     return newSkImageFromRaster(info, std::move(dstPixels), input->width() * info.bytesPerPixel());
 }
 
@@ -119,10 +135,14 @@ PassRefPtr<SkImage> ImageBitmap::getSkImageFromDecoder(std::unique_ptr<ImageDeco
 // in the same format, then we don't need to use the ImageDecoder to decode the image.
 static PassRefPtr<StaticBitmapImage> cropImage(Image* image, const IntRect& cropRect, bool flipY, bool premultiplyAlpha, AlphaDisposition imageFormat = PremultiplyAlpha, ImageDecoder::GammaAndColorProfileOption colorSpaceOp = ImageDecoder::GammaAndColorProfileApplied)
 {
-    ASSERT(image);
+    if (dstBufferSizeHasOverflow(cropRect))
+        return nullptr;
 
+    ASSERT(image);
     IntRect imgRect(IntPoint(), IntSize(image->width(), image->height()));
     const IntRect srcRect = intersection(imgRect, cropRect);
+    if (dstBufferSizeHasOverflow(imgRect))
+        return nullptr;
 
     // In the case when cropRect doesn't intersect the source image and it requires a umpremul image
     // We immediately return a transparent black image with cropRect.size()
@@ -176,7 +196,7 @@ static PassRefPtr<StaticBitmapImage> cropImage(Image* image, const IntRect& crop
         skiaImage = flipSkImageVertically(skiaImage.get(), PremultiplyAlpha);
 
     if (premultiplyAlpha) {
-        if (imageFormat == PremultiplyAlpha)
+        if (imageFormat == DontPremultiplyAlpha)
             return StaticBitmapImage::create(unPremulSkImageToPremul(skiaImage.get()));
         return StaticBitmapImage::create(skiaImage.release());
     }
@@ -188,6 +208,8 @@ ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect, Docum
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect))
+        return;
 
     if (options.colorSpaceConversion() == "none")
         m_image = cropImage(image->cachedImage()->getImage(), cropRect, flipY, premultiplyAlpha, PremultiplyAlpha, ImageDecoder::GammaAndColorProfileIgnored);
@@ -204,6 +226,8 @@ ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect, Docum
         surface->getCanvas()->drawImage(skImage.get(), 0, 0);
         m_image = StaticBitmapImage::create(fromSkSp(surface->makeImageSnapshot()));
     }
+    if (!m_image)
+        return;
     m_image->setOriginClean(!image->wouldTaintOrigin(document->getSecurityOrigin()));
     m_image->setPremultiplied(premultiplyAlpha);
 }
@@ -226,6 +250,8 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect, Docum
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect) || dstBufferSizeHasOverflow(videoRect))
+        return;
 
     if (flipY || !premultiplyAlpha) {
         RefPtr<SkImage> skiaImage = buffer->newSkImageSnapshot(PreferNoAcceleration, SnapshotReasonUnknown);
@@ -233,6 +259,8 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect, Docum
             skiaImage = flipSkImageVertically(skiaImage.get(), PremultiplyAlpha);
         if (!premultiplyAlpha)
             skiaImage = premulSkImageToUnPremul(skiaImage.get());
+        if (!skiaImage)
+            return;
         m_image = StaticBitmapImage::create(skiaImage.release());
     } else {
         m_image = StaticBitmapImage::create(buffer->newSkImageSnapshot(PreferNoAcceleration, SnapshotReasonUnknown));
@@ -247,6 +275,8 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect, con
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect))
+        return;
 
     // canvas is always premultiplied, so set the last parameter to true and convert to un-premul later
     m_image = cropImage(canvas->copiedImage(BackBuffer, PreferAcceleration).get(), cropRect, flipY, true);
@@ -254,6 +284,8 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect, con
         return;
     if (!premultiplyAlpha)
         m_image = StaticBitmapImage::create(premulSkImageToUnPremul(m_image->imageForCurrentFrame().get()));
+    if (!m_image)
+        return;
     m_image->setOriginClean(canvas->originClean());
     m_image->setPremultiplied(premultiplyAlpha);
 }
@@ -264,6 +296,8 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect, const ImageBi
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect) || dstBufferSizeHasOverflow(IntRect(IntPoint(), data->size())))
+        return;
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), data->size()));
 
     // treat non-premultiplyAlpha as a special case
@@ -316,6 +350,8 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect, const ImageBi
             }
             m_image = StaticBitmapImage::create(newSkImageFromRaster(info, std::move(copiedDataBuffer), dstPixelBytesPerRow));
         }
+        if (!m_image)
+            return;
         m_image->setPremultiplied(premultiplyAlpha);
         m_image->setOriginClean(isImageDataOriginClean);
         return;
@@ -347,6 +383,8 @@ ImageBitmap::ImageBitmap(ImageBitmap* bitmap, const IntRect& cropRect, const Ima
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect))
+        return;
     m_image = cropImage(bitmap->bitmapImage(), cropRect, flipY, premultiplyAlpha, bitmap->isPremultiplied() ? PremultiplyAlpha : DontPremultiplyAlpha);
     if (!m_image)
         return;
@@ -359,9 +397,12 @@ ImageBitmap::ImageBitmap(PassRefPtr<StaticBitmapImage> image, const IntRect& cro
     bool flipY;
     bool premultiplyAlpha;
     parseOptions(options, flipY, premultiplyAlpha);
-    m_image = cropImage(image.get(), cropRect, flipY, premultiplyAlpha, DontPremultiplyAlpha);
+    if (dstBufferSizeHasOverflow(cropRect))
+        return;
+    m_image = cropImage(image.get(), cropRect, flipY, premultiplyAlpha);
     if (!m_image)
         return;
+
     m_image->setOriginClean(image->originClean());
     m_image->setPremultiplied(premultiplyAlpha);
 }
