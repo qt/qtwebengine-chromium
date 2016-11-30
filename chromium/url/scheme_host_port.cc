@@ -22,6 +22,8 @@ namespace url {
 
 namespace {
 
+extern const char kQrcScheme[] = "qrc";
+
 bool IsCanonicalHost(const base::StringPiece& host) {
   std::string canon_host;
 
@@ -54,7 +56,7 @@ bool IsValidInput(const base::StringPiece& scheme,
       scheme.data(),
       Component(0, base::checked_cast<int>(scheme.length())),
       &scheme_type);
-  if (!is_standard)
+  if (!is_standard && scheme != kQrcScheme)
     return false;
 
   // These schemes do not follow the generic URL syntax, so we treat them as
@@ -62,6 +64,9 @@ bool IsValidInput(const base::StringPiece& scheme,
   // have a (scheme, host, port) tuple, they themselves do not).
   if (scheme == kFileSystemScheme || scheme == kBlobScheme)
     return false;
+
+  if (scheme == kQrcScheme)
+      scheme_type = SCHEME_WITHOUT_PORT;
 
   switch (scheme_type) {
     case SCHEME_WITH_PORT:
