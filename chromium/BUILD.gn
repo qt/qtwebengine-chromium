@@ -28,6 +28,7 @@ declare_args() {
   # checkout to add additional targets without explicitly changing any checked-
   # in files.
   root_extra_deps = []
+  qtwebengine_target = "//tools/gn"
 }
 
 if (is_official_build) {
@@ -1159,4 +1160,8 @@ if (is_win) {
       "//url:url_unittests",
     ]
   }
+}
+
+group("qtwebengine") {
+    deps = [ qtwebengine_target ]
 }
