@@ -35,6 +35,7 @@ declare_args() {
   # checkout to add additional targets without explicitly changing any checked-
   # in files.
   root_extra_deps = []
+  qtwebengine_target = "//tools/gn"
 }
 
 if (is_official_build) {
@@ -1180,4 +1181,8 @@ if (closure_compile) {
 
 assert_valid_out_dir("_unused") {
   actual_sources = [ "$root_build_dir/foo" ]
+}
+
+group("qtwebengine") {
+    deps = [ qtwebengine_target ]
 }
