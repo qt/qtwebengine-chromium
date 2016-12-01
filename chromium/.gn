@@ -277,31 +277,3 @@ no_check_targets = [
 #      using glob, and it's possible to mess it up without glob, but globs make
 #      this situation much easier to create. if the build always lists the
 #      files and passes them to a script, it will always be correct.
-
-exec_script_whitelist =
-    build_dotfile_settings.exec_script_whitelist +
-    angle_dotfile_settings.exec_script_whitelist +
-    [
-      # Whitelist entries for //build should go into
-      # //build/dotfile_settings.gni instead, so that they can be shared
-      # with other repos. The entries in this list should be only for files
-      # in the Chromium repo outside of //build.
-      "//build_overrides/build.gni",
-
-      "//chrome/android/webapk/shell_apk/prepare_upload_dir/BUILD.gn",
-
-      # TODO(dgn): Layer violation but breaks the build otherwise, see
-      # https://crbug.com/474506.
-      "//clank/java/BUILD.gn",
-      "//clank/native/BUILD.gn",
-
-      "//google_apis/BUILD.gn",
-      "//printing/BUILD.gn",
-
-      "//remoting/host/installer/linux/BUILD.gn",
-      "//remoting/remoting_version.gni",
-      "//remoting/host/installer/win/generate_clsids.gni",
-
-      "//tools/grit/grit_rule.gni",
-      "//tools/gritsettings/BUILD.gn",
-    ]
