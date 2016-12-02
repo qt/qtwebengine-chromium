@@ -172,8 +172,14 @@
         'text/CharacterPropertyDataGenerator.cpp',
       ],
       'dependencies': [
-        '../config.gyp:config',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc#host',
+      ],
+      'conditions': [
+        ['use_system_icu==1', {
+          'defines': [
+            'USING_SYSTEM_ICU',
+          ],
+        }],
       ],
     },
   ],
