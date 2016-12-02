@@ -23,7 +23,10 @@
 #include "libANGLE/validationES3.h"
 #include "libANGLE/queryconversions.h"
 
+#include "base/numerics/safe_conversions.h"
 #include "common/debug.h"
+#include "common/mathutil.h"
+#include "common/utilities.h"
 
 namespace gl
 {
@@ -1556,18 +1559,49 @@ void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintp
             return;
         }
 
-        if (readOffset < 0 || writeOffset < 0 || size < 0 ||
-            static_cast<unsigned int>(readOffset + size) > readBuffer->getSize() ||
-            static_cast<unsigned int>(writeOffset + size) > writeBuffer->getSize())
+        CheckedNumeric<GLintptr> checkedReadOffset(readOffset);
+        CheckedNumeric<GLintptr> checkedWriteOffset(writeOffset);
+        CheckedNumeric<GLintptr> checkedSize(size);
+        auto checkedReadSum  = checkedReadOffset + checkedSize;
+        auto checkedWriteSum = checkedWriteOffset + checkedSize;
+
+        if (!checkedReadSum.IsValid() || !checkedWriteSum.IsValid() ||
+            !IsValueInRangeForNumericType<GLintptr>(readBuffer->getSize()) ||
+            !IsValueInRangeForNumericType<GLintptr>(writeBuffer->getSize()))
         {
             context->handleError(Error(GL_INVALID_VALUE));
             return;
         }
 
-        if (readBuffer == writeBuffer && std::abs(readOffset - writeOffset) < size)
+        if (readOffset < 0 || writeOffset < 0 || size < 0)
         {
             context->handleError(Error(GL_INVALID_VALUE));
             return;
+        }
+
+        if (checkedReadSum.ValueOrDie() > readBuffer->getSize() ||
+            checkedWriteSum.ValueOrDie() > writeBuffer->getSize())
+        {
+            context->handleError(Error(GL_INVALID_VALUE));
+            return;
+        }
+
+        if (readBuffer == writeBuffer)
+        {
+            auto checkedOffsetDiff = (checkedReadOffset - checkedWriteOffset).Abs();
+            if (!checkedOffsetDiff.IsValid())
+            {
+                // This shold not be possible.
+                UNREACHABLE();
+                context->handleError(Error(GL_INVALID_VALUE));
+                return;
+            }
+
+            if (checkedOffsetDiff.ValueOrDie() < size)
+            {
+                context->handleError(Error(GL_INVALID_VALUE));
+                return;
+            }
         }
 
         // if size is zero, the copy is a successful no-op
