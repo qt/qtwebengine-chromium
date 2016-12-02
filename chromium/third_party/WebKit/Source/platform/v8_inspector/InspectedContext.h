@@ -42,8 +42,6 @@ public:
 private:
     friend class V8DebuggerImpl;
     InspectedContext(V8DebuggerImpl*, const V8ContextInfo&, int contextId);
-    static void weakCallback(const v8::WeakCallbackInfo<InspectedContext>&);
-    static void consoleWeakCallback(const v8::WeakCallbackInfo<InspectedContext>&);
 
     V8DebuggerImpl* m_debugger;
     v8::Global<v8::Context> m_context;

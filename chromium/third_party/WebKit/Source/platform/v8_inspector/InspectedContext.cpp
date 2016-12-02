@@ -13,21 +13,22 @@
 
 namespace blink {
 
-void InspectedContext::weakCallback(const v8::WeakCallbackInfo<InspectedContext>& data)
-{
-    InspectedContext* context = data.GetParameter();
-    if (!context->m_context.IsEmpty()) {
-        context->m_context.Reset();
-        data.SetSecondPassCallback(&InspectedContext::weakCallback);
-    } else {
-        context->m_debugger->discardInspectedContext(context->m_contextGroupId, context->m_contextId);
-    }
-}
+namespace {
 
-void InspectedContext::consoleWeakCallback(const v8::WeakCallbackInfo<InspectedContext>& data)
-{
-    data.GetParameter()->m_console.Reset();
-}
+    void clearContext(const v8::WeakCallbackInfo<v8::Global<v8::Context>>& data) {
+        // Inspected context is created in V8InspectorImpl::contextCreated method
+        // and destroyed in V8InspectorImpl::contextDestroyed.
+        // Both methods takes valid v8::Local<v8::Context> handle to the same context,
+        // it means that context is created before InspectedContext constructor and is
+        // always destroyed after InspectedContext destructor therefore this callback
+        // should be never called.
+        // It's possible only if inspector client doesn't call contextDestroyed which
+        // is considered an error.
+        CHECK(false);
+        data.GetParameter()->Reset();
+    }
+    
+} // namespace
 
 InspectedContext::InspectedContext(V8DebuggerImpl* debugger, const V8ContextInfo& info, int contextId)
     : m_debugger(debugger)
@@ -40,7 +41,7 @@ InspectedContext::InspectedContext(V8DebuggerImpl* debugger, const V8ContextInfo
     , m_frameId(info.frameId)
     , m_reported(false)
 {
-    m_context.SetWeak(this, &InspectedContext::weakCallback, v8::WeakCallbackType::kParameter);
+    m_context.SetWeak(&m_context, &clearContext, v8::WeakCallbackType::kParameter);
 
     v8::Isolate* isolate = m_debugger->isolate();
     v8::Local<v8::Object> global = info.context->Global();
@@ -48,12 +49,12 @@ InspectedContext::InspectedContext(V8DebuggerImpl* debugger, const V8ContextInfo
     if (!global->Set(info.context, toV8StringInternalized(isolate, "console"), console).FromMaybe(false))
         return;
     m_console.Reset(isolate, console);
-    m_console.SetWeak(this, &InspectedContext::consoleWeakCallback, v8::WeakCallbackType::kParameter);
+    m_console.SetWeak();
 }
 
 InspectedContext::~InspectedContext()
 {
-    if (!m_context.IsEmpty() && !m_console.IsEmpty()) {
+    if (!m_context.IsEmpty()) {
         v8::HandleScope scope(isolate());
         V8Console::clearInspectedContextIfNeeded(context(), m_console.Get(isolate()));
     }
