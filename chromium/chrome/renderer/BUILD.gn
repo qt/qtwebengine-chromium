@@ -157,12 +157,12 @@ static_library("renderer") {
     if (!is_android) {
       deps += [ "//third_party/hunspell" ]
     }
+    if (!use_browser_spellchecker) {
+      sources -= [
+        "spellchecker/platform_spelling_engine.cc",
+        "spellchecker/platform_spelling_engine.h",
+      ]
   }
-  if (!use_browser_spellchecker) {
-    sources -= [
-      "spellchecker/platform_spelling_engine.cc",
-      "spellchecker/platform_spelling_engine.h",
-    ]
   }
   if (enable_basic_printing || enable_print_preview) {
     deps += [ "//printing" ]
