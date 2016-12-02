@@ -41,12 +41,15 @@ namespace content {
 // |full_path| : is the path to the downloaded file. This should be the final
 //               path of the download. Must be present.
 // |source_url|: the source URL for the download. If empty, the source will
-//               not be set.
+//               be set to 'about:internet'.
+// |referrer_url|: the referrer URL for the download. If empty, the referrer
+//               will not be set.
 // |client_guid|: the GUID to be set in the IAttachmentExecute client slot.
 //                Used to identify the app to the system AV function.
 //                If GUID_NULL is passed, no client GUID is set.
 HRESULT AVScanFile(const base::FilePath& full_path,
                    const std::string& source_url,
+                   const std::string& referrer_url,
                    const GUID& client_guid);
 }  // namespace content
 
