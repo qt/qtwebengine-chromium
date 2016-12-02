@@ -4,6 +4,7 @@
 
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <wininet.h>
 
 #include "content/browser/safe_util_win.h"
 
@@ -53,6 +54,7 @@ bool SetInternetZoneIdentifierDirectly(const base::FilePath& full_path) {
 
 HRESULT AVScanFile(const base::FilePath& full_path,
                    const std::string& source_url,
+                   const std::string& referrer_url,
                    const GUID& client_guid) {
   base::win::ScopedComPtr<IAttachmentExecute> attachment_services;
   HRESULT hr = attachment_services.CreateInstance(CLSID_AttachmentServices);
@@ -68,6 +70,10 @@ HRESULT AVScanFile(const base::FilePath& full_path,
     return hr;
   }
 
+  // Note that it is mandatory to check the return values from here on out. If
+  // setting one of the parameters fails, it could leave the object in a state
+  // where the final Save() call will also fail.
+
   if (!IsEqualGUID(client_guid, GUID_NULL)) {
     hr = attachment_services->SetClientGuid(client_guid);
     if (FAILED(hr))
@@ -78,12 +84,30 @@ HRESULT AVScanFile(const base::FilePath& full_path,
   if (FAILED(hr))
     return hr;
 
-  // Note: SetSource looks like it needs to be called, even if empty.
-  // Docs say it is optional, but it appears not calling it at all sets
-  // a zone that is too restrictive.
-  hr = attachment_services->SetSource(base::UTF8ToWide(source_url).c_str());
+  // The source URL could be empty if it was not a valid URL or was not HTTP/S.
+  // If so, user "about:internet" as a fallback URL. The latter is known to
+  // reliably map to the Internet zone.
+  //
+  // In addition, URLs that are longer than INTERNET_MAX_URL_LENGTH are also
+  // known to cause problems for URLMon. Hence also use "about:internet" in
+  // these cases. See http://crbug.com/601538.
+  hr = attachment_services->SetSource(
+      source_url.empty() || source_url.size() > INTERNET_MAX_URL_LENGTH
+          ? L"about:internet"
+          : base::UTF8ToWide(source_url).c_str());
   if (FAILED(hr))
     return hr;
+
+  // Only set referrer if one is present and shorter than
+  // INTERNET_MAX_URL_LENGTH. Also, the source_url is authoritative for
+  // determining the relative danger of |full_path| so we don't consider it an
+  // error if we have to skip the |referrer_url|.
+  if (!referrer_url.empty() && referrer_url.size() < INTERNET_MAX_URL_LENGTH) {
+    hr = attachment_services->SetReferrer(
+        base::UTF8ToWide(referrer_url).c_str());
+    if (FAILED(hr))
+      return false;
+  }
 
   // A failure in the Save() call below could result in the downloaded file
   // being deleted.

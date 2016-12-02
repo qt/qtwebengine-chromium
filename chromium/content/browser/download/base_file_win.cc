@@ -316,6 +316,35 @@ DownloadInterruptReason MapScanAndSaveErrorCodeToInterruptReason(
   }
 }
 
+// Given a source and a referrer, determines the "safest" URL that can be used
+// to determine the authority of the download source. Returns an empty URL if no
+// HTTP/S URL can be determined for the <|source_url|, |referrer_url|> pair.
+GURL GetEffectiveAuthorityURL(const GURL& source_url,
+                              const GURL& referrer_url) {
+  if (source_url.is_valid()) {
+    // http{,s} has an authority and are supported.
+    if (source_url.SchemeIsHTTPOrHTTPS())
+      return source_url;
+
+    // If the download source is file:// ideally we should copy the MOTW from
+    // the original file, but given that Chrome/Chromium places strict
+    // restrictions on which schemes can reference file:// URLs, this code is
+    // going to assume that at this point it's okay to treat this download as
+    // being from the local system.
+    if (source_url.SchemeIsFile())
+      return source_url;
+
+    // ftp:// has an authority.
+    if (source_url.SchemeIs(url::kFtpScheme))
+      return source_url;
+  }
+
+  if (referrer_url.is_valid() && referrer_url.SchemeIsHTTPOrHTTPS())
+    return referrer_url;
+
+  return GURL();
+}
+
 } // namespace
 
 // Renames a file using the SHFileOperation API to ensure that the target file
@@ -367,7 +396,10 @@ DownloadInterruptReason BaseFile::AnnotateWithSourceInformation() {
       guid = GUID_NULL;
   }
 
-  HRESULT hr = AVScanFile(full_path_, source_url_.spec(), guid);
+  HRESULT hr = AVScanFile(full_path_,
+                          GetEffectiveAuthorityURL(source_url_, referrer_url_).spec(),
+                          referrer_url_.spec(),
+                          guid);
 
   // If the download file is missing after the call, then treat this as an
   // interrupted download.
