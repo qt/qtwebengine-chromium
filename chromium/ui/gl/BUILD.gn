@@ -202,7 +202,7 @@ component("gl") {
     }
   }
 
-  if (ozone_platform_x11) {
+  if (ozone_platform_x11 && !is_qtwebengine) {
     sources += [
       "gl_surface_egl_x11.cc",
       "gl_surface_egl_x11.h",
@@ -382,6 +382,13 @@ component("gl") {
 
   if (is_linux || is_chromeos) {
     deps += [ "//third_party/angle:angle_gpu_info_util" ]
+  }
+
+  if (is_qtwebengine) {
+    data_deps -= [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
   }
 }
 

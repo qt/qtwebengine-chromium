@@ -1404,6 +1404,9 @@ config("features") {
   if (v8_lower_limits_mode) {
     defines += [ "V8_LOWER_LIMITS_MODE" ]
   }
+  if (is_qtwebengine) {
+    defines += [ "V8_TLS_USED_IN_LIBRARY" ]
+  }
 }
 
 config("toolchain") {

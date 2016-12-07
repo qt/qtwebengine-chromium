@@ -142,6 +142,13 @@ declare_args() {
               current_cpu != "mips" && current_cpu != "mips64" &&
               current_cpu != "riscv64")
 
+  # Helpers set from qt
+  is_mingw = false
+  is_msvc = false
+  is_gcc = false
+  is_qtwebengine = false
+  is_qtpdf = false
+
   # Allows the path to a custom target toolchain to be injected as a single
   # argument, and set as the default toolchain.
   custom_toolchain = ""
@@ -172,6 +179,11 @@ declare_args() {
   # https://chromium.googlesource.com/chromium/src/+/main/docs/component_build.md
   is_component_build =
       is_debug && current_os != "ios" && current_os != "watchos"
+}
+
+declare_args() {
+  # Shared library build
+  is_shared = is_component_build
 }
 
 assert(!(is_debug && is_official_build), "Can't do official debug builds")

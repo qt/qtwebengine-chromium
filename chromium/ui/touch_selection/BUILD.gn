@@ -40,7 +40,7 @@ component("touch_selection") {
     "//ui/gfx/geometry",
   ]
 
-  if (use_aura) {
+  if (use_aura && toolkit_views) {
     deps += [
       "//cc/paint",
       "//skia:skia",

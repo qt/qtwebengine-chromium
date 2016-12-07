@@ -29,7 +29,9 @@
 #include "ui/linux/linux_ui_delegate.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "ui/strings/grit/ui_strings.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_linux.h"
+#endif
 #include "url/gurl.h"
 #include "url/url_util.h"
 
@@ -192,6 +194,7 @@ void SelectFileDialogLinuxPortal::SelectFileImpl(
   type_ = type;
   invoker_task_runner_ = base::SequencedTaskRunner::GetCurrentDefault();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (owning_window) {
     if (auto* root = owning_window->GetRootWindow()) {
       if (auto* host = root->GetNativeWindowProperty(
@@ -200,6 +203,7 @@ void SelectFileDialogLinuxPortal::SelectFileImpl(
       }
     }
   }
+#endif
 
   if (file_types) {
     set_file_types(*file_types);
@@ -531,9 +535,11 @@ void SelectFileDialogLinuxPortal::DialogCreatedOnInvoker() {
     return;
   }
   host_->ReleaseCapture();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   reenable_window_event_handling_ =
       static_cast<views::DesktopWindowTreeHostLinux*>(host_.get())
           ->DisableEventListening();
+#endif
 }
 
 void SelectFileDialogLinuxPortal::CompleteOpenOnInvoker(

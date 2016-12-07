@@ -30,14 +30,14 @@ declare_args() {
   #   (which may be used outside of Chromium build)
   # * `enable_rust` should *not* be consulted in other Chromium directories
   #   (including `//base`, `//net`, etc.)
-  enable_rust = build_with_chromium
+  enable_rust = build_with_chromium && !is_qtwebengine
 
   # The CXX tool is in //third_party/rust which is not shared with downstream
   # projects yet. So they need to copy the required dependencies and GN files
   # into their project to enable CXX there.
   #
   # We do not support disabling this flag in Chromium code.
-  enable_rust_cxx = build_with_chromium
+  enable_rust_cxx = build_with_chromium && !is_qtwebengine
 
   # The chromium prelude crate provides the `chromium::import!` macro which
   # is needed to depend on first-party rust libraries. Third-party libraries
@@ -51,7 +51,7 @@ declare_args() {
   # Chromium, and is also discouraged for downstream projects when possible.
   #
   # We do not support disabling this flag in Chromium code.
-  enable_chromium_prelude = build_with_chromium
+  enable_chromium_prelude = build_with_chromium && !is_qtwebengine
 
   # Chromium provides a Rust toolchain in //third_party/rust-toolchain.
   #

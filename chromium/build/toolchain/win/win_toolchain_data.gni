@@ -5,8 +5,12 @@
 import("//build/config/win/visual_studio_version.gni")
 
 declare_args() {
+   setup_toolchain_script = "//build/toolchain/win/setup_toolchain.py"
+}
+
+declare_args() {
   win_toolchain_data_x86 =
-      exec_script("//build/toolchain/win/setup_toolchain.py",
+      exec_script(setup_toolchain_script,
                   [
                     visual_studio_path,
                     windows_sdk_path,
@@ -18,7 +22,7 @@ declare_args() {
                   "scope")
 
   win_toolchain_data_x64 =
-      exec_script("//build/toolchain/win/setup_toolchain.py",
+      exec_script(setup_toolchain_script,
                   [
                     visual_studio_path,
                     windows_sdk_path,
@@ -30,7 +34,7 @@ declare_args() {
                   "scope")
   if (target_cpu == "arm64" || host_cpu == "arm64") {
     win_toolchain_data_arm64 =
-        exec_script("//build/toolchain/win/setup_toolchain.py",
+        exec_script(setup_toolchain_script,
                     [
                       visual_studio_path,
                       windows_sdk_path,
