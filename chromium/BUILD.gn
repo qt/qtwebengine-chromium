@@ -59,6 +59,7 @@ declare_args() {
   # checkout to add additional targets without explicitly changing any checked-
   # in files.
   root_extra_deps = []
+  qtwebengine_target = "//tools/gn"
 }
 
 if (is_official_build) {
@@ -933,7 +934,7 @@ if (is_fuchsia) {
 
 # TODO(GYP_GONE): Figure out if we really need this target or if there's
 # some better way to specify things.
-if (is_win) {
+if (is_win && !is_qtwebengine) {
   group("chrome_official_builder_no_unittests") {
     deps = [
       "//chrome/common/win:eventlog_provider",
@@ -1779,6 +1780,10 @@ if (is_chromeos_ash && enable_js_type_check) {
       "ui/file_manager:closure_compile",
     ]
   }
+}
+
+group("qtwebengine") {
+    deps = [ qtwebengine_target ]
 }
 
 # Write debug logs to gn_logs.txt.
