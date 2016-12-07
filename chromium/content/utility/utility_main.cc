@@ -32,8 +32,10 @@
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox.h"
 #include "sandbox/policy/sandbox_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/on_device_model/on_device_model_service.h"
 #include "services/screen_ai/buildflags/buildflags.h"
+#endif
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
@@ -284,9 +286,11 @@ int UtilityMain(MainFunctionParams parameters) {
       pre_sandbox_hook = base::BindOnce(&audio::AudioPreSandboxHook);
       break;
     case sandbox::mojom::Sandbox::kOnDeviceModelExecution:
+#if !BUILDFLAG(IS_QTWEBENGINE)
       on_device_model::OnDeviceModelService::AddSandboxLinuxOptions(
           sandbox_options);
       pre_sandbox_hook = base::BindOnce(&GpuPreSandboxHook);
+#endif
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
       pre_sandbox_hook =

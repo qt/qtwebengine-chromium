@@ -24,6 +24,9 @@ import("//build/toolchain/rbe.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
 
+# Import features.gni for the "is_qtwebengine" argument to be available.
+import("//build/config/features.gni")
+
 if (current_cpu == "arm" || current_cpu == "arm64") {
   import("//build/config/arm.gni")
 }
@@ -386,6 +389,12 @@ config("compiler") {
     if (fatal_linker_warnings && is_apple) {
       ldflags += [ "-Wl,-fatal_warnings" ]
     }
+  }
+
+  if (is_qtwebengine && is_clang) {
+    cflags += [
+      "-Wno-unknown-warning-option"
+    ]
   }
 
   if (is_clang && is_debug) {
@@ -2010,7 +2019,7 @@ config("chromium_code") {
       if (is_chromeos_device && !lacros_use_chromium_toolchain) {
         fortify_level = "3"
       }
-      defines += [ "_FORTIFY_SOURCE=" + fortify_level ]
+      cflags += [ "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=" + fortify_level ]
     }
 
     if (is_apple) {
