@@ -56,6 +56,8 @@ declare_args() {
               current_toolchain == default_toolchain
 
   use_gio = is_linux && !is_chromeos && !is_chromecast
+
+  use_qt = false
 }
 #
 # =============================================
