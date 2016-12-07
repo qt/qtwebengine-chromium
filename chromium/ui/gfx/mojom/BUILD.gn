@@ -490,8 +490,10 @@ component("shared_mojom_traits") {
     "//skia/public/mojom",
     "//ui/base:ozone_buildflags",
   ]
-  frameworks = [
-    "CoreFoundation.framework",
-    "IOSurface.framework",
-  ]
+  if (is_apple) {
+    frameworks = [
+      "CoreFoundation.framework",
+      "IOSurface.framework",
+    ]
+  }
 }

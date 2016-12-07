@@ -1759,7 +1759,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/web_applications:prevent_close_test_support",
       "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/browser/web_applications/extensions",
-      "//chrome/browser/webaudio:browser_tests",
       "//chrome/common:version_header",
       "//chrome/common/companion/visual_query:flags",
       "//chrome/common/privacy_budget:test_support",
@@ -3990,11 +3989,11 @@ if (!is_android && !is_fuchsia) {
           "//media/test/data/id3_png_test.mp3",
         ]
       }
-
       deps += [
         "//build:chromeos_buildflags",
         "//chrome/browser/devtools:test_support",
         "//chrome/browser/extensions:test_support",
+        "//chrome/browser/web_applications:browser_tests",
         "//chrome/common/extensions/api",
         "//chrome/services/media_gallery_util/public/cpp:browser_tests",
         "//components/content_settings/core/test:test_support",
@@ -6017,7 +6016,7 @@ template("performance_test_suite_template_base") {
       data_deps += [ "//third_party/dawn/src/dawn/tests:dawn_perf_tests" ]
     }
 
-    if (!is_chromeos_lacros) {
+    if (!is_chromeos_lacros && !is_qtwebengine) {
       data_deps += [ "//third_party/angle/src/tests:angle_perftests" ]
     }
 
@@ -10759,7 +10758,7 @@ if (!is_android) {
 # Interactive UI test target can't run on ChromeOS device. See
 # //docs/testing/chromeos_integration for how to create an integration
 # test that works on ChromeOS VM/Device.
-if (!is_android && !is_chromeos_device && !is_fuchsia) {
+if (!is_android && !is_chromeos_device && !is_fuchsia && !is_qtwebengine) {
   test("interactive_ui_tests") {
     use_xvfb = use_xvfb_in_this_config
 
@@ -12621,7 +12620,7 @@ if (is_chromeos_ash) {
   }
 }
 
-if (is_linux || is_mac || is_win) {
+if ((is_linux || is_mac || is_win) && !is_qtwebengine) {
   script_test("variations_smoke_tests") {
     if (is_linux) {
       script = "//testing/xvfb.py"

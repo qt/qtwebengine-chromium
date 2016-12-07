@@ -18,6 +18,7 @@
 
 namespace content {
 
+#if !defined(TOOLKIT_QT)
 base::Value::List GetFontList_SlowBlocking() {
   TRACE_EVENT0("fonts", "GetFontList_SlowBlocking");
 
@@ -68,5 +69,6 @@ base::Value::List GetFontList_SlowBlocking() {
   std::sort(font_list.begin(), font_list.end());
   return font_list;
 }
+#endif
 
 }  // namespace content

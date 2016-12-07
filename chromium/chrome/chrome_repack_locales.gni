@@ -117,5 +117,15 @@ template("chrome_repack_locales") {
     if (defined(invoker.additional_source_patterns)) {
       source_patterns += invoker.additional_source_patterns
     }
+
+    if (is_qtwebengine) {
+      source_patterns -= [
+        "${root_gen_dir}/components/omnibox/resources/omnibox_pedal_synonyms_",
+      ]
+
+      deps -= [
+        "//components/omnibox/resources:omnibox_pedal_synonyms",
+      ]
+    }
   }
 }

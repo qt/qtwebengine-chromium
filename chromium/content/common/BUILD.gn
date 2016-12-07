@@ -454,7 +454,6 @@ source_set("common") {
       "//sandbox/linux:sandbox_services",
       "//sandbox/linux:seccomp_bpf",
       "//sandbox/policy:chromecast_sandbox_allowlist_buildflags",
-      "//third_party/fontconfig",
     ]
     if (use_v4l2_codec) {
       deps += [ "//media/gpu/v4l2" ]
@@ -468,8 +467,10 @@ source_set("common") {
     ]
   }
 
-  if (is_mac || is_win || is_android || is_fuchsia || is_ios) {
+  if (is_mac || is_win || is_android || is_fuchsia || is_ios || is_qtwebengine) {
     sources -= [ "font_list_fontconfig.cc" ]
+  } else {
+    deps += [ "//third_party/fontconfig" ]
   }
 
   if (enable_ppapi) {

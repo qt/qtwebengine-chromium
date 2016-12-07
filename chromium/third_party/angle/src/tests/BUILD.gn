@@ -10,12 +10,12 @@ declare_args() {
   build_angle_gles1_conform_tests = checkout_angle_internal
   build_angle_trace_perf_tests = false
   build_angle_perftests =
-      is_win || is_linux || is_chromeos || is_android || is_apple || is_fuchsia
+      (is_win || is_linux || is_chromeos || is_android || is_apple || is_fuchsia) && !is_qtwebengine
 }
 
 declare_args() {
   build_angle_trace_tests = is_clang && (build_angle_trace_perf_tests ||
-                                         checkout_angle_restricted_traces)
+                                         checkout_angle_restricted_traces) && !is_qtwebengine
   if (!build_with_chromium && is_android) {
     assert(
         !is_official_build,
@@ -1901,5 +1901,9 @@ group("angle_tests") {
     if (!is_win && !is_apple) {
       deps += [ ":angle_gles1_covgl_tests" ]
     }
+  }
+
+  if (is_qtwebengine) {
+    deps = []
   }
 }
