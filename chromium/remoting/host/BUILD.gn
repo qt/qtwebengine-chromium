@@ -687,7 +687,9 @@ static_library("common") {
       "linux/certificate_watcher.h",
     ]
 
-    deps += [ "//build/config/linux/gtk" ]
+    if (use_gtk) {
+      deps += [ "//build/config/linux/gtk" ]
+    }
 
     if (remoting_use_x11) {
       deps += [ "linux:x11" ]
@@ -705,8 +707,13 @@ static_library("common") {
       "//ui/base/x",
       "//ui/events/platform/x11",
       "//ui/gfx/x",
-      "//ui/gtk:gtk_config",
     ]
+    if (use_gtk) {
+      deps += [
+        "//build/config/linux/gtk",
+        "//ui/gtk:gtk_config",
+      ]
+    }
     public_configs = [ ":xkbcommon" ]
   }
 
@@ -1030,9 +1037,11 @@ source_set("unit_tests") {
   }
 
   if (is_linux) {
+    if (use_gtk) {
+      deps += [ "//ui/gtk:gtk_config" ]
+    }
     deps += [
       "//components/dbus",
-      "//ui/gtk:gtk_config",
     ]
   }
 
@@ -1309,7 +1318,7 @@ if (enable_me2me_host) {
         "//remoting/host/linux:platform_impls",
         "//ui/events/platform/x11",
       ]
-      if (is_linux) {
+      if (is_linux && use_gtk) {
         deps += [ "//ui/gtk:gtk_config" ]
       }
     }
@@ -1325,7 +1334,7 @@ if (enable_me2me_host) {
       deps += [ "//components/policy:generated" ]
     }
 
-    if (is_linux) {
+    if (use_gtk) {
       deps += [ "//build/config/linux/gtk" ]
     }
 

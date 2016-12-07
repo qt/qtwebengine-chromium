@@ -37,6 +37,13 @@ source_set("common") {
     "//ui/ozone:ozone_base",
   ]
 
+  if (is_qtwebengine) {
+    sources -= [
+      "gl_surface_egl_readback.cc",
+      "gl_surface_egl_readback.h",
+    ]
+  }
+
   deps = [
     "//components/viz/common/resources:shared_image_format",
     "//ui/gl",

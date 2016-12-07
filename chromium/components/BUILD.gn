@@ -1034,6 +1034,12 @@ test("components_unittests") {
     "RustStreamFramerFuzzTest.FeedDoesNotCrashOnArbitraryChunks",
     "TranslateUtilFuzzTest.GetTranslateSecurityOriginDoesNotCrash",
   ]
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/named_mojo_ipc_server:unit_tests",
+    ]
+  }
 }
 
 repack("components_tests_pak") {

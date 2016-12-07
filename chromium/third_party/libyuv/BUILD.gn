@@ -229,8 +229,12 @@ if (libyuv_use_neon) {
       # The -march arguments below are incompatible with libc++ modules.
       use_libcxx_modules = false
 
-      # TODO(thakis): Do we get this from global flags already? Is this needed?
-      cflags = [ "-march=armv8-a+dotprod+i8mm" ]
+      if(!is_qtwebengine || !is_linux) {
+        cflags = [ "-march=armv8-a+dotprod+i8mm" ]
+      }
+    } else {
+      configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+      cflags = [ "-mfpu=neon" ]
     }
   }
 }

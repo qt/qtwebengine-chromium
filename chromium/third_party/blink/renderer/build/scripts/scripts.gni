@@ -84,8 +84,12 @@ make_trie_helpers_files =
 # The executables are relative to the build directory. Don't rebase it because
 # on Posix we want to run the system one on the path.
 if (host_os == "win") {
-  # TODO: crbug.com/431264806 - Switch to CIPD package.
-  gperf_exe = "//third_party/gperf/bin/gperf.exe"
+  if (is_qtwebengine) {
+    gperf_exe = "gperf.exe"
+  } else {
+    # TODO: crbug.com/431264806 - Switch to CIPD package.
+    gperf_exe = "//third_party/gperf/bin/gperf.exe"
+  }
 } else if (is_ios) {
   # $ios_toolchains_path is a source absolute path under $root_build_dir.
   # GN complains since there is no target that generates it.
@@ -98,7 +102,7 @@ if (host_os == "win") {
                                "list lines")
   sdk_bin_path = find_sdk_lines[0]
   gperf_exe = "$sdk_bin_path/gperf"
-} else if (host_os == "mac") {
+} else if (host_os == "mac" && !is_qtwebengine) {
   # TODO(thakis): This should probably run in the host toolchain and check
   # is_mac instead of checking host_os.
   if (use_system_xcode) {
@@ -109,7 +113,11 @@ if (host_os == "win") {
   }
   gperf_exe = _mac_bin_path + "gperf"
 } else {
-  gperf_exe = "//third_party/gperf/cipd/bin/gperf"
+  if (is_qtwebengine) {
+    gperf_exe = "gperf"
+  } else {
+    gperf_exe = "//third_party/gperf/cipd/bin/gperf"
+  }
 }
 
 # Templates --------------------------------------------------------------------
@@ -273,11 +281,18 @@ template("css_properties") {
     if (defined(invoker.other_inputs)) {
       other_inputs += invoker.other_inputs
     }
-    other_args = [
-      "--gperf",
-      rebase_path(gperf_exe, root_build_dir),
-    ]
-    sources = [ gperf_exe ]
+    if (!is_qtwebengine) {
+      other_args = [
+        "--gperf",
+        rebase_path(gperf_exe, root_build_dir),
+      ]
+      sources = [ gperf_exe ]
+    } else {
+      other_args = [
+        "--gperf",
+        gperf_exe,
+      ]
+    }
 
     outputs = invoker.outputs
   }

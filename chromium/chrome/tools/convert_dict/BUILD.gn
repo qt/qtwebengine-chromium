@@ -6,7 +6,7 @@ import("//build/config/features.gni")
 
 source_set("lib") {
 
-  if (!use_qt) {
+  if (!is_qtwebengine) {
     # Production code shouldn't be depending on this.
     testonly = true
   }

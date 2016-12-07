@@ -273,6 +273,12 @@
 #define BUILDFLAG_INTERNAL_IS_OZONE() (0)
 #endif
 
+#if defined(TOOLKIT_QT)
+#define BUILDFLAG_INTERNAL_IS_QTWEBENGINE() (1)
+#else
+#define BUILDFLAG_INTERNAL_IS_QTWEBENGINE() (0)
+#endif
+
 #if __PTRAUTH__
 #define BUILDFLAG_INTERNAL_ARCH_CPU_PTRAUTH() (1)
 #else

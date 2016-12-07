@@ -1626,6 +1626,9 @@ config("features") {
       defines += [ "PA_ENABLE_USER_SPACE_ZERO_SEGMENT" ]
     }
   }
+  if (is_qtwebengine) {
+    defines += [ "V8_TLS_USED_IN_LIBRARY" ]
+  }
 }
 
 config("toolchain") {
