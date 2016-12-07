@@ -135,7 +135,7 @@ template("msvc_toolchain") {
           "${invoker.sys_include_flags} "  # Note trailing space.
     } else {
       # clang-cl doesn't need this env hoop, so omit it there.
-      assert(!toolchain_is_clang)
+      assert(!toolchain_is_clang || is_qtwebengine)
       env_wrapper = "ninja -t msvc -e $env -- "  # Note trailing space.
       sys_include_flags = ""
     }

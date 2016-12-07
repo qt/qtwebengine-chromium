@@ -30,7 +30,7 @@ source_set("unit_tests") {
     "//components/user_prefs/test:test_support",
     "//content/test:test_support",
     "//testing/gtest",
-    "//third_party/mediapipe",
+#    "//third_party/mediapipe",
   ]
 
   sources = [ "media_device_info_unittest.cc" ]

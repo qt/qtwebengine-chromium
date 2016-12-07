@@ -216,7 +216,7 @@ component("gl") {
     }
   }
 
-  if (ozone_platform_x11) {
+  if (ozone_platform_x11 && !is_qtwebengine) {
     sources += [
       "gl_surface_egl_x11.cc",
       "gl_surface_egl_x11.h",

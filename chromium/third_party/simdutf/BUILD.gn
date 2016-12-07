@@ -11,15 +11,19 @@ source_set("header") {
 source_set("simdutf") {
   sources = [ "simdutf.cpp" ]
   public_deps = [ ":header" ]
-  cflags_cc = [
-    "-Wno-unused-const-variable",
-    "-Wno-unused-function",
-  ]
+  cflags = []
+  cflags_cc = []
+  if (!is_msvc) {
+    cflags_cc += [
+      "-Wno-unused-const-variable",
+      "-Wno-unused-function",
+    ]
 
-  # TODO(crbug.com/483020951): Replace this with `-Wno-array-bounds-member` if
-  # that gets implemented. Then patch simdutf and remove this completely.
-  # Upstream issue: https://github.com/simdutf/simdutf/issues/938
-  cflags = [ "-Wno-array-bounds" ]
+    # TODO(crbug.com/483020951): Replace this with `-Wno-array-bounds-member` if
+    # that gets implemented. Then patch simdutf and remove this completely.
+    # Upstream issue: https://github.com/simdutf/simdutf/issues/938
+    cflags += [ "-Wno-array-bounds" ]
+  }
 
   defines = []
   if (!allow_avx512) {

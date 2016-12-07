@@ -636,7 +636,7 @@ if (is_win) {
 
   bundle_data("chrome_resources") {
     sources = [
-      "$root_out_dir/$chrome_mac_bundle_id.manifest",
+#      "$root_out_dir/$chrome_mac_bundle_id.manifest",
       "browser/ui/cocoa/applescript/scripting.sdef",
     ]
     outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
@@ -644,7 +644,7 @@ if (is_win) {
       ":chrome_app_icon",
       ":chrome_app_strings",
       ":chrome_asset_catalog",
-      "//components/policy:chrome_manifest_bundle",
+#      "//components/policy:chrome_manifest_bundle",
     ]
   }
 
