@@ -50,6 +50,7 @@ declare_args() {
   # checkout to add additional targets without explicitly changing any checked-
   # in files.
   root_extra_deps = []
+  qtwebengine_target = "//tools/gn"
 }
 
 if (is_official_build) {
@@ -127,7 +128,7 @@ group("gn_all") {
     ]
   }
 
-  if (!is_ios && !is_android && !is_chromecast && !is_fuchsia) {
+  if (!is_ios && !is_android && !is_chromecast && !is_fuchsia && !use_qt) {
     deps += [
       "//chrome",
       "//chrome/browser/ui/color:dump_colors",
@@ -224,7 +225,7 @@ group("gn_all") {
     ]
   }
 
-  if (is_win || (is_linux && !is_chromeos_lacros) || is_android) {
+  if ((is_win || (is_linux && !is_chromeos_lacros) || is_android) && !use_qt) {
     deps += [
       "//weblayer/shell:weblayer_shell",
       "//weblayer/test:weblayer_browsertests",
@@ -253,7 +254,7 @@ group("gn_all") {
     deps += [ "//chrome/browser/media/router:openscreen_unittests" ]
   }
 
-  if (!is_ios && !is_fuchsia) {
+  if (!is_ios && !is_fuchsia && !use_qt) {
     deps += [
       "//google_apis/gcm:mcs_probe",
       "//media/cast:cast_unittests",
@@ -267,7 +268,7 @@ group("gn_all") {
         deps += [ "//chrome/test:telemetry_perf_unittests${_target_suffix}" ]
       }
     }
-  } else if (is_ios) {
+  } else if (is_ios && !use_qt) {
     deps += [
       "//ios:all",
       "//third_party/crashpad/crashpad:crashpad_tests",
@@ -485,7 +486,7 @@ group("gn_all") {
     deps += [ "//chromeos:chromeos_unittests" ]
   }
 
-  if (is_chromeos_ash || is_mac || is_win) {
+  if ((is_chromeos_ash || is_mac || is_win) && !use_qt) {
     deps += [
       "//rlz:rlz_id",
       "//rlz:rlz_lib",
@@ -532,7 +533,7 @@ group("gn_all") {
 
   # TODO(GYP): Figure out which of these should (and can) build
   # for Chrome OS, iOS, and Fuchsia.
-  if (!is_chromeos_ash && !is_ios && !is_fuchsia) {
+  if (!is_chromeos_ash && !is_ios && !is_fuchsia && !use_qt) {
     deps += [
       "//base:build_utf8_validator_tables",
       "//base:check_example",
@@ -604,7 +605,7 @@ group("gn_all") {
     deps += [ "//chrome/test/chromedriver:chromedriver($host_toolchain)" ]
   }
 
-  if (is_android || (is_linux || is_chromeos_lacros)) {
+  if (is_android || ((is_linux || is_chromeos_lacros) && !use_qt)) {
     deps += [
       "//components/network_hints/browser",
       "//content/public/app",
@@ -685,7 +686,7 @@ group("gn_all") {
 
     # TODO(thakis): Enable this in cross builds, https://crbug.com/799827
     if (!(is_component_build && is_debug && target_cpu == "x86") &&
-        host_os == "win") {
+        host_os == "win" && !use_qt) {
       deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
     }
   } else if (!is_android && !is_ios && !is_fuchsia) {
@@ -917,7 +918,7 @@ if (is_fuchsia) {
 
 # TODO(GYP_GONE): Figure out if we really need this target or if there's
 # some better way to specify things.
-if (is_win) {
+if (is_win && !use_qt) {
   group("chrome_official_builder_no_unittests") {
     deps = [
       "//chrome/common/win:eventlog_provider",
@@ -1619,6 +1620,10 @@ if (enable_js_type_check) {
       data_deps += [ "components/offline_pages/resources:closure_compile" ]
     }
   }
+}
+
+group("qtwebengine") {
+    deps = [ qtwebengine_target ]
 }
 
 # Write debug logs to gn_logs.txt.

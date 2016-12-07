@@ -139,6 +139,7 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatform() {
   VSyncProviderWin::InitializeOneOff();
 
@@ -158,6 +159,7 @@ bool InitializeGLOneOffPlatform() {
   }
   return true;
 }
+#endif
 
 bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu

@@ -20,6 +20,7 @@
 import("//build/config/chromecast_build.gni")
 import("//build/config/chromeos/args.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 import("//build/config/ozone.gni")
 
 declare_args() {
@@ -38,13 +39,14 @@ declare_args() {
 assert(!use_glib || (is_linux && !is_chromecast))
 
 use_atk = is_linux && !is_chromecast && use_glib &&
-          current_toolchain == default_toolchain
+          current_toolchain == default_toolchain && !use_qt
 
 # Whether using Xvfb to provide a display server for a test might be
 # necessary.
 use_xvfb_in_this_config =
     is_linux || (is_chromeos_lacros && !is_chromeos_device)
 #
+
 # =============================================
 #   PLEASE DO NOT ADD MORE FLAGS TO THIS FILE
 # =============================================
