@@ -51,6 +51,8 @@ declare_args() {
   use_dbus = is_linux && !is_chromecast
 
   use_gio = is_linux && !is_chromeos && !is_chromecast
+
+  use_qt = false
 }
 #
 # =============================================
