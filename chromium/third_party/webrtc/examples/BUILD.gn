@@ -740,7 +740,9 @@ if (is_linux || is_chromeos || is_win) {
         "Xext",
         "Xrender",
       ]
-      configs += [ ":gtk_config" ]
+      if (use_gtk) {
+        configs += [ ":gtk_config" ]
+      }
     }
 
     deps += [

@@ -1193,7 +1193,6 @@ if (!is_android) {
       "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/browser/web_applications/extensions",
       "//chrome/browser/web_share_target:browser_tests",
-      "//chrome/browser/webaudio:browser_tests",
       "//chrome/common:version_header",
       "//chrome/common/privacy_budget:test_support",
       "//chrome/renderer",
@@ -3065,11 +3064,11 @@ if (!is_android) {
           "//media/test/data/id3_png_test.mp3",
         ]
       }
-
       deps += [
         "//build:chromeos_buildflags",
         "//chrome/browser/devtools:test_support",
         "//chrome/browser/extensions:test_support",
+        "//chrome/browser/web_applications:browser_tests",
         "//chrome/common/extensions/api",
         "//chrome/services/media_gallery_util/public/cpp:browser_tests",
         "//components/content_settings/core/test:test_support",
@@ -8829,7 +8828,7 @@ if (!is_android) {
   }
 }
 
-if (!is_android) {
+if (!is_android && !use_qt) {
   test("interactive_ui_tests") {
     use_xvfb = use_xvfb_in_this_config
 
@@ -10528,7 +10527,7 @@ if (is_chromeos_ash) {
   }
 }
 
-if (is_linux || is_mac || is_win) {
+if ((is_linux || is_mac || is_win) && !use_qt) {
   script_test("variations_smoke_tests") {
     if (is_linux) {
       script = "//testing/xvfb.py"

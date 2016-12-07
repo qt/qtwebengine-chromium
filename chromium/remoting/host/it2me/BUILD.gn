@@ -92,7 +92,7 @@ source_set("common") {
     "//services/network/public/cpp:cpp",
   ]
 
-  if (is_linux) {
+  if (use_gtk) {
     deps += [
       "//build/config/linux/gtk",
       "//ui/base:base",

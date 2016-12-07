@@ -96,7 +96,7 @@ generate_grd("build_grd") {
     ]
   }
 
-  if (!is_android && !is_ios) {
+  if (!is_android && !is_ios && !use_qt) {
     deps += [ "//third_party/lottie:build_grdp" ]
     grdp_files += [ "$root_gen_dir/third_party/lottie/resources.grdp" ]
   }

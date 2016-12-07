@@ -23,6 +23,9 @@ import("//build/toolchain/rbe.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
 
+# Import features.gni for the "use_qt" argument to be available.
+import("//build/config/features.gni")
+
 if (current_cpu == "arm" || current_cpu == "arm64") {
   import("//build/config/arm.gni")
 }
@@ -362,6 +365,12 @@ config("compiler") {
     if (fatal_linker_warnings && is_apple) {
       ldflags += [ "-Wl,-fatal_warnings" ]
     }
+  }
+
+  if (use_qt && is_clang) {
+    cflags += [
+      "-Wno-unknown-warning-option"
+    ]
   }
 
   if (is_clang && is_debug) {

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 
 component("proxy_config") {
   sources = [
@@ -33,6 +34,17 @@ component("proxy_config") {
     "//net",
     "//url",
   ]
+  if (use_qt) {
+    sources -= [
+      "proxy_policy_handler.cc",
+      "proxy_policy_handler.h",
+    ]
+    deps -= [
+      "//components/policy:generated",
+      "//components/policy/core/browser",
+      "//components/policy/core/common",
+    ]
+  }
 
   # TODO(https://crbug.com/562773): Break a header include cycle on ChromeOS
   # and disable include checking so GN doesn't complain about the missing

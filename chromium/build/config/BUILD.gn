@@ -96,6 +96,10 @@ config("feature_flags") {
     defines += [ "OFFICIAL_BUILD" ]
   }
 
+  if (use_qt) {
+    defines += [ "TOOLKIT_QT" ]
+  }
+
   # ==============================================
   #   PLEASE DO NOT ADD MORE THINGS TO THIS LIST
   # ==============================================

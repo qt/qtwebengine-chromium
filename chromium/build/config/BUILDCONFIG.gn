@@ -168,6 +168,11 @@ declare_args() {
   is_component_build = is_debug && current_os != "ios"
 }
 
+declare_args() {
+  # Shared library build
+  is_shared = is_component_build
+}
+
 assert(!(is_debug && is_official_build), "Can't do official debug builds")
 assert(!(current_os == "ios" && is_component_build),
        "Can't use component build on iOS")

@@ -6,15 +6,15 @@ import("../scripts/build/ninja/copy.gni")
 
 group("test") {
   deps = [
-    ":config",
-    "e2e",
-    "interactions",
-    "perf",
-    "shared",
-    "unittests",
+#    ":config",
+#    "e2e",
+#    "interactions",
+#    "perf",
+#    "shared",
+#    "unittests",
   ]
 }
 
-copy_to_gen("config") {
-  sources = [ "base-mocharc.js" ]
-}
+#copy_to_gen("config") {
+#  sources = [ "base-mocharc.js" ]
+#}
