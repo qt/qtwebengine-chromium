@@ -36,8 +36,8 @@ jumbo_component("clipboard_types") {
   }
 
   if (!is_ios) {
-    if (use_aura) {
-      if ((use_x11 && is_desktop_linux) || !is_win) {
+    if (use_aura || use_qt) {
+      if ((use_x11 && is_desktop_linux) || !is_win || use_qt) {
         sources += [ "clipboard_format_type_aura.cc" ]
       }
     }
@@ -51,8 +51,21 @@ jumbo_component("clipboard_types") {
     "//base",
   ]
 
+  if (use_qt) {
+    if (is_win) {
+      sources -= [
+        "clipboard_format_type_win.cc",
+      ]
+    } else if (is_mac) {
+      sources -= [
+        "clipboard_constants_mac.mm",
+        "clipboard_format_type_mac.mm",
+      ]
+    }
+  }
+
   libs = []
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     libs += [
       "AppKit.framework",
       "CoreFoundation.framework",
@@ -116,7 +129,7 @@ jumbo_component("clipboard") {
     ":clipboard_types",
   ]
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     # Aura clipboard.
     # Chromecast uses clipboard_aura now.
     if (is_desktop_linux && !is_chromecast) {
@@ -162,7 +175,25 @@ jumbo_component("clipboard") {
     deps += [ "//ui/base:ui_base_jni_headers" ]
   }
 
-  if (is_mac) {
+  if (use_qt) {
+    if (is_mac) {
+      sources -= [
+        "clipboard_mac.h",
+        "clipboard_mac.mm",
+        "clipboard_util_mac.h",
+        "clipboard_util_mac.mm",
+      ]
+    } else if (is_win) {
+      sources -= [
+        "clipboard_util_win.cc",
+        "clipboard_util_win.h",
+        "clipboard_win.cc",
+        "clipboard_win.h",
+      ]
+    }
+  }
+
+  if (is_mac && !use_qt) {
     deps += [ "//third_party/mozilla" ]
     libs = [
       "AppKit.framework",

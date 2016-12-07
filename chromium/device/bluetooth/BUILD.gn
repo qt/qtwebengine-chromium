@@ -278,7 +278,8 @@ component("bluetooth") {
   }
 
   if (is_chromeos || is_linux) {
-    if (use_dbus) {
+    if (use_dbus && is_chromeos) {
+      # This crap uses ChromeOS specific system API
       sources += [
         "bluez/bluetooth_adapter_bluez.cc",
         "bluez/bluetooth_adapter_bluez.h",
