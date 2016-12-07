@@ -472,11 +472,9 @@ source_set("common") {
     sources -= [ "cursors/webcursor_aurax11.cc" ]
   }
 
-  if (is_linux) {
+  if (is_linux && !use_qt) {
     deps += [ "//build/linux:fontconfig" ]
-  }
-
-  if (is_mac || is_win || is_android) {
+  } else {
     sources -= [ "font_list_fontconfig.cc" ]
   }
 

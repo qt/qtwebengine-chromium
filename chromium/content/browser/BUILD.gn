@@ -2024,6 +2024,43 @@ source_set("browser") {
       "hyphenation/hyphenation_impl.h",
     ]
   }
+
+  if (use_qt) {
+    if (is_win) {
+      sources -= [
+        "accessibility/browser_accessibility_event_win.cc",
+        "accessibility/browser_accessibility_event_win.h",
+        "accessibility/browser_accessibility_manager_win.cc",
+        "accessibility/browser_accessibility_manager_win.h",
+        "accessibility/browser_accessibility_win.cc",
+        "accessibility/browser_accessibility_win.h",
+      ]
+    }
+    if (use_aura) {
+      sources -= [
+        "renderer_host/native_web_keyboard_event_aura.cc",
+        "renderer_host/render_widget_host_view_aura.cc",
+        "renderer_host/render_widget_host_view_aura.h",
+        "web_contents/web_contents_view_aura.h",
+        "web_contents/web_contents_view_aura.cc",
+      ]
+    } else if (is_mac) {
+      sources -= [
+        "accessibility/accessibility_tree_formatter_mac.mm",
+        "accessibility/browser_accessibility_cocoa.mm",
+        "accessibility/browser_accessibility_cocoa.h",
+        "accessibility/browser_accessibility_mac.mm",
+        "accessibility/browser_accessibility_mac.h",
+        "accessibility/browser_accessibility_manager_mac.mm",
+        "accessibility/browser_accessibility_manager_mac.h",
+        "renderer_host/native_web_keyboard_event_mac.mm",
+        "renderer_host/render_widget_host_view_mac.mm",
+        "renderer_host/render_widget_host_view_mac.h",
+        "web_contents/web_contents_view_mac.mm",
+        "web_contents/web_contents_view_mac.h",
+      ]
+    }
+  }
 }
 
 # See comment at the top of //content/BUILD.gn for how this works.

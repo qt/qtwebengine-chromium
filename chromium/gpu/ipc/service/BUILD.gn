@@ -110,7 +110,7 @@ target(link_target_type, "ipc_service_sources") {
     ]
     libs += [ "android" ]
   }
-  if (is_linux) {
+  if (is_linux && ui_compositor_image_transport) {
     sources += [ "image_transport_surface_linux.cc" ]
   }
   if (use_x11) {

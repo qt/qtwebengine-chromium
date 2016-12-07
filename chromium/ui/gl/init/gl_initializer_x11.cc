@@ -136,6 +136,7 @@ bool InitializeStaticEGLInternal() {
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatform() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
@@ -166,6 +167,7 @@ bool InitializeGLOneOffPlatform() {
       return true;
   }
 }
+#endif
 
 bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu

@@ -245,6 +245,12 @@ config("compiler") {
     }
   }
 
+  if (use_qt && is_clang) {
+    cflags += [
+      "-Wno-unknown-warning-option"
+    ]
+  }
+
   if (is_clang && is_debug) {
     # Allow comparing the address of references and 'this' against 0
     # in debug builds. Technically, these can never be null in
