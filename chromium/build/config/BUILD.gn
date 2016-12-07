@@ -93,6 +93,10 @@ config("feature_flags") {
     defines += [ "OFFICIAL_BUILD" ]
   }
 
+  if (is_qtwebengine) {
+    defines += [ "TOOLKIT_QT" ]
+  }
+
   # ==============================================
   #   PLEASE DO NOT ADD MORE THINGS TO THIS LIST
   # ==============================================

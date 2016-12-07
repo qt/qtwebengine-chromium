@@ -362,7 +362,6 @@ source_set("common") {
     deps += [
       ":sandbox_support_linux",
       ":set_process_title_linux",
-      "//third_party/fontconfig",
     ]
   }
 
@@ -373,8 +372,10 @@ source_set("common") {
     ]
   }
 
-  if (is_mac || is_win || is_android || is_fuchsia) {
+  if (is_mac || is_win || is_android || is_fuchsia || is_qtwebengine) {
     sources -= [ "font_list_fontconfig.cc" ]
+  } else {
+    deps += [ "//third_party/fontconfig" ]
   }
 
   if (enable_ppapi) {

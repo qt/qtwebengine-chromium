@@ -96,6 +96,12 @@ source_set("platform") {
     "//ui/base:buildflags",
     "//ui/display",
   ]
+  if (is_win) {
+    public_deps += [
+      "//third_party/iaccessible2",
+      "//ui/accessibility/platform:ichromeaccessible",
+    ]
+  }
 
   if (enable_extensions) {
     sources += [
