@@ -18,18 +18,26 @@ group("all") {
 }
 
 mojo_native_application("mus") {
-  sources = [
-    "main.cc",
-  ]
+
+  if (!use_qt) {
+    sources = [
+      "main.cc",
+    ]
+  }
 
   deps = [
-    ":lib",
     ":resources_100",
     ":resources_200",
     ":resources_strings",
     "//services/shell/public/cpp:sources",
     "//services/tracing/public/interfaces",
   ]
+
+  if (!use_qt) {
+    deps += [
+      ":lib"
+    ]
+  }
 
   if (is_win) {
     deps += [ ":copy_gl_libraries" ]
