@@ -997,8 +997,6 @@ test("browser_tests") {
     data_deps += [
       "//ppapi:ppapi_tests",
       "//ppapi:power_saver_test_plugin",
-      "//remoting/webapp:browser_test_resources",
-      "//remoting/webapp:unit_tests",
       "//third_party/mesa:osmesa",
       "//third_party/widevine/cdm:widevine_test_license_server",
     ]
@@ -2069,7 +2067,11 @@ test("browser_tests") {
         "remoting/waiter.h",
         "remoting/webapp_javascript_browsertest.cc",
       ]
-      data_deps += [ "//remoting/webapp" ]
+      data_deps += [
+        "//remoting/webapp",
+        "//remoting/webapp:browser_test_resources",
+        "//remoting/webapp:unit_tests",
+      ]
     }
 
     if (use_aura) {

@@ -86,6 +86,12 @@ component("service") {
       "gpu_memory_buffer_factory_dxgi.h",
       "image_transport_surface_win.cc",
     ]
+    if (use_qt) {
+      sources -= [
+        "direct_composition_surface_win.cc",
+        "direct_composition_surface_win.h",
+      ]
+    }
     libs += [
       "dxgi.lib",
       "dwmapi.lib",
