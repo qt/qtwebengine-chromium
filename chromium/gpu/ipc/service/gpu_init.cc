@@ -34,7 +34,7 @@
 #include "ui/ozone/public/ozone_platform.h"
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include "gpu/ipc/service/direct_composition_surface_win.h"
 #include "ui/gl/gl_surface_egl.h"
 #endif
