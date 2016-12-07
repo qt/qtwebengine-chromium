@@ -649,8 +649,6 @@ if (!is_android) {
       "HAS_OUT_OF_PROC_TEST_RUNNER",
       "CHROME_VERSION_MAJOR=" + chrome_version_major,
     ]
-    allow_circular_includes_from =
-        [ "//chrome/browser/web_applications/extensions:browser_tests" ]
     deps = [
       ":browser_tests_runner",
       ":policy_testserver_pyproto",
@@ -670,8 +668,6 @@ if (!is_android) {
       "//chrome/browser/notifications/scheduler/test:test_support",
       "//chrome/browser/profiling_host:profiling_browsertests",
       "//chrome/browser/resources:browser_tests",
-      "//chrome/browser/web_applications:browser_tests",
-      "//chrome/browser/web_applications/extensions:browser_tests",
       "//chrome/renderer",
       "//chrome/services/removable_storage_writer:lib",
       "//components/autofill/content/browser:risk_proto",
@@ -1803,8 +1799,11 @@ if (!is_android) {
           "../browser/extensions/clipboard_extension_apitest_chromeos.cc",
         ]
       }
-
+      allow_circular_includes_from =
+          [ "//chrome/browser/web_applications/extensions:browser_tests" ]
       deps += [
+        "//chrome/browser/web_applications:browser_tests",
+        "//chrome/browser/web_applications/extensions:browser_tests",
         "//chrome/common/extensions/api",
         "//chrome/services/media_gallery_util/public/cpp:browser_tests",
         "//chrome/test/media_router:browser_tests",
@@ -2647,7 +2646,11 @@ if (!is_android) {
         "remoting/waiter.h",
         "remoting/webapp_javascript_browsertest.cc",
       ]
-      data_deps += [ "//remoting/webapp" ]
+      data_deps += [
+        "//remoting/webapp",
+        "//remoting/webapp:browser_test_resources",
+        "//remoting/webapp:unit_tests",
+      ]
     }
 
     if (use_aura) {

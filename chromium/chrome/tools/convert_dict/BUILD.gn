@@ -34,7 +34,6 @@ if (use_qt) {
       ":lib",
       "//base",
       "//base:i18n",
-      "//build/config/sanitizers:deps",
       "//third_party/hunspell",
     ]
   }

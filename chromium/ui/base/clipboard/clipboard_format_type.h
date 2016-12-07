@@ -79,9 +79,9 @@ struct COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   // ClipboardFormatType can be used in a set on some platforms.
   bool operator<(const ClipboardFormatType& other) const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   const FORMATETC& ToFormatEtc() const { return data_; }
-#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA) || defined(TOOLKIT_QT)
   const std::string& ToString() const { return data_; }
 #elif defined(OS_MACOSX)
   NSString* ToNSString() const { return data_; }
@@ -104,7 +104,7 @@ struct COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   //
   // Note that in some cases, the accessor for the wrapped descriptor may be
   // public, as these format types can be used by drag and drop code as well.
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   explicit ClipboardFormatType(UINT native_format);
   ClipboardFormatType(UINT native_format, LONG index);
   ClipboardFormatType(UINT native_format, LONG index, DWORD tymed);
@@ -120,7 +120,7 @@ struct COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   // FORMATETC:
   // https://docs.microsoft.com/en-us/windows/desktop/com/the-formatetc-structure
   FORMATETC data_;
-#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA) || defined(TOOLKIT_QT)
   explicit ClipboardFormatType(const std::string& native_format);
   std::string data_;
 #elif defined(OS_MACOSX)
