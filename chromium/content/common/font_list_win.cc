@@ -17,6 +17,7 @@
 
 namespace content {
 
+#if !defined(TOOLKIT_QT)
 std::unique_ptr<base::ListValue> GetFontList_SlowBlocking() {
   TRACE_EVENT0("fonts", "GetFontList_SlowBlocking");
 
@@ -67,5 +68,6 @@ std::unique_ptr<base::ListValue> GetFontList_SlowBlocking() {
 
   return font_list;
 }
+#endif
 
 }  // namespace content

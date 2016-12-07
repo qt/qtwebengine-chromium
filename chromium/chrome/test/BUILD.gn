@@ -652,7 +652,6 @@ if (!is_android) {
       "//chrome/browser/notifications/scheduler/test:test_support",
       "//chrome/browser/payments:browsertests",
       "//chrome/browser/profiling_host:profiling_browsertests",
-      "//chrome/browser/web_applications:browser_tests",
       "//chrome/renderer",
       "//chrome/services/removable_storage_writer:lib",
       "//chrome/test/data:webui_test_resources",
@@ -1866,8 +1865,8 @@ if (!is_android) {
           "../browser/extensions/clipboard_extension_apitest_chromeos.cc",
         ]
       }
-
       deps += [
+        "//chrome/browser/web_applications:browser_tests",
         "//chrome/common/extensions/api",
         "//chrome/services/media_gallery_util/public/cpp:browser_tests",
         "//chrome/test/media_router:browser_tests",
@@ -5153,14 +5152,16 @@ test("unit_tests") {
     ldflags = [ "-Wl,--strip-debug" ]
   }
   if (is_mac) {
-    sources -= [
-      # This tests the function GetSpellCheckLanguages which is not used on
-      # Mac.
-      "../browser/spellchecker/spellcheck_service_unittest.cc",
+    if (enable_spellcheck) {
+      sources -= [
+        # This tests the function GetSpellCheckLanguages which is not used on
+        # Mac.
+        "../browser/spellchecker/spellcheck_service_unittest.cc",
 
-      # This tests Chrome's spellchecker which Mac doesn't use.
-      "../tools/convert_dict/convert_dict_unittest.cc",
-    ]
+        # This tests Chrome's spellchecker which Mac doesn't use.
+        "../tools/convert_dict/convert_dict_unittest.cc",
+      ]
+    }
 
     # The test fetches resources which means Mac need the app bundle to exist
     # on disk so it can pull from it.

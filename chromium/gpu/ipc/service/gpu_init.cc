@@ -43,7 +43,7 @@
 #include "ui/ozone/public/surface_factory_ozone.h"
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include "ui/gl/gl_surface_egl.h"
 #endif
 
