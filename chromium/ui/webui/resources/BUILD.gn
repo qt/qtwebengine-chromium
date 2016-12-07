@@ -106,7 +106,7 @@ generate_grd("build_grd") {
     grdp_files += [ "$target_gen_dir/cros_styles_resources.grdp" ]
   }
 
-  if (!is_android && !is_ios) {
+  if (!is_android && !is_ios && !is_qtwebengine) {
     public_deps += [
       "cr_components/color_change_listener:build_grdp",
       "cr_components/page_image_service:build_grdp",

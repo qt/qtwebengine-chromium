@@ -254,6 +254,12 @@
 #define BUILDFLAG_INTERNAL_IS_OZONE() (0)
 #endif
 
+#if defined(TOOLKIT_QT)
+#define BUILDFLAG_INTERNAL_IS_QTWEBENGINE() (1)
+#else
+#define BUILDFLAG_INTERNAL_IS_QTWEBENGINE() (0)
+#endif
+
 // Compiler detection. Note: clang masquerades as GCC on POSIX and as MSVC on
 // Windows.
 #if defined(__GNUC__)
