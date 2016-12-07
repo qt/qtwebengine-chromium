@@ -68,6 +68,8 @@ declare_args() {
 
   use_gio = is_linux && !is_chromeos && !is_chromecast
 
+  use_qt = false
+
   # Whether or not to use external popup menu.
   use_external_popup_menu = is_android || is_mac
 
