@@ -141,6 +141,10 @@ config("feature_flags") {
     defines += [ "FIELDTRIAL_TESTING_ENABLED" ]
   }
 
+  if (use_qt) {
+    defines += [ "TOOLKIT_QT" ]
+  }
+
   # ==============================================
   #   PLEASE DO NOT ADD MORE THINGS TO THIS LIST
   # ==============================================
