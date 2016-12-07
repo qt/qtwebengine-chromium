@@ -11,6 +11,9 @@ import("//build/toolchain/cc_wrapper.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
 
+# Import features.gni for the "use_qt" argument to be available.
+import("//build/config/features.gni")
+
 if (current_cpu == "arm" || current_cpu == "arm64") {
   import("//build/config/arm.gni")
 }
@@ -251,6 +254,12 @@ config("compiler") {
         "-D__TIMESTAMP__=",
       ]
     }
+  }
+
+  if (use_qt && is_clang) {
+    cflags += [
+      "-Wno-unknown-warning-option"
+    ]
   }
 
   if (is_clang && is_debug) {
