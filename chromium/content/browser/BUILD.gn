@@ -504,6 +504,16 @@ source_set("browser") {
   if (enable_ipc_fuzzer) {
     configs += [ "//tools/ipc_fuzzer:ipc_fuzzer_config" ]
   }
+
+  if (use_qt && is_linux) {
+    sources -= [
+      "renderer_host/native_web_keyboard_event_aura.cc",
+      "renderer_host/render_widget_host_view_aura.cc",
+      "renderer_host/render_widget_host_view_aura.h",
+      "web_contents/web_contents_view_aura.h",
+      "web_contents/web_contents_view_aura.cc",
+    ]
+  }
 }
 
 # See comment at the top of //content/BUILD.gn for how this works.

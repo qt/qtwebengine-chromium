@@ -59,4 +59,10 @@ component("init") {
 
     deps += [ "//ui/ozone" ]
   }
+
+  if (use_qt && use_x11) {
+    sources -= [
+      "gl_initializer_x11.cc",
+    ]
+  }
 }

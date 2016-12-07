@@ -591,7 +591,7 @@ component("base") {
   }
 
   # Aura clipboard.
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     if (use_clipboard_aurax11) {
       sources += [
         "clipboard/clipboard_aurax11.cc",
@@ -608,6 +608,14 @@ component("base") {
 
   if (is_android || is_ios) {
     sources -= [ "device_form_factor_desktop.cc" ]
+  }
+
+  if (use_qt && is_linux) {
+   sources -= [
+     "resource/resource_bundle_auralinux.cc",
+     "dragdrop/os_exchange_data_provider_aurax11.cc",
+     "dragdrop/os_exchange_data_provider_aurax11.h",
+   ]
   }
 }
 
