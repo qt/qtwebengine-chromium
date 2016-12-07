@@ -389,7 +389,7 @@ GpuServiceImpl::GpuServiceImpl(
   }
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   if (media::SupportMediaFoundationClearPlayback()) {
     // Initialize the OverlayStateService using the GPUServiceImpl task
     // sequence.

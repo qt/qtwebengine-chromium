@@ -24,11 +24,11 @@ component("clipboard_types") {
     }
   }
 
-  if (is_android) {
+  if (is_android && !is_qtwebengine) {
     sources += [ "clipboard_format_type_android.cc" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !is_qtwebengine) {
     sources += [ "clipboard_format_type_mac.mm" ]
   }
 
@@ -36,11 +36,11 @@ component("clipboard_types") {
     sources += [ "clipboard_constants_mac.mm" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources += [ "clipboard_format_type_win.cc" ]
   }
 
-  if (use_aura && !is_win) {
+  if (use_aura && (!is_win || is_qtwebengine)) {
     sources += [ "clipboard_format_type_aura.cc" ]
   }
 
@@ -49,10 +49,10 @@ component("clipboard_types") {
   deps = [ "//base" ]
 
   frameworks = []
-  if (is_apple) {
+  if (is_apple && !is_qtwebengine) {
     frameworks += [ "Foundation.framework" ]
   }
-  if (is_mac) {
+  if (is_mac && !is_qtwebengine) {
     frameworks += [ "AppKit.framework" ]
     weak_frameworks = [
       "UniformTypeIdentifiers.framework",  # macOS 11
@@ -104,7 +104,7 @@ component("clipboard") {
     "scoped_clipboard_writer.h",
   ]
 
-  if (is_android) {
+  if (is_android && !is_qtwebengine) {
     sources += [
       "clipboard_android.cc",
       "clipboard_android.h",
@@ -130,7 +130,7 @@ component("clipboard") {
   if (is_ios) {
     sources += [ "clipboard_ios.mm" ]
   }
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources += [
       "clipboard_util_win.cc",
       "clipboard_util_win.h",
@@ -158,7 +158,7 @@ component("clipboard") {
     "//ui/base/data_transfer_policy",
   ]
 
-  if (use_aura) {
+  if (use_aura && !is_qtwebengine) {
     if (use_ozone) {
       sources += [
         "clipboard_factory_ozone.cc",
@@ -176,7 +176,7 @@ component("clipboard") {
     deps += [ "//ui/base:ui_base_jni_headers" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !is_qtwebengine) {
     deps += [ ":url_file_parser" ]
     frameworks = [
       "AppKit.framework",
@@ -185,6 +185,9 @@ component("clipboard") {
     weak_frameworks = [
       "UniformTypeIdentifiers.framework",  # macOS 11
     ]
+  }
+  if (is_qtwebengine && is_mac) {
+    sources -= [ "clipboard_mac.h", "clipboard_mac.mm" ]
   }
 }
 
