@@ -287,6 +287,17 @@ component("gl") {
       "//third_party/angle:libGLESv2",
     ]
   }
+
+  if (use_qt && is_linux) {
+    sources -= [
+      "gl_surface_egl.cc",
+      "gl_surface_egl.h",
+      "gl_surface_egl_x11.cc",
+      "gl_surface_egl_x11.h",
+      "gl_surface_glx.cc",
+      "gl_surface_glx.h",
+    ]
+  }
 }
 
 static_library("gl_unittest_utils") {
