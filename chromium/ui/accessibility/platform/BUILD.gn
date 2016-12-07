@@ -82,6 +82,12 @@ source_set("platform") {
     "//ui/accessibility:ax_base",
     "//ui/display",
   ]
+  if (is_win) {
+    public_deps += [
+      "//third_party/iaccessible2",
+      "//ui/accessibility/platform:ichromeaccessible",
+    ]
+  }
 
   if (has_native_accessibility) {
     sources += [

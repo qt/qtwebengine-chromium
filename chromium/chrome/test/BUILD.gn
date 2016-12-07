@@ -1055,7 +1055,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/browser/web_applications/extensions",
       "//chrome/browser/web_share_target:browser_tests",
-      "//chrome/browser/webaudio:browser_tests",
       "//chrome/common:version_header",
       "//chrome/common/privacy_budget:test_support",
       "//chrome/renderer",
@@ -2648,10 +2647,10 @@ if (!is_android && !is_fuchsia) {
           "//chrome/browser/error_reporting:test_support",
         ]
       }
-
       deps += [
         "//build:chromeos_buildflags",
         "//chrome/browser/devtools:test_support",
+        "//chrome/browser/web_applications:browser_tests",
         "//chrome/common/extensions/api",
         "//chrome/services/media_gallery_util/public/cpp:browser_tests",
         "//chrome/test/media_router:browser_tests",
@@ -7187,14 +7186,16 @@ test("unit_tests") {
     ldflags = [ "-Wl,--strip-debug" ]
   }
   if (is_mac) {
-    sources -= [
-      # This tests the function GetSpellCheckLanguages which is not used on
-      # Mac.
-      "../browser/spellchecker/spellcheck_service_unittest.cc",
+    if (enable_spellcheck) {
+      sources -= [
+        # This tests the function GetSpellCheckLanguages which is not used on
+        # Mac.
+        "../browser/spellchecker/spellcheck_service_unittest.cc",
 
-      # This tests Chrome's spellchecker which Mac doesn't use.
-      "../tools/convert_dict/convert_dict_unittest.cc",
-    ]
+        # This tests Chrome's spellchecker which Mac doesn't use.
+        "../tools/convert_dict/convert_dict_unittest.cc",
+      ]
+    }
 
     # The test fetches resources which means Mac need the app bundle to exist
     # on disk so it can pull from it.

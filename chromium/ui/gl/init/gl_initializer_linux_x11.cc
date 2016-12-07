@@ -159,6 +159,7 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatformX11() {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
@@ -214,6 +215,7 @@ bool InitializeStaticGLBindingsX11(GLImplementationParts implementation) {
 
   return false;
 }
+#endif // !defined(TOOLKIT_QT)
 
 void ShutdownGLPlatformX11() {
   GLSurfaceEGL::ShutdownOneOff();

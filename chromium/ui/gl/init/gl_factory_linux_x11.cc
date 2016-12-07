@@ -72,6 +72,7 @@ scoped_refptr<GLContext> CreateGLContextX11(GLShareGroup* share_group,
   }
 }
 
+#ifndef TOOLKIT_QT
 scoped_refptr<GLSurface> CreateViewGLSurfaceX11(gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "gl::init::CreateViewGLSurface");
   switch (GetGLImplementation()) {
@@ -121,6 +122,7 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurfaceWithFormatX11(
       return nullptr;
   }
 }
+#endif
 
 void SetDisabledExtensionsPlatformX11(const std::string& disabled_extensions) {
   GLImplementation implementation = GetGLImplementation();

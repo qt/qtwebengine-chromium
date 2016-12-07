@@ -721,7 +721,9 @@ if (is_linux || is_chromeos || is_win) {
         "Xext",
         "Xrender",
       ]
-      deps += [ "//build/config/linux/gtk" ]
+      if (use_gtk) {
+        deps += [ "//build/config/linux/gtk" ]
+      }
     }
 
     deps += [

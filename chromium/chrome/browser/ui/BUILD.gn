@@ -5136,7 +5136,7 @@ static_library("test_support") {
     "//ui/shell_dialogs",
   ]
 
-  if (is_mac) {
+  if (is_mac && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "cocoa/test/cocoa_test_helper.h",
