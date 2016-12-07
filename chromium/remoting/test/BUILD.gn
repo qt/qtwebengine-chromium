@@ -142,7 +142,7 @@ if (enable_remoting_host && !is_android && !is_chromeos_ash &&
 
     deps = [ ":it2me_standalone_host" ]
 
-    if (is_linux || is_chromeos_lacros) {
+    if (use_gtk) {
       deps += [
         "//build/config/linux/gtk",
         "//ui/events/platform/x11:x11",

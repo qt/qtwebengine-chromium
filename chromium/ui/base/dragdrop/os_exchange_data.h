@@ -13,7 +13,7 @@
 
 #include "build/build_config.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include <objidl.h>
 #endif
 

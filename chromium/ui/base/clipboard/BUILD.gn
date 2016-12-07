@@ -18,11 +18,11 @@ component("clipboard_types") {
     sources += [ "clipboard_format_type.h" ]
   }
 
-  if (is_android) {
+  if (is_android && !use_qt) {
     sources += [ "clipboard_format_type_android.cc" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     sources += [ "clipboard_format_type_mac.mm" ]
   }
 
@@ -30,12 +30,12 @@ component("clipboard_types") {
     sources += [ "clipboard_constants_mac.mm" ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources += [ "clipboard_format_type_win.cc" ]
   }
 
-  if (use_aura) {
-    if ((use_x11 && (is_linux || is_chromeos_lacros)) || !is_win) {
+  if (use_aura || use_qt) {
+    if ((use_x11 && (is_linux || is_chromeos_lacros)) || !is_win || use_qt) {
       sources += [ "clipboard_format_type_aura.cc" ]
     }
   }
@@ -45,10 +45,10 @@ component("clipboard_types") {
   deps = [ "//base" ]
 
   frameworks = []
-  if (is_apple) {
+  if (is_apple && !use_qt) {
     frameworks += [ "Foundation.framework" ]
   }
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     frameworks += [ "AppKit.framework" ]
   }
 }
@@ -84,7 +84,7 @@ component("clipboard") {
     "scoped_clipboard_writer.h",
   ]
 
-  if (is_android) {
+  if (is_android && !use_qt) {
     sources += [
       "clipboard_android.cc",
       "clipboard_android.h",
@@ -100,7 +100,7 @@ component("clipboard") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources += [
       "clipboard_util_win.cc",
       "clipboard_util_win.h",
@@ -128,7 +128,7 @@ component("clipboard") {
     "//ui/base/data_transfer_policy",
   ]
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     if (use_ozone) {
       sources += [
         "clipboard_data.cc",
@@ -175,12 +175,15 @@ component("clipboard") {
     deps += [ "//ui/base:ui_base_jni_headers" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     deps += [ "//third_party/mozilla" ]
     frameworks = [
       "AppKit.framework",
       "CoreFoundation.framework",
     ]
+  }
+  if (use_qt && is_mac) {
+    sources -= [ "clipboard_mac.h", "clipboard_mac.mm" ]
   }
 }
 

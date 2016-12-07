@@ -466,7 +466,7 @@ config("delayloads_not_for_child_dll") {
 # See https://msdn.microsoft.com/en-us/library/2kzt1wy3.aspx for a reference of
 # what each value does.
 config("default_crt") {
-  if (is_component_build) {
+  if (is_shared) {
     # Component mode: dynamic CRT. Since the library is shared, it requires
     # exceptions or will give errors about things not matching, so keep
     # exceptions on.

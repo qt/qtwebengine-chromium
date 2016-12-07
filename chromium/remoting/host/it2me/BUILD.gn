@@ -75,7 +75,7 @@ source_set("common") {
     "//remoting/signaling",
     "//services/network/public/cpp:cpp",
   ]
-  if (is_linux && !is_chromeos_lacros) {
+  if (use_gtk) {
     deps += [
       "//build/config/linux/gtk",
       "//ui/base:base",
@@ -289,7 +289,7 @@ if (!is_chromeos_ash && enable_remoting_host) {
         }
       }
 
-      if (is_linux && !is_chromeos_lacros) {
+      if (use_gtk) {
         deps += [
           "//build/config/linux/gtk",
           "//mojo/core/embedder:embedder",
