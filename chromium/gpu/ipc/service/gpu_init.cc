@@ -33,7 +33,7 @@
 #include "ui/ozone/public/ozone_switches.h"
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include "gpu/ipc/service/direct_composition_surface_win.h"
 #include "ui/gl/gl_surface_egl.h"
 #endif
@@ -55,7 +55,7 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info,
   if (!success)
     LOG(ERROR) << "gpu::CollectGraphicsInfo failed.";
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   if (gl::GetGLImplementation() == gl::kGLImplementationEGLGLES2 &&
       gl::GLSurfaceEGL::IsDirectCompositionSupported()) {
     gpu_info->direct_composition = true;
