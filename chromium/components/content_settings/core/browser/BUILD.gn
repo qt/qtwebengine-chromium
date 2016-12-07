@@ -74,7 +74,7 @@ static_library("browser") {
     "//url",
   ]
 
-  if (use_blink) {
+  if (use_blink && !is_qtwebengine) {
     deps += [
       "//components/policy:generated",
       "//components/policy/core/browser",
