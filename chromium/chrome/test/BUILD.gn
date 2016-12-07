@@ -2538,7 +2538,11 @@ if (!is_android) {
         "remoting/waiter.h",
         "remoting/webapp_javascript_browsertest.cc",
       ]
-      data_deps += [ "//remoting/webapp" ]
+      data_deps += [
+        "//remoting/webapp",
+        "//remoting/webapp:browser_test_resources",
+        "//remoting/webapp:unit_tests",
+      ]
     }
 
     if (use_aura) {
