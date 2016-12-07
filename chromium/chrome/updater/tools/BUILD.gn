@@ -22,7 +22,8 @@ executable("tag_exe") {
 
 copy("tag") {
   # For arm64 builds, we need to create an x86_64 tag executable.
-  if (current_cpu != "x64" && is_win) {
+  if (current_cpu != "x64" && is_win && !is_msvc) {
+    # TODO: remove fixed clang toolchain
     tag_tool = ":tag_exe(//build/toolchain/win:win_clang_x64)"
   } else {
     tag_tool = ":tag_exe"

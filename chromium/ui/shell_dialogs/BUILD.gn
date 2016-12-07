@@ -62,8 +62,10 @@ component("shell_dialogs") {
       deps += [
         "//components/dbus",
         "//dbus",
-        "//ui/views",
       ]
+      if (toolkit_views) {
+        deps += [ "//ui/views" ]
+      }
     }
   }
 

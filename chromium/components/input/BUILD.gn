@@ -139,6 +139,11 @@ component("input") {
       "web_input_event_builders_mac.h",
       "web_input_event_builders_mac.mm",
     ]
+    if (is_qtwebengine) {
+      sources -= [
+        "native_web_keyboard_event_mac.mm",
+      ]
+    }
     frameworks = [
       "AppKit.framework",
       "CoreGraphics.framework",

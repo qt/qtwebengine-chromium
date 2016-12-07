@@ -32,7 +32,9 @@
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox.h"
 #include "sandbox/policy/sandbox_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/on_device_model/on_device_model_service.h"
+#endif
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "services/video_effects/public/cpp/buildflags.h"
 
@@ -243,9 +245,11 @@ int UtilityMain(MainFunctionParams parameters) {
     }
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (utility_sub_type == on_device_model::mojom::OnDeviceModelService::Name_) {
     CHECK(on_device_model::OnDeviceModelService::PreSandboxInit());
   }
+#endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   // Thread type delegate of the process should be registered before first
@@ -279,9 +283,11 @@ int UtilityMain(MainFunctionParams parameters) {
       pre_sandbox_hook = base::BindOnce(&audio::AudioPreSandboxHook);
       break;
     case sandbox::mojom::Sandbox::kOnDeviceModelExecution:
+#if !BUILDFLAG(IS_QTWEBENGINE)
       on_device_model::OnDeviceModelService::AddSandboxLinuxOptions(
           sandbox_options);
       pre_sandbox_hook = base::BindOnce(&GpuPreSandboxHook);
+#endif
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
       pre_sandbox_hook =
@@ -454,9 +460,11 @@ int UtilityMain(MainFunctionParams parameters) {
 
   run_loop.Run();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (utility_sub_type == on_device_model::mojom::OnDeviceModelService::Name_) {
     CHECK(on_device_model::OnDeviceModelService::Shutdown());
   }
+#endif
 
 #if defined(LEAK_SANITIZER)
   // Invoke LeakSanitizer before shutting down the utility thread, to avoid

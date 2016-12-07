@@ -15,11 +15,13 @@ if (!defined(partition_alloc_remove_configs)) {
   partition_alloc_remove_configs = []
 }
 
-# Enables compilation of the freelist dispatcher, which we'll use to
-# carry out runtime evaluation of PartitionAlloc's two freelist
-# implementations: the existing encoded-next freelist and the new
-# pool offset freelist. When false, the latter is not built.
-use_freelist_dispatcher = has_64_bit_pointers
+declare_args() {
+  # Enables compilation of the freelist dispatcher, which we'll use to
+  # carry out runtime evaluation of PartitionAlloc's two freelist
+  # implementations: the existing encoded-next freelist and the new
+  # pool offset freelist. When false, the latter is not built.
+  use_freelist_dispatcher = has_64_bit_pointers
+}
 
 assert(has_64_bit_pointers || !use_freelist_dispatcher,
        "freelist dispatcher can't be used without 64-bit pointers")
@@ -269,7 +271,7 @@ if (is_clang_or_gcc) {
 
   config("memory_tagging") {
     if (current_cpu == "arm64" &&
-        (is_linux || is_chromeos || is_android || is_fuchsia)) {
+        (is_linux || is_chromeos || is_android || is_fuchsia) && !is_gcc) {
       # base/ has access to the MTE intrinsics because it needs to use them,
       # but they're not backwards compatible. Use base::CPU::has_mte()
       # beforehand to confirm or use indirect functions (ifuncs) to select
@@ -496,7 +498,7 @@ if (is_clang_or_gcc) {
     } else if (current_cpu == "arm") {
       assert(stack_scan_supported)
       sources += [ "stack/asm/arm/push_registers_asm.cc" ]
-    } else if (current_cpu == "arm64") {
+    } else if (current_cpu == "arm64" && (!is_msvc || is_clang)) {
       assert(stack_scan_supported)
       sources += [ "stack/asm/arm64/push_registers_asm.cc" ]
     } else if (current_cpu == "riscv64") {

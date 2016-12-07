@@ -468,11 +468,12 @@ component("native_handle_types_mojom_traits") {
     "//mojo/public/mojom/base",
     "//ui/gfx",
   ]
-
-  frameworks = [
-    "CoreFoundation.framework",
-    "IOSurface.framework",
-  ]
+  if (is_mac) {
+    frameworks = [
+      "CoreFoundation.framework",
+      "IOSurface.framework",
+    ]
+  }
 }
 
 mojom("hdr_metadata") {

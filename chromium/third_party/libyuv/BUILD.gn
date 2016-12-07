@@ -73,7 +73,7 @@ group("libyuv") {
   all_dependent_configs = [ ":libyuv_config" ]
   deps = []
 
-  if (is_win && target_cpu == "x64" && !use_qt) {
+  if (is_win && target_cpu == "x64" && !is_qtwebengine) {
     # Compile with clang in order to get inline assembly
     public_deps = [ ":libyuv_internal(//build/toolchain/win:win_clang_x64)" ]
   } else {
@@ -237,7 +237,9 @@ if (libyuv_use_neon) {
     public_configs = [ ":libyuv_config" ]
 
     if (current_cpu == "arm64") {
-      cflags = [ "-march=armv8-a+dotprod+i8mm" ]
+      if(!is_qtwebengine || !is_linux) {
+        cflags = [ "-march=armv8-a+dotprod+i8mm" ]
+      }
     } else {
       configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
       cflags = [ "-mfpu=neon" ]
