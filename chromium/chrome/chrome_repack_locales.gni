@@ -122,5 +122,17 @@ template("chrome_repack_locales") {
     if (defined(invoker.additional_source_patterns)) {
       source_patterns += invoker.additional_source_patterns
     }
+
+    if (use_qt) {
+      source_patterns -= [
+        "${root_gen_dir}/components/omnibox/resources/omnibox_pedal_synonyms_",
+        "${root_gen_dir}/components/omnibox/resources/omnibox_resources_",
+      ]
+
+      deps -= [
+        "//components/omnibox/resources:omnibox_pedal_synonyms",
+        "//components/omnibox/resources:omnibox_resources",
+      ]
+    }
   }
 }

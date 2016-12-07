@@ -109,7 +109,7 @@ generate_grd("build_grd") {
     ]
   }
 
-  if (!is_android && !is_ios) {
+  if (!is_android && !is_ios && !use_qt) {
     public_deps += [
       "cr_components/color_change_listener:build_grdp",
       "//third_party/lottie:build_grdp",
