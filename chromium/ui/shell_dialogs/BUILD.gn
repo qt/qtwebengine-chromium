@@ -66,6 +66,12 @@ component("shell_dialogs") {
         "//dbus",
         "//ui/views",
       ]
+
+      if (is_qtwebengine) {
+        deps -= [
+          "//ui/views",
+        ]
+      }
     }
   }
 

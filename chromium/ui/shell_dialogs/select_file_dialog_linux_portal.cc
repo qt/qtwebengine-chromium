@@ -222,6 +222,7 @@ void SelectFileDialogLinuxPortal::SelectFileImpl(
   info_->type = type;
   info_->main_task_runner = base::SequencedTaskRunner::GetCurrentDefault();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (owning_window) {
     if (auto* root = owning_window->GetRootWindow()) {
       if (auto* host = root->GetNativeWindowProperty(
@@ -230,6 +231,7 @@ void SelectFileDialogLinuxPortal::SelectFileImpl(
       }
     }
   }
+#endif
 
   if (file_types)
     set_file_types(*file_types);
@@ -691,9 +693,11 @@ void SelectFileDialogLinuxPortal::DialogCreatedOnMainThread() {
     return;
   }
   host_->ReleaseCapture();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   reenable_window_event_handling_ =
       static_cast<views::DesktopWindowTreeHostLinux*>(host_.get())
           ->DisableEventListening();
+#endif
 }
 
 void SelectFileDialogLinuxPortal::CompleteOpenOnMainThread(

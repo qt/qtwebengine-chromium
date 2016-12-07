@@ -38,6 +38,13 @@ source_set("common") {
     "//ui/ozone:ozone_base",
   ]
 
+  if (is_qtwebengine) {
+    sources -= [
+      "gl_surface_egl_readback.cc",
+      "gl_surface_egl_readback.h",
+    ]
+  }
+
   deps = [
     "//build:chromeos_buildflags",
     "//ui/gfx/ipc/color",
