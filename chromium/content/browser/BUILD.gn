@@ -2036,8 +2036,6 @@ jumbo_source_set("browser") {
       "media/now_playing_info_center_notifier.h",
       "sandbox_support_mac_impl.h",
       "sandbox_support_mac_impl.mm",
-      "web_contents/web_contents_ns_view_bridge.h",
-      "web_contents/web_contents_ns_view_bridge.mm",
     ]
     deps += [ "//ui/events:dom_keyboard_layout" ]
   }
@@ -2477,6 +2475,8 @@ jumbo_source_set("browser") {
       "renderer_host/render_widget_host_ns_view_client_helper.h",
       "renderer_host/render_widget_host_view_cocoa.h",
       "renderer_host/render_widget_host_view_cocoa.mm",
+      "web_contents/web_contents_ns_view_bridge.h",
+      "web_contents/web_contents_ns_view_bridge.mm",
       "web_contents/web_contents_view_cocoa.h",
       "web_contents/web_contents_view_cocoa.mm",
     ]
@@ -2628,6 +2628,46 @@ jumbo_source_set("browser") {
       "media/mpris_notifier.h",
     ]
     deps += [ "//ui/base/mpris" ]
+  }
+
+  if (use_qt) {
+    deps -= [
+      "//components/variations",
+      "//components/variations/net",
+    ]
+    if (is_win) {
+      sources -= [
+        "accessibility/browser_accessibility_com_win.cc",
+        "accessibility/browser_accessibility_com_win.h",
+        "accessibility/browser_accessibility_manager_win.cc",
+        "accessibility/browser_accessibility_manager_win.h",
+        "accessibility/browser_accessibility_win.cc",
+        "accessibility/browser_accessibility_win.h",
+        "accessibility/accessibility_tree_formatter_win.cc",
+        "renderer_host/legacy_render_widget_host_win.cc",
+        "renderer_host/legacy_render_widget_host_win.h"
+      ]
+    }
+    if (is_mac) {
+      sources -= [
+        "accessibility/accessibility_tree_formatter_mac.mm",
+        "accessibility/browser_accessibility_cocoa.mm",
+        "accessibility/browser_accessibility_cocoa.h",
+        "accessibility/browser_accessibility_mac.mm",
+        "accessibility/browser_accessibility_mac.h",
+        "accessibility/browser_accessibility_manager_mac.mm",
+        "accessibility/browser_accessibility_manager_mac.h",
+        "renderer_host/native_web_keyboard_event_mac.mm",
+        "renderer_host/render_widget_host_view_mac.mm",
+        "renderer_host/render_widget_host_view_mac.h",
+        "web_contents/web_contents_view_mac.mm",
+        "web_contents/web_contents_view_mac.h",
+        "web_contents/web_drag_dest_mac.h",
+        "web_contents/web_drag_dest_mac.mm",
+        "web_contents/web_drag_source_mac.h",
+        "web_contents/web_drag_source_mac.mm",
+      ]
+    }
   }
 }
 
