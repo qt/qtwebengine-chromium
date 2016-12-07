@@ -9,7 +9,7 @@ if (is_android) {
 }
 if (is_chromeos_ash) {
   import("//chromeos/dbus/use_real_dbus_clients.gni")
-} else if (use_dbus) {
+} else if (use_dbus && !use_qt) {
   use_real_dbus_clients = false
 }
 
@@ -304,7 +304,8 @@ component("bluetooth") {
   }
 
   if (is_chromeos || is_linux) {
-    if (use_dbus) {
+    if (use_dbus && is_chromeos) {
+      # This crap uses ChromeOS specific system API
       sources += [
         "bluez/bluetooth_adapter_bluez.cc",
         "bluez/bluetooth_adapter_bluez.h",

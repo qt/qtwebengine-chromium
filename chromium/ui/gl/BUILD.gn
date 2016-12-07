@@ -249,7 +249,7 @@ component("gl") {
     deps += [ "//ui/ozone:buildflags" ]
   }
 
-  if (use_x11 || ozone_platform_x11) {
+  if ((use_x11 || ozone_platform_x11) && !use_qt) {
     sources += [
       "gl_image_egl_pixmap.cc",
       "gl_image_egl_pixmap.h",
@@ -286,13 +286,18 @@ component("gl") {
       "gl_image_glx.h",
       "gl_image_glx_native_pixmap.cc",
       "gl_image_glx_native_pixmap.h",
-      "gl_surface_glx.cc",
-      "gl_surface_glx.h",
       "gl_visual_picker_glx.cc",
       "gl_visual_picker_glx.h",
       "glx_util.cc",
       "glx_util.h",
     ]
+
+    if (!use_qt) {
+      sources += [
+        "gl_surface_glx.cc",
+        "gl_surface_glx.h",
+      ]
+    }
 
     deps += [
       "//ui/base/x",
@@ -401,11 +406,31 @@ component("gl") {
     defines += [ "CHROMECAST_BUILD" ]
   }
 
-  if (use_qt && (is_win || use_x11 || ozone_platform_x11 || (is_mac && use_egl))) {
-    data_deps -= [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
+  if (use_qt) {
+    if (is_win || (is_mac && use_egl)) {
+      data_deps -= [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
+    if (is_win) {
+      sources -= [
+        "dc_layer_tree.cc",
+        "dc_layer_tree.h",
+        "direct_composition_child_surface_win.cc",
+        "direct_composition_child_surface_win.h",
+        "direct_composition_surface_win.cc",
+        "direct_composition_surface_win.h",
+        "swap_chain_presenter.cc",
+        "swap_chain_presenter.h",
+      ]
+    }
+    if (is_linux || is_win) {
+      sources -= [
+        "gl_surface_egl.cc",
+        "gl_surface_egl.h",
+      ]
+    }
   }
 }
 

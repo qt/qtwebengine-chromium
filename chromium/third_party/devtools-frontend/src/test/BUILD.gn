@@ -4,10 +4,10 @@
 
 group("test") {
   deps = [
-    "e2e",
-    "interactions",
-    "perf",
-    "shared",
-    "unittests",
+#    "e2e",
+#    "interactions",
+#    "perf",
+#    "shared",
+#    "unittests",
   ]
 }

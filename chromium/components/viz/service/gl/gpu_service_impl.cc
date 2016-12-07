@@ -408,7 +408,7 @@ GpuServiceImpl::GpuServiceImpl(
   }
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   auto info_callback = base::BindRepeating(
       &GpuServiceImpl::UpdateOverlayAndHDRInfo, weak_ptr_factory_.GetWeakPtr());
   gl::DirectCompositionSurfaceWin::SetOverlayHDRGpuInfoUpdateCallback(

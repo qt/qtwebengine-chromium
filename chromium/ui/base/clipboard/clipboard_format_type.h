@@ -91,8 +91,10 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   // Returns a human-readable format name, or an empty string as an error value
   // if the format isn't found.
   std::string GetName() const;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   const FORMATETC& ToFormatEtc() const { return data_; }
+#elif defined(TOOLKIT_QT)
+  const std::string& ToString() const { return data_; }
 #elif defined(OS_APPLE)
   NSString* ToNSString() const { return data_; }
   // Custom copy and assignment constructor to handle NSString.
@@ -117,7 +119,7 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   //
   // In all platforms, format names may be ASCII or UTF8/16.
   // TODO(huangdarwin): Convert interfaces to base::string16.
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // When there are multiple files in the data store and they are described
   // using a file group descriptor, the file contents are retrieved by
   // requesting the CFSTR_FILECONTENTS clipboard format type and also providing
@@ -129,7 +131,7 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   // FORMATETC:
   // https://docs.microsoft.com/en-us/windows/desktop/com/the-formatetc-structure
   FORMATETC data_;
-#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA)
+#elif defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_FUCHSIA) || defined(TOOLKIT_QT)
   explicit ClipboardFormatType(const std::string& native_format);
   std::string data_;
 #elif defined(OS_APPLE)
