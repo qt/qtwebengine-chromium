@@ -136,7 +136,7 @@ if (enable_remoting_host && !is_android && !is_chromeos) {
 
     deps = [ ":it2me_standalone_host" ]
 
-    if (is_linux) {
+    if (use_gtk) {
       deps += [ "//build/config/linux/gtk" ]
     }
 

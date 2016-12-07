@@ -25,7 +25,11 @@ const char kFirefoxTitle[] = "Firefox";
 const char kSafariTitle[] = "Safari";
 
 bool IsBrowserAccessibilityCocoa(const id node) {
+#if !defined(TOOLKIT_QT)
   return [node isKindOfClass:[BrowserAccessibilityCocoa class]];
+#else
+  return false;
+#endif
 }
 
 bool IsAXUIElement(const id node) {

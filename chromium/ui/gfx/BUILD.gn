@@ -567,7 +567,7 @@ source_set("memory_buffer_sources") {
     "//ui/gfx/geometry",
   ]
 
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && !use_qt) {
     sources += [
       "linux/client_native_pixmap_dmabuf.cc",
       "linux/client_native_pixmap_dmabuf.h",

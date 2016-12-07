@@ -24,6 +24,7 @@
 namespace gl {
 namespace init {
 
+#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatform() {
 #if defined(USE_X11)
   if (!features::IsUsingOzonePlatform())
@@ -46,6 +47,7 @@ bool InitializeGLOneOffPlatform() {
 #endif
   return false;
 }
+#endif
 
 bool InitializeStaticGLBindings(GLImplementation implementation) {
 #if defined(USE_X11)
