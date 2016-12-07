@@ -537,7 +537,7 @@ component("base") {
     ]
   }
 
-  if (is_mac || is_win) {
+  if ((is_mac || is_win) && !use_qt) {
     deps += [ "//ui/base/clipboard" ]
   }
 
@@ -591,6 +591,43 @@ component("base") {
 
   if (is_android || is_ios) {
     sources -= [ "device_form_factor_desktop.cc" ]
+  }
+
+  if (use_qt) {
+    if (toolkit_views || use_aura) {
+      sources -= [
+        "dragdrop/os_exchange_data_provider_factory.cc",
+        "dragdrop/os_exchange_data_provider_factory.h",
+      ]
+    }
+    if (is_linux) {
+      sources -= [
+        "resource/resource_bundle_auralinux.cc",
+      ]
+      if (use_x11) {
+        sources -= [
+          "dragdrop/os_exchange_data_provider_aurax11.cc",
+          "dragdrop/os_exchange_data_provider_aurax11.h",
+        ]
+      }
+    } else if (is_mac) {
+      sources -= [
+        "dragdrop/os_exchange_data_provider_builder_mac.h",
+        "dragdrop/os_exchange_data_provider_builder_mac.mm",
+        "dragdrop/os_exchange_data_provider_mac.mm",
+        "dragdrop/os_exchange_data_provider_mac.h",
+        "resource/resource_bundle_mac.mm",
+      ]
+    } else if (is_win) {
+      sources -= [
+        "dragdrop/drag_source_win.cc",
+        "dragdrop/drag_source_win.h",
+        "dragdrop/os_exchange_data_provider_win.cc",
+        "dragdrop/os_exchange_data_provider_win.h",
+        "resource/resource_bundle_win.cc",
+        "resource/resource_bundle_win.h",
+      ]
+    }
   }
 }
 

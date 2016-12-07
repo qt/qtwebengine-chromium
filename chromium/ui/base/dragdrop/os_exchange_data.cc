@@ -101,7 +101,7 @@ bool OSExchangeData::HasAnyFormat(
     return true;
   if ((formats & URL) != 0 && HasURL(FilenameToURLPolicy::CONVERT_FILENAMES))
     return true;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   if ((formats & FILE_CONTENTS) != 0 && provider_->HasFileContents())
     return true;
 #endif
@@ -118,7 +118,7 @@ bool OSExchangeData::HasAnyFormat(
   return false;
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 void OSExchangeData::SetFileContents(const base::FilePath& filename,
                                      const std::string& file_contents) {
   provider_->SetFileContents(filename, file_contents);

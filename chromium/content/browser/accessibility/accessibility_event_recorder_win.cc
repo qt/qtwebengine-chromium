@@ -63,9 +63,11 @@ std::string BstrToPrettyUTF8(BSTR bstr) {
   // children, with an "embedded object character" for each non-text child.
   // Pretty-print the embedded object character as <obj> so that test output
   // is human-readable.
+#ifndef TOOLKIT_QT
   base::StringPiece16 embedded_character(
       &BrowserAccessibilityComWin::kEmbeddedCharacter, 1);
   base::ReplaceChars(str16, embedded_character, L"<obj>", &str16);
+#endif
 
   return base::UTF16ToUTF8(str16);
 }

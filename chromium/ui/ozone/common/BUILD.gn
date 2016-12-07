@@ -21,6 +21,13 @@ source_set("common") {
 
   public_deps = [ "//ui/ozone:ozone_base" ]
 
+  if (use_qt) {
+    sources -= [
+      "gl_surface_egl_readback.cc",
+      "gl_surface_egl_readback.h",
+    ]
+  }
+
   deps = [
     "//ui/gfx/ipc/color",
     "//ui/gl",

@@ -13,7 +13,7 @@
 
 #include "build/build_config.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 #include <objidl.h>
 #endif
 
@@ -56,7 +56,7 @@ class COMPONENT_EXPORT(UI_BASE) OSExchangeData {
     URL            = 1 << 1,
     FILE_NAME      = 1 << 2,
     PICKLED_DATA   = 1 << 3,
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     FILE_CONTENTS  = 1 << 4,
 #endif
 #if defined(USE_AURA)
@@ -131,7 +131,7 @@ class COMPONENT_EXPORT(UI_BASE) OSExchangeData {
   bool HasAnyFormat(int formats,
                     const std::set<ClipboardFormatType>& types) const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR on
   // Windows).
   void SetFileContents(const base::FilePath& filename,
