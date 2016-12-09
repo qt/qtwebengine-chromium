@@ -160,7 +160,9 @@ template("chrome_repack_locales") {
       locale = input_locale
 
       # Compute the output name. Mac uses a different location.
-      if (is_mac || is_ios) {
+      if (use_qt && defined(invoker.output_dir_name)) {
+        output = "${root_out_dir}/${invoker.output_dir_name}/${output_locale}.pak"
+      } else if (is_mac || is_ios) {
         output = "${root_gen_dir}/repack/locales/${output_locale}.pak"
       } else {
         output = "${root_out_dir}/locales/${output_locale}.pak"
