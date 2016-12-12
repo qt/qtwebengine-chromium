@@ -1525,6 +1525,8 @@ const GLubyte *GL_APIENTRY GetStringi(GLenum name, GLuint index)
 
 void GL_APIENTRY CopyBufferSubData(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size)
 {
+    using base::IsValueInRangeForNumericType;
+    using base::internal::CheckedNumeric;
     EVENT("(GLenum readTarget = 0x%X, GLenum writeTarget = 0x%X, GLintptr readOffset = %d, GLintptr writeOffset = %d, GLsizeiptr size = %d)",
           readTarget, writeTarget, readOffset, writeOffset, size);
 
