@@ -136,7 +136,7 @@ PrivateScriptController.prototype = {
     },
 }
 
-if (typeof window.privateScriptController === 'undefined')
+if (!window.hasOwnProperty("privateScriptController"))
     window.privateScriptController = new PrivateScriptController();
 
 // This line must be the last statement of this JS file.
