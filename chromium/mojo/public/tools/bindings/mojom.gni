@@ -47,7 +47,6 @@ mojom_generator_script = "$mojom_generator_root/mojom_bindings_generator.py"
 mojom_generator_sources = [
   "$mojom_generator_root/generators/mojom_cpp_generator.py",
   "$mojom_generator_root/generators/mojom_js_generator.py",
-  "$mojom_generator_root/generators/mojom_java_generator.py",
   "$mojom_generator_root/pylib/mojom/__init__.py",
   "$mojom_generator_root/pylib/mojom/error.py",
   "$mojom_generator_root/pylib/mojom/generate/__init__.py",
@@ -685,7 +684,7 @@ template("mojom") {
           ":$type_mappings_target_name",
           "//mojo/public/tools/bindings:precompile_templates",
         ]
-        outputs = generator_cpp_outputs + generator_java_outputs
+        outputs = generator_cpp_outputs
         args = common_generator_args
 
         if (cpp_only) {
@@ -696,7 +695,7 @@ template("mojom") {
         } else {
           args += [
             "-g",
-            "c++,java",
+            "c++",
           ]
         }
 
