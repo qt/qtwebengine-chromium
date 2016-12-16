@@ -46,7 +46,6 @@ from mojom.parse.translate import Translate
 _BUILTIN_GENERATORS = {
   "c++": "mojom_cpp_generator.py",
   "javascript": "mojom_js_generator.py",
-  "java": "mojom_java_generator.py",
 }
 
 
@@ -267,7 +266,7 @@ def main():
   generate_parser.add_argument("-g", "--generators",
                                dest="generators_string",
                                metavar="GENERATORS",
-                               default="c++,javascript,java",
+                               default="c++,javascript",
                                help="comma-separated list of generators")
   generate_parser.add_argument(
       "-I", dest="import_directories", action="append", metavar="directory",
