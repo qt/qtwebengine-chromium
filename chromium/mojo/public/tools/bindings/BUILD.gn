@@ -73,7 +73,6 @@ action("precompile_templates") {
   inputs = jinja2_sources
   outputs = [
     "$target_gen_dir/cpp_templates.zip",
-    "$target_gen_dir/java_templates.zip",
     "$target_gen_dir/js_templates.zip",
   ]
   args = [
