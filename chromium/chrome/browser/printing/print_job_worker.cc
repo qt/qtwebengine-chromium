@@ -38,8 +38,9 @@
 #endif
 
 #else // !defined(TOOLKIT_QT)
-// Used to fetch the application name
-#include "web_engine_library_info.h"
+namespace printing {
+std::string getApplicationLocale();
+}
 #endif
 
 using content::BrowserThread;
@@ -93,7 +94,7 @@ content::WebContents* PrintingContextDelegate::GetWebContents() {
 
 std::string PrintingContextDelegate::GetAppLocale() {
 #if defined(TOOLKIT_QT)
-  return WebEngineLibraryInfo::getApplicationLocale();
+  return getApplicationLocale();
 #else
   return g_browser_process->GetApplicationLocale();
 #endif // if defined(TOOLKIT_QT)
