@@ -2202,6 +2202,15 @@ void Document::detach(const AttachContext& context)
     // consistent state.
     ScriptForbiddenScope forbidScript;
     view()->dispose();
+
+    // If the widget of the document's frame owner doesn't match view() then
+    // FrameView::dispose() didn't clear the owner's widget. If we don't clear it
+    // here, it may be clobbered later in LocalFrame::createView(). See also
+    // https://crbug.com/673170 and the comment in FrameView::dispose().
+    HTMLFrameOwnerElement* ownerElement = m_frame->deprecatedLocalOwner();
+    if (ownerElement)
+        ownerElement->setWidget(nullptr);
+
     m_markers->prepareForDestruction();
     if (LocalDOMWindow* window = this->domWindow())
         window->willDetachDocumentFromFrame();
