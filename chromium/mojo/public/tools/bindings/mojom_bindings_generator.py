@@ -48,7 +48,6 @@ from mojom.generate.generator import WriteFile
 _BUILTIN_GENERATORS = {
     "c++": "mojom_cpp_generator",
     "javascript": "mojom_js_generator",
-    "java": "mojom_java_generator",
     "mojolpm": "mojom_mojolpm_generator",
     "typescript": "mojom_ts_generator",
     "rust": "mojom_rust_generator",
@@ -394,7 +393,7 @@ def main():
                                "--generators",
                                dest="generators_string",
                                metavar="GENERATORS",
-                               default="c++,javascript,java,mojolpm",
+                               default="c++,javascript,mojolpm",
                                help="comma-separated list of generators")
   generate_parser.add_argument("-c",
                                "--checks",
