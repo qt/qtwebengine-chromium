@@ -2026,6 +2026,10 @@ source_set("browser") {
   }
 
   if (use_qt) {
+    sources -= [
+      "tracing/tracing_ui.cc",
+      "tracing/tracing_ui.h",
+    ]
     if (is_win) {
       sources -= [
         "accessibility/browser_accessibility_event_win.cc",
