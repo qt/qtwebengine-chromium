@@ -10,8 +10,11 @@
 #include "base/strings/string_piece.h"
 #include "media/base/watch_time_keys.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
+
+#if !defined(TOOLKIT_QT)
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#endif
 
 namespace media {
 
@@ -150,6 +153,7 @@ void WatchTimeRecorder::UpdateUnderflowCount(int32_t count) {
 }
 
 void WatchTimeRecorder::RecordUkmPlaybackData() {
+#if !defined(TOOLKIT_QT)
   // UKM may be unavailable in content_shell or other non-chrome/ builds; it
   // may also be unavailable if browser shutdown has started; so this may be a
   // nullptr. If it's unavailable, UKM reporting will be skipped.
@@ -225,6 +229,7 @@ void WatchTimeRecorder::RecordUkmPlaybackData() {
   builder.SetVideoNaturalHeight(properties_->natural_size.height());
   builder.Record(ukm_recorder);
   aggregate_watch_time_info_.clear();
+#endif
 }
 
 WatchTimeRecorder::RebufferMapping::RebufferMapping(const RebufferMapping& copy)

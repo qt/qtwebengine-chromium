@@ -261,44 +261,6 @@ static_library("test_support") {
   }
 }
 
-group("telemetry_gpu_integration_test") {
-  testonly = true
-  deps = [
-    "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
-  ]
-
-  data = [
-    # For isolate contract.
-    "//testing/scripts/common.py",
-    "//testing/xvfb.py",
-    "//testing/scripts/run_gpu_integration_test_as_googletest.py",
-
-    "//content/test/gpu/",
-    "//content/test/data/gpu/",
-
-    # For the Maps WPR archive SHA. Include the entire directory to
-    # avoid having to update this BUILD.gn file if the WPR is
-    # re-recorded.
-    "//tools/perf/page_sets/data/",
-
-    # For depth_capture
-    "//content/test/data/media/depth_stream_test_utilities.js",
-    "//content/test/data/media/getusermedia-depth-capture.html",
-    "//content/test/data/media/webrtc_test_utilities.js",
-
-    # For GpuProcess.video
-    "//content/test/data/media/bear.ogv",
-
-    # For webgl_conformance
-    "//third_party/webgl/",
-    "//content/test/gpu/run_gpu_integration_test.py",
-
-    # For pixel_test
-    "//media/test/data/bear.mp4",
-    "//media/test/data/bear-vp9.webm",
-  ]
-}
-
 if (!is_android) {
   static_library("test_support_ui") {
     defines = []
@@ -998,64 +960,6 @@ if (!is_android && !is_fuchsia) {
         "//components/user_manager:test_support",
       ]
     }
-  }
-
-  group("telemetry_unittests") {
-    testonly = true
-    deps = [
-      "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
-    ]
-
-    data = [
-      "//tools/perf/run_telemetry_tests",
-
-      # For isolate contract.
-      "//testing/scripts/common.py",
-      "//testing/xvfb.py",
-      "//testing/scripts/run_telemetry_as_googletest.py",
-    ]
-
-    if (enable_package_mash_services) {
-      deps += [ "//chrome:chrome_test" ]
-      data_deps = [
-        "//chrome:chrome_test",
-      ]
-    }
-  }
-
-  group("telemetry_gpu_unittests_run") {
-    testonly = true
-    deps = [
-      ":telemetry_gpu_unittests",
-    ]
-  }
-
-  group("telemetry_gpu_unittests") {
-    deps = [
-      "//third_party/catapult/telemetry:telemetry_test_support",
-    ]
-    data = [
-      # TODO(kbr): refactor the telemetry dependencies more cleanly.
-      "//content/test/gpu/",
-      "//content/test/data/gpu/",
-
-      # For GpuProcess.video
-      "//content/test/data/media/bear.ogv",
-
-      # For webgl_conformance_expectations_unittest
-      "//third_party/webgl/src/sdk/tests/",
-
-      # For resolve the imports in content/test/gpu/run_gpu_test.py
-      "//tools/perf/core/",
-      "//tools/perf/chrome_telemetry_build/",
-
-      # From telemetry_gpu_unittests.isolate
-      "//third_party/pylint/",
-      "//third_party/logilab/",
-      "//testing/scripts/common.py",
-      "//testing/xvfb.py",
-      "//testing/scripts/run_telemetry_as_googletest.py",
-    ]
   }
 }
 

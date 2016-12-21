@@ -8,7 +8,9 @@
 
 #include "base/memory/ptr_util.h"
 #include "services/resource_coordinator/memory_instrumentation/coordinator_impl.h"
+#if !defined(TOOLKIT_QT)
 #include "services/resource_coordinator/observers/metrics_collector.h"
+#endif
 #include "services/resource_coordinator/observers/tab_signal_generator_impl.h"
 #include "services/resource_coordinator/service_callbacks_impl.h"
 #include "services/resource_coordinator/tracing/agent_registry.h"
@@ -52,8 +54,10 @@ void ResourceCoordinatorService::OnStart() {
   coordination_unit_manager_.RegisterObserver(
       std::move(tab_signal_generator_impl));
 
+#if !defined(TOOLKIT_QT)
   coordination_unit_manager_.RegisterObserver(
       base::MakeUnique<MetricsCollector>());
+#endif
 
   coordination_unit_manager_.OnStart(&registry_, ref_factory_.get());
 

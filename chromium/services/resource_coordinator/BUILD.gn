@@ -5,6 +5,7 @@
 # There should be only one resource coordinator. It is currently
 # in the browser process. So, only //content/browser should link to this target.
 # Others modules should only need the public targets.
+import("//build/config/features.gni")
 import("//services/catalog/public/tools/catalog.gni")
 import("//services/service_manager/public/cpp/service.gni")
 import("//services/service_manager/public/service_manifest.gni")
@@ -56,6 +57,17 @@ source_set("lib") {
     "//services/resource_coordinator/tracing:lib",
     "//services/service_manager/public/cpp/standalone_service:standalone_service",
   ]
+
+  if (use_qt) {
+    sources -= [
+      "observers/metrics_collector.cc",
+      "observers/metrics_collector.h",
+    ]
+    public_deps -= [
+      "//components/ukm:ukm",
+      "//services/metrics/public/cpp:ukm_builders",
+    ]
+  }
 }
 
 service_manifest("manifest") {

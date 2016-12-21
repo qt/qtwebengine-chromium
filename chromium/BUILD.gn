@@ -156,6 +156,14 @@ group("gn_all") {
       "//ui/accessibility:accessibility_unittests",
       "//ui/accessibility/extensions",
     ]
+    if (use_qt) {
+      deps -= [
+        "//chrome/test:browser_tests",
+        "//chrome/test:interactive_ui_tests",
+        "//chrome/test:sync_integration_tests",
+        "//chrome/test/chromedriver:chromedriver_unittests",
+      ]
+    }
   }
 
   if (!is_ios) {
@@ -224,6 +232,13 @@ group("gn_all") {
       "//url/ipc:url_ipc_unittests",
       "//v8:gn_all",
     ]
+    if (use_qt) {
+      deps -= [
+        "//chrome/test:telemetry_perf_unittests",
+        "//chrome/test:unit_tests",
+        "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
+      ]
+    }
   } else if (is_ios) {
     deps += [ "//ios:all" ]
   } else if (is_fuchsia) {
@@ -486,6 +501,14 @@ group("gn_all") {
         "//third_party/leveldatabase:env_chromium_unittests",
         "//third_party/libaddressinput:libaddressinput_unittests",
       ]
+      if (use_qt) {
+        deps -= [
+          "//chrome/test:load_library_perf_tests",
+          "//chrome/test:sync_performance_tests",
+          "//chrome/test/chromedriver:chromedriver",
+          "//chrome/test/chromedriver:chromedriver_tests",
+        ]
+      }
     }
 
     if (enable_extensions) {
@@ -688,6 +711,9 @@ group("gn_all") {
     if (target_cpu == "x86" || target_cpu == "x64") {
       if (!is_android) {
         deps += [ "//chrome/test:load_library_perf_tests" ]
+        if (use_qt) {
+          deps -= [ "//chrome/test:load_library_perf_tests" ]
+        }
       }
       deps += [
         "//native_client/src/trusted/platform_qualify:vcpuid",
@@ -1043,12 +1069,19 @@ group("chromium_builder_perf") {
       "//media:media_perftests",
       "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
     ]
+    if (use_qt) {
+      data_deps -= [
+        "//chrome/test:load_library_perf_tests",
+        "//chrome/test:telemetry_perf_tests",
+        "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
+      ]
+    }
 
     if (is_android) {
       data += [ "//third_party/android_tools/sdk/platform-tools/adb" ]
     }
 
-    if (!is_chromeos) {
+    if (!is_chromeos && !use_qt) {
       data_deps += [ "//chrome/test:performance_browser_tests" ]
     }
     if (is_linux && !is_chromeos) {

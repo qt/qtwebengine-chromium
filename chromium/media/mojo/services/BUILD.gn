@@ -110,6 +110,13 @@ component("services") {
     "//services/service_manager/public/interfaces",
   ]
 
+  if (use_qt) {
+    deps -= [
+      "//services/metrics/public/cpp:metrics_cpp",
+      "//services/metrics/public/cpp:ukm_builders",
+    ]
+  }
+
   if (is_android) {
     sources += [
       "android_mojo_media_client.cc",
