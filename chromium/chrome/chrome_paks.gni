@@ -126,6 +126,15 @@ template("chrome_extra_paks") {
       sources += invoker.additional_paks
     }
 
+    if (use_qt) {
+      sources -= [
+        "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+      ]
+      deps -= [
+        "//content/browser/tracing:resources",
+      ]
+    }
+
     if (!is_android) {
       # New paks should be added here by default.
       sources += [

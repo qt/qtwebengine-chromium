@@ -143,6 +143,14 @@ repack("pak") {
     "//ui/strings",
     "//ui/views/resources",
   ]
+  if (use_qt) {
+    sources -= [
+      "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+    ]
+    deps -= [
+      "//content/browser/tracing:resources",
+    ]
+  }
 
   output = "$root_out_dir/navigation.pak"
 }

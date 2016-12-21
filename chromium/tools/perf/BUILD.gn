@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
 group("perf") {
   testonly = true
   deps = [
@@ -25,6 +27,11 @@ group("perf") {
     # For blink_perf.BlinkPerfPywebsocket benchmark.
     "//third_party/pywebsocket/",
   ]
+  if (use_qt) {
+    deps -= [
+      "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
+    ]
+  }
 }
 
 if (is_android) {

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 #
 
+import("//build/config/features.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//testing/test.gni")
 
@@ -103,6 +104,11 @@ static_library("test_support") {
     "//chrome/test:test_support",
     "//testing/gmock",
   ]
+  if (use_qt) {
+    deps -= [
+      "//chrome/test:test_support",
+    ]
+  }
   sources = [
     "mock_media_router.cc",
     "mock_media_router.h",
@@ -111,7 +117,6 @@ static_library("test_support") {
     "test_helper.cc",
     "test_helper.h",
   ]
-
   if (!is_android) {
     deps += [
       ":mojo_bindings",
