@@ -1132,8 +1132,6 @@ blink::WebView* RenderViewImpl::webview() const {
   return webview_;
 }
 
-#if BUILDFLAG(ENABLE_PLUGINS)
-
 #if defined(OS_MACOSX)
 void RenderViewImpl::OnGetRenderedText() {
   if (!webview())
@@ -1158,8 +1156,6 @@ void RenderViewImpl::OnGetRenderedText() {
   Send(new ViewMsg_GetRenderedTextCompleted(GetRoutingID(), text));
 }
 #endif  // defined(OS_MACOSX)
-
-#endif  // ENABLE_PLUGINS
 
 void RenderViewImpl::TransferActiveWheelFlingAnimation(
     const blink::WebActiveWheelFlingParameters& params) {
