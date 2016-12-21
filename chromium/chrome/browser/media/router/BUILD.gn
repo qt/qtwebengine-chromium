@@ -48,6 +48,11 @@ source_set("test_support") {
     "//chrome/test:test_support",
     "//testing/gmock",
   ]
+  if (use_qt) {
+    deps -= [
+      "//chrome/test:test_support",
+    ]
+  }
   sources = rebase_path(gypi_values.media_router_test_support_sources,
                         ".",
                         "//chrome/browser/media/router")

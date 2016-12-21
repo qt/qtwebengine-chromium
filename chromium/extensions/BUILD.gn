@@ -364,4 +364,9 @@ source_set("chrome_extensions_interactive_uitests") {
     "//ui/resources:ui_test_pak",
     "//ui/web_dialogs:test_support",
   ]
+  if (use_qt) {
+    deps -= [
+      "//chrome/test:test_support",
+    ]
+  }
 }

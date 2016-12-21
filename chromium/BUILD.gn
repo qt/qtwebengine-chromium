@@ -253,6 +253,14 @@ group("both_gn_and_gyp") {
       "//tools/perf/clear_system_cache",
       "//ui/accessibility:accessibility_unittests",
     ]
+    if (use_qt) {
+      deps -= [
+        "//chrome/test:browser_tests",
+        "//chrome/test:interactive_ui_tests",
+        "//chrome/test:sync_integration_tests",
+        "//chrome/test/chromedriver:chromedriver_unittests",
+      ]
+    }
   }
 
   if (!is_ios) {
@@ -295,6 +303,13 @@ group("both_gn_and_gyp") {
       "//ui/touch_selection:ui_touch_selection_unittests",
       "//url/ipc:url_ipc_unittests",
     ]
+    if (use_qt) {
+      deps -= [
+        "//chrome/test:telemetry_perf_unittests",
+        "//chrome/test:unit_tests",
+        "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
+      ]
+    }
   } else {
     deps += [ "//ios:all" ]
   }
@@ -542,6 +557,14 @@ group("both_gn_and_gyp") {
         "//third_party/leveldatabase:env_chromium_unittests",
         "//third_party/libaddressinput:libaddressinput_unittests",
       ]
+      if (use_qt) {
+        deps -= [
+          "//chrome/test:load_library_perf_tests",
+          "//chrome/test:sync_performance_tests",
+          "//chrome/test/chromedriver:chromedriver",
+          "//chrome/test/chromedriver:chromedriver_tests",
+        ]
+      }
     }
 
     if (enable_extensions) {
@@ -787,6 +810,9 @@ group("gn_only") {
     if (target_cpu == "x86" || target_cpu == "x64") {
       if (!is_android) {
         deps += [ "//chrome/test:load_library_perf_tests" ]
+        if (use_qt) {
+          deps -= [ "//chrome/test:load_library_perf_tests" ]
+        }
       }
       deps += [
         "//native_client/src/trusted/platform_qualify:vcpuid",
@@ -930,9 +956,20 @@ group("chromium_builder_perf") {
       "//media:media_perftests",
       "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
     ]
+    if (use_qt) {
+      deps -= [
+        "//chrome/test:load_library_perf_tests",
+        "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
+      ]
+    }
 
     if (!is_chromeos) {
       deps += [ "//chrome/test:performance_browser_tests" ]
+      if (use_qt) {
+        deps -= [
+          "//chrome/test:performance_browser_tests"
+        ]
+      }
     }
     if (is_linux && !is_chromeos) {
       if (is_official_build) {

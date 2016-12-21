@@ -1389,6 +1389,14 @@ repack("packed_extra_resources") {
       "//content/browser/tracing:resources",
       "//third_party/WebKit/public:resources",
     ]
+    if (use_qt) {
+      sources -= [
+        "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+      ]
+      deps -= [
+        "//content/browser/tracing:resources",
+      ]
+    }
   }
   if (is_chromeos) {
     sources += [ "$root_gen_dir/ui/file_manager/file_manager_resources.pak" ]

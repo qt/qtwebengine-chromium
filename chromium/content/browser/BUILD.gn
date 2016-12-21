@@ -506,6 +506,11 @@ source_set("browser") {
   }
 
   if (use_qt) {
+    sources -= [
+      "tracing/tracing_ui.cc",
+      "tracing/tracing_ui.h",
+    ]
+    deps -= [ "//content/browser/tracing:resources" ]
     if (use_aura) {
       sources -= [
         "renderer_host/native_web_keyboard_event_aura.cc",
