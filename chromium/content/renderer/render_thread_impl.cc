@@ -792,7 +792,7 @@ void RenderThreadImpl::Init() {
   midi_message_filter_ = new MidiMessageFilter(GetIOTaskRunner());
   AddFilter(midi_message_filter_.get());
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (features::IsMultiProcessMash())
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
 #endif
@@ -949,7 +949,7 @@ void RenderThreadImpl::Init() {
 
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
   if (features::IsMultiProcessMash()) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     GetServiceManagerConnection()->GetConnector()->BindInterface(
         ws::mojom::kServiceName, &manager_ptr);
 #else
@@ -1921,7 +1921,7 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
 
   params.client_name = client_name;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (features::IsMultiProcessMash()) {
     if (!RendererWindowTreeClient::Get(routing_id)) {
       std::move(callback).Run(nullptr);

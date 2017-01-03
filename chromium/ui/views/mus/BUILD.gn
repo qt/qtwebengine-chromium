@@ -206,6 +206,13 @@ test("views_mus_unittests") {
     "//services/ws/test_ws",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ws/ime/test_ime_driver",
+      "//services/ws/test_ws",
+     ]
+  }
+
   if (is_win) {
     deps += [
       "//build/win:default_exe_manifest",

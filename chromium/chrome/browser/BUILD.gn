@@ -3594,6 +3594,9 @@ jumbo_split_static_library("browser") {
       "//ui/snapshot",
       "//ui/views/mus",
     ]
+    if (use_qt) {
+      deps -= [ "//ui/views/mus" ]
+    }
   }
 
   if (use_aura && !use_ozone && is_desktop_linux) {
