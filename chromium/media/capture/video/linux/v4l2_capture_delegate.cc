@@ -13,6 +13,10 @@
 
 #include <utility>
 
+#if !defined(OS_OPENBSD)
+#include <linux/version.h>
+#endif
+
 #include "base/bind.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
@@ -345,9 +349,12 @@ void V4L2CaptureDelegate::AllocateAndStart(
 
   // Set anti-banding/anti-flicker to 50/60Hz. May fail due to not supported
   // operation (|errno| == EINVAL in this case) or plain failure.
-  if ((power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_50HZ) ||
-      (power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_60HZ) ||
-      (power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_AUTO)) {
+  if ((power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_50HZ)
+      || (power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_60HZ)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
+      || (power_line_frequency_ == V4L2_CID_POWER_LINE_FREQUENCY_AUTO)
+#endif
+    ) {
     struct v4l2_control control = {};
     control.id = V4L2_CID_POWER_LINE_FREQUENCY;
     control.value = power_line_frequency_;
