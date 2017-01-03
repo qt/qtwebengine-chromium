@@ -47,7 +47,7 @@
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 #include "content/renderer/mus/mus_embedded_frame.h"
 #include "content/renderer/mus/renderer_window_tree_client.h"
 #endif
@@ -241,7 +241,7 @@ void RenderFrameProxy::Init(blink::WebRemoteFrame* web_frame,
 
   pending_resize_params_.screen_info = render_widget_->GetOriginalScreenInfo();
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (features::IsMusEnabled()) {
     RendererWindowTreeClient* renderer_window_tree_client =
         RendererWindowTreeClient::Get(render_widget_->routing_id());
@@ -582,7 +582,7 @@ void RenderFrameProxy::OnDisableAutoResize() {
   WasResized();
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void RenderFrameProxy::SetMusEmbeddedFrame(
     std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame) {
   mus_embedded_frame_ = std::move(mus_embedded_frame);
@@ -626,7 +626,7 @@ void RenderFrameProxy::WasResized() {
                                   pending_resize_params_.screen_space_rect;
   bool resize_params_changed = synchronized_params_changed || rect_changed;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (rect_changed && mus_embedded_frame_) {
     mus_embedded_frame_->SetWindowBounds(local_surface_id_,
                                          gfx::Rect(local_frame_size()));
@@ -654,7 +654,7 @@ void RenderFrameProxy::OnSetHasReceivedUserGestureBeforeNavigation(bool value) {
 }
 
 void RenderFrameProxy::FrameDetached(DetachType type) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   mus_embedded_frame_.reset();
 #endif
 
@@ -818,7 +818,7 @@ base::UnguessableToken RenderFrameProxy::GetDevToolsFrameToken() {
   return devtools_frame_token_;
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void RenderFrameProxy::OnMusEmbeddedFrameSurfaceChanged(
     const viz::SurfaceInfo& surface_info) {
   SetChildFrameSurface(surface_info);
