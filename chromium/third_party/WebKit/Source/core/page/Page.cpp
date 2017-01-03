@@ -59,14 +59,14 @@ namespace blink {
 // not observable from scripts.
 static Page::PageSet& allPages()
 {
-    DEFINE_STATIC_LOCAL(Page::PageSet, allPages, ());
-    return allPages;
+    DEFINE_STATIC_LOCAL(Page::PageSet, pages, ());
+    return pages;
 }
 
 Page::PageSet& Page::ordinaryPages()
 {
-    DEFINE_STATIC_LOCAL(Page::PageSet, ordinaryPages, ());
-    return ordinaryPages;
+    DEFINE_STATIC_LOCAL(Page::PageSet, pages, ());
+    return pages;
 }
 
 void Page::networkStateChanged(bool online)
@@ -153,6 +153,18 @@ Page::~Page()
 #endif
     // willBeDestroyed() must be called before Page destruction.
     ASSERT(!m_mainFrame);
+}
+
+void Page::closeSoon()
+{
+  // Make sure this Page can no longer be found by JS.
+  m_isClosing = true;
+
+  // TODO(dcheng): Try to remove this in a followup, it's not obviously needed.
+  if (m_mainFrame->isLocalFrame())
+     toLocalFrame(m_mainFrame)->loader().stopAllLoaders();
+
+  chromeClient().closeWindowSoon();
 }
 
 ViewportDescription Page::viewportDescription() const
@@ -555,11 +567,6 @@ void Page::willCloseLayerTreeView(WebLayerTreeView& layerTreeView)
 {
     if (m_scrollingCoordinator)
         m_scrollingCoordinator->willCloseLayerTreeView(layerTreeView);
-}
-
-void Page::willBeClosed()
-{
-    ordinaryPages().remove(this);
 }
 
 void Page::willBeDestroyed()

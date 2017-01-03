@@ -36,6 +36,10 @@ public:
     explicit ScopedPageSuspender();
     ~ScopedPageSuspender();
 
+private:
+    friend class Page;
+
+    static void setSuspended(bool);
     static bool isActive();
 };
 

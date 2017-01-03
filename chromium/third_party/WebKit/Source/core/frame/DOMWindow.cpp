@@ -336,7 +336,7 @@ void DOMWindow::close(ExecutionContext* context)
 
     InspectorInstrumentation::willCloseWindow(context);
 
-    page->chromeClient().closeWindowSoon();
+    page->closeSoon();
 
     // So as to make window.closed return the expected result
     // after window.close(), separately record the to-be-closed
