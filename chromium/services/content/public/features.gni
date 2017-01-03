@@ -9,5 +9,5 @@ import("//build/config/ui.gni")
 declare_args() {
   # Determines whether or not Aura-based view embedding should be supported by
   # the Content Service.
-  enable_aura_content_view_embedding = use_aura && !is_fuchsia && !is_chromecast
+  enable_aura_content_view_embedding = use_aura && !is_fuchsia && !is_chromecast && !use_qt
 }

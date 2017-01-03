@@ -3698,6 +3698,9 @@ split_static_library("ui") {
       "//ash/resources/vector_icons",
       "//ui/views/mus/remote_view:remote_view_provider",
     ]
+    if (use_qt) {
+      deps -= [ "//ui/views/mus/remote_view:remote_view_provider" ]
+    }
 
     if (is_chromeos) {
       sources += [

@@ -837,7 +837,7 @@ void RenderThreadImpl::Init(
   midi_message_filter_ = new MidiMessageFilter(GetIOTaskRunner());
   AddFilter(midi_message_filter_.get());
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!features::IsAshInBrowserProcess())
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
 #endif
@@ -994,7 +994,7 @@ void RenderThreadImpl::Init(
 
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
   if (!features::IsAshInBrowserProcess()) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     GetServiceManagerConnection()->GetConnector()->BindInterface(
         ui::mojom::kServiceName, &manager_ptr);
 #else
@@ -1998,7 +1998,7 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
   if (command_line.HasSwitch(switches::kDisableFrameRateLimit))
     params.synthetic_begin_frame_source = CreateSyntheticBeginFrameSource();
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!features::IsAshInBrowserProcess()) {
     if (!RendererWindowTreeClient::Get(routing_id)) {
       std::move(callback).Run(nullptr);
