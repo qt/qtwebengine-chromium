@@ -1997,7 +1997,7 @@ test("unit_tests") {
       "//chrome/browser/ui/startup/default_browser_infobar_delegate_unittest.cc",
     ]
   }
-  if (!is_chromeos && !use_ozone && is_linux) {
+  if (!is_chromeos && !use_ozone && is_linux && use_gio) {
     deps += [
       "//build/linux/libgio",
       "//chrome/browser/ui/libgtk2ui",
