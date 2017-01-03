@@ -1864,7 +1864,7 @@ source_set("browser") {
     deps += [ "//media/mojo/interfaces" ]
   }
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     deps += [
       "//services/ui/public/cpp",
       "//services/ui/public/interfaces",
@@ -1881,7 +1881,7 @@ source_set("browser") {
       "renderer_host/render_widget_host_view_event_handler.cc",
       "renderer_host/render_widget_host_view_event_handler.h",
     ]
-  } else {  # Not aura.
+  } else if (!use_aura) {  # Not aura.
     sources -= [
       "renderer_host/compositor_resize_lock_aura.cc",
       "renderer_host/compositor_resize_lock_aura.h",

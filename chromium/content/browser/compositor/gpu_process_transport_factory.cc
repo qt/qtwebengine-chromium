@@ -549,7 +549,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
           gpu_vsync_control = gpu_output_surface.get();
           display_output_surface = std::move(gpu_output_surface);
         } else {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
           aura::WindowTreeHost* host =
               aura::WindowTreeHost::GetForAcceleratedWidget(
                   compositor->widget());

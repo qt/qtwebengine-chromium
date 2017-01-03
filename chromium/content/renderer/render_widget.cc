@@ -392,7 +392,7 @@ RenderWidget::RenderWidget(int32_t widget_routing_id,
                                           ->NewRenderWidgetSchedulingState();
     render_widget_scheduling_state_->SetHidden(is_hidden_);
   }
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kNoUseMusInRenderer)) {
     RendererWindowTreeClient::CreateIfNecessary(routing_id_);
@@ -406,7 +406,7 @@ RenderWidget::~RenderWidget() {
   // If we are swapped out, we have released already.
   if (!is_swapped_out_ && RenderProcess::current())
     RenderProcess::current()->ReleaseProcess();
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kNoUseMusInRenderer)) {
     // It is possible for a RenderWidget to be destroyed before it was embedded

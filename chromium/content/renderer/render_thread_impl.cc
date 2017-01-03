@@ -197,9 +197,11 @@
 #include "v8/src/third_party/vtune/v8-vtune.h"
 #endif
 
+#if !defined(TOOLKIT_QT)
 #include "content/public/common/service_manager_connection.h"
 #include "content/renderer/mus/render_widget_window_tree_client_factory.h"
 #include "content/renderer/mus/renderer_window_tree_client.h"
+#endif
 #include "services/ui/public/cpp/gpu/gpu.h"
 
 #if defined(ENABLE_IPC_FUZZER)
@@ -622,12 +624,16 @@ void RenderThreadImpl::Init(
   // Register this object as the main thread.
   ChildProcess::current()->set_main_thread(this);
 
+#if !defined(TOOLKIT_QT)
   if (IsRunningInMash()) {
     gpu_ = ui::Gpu::Create(GetServiceManagerConnection()->GetConnector(),
                            GetIOTaskRunner());
   } else {
     gpu_ = ui::Gpu::Create(GetRemoteInterfaces(), GetIOTaskRunner());
   }
+#else
+  gpu_ = ui::Gpu::Create(GetRemoteInterfaces(), GetIOTaskRunner());
+#endif
 
   channel()->GetThreadSafeRemoteAssociatedInterface(
       &thread_safe_render_message_filter_);
@@ -701,7 +707,7 @@ void RenderThreadImpl::Init(
 
   AddFilter((new ServiceWorkerContextMessageFilter())->GetFilter());
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningInMash() &&
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kNoUseMusInRenderer)) {
@@ -843,7 +849,7 @@ void RenderThreadImpl::Init(
 
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
   if (IsRunningInMash()) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     GetServiceManagerConnection()->GetConnector()->BindInterface(
         ui::mojom::kServiceName, &manager_ptr);
 #else
@@ -1852,7 +1858,7 @@ RenderThreadImpl::CreateCompositorFrameSink(
   if (command_line.HasSwitch(switches::kDisableGpuCompositing))
     use_software = true;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!use_software && IsRunningInMash() &&
       !command_line.HasSwitch(switches::kNoUseMusInRenderer)) {
     return RendererWindowTreeClient::Get(routing_id)
