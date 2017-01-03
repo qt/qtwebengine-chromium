@@ -45,7 +45,7 @@
 #include "core/page/DragController.h"
 #include "core/page/FocusController.h"
 #include "core/page/PointerLockController.h"
-#include "core/page/ScopedPageLoadDeferrer.h"
+#include "core/page/ScopedPageSuspender.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/paint/PaintLayer.h"
@@ -109,8 +109,8 @@ PassOwnPtrWillBeRawPtr<Page> Page::createOrdinary(PageClients& pageClients)
 {
     OwnPtrWillBeRawPtr<Page> page = create(pageClients);
     ordinaryPages().add(page.get());
-    if (ScopedPageLoadDeferrer::isActive())
-        page->setDefersLoading(true);
+    if (ScopedPageSuspender::isActive())
+        page->setSuspended(true);
     page->memoryPurgeController().registerClient(page.get());
     return page.release();
 }
@@ -131,7 +131,7 @@ Page::Page(PageClients& pageClients)
     , m_spellCheckerClient(pageClients.spellCheckerClient)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
-    , m_defersLoading(false)
+    , m_suspended(false)
     , m_deviceScaleFactor(1)
     , m_visibilityState(PageVisibilityStateVisible)
     , m_isCursorVisible(true)
@@ -300,15 +300,15 @@ void Page::setValidationMessageClient(PassOwnPtrWillBeRawPtr<ValidationMessageCl
     m_validationMessageClient = client;
 }
 
-void Page::setDefersLoading(bool defers)
+void Page::setSuspended(bool suspend)
 {
-    if (defers == m_defersLoading)
+    if (suspend == m_suspended)
         return;
 
-    m_defersLoading = defers;
+    m_suspended = suspend;
     for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->isLocalFrame())
-            toLocalFrame(frame)->loader().setDefersLoading(defers);
+            toLocalFrame(frame)->loader().setDefersLoading(suspend);
     }
 }
 

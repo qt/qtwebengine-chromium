@@ -85,7 +85,7 @@
 #include "core/page/Page.h"
 #include "core/page/PagePopupClient.h"
 #include "core/page/PointerLockController.h"
-#include "core/page/ScopedPageLoadDeferrer.h"
+#include "core/page/ScopedPageSuspender.h"
 #include "core/page/TouchDisambiguation.h"
 #include "core/paint/PaintLayer.h"
 #include "core/timing/DOMWindowPerformance.h"
@@ -223,10 +223,10 @@ const double WebView::maxTextSizeMultiplier = 3.0;
 
 // Used to defer all page activity in cases where the embedder wishes to run
 // a nested event loop. Using a stack enables nesting of message loop invocations.
-static Vector<OwnPtr<ScopedPageLoadDeferrer>>& pageLoadDeferrerStack()
+static Vector<OwnPtr<ScopedPageSuspender>>& pageSuspenderStack()
 {
-    DEFINE_STATIC_LOCAL(Vector<OwnPtr<ScopedPageLoadDeferrer>>, deferrerStack, ());
-    return deferrerStack;
+    DEFINE_STATIC_LOCAL(Vector<OwnPtr<ScopedPageSuspender>>, suspenderStack, ());
+    return suspenderStack;
 }
 
 // Ensure that the WebDragOperation enum values stay in sync with the original
@@ -418,13 +418,13 @@ void WebView::resetVisitedLinkState(bool invalidateVisitedLinkHashes)
 
 void WebView::willEnterModalLoop()
 {
-    pageLoadDeferrerStack().append(adoptPtr(new ScopedPageLoadDeferrer()));
+    pageSuspenderStack().append(adoptPtr(new ScopedPageSuspender()));
 }
 
 void WebView::didExitModalLoop()
 {
-    ASSERT(pageLoadDeferrerStack().size());
-    pageLoadDeferrerStack().removeLast();
+    ASSERT(pageSuspenderStack().size());
+    pageSuspenderStack().removeLast();
 }
 
 void WebViewImpl::setMainFrame(WebFrame* frame)

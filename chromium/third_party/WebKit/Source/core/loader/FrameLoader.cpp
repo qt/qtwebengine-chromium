@@ -199,10 +199,10 @@ void FrameLoader::init()
     m_provisionalDocumentLoader->startLoadingMainResource();
     m_frame->document()->cancelParsing();
     m_stateMachine.advanceTo(FrameLoaderStateMachine::DisplayingInitialEmptyDocument);
-    // Self-suspend if created in an already deferred Page. Note that both
+    // Self-suspend if created in an already suspended Page. Note that both
     // startLoadingMainResource() and cancelParsing() may have already detached
     // the frame, since they both fire JS events.
-    if (m_frame->page() && m_frame->page()->defersLoading())
+    if (m_frame->page() && m_frame->page()->suspended())
         setDefersLoading(true);
 }
 
@@ -626,7 +626,7 @@ void FrameLoader::checkCompleted()
 void FrameLoader::checkTimerFired(Timer<FrameLoader>*)
 {
     if (Page* page = m_frame->page()) {
-        if (page->defersLoading())
+        if (page->suspended())
             return;
     }
     checkCompleted();
@@ -897,7 +897,7 @@ void FrameLoader::load(const FrameLoadRequest& passedRequest, FrameLoadType fram
     if (m_inStopAllLoaders)
         return;
 
-    if (m_frame->page()->defersLoading() && isBackForwardLoadType(frameLoadType)) {
+    if (m_frame->page()->suspended() && isBackForwardLoadType(frameLoadType)) {
         m_deferredHistoryLoad = DeferredHistoryLoad::create(passedRequest.resourceRequest(), historyItem, frameLoadType, historyLoadType);
         return;
     }

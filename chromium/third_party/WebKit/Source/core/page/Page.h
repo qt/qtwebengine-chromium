@@ -172,8 +172,8 @@ public:
     // DefersLoading is used to delay loads during modal dialogs.
     // Modal dialogs are supposed to freeze all background processes
     // in the page, including prevent additional loads from staring/continuing.
-    void setDefersLoading(bool);
-    bool defersLoading() const { return m_defersLoading; }
+    void setSuspended(bool);
+    bool suspended() const { return m_suspended; }
 
     void setPageScaleFactor(float);
     float pageScaleFactor() const;
@@ -271,7 +271,7 @@ private:
     bool m_openedByDOM;
 
     bool m_tabKeyCyclesThroughElements;
-    bool m_defersLoading;
+    bool m_suspended;
 
     float m_deviceScaleFactor;
 

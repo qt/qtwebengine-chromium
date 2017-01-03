@@ -27,7 +27,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/HitTestResult.h"
 #include "core/page/FrameTree.h"
-#include "core/page/ScopedPageLoadDeferrer.h"
+#include "core/page/ScopedPageSuspender.h"
 #include "core/page/WindowFeatures.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/network/NetworkHints.h"
@@ -79,10 +79,10 @@ void ChromeClient::setWindowFeatures(const WindowFeatures& features)
 template <typename Delegate>
 static bool openJavaScriptDialog(LocalFrame* frame, const String& message, ChromeClient::DialogType dialogType, const Delegate& delegate)
 {
-    // Defer loads in case the client method runs a new event loop that would
+    // Suspend loads in case the client method runs a new event loop that would
     // otherwise cause the load to continue while we're in the middle of
     // executing JavaScript.
-    ScopedPageLoadDeferrer deferrer;
+    ScopedPageSuspender suspender;
 
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message, dialogType);
     bool result = delegate();
@@ -183,10 +183,10 @@ void ChromeClient::clearToolTip()
 
 void ChromeClient::print(LocalFrame* frame)
 {
-    // Defer loads in case the client method runs a new event loop that would
+    // Suspend loads in case the client method runs a new event loop that would
     // otherwise cause the load to continue while we're in the middle of
     // executing JavaScript.
-    ScopedPageLoadDeferrer deferrer;
+    ScopedPageSuspender suspender;
 
     printDelegate(frame);
 }

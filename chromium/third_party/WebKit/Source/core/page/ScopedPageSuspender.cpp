@@ -18,7 +18,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "core/page/ScopedPageLoadDeferrer.h"
+#include "core/page/ScopedPageSuspender.h"
 
 #include "core/dom/Document.h"
 #include "core/loader/FrameLoader.h"
@@ -33,9 +33,9 @@ namespace blink {
 
 namespace {
 
-unsigned s_deferralCount = 0;
+unsigned s_suspensionCount = 0;
 
-void setDefersLoading(bool isDeferred)
+void setSuspended(bool isSuspended)
 {
     // Make a copy of the collection. Undeferring loads can cause script to run,
     // which would mutate ordinaryPages() in the middle of iteration.
@@ -43,32 +43,32 @@ void setDefersLoading(bool isDeferred)
     for (const auto& page : Page::ordinaryPages())
         pages.append(page);
     for (const auto& page : pages)
-        page->setDefersLoading(isDeferred);
+        page->setSuspended(isSuspended);
 }
 
 } // namespace
 
-ScopedPageLoadDeferrer::ScopedPageLoadDeferrer()
+ScopedPageSuspender::ScopedPageSuspender()
 {
-    if (++s_deferralCount > 1)
+   if (++s_suspensionCount > 1)
         return;
 
-    setDefersLoading(true);
+    setSuspended(true);
     Platform::current()->currentThread()->scheduler()->suspendTimerQueue();
 }
 
-ScopedPageLoadDeferrer::~ScopedPageLoadDeferrer()
+ScopedPageSuspender::~ScopedPageSuspender()
 {
-    if (--s_deferralCount > 0)
+   if (--s_suspensionCount > 0)
         return;
 
-    setDefersLoading(false);
+    setSuspended(false);
     Platform::current()->currentThread()->scheduler()->resumeTimerQueue();
 }
 
-bool ScopedPageLoadDeferrer::isActive()
+bool ScopedPageSuspender::isActive() 
 {
-    return s_deferralCount > 0;
+  return s_suspensionCount > 0;
 }
 
 } // namespace blink
