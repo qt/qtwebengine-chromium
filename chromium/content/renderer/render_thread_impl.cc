@@ -200,7 +200,7 @@
 #include "v8/src/third_party/vtune/v8-vtune.h"
 #endif
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 #include "content/public/common/service_manager_connection.h"
 #include "content/renderer/mus/render_widget_mus_connection.h"
 #include "content/renderer/mus/render_widget_window_tree_client_factory.h"
@@ -646,7 +646,7 @@ void RenderThreadImpl::Init(
   // Register this object as the main thread.
   ChildProcess::current()->set_main_thread(this);
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningInMash()) {
     gpu_service_ =
         ui::GpuService::Create(GetServiceManagerConnection()->GetConnector(),
@@ -727,7 +727,7 @@ void RenderThreadImpl::Init(
 
   AddFilter((new ServiceWorkerContextMessageFilter())->GetFilter());
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kUseMusInRenderer)) {
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
@@ -1635,7 +1635,7 @@ RenderThreadImpl::GetCompositorImplThreadTaskRunner() {
 }
 
 gpu::GpuMemoryBufferManager* RenderThreadImpl::GetGpuMemoryBufferManager() {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (gpu_service_)
     return gpu_service_->gpu_memory_buffer_manager();
 #endif
@@ -1811,7 +1811,7 @@ scoped_refptr<gpu::GpuChannelHost> RenderThreadImpl::EstablishGpuChannelSync() {
                                     ChildProcess::current()->GetShutDownEvent(),
                                     GetGpuMemoryBufferManager());
   } else {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     gpu_channel_ = gpu_service_->EstablishGpuChannelSync();
 #else
     NOTREACHED();
@@ -1831,7 +1831,7 @@ RenderThreadImpl::CreateCompositorFrameSink(
   if (command_line.HasSwitch(switches::kDisableGpuCompositing))
     use_software = true;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (GetServiceManagerConnection() && !use_software &&
       command_line.HasSwitch(switches::kUseMusInRenderer)) {
     RenderWidgetMusConnection* connection =

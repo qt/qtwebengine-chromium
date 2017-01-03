@@ -509,7 +509,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
                   context_provider, compositor->vsync_manager(),
                   begin_frame_source.get(), std::move(validator));
         } else {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
           display_output_surface =
               base::MakeUnique<MusBrowserCompositorOutputSurface>(
                   compositor->window(), context_provider,

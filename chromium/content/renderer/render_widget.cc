@@ -201,7 +201,7 @@ bool IsDateTimeInput(ui::TextInputType type) {
 
 content::RenderWidgetInputHandlerDelegate* GetRenderWidgetInputHandlerDelegate(
     content::RenderWidget* widget) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();
   if (content::ServiceManagerConnection::GetForProcess() &&
       cmdline.HasSwitch(switches::kUseMusInRenderer)) {

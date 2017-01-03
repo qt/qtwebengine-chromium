@@ -677,7 +677,7 @@ class CONTENT_EXPORT RenderThreadImpl
   std::unique_ptr<MemoryObserver> memory_observer_;
   std::unique_ptr<ChildMemoryCoordinatorImpl> memory_coordinator_;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   std::unique_ptr<ui::GpuService> gpu_service_;
 #endif
 
