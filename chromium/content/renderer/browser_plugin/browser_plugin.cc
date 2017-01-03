@@ -49,7 +49,7 @@
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 #include "content/renderer/mus/mus_embedded_frame.h"
 #include "content/renderer/mus/renderer_window_tree_client.h"
 #endif
@@ -127,7 +127,7 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
                         OnResizeDueToAutoResize)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMouseLock, OnSetMouseLock)
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMusEmbedToken, OnSetMusEmbedToken)
 #endif
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetTooltipText, OnSetTooltipText)
@@ -187,7 +187,7 @@ void BrowserPlugin::Attach() {
             ->GetDocument()
             .IsPluginDocument();
   }
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (pending_embed_token_) {
     base::Optional<base::UnguessableToken> embed_token =
         std::move(pending_embed_token_);
@@ -231,7 +231,7 @@ void BrowserPlugin::Detach() {
       new BrowserPluginHostMsg_Detach(browser_plugin_instance_id_));
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void BrowserPlugin::CreateMusWindowAndEmbed(
     const base::UnguessableToken& embed_token) {
   RenderFrameImpl* render_frame =
@@ -291,7 +291,7 @@ void BrowserPlugin::WasResized() {
   if (resize_params_changed && attached())
     sent_resize_params_ = pending_resize_params_;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningWithMus() && mus_embedded_frame_) {
     mus_embedded_frame_->SetWindowBounds(local_surface_id_,
                                          FrameRectInPixels());
@@ -354,7 +354,7 @@ void BrowserPlugin::OnSetMouseLock(int browser_plugin_instance_id,
   }
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void BrowserPlugin::OnSetMusEmbedToken(
     int instance_id,
     const base::UnguessableToken& embed_token) {
@@ -762,7 +762,7 @@ bool BrowserPlugin::HandleMouseLockedInputEvent(
   return true;
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void BrowserPlugin::OnMusEmbeddedFrameSurfaceChanged(
     const viz::SurfaceInfo& surface_info) {
   if (!attached_)

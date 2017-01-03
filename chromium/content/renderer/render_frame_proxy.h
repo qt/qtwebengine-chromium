@@ -45,7 +45,7 @@ struct FrameOwnerProperties;
 struct FrameReplicationState;
 struct ResourceTimingInfo;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 class MusEmbeddedFrame;
 #endif
 
@@ -71,7 +71,7 @@ class MusEmbeddedFrame;
 // RenderFrame is created for it.
 class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
                                         public IPC::Sender,
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
                                         public MusEmbeddedFrameDelegate,
 #endif
                                         public blink::WebRemoteFrameClient {
@@ -144,7 +144,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // Returns the widget used for the local frame root.
   RenderWidget* render_widget() { return render_widget_; }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   void SetMusEmbeddedFrame(
       std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame);
 #endif
@@ -237,7 +237,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   void OnResizeDueToAutoResize(uint64_t sequence_number);
   void OnSetHasReceivedUserGestureBeforeNavigation(bool value);
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   // MusEmbeddedFrameDelegate
   void OnMusEmbeddedFrameSurfaceChanged(
       const viz::SurfaceInfo& surface_info) override;
@@ -288,7 +288,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 
   bool enable_surface_synchronization_ = false;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame_;
 #endif
 
