@@ -409,7 +409,7 @@ bool IsIDNComponentSafe(const base::char16* str,
       icu::UnicodeString(
           L"[[\\ \u00ad\u00bc\u00bd\u01c3\u0337\u0338"
           L"\u05c3\u05f4\u06d4\u0702\u115f\u1160][\u2000-\u200b]"
-          L"[\u2024\u2027\u2028\u2029\u2039\u203a\u2044\u205f]"
+          L"[\u2010\u2024\u2027\u2028\u2029\u2039\u203a\u2044\u205f]"
           L"[\u2154-\u2156][\u2159-\u215b][\u215f\u2215\u23ae"
           L"\u29f6\u29f8\u2afb\u2afd][\u2ff0-\u2ffb][\u3014"
           L"\u3015\u3033\u3164\u321d\u321e\u33ae\u33af\u33c6\u33df\ufe14"
@@ -429,7 +429,7 @@ bool IsIDNComponentSafe(const base::char16* str,
       icu::UnicodeString(
           "[[\\u0020\\u00ad\\u00bc\\u00bd\\u01c3\\u0337\\u0338"
           "\\u05c3\\u05f4\\u06d4\\u0702\\u115f\\u1160][\\u2000-\\u200b]"
-          "[\\u2024\\u2027\\u2028\\u2029\\u2039\\u203a\\u2044\\u205f]"
+          "[\\u2010\\u2024\\u2027\\u2028\\u2029\\u2039\\u203a\\u2044\\u205f]"
           "[\\u2154-\\u2156][\\u2159-\\u215b][\\u215f\\u2215\\u23ae"
           "\\u29f6\\u29f8\\u2afb\\u2afd][\\u2ff0-\\u2ffb][\\u3014"
           "\\u3015\\u3033\\u3164\\u321d\\u321e\\u33ae\\u33af\\u33c6\\u33df\\ufe"
