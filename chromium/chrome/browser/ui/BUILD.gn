@@ -216,7 +216,7 @@ split_static_library("ui") {
     ]
   }
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     defines += [ "MOJO_RUNNER_CLIENT" ]
   }
 
@@ -368,7 +368,7 @@ split_static_library("ui") {
       ]
     }
   }
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     sources +=
         rebase_path(gypi_values.chrome_browser_ui_aura_sources, ".", "//chrome")
     deps += [

@@ -605,7 +605,7 @@ split_static_library("browser") {
     defines += [ "USE_LIBSECRET" ]
     deps += [ "//third_party/libsecret" ]
   }
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     sources +=
         rebase_path(gypi_values.chrome_browser_aura_sources, ".", "//chrome")
 

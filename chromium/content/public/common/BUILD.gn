@@ -57,7 +57,7 @@ config("static_switches_defines") {
 # Mojo shell.
 config("mojo_shell_client") {
   # This configuration has only been tested on these platforms.
-  if ((is_win || is_linux || is_chromeos) && !is_chromecast) {
+  if ((is_win || is_linux || is_chromeos) && !is_chromecast && !use_qt) {
     defines = [ "MOJO_SHELL_CLIENT" ]
   }
 }

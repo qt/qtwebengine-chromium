@@ -97,7 +97,7 @@ source_set("renderer") {
   ]
   allow_circular_includes_from = []
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     public_deps += [ "//content/renderer/mus" ]
     allow_circular_includes_from += [ "//content/renderer/mus" ]
     deps += [ "//components/mus/common:mus_common" ]

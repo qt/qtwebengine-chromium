@@ -380,7 +380,7 @@ source_set("browser") {
     ]
   }
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     deps += [
       "//components/bitmap_uploader",
       "//components/mus/common:mus_common",
@@ -402,7 +402,7 @@ source_set("browser") {
     if (toolkit_views) {
       defines += [ "MOJO_RUNNER_CLIENT" ]
     }
-  } else {  # Not aura.
+  } else if (!use_aura) {  # Not aura.
     sources -= [
       "media/capture/cursor_renderer_aura.cc",
       "media/capture/cursor_renderer_aura.h",
