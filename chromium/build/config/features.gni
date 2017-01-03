@@ -126,6 +126,15 @@ declare_args() {
 
   # Use the operating system's spellchecker rather than hunspell.
   use_browser_spellchecker = is_android || is_mac
+
+  # Enable notifications everywhere except iOS.
+  enable_notifications = !is_ios
+
+  enable_web_speech = !is_android && !is_ios
+
+  enable_task_manager = !is_ios && !is_android
+
+  enable_themes = !is_android && !is_ios
 }
 
 # Additional dependent variables -----------------------------------------------
@@ -145,15 +154,6 @@ use_seccomp_bpf =
     (is_linux || is_android) &&
     (current_cpu == "x86" || current_cpu == "x64" || current_cpu == "arm" ||
      current_cpu == "arm64" || current_cpu == "mipsel")
-
-# Enable notifications everywhere except iOS.
-enable_notifications = !is_ios
-
-enable_web_speech = !is_android && !is_ios
-
-enable_task_manager = !is_ios && !is_android
-
-enable_themes = !is_android && !is_ios
 
 # Whether we are using the rlz library or not.  Platforms like Android send
 # rlz codes for searches but do not use the library.
