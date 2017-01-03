@@ -40,6 +40,12 @@ source_set("cpp") {
     "//services/ui",
   ]
 
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui",
+    ]
+  }
+
   defines = [ "GL_GLEXT_PROTOTYPES" ]
 
   allow_circular_includes_from = [ ":internal" ]
@@ -80,6 +86,12 @@ source_set("internal") {
   data_deps = [
     "//services/ui",
   ]
+
+  if (use_qt) {
+    data_deps -= [
+      "//services/ui",
+    ]
+  }
 
   defines = [ "GL_GLEXT_PROTOTYPES" ]
 

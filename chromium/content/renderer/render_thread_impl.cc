@@ -209,9 +209,11 @@
 #include "v8/src/third_party/vtune/v8-vtune.h"
 #endif
 
+#if !defined(TOOLKIT_QT)
 #include "content/public/common/service_manager_connection.h"
 #include "content/renderer/mus/render_widget_window_tree_client_factory.h"
 #include "content/renderer/mus/renderer_window_tree_client.h"
+#endif
 #include "services/ui/public/cpp/gpu/gpu.h"
 
 #if defined(ENABLE_IPC_FUZZER)
@@ -659,6 +661,7 @@ void RenderThreadImpl::Init(
       base::BindRepeating(&CreateSingleSampleMetricsProvider,
                           message_loop()->task_runner(), GetConnector()));
 
+  // QTFIXME!
   gpu_ = ui::Gpu::Create(
       GetConnector(),
       IsRunningInMash() ? ui::mojom::kServiceName : mojom::kBrowserServiceName,
@@ -736,7 +739,7 @@ void RenderThreadImpl::Init(
 
   AddFilter((new ServiceWorkerContextMessageFilter())->GetFilter());
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningInMash()) {
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
   }
@@ -886,7 +889,7 @@ void RenderThreadImpl::Init(
 
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
   if (IsRunningInMash()) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
     GetServiceManagerConnection()->GetConnector()->BindInterface(
         ui::mojom::kServiceName, &manager_ptr);
 #else
@@ -1898,7 +1901,7 @@ void RenderThreadImpl::RequestNewCompositorFrameSink(
     synthetic_begin_frame_source = CreateSyntheticBeginFrameSource();
   }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (!use_software && IsRunningInMash()) {
     scoped_refptr<gpu::GpuChannelHost> channel = EstablishGpuChannelSync();
     // If the channel could not be established correctly, then return null. This
