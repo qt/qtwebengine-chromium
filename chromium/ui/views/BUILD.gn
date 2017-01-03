@@ -964,6 +964,9 @@ jumbo_source_set("test_support") {
       "//ui/wm",
       "//ui/wm/public",
     ]
+    if (use_qt) {
+      deps -= [ "//ui/views/mus" ]
+    }
     if (use_x11) {
       sources += [
         "test/desktop_screen_x11_test_api.cc",

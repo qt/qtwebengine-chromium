@@ -2462,7 +2462,7 @@ jumbo_source_set("browser") {
     deps += [ "//chromeos/services/assistant/public/mojom" ]
   }
 
-  if (use_aura) {
+  if (use_aura && !use_qt) {
     deps += [
       "//services/ws/public/cpp",
       "//services/ws/public/cpp/host",
@@ -2671,6 +2671,11 @@ jumbo_source_set("browser") {
         "web_contents/web_drag_dest_mac.mm",
         "web_contents/web_drag_source_mac.h",
         "web_contents/web_drag_source_mac.mm",
+      ]
+    }
+    if (use_aura) {
+      sources += [
+        "media/desktop_media_window_registry_aura.cc",
       ]
     }
   }

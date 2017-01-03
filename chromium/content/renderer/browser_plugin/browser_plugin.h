@@ -26,7 +26,7 @@
 #include "third_party/blink/public/web/web_input_method_controller.h"
 #include "third_party/blink/public/web/web_node.h"
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 #include "content/renderer/mus/mus_embedded_frame_delegate.h"
 #endif
 
@@ -45,12 +45,12 @@ class BrowserPluginDelegate;
 class BrowserPluginManager;
 class ChildFrameCompositingHelper;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 class MusEmbeddedFrame;
 #endif
 
 class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
                                      public MusEmbeddedFrameDelegate,
 #endif
                                      public ChildFrameCompositor,
@@ -185,7 +185,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
 
   void UpdateInternalInstanceId();
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   void CreateMusWindowAndEmbed(const base::UnguessableToken& embed_token);
 #endif
 
@@ -204,13 +204,13 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   void OnSetContentsOpaque(int instance_id, bool opaque);
   void OnSetCursor(int instance_id, const WebCursor& cursor);
   void OnSetMouseLock(int instance_id, bool enable);
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   void OnSetMusEmbedToken(int instance_id,
                           const base::UnguessableToken& embed_token);
 #endif
   void OnShouldAcceptTouchEvents(int instance_id, bool accept);
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   // MusEmbeddedFrameDelegate
   void OnMusEmbeddedFrameSinkIdAllocated(
       const viz::FrameSinkId& frame_sink_id) override;
@@ -267,7 +267,7 @@ class CONTENT_EXPORT BrowserPlugin : public blink::WebPlugin,
   // own this. The delegate destroys itself.
   base::WeakPtr<BrowserPluginDelegate> delegate_;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   // Set if OnSetMusEmbedToken() is called before attached.
   base::Optional<base::UnguessableToken> pending_embed_token_;
 

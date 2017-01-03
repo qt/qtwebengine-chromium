@@ -654,7 +654,7 @@ group("gn_all") {
     deps += [ "//content/browser/bluetooth/tools:bluetooth_metrics_hash" ]
   }
 
-  if (is_win || is_linux) {
+  if ((is_win || is_linux) && !use_qt) {
     deps += [
       "//media/mojo/services:media_service_unittests",
       "//mojo",

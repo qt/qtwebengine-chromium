@@ -3298,6 +3298,9 @@ jumbo_split_static_library("ui") {
       "//chrome/browser/ui/app_list/search/search_result_ranker:recurrence_ranker_proto",
       "//ui/views/mus/remote_view:remote_view_provider",
     ]
+    if (use_qt) {
+      deps -= [ "//ui/views/mus/remote_view:remote_view_provider" ]
+    }
 
     if (is_chromeos) {
       sources += [
