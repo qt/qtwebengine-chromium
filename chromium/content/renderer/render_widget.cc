@@ -401,7 +401,7 @@ RenderWidget::RenderWidget(int32_t widget_routing_id,
                                           ->NewRenderWidgetSchedulingState();
     render_widget_scheduling_state_->SetHidden(is_hidden_);
   }
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   RendererWindowTreeClient::CreateIfNecessary(routing_id_);
   if (IsRunningInMash())
     RendererWindowTreeClient::Get(routing_id_)->SetVisible(!is_hidden_);
@@ -417,7 +417,7 @@ RenderWidget::~RenderWidget() {
   // If we are swapped out, we have released already.
   if (!is_swapped_out_ && RenderProcess::current())
     RenderProcess::current()->ReleaseProcess();
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   // It is possible for a RenderWidget to be destroyed before it was embedded
   // in a mus window. The RendererWindowTreeClient will leak in such cases. So
   // explicitly delete it here.
@@ -2043,7 +2043,7 @@ void RenderWidget::SetHidden(bool hidden) {
   // throttled acks are released in case frame production ceases.
   is_hidden_ = hidden;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningInMash())
     RendererWindowTreeClient::Get(routing_id_)->SetVisible(!hidden);
 #endif

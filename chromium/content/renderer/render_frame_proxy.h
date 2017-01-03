@@ -37,7 +37,7 @@ struct ContentSecurityPolicyHeader;
 struct FrameOwnerProperties;
 struct FrameReplicationState;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 class MusEmbeddedFrame;
 #endif
 
@@ -133,7 +133,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
   // Returns the widget used for the local frame root.
   RenderWidget* render_widget() { return render_widget_; }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   // Called when mus determines the FrameSinkId.
   void OnMusFrameSinkIdAllocated(const viz::FrameSinkId& frame_sink_id);
 
@@ -225,7 +225,7 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
 
   bool enable_surface_synchronization_ = false;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   std::unique_ptr<MusEmbeddedFrame> mus_embedded_frame_;
 #endif
 

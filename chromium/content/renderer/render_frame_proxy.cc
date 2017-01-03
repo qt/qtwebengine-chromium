@@ -40,7 +40,7 @@
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 #include "content/renderer/mus/renderer_window_tree_client.h"
 #endif
 
@@ -226,7 +226,7 @@ void RenderFrameProxy::Init(blink::WebRemoteFrame* web_frame,
   compositing_helper_.reset(
       ChildFrameCompositingHelper::CreateForRenderFrameProxy(this));
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (IsRunningInMash()) {
     RendererWindowTreeClient* renderer_window_tree_client =
         RendererWindowTreeClient::Get(render_widget_->routing_id());
@@ -473,7 +473,7 @@ void RenderFrameProxy::OnSetHasReceivedUserGesture() {
   web_frame_->SetHasReceivedUserGesture();
 }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
 void RenderFrameProxy::OnMusFrameSinkIdAllocated(
     const viz::FrameSinkId& frame_sink_id) {
   frame_sink_id_ = frame_sink_id;
@@ -490,7 +490,7 @@ void RenderFrameProxy::SetMusEmbeddedFrame(
 #endif
 
 void RenderFrameProxy::FrameDetached(DetachType type) {
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   mus_embedded_frame_.reset();
 #endif
 
@@ -578,7 +578,7 @@ void RenderFrameProxy::Navigate(const blink::WebURLRequest& request,
 void RenderFrameProxy::FrameRectsChanged(const blink::WebRect& frame_rect) {
   gfx::Rect rect = frame_rect;
   const bool did_size_change = frame_rect_.size() != rect.size();
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   const bool did_rect_change = did_size_change || frame_rect_ != rect;
 #endif
 
@@ -589,7 +589,7 @@ void RenderFrameProxy::FrameRectsChanged(const blink::WebRect& frame_rect) {
     MaybeUpdateCompositingHelper();
   }
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !defined(TOOLKIT_QT)
   if (did_rect_change && mus_embedded_frame_)
     mus_embedded_frame_->SetWindowBounds(local_surface_id_, rect);
 #endif
